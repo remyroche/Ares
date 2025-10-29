@@ -159,6 +159,9 @@ class LiveTrader:
             # Initialize enhanced signal generators
             await self._initialize_signal_generators()
 
+            # Reconcile positions with exchange
+            await self.reconcile_positions_with_exchange()
+
             # Start trading session
             self.session = TradingSession(
                 session_id=str(datetime.now().timestamp()),
@@ -243,6 +246,23 @@ class LiveTrader:
             Order ID if successful, None otherwise
         """
         try:
+            # Validate inputs
+            if not symbol or not isinstance(symbol, str):
+                tprint_error(f"❌ Invalid symbol: {symbol}")
+                return None
+                
+            if not side or side.lower() not in ['buy', 'sell']:
+                tprint_error(f"❌ Invalid side: {side}")
+                return None
+                
+            if quantity is None or quantity <= 0:
+                tprint_error(f"❌ Invalid quantity: {quantity}")
+                return None
+                
+            if not self.order_manager:
+                tprint_error("❌ Order manager not initialized")
+                return None
+
             # Validate trade parameters
             await self._validate_trade(symbol, side, quantity)
 
@@ -261,6 +281,15 @@ class LiveTrader:
                 quantity=quantity,
                 price=price
             )
+
+            # Validate order was created
+            if order is None:
+                tprint_error(f"❌ Failed to create order for {symbol}")
+                return None
+                
+            if not hasattr(order, 'order_id') or not order.order_id:
+                tprint_error(f"❌ Order created but missing order_id for {symbol}")
+                return None
 
             # Add to active orders
             self.active_orders[order.order_id] = order
@@ -303,15 +332,39 @@ class LiveTrader:
 
     async def _check_position_limits(self, symbol: str, side: str, quantity: float) -> bool:
         """Check if trade is within position limits."""
+        # Validate inputs
+        if not symbol or quantity is None or quantity <= 0:
+            return False
+            
         # Get current portfolio value
         portfolio_value = await self._get_portfolio_value()
 
+        # Prevent division by zero
+        if portfolio_value is None or portfolio_value <= 0:
+            tprint_warning(f"⚠️ Portfolio value is {portfolio_value}, cannot validate position limits")
+            return False
+
         # Calculate position size as percentage of portfolio
         current_price = await self._get_current_price(symbol)
+        
+        # Handle None price
+        if current_price is None or current_price <= 0:
+            tprint_warning(f"⚠️ Invalid price for {symbol}: {current_price}, cannot validate position limits")
+            return False
+            
         position_value = quantity * current_price
+        
+        if position_value <= 0:
+            tprint_warning(f"⚠️ Invalid position value: {position_value}")
+            return False
+            
         position_percentage = position_value / portfolio_value
 
-        return position_percentage <= self.max_position_size
+        if position_percentage > self.max_position_size:
+            tprint_warning(f"⚠️ Position size {position_percentage:.2%} exceeds limit {self.max_position_size:.2%}")
+            return False
+            
+        return True
 
     async def _create_stop_loss_order(
         self,
@@ -364,36 +417,87 @@ class LiveTrader:
             tprint_warning(f"⚠️ Failed to create take profit order: {str(e)}")
 
     async def _get_portfolio_value(self) -> float:
-        """Get current portfolio value."""
+        """Get current portfolio value accounting for both long and short positions."""
         try:
             # Get account balance from exchange
             balances = await self.exchange_interface.get_account_balance()
+            if balances is None:
+                balances = {}
 
-            # Get current prices for all positions
-            total_value = 0.0
+            # Start with cash balance (USDT)
+            total_value = balances.get('USDT', 0.0)
+            if total_value < 0:
+                tprint_warning(f"⚠️ Negative cash balance: {total_value}")
+                total_value = 0.0
 
+            # Calculate unrealized PnL for all positions
             for symbol, position in self.positions.items():
+                if position.quantity == 0:
+                    continue
+                
                 current_price = await self._get_current_price(symbol)
-                position_value = position.quantity * current_price
-                total_value += position_value
+                if current_price <= 0:
+                    tprint_warning(f"⚠️ Invalid price for {symbol}: {current_price}")
+                    continue
 
-            # Add cash balance (USDT)
-            total_value += balances.get('USDT', 0.0)
+                # Calculate unrealized PnL based on position side
+                if position.side == 'long':
+                    # Long position: value = quantity * current_price
+                    # Unrealized PnL = (current_price - entry_price) * quantity
+                    unrealized_pnl = (current_price - position.entry_price) * position.quantity
+                    total_value += unrealized_pnl
+                elif position.side == 'short':
+                    # Short position: 
+                    # Value at entry = quantity * entry_price (collateral locked)
+                    # Current value = quantity * current_price (what we owe)
+                    # Unrealized PnL = (entry_price - current_price) * quantity
+                    unrealized_pnl = (position.entry_price - current_price) * position.quantity
+                    total_value += unrealized_pnl
+                    # For shorts, we also need to account for the collateral already in balance
+                    # The locked collateral is not in cash, but represented as negative position
+                else:
+                    tprint_warning(f"⚠️ Unknown position side for {symbol}: {position.side}")
 
-            return total_value
+            return max(0.0, total_value)  # Ensure non-negative
 
         except Exception as e:
             tprint_warning(f"⚠️ Failed to get portfolio value: {str(e)}")
+            self.logger.exception("Error calculating portfolio value")
             return 10000.0  # Default fallback
 
-    async def _get_current_price(self, symbol: str) -> float:
+    async def _get_current_price(self, symbol: str) -> Optional[float]:
         """Get current market price for symbol."""
+        if not symbol:
+            tprint_warning("⚠️ Empty symbol provided for price lookup")
+            return None
+            
         try:
+            if not self.exchange_interface:
+                tprint_warning("⚠️ Exchange interface not available for price lookup")
+                return None
+                
             ticker = await self.exchange_interface.get_ticker(symbol)
-            return ticker.price if ticker else 3000.0  # Fallback price
+            
+            if ticker is None:
+                tprint_warning(f"⚠️ No ticker data available for {symbol}")
+                return None
+                
+            if not hasattr(ticker, 'price') or ticker.price is None:
+                tprint_warning(f"⚠️ Invalid price in ticker for {symbol}")
+                return None
+                
+            price = float(ticker.price)
+            
+            if price <= 0:
+                tprint_warning(f"⚠️ Non-positive price for {symbol}: {price}")
+                return None
+                
+            return price
+            
         except Exception as e:
             tprint_warning(f"⚠️ Failed to get price for {symbol}: {str(e)}")
-            return 3000.0 if symbol.startswith('ETH') else 50000.0
+            self.logger.exception(f"Error getting price for {symbol}")
+            return None
 
     async def close_position(self, symbol: str, quantity: Optional[float] = None) -> bool:
         """
@@ -407,12 +511,32 @@ class LiveTrader:
             True if closed successfully, False otherwise
         """
         try:
+            # Validate inputs
+            if not symbol or not isinstance(symbol, str):
+                tprint_error(f"❌ Invalid symbol: {symbol}")
+                return False
+                
+            if quantity is not None and quantity <= 0:
+                tprint_error(f"❌ Invalid close quantity: {quantity}")
+                return False
+                
             if symbol not in self.positions:
                 tprint_warning(f"⚠️ No position found for {symbol}")
                 return False
 
             position = self.positions[symbol]
-            close_quantity = quantity or position.quantity
+            
+            # Validate position
+            if position.quantity is None or position.quantity <= 0:
+                tprint_warning(f"⚠️ Position has invalid quantity: {position.quantity}, removing")
+                del self.positions[symbol]
+                return False
+                
+            if position.side not in ['long', 'short']:
+                tprint_warning(f"⚠️ Position has invalid side: {position.side}")
+                return False
+            
+            close_quantity = quantity if quantity is not None else position.quantity
             
             # Validate quantity
             if close_quantity <= 0:
@@ -436,8 +560,9 @@ class LiveTrader:
             if order_id:
                 # Update position
                 position.quantity -= close_quantity
-                if position.quantity <= 0:
+                if position.quantity <= 0 or abs(position.quantity) < 1e-8:  # Handle floating point precision
                     del self.positions[symbol]
+                    tprint_info(f"🗑️ Removed position entry for {symbol}")
 
                 tprint_success(f"✅ Position closed for {symbol}")
                 return True
@@ -447,6 +572,7 @@ class LiveTrader:
 
         except Exception as e:
             tprint_error(f"❌ Error closing position for {symbol}: {str(e)}")
+            self.logger.exception(f"Error closing position for {symbol}")
             return False
 
     async def get_positions(self) -> Dict[str, Position]:
@@ -483,21 +609,225 @@ class LiveTrader:
             tprint_error(f"❌ Failed to cancel order {order_id}: {str(e)}")
             return False
 
+    async def reconcile_positions_with_exchange(self) -> Dict[str, Any]:
+        """
+        Reconcile internal position tracking with exchange positions.
+        
+        This method:
+        1. Fetches actual positions from the exchange
+        2. Compares with internal position tracking
+        3. Identifies discrepancies (missing, extra, or mismatched positions)
+        4. Updates internal tracking to match exchange reality
+        5. Logs all discrepancies for investigation
+        
+        Returns:
+            Dictionary with reconciliation results including:
+            - synced_positions: List of successfully synced positions
+            - discrepancies: List of discrepancies found
+            - exchange_positions: Raw positions from exchange
+        """
+        reconciliation_result = {
+            'synced_positions': [],
+            'discrepancies': [],
+            'exchange_positions': [],
+            'timestamp': datetime.now()
+        }
+        
+        try:
+            if not self.exchange_interface:
+                tprint_warning("⚠️ Cannot reconcile: exchange interface not available")
+                reconciliation_result['discrepancies'].append({
+                    'type': 'missing_interface',
+                    'message': 'Exchange interface not initialized'
+                })
+                return reconciliation_result
+
+            # Get positions from exchange
+            exchange_positions_raw = []
+            try:
+                # Try to get open positions from exchange
+                if hasattr(self.exchange_interface, 'get_open_positions'):
+                    exchange_positions_raw = await self.exchange_interface.get_open_positions()
+                elif hasattr(self.exchange_interface, 'dispatcher') and self.exchange_interface.dispatcher:
+                    # Try through dispatcher
+                    if hasattr(self.exchange_interface.dispatcher, 'get_positions'):
+                        exchange_positions_raw = await self.exchange_interface.dispatcher.get_positions()
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to fetch positions from exchange: {e}")
+                reconciliation_result['discrepancies'].append({
+                    'type': 'fetch_error',
+                    'message': f'Error fetching exchange positions: {str(e)}'
+                })
+
+            reconciliation_result['exchange_positions'] = exchange_positions_raw
+
+            # Normalize exchange positions to our Position format
+            exchange_positions = {}
+            for pos_data in exchange_positions_raw:
+                try:
+                    symbol = pos_data.get('symbol') or pos_data.get('instrument') or pos_data.get('pair')
+                    if not symbol:
+                        continue
+
+                    # Extract position data (format may vary by exchange)
+                    quantity = float(pos_data.get('positionAmt', pos_data.get('size', pos_data.get('quantity', 0))))
+                    entry_price = float(pos_data.get('entryPrice', pos_data.get('avg_price', pos_data.get('price', 0))))
+                    current_price = float(pos_data.get('markPrice', pos_data.get('current_price', pos_data.get('lastPrice', 0))))
+                    unrealized_pnl = float(pos_data.get('unrealizedPnl', pos_data.get('unrealized_pnl', 0)))
+
+                    # Determine side based on quantity sign (exchange-dependent)
+                    if quantity > 0:
+                        side = 'long'
+                    elif quantity < 0:
+                        side = 'short'
+                        quantity = abs(quantity)  # Store as positive with side indicator
+                    else:
+                        continue  # Skip zero positions
+
+                    exchange_positions[symbol] = {
+                        'symbol': symbol,
+                        'side': side,
+                        'quantity': quantity,
+                        'entry_price': entry_price,
+                        'current_price': current_price,
+                        'unrealized_pnl': unrealized_pnl,
+                        'exchange_data': pos_data
+                    }
+                except (ValueError, KeyError, TypeError) as e:
+                    tprint_warning(f"⚠️ Failed to parse exchange position: {pos_data}, error: {e}")
+                    continue
+
+            # Compare with internal positions
+            internal_symbols = set(self.positions.keys())
+            exchange_symbols = set(exchange_positions.keys())
+
+            # Find missing positions (in exchange but not in internal)
+            for symbol in exchange_symbols - internal_symbols:
+                exchange_pos = exchange_positions[symbol]
+                self.positions[symbol] = Position(
+                    symbol=symbol,
+                    side=exchange_pos['side'],
+                    quantity=exchange_pos['quantity'],
+                    entry_price=exchange_pos['entry_price'],
+                    current_price=exchange_pos['current_price'],
+                    unrealized_pnl=exchange_pos['unrealized_pnl'],
+                    realized_pnl=0.0,
+                    timestamp=datetime.now()
+                )
+                reconciliation_result['synced_positions'].append(symbol)
+                reconciliation_result['discrepancies'].append({
+                    'type': 'missing_internal',
+                    'symbol': symbol,
+                    'message': f'Position found on exchange but missing internally - added'
+                })
+                tprint_warning(f"⚠️ Found position on exchange not tracked internally: {symbol}")
+
+            # Find extra positions (in internal but not in exchange)
+            for symbol in internal_symbols - exchange_symbols:
+                internal_pos = self.positions[symbol]
+                reconciliation_result['discrepancies'].append({
+                    'type': 'missing_exchange',
+                    'symbol': symbol,
+                    'message': f'Position tracked internally but not found on exchange',
+                    'internal_quantity': internal_pos.quantity,
+                    'internal_side': internal_pos.side
+                })
+                tprint_warning(f"⚠️ Position tracked internally but not found on exchange: {symbol}")
+                # Optionally: remove from internal tracking or mark as closed
+                # For safety, we'll keep it but mark it as potentially stale
+
+            # Compare matching positions for discrepancies
+            for symbol in internal_symbols & exchange_symbols:
+                internal_pos = self.positions[symbol]
+                exchange_pos = exchange_positions[symbol]
+
+                discrepancies = []
+                
+                # Check quantity mismatch
+                if abs(internal_pos.quantity - exchange_pos['quantity']) > 0.0001:  # Allow small floating point differences
+                    discrepancies.append({
+                        'field': 'quantity',
+                        'internal': internal_pos.quantity,
+                        'exchange': exchange_pos['quantity'],
+                        'difference': abs(internal_pos.quantity - exchange_pos['quantity'])
+                    })
+
+                # Check side mismatch
+                if internal_pos.side != exchange_pos['side']:
+                    discrepancies.append({
+                        'field': 'side',
+                        'internal': internal_pos.side,
+                        'exchange': exchange_pos['side']
+                    })
+
+                # Check entry price mismatch (within 1% tolerance)
+                price_tolerance = 0.01
+                if abs(internal_pos.entry_price - exchange_pos['entry_price']) / max(internal_pos.entry_price, exchange_pos['entry_price']) > price_tolerance:
+                    discrepancies.append({
+                        'field': 'entry_price',
+                        'internal': internal_pos.entry_price,
+                        'exchange': exchange_pos['entry_price'],
+                        'difference_percent': abs(internal_pos.entry_price - exchange_pos['entry_price']) / max(internal_pos.entry_price, exchange_pos['entry_price']) * 100
+                    })
+
+                if discrepancies:
+                    # Update internal position to match exchange (authoritative source)
+                    internal_pos.quantity = exchange_pos['quantity']
+                    internal_pos.side = exchange_pos['side']
+                    internal_pos.entry_price = exchange_pos['entry_price']
+                    internal_pos.current_price = exchange_pos['current_price']
+                    internal_pos.unrealized_pnl = exchange_pos['unrealized_pnl']
+                    
+                    reconciliation_result['discrepancies'].append({
+                        'type': 'mismatch',
+                        'symbol': symbol,
+                        'discrepancies': discrepancies,
+                        'message': 'Position data mismatch - synced to exchange values'
+                    })
+                    tprint_warning(f"⚠️ Position mismatch for {symbol}: {discrepancies}")
+                else:
+                    # Positions match, just update current price and PnL
+                    internal_pos.current_price = exchange_pos['current_price']
+                    internal_pos.unrealized_pnl = exchange_pos['unrealized_pnl']
+                    reconciliation_result['synced_positions'].append(symbol)
+
+            tprint_success(f"✅ Position reconciliation complete: {len(reconciliation_result['synced_positions'])} synced, {len(reconciliation_result['discrepancies'])} discrepancies")
+            return reconciliation_result
+
+        except Exception as e:
+            tprint_error(f"❌ Position reconciliation failed: {str(e)}")
+            self.logger.exception("Error during position reconciliation")
+            reconciliation_result['discrepancies'].append({
+                'type': 'reconciliation_error',
+                'message': f'Reconciliation process failed: {str(e)}'
+            })
+            return reconciliation_result
+
     async def update_positions(self) -> None:
         """Update position information with current prices."""
         try:
             for symbol, position in self.positions.items():
+                if position.quantity == 0:
+                    continue
+                    
                 current_price = await self._get_current_price(symbol)
+                
+                if current_price is None or current_price <= 0:
+                    tprint_warning(f"⚠️ Invalid price for {symbol}: {current_price}")
+                    continue
 
                 position.current_price = current_price
 
                 if position.side == 'long':
                     position.unrealized_pnl = (current_price - position.entry_price) * position.quantity
-                else:
+                elif position.side == 'short':
                     position.unrealized_pnl = (position.entry_price - current_price) * position.quantity
+                else:
+                    tprint_warning(f"⚠️ Unknown position side for {symbol}: {position.side}")
 
         except Exception as e:
             tprint_warning(f"⚠️ Failed to update positions: {str(e)}")
+            self.logger.exception("Error updating positions")
 
     async def monitor_positions(self) -> None:
         """Monitor positions and execute risk management."""

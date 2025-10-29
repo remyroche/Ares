@@ -339,19 +339,42 @@ class PartialBarNowcaster:
         3. Volatility-adjusted projections
         """
         try:
-            if len(partial_data) == 0:
+            if partial_data is None or len(partial_data) == 0:
                 return pd.DataFrame()
 
             # Get the latest partial data
             latest = partial_data.iloc[-1]
+            
+            # Validate required columns exist
+            required_cols = ['open', 'close', 'high', 'low', 'volume']
+            missing_cols = [col for col in required_cols if col not in partial_data.columns]
+            if missing_cols:
+                tprint_error(f"❌ Missing required columns in partial data: {missing_cols}")
+                return pd.DataFrame()
+            
+            # Validate data integrity
+            if latest['open'] is None or latest['close'] is None:
+                tprint_error("❌ Missing price data in latest partial bar")
+                return pd.DataFrame()
 
             # Calculate trend from partial data
             if len(partial_data) > 1:
-                price_trend = (latest['close'] - partial_data.iloc[0]['open']) / partial_data.iloc[0]['open']
+                first_open = partial_data.iloc[0]['open']
+                if first_open is None or first_open <= 0:
+                    tprint_warning("⚠️ Invalid first open price, using conservative trend")
+                    price_trend = 0.0
+                else:
+                    price_trend = (latest['close'] - first_open) / first_open
                 volume_trend = partial_data['volume'].mean()
+                if pd.isna(volume_trend) or volume_trend <= 0:
+                    volume_trend = latest.get('volume', 0.0)
             else:
                 price_trend = 0.0
-                volume_trend = latest['volume']
+                volume_trend = latest.get('volume', 0.0)
+                
+            # Validate volume
+            if volume_trend is None or volume_trend < 0:
+                volume_trend = 0.0
 
             # Estimate remaining time
             remaining_ratio = 1.0 - completion_ratio
@@ -367,18 +390,47 @@ class PartialBarNowcaster:
                 final_close = latest['close'] * (1 + price_trend * 0.1)
                 final_volume = volume_trend * 1.1
 
+            # Validate latest close price
+            latest_close = latest['close']
+            if latest_close is None or latest_close <= 0:
+                tprint_error("❌ Invalid latest close price for nowcasting")
+                return pd.DataFrame()
+            
             # Ensure reasonable bounds
-            final_close = max(final_close, latest['close'] * 0.95)  # Max 5% drop
-            final_close = min(final_close, latest['close'] * 1.05)  # Max 5% rise
+            final_close = max(final_close, latest_close * 0.95)  # Max 5% drop
+            final_close = min(final_close, latest_close * 1.05)  # Max 5% rise
+            
+            # Validate final_close
+            if final_close <= 0:
+                tprint_error("❌ Calculated invalid final close price")
+                return pd.DataFrame()
+
+            # Get first open price
+            first_open = partial_data.iloc[0]['open']
+            if first_open is None or first_open <= 0:
+                tprint_error("❌ Invalid first open price")
+                return pd.DataFrame()
+            
+            # Get high/low with validation
+            try:
+                high_max = partial_data['high'].max()
+                low_min = partial_data['low'].min()
+                if pd.isna(high_max) or pd.isna(low_min):
+                    high_max = latest_close
+                    low_min = latest_close
+            except Exception as e:
+                tprint_warning(f"⚠️ Error calculating high/low: {e}")
+                high_max = latest_close
+                low_min = latest_close
 
             # Create complete bar
             complete_bar = pd.DataFrame({
-                'timestamp': [self.current_hour_start],
-                'open': [partial_data.iloc[0]['open']],
-                'high': [max(partial_data['high'].max(), final_close)],
-                'low': [min(partial_data['low'].min(), final_close)],
+                'timestamp': [self.current_hour_start] if self.current_hour_start else [datetime.now()],
+                'open': [first_open],
+                'high': [max(high_max, final_close)],
+                'low': [min(low_min, final_close)],
                 'close': [final_close],
-                'volume': [final_volume],
+                'volume': [max(0.0, final_volume)],
                 'is_complete': True,
                 'is_nowcasted': True,
                 'completion_ratio': completion_ratio,

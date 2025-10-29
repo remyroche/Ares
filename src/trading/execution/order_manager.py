@@ -253,20 +253,20 @@ class OrderManager:
             metadata=metadata or {}
         )
 
-            # Store order
-            self.active_orders[order.order_id] = order
-            self.order_count += 1
+        # Store order
+        self.active_orders[order.order_id] = order
+        self.order_count += 1
 
-            tprint_info(f"📝 Created {side.value} order for {symbol}: {quantity} @ {price}")
+        tprint_info(f"📝 Created {side.value} order for {symbol}: {quantity} @ {price}")
 
-            # Submit order to exchange
-            await self._submit_order(order)
-            
-            # Start polling for order status if enabled and order is not immediately filled
-            if self.polling_enabled and order.status == OrderStatus.SUBMITTED:
-                await self._start_order_polling(order)
+        # Submit order to exchange
+        await self._submit_order(order)
+        
+        # Start polling for order status if enabled and order is not immediately filled
+        if self.polling_enabled and order.status == OrderStatus.SUBMITTED:
+            await self._start_order_polling(order)
 
-            return order
+        return order
 
     async def _start_order_polling(self, order: Order) -> None:
         """Start polling for order status updates."""

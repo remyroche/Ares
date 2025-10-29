@@ -136,6 +136,61 @@ class ValidationError(TradingError):
             **kwargs
         )
 
+class NetworkError(TradingError):
+    """Network-related errors."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message,
+            error_code="NETWORK_ERROR",
+            severity=kwargs.get('severity', TradingErrorSeverity.MEDIUM),
+            **kwargs
+        )
+
+class RateLimitError(TradingError):
+    """Rate limit exceeded errors."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message,
+            error_code="RATE_LIMIT_ERROR",
+            severity=kwargs.get('severity', TradingErrorSeverity.MEDIUM),
+            **kwargs
+        )
+
+class InsufficientFundsError(TradingError):
+    """Insufficient funds errors."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message,
+            error_code="INSUFFICIENT_FUNDS_ERROR",
+            severity=kwargs.get('severity', TradingErrorSeverity.HIGH),
+            **kwargs
+        )
+
+class InvalidSymbolError(TradingError):
+    """Invalid symbol errors."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message,
+            error_code="INVALID_SYMBOL_ERROR",
+            severity=kwargs.get('severity', TradingErrorSeverity.HIGH),
+            **kwargs
+        )
+
+class MarketClosedError(TradingError):
+    """Market closed errors."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message,
+            error_code="MARKET_CLOSED_ERROR",
+            severity=kwargs.get('severity', TradingErrorSeverity.MEDIUM),
+            **kwargs
+        )
+
 def trading_error_handler(
     error_types: Union[Type[Exception], tuple] = Exception,
     severity: TradingErrorSeverity = TradingErrorSeverity.MEDIUM,
@@ -183,6 +238,36 @@ def trading_error_handler(
 
     return decorator
 
+def _extract_error_context(
+    context_extractor: Optional[Callable],
+    args: tuple,
+    kwargs: dict
+) -> Dict[str, Any]:
+    """Extract context from function arguments."""
+    context = {}
+    if context_extractor:
+        try:
+            context = context_extractor(*args, **kwargs)
+        except Exception as ctx_error:
+            logger.warning(f"Failed to extract context: {ctx_error}")
+    return context
+
+def _create_trading_error(
+    error: Exception,
+    severity: TradingErrorSeverity,
+    context: Dict[str, Any]
+) -> TradingError:
+    """Create a TradingError from an exception."""
+    if isinstance(error, TradingError):
+        return error
+    else:
+        return TradingError(
+            message=str(error),
+            severity=severity,
+            context=context,
+            original_exception=error
+        )
+
 async def _handle_trading_error(
     error: Exception,
     func: Callable,
@@ -194,33 +279,14 @@ async def _handle_trading_error(
     context_extractor: Optional[Callable]
 ):
     """Handle trading error asynchronously."""
-    # Extract context
-    context = {}
-    if context_extractor:
-        try:
-            context = context_extractor(*args, **kwargs)
-        except Exception as ctx_error:
-            logger.warning(f"Failed to extract context: {ctx_error}")
-
-    # Create trading error
-    if isinstance(error, TradingError):
-        trading_error = error
-    else:
-        trading_error = TradingError(
-            message=str(error),
-            severity=severity,
-            context=context,
-            original_exception=error
-        )
-
-    # Log error based on severity
+    context = _extract_error_context(context_extractor, args, kwargs)
+    trading_error = _create_trading_error(error, severity, context)
+    
     await _log_trading_error(trading_error, func, log_traceback)
-
-    # Handle critical errors
+    
     if severity == TradingErrorSeverity.CRITICAL:
         await _handle_critical_error(trading_error, func)
-
-    # Re-raise if requested
+    
     if raise_on_error:
         raise trading_error
 
@@ -235,61 +301,49 @@ def _handle_trading_error_sync(
     context_extractor: Optional[Callable]
 ):
     """Handle trading error synchronously."""
-    # Extract context
-    context = {}
-    if context_extractor:
-        try:
-            context = context_extractor(*args, **kwargs)
-        except Exception as ctx_error:
-            logger.warning(f"Failed to extract context: {ctx_error}")
-
-    # Create trading error
-    if isinstance(error, TradingError):
-        trading_error = error
-    else:
-        trading_error = TradingError(
-            message=str(error),
-            severity=severity,
-            context=context,
-            original_exception=error
-        )
-
-    # Log error based on severity
+    context = _extract_error_context(context_extractor, args, kwargs)
+    trading_error = _create_trading_error(error, severity, context)
+    
     _log_trading_error_sync(trading_error, func, log_traceback)
-
-    # Handle critical errors
+    
     if severity == TradingErrorSeverity.CRITICAL:
         _handle_critical_error_sync(trading_error, func)
-
-    # Re-raise if requested
+    
     if raise_on_error:
         raise trading_error
 
-async def _log_trading_error(
+def _log_trading_error_common(
     error: TradingError,
     func: Callable,
     log_traceback: bool
-):
-    """Log trading error with appropriate severity."""
+) -> None:
+    """Common logging logic for trading errors."""
     error_dict = error.to_dict()
     error_dict['function'] = func.__name__
     error_dict['module'] = func.__module__
+    
+    # Format traceback if needed
+    tb_str = None
+    if log_traceback and error.original_exception:
+        tb_str = ''.join(traceback.format_exception(
+            type(error.original_exception),
+            error.original_exception,
+            error.original_exception.__traceback__
+        ))
 
-    # Print based on severity
+    # Print and log based on severity
     if error.severity == TradingErrorSeverity.CRITICAL:
         tprint_error(f"🚨 CRITICAL ERROR in {func.__name__}: {error.message}")
         tprint_structured(error_dict, LogLevel.ERROR)
-
-        # Also log to system logger
         logger.critical(f"CRITICAL TRADING ERROR: {error}")
-        if log_traceback and error.original_exception:
-            logger.critical(f"Traceback: {traceback.format_exc()}")
+        if tb_str:
+            logger.critical(f"Traceback: {tb_str}")
 
     elif error.severity == TradingErrorSeverity.HIGH:
         tprint_error(f"❌ HIGH SEVERITY ERROR in {func.__name__}: {error.message}")
         logger.error(f"HIGH SEVERITY TRADING ERROR: {error}")
-        if log_traceback and error.original_exception:
-            logger.error(f"Traceback: {traceback.format_exc()}")
+        if tb_str:
+            logger.error(f"Traceback: {tb_str}")
 
     elif error.severity == TradingErrorSeverity.MEDIUM:
         tprint_warning(f"⚠️ MEDIUM SEVERITY ERROR in {func.__name__}: {error.message}")
@@ -302,6 +356,14 @@ async def _log_trading_error(
     else:  # WARNING
         tprint_warning(f"⚠️ WARNING in {func.__name__}: {error.message}")
         logger.warning(f"TRADING WARNING: {error}")
+
+async def _log_trading_error(
+    error: TradingError,
+    func: Callable,
+    log_traceback: bool
+):
+    """Log trading error with appropriate severity (async)."""
+    _log_trading_error_common(error, func, log_traceback)
 
 def _log_trading_error_sync(
     error: TradingError,
@@ -309,40 +371,10 @@ def _log_trading_error_sync(
     log_traceback: bool
 ):
     """Log trading error synchronously."""
-    error_dict = error.to_dict()
-    error_dict['function'] = func.__name__
-    error_dict['module'] = func.__module__
+    _log_trading_error_common(error, func, log_traceback)
 
-    # Print based on severity
-    if error.severity == TradingErrorSeverity.CRITICAL:
-        tprint_error(f"🚨 CRITICAL ERROR in {func.__name__}: {error.message}")
-        tprint_structured(error_dict, LogLevel.ERROR)
-
-        # Also log to system logger
-        logger.critical(f"CRITICAL TRADING ERROR: {error}")
-        if log_traceback and error.original_exception:
-            logger.critical(f"Traceback: {traceback.format_exc()}")
-
-    elif error.severity == TradingErrorSeverity.HIGH:
-        tprint_error(f"❌ HIGH SEVERITY ERROR in {func.__name__}: {error.message}")
-        logger.error(f"HIGH SEVERITY TRADING ERROR: {error}")
-        if log_traceback and error.original_exception:
-            logger.error(f"Traceback: {traceback.format_exc()}")
-
-    elif error.severity == TradingErrorSeverity.MEDIUM:
-        tprint_warning(f"⚠️ MEDIUM SEVERITY ERROR in {func.__name__}: {error.message}")
-        logger.warning(f"MEDIUM SEVERITY TRADING ERROR: {error}")
-
-    elif error.severity == TradingErrorSeverity.LOW:
-        tprint_info(f"ℹ️ LOW SEVERITY ERROR in {func.__name__}: {error.message}")
-        logger.info(f"LOW SEVERITY TRADING ERROR: {error}")
-
-    else:  # WARNING
-        tprint_warning(f"⚠️ WARNING in {func.__name__}: {error.message}")
-        logger.warning(f"TRADING WARNING: {error}")
-
-async def _handle_critical_error(error: TradingError, func: Callable):
-    """Handle critical errors that require immediate attention."""
+def _handle_critical_error_common(error: TradingError, func: Callable):
+    """Common logic for handling critical errors."""
     tprint_error("🚨 CRITICAL TRADING ERROR DETECTED!")
     tprint_error("🛑 TRADING OPERATIONS MAY BE COMPROMISED!")
     tprint_error(f"🔍 Error in function: {func.__name__}")
@@ -364,28 +396,21 @@ async def _handle_critical_error(error: TradingError, func: Callable):
     # 3. Notify administrators
     # 4. Save state for recovery
 
+async def _handle_critical_error(error: TradingError, func: Callable):
+    """Handle critical errors that require immediate attention (async)."""
+    _handle_critical_error_common(error, func)
+
 def _handle_critical_error_sync(error: TradingError, func: Callable):
     """Handle critical errors synchronously."""
-    tprint_error("🚨 CRITICAL TRADING ERROR DETECTED!")
-    tprint_error("🛑 TRADING OPERATIONS MAY BE COMPROMISED!")
-    tprint_error(f"🔍 Error in function: {func.__name__}")
-    tprint_error(f"💥 Error message: {error.message}")
-
-    # Log critical error details
-    logger.critical("=" * 80)
-    logger.critical("CRITICAL TRADING ERROR - IMMEDIATE ATTENTION REQUIRED")
-    logger.critical("=" * 80)
-    logger.critical(f"Function: {func.__name__}")
-    logger.critical(f"Module: {func.__module__}")
-    logger.critical(f"Error: {error}")
-    logger.critical(f"Context: {error.context}")
-    logger.critical("=" * 80)
+    _handle_critical_error_common(error, func)
 
 def require_no_fallback(message: str = "Operation failed with no fallback available"):
     """
     Decorator that ensures no fallback behavior is used.
     Raises TradingError immediately on any exception.
     """
+    import asyncio
+    
     def decorator(func):
         @wraps(func)
         async def async_wrapper(*args, **kwargs):

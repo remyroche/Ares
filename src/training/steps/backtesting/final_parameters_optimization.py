@@ -862,81 +862,30 @@ class FinalParametersOptimizer(BaseStep):
                                      tactician_conf: np.ndarray,
                                      params: Dict[str, Any]) -> np.ndarray:
         """
-        Calculate combined confidence using multiple methods with validation
+        Return Tactician confidence (no combination with Analyst).
+        
+        Note: Tactician uses Analyst output as input, so combining confidences
+        would cause overfitting. We use only Tactician's Ensemble confidence.
 
         Args:
-            analyst_conf: Analyst confidence array
+            analyst_conf: Analyst confidence array (not used, kept for API compatibility)
             tactician_conf: Tactician confidence array
-            params: Parameters including weights and combination method
+            params: Parameters (not used for combination, kept for API compatibility)
 
         Returns:
-            Combined confidence array
+            Tactician confidence array
         """
         try:
             # Validate inputs
-            analyst_conf = ensure_array(analyst_conf)
             tactician_conf = ensure_array(tactician_conf)
-
-            if len(analyst_conf) != len(tactician_conf):
-                tprint(f"⚠️  Confidence length mismatch: {len(analyst_conf)} vs {len(tactician_conf)}", "warning")
-                min_len = min(len(analyst_conf), len(tactician_conf))
-                analyst_conf = analyst_conf[:min_len]
-                tactician_conf = tactician_conf[:min_len]
-
-            # Validate confidence values
-            analyst_conf = validate_probability(analyst_conf)
             tactician_conf = validate_probability(tactician_conf)
-
-            # Get weights and validate
-            tactician_weight = validate_probability(params.get('tactician_confidence_weight', 0.6))
-            analyst_weight = validate_probability(params.get('analyst_confidence_weight', 0.4))
-
-            # Normalize weights to sum to 1
-            total_weight = tactician_weight + analyst_weight
-            if total_weight > 0:
-                tactician_weight = tactician_weight / total_weight
-                analyst_weight = analyst_weight / total_weight
-            else:
-                tactician_weight, analyst_weight = 0.6, 0.4
-
-            # Get combination method
-            method = params.get('confidence_combination_method', 'weighted_average')
-
-            # Calculate combined confidence based on method
-            if method == 'multiplicative':
-                # Multiplicative: (tact^w_t) * (analyst^w_a)
-                combined = (
-                    np.power(np.maximum(tactician_conf, 0.001), tactician_weight) *
-                    np.power(np.maximum(analyst_conf, 0.001), analyst_weight)
-                )
-            elif method == 'logarithmic':
-                # Logarithmic: exp(w_t * log(tact) + w_a * log(analyst))
-                log_combined = (
-                    tactician_weight * safe_log(np.maximum(tactician_conf, 0.001)) +
-                    analyst_weight * safe_log(np.maximum(analyst_conf, 0.001))
-                )
-                combined = np.exp(log_combined)
-            elif method == 'harmonic':
-                # Harmonic mean: 1 / (w_t/tact + w_a/analyst)
-                combined = safe_divide(
-                    np.ones_like(tactician_conf),
-                    safe_divide(tactician_weight, np.maximum(tactician_conf, 0.001)) +
-                    safe_divide(analyst_weight, np.maximum(analyst_conf, 0.001)),
-                    default=0.5
-                )
-            else:  # weighted_average
-                combined = tactician_conf * tactician_weight + analyst_conf * analyst_weight
-
-            # Validate and clip to [0, 1]
-            combined = validate_probability(combined)
-
-            return combined
+            return tactician_conf
 
         except Exception as e:
-            self.logger.error(f"Error calculating combined confidence: {e}")
-            tprint(f"❌ Combined confidence calculation failed: {e}", "error")
-            # Fallback to simple average
-            return (analyst_conf + tactician_conf) / 2.0
+            self.logger.error(f"Error processing tactician confidence: {e}")
+            tprint(f"❌ Tactician confidence processing failed: {e}", "error")
+            # Return zero confidence on error
+            return np.zeros_like(tactician_conf) if hasattr(tactician_conf, 'shape') else np.array([0.0])
 
 class AsymmetricParametersOptimizer(FinalParametersOptimizer):
     """Enhanced optimizer with long/short parameter differentiation"""
@@ -1510,17 +1459,14 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'base_entry_threshold': {'type': 'float', 'min': 0.5, 'max': 0.9},
                 'analyst_confidence_threshold': {'type': 'float', 'min': 0.6, 'max': 0.8},
                 'tactician_confidence_threshold': {'type': 'float', 'min': 0.7, 'max': 0.9},
-                'tactician_confidence_weight': {'type': 'float', 'min': 0.3, 'max': 0.8},
-                'analyst_confidence_weight': {'type': 'float', 'min': 0.2, 'max': 0.7},
-                'confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'logarithmic', 'harmonic', 'weighted_average']},
+                # Note: No confidence combination weights - Tactician uses Analyst output as input,
+                # so combining them would cause overfitting. We use only Tactician's Ensemble confidence.
                 # 0.3% Micro Movement Entry Thresholds (immediate only)
                 'micro_immediate_long_threshold': {'type': 'float', 'min': 0.65, 'max': 0.85},
                 'micro_immediate_short_threshold': {'type': 'float', 'min': 0.68, 'max': 0.88},
                 # Exit-specific confidence parameters for 0.3% micro movements
                 'exit_confidence_threshold': {'type': 'float', 'min': 0.3, 'max': 0.7},
-                'tactician_exit_confidence_weight': {'type': 'float', 'min': 0.4, 'max': 0.8},
-                'analyst_exit_confidence_weight': {'type': 'float', 'min': 0.2, 'max': 0.6},
-                'exit_confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'logarithmic', 'weighted_average']},
+                # Note: No exit confidence combination weights - we use only Tactician's Ensemble confidence
                 # 0.3% Micro Movement Exit Thresholds (immediate only)
                 'exit_micro_immediate_long_threshold': {'type': 'float', 'min': 0.1, 'max': 0.5},
                 'exit_micro_immediate_short_threshold': {'type': 'float', 'min': 0.1, 'max': 0.5},
@@ -2163,30 +2109,27 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         try:
             # Ensure arrays are same length
             min_len = min(len(analyst_conf), len(tactician_conf), len(returns))
-            analyst_conf = ensure_array(analyst_conf)[:min_len]
             tactician_conf = ensure_array(tactician_conf)[:min_len]
             returns = ensure_array(returns)[:min_len]
 
-            # Calculate combined confidence
-            combined_conf = self.calculate_combined_confidence(analyst_conf, tactician_conf, params)
+            # Use only Tactician confidence (no combination with Analyst)
+            tactician_conf = self.calculate_combined_confidence(analyst_conf, tactician_conf, params)
 
-            # Generate signals based on confidence threshold
-            threshold = validate_probability(params.get('analyst_confidence_threshold', 0.6))
-            signals = np.where(combined_conf >= threshold, 1, 0)
+            # Generate signals based on Tactician confidence threshold
+            threshold = validate_probability(params.get('tactician_confidence_threshold', 0.7))
+            signals = np.where(tactician_conf >= threshold, 1, 0)
 
             # Simulate trading with CV if enabled and sufficient data
             if self.use_cv and len(signals) >= self.cv_folds * 100:
                 # Prepare data for CV
                 data = {
                     'features': pd.DataFrame({
-                        'combined_conf': combined_conf,
-                        'analyst_conf': analyst_conf,
                         'tactician_conf': tactician_conf
                     }),
                     'targets': pd.Series(returns),
                     'signals': signals,
                     'returns': returns,
-                    'confidences': combined_conf
+                    'confidences': tactician_conf
                 }
 
                 # Define evaluation function for a single fold
@@ -2256,116 +2199,39 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             if validate_range(diff, 0.1, 0.2):
                 score += 0.1
 
-        # Weight validation
-        tactician_weight = validate_probability(params.get('tactician_confidence_weight', 0.6))
-        analyst_weight = validate_probability(params.get('analyst_confidence_weight', 0.4))
-
-        # Check if weights sum to approximately 1
-        if abs(tactician_weight + analyst_weight - 1.0) < 0.1:
-            score += 0.2
-
-        # Exit confidence validation
+        # Exit confidence validation (using only Tactician confidence)
         exit_threshold = validate_probability(params.get('exit_confidence_threshold', 0.5))
         if validate_range(exit_threshold, 0.3, 0.7):
             score += 0.1
 
-        # Bonus for advanced combination methods
-        method = params.get('confidence_combination_method', 'weighted_average')
-        if method in ['multiplicative', 'logarithmic', 'harmonic']:
-            score += 0.1
+        # Note: No confidence combination validation - we use only Tactician's Ensemble confidence
 
         return score
 
     def _calculate_optimal_confidence(self, analyst_threshold: float, tactician_threshold: float,
                                     calibration_results: Dict[str, Any]) -> Optional[float]:
         """
-        Calculate optimal confidence using multiplicative and logarithmic operations.
-
-        This method implements the requirement for optimal confidence calculation based on
-        tactician's and analyst's confidence outputs, using:
-        1. Multiplicative operations for combining confidences
-        2. Logarithmic additions for weighted combination
-        3. Different weights for tactician and analyst
+        Return Tactician confidence threshold (no combination with Analyst).
+        
+        Note: Tactician uses Analyst output as input, so combining confidences
+        would cause overfitting. We use only Tactician's Ensemble confidence.
 
         Args:
-            analyst_threshold: Analyst confidence threshold
+            analyst_threshold: Analyst confidence threshold (not used, kept for API compatibility)
             tactician_threshold: Tactician confidence threshold
             calibration_results: Results from confidence calibration
 
         Returns:
-            Optimal confidence value or None if calculation fails
+            Tactician confidence threshold or None if calculation fails
         """
         try:
-            # Check if both confidence levels are available (requirement 1)
-            if not self._has_confidence_levels_available(calibration_results):
-                self.logger.warning("⚠️ Both tactician and analyst confidence levels not available")
+            # Check if tactician confidence is available
+            if 'tactician_confidence' not in calibration_results and 'tactician_confidence_threshold' not in calibration_results:
+                self.logger.warning("⚠️ Tactician confidence not available")
                 return None
 
-            # Extract confidence weights from calibration results or use defaults
-            tactician_weight = calibration_results.get('tactician_confidence_weight', 0.6)
-            analyst_weight = calibration_results.get('analyst_confidence_weight', 0.4)
-
-            # Ensure weights sum to 1.0
-            total_weight = tactician_weight + analyst_weight
-            if total_weight > 0:
-                tactician_weight = tactician_weight / total_weight
-                analyst_weight = analyst_weight / total_weight
-            else:
-                tactician_weight = 0.6
-                analyst_weight = 0.4
-
-            self.logger.debug(f"📊 Using confidence weights - Tactician: {tactician_weight:.3f}, Analyst: {analyst_weight:.3f}")
-
-            # Get combination method from calibration results
-            combination_method = calibration_results.get('confidence_combination_method', 'weighted_average')
-
-            # Calculate confidence based on selected method
-            if combination_method == 'multiplicative':
-                optimal_confidence = self._calculate_multiplicative_confidence(
-                    analyst_threshold, tactician_threshold, tactician_weight, analyst_weight
-                )
-            elif combination_method == 'logarithmic':
-                optimal_confidence = self._calculate_logarithmic_confidence(
-                    analyst_threshold, tactician_threshold, tactician_weight, analyst_weight
-                )
-            elif combination_method == 'harmonic':
-                optimal_confidence = self._calculate_harmonic_confidence(
-                    analyst_threshold, tactician_threshold, tactician_weight, analyst_weight
-                )
-            else:  # weighted_average or default
-                # Method 1: Multiplicative combination
-                multiplicative_confidence = self._calculate_multiplicative_confidence(
-                    analyst_threshold, tactician_threshold, tactician_weight, analyst_weight
-                )
-
-                # Method 2: Logarithmic addition combination
-                logarithmic_confidence = self._calculate_logarithmic_confidence(
-                    analyst_threshold, tactician_threshold, tactician_weight, analyst_weight
-                )
-
-                # Method 3: Weighted harmonic mean (additional method for robustness)
-                harmonic_confidence = self._calculate_harmonic_confidence(
-                    analyst_threshold, tactician_threshold, tactician_weight, analyst_weight
-                )
-
-                # Combine methods using weighted average
-                optimal_confidence = (
-                    0.4 * multiplicative_confidence +
-                    0.4 * logarithmic_confidence +
-                    0.2 * harmonic_confidence
-                )
-
-            # Ensure confidence is within valid range [0, 1]
-            optimal_confidence = max(0.0, min(1.0, optimal_confidence))
-
-            self.logger.debug(f"📊 Optimal confidence calculation using {combination_method}:")
-            if combination_method == 'weighted_average':
-                self.logger.debug(f"   Multiplicative: {multiplicative_confidence:.4f}")
-                self.logger.debug(f"   Logarithmic: {logarithmic_confidence:.4f}")
-                self.logger.debug(f"   Harmonic: {harmonic_confidence:.4f}")
-            self.logger.debug(f"   Final optimal: {optimal_confidence:.4f}")
-
-            return optimal_confidence
+            # Return tactician threshold directly (no combination)
+            return validate_probability(tactician_threshold)
 
         except Exception as e:
             self.logger.error(f"❌ Error calculating optimal confidence: {e}")
@@ -2571,61 +2437,23 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         try:
             score = 0.0
 
-            # Get exit confidence parameters
+            # Get exit confidence parameters (using only Tactician confidence)
             exit_threshold = calibration_results.get('exit_confidence_threshold', 0.5)
-            tactician_exit_weight = calibration_results.get('tactician_exit_confidence_weight', 0.6)
-            analyst_exit_weight = calibration_results.get('analyst_exit_confidence_weight', 0.4)
-            exit_combination_method = calibration_results.get('exit_confidence_combination_method', 'multiplicative')
 
-            # Calculate exit confidence using different methods
-            exit_confidences = {}
-
-            # Method 1: Multiplicative
-            try:
-                analyst_conf = max(0.001, analyst_threshold)
-                tactician_conf = max(0.001, tactician_threshold)
-                multiplicative_exit = (
-                    (tactician_conf ** tactician_exit_weight) *
-                    (analyst_conf ** analyst_exit_weight)
-                )
-                exit_confidences['multiplicative'] = min(1.0, multiplicative_exit)
-            except:
-                exit_confidences['multiplicative'] = 0.5
-
-            # Method 2: Logarithmic
-            try:
-                analyst_conf = max(0.001, analyst_threshold)
-                tactician_conf = max(0.001, tactician_threshold)
-                log_combination = (
-                    tactician_exit_weight * np.log(tactician_conf) +
-                    analyst_exit_weight * np.log(analyst_conf)
-                )
-                logarithmic_exit = np.exp(log_combination)
-                exit_confidences['logarithmic'] = min(1.0, max(0.0, logarithmic_exit))
-            except:
-                exit_confidences['logarithmic'] = 0.5
-
-            # Method 3: Weighted Average
-            weighted_avg_exit = (
-                analyst_threshold * analyst_exit_weight +
-                tactician_threshold * tactician_exit_weight
-            )
-            exit_confidences['weighted_average'] = max(0.0, min(1.0, weighted_avg_exit))
-
-            # Score based on selected method effectiveness
-            selected_exit_confidence = exit_confidences.get(exit_combination_method, 0.5)
+            # Use only Tactician confidence for exit decisions (no combination)
+            tactician_conf = validate_probability(tactician_threshold)
 
             # Score factors
             # 1. Exit confidence should be reasonable (not too high or too low)
-            if 0.4 <= selected_exit_confidence <= 0.8:
+            if 0.4 <= tactician_conf <= 0.8:
                 score += 0.3
-            elif 0.2 <= selected_exit_confidence <= 0.9:
+            elif 0.2 <= tactician_conf <= 0.9:
                 score += 0.2
             else:
                 score += 0.1
 
             # 2. Exit threshold should be lower than entry confidence
-            entry_confidence = (analyst_threshold + tactician_threshold) / 2
+            entry_confidence = tactician_threshold  # Use only Tactician for entry too
             if exit_threshold < entry_confidence:
                 score += 0.2
                 # Bonus for reasonable gap
@@ -2633,22 +2461,8 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 if 0.1 <= gap <= 0.3:
                     score += 0.1
 
-            # 3. Exit weights should be reasonable
-            if abs(tactician_exit_weight + analyst_exit_weight - 1.0) < 0.1:
-                score += 0.2
-
-            # 4. Method consistency bonus
-            if exit_combination_method in ['multiplicative', 'logarithmic']:
-                # These methods should produce reasonable results
-                multiplicative_conf = exit_confidences.get('multiplicative', 0)
-                logarithmic_conf = exit_confidences.get('logarithmic', 0)
-
-                if multiplicative_conf > 0.1 and logarithmic_conf > 0.1:
-                    score += 0.1
-
-                    # Bonus if methods are consistent
-                    if abs(multiplicative_conf - logarithmic_conf) < 0.2:
-                        score += 0.1
+            # Note: No combination method or weight validation - we use only Tactician confidence
+            score += 0.2
 
             return min(1.0, score)
 
@@ -2672,18 +2486,15 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             Backtesting evaluation score (0.0 to 1.0)
         """
         try:
-            # Extract exit parameters
+            # Extract exit parameters (using only Tactician confidence)
             exit_threshold = calibration_results.get('exit_confidence_threshold', 0.5)
-            exit_method = calibration_results.get('exit_confidence_combination_method', 'multiplicative')
 
             # Use existing calibration data for evaluation
-            if 'analyst_confidence' in calibration_results and 'tactician_confidence' in calibration_results:
-                analyst_confidences = calibration_results['analyst_confidence']
+            if 'tactician_confidence' in calibration_results:
                 tactician_confidences = calibration_results['tactician_confidence']
-
-                # Evaluate exit timing using historical data
+                # Pass empty list for analyst_confidences (not used)
                 exit_performance = self._evaluate_exit_timing_on_historical_data(
-                    analyst_confidences, tactician_confidences, calibration_results
+                    [], tactician_confidences, calibration_results
                 )
 
                 return exit_performance
@@ -2697,18 +2508,8 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             elif 0.3 <= exit_threshold <= 0.7:
                 score += 0.2
 
-            # Method consistency
-            if exit_method in ['multiplicative', 'logarithmic']:
-                score += 0.3
-            else:
-                score += 0.2
-
-            # Weight balance
-            tactician_weight = calibration_results.get('tactician_exit_confidence_weight', 0.6)
-            analyst_weight = calibration_results.get('analyst_exit_confidence_weight', 0.4)
-
-            if abs(tactician_weight + analyst_weight - 1.0) < 0.1:
-                score += 0.3
+            # Note: No combination method or weight validation - we use only Tactician confidence
+            score += 0.3
 
             return min(1.0, score)
 
@@ -2720,35 +2521,22 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                                                tactician_confidences: List[float],
                                                calibration_results: Dict[str, Any]) -> float:
         """
-        Evaluate exit timing using historical confidence data from calibration results.
-
-        This uses the existing backtesting framework's historical data rather than
-        creating synthetic scenarios.
+        Evaluate exit timing using Tactician confidence only.
+        
+        Note: Tactician uses Analyst output as input, so combining confidences
+        would cause overfitting. We use only Tactician's Ensemble confidence.
         """
         try:
-            if len(analyst_confidences) != len(tactician_confidences):
+            if not tactician_confidences:
                 return 0.5
 
             exit_threshold = calibration_results.get('exit_confidence_threshold', 0.5)
-            tactician_weight = calibration_results.get('tactician_exit_confidence_weight', 0.6)
-            analyst_weight = calibration_results.get('analyst_exit_confidence_weight', 0.4)
-            exit_method = calibration_results.get('exit_confidence_combination_method', 'multiplicative')
 
-            # Calculate exit points using historical data
+            # Calculate exit points using only Tactician confidence
             exit_signals = []
-            for analyst_conf, tactician_conf in zip(analyst_confidences, tactician_confidences):
-                if exit_method == 'multiplicative':
-                    exit_conf = self._calculate_multiplicative_confidence(
-                        analyst_conf, tactician_conf, tactician_weight, analyst_weight
-                    )
-                elif exit_method == 'logarithmic':
-                    exit_conf = self._calculate_logarithmic_confidence(
-                        analyst_conf, tactician_conf, tactician_weight, analyst_weight
-                    )
-                else:
-                    exit_conf = analyst_conf * analyst_weight + tactician_conf * tactician_weight
-
-                exit_signals.append(exit_conf < exit_threshold)
+            for tactician_conf in tactician_confidences:
+                # Use only Tactician confidence for exit decisions
+                exit_signals.append(tactician_conf < exit_threshold)
 
             # Evaluate exit signal quality using existing framework metrics
             if 'historical_returns' in calibration_results:

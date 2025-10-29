@@ -1969,7 +1969,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             return extended_feature
             
         except Exception as e:
-                return None
+            return None
             
     async def _extract_cross_timeframe_interactions(self, features: pd.DataFrame) -> pd.DataFrame:
         """
@@ -2002,7 +2002,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                                 timeframe_features[base_name] = {}
                             timeframe_features[base_name][multiplier.replace('_', '').replace('ratio', '')] = col
                             break
-            else:
+                else:
                     # Base feature without timeframe marker
                     base_features.append(col)
             
@@ -4512,102 +4512,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         print(f"🔍 DEBUG: Sampled features shape: {sampled_features.shape}, sampled targets shape: {sampled_targets.shape}")
         return sampled_features, sampled_targets
     
-    def _extract_base_feature_name(self, variant_col: str) -> str:
-        """Extract base feature name from variant column name."""
-        # Remove variant suffixes
-        suffixes_to_remove = ['_base', '_volnorm', '_vwap', '_trend_adj']
-        base_name = variant_col
-        
-        for suffix in suffixes_to_remove:
-            if base_name.endswith(suffix):
-                base_name = base_name[:-len(suffix)]
-                break
-        
-        return base_name
-    
-    def _extract_variant_type(self, variant_col: str) -> str:
-        """Extract variant type from variant column name."""
-        if variant_col.endswith('_volnorm'):
-            return 'volnorm'
-        elif variant_col.endswith('_vwap'):
-            return 'vwap'
-        elif variant_col.endswith('_trend_adj'):
-            return 'trend_adj'
-        else:
-            return 'base'
-    
-    def _extract_base_feature_name(self, variant_col: str) -> str:
-        """Extract base feature name from variant column name."""
-        # Remove variant suffixes
-        suffixes_to_remove = ['_base', '_volnorm', '_vwap', '_trend_adj']
-        base_name = variant_col
-        
-        for suffix in suffixes_to_remove:
-            if base_name.endswith(suffix):
-                base_name = base_name[:-len(suffix)]
-                break
-        
-        return base_name
-    
-    def _extract_variant_type(self, variant_col: str) -> str:
-        """Extract variant type from variant column name."""
-        if variant_col.endswith('_volnorm'):
-            return 'volnorm'
-        elif variant_col.endswith('_vwap'):
-            return 'vwap'
-        elif variant_col.endswith('_trend_adj'):
-            return 'trend_adj'
-        else:
-            return 'base'
-    
-    def _extract_base_feature_name(self, variant_col: str) -> str:
-        """Extract base feature name from variant column name."""
-        # Remove variant suffixes
-        suffixes_to_remove = ['_base', '_volnorm', '_vwap', '_trend_adj']
-        base_name = variant_col
-        
-        for suffix in suffixes_to_remove:
-            if base_name.endswith(suffix):
-                base_name = base_name[:-len(suffix)]
-                break
-        
-        return base_name
-    
-    def _extract_variant_type(self, variant_col: str) -> str:
-        """Extract variant type from variant column name."""
-        if variant_col.endswith('_volnorm'):
-            return 'volnorm'
-        elif variant_col.endswith('_vwap'):
-            return 'vwap'
-        elif variant_col.endswith('_trend_adj'):
-            return 'trend_adj'
-        else:
-            return 'base'
-    
-    def _extract_base_feature_name(self, variant_col: str) -> str:
-        """Extract base feature name from variant column name."""
-        # Remove variant suffixes
-        suffixes_to_remove = ['_base', '_volnorm', '_vwap', '_trend_adj']
-        base_name = variant_col
-        
-        for suffix in suffixes_to_remove:
-            if base_name.endswith(suffix):
-                base_name = base_name[:-len(suffix)]
-                break
-        
-        return base_name
-    
-    def _extract_variant_type(self, variant_col: str) -> str:
-        """Extract variant type from variant column name."""
-        if variant_col.endswith('_volnorm'):
-            return 'volnorm'
-        elif variant_col.endswith('_vwap'):
-            return 'vwap'
-        elif variant_col.endswith('_trend_adj'):
-            return 'trend_adj'
-        else:
-            return 'base'
-    
     def _adaptive_category_selection(self, features_by_category: Dict[str, List[str]], feature_importance: pd.Series, min_per_category: int = 2, max_per_category: int = 8) -> List[str]:
         """Dynamic feature selection based on signal strength."""
         selected_features = []
@@ -4932,35 +4836,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         """Process a single chunk of data."""
         # This is a placeholder - implement specific chunk processing logic
         # For now, just return the chunk as-is
-        return chunk_features
-    
-    def _extract_base_feature_name(self, variant_col: str) -> str:
-        """Extract base feature name from variant column name."""
-        # Remove variant suffixes
-        suffixes_to_remove = ['_base', '_volnorm', '_vwap', '_trend_adj']
-        base_name = variant_col
-        
-        for suffix in suffixes_to_remove:
-            if base_name.endswith(suffix):
-                base_name = base_name[:-len(suffix)]
-                break
-        
-        return base_name
-    
-    def _extract_variant_type(self, variant_col: str) -> str:
-        """Extract variant type from variant column name."""
-        if variant_col.endswith('_volnorm'):
-            return 'volnorm'
-        elif variant_col.endswith('_vwap'):
-            return 'vwap'
-        elif variant_col.endswith('_trend_adj'):
-            return 'trend_adj'
-        else:
-            return 'base'
-    
-    def _process_chunk(self, chunk_features: pd.DataFrame, chunk_targets: pd.DataFrame) -> pd.DataFrame:
-        """Process a single chunk of data."""
-        # This is a placeholder - implement specific chunk processing logic
         return chunk_features
 
 

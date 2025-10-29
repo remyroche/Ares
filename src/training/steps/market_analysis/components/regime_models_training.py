@@ -30,6 +30,22 @@ from src.utils.ml_common.unified_vectorization_manager import (
 from src.utils.ml_common.optimization.hpo_utils import (
     HyperparameterOptimization
 )
+from src.utils.ml_common.optimization.transition_aware_scoring import (
+    create_transition_aware_scorer,
+    create_multi_objective_scorer
+)
+try:
+    from src.utils.ml_common.optimization.pareto import (
+        ParetoOptimizer,
+        Solution,
+        ObjectiveDirection
+    )
+    PARETO_AVAILABLE = True
+except ImportError:
+    PARETO_AVAILABLE = False
+    ParetoOptimizer = None
+    Solution = None
+    ObjectiveDirection = None
 from src.utils.ml_common.validation.universal_temporal_validation import (
     UniversalTemporalValidator, TemporalValidationConfig
 )
@@ -220,6 +236,18 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             }
         )
         tprint("🔧 [REGIME_MODELS] HPO optimizer initialized", color="green")
+        
+        # Initialize Pareto optimizer for multi-objective HPO
+        if PARETO_AVAILABLE:
+            self.pareto_optimizer = ParetoOptimizer()
+            tprint("✅ [REGIME_MODELS] Pareto optimizer initialized for multi-objective HPO", color="green")
+        else:
+            self.pareto_optimizer = None
+            tprint("⚠️ [REGIME_MODELS] Pareto optimizer not available", color="yellow")
+        
+        # Enable transition-aware multi-objective HPO by default
+        self.enable_multi_objective_hpo = True
+        self.use_pareto_optimization = PARETO_AVAILABLE
 
         # Initialize temporal validator for data leakage prevention
         self.temporal_validator = UniversalTemporalValidator(
@@ -426,12 +454,31 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         verbose=False
                     )
                 
+                # Use transition-aware scorer or multi-objective optimization
+                if self.enable_multi_objective_hpo and self.use_pareto_optimization:
+                    # Use multi-objective scorer with Pareto optimization
+                    multi_scorer = create_multi_objective_scorer(min_episode_length=3)
+                    # Note: Full Pareto integration would require Optuna multi-objective study
+                    # For now, use transition-aware composite scorer
+                    scoring = create_transition_aware_scorer(
+                        alpha=self.temporal_smoothing_alpha,
+                        accuracy_weight=0.7,
+                        stability_weight=0.3
+                    )
+                else:
+                    # Use transition-aware composite scorer (single objective)
+                    scoring = create_transition_aware_scorer(
+                        alpha=self.temporal_smoothing_alpha,
+                        accuracy_weight=0.7,
+                        stability_weight=0.3
+                    )
+                
                 hpo_result = self.hpo_optimizer.optimize(
                     model_factory=create_catboost_model,
                     X=X_train,
                     y=y_train,
                     cv_folds=3,
-                    scoring='accuracy',
+                    scoring=scoring,  # Use transition-aware scorer
                     n_trials=15
                 )
                 
@@ -469,12 +516,19 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         n_jobs=-1
                     )
                 
+                # Use transition-aware scorer
+                scoring = create_transition_aware_scorer(
+                    alpha=self.temporal_smoothing_alpha,
+                    accuracy_weight=0.7,
+                    stability_weight=0.3
+                )
+                
                 hpo_result = self.hpo_optimizer.optimize(
                     model_factory=create_extratrees_model,
                     X=X_train,
                     y=y_train,
                     cv_folds=3,
-                    scoring='accuracy',
+                    scoring=scoring,  # Use transition-aware scorer
                     n_trials=15
                 )
                 
@@ -517,12 +571,19 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         verbosity=0
                     )
                 
+                # Use transition-aware scorer
+                scoring = create_transition_aware_scorer(
+                    alpha=self.temporal_smoothing_alpha,
+                    accuracy_weight=0.7,
+                    stability_weight=0.3
+                )
+                
                 hpo_result = self.hpo_optimizer.optimize(
                     model_factory=create_xgboost_model,
                     X=X_train,
                     y=y_train,
                     cv_folds=3,
-                    scoring='accuracy',
+                    scoring=scoring,  # Use transition-aware scorer
                     n_trials=15
                 )
                 

@@ -25,6 +25,22 @@ from src.utils.ml_common.unified_vectorization_manager import (
 from src.utils.ml_common.optimization.hpo_utils import (
     HyperparameterOptimization
 )
+from src.utils.ml_common.optimization.transition_aware_scoring import (
+    create_transition_aware_scorer,
+    create_multi_objective_scorer
+)
+try:
+    from src.utils.ml_common.optimization.pareto import (
+        ParetoOptimizer,
+        Solution,
+        ObjectiveDirection
+    )
+    PARETO_AVAILABLE = True
+except ImportError:
+    PARETO_AVAILABLE = False
+    ParetoOptimizer = None
+    Solution = None
+    ObjectiveDirection = None
 from src.utils.ml_common.validation.universal_temporal_validation import (
     UniversalTemporalValidator, TemporalValidationConfig
 )
@@ -116,6 +132,19 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             }
         )
         tprint("🔧 [REGIME_ENSEMBLE] HPO optimizer initialized", color="green")
+        
+        # Initialize Pareto optimizer for multi-objective HPO
+        if PARETO_AVAILABLE:
+            self.pareto_optimizer = ParetoOptimizer()
+            tprint("✅ [REGIME_ENSEMBLE] Pareto optimizer initialized for multi-objective HPO", color="green")
+        else:
+            self.pareto_optimizer = None
+            tprint("⚠️ [REGIME_ENSEMBLE] Pareto optimizer not available", color="yellow")
+        
+        # Enable transition-aware multi-objective HPO by default
+        self.enable_multi_objective_hpo = True
+        self.use_pareto_optimization = PARETO_AVAILABLE
+        self.temporal_smoothing_alpha = 0.1
 
         # Initialize temporal validator for data leakage prevention
         self.temporal_validator = UniversalTemporalValidator(
@@ -696,6 +725,13 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     n_jobs=-1
                 )
 
+            # Use transition-aware scorer for HPO
+            scoring = create_transition_aware_scorer(
+                alpha=self.temporal_smoothing_alpha,
+                accuracy_weight=0.7,
+                stability_weight=0.3
+            )
+            
             # Perform HPO optimization
             tprint("🔍 [REGIME_ENSEMBLE] Starting HPO optimization for meta-learner", color="cyan")
             hpo_result = self.hpo_optimizer.optimize(
@@ -703,7 +739,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 X=meta_features,
                 y=y,
                 cv_folds=3,
-                scoring='accuracy',
+                scoring=scoring,  # Use transition-aware scorer
                 n_trials=20
             )
 

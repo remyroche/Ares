@@ -1,8 +1,11 @@
-from src.utils.tprint import tprint
 import numpy as np
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
+    tprint_structured, LogLevel
+)
 from ..utils.error_handling import (
     ExecutionError, TradingErrorSeverity, trading_error_handler,
     critical_operation, require_no_fallback
@@ -20,7 +23,7 @@ from datetime import datetime
 
 # Removed trading_decorators imports - using core decorators instead
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
 
 # Simple trade tracker stub
@@ -60,26 +63,26 @@ class PaperTrader:
     Enhanced paper trader with comprehensive error handling and type safety.
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize paper trader with enhanced type safety.
 
         Args:
             config: Configuration dictionary
         """
-        self.config: dict[str, Any] = config
+        self.config: Dict[str, Any] = config
         self.logger = system_logger.getChild("PaperTrader")
 
         # Trading state
         self.is_trading: bool = False
-        self.positions: dict[str, dict[str, Any]] = {}
-        self.trade_history: list[dict[str, Any]] = []
+        self.positions: Dict[str, Dict[str, Any]] = {}
+        self.trade_history: List[Dict[str, Any]] = []
         self.balance: float = 10000.0  # Starting balance
-        self.equity_history: list[float] = []
-        self.prices: dict[str, float] = {}
+        self.equity_history: List[float] = []
+        self.prices: Dict[str, float] = {}
 
         # Configuration
-        self.trader_config: dict[str, Any] = self.config.get("paper_trader", {})
+        self.trader_config: Dict[str, Any] = self.config.get("paper_trader", {})
         self.initial_balance: float = self.trader_config.get(
             "initial_balance",
             DEFAULT_INITIAL_BALANCE,
@@ -116,14 +119,14 @@ class PaperTrader:
             bool: True if initialization successful, False otherwise
         """
         try:
-            self.logger.info("Initializing Paper Trader...")
+            tprint_info("🚀 Initializing Paper Trader...")
 
             # Load trader configuration
             await self._load_trader_configuration()
 
             # Validate configuration
             if not self._validate_configuration():
-                self.logger.error(invalid("Invalid configuration for paper trader"))
+                tprint_error(invalid("Invalid configuration for paper trader"))
                 return False
 
             # Initialize trading state
@@ -132,10 +135,11 @@ class PaperTrader:
             # Initialize enhanced monitoring
             await self._initialize_enhanced_monitoring()
 
-            self.logger.info("✅ Paper Trader initialization completed successfully")
+            tprint_success("✅ Paper Trader initialization completed successfully")
             return True
 
         except Exception as e:
+            tprint_error(f"❌ Paper Trader initialization failed: {e}")
             self.logger.exception(
                 ExecutionError(f"Paper Trader initialization failed: {e}"),
             )
@@ -163,7 +167,7 @@ class PaperTrader:
             self.commission_rate = self.trader_config["commission_rate"]
             self.slippage_rate = self.trader_config["slippage_rate"]
 
-            self.logger.info("Trader configuration loaded successfully")
+            tprint_info("📋 Trader configuration loaded successfully")
 
         except Exception as e:
             self.logger.exception(
@@ -185,25 +189,25 @@ class PaperTrader:
         try:
             # Validate initial balance
             if self.initial_balance <= 0:
-                self.logger.error(invalid("Invalid initial balance"))
+                tprint_error(invalid("Invalid initial balance"))
                 return False
 
             # Validate position size
             if self.max_position_size <= 0 or self.max_position_size > 1:
-                self.logger.error(invalid("Invalid max position size"))
+                tprint_error(invalid("Invalid max position size"))
                 return False
 
             # Validate commission rate
             if self.commission_rate < 0 or self.commission_rate > 0.1:
-                self.logger.error(invalid("Invalid commission rate"))
+                tprint_error(invalid("Invalid commission rate"))
                 return False
 
             # Validate slippage rate
             if self.slippage_rate < 0 or self.slippage_rate > 0.01:
-                self.logger.error(invalid("Invalid slippage rate"))
+                tprint_error(invalid("Invalid slippage rate"))
                 return False
 
-            self.logger.info("Configuration validation successful")
+            tprint_success("✅ Configuration validation successful")
             return True
 
         except Exception as e:
@@ -229,8 +233,8 @@ class PaperTrader:
             self.positions.clear()
             self.trade_history.clear()
 
-            self.logger.info(
-                f"Trading state initialized with balance: ${self.balance:,.2f}",
+            tprint_success(
+                f"✅ Trading state initialized with balance: ${self.balance:,.2f}",
             )
 
         except Exception as e:
@@ -246,19 +250,19 @@ class PaperTrader:
     async def _initialize_enhanced_monitoring(self) -> None:
         """Initialize enhanced monitoring system."""
         try:
-            self.logger.info("🔍 Initializing Enhanced Monitoring for Paper Trader...")
+            tprint_info("🔍 Initializing Enhanced Monitoring for Paper Trader...")
 
             # Initialize enhanced monitoring orchestrator
             self.enhanced_monitoring = EnhancedMonitoringOrchestrator()
             await self.enhanced_monitoring.initialize()
 
             if self.enhanced_monitoring:
-                self.logger.info("✅ Enhanced Monitoring initialized for Paper Trader")
-                self.logger.info("   📊 Trade decisions will be automatically captured")
-                self.logger.info("   🔍 SHAP/LIME explanations will be generated")
-                self.logger.info("   📈 Performance metrics will be tracked")
+                tprint_success("✅ Enhanced Monitoring initialized for Paper Trader")
+                tprint_info("   📊 Trade decisions will be automatically captured")
+                tprint_info("   🔍 SHAP/LIME explanations will be generated")
+                tprint_info("   📈 Performance metrics will be tracked")
             else:
-                self.logger.warning("⚠️ Failed to initialize Enhanced Monitoring for Paper Trader")
+                tprint_warning("⚠️ Failed to initialize Enhanced Monitoring for Paper Trader")
 
         except Exception as e:
             self.logger.exception(
@@ -270,7 +274,7 @@ class PaperTrader:
         severity=TradingErrorSeverity.MEDIUM,
         raise_on_error=True
     )
-    async def _record_trade_in_monitoring(self, trade_record: dict[str, Any], side: str) -> None:
+    async def _record_trade_in_monitoring(self, trade_record: Dict[str, Any], side: str) -> None:
         """Record trade in enhanced monitoring system."""
         try:
             if not self.enhanced_monitoring:
@@ -306,7 +310,7 @@ class PaperTrader:
             # Record the trade decision
             await self.enhanced_monitoring.record_comprehensive_trade_decision(trade_decision)
 
-            self.logger.info(f"📊 {side} trade recorded in enhanced monitoring system")
+            tprint_info(f"📊 {side} trade recorded in enhanced monitoring system")
 
         except Exception as e:
             self.logger.exception(f"Error recording {side} trade in monitoring: {e}")
@@ -349,8 +353,8 @@ class PaperTrader:
 
             # Check if we have enough balance
             if total_with_fees > self.balance:
-                self.logger.warning(
-                    f"Insufficient balance for buy order: ${total_with_fees:.2f} > ${self.balance:.2f}",
+                tprint_warning(
+                    f"⚠️ Insufficient balance for buy order: ${total_with_fees:.2f} > ${self.balance:.2f}",
                 )
                 return False
 
@@ -413,7 +417,7 @@ class PaperTrader:
             # Record trade decision in enhanced monitoring system
             await self._record_trade_in_monitoring(trade_record, "BUY")
 
-            self.logger.info(
+            tprint_success(
                 f"✅ Buy order executed: {quantity} {symbol} @ ${price:.4f}",
             )
             return True
@@ -457,8 +461,8 @@ class PaperTrader:
                 symbol not in self.positions
                 or self.positions[symbol]["quantity"] < quantity
             ):
-                self.logger.warning(
-                    f"Insufficient position for sell order: {quantity} > {self.positions.get(symbol, {}).get('quantity', 0)}",
+                tprint_warning(
+                    f"⚠️ Insufficient position for sell order: {quantity} > {self.positions.get(symbol, {}).get('quantity', 0)}",
                 )
                 return False
 
@@ -532,7 +536,7 @@ class PaperTrader:
             # Record trade decision in enhanced monitoring system
             await self._record_trade_in_monitoring(trade_record, "SELL")
 
-            self.logger.info(
+            tprint_success(
                 f"✅ Sell order executed: {quantity} {symbol} @ ${price:.4f}",
             )
             return True
@@ -561,17 +565,17 @@ class PaperTrader:
         try:
             # Validate symbol
             if not symbol or len(symbol) == 0:
-                self.logger.error(invalid("Invalid symbol"))
+                tprint_error(invalid("Invalid symbol"))
                 return False
 
             # Validate quantity
             if quantity <= 0:
-                self.logger.error(invalid("Invalid quantity"))
+                tprint_error(invalid("Invalid quantity"))
                 return False
 
             # Validate price
             if price <= 0:
-                self.logger.error(invalid("Invalid price"))
+                tprint_error(invalid("Invalid price"))
                 return False
 
             # Check position size limits
@@ -579,8 +583,8 @@ class PaperTrader:
             max_allowed = self.balance * self.max_position_size
 
             if total_value > max_allowed:
-                self.logger.warning(
-                    f"Order exceeds max position size: ${total_value:.2f} > ${max_allowed:.2f}",
+                tprint_warning(
+                    f"⚠️ Order exceeds max position size: ${total_value:.2f} > ${max_allowed:.2f}",
                 )
                 return False
 
@@ -595,7 +599,7 @@ class PaperTrader:
         severity=TradingErrorSeverity.MEDIUM,
         raise_on_error=True
     )
-    def get_position(self, symbol: str) -> dict[str, Any] | None:
+    def get_position(self, symbol: str) -> Optional[Dict[str, Any]]:
         """
         Get current position for a symbol.
 
@@ -645,7 +649,7 @@ class PaperTrader:
         severity=TradingErrorSeverity.MEDIUM,
         raise_on_error=True
     )
-    def get_all_positions(self) -> dict[str, dict[str, Any]]:
+    def get_all_positions(self) -> Dict[str, Dict[str, Any]]:
         """
         Get all current positions.
 
@@ -683,7 +687,7 @@ class PaperTrader:
         severity=TradingErrorSeverity.MEDIUM,
         raise_on_error=True
     )
-    def get_trade_history(self, symbol: str | None = None) -> list[dict[str, Any]]:
+    def get_trade_history(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Get trade history.
 
@@ -709,7 +713,7 @@ class PaperTrader:
         severity=TradingErrorSeverity.MEDIUM,
         raise_on_error=True
     )
-    def calculate_performance(self) -> dict[str, Any]:
+    def calculate_performance(self) -> Dict[str, Any]:
         """
         Calculate trading performance metrics.
 
@@ -792,7 +796,7 @@ class PaperTrader:
             )
             return {}
 
-    def get_trader_status(self) -> dict[str, Any]:
+    def get_trader_status(self) -> Dict[str, Any]:
         """
         Get paper trader status information.
 
@@ -817,28 +821,28 @@ class PaperTrader:
     )
     async def stop(self) -> None:
         """Stop the paper trader."""
-        self.logger.info("🛑 Stopping Paper Trader...")
+        tprint_info("🛑 Stopping Paper Trader...")
 
         try:
             # Stop enhanced monitoring
             if self.enhanced_monitoring:
                 await self.enhanced_monitoring.stop()
-                self.logger.info("🔍 Enhanced monitoring stopped")
+                tprint_info("🔍 Enhanced monitoring stopped")
 
             # Close all positions
             if self.positions:
-                self.logger.info(f"Closing {len(self.positions)} positions...")
+                tprint_info(f"📊 Closing {len(self.positions)} positions...")
                 # Note: In a real implementation, you would close positions at current market prices
                 self.positions.clear()
 
             self.is_trading = False
-            self.logger.info("✅ Paper Trader stopped successfully")
+            tprint_success("✅ Paper Trader stopped successfully")
 
         except Exception as e:
             self.logger.exception(ExecutionError(f"Error stopping paper trader: {e}"))
 
 # Global paper trader instance
-paper_trader: PaperTrader | None = None
+paper_trader: Optional[PaperTrader] = None
 
 @handles_errors(
     exceptions=(Exception,),
@@ -846,8 +850,8 @@ paper_trader: PaperTrader | None = None
     context="paper trader setup",
 )
 async def setup_paper_trader(
-    config: dict[str, Any] | None = None,
-) -> PaperTrader | None:
+    config: Optional[Dict[str, Any]] = None,
+) -> Optional[PaperTrader]:
     """
     Setup global paper trader.
 

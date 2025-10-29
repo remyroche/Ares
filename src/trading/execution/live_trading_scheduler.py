@@ -237,7 +237,7 @@ class LiveTradingScheduler:
         tprint_success("✅ Live Trading Scheduler stopped")
         return True
 
-    async def _initialize_models(self):
+    async def _initialize_models(self) -> None:
         """Initialize all models for live trading."""
         try:
             tprint_info("🔄 Initializing models for live trading...")
@@ -257,7 +257,7 @@ class LiveTradingScheduler:
             tprint_error(f"❌ Model initialization failed: {e}")
             raise
 
-    async def _initialize_hmm_models(self):
+    async def _initialize_hmm_models(self) -> None:
         """Initialize HMM models for regime detection."""
         try:
             # Create a mock HMM implementation since the actual training module is not available
@@ -287,7 +287,7 @@ class LiveTradingScheduler:
             tprint_error(f"❌ HMM model initialization failed: {e}")
             raise
 
-    async def _initialize_analyst_models(self):
+    async def _initialize_analyst_models(self) -> None:
         """Initialize Analyst models for trade decisions."""
         try:
             # Try to import the actual module, fallback to mock if not available
@@ -316,7 +316,7 @@ class LiveTradingScheduler:
             tprint_error(f"❌ Analyst model initialization failed: {e}")
             raise
 
-    async def _initialize_tactician_models(self):
+    async def _initialize_tactician_models(self) -> None:
         """Initialize Tactician models for timing decisions."""
         try:
             # Try to import the actual module, fallback to mock if not available
@@ -345,7 +345,7 @@ class LiveTradingScheduler:
             tprint_error(f"❌ Tactician model initialization failed: {e}")
             raise
 
-    def _schedule_initial_executions(self):
+    def _schedule_initial_executions(self) -> None:
         """Schedule initial execution times for all models."""
         now = datetime.now()
 
@@ -355,7 +355,7 @@ class LiveTradingScheduler:
                 config.next_execution = now
                 tprint_info(f"📅 {model_type.value.upper()} scheduled for immediate execution")
 
-    async def _scheduler_loop(self):
+    async def _scheduler_loop(self) -> None:
         """Main scheduler loop."""
         while self.is_running:
             try:
@@ -391,7 +391,7 @@ class LiveTradingScheduler:
                 await self._handle_error(e)
                 await asyncio.sleep(5)  # Wait before retrying
 
-    async def _execute_model(self, model_type: ModelType):
+    async def _execute_model(self, model_type: ModelType) -> None:
         """Execute a specific model with error recovery."""
         config = self.model_configs[model_type]
         execution_start = time.time()
@@ -613,7 +613,7 @@ class LiveTradingScheduler:
             tprint_error(f"❌ Tactician execution failed: {e}")
             raise
 
-    async def _trigger_execution_callbacks(self, result: ExecutionResult):
+    async def _trigger_execution_callbacks(self, result: ExecutionResult) -> None:
         """Trigger execution callbacks."""
         for callback in self.on_execution_callbacks:
             try:
@@ -624,7 +624,7 @@ class LiveTradingScheduler:
             except Exception as e:
                 tprint_warning(f"⚠️ Execution callback failed: {e}")
 
-    async def _trigger_error_callbacks(self, error: Exception):
+    async def _trigger_error_callbacks(self, error: Exception) -> None:
         """Trigger error callbacks."""
         for callback in self.on_error_callbacks:
             try:
@@ -635,16 +635,16 @@ class LiveTradingScheduler:
             except Exception as e:
                 tprint_warning(f"⚠️ Error callback failed: {e}")
 
-    async def _handle_error(self, error: Exception):
+    async def _handle_error(self, error: Exception) -> None:
         """Handle scheduler errors."""
         tprint_error(f"❌ Scheduler error: {error}")
         await self._trigger_error_callbacks(error)
 
-    def add_execution_callback(self, callback: Callable[[ExecutionResult], None]):
+    def add_execution_callback(self, callback: Callable[[ExecutionResult], None]) -> None:
         """Add a callback for model executions."""
         self.on_execution_callbacks.append(callback)
 
-    def add_error_callback(self, callback: Callable[[Exception], None]):
+    def add_error_callback(self, callback: Callable[[Exception], None]) -> None:
         """Add a callback for errors."""
         self.on_error_callbacks.append(callback)
 
@@ -691,7 +691,7 @@ class LiveTradingScheduler:
         """Get recent execution results."""
         return self.execution_history[-n:] if len(self.execution_history) >= n else self.execution_history.copy()
 
-    def enable_model(self, model_type: ModelType, enabled: bool = True):
+    def enable_model(self, model_type: ModelType, enabled: bool = True) -> None:
         """Enable or disable a model."""
         if model_type in self.model_configs:
             self.model_configs[model_type].enabled = enabled
@@ -699,7 +699,7 @@ class LiveTradingScheduler:
                 self.model_configs[model_type].next_execution = datetime.now()
             tprint_info(f"📊 {model_type.value.upper()} model {'enabled' if enabled else 'disabled'}")
 
-    def update_model_interval(self, model_type: ModelType, interval_seconds: int):
+    def update_model_interval(self, model_type: ModelType, interval_seconds: int) -> None:
         """Update execution interval for a model."""
         if model_type in self.model_configs:
             self.model_configs[model_type].execution_interval_seconds = interval_seconds

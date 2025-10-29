@@ -192,7 +192,7 @@ class TradingOrchestrator:
             self.status = OrchestratorStatus.ERROR
             return False
 
-    async def _initialize_core_components(self):
+    async def _initialize_core_components(self) -> None:
         """Initialize core trading components."""
         try:
             tprint_info("🔄 Initializing core components...")
@@ -236,7 +236,7 @@ class TradingOrchestrator:
             tprint_error(f"❌ Core component initialization failed: {e}")
             raise
 
-    async def _initialize_signal_generators(self):
+    async def _initialize_signal_generators(self) -> None:
         """Initialize signal generators with NAS/TAS enhancement."""
         try:
             tprint_info("🔄 Initializing enhanced signal generators with NAS/TAS...")
@@ -281,7 +281,7 @@ class TradingOrchestrator:
             tprint_error(f"❌ Enhanced signal generator initialization failed: {e}")
             raise
 
-    async def _initialize_data_collection(self):
+    async def _initialize_data_collection(self) -> None:
         """Initialize data collection."""
         try:
             tprint_info("🔄 Initializing data collection...")
@@ -302,7 +302,7 @@ class TradingOrchestrator:
             tprint_error(f"❌ Data collection initialization failed: {e}")
             raise
 
-    async def _initialize_trading_scheduler(self):
+    async def _initialize_trading_scheduler(self) -> None:
         """Initialize trading scheduler."""
         try:
             tprint_info("🔄 Initializing trading scheduler...")
@@ -318,7 +318,7 @@ class TradingOrchestrator:
             tprint_error(f"❌ Trading scheduler initialization failed: {e}")
             raise
 
-    async def _initialize_comprehensive_monitoring(self):
+    async def _initialize_comprehensive_monitoring(self) -> None:
         """Initialize comprehensive trade monitoring."""
         try:
             tprint_info("🔄 Initializing comprehensive trade monitoring...")
@@ -435,7 +435,7 @@ class TradingOrchestrator:
             self.status = OrchestratorStatus.ERROR
             return False
 
-    def _setup_callbacks(self):
+    def _setup_callbacks(self) -> None:
         """Set up callbacks for data and execution events."""
         try:
             # Data collection callbacks
@@ -630,7 +630,7 @@ class TradingOrchestrator:
         self,
         decision: TradingDecision,
         market_snapshot: Dict[str, Any],
-    ):
+    ) -> None:
         """Execute trading decision with comprehensive monitoring."""
         try:
             tprint_info(f"🔄 Executing {decision.action} order for {decision.symbol}")
@@ -1123,30 +1123,30 @@ class TradingOrchestrator:
             self.logger.error(f"❌ Order execution simulation failed: {e}")
             return False
 
-    async def _on_new_data(self, data_point):
+    async def _on_new_data(self, data_point: Any) -> None:
         """Handle new data point."""
         try:
             # Process new data if needed
             pass
         except Exception as e:
-            self.logger.error(f"❌ New data handler error: {e}")
+            tprint_error(f"❌ New data handler error: {e}")
 
-    async def _on_data_error(self, error: Exception):
+    async def _on_data_error(self, error: Exception) -> None:
         """Handle data collection error."""
-        self.logger.error(f"❌ Data collection error: {error}")
+        tprint_error(f"❌ Data collection error: {error}")
 
-    async def _on_model_execution(self, result):
+    async def _on_model_execution(self, result: Any) -> None:
         """Handle model execution result."""
         try:
             tprint_info(f"📊 {result.model_type.value.upper()} execution completed")
         except Exception as e:
-            self.logger.error(f"❌ Model execution handler error: {e}")
+            tprint_error(f"❌ Model execution handler error: {e}")
 
-    async def _on_scheduler_error(self, error: Exception):
+    async def _on_scheduler_error(self, error: Exception) -> None:
         """Handle scheduler error."""
-        self.logger.error(f"❌ Scheduler error: {error}")
+        tprint_error(f"❌ Scheduler error: {error}")
 
-    def _update_session_metrics(self):
+    def _update_session_metrics(self) -> None:
         """Update session performance metrics."""
         if not self.current_session:
             return
@@ -1308,7 +1308,7 @@ class TradingOrchestrator:
         """
         self._on_trade_decision_callbacks.append(callback)
 
-    async def _trigger_trade_callbacks(self, decision: TradingDecision, event: str, **kwargs):
+    async def _trigger_trade_callbacks(self, decision: TradingDecision, event: str, **kwargs: Any) -> None:
         """Trigger trade decision callbacks with proper error handling."""
         for cb in self._on_trade_decision_callbacks:
             try:

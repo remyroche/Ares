@@ -178,7 +178,7 @@ class LiveTrader:
             tprint_error(f"❌ Failed to initialize Live Trader: {str(e)}")
             raise
 
-    async def _initialize_signal_generators(self):
+    async def _initialize_signal_generators(self) -> None:
         """Initialize enhanced signal generators with NAS/TAS models."""
         try:
             # Initialize Analyst signal generator with NAS enhancement

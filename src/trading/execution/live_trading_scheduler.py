@@ -392,10 +392,13 @@ class LiveTradingScheduler:
                 await asyncio.sleep(5)  # Wait before retrying
 
     async def _execute_model(self, model_type: ModelType):
-        """Execute a specific model."""
+        """Execute a specific model with error recovery."""
         config = self.model_configs[model_type]
         execution_start = time.time()
-
+        
+        # Track consecutive failures for exponential backoff
+        max_consecutive_failures = config.failure_count - config.success_count
+        
         try:
             tprint_info(f"🔄 Executing {model_type.value.upper()} model...")
 
@@ -420,7 +423,11 @@ class LiveTradingScheduler:
                 / config.execution_count
             )
 
-            # Schedule next execution
+            # Reset failure count on success
+            if config.failure_count > 0:
+                config.failure_count = max(0, config.failure_count - 1)
+
+            # Schedule next execution with normal interval
             config.next_execution = datetime.now() + timedelta(seconds=config.execution_interval_seconds)
 
             # Create execution result
@@ -451,7 +458,12 @@ class LiveTradingScheduler:
         except Exception as e:
             execution_duration = time.time() - execution_start
             config.failure_count += 1
-
+            
+            # Calculate backoff based on consecutive failures
+            consecutive_failures = config.failure_count - config.success_count
+            backoff_multiplier = min(2 ** consecutive_failures, 32)  # Max 32x backoff
+            backoff_seconds = config.execution_interval_seconds * backoff_multiplier
+            
             # Create error result
             result = ExecutionResult(
                 model_type=model_type,
@@ -461,7 +473,9 @@ class LiveTradingScheduler:
                 error_message=str(e),
                 metrics={
                     'execution_count': config.execution_count,
-                    'failure_count': config.failure_count
+                    'failure_count': config.failure_count,
+                    'consecutive_failures': consecutive_failures,
+                    'backoff_multiplier': backoff_multiplier
                 }
             )
 
@@ -472,9 +486,16 @@ class LiveTradingScheduler:
             await self._trigger_error_callbacks(e)
 
             tprint_error(f"❌ {model_type.value.upper()} execution failed: {e}")
+            tprint_warning(f"⚠️ Applying {backoff_multiplier}x backoff: next execution in {backoff_seconds}s")
 
-            # Schedule next execution even on failure
-            config.next_execution = datetime.now() + timedelta(seconds=config.execution_interval_seconds)
+            # Schedule next execution with exponential backoff
+            config.next_execution = datetime.now() + timedelta(seconds=backoff_seconds)
+            
+            # If too many failures, disable model temporarily
+            if consecutive_failures >= 5:
+                tprint_error(f"❌ Too many consecutive failures ({consecutive_failures}), disabling {model_type.value.upper()} temporarily")
+                config.enabled = False
+                config.next_execution = datetime.now() + timedelta(minutes=15)  # Re-enable after 15 minutes
 
     async def _execute_hmm(self) -> Dict[str, Any]:
         """Execute HMM model for regime detection with partial-bar nowcasting."""

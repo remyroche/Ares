@@ -198,9 +198,6 @@ class ExchangeInterface:
         # Initialize simulated data
         self._initialize_simulated_data()
 
-        # Initialize shared utilities
-        self._initialize_shared_utilities()
-
         self.logger = logger.getChild(f'{self.exchange_type}')
 
     def _initialize_shared_utilities(self) -> None:
@@ -264,54 +261,80 @@ class ExchangeInterface:
 
 
     @handle_async_errors(default_return=False)
-    async def connect(self) -> bool:
-        """Connect to exchange."""
+    async def connect(self, max_retries: int = 5, initial_backoff: float = 1.0) -> bool:
+        """Connect to exchange with retry logic and exponential backoff."""
         try:
             if self.exchange_type == 'simulated':
                 self.connection_status = ConnectionStatus.CONNECTED
                 tprint("✅ Connected to simulated exchange", "INFO")
                 return True
 
-            # Authenticate using shared auth manager
-            if self.auth_manager:
-                credentials = {
-                    'api_key': self.api_key,
-                    'api_secret': self.api_secret,
-                    'testnet': self.testnet
-                }
-                auth_success = await self.auth_manager.authenticate(credentials)
-                if not auth_success:
-                    tprint("❌ Authentication failed", "ERROR")
-                    self.connection_status = ConnectionStatus.ERROR
-                    return False
-                tprint(f"Connected to {self.exchange_type} (simulated)", "INFO")
-                return True
+            # Retry logic with exponential backoff
+            backoff = initial_backoff
+            last_error = None
+            
+            for attempt in range(max_retries):
+                try:
+                    self.connection_status = ConnectionStatus.CONNECTING
+                    self.last_connection_attempt = datetime.now()
+                    
+                    # Authenticate using shared auth manager
+                    if self.auth_manager:
+                        credentials = {
+                            'api_key': self.api_key,
+                            'api_secret': self.api_secret,
+                            'testnet': self.testnet
+                        }
+                        auth_success = await self.auth_manager.authenticate(credentials)
+                        if not auth_success:
+                            raise Exception("Authentication failed")
+                        tprint(f"✅ Connected to {self.exchange_type}", "INFO")
+                        self.connection_status = ConnectionStatus.CONNECTED
+                        return True
 
-            # Initialize shared utilities for real exchanges
-            await self._initialize_exchange_utilities()
+                    # Initialize shared utilities for real exchanges
+                    await self._initialize_exchange_utilities()
 
-            # Create exchange dispatcher
-            exchange_type = ExchangeType.OKX if self.exchange_type == 'okx' else ExchangeType.BINANCE
-            config = ExchangeConfig(
-                exchange_type=exchange_type,
-                api_key=self.api_key,
-                api_secret=self.api_secret,
-                use_testnet=self.testnet,
-                trade_symbol=self.config.get('trade_symbol', 'BTCUSDT')
-            )
+                    # Create exchange dispatcher
+                    exchange_type = ExchangeType.OKX if self.exchange_type == 'okx' else ExchangeType.BINANCE
+                    config = ExchangeConfig(
+                        exchange_type=exchange_type,
+                        api_key=self.api_key,
+                        api_secret=self.api_secret,
+                        use_testnet=self.testnet,
+                        trade_symbol=self.config.get('trade_symbol', 'BTCUSDT')
+                    )
 
-            self.dispatcher = ExchangeDispatcher(config)
-            success = await self.dispatcher.initialize()
+                    self.dispatcher = ExchangeDispatcher(config)
+                    success = await self.dispatcher.initialize()
 
-            if success:
-                self.connection_status = ConnectionStatus.CONNECTED
-                tprint(f"✅ Connected to {self.exchange_type}", "INFO")
-                tprint(f"Connected to {self.exchange_type}", "INFO")
-                return True
-            else:
-                self.connection_status = ConnectionStatus.ERROR
-                tprint(f"❌ Failed to connect to {self.exchange_type}", "ERROR")
-                return False
+                    if success:
+                        self.connection_status = ConnectionStatus.CONNECTED
+                        tprint(f"✅ Connected to {self.exchange_type}", "INFO")
+                        return True
+                    else:
+                        raise Exception(f"Failed to initialize dispatcher for {self.exchange_type}")
+
+                except Exception as e:
+                    last_error = e
+                    self.connection_errors.append({
+                        'timestamp': datetime.now(),
+                        'operation': 'connect',
+                        'attempt': attempt + 1,
+                        'error': str(e)
+                    })
+                    
+                    if attempt < max_retries - 1:
+                        self.connection_status = ConnectionStatus.RECONNECTING
+                        tprint_warning(f"⚠️ Connection attempt {attempt + 1}/{max_retries} failed: {e}. Retrying in {backoff:.1f}s...")
+                        await asyncio.sleep(backoff)
+                        backoff = min(backoff * 2, 60.0)  # Exponential backoff, max 60s
+                    else:
+                        # Last attempt failed
+                        self.connection_status = ConnectionStatus.ERROR
+                        tprint_error(f"❌ Failed to connect to {self.exchange_type} after {max_retries} attempts")
+                        await self._handle_error(e, "connect")
+                        return False
 
         except Exception as e:
             self.connection_status = ConnectionStatus.ERROR
@@ -488,6 +511,33 @@ class ExchangeInterface:
     async def disconnect(self) -> None:
         """Disconnect from exchange."""
         try:
+            # Close all data streams
+            for symbol in list(self.ticker_streams.keys()):
+                try:
+                    stream = self.ticker_streams.pop(symbol, None)
+                    if stream and hasattr(stream, 'close'):
+                        await stream.close()
+                except Exception as e:
+                    tprint_warning(f"⚠️ Error closing ticker stream for {symbol}: {e}")
+            
+            for symbol in list(self.order_book_streams.keys()):
+                try:
+                    stream = self.order_book_streams.pop(symbol, None)
+                    if stream and hasattr(stream, 'close'):
+                        await stream.close()
+                except Exception as e:
+                    tprint_warning(f"⚠️ Error closing order book stream for {symbol}: {e}")
+            
+            for symbol in list(self.kline_streams.keys()):
+                for interval in list(self.kline_streams[symbol].keys()):
+                    try:
+                        stream = self.kline_streams[symbol].pop(interval, None)
+                        if stream and hasattr(stream, 'close'):
+                            await stream.close()
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Error closing kline stream for {symbol}/{interval}: {e}")
+            
+            # Close dispatcher
             if self.dispatcher:
                 await self.dispatcher.close()
                 self.dispatcher = None
@@ -495,8 +545,11 @@ class ExchangeInterface:
             # Close shared utilities
             for manager in [self.auth_manager, self.market_manager, self.order_manager,
                           self.risk_manager, self.balance_manager, self.rate_limit_manager]:
-                if manager:
-                    manager.close()
+                if manager and hasattr(manager, 'close'):
+                    try:
+                        manager.close()
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Error closing manager: {e}")
 
             self.connection_status = ConnectionStatus.DISCONNECTED
             tprint(f"📴 Disconnected from {self.exchange_type}", "INFO")
@@ -504,9 +557,6 @@ class ExchangeInterface:
         except Exception as e:
             tprint(f"❌ Error during disconnect: {e}", "ERROR")
             self.connection_status = ConnectionStatus.DISCONNECTED
-            tprint(f"Disconnected from {self.exchange_type}", "INFO")
-        except Exception as e:
-            tprint(f"Error disconnecting from exchange: {e}", "ERROR")
 
     # Exchange-specific methods for shared utilities
     async def _get_server_time(self) -> Optional[int]:
@@ -1099,16 +1149,30 @@ class ExchangeInterface:
             if self.rate_limit_manager:
                 return not self.rate_limit_manager.is_limited(endpoint)
 
-            # Fallback to simple rate limiting implementation
+            # Fallback to time-windowed rate limiting implementation
             now = datetime.now()
-            if endpoint in self.request_counts:
-                if self.request_counts[endpoint] >= self.rate_limits.get(endpoint, 100):
-                    return False
+            
+            # Reset counters if time window has passed
+            if endpoint in self.last_requests:
+                time_since_last = (now - self.last_requests[endpoint]).total_seconds()
+                # Reset every minute
+                if time_since_last >= 60:
+                    self.request_counts[endpoint] = 0
+                    self.last_requests[endpoint] = now
+            
+            # Check if we're within limits
+            limit = self.rate_limits.get(endpoint, 100)
+            current_count = self.request_counts.get(endpoint, 0)
+            
+            if current_count >= limit:
+                tprint_warning(f"⚠️ Rate limit exceeded for {endpoint}: {current_count}/{limit}")
+                return False
+            
             return True
 
         except Exception as e:
             tprint(f"❌ Error checking rate limit: {e}", "ERROR")
-            return False
+            return False  # Fail closed for safety
 
     @handle_async_errors(default_return={})
     async def get_risk_info(self, symbol: str, position_size: float, current_price: float, leverage: float = 1.0) -> Dict[str, Any]:
@@ -1145,6 +1209,7 @@ class ExchangeInterface:
             self.last_requests[endpoint] = now
 
         self.request_counts[endpoint] += 1
+        self.last_requests[endpoint] = now
         self.total_requests += 1
 
     @handle_async_errors(default_return=None)

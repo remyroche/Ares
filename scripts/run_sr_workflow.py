@@ -7,8 +7,18 @@ This script runs the complete SR (Support/Resistance) workflow in the correct or
 2. SR Detection - Detects SR levels using optimized parameters
 3. SR Clustering - Clusters the detected SR levels
 
-Usage:
-    python scripts/run_sr_workflow.py --symbol ETHUSDT --exchange binance --timeframe 15m --mode light
+Usage Examples:
+    # Basic usage with defaults
+    python scripts/run_sr_workflow.py --symbol ETHUSDT --exchange binance --timeframe 15m
+    
+    # With lookback period (days)
+    python scripts/run_sr_workflow.py --symbol BTCUSDT --exchange binance --timeframe 1h --lookback-days 30
+    
+    # With explicit date range
+    python scripts/run_sr_workflow.py --symbol ETHUSDT --exchange binance --timeframe 15m --start-date 2024-01-01 --end-date 2024-01-31
+    
+    # Full mode with all options
+    python scripts/run_sr_workflow.py --symbol BTCUSDT --exchange binance --timeframe 1h --direction longs --mode full --lookback-days 60
 """
 
 import asyncio
@@ -17,7 +27,7 @@ import logging
 import sys
 from pathlib import Path
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -45,7 +55,10 @@ class SRWorkflowRunner:
         exchange: str = "binance",
         timeframe: str = "15m",
         direction: str = "longs",
-        mode: str = "light"
+        mode: str = "light",
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        lookback_days: Optional[int] = None
     ):
         """
         Initialize the SR workflow runner.
@@ -53,9 +66,12 @@ class SRWorkflowRunner:
         Args:
             symbol: Trading symbol (e.g., 'ETHUSDT')
             exchange: Exchange name (e.g., 'binance')
-            timeframe: Timeframe (e.g., '15m')
+            timeframe: Timeframe (e.g., '15m', '1h', '1d')
             direction: Trading direction ('longs' or 'shorts')
             mode: Execution mode ('light', 'full', or 'blank')
+            start_date: Start date for data range (YYYY-MM-DD format). If None, uses lookback_days or all available data
+            end_date: End date for data range (YYYY-MM-DD format). If None, uses current date
+            lookback_days: Number of days to look back from end_date. If both start_date and lookback_days are provided, lookback_days takes precedence
         """
         self.logger = system_logger.getChild('SRWorkflowRunner')
         self.symbol = symbol
@@ -63,6 +79,21 @@ class SRWorkflowRunner:
         self.timeframe = timeframe
         self.direction = direction
         self.mode = mode
+        self.start_date = start_date
+        self.end_date = end_date
+        self.lookback_days = lookback_days
+        
+        # Calculate start_date from lookback_days if provided
+        # If both start_date and lookback_days are provided, lookback_days takes precedence
+        if lookback_days:
+            end = datetime.now()
+            if end_date:
+                try:
+                    end = datetime.strptime(end_date, '%Y-%m-%d')
+                except ValueError:
+                    self.logger.warning(f"Invalid end_date format: {end_date}, using current date")
+            self.start_date = (end - timedelta(days=lookback_days)).strftime('%Y-%m-%d')
+            self.logger.info(f"Calculated start_date from lookback_days={lookback_days}: {self.start_date}")
         
         # Initialize steps
         self.logger.info("🚀 Initializing SR workflow steps...")
@@ -130,6 +161,12 @@ class SRWorkflowRunner:
         self.logger.info(f"   Timeframe: {self.timeframe}")
         self.logger.info(f"   Direction: {self.direction}")
         self.logger.info(f"   Mode: {self.mode}")
+        if self.start_date:
+            self.logger.info(f"   Start Date: {self.start_date}")
+        if self.end_date:
+            self.logger.info(f"   End Date: {self.end_date}")
+        if self.lookback_days and not self.start_date:
+            self.logger.info(f"   Lookback: {self.lookback_days} days")
         self.logger.info("=" * 80)
         
         workflow_results = {
@@ -156,8 +193,14 @@ class SRWorkflowRunner:
                 'enable_bayesian_hpo': True,
                 'enable_vectorbt': True,
                 'enable_hardware_optimization': True,
-                'enable_sr_detection_testing': True  # Enable SR detection testing during optimization
+                'enable_sr_detection_testing': True,  # Enable SR detection testing during optimization
             }
+            
+            # Add date range parameters if provided
+            if self.start_date:
+                optimization_config['start_date'] = self.start_date
+            if self.end_date:
+                optimization_config['end_date'] = self.end_date
             
             optimization_result = await self.param_optimizer.execute(optimization_config)
             
@@ -197,6 +240,12 @@ class SRWorkflowRunner:
                 # Pass optimized parameters from step 1
                 'sr_parameters': optimized_params
             }
+            
+            # Add date range parameters if provided
+            if self.start_date:
+                detection_config['start_date'] = self.start_date
+            if self.end_date:
+                detection_config['end_date'] = self.end_date
             
             detection_result = await self.sr_detector.execute(detection_config)
             
@@ -238,6 +287,12 @@ class SRWorkflowRunner:
                 'clustering_algorithm': 'ensemble',  # Use ensemble for best results
                 # SR levels will be loaded from artifacts automatically
             }
+            
+            # Add date range parameters if provided
+            if self.start_date:
+                clustering_config['start_date'] = self.start_date
+            if self.end_date:
+                clustering_config['end_date'] = self.end_date
             
             clustering_result = await self.sr_clusterer.execute(clustering_config)
             
@@ -293,14 +348,55 @@ class SRWorkflowRunner:
 
 async def main():
     """Main entry point for the SR workflow runner."""
-    parser = argparse.ArgumentParser(description="Run the complete SR workflow")
-    parser.add_argument('--symbol', type=str, default='ETHUSDT', help='Trading symbol')
-    parser.add_argument('--exchange', type=str, default='binance', help='Exchange name')
-    parser.add_argument('--timeframe', type=str, default='15m', help='Timeframe')
+    parser = argparse.ArgumentParser(
+        description="Run the complete SR workflow",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Basic usage
+  python scripts/run_sr_workflow.py --symbol ETHUSDT --exchange binance --timeframe 15m
+  
+  # With 30-day lookback
+  python scripts/run_sr_workflow.py --symbol BTCUSDT --exchange binance --timeframe 1h --lookback-days 30
+  
+  # With explicit date range
+  python scripts/run_sr_workflow.py --symbol ETHUSDT --exchange binance --timeframe 15m --start-date 2024-01-01 --end-date 2024-01-31
+        """
+    )
+    parser.add_argument('--symbol', type=str, default='ETHUSDT', help='Trading symbol (e.g., ETHUSDT, BTCUSDT)')
+    parser.add_argument('--exchange', type=str, default='binance', help='Exchange name (e.g., binance, bybit)')
+    parser.add_argument('--timeframe', type=str, default='15m', help='Timeframe (e.g., 15m, 1h, 4h, 1d)')
     parser.add_argument('--direction', type=str, default='longs', choices=['longs', 'shorts'], help='Trading direction')
     parser.add_argument('--mode', type=str, default='light', choices=['light', 'full', 'blank'], help='Execution mode')
     
+    # Date range options
+    parser.add_argument('--start-date', type=str, default=None, 
+                       help='Start date for data range (YYYY-MM-DD format). If not provided, uses lookback-days or all available data')
+    parser.add_argument('--end-date', type=str, default=None,
+                       help='End date for data range (YYYY-MM-DD format). If not provided, uses current date')
+    parser.add_argument('--lookback-days', type=int, default=None,
+                       help='Number of days to look back from end_date. If both start-date and lookback-days are provided, lookback-days takes precedence')
+    
     args = parser.parse_args()
+    
+    # Validate date arguments
+    if args.start_date:
+        try:
+            datetime.strptime(args.start_date, '%Y-%m-%d')
+        except ValueError:
+            print(f"Error: Invalid start-date format: {args.start_date}. Expected YYYY-MM-DD")
+            return 1
+    
+    if args.end_date:
+        try:
+            datetime.strptime(args.end_date, '%Y-%m-%d')
+        except ValueError:
+            print(f"Error: Invalid end-date format: {args.end_date}. Expected YYYY-MM-DD")
+            return 1
+    
+    if args.lookback_days and args.lookback_days <= 0:
+        print(f"Error: lookback-days must be positive, got: {args.lookback_days}")
+        return 1
     
     # Create workflow runner
     runner = SRWorkflowRunner(
@@ -308,7 +404,10 @@ async def main():
         exchange=args.exchange,
         timeframe=args.timeframe,
         direction=args.direction,
-        mode=args.mode
+        mode=args.mode,
+        start_date=args.start_date,
+        end_date=args.end_date,
+        lookback_days=args.lookback_days
     )
     
     # Run workflow

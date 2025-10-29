@@ -67,8 +67,9 @@ class AnalystFeatureEngineer(FeatureEngineer):
     
     Engineers the same features as used in training:
     - Regime-based features (regime_strength, regime_confidence)
-    - Market condition features (volume_price_trend, volume_momentum)
-    - Volatility features (volatility_5d, volatility_20d, volatility_ratio)
+    
+    Note: Base features come from feature_generation_final_feature_selection_step
+    and are added separately. This module only adds engineered features on top.
     """
     
     def __init__(self, logger: Optional[logging.Logger] = None):
@@ -76,11 +77,6 @@ class AnalystFeatureEngineer(FeatureEngineer):
         self.engineered_feature_names = [
             'regime_strength',
             'regime_confidence',
-            'volume_price_trend',
-            'volume_momentum',
-            'volatility_5d',
-            'volatility_20d',
-            'volatility_ratio',
         ]
     
     def engineer_features(
@@ -150,33 +146,6 @@ class AnalystFeatureEngineer(FeatureEngineer):
             else:
                 warnings.append("No regime_probability provided and not found in data")
             
-            # 2. Add market condition features
-            if 'volume' in result_data.columns and 'close' in result_data.columns:
-                result_data['volume_price_trend'] = result_data['volume'] * result_data['close'].pct_change()
-                # Handle division by zero for volume_momentum
-                volume_5d = result_data['volume'].rolling(5).mean()
-                volume_20d = result_data['volume'].rolling(20).mean()
-                result_data['volume_momentum'] = self._safe_divide(volume_5d, volume_20d)
-            else:
-                missing_cols = []
-                if 'volume' not in result_data.columns:
-                    missing_cols.append('volume')
-                if 'close' not in result_data.columns:
-                    missing_cols.append('close')
-                warnings.append(f"Missing columns for market condition features: {missing_cols}")
-            
-            # 3. Add volatility features
-            if 'close' in result_data.columns:
-                result_data['volatility_5d'] = result_data['close'].rolling(5).std()
-                result_data['volatility_20d'] = result_data['close'].rolling(20).std()
-                # Handle division by zero for volatility_ratio
-                result_data['volatility_ratio'] = self._safe_divide(
-                    result_data['volatility_5d'],
-                    result_data['volatility_20d']
-                )
-            else:
-                warnings.append("Missing 'close' column for volatility features")
-            
             # Fill NaN values created by rolling operations
             result_data = result_data.fillna(method='bfill').fillna(0)
             
@@ -221,26 +190,26 @@ class TacticianFeatureEngineer(FeatureEngineer):
     Feature engineer for Tactician role.
     
     Engineers the same features as used in training:
-    - Timing features (hour, day_of_week, is_weekend)
+    - Regime-based features (regime_strength, regime_confidence)
     - Analyst signal features (analyst_signal_strength, analyst_signal_consistency)
-    - Risk features (price_momentum, risk_adjusted_return)
+    
+    Note: Base features come from feature_generation_final_feature_selection_step
+    and are added separately. This module only adds engineered features on top.
     """
     
     def __init__(self, logger: Optional[logging.Logger] = None):
         super().__init__(logger)
         self.engineered_feature_names = [
-            'hour',
-            'day_of_week',
-            'is_weekend',
+            'regime_strength',
+            'regime_confidence',
             'analyst_signal_strength',
             'analyst_signal_consistency',
-            'price_momentum',
-            'risk_adjusted_return',
         ]
     
     def engineer_features(
         self,
         data: pd.DataFrame,
+        regime_probability: Optional[Union[pd.Series, np.ndarray, float]] = None,
         timestamp: Optional[Union[pd.Timestamp, datetime, str]] = None,
         analyst_confidence: Optional[float] = None,
         analyst_outputs: Optional[Dict[str, Any]] = None,
@@ -253,7 +222,8 @@ class TacticianFeatureEngineer(FeatureEngineer):
         
         Args:
             data: Input DataFrame with market data
-            timestamp: Optional timestamp for timing features
+            regime_probability: Optional regime probability value(s) to add
+            timestamp: Optional timestamp (not used, kept for compatibility)
             analyst_confidence: Optional analyst confidence value
             analyst_outputs: Optional analyst output dictionary
             **kwargs: Additional arguments
@@ -265,35 +235,47 @@ class TacticianFeatureEngineer(FeatureEngineer):
             result_data = data.copy()
             warnings = []
             
-            # 1. Add timing features
-            if timestamp is not None:
-                # Handle different timestamp types
-                if isinstance(timestamp, str):
-                    timestamp_dt = pd.to_datetime(timestamp)
-                elif isinstance(timestamp, (pd.Timestamp, datetime)):
-                    timestamp_dt = timestamp
+            # 1. Add regime-based features (same as Analyst)
+            if regime_probability is not None:
+                # Handle different input types
+                if isinstance(regime_probability, (float, int)):
+                    regime_prob = pd.Series([regime_probability] * len(result_data), index=result_data.index)
+                elif isinstance(regime_probability, pd.Series):
+                    regime_prob = regime_probability
+                elif isinstance(regime_probability, np.ndarray):
+                    if len(regime_probability) == 1:
+                        regime_prob = pd.Series([regime_probability[0]] * len(result_data), index=result_data.index)
+                    else:
+                        regime_prob = pd.Series(regime_probability, index=result_data.index[:len(regime_probability)])
                 else:
-                    timestamp_dt = None
+                    regime_prob = None
                 
-                if timestamp_dt is not None:
-                    result_data['hour'] = timestamp_dt.hour
-                    result_data['day_of_week'] = timestamp_dt.dayofweek
-                    result_data['is_weekend'] = 1 if timestamp_dt.dayofweek in [5, 6] else 0
-                else:
-                    warnings.append(f"Could not parse timestamp: {timestamp}")
+                if regime_prob is not None:
+                    # Ensure same length as data
+                    if len(regime_prob) != len(result_data):
+                        if len(regime_prob) == 1:
+                            regime_prob = pd.Series([regime_prob.iloc[0]] * len(result_data), index=result_data.index)
+                        else:
+                            warnings.append(f"Regime probability length ({len(regime_prob)}) doesn't match data length ({len(result_data)}), using last value")
+                            regime_prob = pd.Series([regime_prob.iloc[-1]] * len(result_data), index=result_data.index)
+                    
+                    result_data['regime_strength'] = regime_prob.abs()
+                    result_data['regime_confidence'] = np.where(
+                        regime_prob > 0.5,
+                        regime_prob,
+                        1 - regime_prob
+                    )
             
-            elif 'timestamp' in result_data.columns:
-                # Use existing timestamp column
-                timestamp_series = pd.to_datetime(result_data['timestamp'])
-                result_data['hour'] = timestamp_series.dt.hour
-                result_data['day_of_week'] = timestamp_series.dt.dayofweek
-                result_data['is_weekend'] = result_data['day_of_week'].isin([5, 6]).astype(int)
+            elif 'regime_probability' in result_data.columns:
+                # Use existing column
+                result_data['regime_strength'] = result_data['regime_probability'].abs()
+                result_data['regime_confidence'] = np.where(
+                    result_data['regime_probability'] > 0.5,
+                    result_data['regime_probability'],
+                    1 - result_data['regime_probability']
+                )
             else:
-                warnings.append("No timestamp provided and not found in data")
-                # Set defaults for timing features
-                result_data['hour'] = 12  # Default noon
-                result_data['day_of_week'] = 0  # Default Monday
-                result_data['is_weekend'] = 0
+                warnings.append("No regime_probability provided and not found in data")
             
             # 2. Add analyst signal features
             analyst_columns = [col for col in result_data.columns if 'analyst' in col.lower()]
@@ -330,20 +312,6 @@ class TacticianFeatureEngineer(FeatureEngineer):
                 warnings.append("No analyst signals found, using defaults")
                 result_data['analyst_signal_strength'] = 0.5
                 result_data['analyst_signal_consistency'] = 0.0
-            
-            # 3. Add risk features
-            if 'close' in result_data.columns:
-                result_data['price_momentum'] = result_data['close'].pct_change(5)
-                # Handle division by zero for risk_adjusted_return
-                price_std = result_data['close'].rolling(20).std()
-                result_data['risk_adjusted_return'] = self._safe_divide(
-                    result_data['price_momentum'],
-                    price_std
-                )
-            else:
-                warnings.append("Missing 'close' column for risk features")
-                result_data['price_momentum'] = 0.0
-                result_data['risk_adjusted_return'] = 0.0
             
             # Fill NaN values
             result_data = result_data.fillna(method='bfill').fillna(0)
@@ -383,6 +351,7 @@ def engineer_analyst_features(
 
 def engineer_tactician_features(
     data: pd.DataFrame,
+    regime_probability: Optional[Union[pd.Series, np.ndarray, float]] = None,
     timestamp: Optional[Union[pd.Timestamp, datetime, str]] = None,
     analyst_confidence: Optional[float] = None,
     analyst_outputs: Optional[Dict[str, Any]] = None,
@@ -393,7 +362,8 @@ def engineer_tactician_features(
     
     Args:
         data: Input DataFrame
-        timestamp: Optional timestamp
+        regime_probability: Optional regime probability value(s)
+        timestamp: Optional timestamp (not used, kept for compatibility)
         analyst_confidence: Optional analyst confidence
         analyst_outputs: Optional analyst outputs dictionary
         logger: Optional logger
@@ -404,6 +374,7 @@ def engineer_tactician_features(
     engineer = TacticianFeatureEngineer(logger=logger)
     return engineer.engineer_features(
         data,
+        regime_probability=regime_probability,
         timestamp=timestamp,
         analyst_confidence=analyst_confidence,
         analyst_outputs=analyst_outputs

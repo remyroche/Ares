@@ -1344,8 +1344,12 @@ class SignalGenerationPipeline:
                         market_data_row = market_data.iloc[[-1]].copy()
                         
                         # Apply shared feature engineering (same as training)
+                        # Extract primary regime probability for feature engineering
+                        primary_regime_prob = max(regime_output.regime_probabilities.values()) if regime_output.regime_probabilities else 0.5
+                        
                         engineered_data = self.tactician_feature_engineer.engineer_features(
                             market_data_row,
+                            regime_probability=primary_regime_prob,
                             timestamp=timestamp,
                             analyst_confidence=analyst_confidence,
                             analyst_outputs={

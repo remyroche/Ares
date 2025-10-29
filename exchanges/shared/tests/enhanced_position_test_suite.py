@@ -21,6 +21,7 @@ Key Features:
 import asyncio
 import os
 import sys
+import argparse
 import pytest
 import pandas as pd
 import numpy as np
@@ -85,22 +86,69 @@ class EnhancedPositionTestSuite:
     Comprehensive testing for position management across all exchange interfaces.
     """
     
-    def __init__(self):
-        """Initialize the test suite."""
+    def __init__(
+        self,
+        exchange: str = 'binance',
+        asset: str = 'BTCUSDT',
+        amount: float = 0.1,
+        leverage: int = 1,
+        mode: str = 'mock'
+    ):
+        """
+        Initialize the test suite.
+        
+        Args:
+            exchange: Exchange name (binance, okx, gateio, mexc)
+            asset: Trading symbol (e.g., BTCUSDT, ETHUSDT)
+            amount: Position size/amount
+            leverage: Leverage multiplier (1-100)
+            mode: Test mode - 'real' for actual exchange calls, 'mock' for mock data
+        """
         self.logger = system_logger.getChild('EnhancedPositionTestSuite')
         self.results: List[PositionTestResult] = []
         self.exchange_manager = UnifiedExchangeManager()
-        self.test_symbols = ['BTCUSDT', 'ETHUSDT', 'ADAUSDT']
+        
+        # Store test parameters
+        self.exchange = exchange.lower()
+        self.asset = asset.upper()
+        self.amount = amount
+        self.leverage = leverage
+        self.mode = mode.lower()
+        
+        # Validate parameters
+        if self.mode not in ['real', 'mock']:
+            raise ValueError(f"Mode must be 'real' or 'mock', got: {self.mode}")
+        
+        if self.leverage < 1 or self.leverage > 100:
+            raise ValueError(f"Leverage must be between 1 and 100, got: {self.leverage}")
+        
+        if self.amount <= 0:
+            raise ValueError(f"Amount must be positive, got: {self.amount}")
+        
+        # Use single asset for focused testing
+        self.test_symbols = [self.asset]
         self.test_intervals = ['1m', '5m', '15m', '1h']
         
         # Test configuration
         self.config = {
             'test_mode': True,
-            'use_paper_trading': True,
+            'use_paper_trading': (self.mode == 'mock'),
             'max_position_size': 1000.0,
             'risk_tolerance': 0.02,
-            'test_duration_minutes': 5
+            'test_duration_minutes': 5,
+            'exchange': self.exchange,
+            'asset': self.asset,
+            'amount': self.amount,
+            'leverage': self.leverage,
+            'mode': self.mode
         }
+        
+        tprint_info(f"✅ Enhanced Position Test Suite initialized")
+        tprint_info(f"   Exchange: {self.exchange}")
+        tprint_info(f"   Asset: {self.asset}")
+        tprint_info(f"   Amount: {self.amount}")
+        tprint_info(f"   Leverage: {self.leverage}x")
+        tprint_info(f"   Mode: {self.mode.upper()}")
         
         self.logger.info("✅ Enhanced Position Test Suite initialized")
     
@@ -162,43 +210,85 @@ class EnhancedPositionTestSuite:
             await self._cleanup_test_environment()
     
     async def _setup_test_environment(self) -> None:
-        """Setup test environment with mock exchanges."""
+        """Setup test environment with mock or real exchanges."""
         tprint_info("🔧 Setting up test environment")
-        tprint_debug("Initializing mock exchange instances for comprehensive testing")
+        tprint_debug(f"Mode: {self.mode.upper()} - {'Using mock data' if self.mode == 'mock' else 'Using real exchange calls'}")
         
-        # Create mock exchange instances for testing
-        mock_exchanges = [
-            ('binance', 'Binance Mock'),
-            ('okx', 'OKX Mock'),
-            ('gateio', 'Gate.io Mock'),
-            ('mexc', 'MEXC Mock')
-        ]
-        
-        tprint_info(f"📊 Registering {len(mock_exchanges)} mock exchanges")
-        
-        for exchange_name, display_name in mock_exchanges:
-            try:
-                tprint_debug(f"Creating mock exchange: {display_name}")
-                
-                # Create mock exchange instance
-                mock_exchange = self._create_mock_exchange(exchange_name)
-                
-                # Register with unified manager
-                exchange_type = ExchangeType(exchange_name.lower())
-                self.exchange_manager.register_exchange(mock_exchange, exchange_type)
-                
-                tprint_success(f"✅ {display_name} mock registered successfully")
-                tprint_debug(f"Exchange type: {exchange_type.value}")
-                
-            except Exception as e:
-                tprint_error(f"❌ Failed to register {display_name}: {e}")
-                self.logger.error(f"❌ Failed to register {display_name}: {e}")
+        if self.mode == 'mock':
+            # Setup mock exchange
+            await self._setup_mock_exchange()
+        else:
+            # Setup real exchange
+            await self._setup_real_exchange()
         
         tprint_success("✅ Test environment setup completed")
         tprint_info(f"📈 Available exchanges: {len(self.exchange_manager.get_available_exchanges())}")
     
+    async def _setup_mock_exchange(self) -> None:
+        """Setup mock exchange for testing."""
+        tprint_debug(f"Creating mock exchange: {self.exchange}")
+        
+        try:
+            # Create mock exchange instance
+            mock_exchange = self._create_mock_exchange(self.exchange)
+            
+            # Register with unified manager
+            exchange_type = ExchangeType(self.exchange.lower())
+            self.exchange_manager.register_exchange(mock_exchange, exchange_type)
+            
+            tprint_success(f"✅ {self.exchange.upper()} mock registered successfully")
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to register {self.exchange} mock: {e}")
+            self.logger.error(f"❌ Failed to register {self.exchange} mock: {e}")
+            raise
+    
+    async def _setup_real_exchange(self) -> None:
+        """Setup real exchange connection."""
+        tprint_debug(f"Setting up real exchange connection: {self.exchange}")
+        
+        try:
+            # Import exchange dispatcher for real exchange setup
+            from exchanges.exchange_dispatcher import ExchangeDispatcher, ExchangeConfig, ExchangeType, TradingMode
+            
+            # Create exchange config
+            exchange_config = ExchangeConfig(
+                exchange_type=ExchangeType[self.exchange.upper()],
+                api_key=os.getenv(f'{self.exchange.upper()}_API_KEY', ''),
+                api_secret=os.getenv(f'{self.exchange.upper()}_API_SECRET', ''),
+                use_testnet=True,  # Use testnet for safety
+                trade_symbol=self.asset,
+                mode=TradingMode.PAPER  # Paper trading mode for safety
+            )
+            
+            # Create dispatcher
+            dispatcher = ExchangeDispatcher(exchange_config)
+            success = await dispatcher.initialize()
+            
+            if not success:
+                raise ConnectionError(f"Failed to initialize {self.exchange} exchange")
+            
+            # Get exchange instance from dispatcher
+            exchange_instance = dispatcher.get_exchange()
+            
+            # Register with unified manager
+            exchange_type = ExchangeType[self.exchange.upper()]
+            self.exchange_manager.register_exchange(exchange_instance, exchange_type)
+            
+            tprint_success(f"✅ {self.exchange.upper()} real exchange connected successfully")
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to connect to {self.exchange} real exchange: {e}")
+            self.logger.error(f"❌ Failed to connect to {self.exchange} real exchange: {e}")
+            raise
+    
     def _create_mock_exchange(self, exchange_name: str) -> Any:
         """Create a mock exchange instance for testing."""
+        
+        # Store reference to test suite parameters
+        asset = self.asset
+        amount = self.amount
+        leverage = self.leverage
         
         class MockExchange:
             def __init__(self, name: str):
@@ -206,7 +296,11 @@ class EnhancedPositionTestSuite:
                 self.connected = False
                 self.positions = {}
                 self.orders = {}
-                self.balance = {'USDT': 10000.0}
+                # Calculate balance based on amount and leverage
+                base_balance = amount * 100  # Base balance for testing
+                self.balance = {'USDT': base_balance}
+                self.leverage = leverage
+                self.test_asset = asset
             
             async def initialize(self) -> None:
                 self.connected = True
@@ -227,7 +321,8 @@ class EnhancedPositionTestSuite:
             async def get_account_info(self) -> Dict[str, Any]:
                 return {
                     'exchange': self.name,
-                    'account_type': 'spot',
+                    'account_type': 'futures' if self.leverage > 1 else 'spot',
+                    'leverage': self.leverage,
                     'can_trade': True,
                     'can_withdraw': True,
                     'can_deposit': True,
@@ -240,14 +335,15 @@ class EnhancedPositionTestSuite:
                         'currency': currency,
                         'exchange': self.name,
                         'free': self.balance.get(currency, 0.0),
-                        'used': 0.0,
+                        'used': amount * 0.1,  # Simulate used balance
                         'total': self.balance.get(currency, 0.0)
                     }
                 else:
                     return {
                         'exchange': self.name,
                         'balances': self.balance,
-                        'total_balance': sum(self.balance.values())
+                        'total_balance': sum(self.balance.values()),
+                        'leverage': self.leverage
                     }
             
             async def create_order(
@@ -261,17 +357,23 @@ class EnhancedPositionTestSuite:
             ) -> Dict[str, Any]:
                 order_id = f"{self.name}_{symbol}_{int(datetime.now().timestamp())}"
                 
+                # Use provided asset for price calculation
+                base_price = self._get_base_price(symbol)
+                
                 # Simulate order execution
                 if order_type == OrderType.MARKET:
                     # Market order - immediate fill
-                    fill_price = price or 50000.0  # Mock price
+                    fill_price = price or base_price
                     filled_quantity = quantity
                     status = OrderStatus.FILLED
                 else:
                     # Limit order - pending
-                    fill_price = None
+                    fill_price = price or base_price
                     filled_quantity = 0.0
                     status = OrderStatus.PENDING
+                
+                # Apply leverage to quantity for margin calculation
+                margin_used = (filled_quantity * fill_price) / self.leverage if self.leverage > 1 else filled_quantity * fill_price
                 
                 order = {
                     'order_id': order_id,
@@ -280,15 +382,29 @@ class EnhancedPositionTestSuite:
                     'filled_quantity': filled_quantity,
                     'remaining_quantity': quantity - filled_quantity,
                     'average_price': fill_price,
-                    'commission': 0.001 * quantity * (fill_price or price or 50000.0),
+                    'commission': 0.001 * filled_quantity * fill_price,
                     'commission_asset': 'USDT',
                     'executed_at': datetime.now(timezone.utc) if status == OrderStatus.FILLED else None,
                     'error_message': None,
+                    'leverage': self.leverage,
+                    'margin_used': margin_used,
                     'metadata': kwargs
                 }
                 
                 self.orders[order_id] = order
                 return order
+            
+            def _get_base_price(self, symbol: str) -> float:
+                """Get base price for symbol."""
+                if 'BTC' in symbol:
+                    return 50000.0
+                elif 'ETH' in symbol:
+                    return 3000.0
+                elif 'ADA' in symbol:
+                    return 1.0
+                else:
+                    # Default price based on asset
+                    return 50000.0 if 'BTC' in self.test_asset else 3000.0 if 'ETH' in self.test_asset else 1.0
             
             async def cancel_order(self, order_id: str) -> Dict[str, Any]:
                 if order_id in self.orders:
@@ -312,8 +428,8 @@ class EnhancedPositionTestSuite:
                 return open_orders
             
             async def get_ticker(self, symbol: str) -> Dict[str, Any]:
-                # Mock ticker data
-                base_price = 50000.0 if 'BTC' in symbol else 3000.0 if 'ETH' in symbol else 1.0
+                # Mock ticker data using provided asset
+                base_price = self._get_base_price(symbol)
                 price_change = np.random.uniform(-0.05, 0.05)  # ±5% change
                 current_price = base_price * (1 + price_change)
                 
@@ -335,9 +451,9 @@ class EnhancedPositionTestSuite:
                 interval: str,
                 limit: int = 100
             ) -> List[Dict[str, Any]]:
-                # Generate mock klines data
+                # Generate mock klines data using provided asset
                 klines = []
-                base_price = 50000.0 if 'BTC' in symbol else 3000.0 if 'ETH' in symbol else 1.0
+                base_price = self._get_base_price(symbol)
                 
                 for i in range(limit):
                     timestamp = datetime.now(timezone.utc) - timedelta(minutes=i)
@@ -529,8 +645,9 @@ class EnhancedPositionTestSuite:
                     'symbol': symbol,
                     'exchange': exchange_type.value,
                     'side': 'long',
-                    'quantity': 0.1,
+                    'quantity': self.amount,  # Use provided amount
                     'entry_price': 50000.0,
+                    'leverage': self.leverage,  # Include leverage
                     'timestamp': datetime.now(timezone.utc)
                 }
                 
@@ -538,6 +655,8 @@ class EnhancedPositionTestSuite:
                 assert position_data['symbol'] == symbol
                 assert position_data['quantity'] > 0
                 assert position_data['entry_price'] > 0
+                assert position_data['quantity'] == self.amount
+                assert position_data['leverage'] == self.leverage
                 
                 tprint_debug(f"✅ Position created: {symbol} on {exchange_type.value}")
         
@@ -745,7 +864,7 @@ class EnhancedPositionTestSuite:
                     symbol=symbol,
                     side=OrderSide.BUY,
                     order_type=OrderType.MARKET,
-                    quantity=0.1
+                    quantity=self.amount  # Use provided amount
                 )
                 
                 # Execute order
@@ -787,7 +906,7 @@ class EnhancedPositionTestSuite:
                     symbol=symbol,
                     side=OrderSide.BUY,
                     order_type=OrderType.LIMIT,
-                    quantity=0.1,
+                    quantity=self.amount,  # Use provided amount
                     price=limit_price
                 )
                 
@@ -1380,13 +1499,84 @@ class EnhancedPositionTestSuite:
 
 async def main():
     """Main entry point for the test suite."""
+    parser = argparse.ArgumentParser(
+        description='Enhanced Position Test Suite - Comprehensive testing for position management',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Mock mode with default parameters
+  python enhanced_position_test_suite.py --mode mock
+  
+  # Mock mode with custom parameters
+  python enhanced_position_test_suite.py --mode mock --exchange binance --asset BTCUSDT --amount 0.5 --leverage 10
+  
+  # Real mode (requires API credentials in environment)
+  python enhanced_position_test_suite.py --mode real --exchange okx --asset ETHUSDT --amount 1.0 --leverage 5
+  
+  # Real mode with testnet
+  python enhanced_position_test_suite.py --mode real --exchange binance --asset BTCUSDT --amount 0.1 --leverage 1
+        """
+    )
+    
+    parser.add_argument(
+        '--exchange',
+        type=str,
+        default='binance',
+        choices=['binance', 'okx', 'gateio', 'mexc'],
+        help='Exchange name (default: binance)'
+    )
+    
+    parser.add_argument(
+        '--asset',
+        type=str,
+        default='BTCUSDT',
+        help='Trading symbol/asset (default: BTCUSDT)'
+    )
+    
+    parser.add_argument(
+        '--amount',
+        type=float,
+        default=0.1,
+        help='Position size/amount (default: 0.1)'
+    )
+    
+    parser.add_argument(
+        '--leverage',
+        type=int,
+        default=1,
+        help='Leverage multiplier (1-100, default: 1)'
+    )
+    
+    parser.add_argument(
+        '--mode',
+        type=str,
+        required=True,
+        choices=['real', 'mock'],
+        help='Test mode: real (actual exchange calls) or mock (mock data)'
+    )
+    
+    args = parser.parse_args()
+    
     tprint_info("🔍 Enhanced Position Test Suite")
+    tprint_info("=" * 70)
+    tprint_info(f"Configuration:")
+    tprint_info(f"  Exchange: {args.exchange}")
+    tprint_info(f"  Asset: {args.asset}")
+    tprint_info(f"  Amount: {args.amount}")
+    tprint_info(f"  Leverage: {args.leverage}x")
+    tprint_info(f"  Mode: {args.mode.upper()}")
     tprint_info("=" * 70)
     
     # Create and run test suite
-    test_suite = EnhancedPositionTestSuite()
-    
     try:
+        test_suite = EnhancedPositionTestSuite(
+            exchange=args.exchange,
+            asset=args.asset,
+            amount=args.amount,
+            leverage=args.leverage,
+            mode=args.mode
+        )
+        
         summary = await test_suite.run_all_tests()
         
         # Print summary
@@ -1409,6 +1599,8 @@ async def main():
             
     except Exception as e:
         tprint_error(f"\n💥 Test suite failed: {e}")
+        import traceback
+        traceback.print_exc()
         return 1
 
 

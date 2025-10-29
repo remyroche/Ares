@@ -778,11 +778,18 @@ class EnhancedKlinesProcessingPipeline:
             }
 
             # Step 1: Download data using ExchangeInterface
+            # Note: Public market data (klines) doesn't require authentication
             try:
-                await exchange_interface.connect()
+                # Only attempt connection if credentials are available
+                # Public endpoints should work without auth
+                if hasattr(exchange_interface, 'api_key') and exchange_interface.api_key:
+                    await exchange_interface.connect()
+                else:
+                    if self.enable_logging:
+                        tprint_info("🔓 Accessing public market data (no authentication required)")
             except Exception as e:
                 if self.enable_logging:
-                    tprint_warning(f"⚠️ Exchange connection failed: {e}")
+                    tprint_warning(f"⚠️ Exchange connection/auth warning (may continue for public data): {e}")
             
             download_result = await self._download_data(
                 symbol, interval, years, exchange_interface
@@ -965,10 +972,12 @@ class EnhancedKlinesProcessingPipeline:
         symbol = f"{asset}USDT"
         
         # Create exchange interface
+        # Note: API keys are optional for public market data (klines)
+        # Only required for authenticated operations like trading
         exchange_config = {
             'exchange_type': exchange.lower(),
-            'api_key': api_key,
-            'api_secret': api_secret,
+            'api_key': api_key if api_key else None,
+            'api_secret': api_secret if api_secret else None,
             'testnet': use_testnet,
             'rate_limits': {}
         }
@@ -977,8 +986,22 @@ class EnhancedKlinesProcessingPipeline:
         exchange_interface = ExchangeInterface(exchange_config)
         
         try:
-            # Connect to exchange
-            await exchange_interface.connect()
+            # Connect to exchange (authentication skipped if no credentials provided)
+            # Public market data doesn't require authentication
+            if api_key and api_secret:
+                await exchange_interface.connect()
+            else:
+                # For public data, we can still initialize without auth
+                # The dispatcher should handle public endpoints without auth
+                if self.enable_logging:
+                    tprint_info("🔓 Using public market data (no credentials required)")
+                # Try to connect but don't fail if auth fails
+                try:
+                    await exchange_interface.connect()
+                except Exception as e:
+                    if self.enable_logging:
+                        tprint_warning(f"⚠️ Authentication skipped for public data: {e}")
+                    # Continue anyway as public data doesn't need auth
             
             # Process klines data
             results = await self.process_klines_data(
@@ -1237,8 +1260,9 @@ class EnhancedKlinesProcessingPipeline:
                 tprint_info(f"🔄 Standardizing data format for {symbol} {interval}")
 
             # Use UnifiedOHLCVStandardizer
+            # The data is already in standardized format, just validate and ensure consistency
             standardized_df = self.data_standardizer.standardize(
-                df
+                df, exchange=self.exchange
             )
 
             result.success = True
@@ -1599,7 +1623,7 @@ class EnhancedKlinesProcessingPipeline:
                     if not gap_df.empty:
                         # Standardize the gap data
                         standardized_gap_df = self.data_standardizer.standardize(
-                            gap_df
+                            gap_df, exchange=self.exchange
                         )
 
                         # Merge with existing data

@@ -355,6 +355,76 @@ class UnifiedOHLCVStandardizer:
             self.logger.error(f"Failed to standardize data from {exchange.value}: {e}")
             raise
     
+    def standardize(
+        self,
+        df: pd.DataFrame,
+        exchange: Optional[Union[str, ExchangeType]] = None
+    ) -> pd.DataFrame:
+        """
+        Standardize an already-formatted DataFrame to ensure consistency.
+        
+        This is a lightweight method for DataFrames that are already mostly standardized
+        (e.g., coming from parquet files or already processed data). It:
+        - Validates OHLCV data consistency
+        - Ensures proper column types
+        - Applies data optimizations
+        - Validates with data quality framework
+        
+        Args:
+            df: DataFrame with OHLCV columns (open, high, low, close, volume)
+            exchange: Optional exchange type or name for context
+            
+        Returns:
+            Standardized and validated DataFrame
+        """
+        try:
+            if df.empty:
+                return df
+            
+            # Validate required columns
+            required_cols = ['open', 'high', 'low', 'close', 'volume']
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            if missing_cols:
+                raise ValueError(f"Missing required OHLCV columns: {missing_cols}")
+            
+            # Ensure numeric types
+            for col in required_cols:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Validate OHLC relationships
+            invalid_mask = (
+                (df['high'] < df[['open', 'close']].max(axis=1)) |
+                (df['low'] > df[['open', 'close']].min(axis=1)) |
+                (df['high'] < df['low'])
+            )
+            if invalid_mask.any():
+                invalid_count = invalid_mask.sum()
+                self.logger.warning(f"Found {invalid_count} rows with invalid OHLC relationships")
+                # Fix invalid rows by adjusting high/low
+                df.loc[invalid_mask, 'high'] = df.loc[invalid_mask, ['open', 'close']].max(axis=1)
+                df.loc[invalid_mask, 'low'] = df.loc[invalid_mask, ['open', 'close']].min(axis=1)
+            
+            # Ensure timestamp index is datetime
+            if not isinstance(df.index, pd.DatetimeIndex):
+                if 'timestamp' in df.columns:
+                    df['timestamp'] = pd.to_datetime(df['timestamp'])
+                    df = df.set_index('timestamp')
+                else:
+                    self.logger.warning("No timestamp column or index found")
+            
+            # Apply data processing optimizations
+            df = self._apply_data_processing_optimizations(df)
+            
+            # Validate with src/utils/data/ framework
+            context = f"{exchange.value if hasattr(exchange, 'value') else exchange}" if exchange else "dataframe"
+            self._validate_with_data_framework(df, f"{context} standardization")
+            
+            return df
+            
+        except Exception as e:
+            self.logger.error(f"Failed to standardize DataFrame: {e}")
+            raise
+
     def standardize_to_dataframe(
         self,
         raw_data: Union[List[Dict], List[List], pd.DataFrame],

@@ -37,6 +37,14 @@ from src.utils.tprint import tprint_info, tprint_success, tprint_error, tprint_d
 logger = logging.getLogger(__name__)
 
 
+class TestMode(Enum):
+    """Test mode options for exchange API testing"""
+    MOCK = "mock"  # Simulated responses, no API calls, no credentials needed
+    TESTNET = "testnet"  # Real API calls to testnet, requires credentials
+    PAPER = "paper"  # Real API calls with paper trading (simulated trades)
+    LIVE = "live"  # Real API calls to production (use with extreme caution!)
+
+
 class ResponseType(Enum):
     """Types of API responses to analyze"""
     TICKER = "ticker"
@@ -111,7 +119,11 @@ class ExchangeAPIFormatAnalyzer:
         Args:
             test_symbols: List of symbols to test (default: ['BTCUSDT'])
             exchanges: List of exchanges to test (default: all supported)
-            mode: Test mode - 'real' for actual exchange calls, 'mock' for mock data
+            mode: Test mode - 'mock', 'testnet', 'paper', or 'live'
+                - 'mock': Simulated responses, no API calls, no credentials needed
+                - 'testnet': Real API calls to testnet, requires credentials
+                - 'paper': Real API calls with paper trading (simulated trades)
+                - 'live': Real API calls to production (use with extreme caution!)
             save_samples: Whether to save response samples to files
             output_dir: Directory for saving analysis results
             sequential: If True, test exchanges one by one (cleanup after each)
@@ -124,6 +136,11 @@ class ExchangeAPIFormatAnalyzer:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.sequential = sequential
         self.single_exchange = single_exchange.lower() if single_exchange else None
+        
+        # Validate mode
+        valid_modes = ['mock', 'testnet', 'paper', 'live']
+        if self.mode not in valid_modes:
+            raise ValueError(f"Invalid mode: {self.mode}. Must be one of: {', '.join(valid_modes)}")
         
         # Test configuration
         self.test_symbols = test_symbols or ['BTCUSDT', 'ETHUSDT']
@@ -153,10 +170,24 @@ class ExchangeAPIFormatAnalyzer:
         tprint_info(f"   Exchanges: {', '.join(self.exchanges)}")
         tprint_info(f"   Symbols: {', '.join(self.test_symbols)}")
         tprint_info(f"   Mode: {self.mode.upper()}")
+        self._print_mode_info()
         if self.sequential:
             tprint_info(f"   Sequential mode: testing exchanges one by one")
         if self.single_exchange:
             tprint_info(f"   Single exchange mode: {self.single_exchange.upper()}")
+    
+    def _print_mode_info(self) -> None:
+        """Print information about the selected mode."""
+        mode_info = {
+            'mock': 'Simulated responses, no API calls, no credentials needed',
+            'testnet': 'Real API calls to testnet, requires credentials',
+            'paper': 'Real API calls with paper trading (simulated trades)',
+            'live': '⚠️  Real API calls to PRODUCTION - Use with extreme caution!'
+        }
+        info = mode_info.get(self.mode, 'Unknown mode')
+        tprint_info(f"   Mode description: {info}")
+        if self.mode == 'live':
+            tprint_warning("   ⚠️  LIVE MODE: This will use real production APIs!")
     
     async def initialize_exchanges(self) -> None:
         """Initialize exchange dispatchers."""
@@ -183,7 +214,7 @@ class ExchangeAPIFormatAnalyzer:
                 api_secret = os.getenv(f'{exchange_name.upper()}_API_SECRET', '')
                 
                 if not api_key or not api_secret:
-                    if self.mode == 'real':
+                    if self.mode in ['testnet', 'paper', 'live']:
                         tprint_warning(f"⚠️  Missing credentials for {exchange_name.upper()}, skipping")
                         skipped_count += 1
                         continue
@@ -192,15 +223,23 @@ class ExchangeAPIFormatAnalyzer:
                     api_key = 'mock_key'
                     api_secret = 'mock_secret'
                 
+                # Determine testnet and trading mode based on mode
+                use_testnet = self.mode == 'testnet'
+                trading_mode = TradingMode.PAPER if self.mode in ['mock', 'paper'] else TradingMode.TRADE
+                
+                # Warn about live mode
+                if self.mode == 'live':
+                    tprint_warning(f"⚠️  LIVE MODE: Using production API for {exchange_name.upper()}")
+                
                 # Create exchange config
                 exchange_type = ExchangeType[exchange_name.upper()]
                 config = ExchangeConfig(
                     exchange_type=exchange_type,
                     api_key=api_key,
                     api_secret=api_secret,
-                    use_testnet=(self.mode == 'real'),  # Use testnet for real mode
+                    use_testnet=use_testnet,
                     trade_symbol=self.test_symbols[0],
-                    mode=TradingMode.PAPER if self.mode == 'mock' else TradingMode.PAPER
+                    mode=trading_mode
                 )
                 
                 # Create dispatcher
@@ -333,20 +372,28 @@ class ExchangeAPIFormatAnalyzer:
                 api_secret = os.getenv(f'{exchange_name.upper()}_API_SECRET', '')
                 
                 if not api_key or not api_secret:
-                    if self.mode == 'real':
+                    if self.mode in ['testnet', 'paper', 'live']:
                         tprint_warning(f"   ⚠️  Missing credentials, skipping {exchange_name.upper()}")
                         continue
                     api_key = 'mock_key'
                     api_secret = 'mock_secret'
+                
+                # Determine testnet and trading mode based on mode
+                use_testnet = self.mode == 'testnet'
+                trading_mode = TradingMode.PAPER if self.mode in ['mock', 'paper'] else TradingMode.TRADE
+                
+                # Warn about live mode
+                if self.mode == 'live':
+                    tprint_warning(f"   ⚠️  LIVE MODE: Using production API for {exchange_name.upper()}")
                 
                 exchange_type = ExchangeType[exchange_name.upper()]
                 config = ExchangeConfig(
                     exchange_type=exchange_type,
                     api_key=api_key,
                     api_secret=api_secret,
-                    use_testnet=(self.mode == 'real'),
+                    use_testnet=use_testnet,
                     trade_symbol=self.test_symbols[0],
-                    mode=TradingMode.PAPER if self.mode == 'mock' else TradingMode.PAPER
+                    mode=trading_mode
                 )
                 
                 dispatcher = ExchangeDispatcher(config)
@@ -1067,20 +1114,26 @@ async def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Analyze all exchanges in mock mode (parallel)
+  # Mock mode - simulated responses, no credentials needed
   python exchange_api_format_analyzer.py --mode mock
   
-  # Analyze all exchanges sequentially (one by one)
-  python exchange_api_format_analyzer.py --mode mock --sequential
+  # Testnet mode - real API calls to testnet (requires credentials)
+  python exchange_api_format_analyzer.py --mode testnet
   
-  # Analyze only Binance exchange
-  python exchange_api_format_analyzer.py --mode mock --single-exchange binance
+  # Paper trading mode - real API calls but simulated trades
+  python exchange_api_format_analyzer.py --mode paper
   
-  # Analyze specific exchanges sequentially
-  python exchange_api_format_analyzer.py --mode real --exchanges binance okx --sequential
+  # Live mode - real API calls to production (USE WITH CAUTION!)
+  python exchange_api_format_analyzer.py --mode live
   
-  # Analyze single exchange with custom symbols
-  python exchange_api_format_analyzer.py --mode mock --single-exchange bingx --symbols BTCUSDT ETHUSDT ADAUSDT
+  # Analyze all exchanges sequentially (one by one) in testnet
+  python exchange_api_format_analyzer.py --mode testnet --sequential
+  
+  # Analyze only Binance exchange in paper mode
+  python exchange_api_format_analyzer.py --mode paper --single-exchange binance
+  
+  # Analyze specific exchanges sequentially in testnet
+  python exchange_api_format_analyzer.py --mode testnet --exchanges binance okx --sequential
         """
     )
     
@@ -1088,8 +1141,8 @@ Examples:
         '--mode',
         type=str,
         default='mock',
-        choices=['real', 'mock'],
-        help='Test mode: real (actual exchange calls) or mock (mock data)'
+        choices=['mock', 'testnet', 'paper', 'live'],
+        help='Test mode: mock (simulated, no API calls), testnet (real API, testnet), paper (real API, paper trading), live (real API, production - use with caution!)'
     )
     
     parser.add_argument(
@@ -1139,6 +1192,21 @@ Examples:
     tprint_info("🚀 Exchange API Format Analyzer")
     tprint_info("=" * 70)
     tprint_info(f"Mode: {args.mode.upper()}")
+    
+    # Show mode description
+    mode_descriptions = {
+        'mock': 'Simulated responses, no API calls, no credentials needed',
+        'testnet': 'Real API calls to testnet, requires credentials',
+        'paper': 'Real API calls with paper trading (simulated trades)',
+        'live': '⚠️  Real API calls to PRODUCTION - Use with extreme caution!'
+    }
+    desc = mode_descriptions.get(args.mode.lower(), 'Unknown mode')
+    tprint_info(f"Mode description: {desc}")
+    
+    if args.mode.lower() == 'live':
+        tprint_warning("⚠️  LIVE MODE: This will use real production APIs!")
+        tprint_warning("⚠️  Make sure you understand the risks before proceeding!")
+    
     if args.single_exchange:
         tprint_info(f"Exchange: {args.single_exchange.upper()} (single exchange mode)")
     else:

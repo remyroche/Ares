@@ -400,6 +400,7 @@ class HDPHMMClusterer:
                 result = self._fit_ssm(data_processed)
                 self.model = result.get('model')  # Store fitted model
             else:
+                tprint_error(f"❌ Unsupported HMM library: {HMM_LIBRARY}")
                 raise ValueError(f"Unsupported HMM library: {HMM_LIBRARY}")
             
             # Calculate metrics (with optional timestamps and returns if available)
@@ -1109,7 +1110,10 @@ class HDPHMMClusterer:
         Returns:
             Predicted labels
         """
+        tprint_info(f"🔮 Predicting regime labels for {len(data)} samples")
+        
         if self.model is None:
+            tprint_error("❌ Model not fitted. Call fit_predict first.")
             raise ValueError("Model not fitted. Call fit_predict first.")
         
         # Preprocess data
@@ -1142,9 +1146,12 @@ class HDPHMMClusterer:
             
         elif HMM_LIBRARY == 'ssm':
             labels = self.model.most_likely_states(data_processed)
+            tprint_debug(f"✅ Predicted {len(labels)} states using ssm")
         else:
+            tprint_error(f"❌ Unsupported HMM library: {HMM_LIBRARY}")
             raise ValueError(f"Unsupported HMM library: {HMM_LIBRARY}")
         
+        tprint_success(f"✅ Prediction complete: {len(labels)} labels generated")
         return labels
 
 

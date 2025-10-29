@@ -167,6 +167,7 @@ def run_hdp_hmm_clustering(
     
     # Validate input data
     if market_data is None or market_data.empty:
+        tprint_error("❌ market_data cannot be None or empty")
         raise ValueError("market_data cannot be None or empty")
     
     tprint_structured({
@@ -365,6 +366,7 @@ def run_hdp_hmm_clustering_from_artifacts(
         )
         
         if market_data is None:
+            tprint_error(f"❌ Could not load artifact: {artifact_name}")
             raise ValueError(f"Could not load artifact: {artifact_name}")
         
         tprint_success(f"✅ Loaded market data: {market_data.shape}")
@@ -441,6 +443,7 @@ def load_market_data_for_clustering(
     )
     
     if market_data is None:
+        tprint_error(f"❌ Could not load market data artifact: {artifact_name}")
         raise ValueError(f"Could not load market data artifact: {artifact_name}")
     
     return market_data

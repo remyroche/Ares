@@ -126,21 +126,13 @@ class RegimeFeatureCategorizer:
                 "temporal_price_diff", "temporal_price_acceleration",
                 "momentum_3", "momentum_5", "momentum_10", "momentum_acceleration",
                 "roc_3", "roc_5", "roc_10",
-                # Comprehensive technical indicators
-                "rolling_ma_3", "rolling_ma_5", "rolling_ma_10",
-                "rolling_ema_3", "rolling_ema_5", "rolling_ema_10",
+                # Comprehensive technical indicators (only features NOT in other categories)
                 "ma_slope_3", "ma_slope_4", "ma_slope_5",
                 "ema_slope_3", "ema_slope_4", "ema_slope_5",
-                "bb_width_10", "bb_width_20",
-                "atr_14", "rolling_std_5", "rolling_std_10", "rolling_std_15", "rolling_std_20",
-                "rsi_14", "macd_line", "macd_histogram", "adx_14", "cci_20",
+                "rolling_std_5", "rolling_std_10", "rolling_std_15", "rolling_std_20",
                 "price_momentum_1", "price_momentum_2", "price_momentum_3", "price_momentum_4", "price_momentum_5",
-                "vwap_deviation",
-                "volume_change_1", "volume_change_2", "volume_change_3",
                 "returns_zscore_5", "returns_zscore_10",
-                "ewma_volatility_10", "ewma_volatility_20",
-                "hurst_exponent_50", "hurst_exponent_100",
-                "skewness_10", "skewness_20", "kurtosis_10", "kurtosis_20"
+                "ewma_volatility_10", "ewma_volatility_20"
             ],
             priority=10,
             stability_required=True,
@@ -267,21 +259,13 @@ class RegimeFeatureCategorizer:
                 "momentum_3", "momentum_5", "momentum_10", "momentum_acceleration",
                 "roc_3", "roc_5", "roc_10",
                 "volatility_trend", "volume_momentum", "volume_roc", "price_position_trend",
-                # Comprehensive technical indicators
-                "rolling_ma_3", "rolling_ma_5", "rolling_ma_10",
-                "rolling_ema_3", "rolling_ema_5", "rolling_ema_10",
+                # Comprehensive technical indicators (only features NOT in other categories)
                 "ma_slope_3", "ma_slope_4", "ma_slope_5",
                 "ema_slope_3", "ema_slope_4", "ema_slope_5",
-                "bb_width_10", "bb_width_20",
-                "atr_14", "rolling_std_5", "rolling_std_10", "rolling_std_15", "rolling_std_20",
-                "rsi_14", "macd_line", "macd_histogram", "adx_14", "cci_20",
+                "rolling_std_5", "rolling_std_10", "rolling_std_15", "rolling_std_20",
                 "price_momentum_1", "price_momentum_2", "price_momentum_3", "price_momentum_4", "price_momentum_5",
-                "vwap_deviation",
-                "volume_change_1", "volume_change_2", "volume_change_3",
                 "returns_zscore_5", "returns_zscore_10",
-                "ewma_volatility_10", "ewma_volatility_20",
-                "hurst_exponent_50", "hurst_exponent_100",
-                "skewness_10", "skewness_20", "kurtosis_10", "kurtosis_20"
+                "ewma_volatility_10", "ewma_volatility_20"
             ],
             priority=5,
             stability_required=True,

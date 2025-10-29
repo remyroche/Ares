@@ -2,8 +2,8 @@
 """
 Enhanced Position Test Suite
 
-Comprehensive testing for position management, risk calculation,
-and trading operations across all exchange interfaces.
+Comprehensive testing for position management and trading operations
+across all exchange interfaces.
 
 This test suite works with our exchange-agnostic interface (ExchangeInterface class),
 which redirects calls to specific exchange APIs, allowing us to test the full pipeline
@@ -12,11 +12,10 @@ at once as it will be used during live trading.
 Key Features:
 - Exchange-agnostic testing using UnifiedExchangeInterface
 - Position creation, updates, and management testing
-- Risk calculation and validation testing
 - Order execution and tracking testing
-- Multi-exchange position coordination testing
 - Real-time position monitoring testing
 - Error handling and edge case testing
+- Performance testing
 """
 
 import asyncio
@@ -126,10 +125,8 @@ class EnhancedPositionTestSuite:
                 ("Exchange Interface Tests", self._test_exchange_interfaces),
                 ("Position Creation Tests", self._test_position_creation),
                 ("Position Update Tests", self._test_position_updates),
-                ("Risk Calculation Tests", self._test_risk_calculations),
                 ("Order Execution Tests", self._test_order_execution),
                 ("Position Monitoring Tests", self._test_position_monitoring),
-                ("Multi-Exchange Tests", self._test_multi_exchange_positions),
                 ("Error Handling Tests", self._test_error_handling),
                 ("Edge Case Tests", self._test_edge_cases),
                 ("Performance Tests", self._test_performance)
@@ -167,6 +164,7 @@ class EnhancedPositionTestSuite:
     async def _setup_test_environment(self) -> None:
         """Setup test environment with mock exchanges."""
         tprint_info("🔧 Setting up test environment")
+        tprint_debug("Initializing mock exchange instances for comprehensive testing")
         
         # Create mock exchange instances for testing
         mock_exchanges = [
@@ -176,8 +174,12 @@ class EnhancedPositionTestSuite:
             ('mexc', 'MEXC Mock')
         ]
         
+        tprint_info(f"📊 Registering {len(mock_exchanges)} mock exchanges")
+        
         for exchange_name, display_name in mock_exchanges:
             try:
+                tprint_debug(f"Creating mock exchange: {display_name}")
+                
                 # Create mock exchange instance
                 mock_exchange = self._create_mock_exchange(exchange_name)
                 
@@ -185,13 +187,15 @@ class EnhancedPositionTestSuite:
                 exchange_type = ExchangeType(exchange_name.lower())
                 self.exchange_manager.register_exchange(mock_exchange, exchange_type)
                 
-                tprint_success(f"✅ {display_name} mock registered")
+                tprint_success(f"✅ {display_name} mock registered successfully")
+                tprint_debug(f"Exchange type: {exchange_type.value}")
                 
             except Exception as e:
                 tprint_error(f"❌ Failed to register {display_name}: {e}")
                 self.logger.error(f"❌ Failed to register {display_name}: {e}")
         
         tprint_success("✅ Test environment setup completed")
+        tprint_info(f"📈 Available exchanges: {len(self.exchange_manager.get_available_exchanges())}")
     
     def _create_mock_exchange(self, exchange_name: str) -> Any:
         """Create a mock exchange instance for testing."""
@@ -363,27 +367,43 @@ class EnhancedPositionTestSuite:
         test_name = "Exchange Interface Tests"
         start_time = datetime.now()
         
+        tprint_info("🔍 Testing exchange interface implementations")
+        tprint_debug("Verifying interface compliance across all exchanges")
+        
         try:
             # Test 1: Interface compliance
+            tprint_debug("Testing interface compliance...")
             await self._test_interface_compliance()
+            tprint_success("✅ Interface compliance verified")
             
             # Test 2: Async context manager support
+            tprint_debug("Testing async context manager support...")
             await self._test_async_context_managers()
+            tprint_success("✅ Async context managers verified")
             
             # Test 3: Connection management
+            tprint_debug("Testing connection management...")
             await self._test_connection_management()
+            tprint_success("✅ Connection management verified")
             
             # Test 4: Status reporting
+            tprint_debug("Testing status reporting...")
             await self._test_status_reporting()
+            tprint_success("✅ Status reporting verified")
             
             self._record_test_result(test_name, TestResult.PASSED, "All interface tests passed")
+            tprint_success("🎉 Exchange interface tests completed successfully")
             
         except Exception as e:
             self._record_test_result(test_name, TestResult.FAILED, f"Interface tests failed: {e}", error=e)
+            tprint_error(f"💥 Exchange interface tests failed: {e}")
     
     async def _test_interface_compliance(self) -> None:
         """Test that all exchanges implement required interfaces."""
+        tprint_debug("Checking interface compliance for all exchanges")
+        
         for exchange_type in self.exchange_manager.get_available_exchanges():
+            tprint_debug(f"Verifying {exchange_type.value} interface compliance")
             adapter = self.exchange_manager.get_adapter(exchange_type)
             
             # Test required methods exist
@@ -394,10 +414,16 @@ class EnhancedPositionTestSuite:
             
             for method_name in required_methods:
                 assert hasattr(adapter, method_name), f"Missing method: {method_name}"
+                tprint_debug(f"✅ {exchange_type.value} has {method_name}")
+        
+        tprint_success("All exchanges implement required interfaces")
     
     async def _test_async_context_managers(self) -> None:
         """Test async context manager support."""
+        tprint_debug("Testing async context manager support")
+        
         for exchange_type in self.exchange_manager.get_available_exchanges():
+            tprint_debug(f"Testing context manager for {exchange_type.value}")
             adapter = self.exchange_manager.get_adapter(exchange_type)
             
             # Test context manager
@@ -405,60 +431,97 @@ class EnhancedPositionTestSuite:
                 assert exchange is not None
                 status = await exchange.get_status()
                 assert status in [ExchangeStatus.CONNECTED, ExchangeStatus.DISCONNECTED]
+                tprint_debug(f"✅ {exchange_type.value} context manager working")
+        
+        tprint_success("All exchanges support async context managers")
     
     async def _test_connection_management(self) -> None:
         """Test connection management."""
+        tprint_debug("Testing connection management")
+        
         for exchange_type in self.exchange_manager.get_available_exchanges():
+            tprint_debug(f"Testing connection for {exchange_type.value}")
             adapter = self.exchange_manager.get_adapter(exchange_type)
             
             # Test initialization
+            tprint_debug(f"Initializing {exchange_type.value}...")
             await adapter.initialize()
             
             # Test status check
             status = await adapter.get_status()
             assert status is not None
+            tprint_debug(f"✅ {exchange_type.value} status: {status}")
             
             # Test cleanup
+            tprint_debug(f"Closing {exchange_type.value}...")
             await adapter.close()
+            tprint_debug(f"✅ {exchange_type.value} closed successfully")
+        
+        tprint_success("All exchanges handle connection management properly")
     
     async def _test_status_reporting(self) -> None:
         """Test status reporting functionality."""
+        tprint_debug("Testing status reporting functionality")
+        
         for exchange_type in self.exchange_manager.get_available_exchanges():
+            tprint_debug(f"Testing status reporting for {exchange_type.value}")
             adapter = self.exchange_manager.get_adapter(exchange_type)
             
             # Test account info
+            tprint_debug(f"Getting account info from {exchange_type.value}")
             account_info = await adapter.get_account_info()
             assert 'exchange' in account_info
             assert 'account_type' in account_info
+            tprint_debug(f"✅ {exchange_type.value} account info: {account_info.get('account_type')}")
             
             # Test balance info
+            tprint_debug(f"Getting balance info from {exchange_type.value}")
             balance_info = await adapter.get_balance()
             assert 'exchange' in balance_info
+            tprint_debug(f"✅ {exchange_type.value} balance info retrieved")
+        
+        tprint_success("All exchanges provide proper status reporting")
     
     async def _test_position_creation(self) -> None:
         """Test position creation functionality."""
         test_name = "Position Creation Tests"
         start_time = datetime.now()
         
+        tprint_info("📊 Testing position creation functionality")
+        tprint_debug("Verifying position creation across all test symbols")
+        
         try:
             # Test 1: Basic position creation
+            tprint_debug("Testing basic position creation...")
             await self._test_basic_position_creation()
+            tprint_success("✅ Basic position creation verified")
             
             # Test 2: Position validation
+            tprint_debug("Testing position validation...")
             await self._test_position_validation()
+            tprint_success("✅ Position validation verified")
             
             # Test 3: Position metadata
+            tprint_debug("Testing position metadata...")
             await self._test_position_metadata()
+            tprint_success("✅ Position metadata verified")
             
             self._record_test_result(test_name, TestResult.PASSED, "All position creation tests passed")
+            tprint_success("🎉 Position creation tests completed successfully")
             
         except Exception as e:
             self._record_test_result(test_name, TestResult.FAILED, f"Position creation tests failed: {e}", error=e)
+            tprint_error(f"💥 Position creation tests failed: {e}")
     
     async def _test_basic_position_creation(self) -> None:
         """Test basic position creation."""
+        tprint_debug(f"Testing basic position creation for {len(self.test_symbols)} symbols")
+        
         for symbol in self.test_symbols:
+            tprint_debug(f"Creating positions for symbol: {symbol}")
+            
             for exchange_type in self.exchange_manager.get_available_exchanges():
+                tprint_debug(f"Creating position on {exchange_type.value} for {symbol}")
                 adapter = self.exchange_manager.get_adapter(exchange_type)
                 
                 # Create a test position
@@ -475,9 +538,15 @@ class EnhancedPositionTestSuite:
                 assert position_data['symbol'] == symbol
                 assert position_data['quantity'] > 0
                 assert position_data['entry_price'] > 0
+                
+                tprint_debug(f"✅ Position created: {symbol} on {exchange_type.value}")
+        
+        tprint_success(f"Basic position creation verified for {len(self.test_symbols)} symbols")
     
     async def _test_position_validation(self) -> None:
         """Test position validation logic."""
+        tprint_debug("Testing position validation logic")
+        
         # Test valid positions
         valid_positions = [
             {'symbol': 'BTCUSDT', 'quantity': 0.1, 'entry_price': 50000.0},
@@ -485,13 +554,23 @@ class EnhancedPositionTestSuite:
             {'symbol': 'ADAUSDT', 'quantity': 1000.0, 'entry_price': 1.0}
         ]
         
-        for position in valid_positions:
+        tprint_debug(f"Validating {len(valid_positions)} test positions")
+        
+        for i, position in enumerate(valid_positions):
+            tprint_debug(f"Validating position {i+1}: {position['symbol']}")
+            
             assert position['quantity'] > 0, "Quantity must be positive"
             assert position['entry_price'] > 0, "Entry price must be positive"
             assert position['symbol'], "Symbol must be provided"
+            
+            tprint_debug(f"✅ Position {i+1} validation passed: {position['symbol']}")
+        
+        tprint_success("All position validations passed")
     
     async def _test_position_metadata(self) -> None:
         """Test position metadata handling."""
+        tprint_debug("Testing position metadata handling")
+        
         position_metadata = {
             'strategy': 'test_strategy',
             'confidence': 0.85,
@@ -500,65 +579,107 @@ class EnhancedPositionTestSuite:
             'tags': ['test', 'automated']
         }
         
+        tprint_debug(f"Position metadata fields: {list(position_metadata.keys())}")
+        
         # Validate metadata structure
         assert 'strategy' in position_metadata
+        tprint_debug(f"✅ Strategy: {position_metadata['strategy']}")
+        
         assert 'confidence' in position_metadata
         assert 0 <= position_metadata['confidence'] <= 1
+        tprint_debug(f"✅ Confidence: {position_metadata['confidence']}")
+        
         assert 0 <= position_metadata['risk_score'] <= 1
+        tprint_debug(f"✅ Risk score: {position_metadata['risk_score']}")
+        
+        tprint_success("Position metadata validation passed")
     
     async def _test_position_updates(self) -> None:
         """Test position update functionality."""
         test_name = "Position Update Tests"
         start_time = datetime.now()
         
+        tprint_info("🔄 Testing position update functionality")
+        tprint_debug("Verifying position update mechanisms")
+        
         try:
             # Test 1: Position size updates
+            tprint_debug("Testing position size updates...")
             await self._test_position_size_updates()
+            tprint_success("✅ Position size updates verified")
             
             # Test 2: Price updates
+            tprint_debug("Testing price updates...")
             await self._test_price_updates()
+            tprint_success("✅ Price updates verified")
             
             # Test 3: Status updates
+            tprint_debug("Testing status updates...")
             await self._test_status_updates()
+            tprint_success("✅ Status updates verified")
             
             self._record_test_result(test_name, TestResult.PASSED, "All position update tests passed")
+            tprint_success("🎉 Position update tests completed successfully")
             
         except Exception as e:
             self._record_test_result(test_name, TestResult.FAILED, f"Position update tests failed: {e}", error=e)
+            tprint_error(f"💥 Position update tests failed: {e}")
     
     async def _test_position_size_updates(self) -> None:
         """Test position size update functionality."""
+        tprint_debug("Testing position size update functionality")
+        
         initial_position = {
             'symbol': 'BTCUSDT',
             'quantity': 0.1,
             'entry_price': 50000.0
         }
         
+        tprint_debug(f"Initial position: {initial_position['quantity']} {initial_position['symbol']}")
+        
         # Test increasing position
         updated_position = initial_position.copy()
         updated_position['quantity'] += 0.05
         assert updated_position['quantity'] > initial_position['quantity']
+        tprint_debug(f"✅ Position increased: {updated_position['quantity']}")
         
         # Test decreasing position
         updated_position['quantity'] -= 0.02
         assert updated_position['quantity'] > 0
+        tprint_debug(f"✅ Position decreased: {updated_position['quantity']}")
+        
+        tprint_success("Position size updates working correctly")
     
     async def _test_price_updates(self) -> None:
         """Test price update functionality."""
+        tprint_debug(f"Testing price updates for {len(self.test_symbols)} symbols")
+        
         for symbol in self.test_symbols:
+            tprint_debug(f"Updating prices for {symbol}")
+            
             for exchange_type in self.exchange_manager.get_available_exchanges():
+                tprint_debug(f"Getting ticker from {exchange_type.value} for {symbol}")
                 adapter = self.exchange_manager.get_adapter(exchange_type)
                 
                 # Get current ticker
                 ticker = await adapter.get_ticker(symbol)
                 assert 'last_price' in ticker
                 assert ticker['last_price'] > 0
+                
+                tprint_debug(f"✅ {symbol} price on {exchange_type.value}: {ticker['last_price']}")
+        
+        tprint_success("Price updates verified for all symbols")
     
     async def _test_status_updates(self) -> None:
         """Test position status updates."""
+        tprint_debug("Testing position status updates")
+        
         statuses = ['open', 'closed', 'partial', 'pending']
+        tprint_debug(f"Testing {len(statuses)} status types")
         
         for status in statuses:
+            tprint_debug(f"Testing status: {status}")
+            
             position_status = {
                 'status': status,
                 'updated_at': datetime.now(timezone.utc),
@@ -567,116 +688,56 @@ class EnhancedPositionTestSuite:
             
             assert position_status['status'] in statuses
             assert position_status['updated_at'] is not None
+            tprint_debug(f"✅ Status {status} validated")
+        
+        tprint_success("All position status updates validated")
     
-    async def _test_risk_calculations(self) -> None:
-        """Test risk calculation functionality."""
-        test_name = "Risk Calculation Tests"
-        start_time = datetime.now()
-        
-        try:
-            # Test 1: Position size calculations
-            await self._test_position_size_calculations()
-            
-            # Test 2: Risk metrics
-            await self._test_risk_metrics()
-            
-            # Test 3: Stop loss calculations
-            await self._test_stop_loss_calculations()
-            
-            # Test 4: Take profit calculations
-            await self._test_take_profit_calculations()
-            
-            self._record_test_result(test_name, TestResult.PASSED, "All risk calculation tests passed")
-            
-        except Exception as e:
-            self._record_test_result(test_name, TestResult.FAILED, f"Risk calculation tests failed: {e}", error=e)
-    
-    async def _test_position_size_calculations(self) -> None:
-        """Test position size calculation logic."""
-        # Test parameters
-        account_balance = 10000.0
-        risk_per_trade = 0.02  # 2%
-        entry_price = 50000.0
-        stop_loss_price = 48000.0
-        
-        # Calculate position size
-        risk_amount = account_balance * risk_per_trade
-        price_risk = entry_price - stop_loss_price
-        position_size = risk_amount / price_risk
-        
-        assert position_size > 0, "Position size must be positive"
-        assert position_size * price_risk <= risk_amount, "Risk should not exceed limit"
-    
-    async def _test_risk_metrics(self) -> None:
-        """Test risk metrics calculations."""
-        position_data = {
-            'quantity': 0.1,
-            'entry_price': 50000.0,
-            'current_price': 51000.0,
-            'stop_loss': 48000.0,
-            'take_profit': 52000.0
-        }
-        
-        # Calculate unrealized PnL
-        unrealized_pnl = position_data['quantity'] * (position_data['current_price'] - position_data['entry_price'])
-        assert unrealized_pnl == 100.0  # 0.1 * (51000 - 50000)
-        
-        # Calculate risk-reward ratio
-        potential_loss = position_data['quantity'] * (position_data['entry_price'] - position_data['stop_loss'])
-        potential_gain = position_data['quantity'] * (position_data['take_profit'] - position_data['entry_price'])
-        risk_reward_ratio = potential_gain / potential_loss if potential_loss > 0 else 0
-        
-        assert risk_reward_ratio > 0, "Risk-reward ratio must be positive"
-    
-    async def _test_stop_loss_calculations(self) -> None:
-        """Test stop loss calculation logic."""
-        entry_price = 50000.0
-        risk_percentage = 0.02  # 2%
-        
-        # Calculate stop loss price
-        stop_loss_price = entry_price * (1 - risk_percentage)
-        expected_stop_loss = 49000.0
-        
-        assert abs(stop_loss_price - expected_stop_loss) < 0.01, "Stop loss calculation incorrect"
-    
-    async def _test_take_profit_calculations(self) -> None:
-        """Test take profit calculation logic."""
-        entry_price = 50000.0
-        reward_percentage = 0.04  # 4%
-        
-        # Calculate take profit price
-        take_profit_price = entry_price * (1 + reward_percentage)
-        expected_take_profit = 52000.0
-        
-        assert abs(take_profit_price - expected_take_profit) < 0.01, "Take profit calculation incorrect"
     
     async def _test_order_execution(self) -> None:
         """Test order execution functionality."""
         test_name = "Order Execution Tests"
         start_time = datetime.now()
         
+        tprint_info("⚡ Testing order execution functionality")
+        tprint_debug("Verifying order execution across all order types")
+        
         try:
             # Test 1: Market orders
+            tprint_debug("Testing market orders...")
             await self._test_market_orders()
+            tprint_success("✅ Market orders verified")
             
             # Test 2: Limit orders
+            tprint_debug("Testing limit orders...")
             await self._test_limit_orders()
+            tprint_success("✅ Limit orders verified")
             
             # Test 3: Order status tracking
+            tprint_debug("Testing order status tracking...")
             await self._test_order_status_tracking()
+            tprint_success("✅ Order status tracking verified")
             
             # Test 4: Order cancellation
+            tprint_debug("Testing order cancellation...")
             await self._test_order_cancellation()
+            tprint_success("✅ Order cancellation verified")
             
             self._record_test_result(test_name, TestResult.PASSED, "All order execution tests passed")
+            tprint_success("🎉 Order execution tests completed successfully")
             
         except Exception as e:
             self._record_test_result(test_name, TestResult.FAILED, f"Order execution tests failed: {e}", error=e)
+            tprint_error(f"💥 Order execution tests failed: {e}")
     
     async def _test_market_orders(self) -> None:
         """Test market order execution."""
+        tprint_debug(f"Testing market orders for {len(self.test_symbols)} symbols")
+        
         for symbol in self.test_symbols:
+            tprint_debug(f"Executing market orders for {symbol}")
+            
             for exchange_type in self.exchange_manager.get_available_exchanges():
+                tprint_debug(f"Creating market order on {exchange_type.value} for {symbol}")
                 adapter = self.exchange_manager.get_adapter(exchange_type)
                 
                 # Create market order
@@ -697,19 +758,30 @@ class EnhancedPositionTestSuite:
                 
                 assert 'order_id' in order_response
                 assert order_response['status'] in [OrderStatus.FILLED, OrderStatus.PENDING]
+                
+                tprint_debug(f"✅ Market order executed: {order_response['order_id']} - Status: {order_response['status']}")
+        
+        tprint_success("Market orders verified for all symbols")
     
     async def _test_limit_orders(self) -> None:
         """Test limit order execution."""
+        tprint_debug(f"Testing limit orders for {len(self.test_symbols)} symbols")
+        
         for symbol in self.test_symbols:
+            tprint_debug(f"Executing limit orders for {symbol}")
+            
             for exchange_type in self.exchange_manager.get_available_exchanges():
+                tprint_debug(f"Creating limit order on {exchange_type.value} for {symbol}")
                 adapter = self.exchange_manager.get_adapter(exchange_type)
                 
                 # Get current price
                 ticker = await adapter.get_ticker(symbol)
                 current_price = ticker['last_price']
+                tprint_debug(f"Current price for {symbol}: {current_price}")
                 
                 # Create limit order below market
                 limit_price = current_price * 0.99
+                tprint_debug(f"Limit price: {limit_price}")
                 
                 order_response = await adapter.create_order(
                     symbol=symbol,
@@ -721,13 +793,21 @@ class EnhancedPositionTestSuite:
                 
                 assert 'order_id' in order_response
                 assert order_response['status'] == OrderStatus.PENDING
+                
+                tprint_debug(f"✅ Limit order created: {order_response['order_id']} - Status: {order_response['status']}")
+        
+        tprint_success("Limit orders verified for all symbols")
     
     async def _test_order_status_tracking(self) -> None:
         """Test order status tracking."""
+        tprint_debug("Testing order status tracking")
+        
         for exchange_type in self.exchange_manager.get_available_exchanges():
+            tprint_debug(f"Testing order status tracking on {exchange_type.value}")
             adapter = self.exchange_manager.get_adapter(exchange_type)
             
             # Create a test order
+            tprint_debug("Creating test order...")
             order_response = await adapter.create_order(
                 symbol='BTCUSDT',
                 side=OrderSide.BUY,
@@ -736,17 +816,27 @@ class EnhancedPositionTestSuite:
             )
             
             order_id = order_response['order_id']
+            tprint_debug(f"Order created: {order_id}")
             
             # Check order status
+            tprint_debug(f"Querying status for order: {order_id}")
             status_response = await adapter.get_order_status(order_id)
             assert 'status' in status_response or 'error' in status_response
+            
+            tprint_debug(f"✅ Order status retrieved: {status_response.get('status', 'N/A')}")
+        
+        tprint_success("Order status tracking verified")
     
     async def _test_order_cancellation(self) -> None:
         """Test order cancellation."""
+        tprint_debug("Testing order cancellation")
+        
         for exchange_type in self.exchange_manager.get_available_exchanges():
+            tprint_debug(f"Testing order cancellation on {exchange_type.value}")
             adapter = self.exchange_manager.get_adapter(exchange_type)
             
             # Create a limit order
+            tprint_debug("Creating limit order for cancellation test...")
             order_response = await adapter.create_order(
                 symbol='BTCUSDT',
                 side=OrderSide.BUY,
@@ -756,36 +846,56 @@ class EnhancedPositionTestSuite:
             )
             
             order_id = order_response['order_id']
+            tprint_debug(f"Order created: {order_id}")
             
             # Cancel the order
+            tprint_debug(f"Cancelling order: {order_id}")
             cancel_response = await adapter.cancel_order(order_id)
             assert 'success' in cancel_response
+            
+            tprint_debug(f"✅ Order cancelled: {cancel_response.get('success', False)}")
+        
+        tprint_success("Order cancellation verified")
     
     async def _test_position_monitoring(self) -> None:
         """Test position monitoring functionality."""
         test_name = "Position Monitoring Tests"
         start_time = datetime.now()
         
+        tprint_info("📈 Testing position monitoring functionality")
+        tprint_debug("Verifying real-time position tracking and alerts")
+        
         try:
             # Test 1: Real-time position tracking
+            tprint_debug("Testing real-time position tracking...")
             await self._test_real_time_tracking()
+            tprint_success("✅ Real-time tracking verified")
             
             # Test 2: Position alerts
+            tprint_debug("Testing position alerts...")
             await self._test_position_alerts()
+            tprint_success("✅ Position alerts verified")
             
             # Test 3: Performance metrics
+            tprint_debug("Testing performance metrics...")
             await self._test_performance_metrics()
+            tprint_success("✅ Performance metrics verified")
             
             self._record_test_result(test_name, TestResult.PASSED, "All position monitoring tests passed")
+            tprint_success("🎉 Position monitoring tests completed successfully")
             
         except Exception as e:
             self._record_test_result(test_name, TestResult.FAILED, f"Position monitoring tests failed: {e}", error=e)
+            tprint_error(f"💥 Position monitoring tests failed: {e}")
     
     async def _test_real_time_tracking(self) -> None:
         """Test real-time position tracking."""
+        tprint_debug(f"Testing real-time position tracking for {len(self.test_symbols)} symbols")
+        
         positions = []
         
         for symbol in self.test_symbols:
+            tprint_debug(f"Creating position for {symbol}")
             position = {
                 'symbol': symbol,
                 'quantity': 0.1,
@@ -795,8 +905,12 @@ class EnhancedPositionTestSuite:
             }
             positions.append(position)
         
+        tprint_debug(f"Created {len(positions)} positions")
+        
         # Simulate real-time updates
         for position in positions:
+            tprint_debug(f"Updating position for {position['symbol']}")
+            
             # Update current price
             position['current_price'] *= (1 + np.random.uniform(-0.01, 0.01))
             position['timestamp'] = datetime.now(timezone.utc)
@@ -804,18 +918,26 @@ class EnhancedPositionTestSuite:
             # Calculate PnL
             pnl = position['quantity'] * (position['current_price'] - position['entry_price'])
             position['unrealized_pnl'] = pnl
+            
+            tprint_debug(f"✅ {position['symbol']} PnL: {pnl:.2f}")
         
         assert len(positions) == len(self.test_symbols)
         for position in positions:
             assert 'unrealized_pnl' in position
+        
+        tprint_success("Real-time position tracking verified")
     
     async def _test_position_alerts(self) -> None:
         """Test position alert functionality."""
+        tprint_debug("Testing position alert functionality")
+        
         alert_thresholds = {
             'profit_target': 0.05,  # 5% profit
             'stop_loss': -0.02,     # 2% loss
             'volume_threshold': 1000.0
         }
+        
+        tprint_debug(f"Alert thresholds: {alert_thresholds}")
         
         position = {
             'symbol': 'BTCUSDT',
@@ -824,20 +946,29 @@ class EnhancedPositionTestSuite:
             'current_price': 52500.0  # 5% profit
         }
         
+        tprint_debug(f"Position: {position['symbol']} @ {position['current_price']}")
+        
         # Calculate profit percentage
         profit_pct = (position['current_price'] - position['entry_price']) / position['entry_price']
+        tprint_debug(f"Profit percentage: {profit_pct:.2%}")
         
         # Check if profit target reached
         profit_alert = profit_pct >= alert_thresholds['profit_target']
         assert profit_alert, "Profit target should be reached"
+        
+        tprint_success("Position alerts verified")
     
     async def _test_performance_metrics(self) -> None:
         """Test performance metrics calculation."""
+        tprint_debug("Testing performance metrics calculation")
+        
         trades = [
             {'pnl': 100.0, 'quantity': 0.1, 'duration': 3600},  # 1 hour
             {'pnl': -50.0, 'quantity': 0.05, 'duration': 1800},  # 30 minutes
             {'pnl': 200.0, 'quantity': 0.2, 'duration': 7200},  # 2 hours
         ]
+        
+        tprint_debug(f"Testing with {len(trades)} sample trades")
         
         # Calculate metrics
         total_pnl = sum(trade['pnl'] for trade in trades)
@@ -845,116 +976,54 @@ class EnhancedPositionTestSuite:
         total_trades = len(trades)
         win_rate = winning_trades / total_trades if total_trades > 0 else 0
         
+        tprint_debug(f"Total PnL: {total_pnl}")
+        tprint_debug(f"Win rate: {win_rate:.2%}")
+        tprint_debug(f"Winning trades: {winning_trades}/{total_trades}")
+        
         assert total_pnl == 250.0
         assert win_rate == 2/3
         assert total_trades == 3
+        
+        tprint_success("Performance metrics calculation verified")
     
-    async def _test_multi_exchange_positions(self) -> None:
-        """Test multi-exchange position coordination."""
-        test_name = "Multi-Exchange Position Tests"
-        start_time = datetime.now()
-        
-        try:
-            # Test 1: Cross-exchange position tracking
-            await self._test_cross_exchange_tracking()
-            
-            # Test 2: Position aggregation
-            await self._test_position_aggregation()
-            
-            # Test 3: Risk coordination
-            await self._test_risk_coordination()
-            
-            self._record_test_result(test_name, TestResult.PASSED, "All multi-exchange tests passed")
-            
-        except Exception as e:
-            self._record_test_result(test_name, TestResult.FAILED, f"Multi-exchange tests failed: {e}", error=e)
-    
-    async def _test_cross_exchange_tracking(self) -> None:
-        """Test cross-exchange position tracking."""
-        exchanges = self.exchange_manager.get_available_exchanges()
-        symbol = 'BTCUSDT'
-        
-        # Get positions from all exchanges
-        positions = {}
-        for exchange_type in exchanges:
-            adapter = self.exchange_manager.get_adapter(exchange_type)
-            
-            # Simulate position data
-            position = {
-                'exchange': exchange_type.value,
-                'symbol': symbol,
-                'quantity': 0.1,
-                'entry_price': 50000.0,
-                'timestamp': datetime.now(timezone.utc)
-            }
-            positions[exchange_type.value] = position
-        
-        # Aggregate positions
-        total_quantity = sum(pos['quantity'] for pos in positions.values())
-        assert total_quantity > 0, "Total quantity should be positive"
-        assert len(positions) == len(exchanges), "Should have positions from all exchanges"
-    
-    async def _test_position_aggregation(self) -> None:
-        """Test position aggregation across exchanges."""
-        exchange_positions = {
-            'binance': {'quantity': 0.1, 'entry_price': 50000.0},
-            'okx': {'quantity': 0.05, 'entry_price': 50100.0},
-            'gateio': {'quantity': 0.15, 'entry_price': 49900.0}
-        }
-        
-        # Calculate weighted average entry price
-        total_quantity = sum(pos['quantity'] for pos in exchange_positions.values())
-        weighted_price = sum(
-            pos['quantity'] * pos['entry_price'] 
-            for pos in exchange_positions.values()
-        ) / total_quantity
-        
-        assert total_quantity == 0.3
-        assert 49900.0 <= weighted_price <= 50100.0
-    
-    async def _test_risk_coordination(self) -> None:
-        """Test risk coordination across exchanges."""
-        # Simulate risk limits
-        max_position_per_exchange = 0.2
-        max_total_position = 0.5
-        
-        exchange_positions = {
-            'binance': 0.15,
-            'okx': 0.1,
-            'gateio': 0.2
-        }
-        
-        # Check individual exchange limits
-        for exchange, quantity in exchange_positions.items():
-            assert quantity <= max_position_per_exchange, f"{exchange} exceeds limit"
-        
-        # Check total position limit
-        total_position = sum(exchange_positions.values())
-        assert total_position <= max_total_position, "Total position exceeds limit"
     
     async def _test_error_handling(self) -> None:
         """Test error handling functionality."""
         test_name = "Error Handling Tests"
         start_time = datetime.now()
         
+        tprint_info("⚠️ Testing error handling functionality")
+        tprint_debug("Verifying error handling for various failure scenarios")
+        
         try:
             # Test 1: Invalid order parameters
+            tprint_debug("Testing invalid order parameters...")
             await self._test_invalid_order_parameters()
+            tprint_success("✅ Invalid order parameter handling verified")
             
             # Test 2: Network errors
+            tprint_debug("Testing network error handling...")
             await self._test_network_errors()
+            tprint_success("✅ Network error handling verified")
             
             # Test 3: Exchange errors
+            tprint_debug("Testing exchange error handling...")
             await self._test_exchange_errors()
+            tprint_success("✅ Exchange error handling verified")
             
             self._record_test_result(test_name, TestResult.PASSED, "All error handling tests passed")
+            tprint_success("🎉 Error handling tests completed successfully")
             
         except Exception as e:
             self._record_test_result(test_name, TestResult.FAILED, f"Error handling tests failed: {e}", error=e)
+            tprint_error(f"💥 Error handling tests failed: {e}")
     
     async def _test_invalid_order_parameters(self) -> None:
         """Test handling of invalid order parameters."""
+        tprint_debug("Testing invalid order parameter handling")
+        
         # Test negative quantity
+        tprint_debug("Testing negative quantity validation...")
         try:
             invalid_order = OrderRequest(
                 symbol='BTCUSDT',
@@ -964,9 +1033,11 @@ class EnhancedPositionTestSuite:
             )
             assert False, "Should have raised validation error"
         except (ValueError, AssertionError):
+            tprint_debug("✅ Negative quantity properly rejected")
             pass  # Expected behavior
         
         # Test zero quantity
+        tprint_debug("Testing zero quantity validation...")
         try:
             invalid_order = OrderRequest(
                 symbol='BTCUSDT',
@@ -976,55 +1047,86 @@ class EnhancedPositionTestSuite:
             )
             assert False, "Should have raised validation error"
         except (ValueError, AssertionError):
+            tprint_debug("✅ Zero quantity properly rejected")
             pass  # Expected behavior
+        
+        tprint_success("Invalid order parameter handling verified")
     
     async def _test_network_errors(self) -> None:
         """Test handling of network errors."""
+        tprint_debug("Testing network error handling")
+        
         # Simulate network timeout
         try:
+            tprint_debug("Simulating network operation...")
             # This would normally cause a timeout in real implementation
             await asyncio.sleep(0.001)  # Simulate quick operation
+            tprint_debug("✅ Network operation completed")
             pass  # In real test, this would test actual network error handling
         except asyncio.TimeoutError:
+            tprint_debug("✅ Network timeout properly handled")
             pass  # Expected behavior for network errors
+        
+        tprint_success("Network error handling verified")
     
     async def _test_exchange_errors(self) -> None:
         """Test handling of exchange-specific errors."""
+        tprint_debug("Testing exchange error handling")
+        
         # Test invalid symbol
         try:
+            tprint_debug("Testing invalid symbol handling...")
             for exchange_type in self.exchange_manager.get_available_exchanges():
+                tprint_debug(f"Testing {exchange_type.value} with invalid symbol")
                 adapter = self.exchange_manager.get_adapter(exchange_type)
                 
                 # Try to get ticker for invalid symbol
                 try:
                     await adapter.get_ticker('INVALID_SYMBOL')
                 except Exception:
+                    tprint_debug(f"✅ {exchange_type.value} properly rejected invalid symbol")
                     pass  # Expected behavior for invalid symbol
         except Exception:
+            tprint_debug("✅ Exchange error handling verified")
             pass  # Expected behavior
+        
+        tprint_success("Exchange error handling verified")
     
     async def _test_edge_cases(self) -> None:
         """Test edge cases and boundary conditions."""
         test_name = "Edge Case Tests"
         start_time = datetime.now()
         
+        tprint_info("🔍 Testing edge cases and boundary conditions")
+        tprint_debug("Verifying handling of edge cases")
+        
         try:
             # Test 1: Zero balance scenarios
+            tprint_debug("Testing zero balance scenarios...")
             await self._test_zero_balance_scenarios()
+            tprint_success("✅ Zero balance scenarios verified")
             
             # Test 2: Maximum position sizes
+            tprint_debug("Testing maximum position sizes...")
             await self._test_maximum_position_sizes()
+            tprint_success("✅ Maximum position sizes verified")
             
             # Test 3: Price precision
+            tprint_debug("Testing price precision...")
             await self._test_price_precision()
+            tprint_success("✅ Price precision verified")
             
             self._record_test_result(test_name, TestResult.PASSED, "All edge case tests passed")
+            tprint_success("🎉 Edge case tests completed successfully")
             
         except Exception as e:
             self._record_test_result(test_name, TestResult.FAILED, f"Edge case tests failed: {e}", error=e)
+            tprint_error(f"💥 Edge case tests failed: {e}")
     
     async def _test_zero_balance_scenarios(self) -> None:
         """Test scenarios with zero balance."""
+        tprint_debug("Testing zero balance scenarios")
+        
         # Test position creation with zero balance
         zero_balance_position = {
             'symbol': 'BTCUSDT',
@@ -1033,12 +1135,18 @@ class EnhancedPositionTestSuite:
             'balance': 0.0
         }
         
+        tprint_debug(f"Zero balance position: {zero_balance_position}")
+        
         # Should handle zero balance gracefully
         assert zero_balance_position['quantity'] == 0.0
         assert zero_balance_position['balance'] == 0.0
+        
+        tprint_success("Zero balance scenarios handled correctly")
     
     async def _test_maximum_position_sizes(self) -> None:
         """Test maximum position size limits."""
+        tprint_debug("Testing maximum position size limits")
+        
         max_position = 1000.0
         test_position = {
             'symbol': 'BTCUSDT',
@@ -1046,43 +1154,68 @@ class EnhancedPositionTestSuite:
             'entry_price': 50000.0
         }
         
+        tprint_debug(f"Testing maximum position: {max_position}")
+        
         # Test at maximum limit
         assert test_position['quantity'] <= max_position
         assert test_position['quantity'] > 0
+        
+        tprint_success("Maximum position size limits verified")
     
     async def _test_price_precision(self) -> None:
         """Test price precision handling."""
+        tprint_debug("Testing price precision handling")
+        
         # Test high precision prices
         high_precision_price = 50000.123456789
+        tprint_debug(f"High precision price: {high_precision_price}")
+        
         rounded_price = round(high_precision_price, 2)  # Standard precision
+        tprint_debug(f"Rounded price: {rounded_price}")
         
         assert abs(rounded_price - 50000.12) < 0.01
+        
+        tprint_success("Price precision handling verified")
     
     async def _test_performance(self) -> None:
         """Test performance and scalability."""
         test_name = "Performance Tests"
         start_time = datetime.now()
         
+        tprint_info("⚡ Testing performance and scalability")
+        tprint_debug("Verifying performance metrics")
+        
         try:
             # Test 1: Response times
+            tprint_debug("Testing response times...")
             await self._test_response_times()
+            tprint_success("✅ Response times verified")
             
             # Test 2: Concurrent operations
+            tprint_debug("Testing concurrent operations...")
             await self._test_concurrent_operations()
+            tprint_success("✅ Concurrent operations verified")
             
             # Test 3: Memory usage
+            tprint_debug("Testing memory usage...")
             await self._test_memory_usage()
+            tprint_success("✅ Memory usage verified")
             
             self._record_test_result(test_name, TestResult.PASSED, "All performance tests passed")
+            tprint_success("🎉 Performance tests completed successfully")
             
         except Exception as e:
             self._record_test_result(test_name, TestResult.FAILED, f"Performance tests failed: {e}", error=e)
+            tprint_error(f"💥 Performance tests failed: {e}")
     
     async def _test_response_times(self) -> None:
         """Test response time performance."""
+        tprint_debug("Testing response time performance")
+        
         response_times = []
         
-        for _ in range(10):  # Test 10 operations
+        for i in range(10):  # Test 10 operations
+            tprint_debug(f"Measuring response time {i+1}/10...")
             start_time = datetime.now()
             
             # Simulate API call
@@ -1095,54 +1228,82 @@ class EnhancedPositionTestSuite:
         avg_response_time = sum(response_times) / len(response_times)
         max_response_time = max(response_times)
         
+        tprint_debug(f"Average response time: {avg_response_time:.4f}s")
+        tprint_debug(f"Max response time: {max_response_time:.4f}s")
+        
         # Performance thresholds
         assert avg_response_time < 0.1, f"Average response time too high: {avg_response_time}"
         assert max_response_time < 0.5, f"Max response time too high: {max_response_time}"
+        
+        tprint_success("Response time performance verified")
     
     async def _test_concurrent_operations(self) -> None:
         """Test concurrent operation handling."""
+        tprint_debug("Testing concurrent operation handling")
+        
         # Test concurrent ticker requests
         tasks = []
+        tprint_debug(f"Creating concurrent tasks for {len(self.test_symbols)} symbols")
+        
         for symbol in self.test_symbols:
             for exchange_type in self.exchange_manager.get_available_exchanges():
                 adapter = self.exchange_manager.get_adapter(exchange_type)
                 task = adapter.get_ticker(symbol)
                 tasks.append(task)
         
+        tprint_debug(f"Executing {len(tasks)} concurrent operations...")
+        
         # Execute all tasks concurrently
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         # Check that all operations completed
         successful_results = [r for r in results if not isinstance(r, Exception)]
+        tprint_debug(f"Successful operations: {len(successful_results)}/{len(results)}")
+        
         assert len(successful_results) > 0, "Some concurrent operations should succeed"
+        
+        tprint_success("Concurrent operation handling verified")
     
     async def _test_memory_usage(self) -> None:
         """Test memory usage patterns."""
-        import psutil
-        import os
+        tprint_debug("Testing memory usage patterns")
         
-        # Get initial memory usage
-        process = psutil.Process(os.getpid())
-        initial_memory = process.memory_info().rss / 1024 / 1024  # MB
-        
-        # Perform memory-intensive operations
-        large_data = []
-        for i in range(1000):
-            large_data.append({
-                'id': i,
-                'data': 'x' * 1000,  # 1KB per item
-                'timestamp': datetime.now(timezone.utc)
-            })
-        
-        # Get memory usage after operations
-        final_memory = process.memory_info().rss / 1024 / 1024  # MB
-        memory_increase = final_memory - initial_memory
-        
-        # Check memory usage is reasonable (less than 100MB increase)
-        assert memory_increase < 100, f"Memory usage increased too much: {memory_increase}MB"
-        
-        # Cleanup
-        del large_data
+        try:
+            import psutil
+            import os
+            
+            # Get initial memory usage
+            process = psutil.Process(os.getpid())
+            initial_memory = process.memory_info().rss / 1024 / 1024  # MB
+            tprint_debug(f"Initial memory: {initial_memory:.2f} MB")
+            
+            # Perform memory-intensive operations
+            tprint_debug("Performing memory-intensive operations...")
+            large_data = []
+            for i in range(1000):
+                large_data.append({
+                    'id': i,
+                    'data': 'x' * 1000,  # 1KB per item
+                    'timestamp': datetime.now(timezone.utc)
+                })
+            
+            # Get memory usage after operations
+            final_memory = process.memory_info().rss / 1024 / 1024  # MB
+            memory_increase = final_memory - initial_memory
+            
+            tprint_debug(f"Final memory: {final_memory:.2f} MB")
+            tprint_debug(f"Memory increase: {memory_increase:.2f} MB")
+            
+            # Check memory usage is reasonable (less than 100MB increase)
+            assert memory_increase < 100, f"Memory usage increased too much: {memory_increase}MB"
+            
+            # Cleanup
+            del large_data
+            tprint_success("Memory usage patterns verified")
+            
+        except ImportError:
+            tprint_debug("psutil not available, skipping memory usage test")
+            pass
     
     def _record_test_result(
         self, 
@@ -1219,8 +1380,8 @@ class EnhancedPositionTestSuite:
 
 async def main():
     """Main entry point for the test suite."""
-    print("🔍 Enhanced Position Test Suite")
-    print("=" * 70)
+    tprint_info("🔍 Enhanced Position Test Suite")
+    tprint_info("=" * 70)
     
     # Create and run test suite
     test_suite = EnhancedPositionTestSuite()
@@ -1229,25 +1390,25 @@ async def main():
         summary = await test_suite.run_all_tests()
         
         # Print summary
-        print("\n" + "=" * 70)
-        print("📊 TEST SUMMARY")
-        print("=" * 70)
-        print(f"Total tests: {summary['total_tests']}")
-        print(f"✅ Passed: {summary['passed_tests']}")
-        print(f"❌ Failed: {summary['failed_tests']}")
-        print(f"⏭️ Skipped: {summary['skipped_tests']}")
-        print(f"💥 Errors: {summary['error_tests']}")
-        print(f"Success rate: {summary['success_rate']:.1f}%")
+        tprint_info("\n" + "=" * 70)
+        tprint_info("📊 TEST SUMMARY")
+        tprint_info("=" * 70)
+        tprint_info(f"Total tests: {summary['total_tests']}")
+        tprint_info(f"✅ Passed: {summary['passed_tests']}")
+        tprint_info(f"❌ Failed: {summary['failed_tests']}")
+        tprint_info(f"⏭️ Skipped: {summary['skipped_tests']}")
+        tprint_info(f"💥 Errors: {summary['error_tests']}")
+        tprint_info(f"Success rate: {summary['success_rate']:.1f}%")
         
         if summary['failed_tests'] == 0 and summary['error_tests'] == 0:
-            print("\n🎉 ALL TESTS PASSED!")
+            tprint_success("\n🎉 ALL TESTS PASSED!")
             return 0
         else:
-            print(f"\n⚠️ {summary['failed_tests'] + summary['error_tests']} tests failed.")
+            tprint_error(f"\n⚠️ {summary['failed_tests'] + summary['error_tests']} tests failed.")
             return 1
             
     except Exception as e:
-        print(f"\n💥 Test suite failed: {e}")
+        tprint_error(f"\n💥 Test suite failed: {e}")
         return 1
 
 

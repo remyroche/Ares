@@ -455,7 +455,12 @@ class MSDRAutoTuner:
         """
         # Use hierarchical optimization if enabled (default and recommended)
         if use_hierarchical:
-            return self.auto_tune_hierarchical(data, n_trials, timeout_minutes)
+            # Convert n_trials to n_trials_per_group if needed
+            n_trials_per_group = None
+            if n_trials is not None:
+                # Distribute trials across groups (default 3 groups)
+                n_trials_per_group = max(10, n_trials // 3)
+            return self.auto_tune_hierarchical(data, n_trials_per_group, timeout_minutes)
         
         # Legacy staged optimization
         tprint_info("🚀 Starting MS-DR Auto-Tuning (Legacy Mode)")

@@ -357,7 +357,7 @@ class EnhancedMSDRClusteringIntegration:
                         # Get regime clustering features
                         regime_clustering_features = self.regime_categorizer.get_priority_features(
                             FeatureUseCase.REGIME_CLUSTERING,
-                            max_features=max_features
+                            max_features=self.max_features
                         )
                         
                         # Filter features to only include those optimized for regime clustering

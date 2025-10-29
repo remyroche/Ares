@@ -373,6 +373,7 @@ class MSDRClusterer:
         
         start_time = time.time()
         tracemalloc.start()
+        memory_usage_mb = 0.0
         
         # Optional: Use memory monitoring context
         if self.config.use_memory_optimization:
@@ -401,12 +402,14 @@ class MSDRClusterer:
             # Calculate metrics
             metrics = self._calculate_metrics(data_processed, result['labels'])
             
-            # Calculate memory usage
-            current, peak = tracemalloc.get_traced_memory()
-            tracemalloc.stop()
-            memory_usage_mb = peak / 1024 / 1024
-            
             processing_time = time.time() - start_time
+            
+            # Calculate memory usage before creating result
+            try:
+                current, peak = tracemalloc.get_traced_memory()
+                memory_usage_mb = peak / 1024 / 1024
+            except Exception:
+                memory_usage_mb = 0.0
             
             # Create result
             ms_result = MSDRResult(
@@ -457,8 +460,14 @@ class MSDRClusterer:
             self.logger.error(f"MS-DR clustering error: {e}", exc_info=True)
             
             # Return failure result
-            current, peak = tracemalloc.get_traced_memory()
-            tracemalloc.stop()
+            processing_time = time.time() - start_time
+            
+            # Calculate memory usage for error case
+            try:
+                current, peak = tracemalloc.get_traced_memory()
+                memory_usage_mb = peak / 1024 / 1024
+            except Exception:
+                memory_usage_mb = 0.0
             
             return MSDRResult(
                 cluster_labels=np.zeros(len(data)),
@@ -477,14 +486,20 @@ class MSDRClusterer:
                 hqic=None,
                 regime_durations=None,
                 transition_persistence=0.0,
-                processing_time=time.time() - start_time,
-                memory_usage_mb=peak / 1024 / 1024,
+                processing_time=processing_time,
+                memory_usage_mb=memory_usage_mb,
                 feature_names=[],
                 success=False,
                 error_message=str(e)
             )
         
         finally:
+            # Ensure tracemalloc is stopped
+            try:
+                tracemalloc.stop()
+            except Exception:
+                pass
+            
             # Cleanup memory context if used
             if memory_context is not None:
                 try:
@@ -513,6 +528,10 @@ class MSDRClusterer:
         
         # Check minimum samples
         n_samples = len(data) if len(data.shape) == 1 else data.shape[0]
+        if n_samples == 0:
+            raise ValueError("Input data is empty")
+        if n_samples < 2:
+            raise ValueError(f"At least 2 samples required for regimes, got {n_samples}")
         if n_samples < self.config.min_samples_required:
             tprint_warning(
                 f"⚠️ Input has {n_samples} samples, but {self.config.min_samples_required}+ "
@@ -563,7 +582,10 @@ class MSDRClusterer:
                 feature_names = data.columns.tolist()
                 data = data.values
             else:
-                feature_names = [f'feature_{i}' for i in range(data.shape[1]) if len(data.shape) > 1] or ['target']
+                if len(data.shape) > 1 and data.shape[1] > 0:
+                    feature_names = [f'feature_{i}' for i in range(data.shape[1])]
+                else:
+                    feature_names = ['target']
             
             # If data is 1D, use as time series
             if len(data.shape) == 1:
@@ -602,6 +624,10 @@ class MSDRClusterer:
                     data_processed = data_scaled
             else:
                 data_processed = data_scaled
+            
+            # Check for zero variance after preprocessing
+            if np.var(data_processed) < 1e-10:
+                raise ValueError("Data has zero variance after preprocessing - cannot fit MS-DR model")
             
             # For MS models, we need univariate time series
             # Convert multi-dimensional data to univariate based on aggregation strategy

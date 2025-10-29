@@ -162,7 +162,6 @@ yarn.lock
 *_keys.py
 secrets.json
 api_keys.json
-secret/
 
 # =============================================================================
 # DEVELOPMENT AND TESTING

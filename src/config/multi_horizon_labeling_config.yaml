@@ -53,9 +53,9 @@ multi_horizon_labeling:
   # Directional Quality Scoring
   enable_directional_quality_scoring: true
   long_speed_bonus: 1.1                     # Bonus multiplier for fast long moves
-  long_adverse_penalty: 0.9                 # Penalty for adverse excursion in longs
+  long_adverse_penalty: 0.9                 # Penalty for adverse excursion in long
   short_sustained_bonus: 1.05               # Bonus for sustained short moves
-  short_adverse_penalty: 0.85               # Penalty for adverse excursion in shorts (more strict)
+  short_adverse_penalty: 0.85               # Penalty for adverse excursion in short (more strict)
   
   # Validation and Quality Control
   min_samples_for_labeling: 50    # Minimum samples needed

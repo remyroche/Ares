@@ -44,7 +44,7 @@ class ExampleSRAccessStep(BaseStep):
             symbol = config.get('symbol', 'ETHUSDT')
             exchange = config.get('exchange', 'binance')
             timeframe = config.get('timeframe', '15m')
-            direction = config.get('direction', 'longs')
+            direction = config.get('direction', 'long')
             
             # Method 1: Access via BaseStep._get_sr_levels() (recommended for training scripts)
             self.logger.info('📊 Method 1: Accessing SR levels via BaseStep._get_sr_levels()')
@@ -200,7 +200,7 @@ async def example_usage():
         'symbol': 'ETHUSDT',
         'exchange': 'binance',
         'timeframe': '15m',
-        'direction': 'longs',
+        'direction': 'long',
         'execution_mode': 'light'
     }
     

@@ -352,7 +352,7 @@ class FinalParametersOptimizer(BaseStep):
             symbol = config.get('symbol', 'ETHUSDT')
             exchange = config.get('exchange', 'binance')
             timeframe = config.get('timeframe', '15m')
-            direction = config.get('direction', 'longs')
+            direction = config.get('direction', 'long')
             
             # Detect execution mode using BaseStep method
             self.execution_mode = self._detect_execution_mode(config)
@@ -1058,7 +1058,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             return self._optimize_averaged_parameters_with_bias(regime_data, regime_id)
 
     def _optimize_directional_parameters(self, regime_data: Dict[str, Any], regime_id: str):
-        """Optimize separate parameters for longs and shorts"""
+        """Optimize separate parameters for long and short"""
 
         results = {}
 
@@ -1359,14 +1359,14 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
 
             # Direction-specific performance metrics
             if direction == 'long':
-                # For longs: reward sustained positive returns
+                # For long: reward sustained positive returns
                 performance = np.mean(directional_returns) * np.sqrt(len(directional_returns))
                 # Bonus for consistency
                 if np.std(directional_returns) > 0:
                     sharpe_bonus = np.mean(directional_returns) / np.std(directional_returns) * 0.1
                     performance += sharpe_bonus
             else:  # short
-                # For shorts: reward quick, sharp negative moves (positive returns for short positions)
+                # For short: reward quick, sharp negative moves (positive returns for short positions)
                 performance = np.mean(directional_returns) * np.sqrt(len(directional_returns))
                 # Bonus for capturing volatility
                 volatility_bonus = np.std(directional_returns) * 0.05

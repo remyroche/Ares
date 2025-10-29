@@ -336,7 +336,7 @@ class DataDrivenLabelingConfig:
     def __init__(self) -> None:
         # Enable to use quantile-calibrated thresholds instead of fixed bps thresholds
         self.enabled = False
-        # Target average number of signals per day (total of longs+shorts) - conservative target
+        # Target average number of signals per day (total of long+short) - conservative target
         self.target_ops_per_day = 6.0  # Reduced from 8.0 to ensure we stay well below the cap
         # Calibration mode: 'global' uses a single set of quantiles; 'vol_bin' uses per-volatility bins
         self.calibration_mode = "global"  # or 'vol_bin'
@@ -671,7 +671,7 @@ class VolatilityAwareMultiHorizonLabeler:
         labels_aligned, prices_aligned = _align_like(labels, prices)
         # Align labels and prices for quality calculation
         
-        # Only calculate quality for trade opportunities (non-zero labels: positive for longs, negative for shorts)
+        # Only calculate quality for trade opportunities (non-zero labels: positive for long, negative for short)
         trade_opportunities = labels_aligned[labels_aligned != 0]
         if len(trade_opportunities) == 0:
             self.logger.warning(f"No trade opportunities found for {target_name}")
@@ -2470,7 +2470,7 @@ class VolatilityAwareMultiHorizonLabeler:
                     total_long_opportunities += int(long_ops)
                     total_short_opportunities += int(short_ops)
                 elif hasattr(quality, 'potential_profits'):
-                    # potential_profits are non-negative by design; treat all as longs
+                    # potential_profits are non-negative by design; treat all as long
                     total_long_opportunities += n_opportunities
                     total_short_opportunities += 0
 

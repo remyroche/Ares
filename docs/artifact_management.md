@@ -29,7 +29,7 @@ class MyStep(BaseStep):
         self.artifact_manager.set_context(
             symbol='ETHUSDT',
             exchange='binance',
-            direction='longs',
+            direction='long',
             model='Analyst'
         )
         
@@ -129,7 +129,7 @@ artifact_path = self._save_artifact(
 self.artifact_manager.set_context(
     symbol='ETHUSDT',
     exchange='binance', 
-    direction='longs',
+    direction='long',
     model='Analyst',
     information='processed_data'
 )
@@ -145,7 +145,7 @@ artifact_path = self._save_artifact(data, 'artifact', 'data')
 artifacts/
 ├── ETHUSDT/
 │   ├── binance/
-│   │   ├── longs/
+│   │   ├── long/
 │   │   │   ├── Analyst/
 │   │   │   │   ├── data_download/
 │   │   │   │   │   ├── raw_data.parquet
@@ -158,7 +158,7 @@ artifacts/
 │   │   │   │       └── model_metadata.json
 │   │   │   └── Tactician/
 │   │   │       └── ...
-│   │   └── shorts/
+│   │   └── short/
 │   │       └── ...
 │   └── other_exchanges/
 └── other_symbols/
@@ -167,7 +167,7 @@ artifacts/
 ### Naming Conventions
 - **Symbols**: Uppercase (e.g., ETHUSDT, BTCUSDT)
 - **Exchanges**: Lowercase (e.g., binance, coinbase)
-- **Directions**: Lowercase (e.g., longs, shorts)
+- **Directions**: Lowercase (e.g., long, short)
 - **Models**: PascalCase (e.g., Analyst, Tactician)
 - **Artifacts**: snake_case (e.g., sr_levels, trained_model)
 

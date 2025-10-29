@@ -66,7 +66,7 @@ python src/launcher/ares_launcher.py --train-tactician-ensemble --symbol ETHUSDT
 ### **Optional Parameters**
 - `--execution-mode`: Execution mode (full, light, blank) - default: full
 - `--data-dir`: Data directory (default: historical_data)
-- `--direction`: Direction type (longs, shorts, both) - default: longs
+- `--direction`: Direction type (long, short, both) - default: long
 
 ### **Execution Modes**
 - **`full`**: Complete training with all features and optimizations
@@ -138,7 +138,7 @@ python src/launcher/ares_launcher.py --train-analyst-base --symbol BTCUSDT --tim
 python src/launcher/ares_launcher.py --train-tactician-ensemble --symbol ETHUSDT --data-dir custom_data
 
 # Custom direction
-python src/launcher/ares_launcher.py --train-analyst-ensemble --symbol ETHUSDT --direction shorts
+python src/launcher/ares_launcher.py --train-analyst-ensemble --symbol ETHUSDT --direction short
 ```
 
 ---
@@ -246,7 +246,7 @@ python src/launcher/ares_launcher.py --train-tactician-base --symbol ETHUSDT --e
 python src/launcher/ares_launcher.py --train-analyst-base --symbol BTCUSDT --timeframe 1h --execution-mode full
 
 # Custom data directory and direction
-python src/launcher/ares_launcher.py --train-tactician-ensemble --symbol ETHUSDT --data-dir custom_data --direction shorts
+python src/launcher/ares_launcher.py --train-tactician-ensemble --symbol ETHUSDT --data-dir custom_data --direction short
 ```
 
 ---

@@ -136,7 +136,7 @@ async def test_unified_training():
         'symbol': 'ETHUSDT',
         'exchange': 'binance',
         'timeframe': '15m',
-        'direction': 'longs',
+        'direction': 'long',
         'training_type': 'analyst_base',
         'execution_mode': 'light'
     }
@@ -189,7 +189,7 @@ async def test_all_training_types():
             'symbol': 'ETHUSDT',
             'exchange': 'binance',
             'timeframe': '15m',
-            'direction': 'longs',
+            'direction': 'long',
             'training_type': training_type,
             'execution_mode': 'light'
         }

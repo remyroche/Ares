@@ -43,11 +43,11 @@ python ares_launcher.py --mode sequential --sub_pipeline feature_generation_feat
 #### After (Autonomous Steps)
 ```bash
 # Simplified step commands
-python ares_launcher.py step feature_generation_data_validation_step --symbol ETHUSDT --timeframe 15m --direction longs --execution-mode light
+python ares_launcher.py step feature_generation_data_validation_step --symbol ETHUSDT --timeframe 15m --direction long --execution-mode light
 
-python ares_launcher.py step feature_generation_period_lookback_optimization_step --symbol ETHUSDT --timeframe 15m --direction longs --execution-mode light
+python ares_launcher.py step feature_generation_period_lookback_optimization_step --symbol ETHUSDT --timeframe 15m --direction long --execution-mode light
 
-python ares_launcher.py step feature_generation_feature_selection_step --symbol ETHUSDT --timeframe 15m --direction longs --execution-mode light
+python ares_launcher.py step feature_generation_feature_selection_step --symbol ETHUSDT --timeframe 15m --direction long --execution-mode light
 ```
 
 ### 2. Update Configuration
@@ -70,7 +70,7 @@ step:
   name: feature_generation_data_validation_step
   symbol: ETHUSDT
   timeframe: 15m
-  direction: longs
+  direction: long
   execution_mode: light
 ```
 
@@ -131,8 +131,8 @@ python ares_launcher.py --start-from-step-name feature_generation_period_lookbac
 ```bash
 #!/bin/bash
 # New autonomous step script
-python ares_launcher.py step feature_generation_data_validation_step --symbol ETHUSDT --timeframe 15m --direction longs --execution-mode light
-python ares_launcher.py step feature_generation_period_lookback_optimization_step --symbol ETHUSDT --timeframe 15m --direction longs --execution-mode light
+python ares_launcher.py step feature_generation_data_validation_step --symbol ETHUSDT --timeframe 15m --direction long --execution-mode light
+python ares_launcher.py step feature_generation_period_lookback_optimization_step --symbol ETHUSDT --timeframe 15m --direction long --execution-mode light
 ```
 
 ### 3. Update Configuration Files
@@ -154,7 +154,7 @@ step:
   name: feature_generation_data_validation_step
   symbol: ETHUSDT
   timeframe: 15m
-  direction: longs
+  direction: long
   execution_mode: light
 ```
 
@@ -190,7 +190,7 @@ python ares_launcher.py --mode sequential --sub_pipeline feature_generation_data
 
 #### After
 ```bash
-python ares_launcher.py step feature_generation_data_validation_step --symbol ETHUSDT --timeframe 15m --direction longs --execution-mode light
+python ares_launcher.py step feature_generation_data_validation_step --symbol ETHUSDT --timeframe 15m --direction long --execution-mode light
 ```
 
 ### Scenario 2: Running Multiple Steps
@@ -203,7 +203,7 @@ python ares_launcher.py --start-from-step-name feature_generation_period_lookbac
 
 #### After
 ```bash
-python ares_launcher.py steps feature_generation_data_validation_step,feature_generation_period_lookback_optimization_step --symbol ETHUSDT --timeframe 15m --direction longs --execution-mode light
+python ares_launcher.py steps feature_generation_data_validation_step,feature_generation_period_lookback_optimization_step --symbol ETHUSDT --timeframe 15m --direction long --execution-mode light
 ```
 
 ### Scenario 3: Running Entire Stages
@@ -215,7 +215,7 @@ python ares_launcher.py --mode sequential --sub_pipeline pre_training --symbol E
 
 #### After
 ```bash
-python ares_launcher.py stage PRE_TRAINING --symbol ETHUSDT --timeframe 15m --direction longs --execution-mode light
+python ares_launcher.py stage PRE_TRAINING --symbol ETHUSDT --timeframe 15m --direction long --execution-mode light
 ```
 
 ### Scenario 4: Custom Step Development
@@ -274,26 +274,26 @@ data = self._get_artifact('artifact_name', 'data')
 ### 1. Test Individual Steps
 ```bash
 # Test each step individually
-python ares_launcher.py step data_download --symbol ETHUSDT --timeframe 15m --direction longs --execution-mode light
-python ares_launcher.py step sr_detection --symbol ETHUSDT --timeframe 15m --direction longs --execution-mode light
+python ares_launcher.py step data_download --symbol ETHUSDT --timeframe 15m --direction long --execution-mode light
+python ares_launcher.py step sr_detection --symbol ETHUSDT --timeframe 15m --direction long --execution-mode light
 ```
 
 ### 2. Test Step Sequences
 ```bash
 # Test step sequences
-python ares_launcher.py steps data_download,sr_detection --symbol ETHUSDT --timeframe 15m --direction longs --execution-mode light
+python ares_launcher.py steps data_download,sr_detection --symbol ETHUSDT --timeframe 15m --direction long --execution-mode light
 ```
 
 ### 3. Test Stage Execution
 ```bash
 # Test stage execution
-python ares_launcher.py stage DATA_COLLECTION --symbol ETHUSDT --timeframe 15m --direction longs --execution-mode light
+python ares_launcher.py stage DATA_COLLECTION --symbol ETHUSDT --timeframe 15m --direction long --execution-mode light
 ```
 
 ### 4. Verify Artifacts
 ```bash
 # Check artifact generation
-ls -la artifacts/ETHUSDT/binance/longs/
+ls -la artifacts/ETHUSDT/binance/long/
 ```
 
 ## Troubleshooting Migration Issues
@@ -324,16 +324,16 @@ python ares_launcher.py check-artifacts --symbol ETHUSDT --timeframe 15m
 #### 4. Performance Issues
 ```bash
 # Use light mode for testing
-python ares_launcher.py step <step_name> --symbol ETHUSDT --timeframe 15m --direction longs --execution-mode light
+python ares_launcher.py step <step_name> --symbol ETHUSDT --timeframe 15m --direction long --execution-mode light
 ```
 
 ### Debug Mode
 ```bash
 # Enable debug logging
-python ares_launcher.py step <step_name> --symbol ETHUSDT --timeframe 15m --direction longs --debug
+python ares_launcher.py step <step_name> --symbol ETHUSDT --timeframe 15m --direction long --debug
 
 # Verbose output
-python ares_launcher.py step <step_name> --symbol ETHUSDT --timeframe 15m --direction longs --verbose
+python ares_launcher.py step <step_name> --symbol ETHUSDT --timeframe 15m --direction long --verbose
 ```
 
 ## Benefits of Migration

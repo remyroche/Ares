@@ -153,7 +153,7 @@ async def test_sr_clustering_basestep_integration():
             symbol='ETHUSDT',
             exchange='binance',
             timeframe='15m',
-            direction='longs'
+            direction='long'
         )
         
         print(f"   ✅ SR levels method executed successfully")
@@ -176,7 +176,7 @@ async def test_sr_clustering_basestep_integration():
             'symbol': 'ETHUSDT',
             'exchange': 'binance',
             'timeframe': '15m',
-            'direction': 'longs',
+            'direction': 'long',
             'execution_mode': 'light',
             'enable_hardware_optimization': False,  # Disable for test
             'enable_vectorbt_optimization': False,  # Disable for test

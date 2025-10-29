@@ -433,7 +433,7 @@ class SRClusteringComponent(BaseStep):
             symbol = config.get('symbol', 'ETHUSDT')
             exchange = config.get('exchange', 'binance')
             timeframe = config.get('timeframe', '15m')
-            direction = config.get('direction', 'longs')
+            direction = config.get('direction', 'long')
             execution_mode = config.get('execution_mode', 'light')
             
             if not symbol:
@@ -688,7 +688,7 @@ class SRClusteringComponent(BaseStep):
                         symbol=symbol,
                         exchange=config.get('exchange', 'binance'),
                         timeframe=timeframe,
-                        direction=config.get('direction', 'longs')
+                        direction=config.get('direction', 'long')
                     )
                     
                     if sr_levels_dict and not sr_levels_dict.get('error') and sr_levels_dict.get('levels'):
@@ -745,7 +745,7 @@ class SRClusteringComponent(BaseStep):
                         symbol=symbol,
                         exchange=config.get('exchange', 'binance'),
                         timeframe=timeframe,
-                        direction=config.get('direction', 'longs')
+                        direction=config.get('direction', 'long')
                     )
                     
                     if sr_levels_dict and not sr_levels_dict.get('error') and sr_levels_dict.get('levels'):

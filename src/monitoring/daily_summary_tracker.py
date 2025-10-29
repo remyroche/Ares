@@ -2,7 +2,7 @@
 """
 Daily Summary Tracker for Enhanced ML Monitoring
 
-Tracks daily trading statistics including trades, shorts vs longs, HMM regime,
+Tracks daily trading statistics including trades, short vs long, HMM regime,
 PnL, win rate, and other key metrics for ongoing monitoring.
 """
 

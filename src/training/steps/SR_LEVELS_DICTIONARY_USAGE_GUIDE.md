@@ -38,7 +38,7 @@ sr_levels = feature_bank.get_sr_levels(
     symbol='ETHUSDT',
     exchange='binance',
     timeframe='15m',
-    direction='longs'
+    direction='long'
 )
 ```
 
@@ -87,7 +87,7 @@ The SR levels dictionary has the following structure:
             'metadata': {               # Level metadata
                 'symbol': 'ETHUSDT',
                 'timeframe': '15m',
-                'direction': 'longs',
+                'direction': 'long',
                 'execution_mode': 'light',
                 'enhancement_version': '2.0',
                 'created_at': '2024-01-15T15:00:00Z'
@@ -230,14 +230,14 @@ sr_levels = self._get_sr_levels(exchange='binance')
 sr_levels = self._get_sr_levels(timeframe='15m')
 
 # Filter by direction
-sr_levels = self._get_sr_levels(direction='longs')
+sr_levels = self._get_sr_levels(direction='long')
 
 # Multiple filters
 sr_levels = self._get_sr_levels(
     symbol='ETHUSDT',
     exchange='binance',
     timeframe='15m',
-    direction='longs'
+    direction='long'
 )
 ```
 

@@ -67,7 +67,7 @@ am.save(
         'symbol': 'ETHUSDT',
         'exchange': 'binance', 
         'timeframe': '15m',
-        'direction': 'longs',
+        'direction': 'long',
         'intensity': 'blank'
     }
 )
@@ -132,7 +132,7 @@ required_metadata = {
     'symbol': str,      # e.g., 'ETHUSDT'
     'exchange': str,    # e.g., 'binance' 
     'timeframe': str,   # e.g., '15m'
-    'direction': str,   # e.g., 'longs'
+    'direction': str,   # e.g., 'long'
     'intensity': str,   # e.g., 'blank'
     'created_at': str  # ISO timestamp (auto-added)
 }
@@ -148,7 +148,7 @@ def _process_data(self, data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
         'symbol': kwargs.get('symbol', 'UNKNOWN'),
         'exchange': kwargs.get('exchange', 'UNKNOWN'), 
         'timeframe': kwargs.get('timeframe', 'UNKNOWN'),
-        'direction': kwargs.get('direction', 'longs'),
+        'direction': kwargs.get('direction', 'long'),
         'intensity': kwargs.get('intensity', 'blank')
     }
     

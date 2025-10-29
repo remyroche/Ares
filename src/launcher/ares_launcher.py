@@ -246,7 +246,7 @@ Examples:
   python ares_launcher.py --step feature_generation_data_validation_step --symbol ETHUSDT --execution-mode light
   
   # MODEL_TRAINING steps (maintain compatibility)
-  python ares_launcher.py --train-analyst-base --symbol ETHUSDT --timeframe 15m --direction longs
+  python ares_launcher.py --train-analyst-base --symbol ETHUSDT --timeframe 15m --direction long
   
   # FEATURE GENERATION INTERACTION GENERATION (differentiated modes)
   python ares_launcher.py --run-tactician-interaction --symbol ETHUSDT --timeframe 15m
@@ -288,7 +288,7 @@ Examples:
     parser.add_argument('--symbol', type=str, help='Trading symbol (e.g., ETHUSDT)')
     parser.add_argument('--exchange', type=str, default='binance', help='Exchange name')
     parser.add_argument('--timeframe', type=str, default='15m', help='Timeframe for training')
-    parser.add_argument('--direction', type=str, choices=['longs', 'shorts', 'both'], default='longs', help='Trading direction')
+    parser.add_argument('--direction', type=str, choices=['long', 'short', 'both'], default='long', help='Trading direction')
     parser.add_argument('--execution-mode', type=str, choices=['full', 'light', 'blank'], default='light', help='Execution mode')
     
     # Legacy compatibility options

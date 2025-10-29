@@ -1,7 +1,7 @@
 """
 Signal Generation Pipeline
 
-Implements proper data flow: HMM regime -> analyst -> tactician
+Implements proper data flow: Regime -> Analyst Base Models -> Analyst Ensemble -> Tactician Base Models -> Tactician Ensemble
 with sequential model calls and confidence score optimization.
 """
 
@@ -65,7 +65,7 @@ class AnalystBaseOutput:
 
 @dataclass
 class AnalystMetaOutput:
-    """Analyst meta model output."""
+    """Analyst ensemble model output (previously called meta output for compatibility)."""
     timestamp: datetime
     analyst_confidence: float
     market_health_score: float
@@ -85,7 +85,7 @@ class TacticianBaseOutput:
 
 @dataclass
 class TacticianMetaOutput:
-    """Tactician meta model output."""
+    """Tactician ensemble model output (previously called meta output for compatibility)."""
     timestamp: datetime
     tactician_confidence: float
     combined_confidence: float
@@ -129,7 +129,14 @@ class SignalGenerationResult:
 class SignalGenerationPipeline:
     """
     Signal generation pipeline with proper data flow:
-    HMM regime -> analyst base models -> analyst meta model -> tactician base models -> tactician meta model
+    Regime -> Analyst Base Models -> Analyst Ensemble -> Tactician Base Models -> Tactician Ensemble
+
+    Architecture:
+    - Regime Detector: Provides regime probabilities
+    - Analyst Base Models: Individual ML models making predictions
+    - Analyst Ensemble Model: ML stacker that combines base predictions optimally
+    - Tactician Base Models: Individual ML models making timing predictions (with analyst inputs)
+    - Tactician Ensemble Model: ML stacker that combines base predictions optimally
 
     Implements confidence score optimization based on backtesting parameters.
     """
@@ -142,10 +149,8 @@ class SignalGenerationPipeline:
         self.regime_detector: Optional[Any] = None
         self.analyst_base_models: List[Any] = []
         self.analyst_ensemble_model: Optional[Any] = None
-        self.analyst_meta_model: Optional[Any] = None
         self.tactician_base_models: List[Any] = []
         self.tactician_ensemble_model: Optional[Any] = None
-        self.tactician_meta_model: Optional[Any] = None
 
         # Model selection
         self.model_selector_service: Optional[Any] = None
@@ -157,11 +162,6 @@ class SignalGenerationPipeline:
             'tactician_confidence_weight': 0.4,
             'regime_confidence_threshold': DEFAULT_REGIME_CONFIDENCE_THRESHOLD,
             'signal_confidence_threshold': DEFAULT_SIGNAL_CONFIDENCE_THRESHOLD,
-            'meta_model_weight': 0.8,
-            'base_model_weight': 0.2,
-            # Ensemble vs Meta model weights (ML ensemble vs rule-based orchestrator)
-            'analyst_ensemble_weight': 0.6,  # 60% ensemble ML model, 40% Analyst rule-based
-            'tactician_ensemble_weight': 0.6,  # 60% ensemble ML model, 40% Tactician rule-based
             # Exit-specific parameters (will be overridden by final_parameters_optimization)
             'exit_confidence_threshold': DEFAULT_EXIT_CONFIDENCE_THRESHOLD,
             'tactician_exit_confidence_weight': 0.6,
@@ -240,13 +240,8 @@ class SignalGenerationPipeline:
             raise
 
     async def _initialize_analyst_models(self):
-        """Initialize analyst base and meta models."""
+        """Initialize analyst base models and ensemble model."""
         try:
-            # Initialize meta model (analyst orchestrator)
-            from src.analyst.analyst import Analyst
-            self.analyst_meta_model = Analyst(self.config)
-            await self.analyst_meta_model.initialize()
-
             # Load trained analyst base models from training steps using unified model loader
             from src.trading.integration.unified_model_loader import get_unified_model_loader
             
@@ -295,13 +290,8 @@ class SignalGenerationPipeline:
             raise
 
     async def _initialize_tactician_models(self):
-        """Initialize tactician base and meta models."""
+        """Initialize tactician base models and ensemble model."""
         try:
-            # Initialize meta model (tactician orchestrator)
-            from src.tactician.tactician import Tactician
-            self.tactician_meta_model = Tactician(self.config)
-            await self.tactician_meta_model.initialize()
-
             # Load trained tactician base models from training steps using unified model loader
             from src.trading.integration.unified_model_loader import get_unified_model_loader
             
@@ -393,8 +383,6 @@ class SignalGenerationPipeline:
                         'tactician_confidence_weight': optimized_params.get('tactician_confidence_weight', self.optimization_params.get('tactician_confidence_weight', 0.4)),
                         'regime_confidence_threshold': optimized_params.get('regime_confidence_threshold', DEFAULT_REGIME_CONFIDENCE_THRESHOLD),
                         'signal_confidence_threshold': optimized_params.get('signal_confidence_threshold', DEFAULT_SIGNAL_CONFIDENCE_THRESHOLD),
-                        'meta_model_weight': optimized_params.get('meta_model_weight', self.optimization_params.get('meta_model_weight', 0.8)),
-                        'base_model_weight': optimized_params.get('base_model_weight', self.optimization_params.get('base_model_weight', 0.2)),
                         # Exit-specific parameters (override defaults)
                         'exit_confidence_threshold': optimized_params.get('exit_confidence_threshold', DEFAULT_EXIT_CONFIDENCE_THRESHOLD),
                         'tactician_exit_confidence_weight': optimized_params.get('tactician_exit_confidence_weight', self.optimization_params.get('tactician_exit_confidence_weight', 0.6)),
@@ -505,39 +493,39 @@ class SignalGenerationPipeline:
             market_data, regime_output, additional_features, timestamp, model_selection_result
         )
 
-        # Step 3: Analyst Meta Model
-        analyst_meta_output = await self._run_analyst_meta_model(
+        # Step 3: Analyst Ensemble Model (combines base model predictions)
+        analyst_output = await self._run_analyst_ensemble(
             market_data, regime_output, analyst_base_outputs, timestamp
         )
 
         # Step 4: Tactician Base Models
         tactician_base_outputs = await self._run_tactician_base_models(
-            market_data, regime_output, analyst_meta_output, timestamp
+            market_data, regime_output, analyst_output, timestamp
         )
 
-        # Step 5: Tactician Meta Model
-        tactician_meta_output = await self._run_tactician_meta_model(
-            market_data, regime_output, analyst_meta_output, tactician_base_outputs, timestamp
+        # Step 5: Tactician Ensemble Model (combines base model predictions)
+        tactician_output = await self._run_tactician_ensemble(
+            market_data, regime_output, analyst_output, tactician_base_outputs, timestamp
         )
 
         # Step 6: Calculate Exit Confidence (for position management)
         exit_confidence = self._calculate_exit_confidence(
-            analyst_meta_output.analyst_confidence,
-            tactician_meta_output.tactician_confidence
+            analyst_output.analyst_confidence,
+            tactician_output.tactician_confidence
         )
 
         # Step 7: Check Exit Conditions (if position is open) - using comprehensive exit parameters
         should_exit, exit_reason = self._check_exit_conditions(
             exit_confidence,
-            analyst_meta_output.analyst_confidence,
-            tactician_meta_output.tactician_confidence,
+            analyst_output.analyst_confidence,
+            tactician_output.tactician_confidence,
             market_data,
             timestamp
         )
 
         # Step 8: Final Signal Generation (with position validation)
         final_signal = self._generate_final_signal(
-            regime_output, analyst_meta_output, tactician_meta_output, should_exit, exit_reason
+            regime_output, analyst_output, tactician_output, should_exit, exit_reason
         )
 
         # Validate signal against current position
@@ -551,8 +539,8 @@ class SignalGenerationPipeline:
         # Update position state based on signal (thread-safe)
         self._update_position_state(
             final_signal, timestamp, should_exit,
-            analyst_meta_output.analyst_confidence,
-            tactician_meta_output.tactician_confidence
+            analyst_output.analyst_confidence,
+            tactician_output.tactician_confidence
         )
 
         # Create result
@@ -560,8 +548,8 @@ class SignalGenerationPipeline:
             timestamp=timestamp,
             symbol=symbol,
             regime_output=regime_output,
-            analyst_output=analyst_meta_output,
-            tactician_output=tactician_meta_output,
+            analyst_output=analyst_output,
+            tactician_output=tactician_output,
             final_signal=final_signal['signal'],
             final_confidence=final_signal['confidence'],
             signal_strength=final_signal['strength'],
@@ -1057,7 +1045,7 @@ class SignalGenerationPipeline:
             self.logger.error(f"❌ Analyst base models failed: {e}")
             raise
 
-    async def _run_analyst_meta_model(
+    async def _run_analyst_ensemble(
         self,
         market_data: pd.DataFrame,
         regime_output: RegimeOutput,
@@ -1065,19 +1053,16 @@ class SignalGenerationPipeline:
         timestamp: datetime
     ) -> AnalystMetaOutput:
         """
-        Step 3: Run analyst meta model and ensemble model with base predictions.
+        Step 3: Run analyst ensemble model with base predictions.
         
         Architecture:
         - Base Models: Individual ML models (CatBoost, XGBoost, LightGBM, etc.) trained separately
         - Ensemble Model: Trained ML stacker model that learns optimal combination of base model predictions
-        - Meta Model: Analyst class orchestrator with rule-based/heuristic methods (analyze_regime, 
-          fractal location analysis, etc.)
         
         Flow:
         1. Base models produce predictions (already done in _run_analyst_base_models)
         2. Ensemble ML model takes base predictions as features, produces ensemble confidence
-        3. Meta model (Analyst.analyze_regime) produces rule-based confidence
-        4. Combine: weighted average of ensemble (ML) and meta (rule-based) confidences
+        3. Use ensemble confidence directly (no meta model combination)
         """
         try:
             # Collect base model predictions for ensemble
@@ -1109,43 +1094,18 @@ class SignalGenerationPipeline:
                 except Exception as e:
                     self.logger.warning(f"⚠️ Analyst ensemble model prediction failed: {e}")
             
-            # Use the existing analyst.analyze_regime method
-            meta_result = await self.analyst_meta_model.analyze_regime(market_data)
-            
-            # Merge regime probabilities into meta result
-            meta_result['regime_probabilities'] = regime_output.regime_probabilities
-            meta_result['primary_regime'] = regime_output.primary_regime.value
-            meta_result['regime_confidence'] = regime_output.confidence
-
-            # Extract confidence from the result
-            # NOTE: "Meta model" here refers to the Analyst class orchestrator, which uses
-            # rule-based/heuristic methods (analyze_regime, fractal location analysis, etc.)
-            # This is DIFFERENT from the ensemble ML model which is a trained stacker model.
-            meta_model_confidence = meta_result.get('confidence', 0.5)
-            
-            # Combine ensemble ML model prediction with meta model (rule-based) prediction
-            # The ensemble model is a trained ML stacker that learns to combine base models optimally
-            # The meta model is the Analyst orchestrator with rule-based logic
-            # Default: 60% ensemble (ML) + 40% meta (rule-based)
-            # This can be configured via optimization_params
+            # Use ensemble confidence, or fallback to average of base confidences
             if ensemble_confidence is not None:
-                # Get ensemble weight from optimization params or use default
-                ensemble_weight = self.optimization_params.get(
-                    'analyst_ensemble_weight', 
-                    0.6  # Default: trust ML ensemble model more
-                )
-                analyst_confidence = (
-                    ensemble_weight * ensemble_confidence + 
-                    (1 - ensemble_weight) * meta_model_confidence
-                )
-                self.logger.debug(
-                    f"Combined analyst confidence: {ensemble_confidence:.3f} (ensemble, {ensemble_weight:.0%}) + "
-                    f"{meta_model_confidence:.3f} (meta, {1-ensemble_weight:.0%}) = {analyst_confidence:.3f}"
-                )
+                analyst_confidence = ensemble_confidence
+                self.logger.debug(f"Using analyst ensemble confidence: {analyst_confidence:.3f}")
+            elif base_confidences:
+                # Fallback: average of base model confidences
+                analyst_confidence = float(np.mean(base_confidences))
+                self.logger.debug(f"Using average base model confidence: {analyst_confidence:.3f}")
             else:
-                # Fallback to meta model only if ensemble unavailable
-                analyst_confidence = meta_model_confidence
-                self.logger.debug(f"Using meta model confidence only: {analyst_confidence:.3f}")
+                # Ultimate fallback
+                analyst_confidence = 0.5
+                self.logger.warning("⚠️ No analyst predictions available, using default confidence 0.5")
 
             # Apply regime adjustment
             regime_adjusted_confidence = self._apply_regime_adjustment(
@@ -1153,21 +1113,30 @@ class SignalGenerationPipeline:
                 regime_output.regime_probabilities
             )
             
-            # Add ensemble features to meta_features
+            # Prepare meta features
+            meta_features = {
+                'regime_probabilities': regime_output.regime_probabilities,
+                'primary_regime': regime_output.primary_regime.value,
+                'regime_confidence': regime_output.confidence,
+                'base_model_count': len(base_outputs),
+                'ensemble_model_used': ensemble_confidence is not None
+            }
+            
+            # Add ensemble features
             if ensemble_features:
-                meta_result.update(ensemble_features)
+                meta_features.update(ensemble_features)
 
             return AnalystMetaOutput(
                 timestamp=timestamp,
                 analyst_confidence=regime_adjusted_confidence,
-                market_health_score=meta_result.get('market_health_score', 0.5),
+                market_health_score=0.5,  # Not calculated without meta model
                 regime_adjusted_confidence=regime_adjusted_confidence,
-                meta_features=meta_result,
+                meta_features=meta_features,
                 base_outputs=base_outputs
             )
 
         except Exception as e:
-            self.logger.error(f"❌ Analyst meta model failed: {e}")
+            self.logger.error(f"❌ Analyst ensemble failed: {e}")
             raise
 
     async def _run_tactician_base_models(
@@ -1254,7 +1223,7 @@ class SignalGenerationPipeline:
             self.logger.error(f"❌ Tactician base models failed: {e}")
             raise
 
-    async def _run_tactician_meta_model(
+    async def _run_tactician_ensemble(
         self,
         market_data: pd.DataFrame,
         regime_output: RegimeOutput,
@@ -1263,19 +1232,17 @@ class SignalGenerationPipeline:
         timestamp: datetime
     ) -> TacticianMetaOutput:
         """
-        Step 5: Run tactician meta model and ensemble model with base predictions.
+        Step 5: Run tactician ensemble model with base predictions.
         
         Architecture:
         - Base Models: Individual ML models (CatBoost, XGBoost, LightGBM, etc.) trained separately
         - Ensemble Model: Trained ML stacker model that learns optimal combination of base model predictions
-        - Meta Model: Tactician class orchestrator with rule-based/heuristic methods 
-          (generate_enhanced_predictions, scenario analysis, etc.)
         
         Flow:
         1. Base models produce predictions with analyst outputs (already done in _run_tactician_base_models)
         2. Ensemble ML model takes base predictions as features, produces ensemble confidence
-        3. Meta model (Tactician.generate_enhanced_predictions) produces rule-based confidence
-        4. Combine: weighted average of ensemble (ML) and meta (rule-based) confidences
+        3. Use ensemble confidence directly (no meta model combination)
+        4. Generate final signal based on confidence thresholds
         """
         try:
             # Collect base model predictions for ensemble
@@ -1307,83 +1274,78 @@ class SignalGenerationPipeline:
                 except Exception as e:
                     self.logger.warning(f"⚠️ Tactician ensemble model prediction failed: {e}")
             
-            # Use the existing tactician.generate_enhanced_predictions method
-            symbol = "ETHUSDT"  # Default symbol
-            if hasattr(market_data, 'columns') and len(market_data.columns) > 0:
-                symbol = market_data.columns[0]
-
-            # Pass regime probabilities and analyst outputs to tactician
-            enhanced_context = {
-                'regime_probabilities': regime_output.regime_probabilities,
-                'primary_regime': regime_output.primary_regime.value,
-                'regime_confidence': regime_output.confidence,
-                'analyst_confidence': analyst_output.analyst_confidence,
-                'analyst_features': analyst_output.meta_features
-            }
-
-            meta_result = await self.tactician_meta_model.generate_enhanced_predictions(
-                market_data, enhanced_context, symbol, "1m", analyst_output.analyst_confidence
-            )
-
-            # Extract confidence from the result
-            # NOTE: "Meta model" here refers to the Tactician class orchestrator, which uses
-            # rule-based/heuristic methods (generate_enhanced_predictions, scenario analysis, etc.)
-            # This is DIFFERENT from the ensemble ML model which is a trained stacker model.
-            meta_model_confidence = meta_result.get('confidence', 0.5)
-            
-            # Combine ensemble ML model prediction with meta model (rule-based) prediction
-            # The ensemble model is a trained ML stacker that learns to combine base models optimally
-            # The meta model is the Tactician orchestrator with rule-based logic
-            # Default: 60% ensemble (ML) + 40% meta (rule-based)
-            # This can be configured via optimization_params
+            # Use ensemble confidence, or fallback to average of base confidences
             if ensemble_confidence is not None:
-                # Get ensemble weight from optimization params or use default
-                ensemble_weight = self.optimization_params.get(
-                    'tactician_ensemble_weight',
-                    0.6  # Default: trust ML ensemble model more
-                )
-                tactician_confidence = (
-                    ensemble_weight * ensemble_confidence + 
-                    (1 - ensemble_weight) * meta_model_confidence
-                )
-                self.logger.debug(
-                    f"Combined tactician confidence: {ensemble_confidence:.3f} (ensemble, {ensemble_weight:.0%}) + "
-                    f"{meta_model_confidence:.3f} (meta, {1-ensemble_weight:.0%}) = {tactician_confidence:.3f}"
-                )
+                tactician_confidence = ensemble_confidence
+                self.logger.debug(f"Using tactician ensemble confidence: {tactician_confidence:.3f}")
+            elif base_confidences:
+                # Fallback: average of base model confidences
+                tactician_confidence = float(np.mean(base_confidences))
+                self.logger.debug(f"Using average base model confidence: {tactician_confidence:.3f}")
             else:
-                # Fallback to meta model only if ensemble unavailable
-                tactician_confidence = meta_model_confidence
-                self.logger.debug(f"Using meta model confidence only: {tactician_confidence:.3f}")
+                # Ultimate fallback
+                tactician_confidence = 0.5
+                self.logger.warning("⚠️ No tactician predictions available, using default confidence 0.5")
 
-            # Calculate combined confidence
+            # Calculate combined confidence with analyst
             combined_confidence = self._calculate_combined_confidence(
                 analyst_output.analyst_confidence, tactician_confidence
             )
 
-            # Extract final signal from trading decisions
-            trading_decisions = meta_result.get('trading_decisions', {})
+            # Generate final signal based on confidence and thresholds
+            # Extract signal direction from base outputs if available
             final_signal = 'hold'
-            if trading_decisions.get('entry_signal', False):
-                final_signal = 'buy' if trading_decisions.get('direction', '') == 'long' else 'sell'
+            signal_strength = 0.5
             
-            # Add ensemble features to meta_features
+            # Try to infer signal from base outputs
+            if base_outputs:
+                # Look for scenario predictions that might indicate direction
+                for output in base_outputs:
+                    scenario_preds = output.scenario_predictions
+                    if scenario_preds:
+                        bullish = scenario_preds.get('bullish_probability', 0.0)
+                        bearish = scenario_preds.get('bearish_probability', 0.0)
+                        if bullish > 0.6 and bullish > bearish:
+                            final_signal = 'buy'
+                            signal_strength = bullish
+                            break
+                        elif bearish > 0.6 and bearish > bullish:
+                            final_signal = 'sell'
+                            signal_strength = bearish
+                            break
+            
+            # If still hold and confidence is high, use confidence to determine signal
+            if final_signal == 'hold' and combined_confidence > 0.7:
+                # Default to buy if high confidence (can be refined based on price action)
+                final_signal = 'buy'
+                signal_strength = combined_confidence
+            
+            # Prepare meta features
+            meta_features = {
+                'regime_probabilities': regime_output.regime_probabilities,
+                'primary_regime': regime_output.primary_regime.value,
+                'regime_confidence': regime_output.confidence,
+                'analyst_confidence': analyst_output.analyst_confidence,
+                'base_model_count': len(base_outputs),
+                'ensemble_model_used': ensemble_confidence is not None
+            }
+            
+            # Add ensemble features
             if ensemble_features:
-                meta_result.update(ensemble_features)
-            meta_result['regime_probabilities'] = regime_output.regime_probabilities
-            meta_result['analyst_confidence'] = analyst_output.analyst_confidence
+                meta_features.update(ensemble_features)
 
             return TacticianMetaOutput(
                 timestamp=timestamp,
                 tactician_confidence=tactician_confidence,
                 combined_confidence=combined_confidence,
                 final_signal=final_signal,
-                signal_strength=meta_result.get('signal_strength', 0.5),
-                meta_features=meta_result,
+                signal_strength=signal_strength,
+                meta_features=meta_features,
                 base_outputs=base_outputs
             )
 
         except Exception as e:
-            self.logger.error(f"❌ Tactician meta model failed: {e}")
+            self.logger.error(f"❌ Tactician ensemble failed: {e}")
             raise
 
     def _apply_regime_adjustment(self, base_confidence: float, regime_probabilities: Dict[RegimeType, float]) -> float:
@@ -2008,15 +1970,9 @@ class SignalGenerationPipeline:
                 if hasattr(model, 'stop'):
                     await model.stop()
 
-            if self.analyst_meta_model and hasattr(self.analyst_meta_model, 'stop'):
-                await self.analyst_meta_model.stop()
-
             for model in self.tactician_base_models:
                 if hasattr(model, 'stop'):
                     await model.stop()
-
-            if self.tactician_meta_model and hasattr(self.tactician_meta_model, 'stop'):
-                await self.tactician_meta_model.stop()
 
             self.is_initialized = False
             self.logger.info("✅ Signal Generation Pipeline stopped successfully")

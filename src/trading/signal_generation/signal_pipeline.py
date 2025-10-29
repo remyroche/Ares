@@ -20,7 +20,11 @@ from src.trading.config.regime_config import RegimeType
 from src.trading.config.trading_config import TradingConfig
 from src.trading.model_selection.model_selector_service import ModelSelectionResult, get_model_selector_service
 from src.core.decorators import handles_errors, traced, log_execution_time
-from .utils import CircuitBreaker, RateLimiter, SignalDeduplicator, validate_regime_probabilities, validate_market_data, validate_signal_parameters
+from .utils import (
+    CircuitBreaker, RateLimiter, SignalDeduplicator, 
+    validate_regime_probabilities, validate_market_data, validate_signal_parameters,
+    calculate_weighted_regime_multiplier
+)
 
 logger = system_logger.getChild('SignalGenerationPipeline')
 
@@ -137,8 +141,10 @@ class SignalGenerationPipeline:
         # Pipeline components
         self.regime_detector: Optional[Any] = None
         self.analyst_base_models: List[Any] = []
+        self.analyst_ensemble_model: Optional[Any] = None
         self.analyst_meta_model: Optional[Any] = None
         self.tactician_base_models: List[Any] = []
+        self.tactician_ensemble_model: Optional[Any] = None
         self.tactician_meta_model: Optional[Any] = None
 
         # Model selection
@@ -266,14 +272,18 @@ class SignalGenerationPipeline:
                 # Convert dict to list for base models
                 self.analyst_base_models = list(analyst_base_models_dict.values())
                 
-                # Store ensemble model separately if needed
-                if analyst_ensemble_model:
-                    self.analyst_base_models.append(analyst_ensemble_model)
+                # Store ensemble model separately (not in base_models list)
+                # The ensemble model will use base model predictions as features
+                self.analyst_ensemble_model = analyst_ensemble_model
                 
-                self.logger.info(f"✅ Loaded {len(self.analyst_base_models)} trained analyst models")
+                self.logger.info(
+                    f"✅ Loaded {len(self.analyst_base_models)} analyst base models"
+                    f"{' and ensemble model' if analyst_ensemble_model else ''}"
+                )
             except Exception as e:
                 self.logger.warning(f"⚠️ Could not load trained analyst models: {e}")
                 self.analyst_base_models = []  # Fallback to empty list
+                self.analyst_ensemble_model = None
 
             self.logger.info("✅ Analyst models initialized")
 
@@ -317,14 +327,18 @@ class SignalGenerationPipeline:
                 # Convert dict to list for base models
                 self.tactician_base_models = list(tactician_base_models_dict.values())
                 
-                # Store ensemble model separately if needed
-                if tactician_ensemble_model:
-                    self.tactician_base_models.append(tactician_ensemble_model)
+                # Store ensemble model separately (not in base_models list)
+                # The ensemble model will use base model predictions as features
+                self.tactician_ensemble_model = tactician_ensemble_model
                 
-                self.logger.info(f"✅ Loaded {len(self.tactician_base_models)} trained tactician models")
+                self.logger.info(
+                    f"✅ Loaded {len(self.tactician_base_models)} tactician base models"
+                    f"{' and ensemble model' if tactician_ensemble_model else ''}"
+                )
             except Exception as e:
                 self.logger.warning(f"⚠️ Could not load trained tactician models: {e}")
                 self.tactician_base_models = []  # Fallback to empty list
+                self.tactician_ensemble_model = None
 
             self.logger.info("✅ Tactician models initialized")
 
@@ -646,7 +660,7 @@ class SignalGenerationPipeline:
         
         try:
             # Use regime detector to predict regime
-            regime_prediction = await self.regime_detector.predict_regime(market_data)
+            regime_prediction = await self.regime_detector.predict_regime(market_data, return_probabilities=True)
             
             if regime_prediction is None:
                 raise RuntimeError("Regime detector returned None prediction")
@@ -678,9 +692,61 @@ class SignalGenerationPipeline:
                 self.logger.warning(f"⚠️ Unexpected primary_regime type: {type(primary_regime_raw)}, defaulting to SIDEWAYS")
                 primary_regime = RegimeType.SIDEWAYS
             
+            # Convert regime_probabilities from {"regime_0": 0.5, ...} to {RegimeType: float}
+            raw_probabilities = regime_prediction.get('regime_probabilities', {})
+            regime_probabilities_dict: Dict[RegimeType, float] = {}
+            
+            if isinstance(raw_probabilities, dict):
+                regime_list = list(RegimeType)
+                for key, value in raw_probabilities.items():
+                    try:
+                        # Try to parse key as "regime_0", "regime_1", etc.
+                        if isinstance(key, str) and key.startswith('regime_'):
+                            regime_index = int(key.split('_')[1])
+                            if 0 <= regime_index < len(regime_list):
+                                regime_probabilities_dict[regime_list[regime_index]] = float(value)
+                        # Try to match key directly to RegimeType value
+                        elif isinstance(key, str):
+                            try:
+                                regime_type = RegimeType(key)
+                                regime_probabilities_dict[regime_type] = float(value)
+                            except ValueError:
+                                # Try to find by value match
+                                for rt in RegimeType:
+                                    if rt.value == key:
+                                        regime_probabilities_dict[rt] = float(value)
+                                        break
+                        # If key is already a RegimeType
+                        elif isinstance(key, RegimeType):
+                            regime_probabilities_dict[key] = float(value)
+                        # If key is an integer index
+                        elif isinstance(key, int):
+                            if 0 <= key < len(regime_list):
+                                regime_probabilities_dict[regime_list[key]] = float(value)
+                    except (ValueError, IndexError, KeyError) as e:
+                        self.logger.debug(f"Could not convert regime probability key {key}: {e}")
+                        continue
+            
+            # If no probabilities were converted, create default distribution
+            if not regime_probabilities_dict:
+                self.logger.warning("⚠️ No regime probabilities could be converted, using default distribution")
+                # Assign primary_regime a high probability, others low
+                for regime in RegimeType:
+                    if regime == primary_regime:
+                        regime_probabilities_dict[regime] = 0.7
+                    else:
+                        regime_probabilities_dict[regime] = 0.3 / (len(RegimeType) - 1)
+            else:
+                # Normalize probabilities to sum to 1.0
+                total_prob = sum(regime_probabilities_dict.values())
+                if total_prob > 0:
+                    regime_probabilities_dict = {
+                        k: v / total_prob for k, v in regime_probabilities_dict.items()
+                    }
+            
             return RegimeOutput(
                 timestamp=timestamp,
-                regime_probabilities=regime_prediction.get('regime_probabilities', {}),
+                regime_probabilities=regime_probabilities_dict,
                 primary_regime=primary_regime,
                 confidence=regime_prediction.get('confidence', 0.5),
                 regime_strength=regime_prediction.get('regime_strength', 0.5),
@@ -907,9 +973,16 @@ class SignalGenerationPipeline:
         timestamp: datetime,
         model_selection_result: Optional[ModelSelectionResult] = None
     ) -> List[AnalystBaseOutput]:
-        """Step 2: Run analyst base models sequentially."""
+        """Step 2: Run analyst base models sequentially with regime probabilities."""
         try:
             base_outputs = []
+
+            # Prepare regime probabilities as features for base models
+            # Convert RegimeType keys to a format models can use
+            regime_probs_array = np.array([
+                regime_output.regime_probabilities.get(rt, 0.0) 
+                for rt in RegimeType
+            ])
 
             # Run the trained analyst base models from training steps
             # These are the models trained in analyst_models_training_refactored.py
@@ -919,21 +992,32 @@ class SignalGenerationPipeline:
                 selected_analyst_model = model_selection_result.selected_models['analyst']
                 self.logger.info(f"🎯 Using selected analyst model: {selected_analyst_model}")
 
-            for model in self.analyst_base_models:
+            for i, model in enumerate(self.analyst_base_models):
                 try:
                     # Use the trained model to make predictions
                     # The model should have a predict method
                     if hasattr(model, 'predict'):
+                        # Prepare input with regime probabilities
+                        # Models may accept regime probabilities as features
                         prediction = model.predict(market_data)
                         confidence = getattr(prediction, 'confidence', 0.5) if hasattr(prediction, 'confidence') else 0.5
                         features = getattr(prediction, 'features', {}) if hasattr(prediction, 'features') else {}
+                        
+                        # Add regime probabilities to features
+                        features['regime_probabilities'] = regime_output.regime_probabilities
+                        features['primary_regime'] = regime_output.primary_regime.value
+                        features['regime_confidence'] = regime_output.confidence
                     else:
                         # Fallback for models without standard predict interface
-                        self.logger.warning(f"⚠️ Analyst base model missing 'predict' method, using fallback confidence")
+                        self.logger.warning(f"⚠️ Analyst base model {i} missing 'predict' method, using fallback confidence")
                         confidence = 0.5
-                        features = {}
+                        features = {
+                            'regime_probabilities': regime_output.regime_probabilities,
+                            'primary_regime': regime_output.primary_regime.value,
+                            'regime_confidence': regime_output.confidence
+                        }
 
-                    # Create base output (ignore market health and liquidation risk as requested)
+                    # Create base output with regime information
                     base_output = AnalystBaseOutput(
                         timestamp=timestamp,
                         market_health={},  # Ignored as requested
@@ -947,7 +1031,7 @@ class SignalGenerationPipeline:
                     base_outputs.append(base_output)
 
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Analyst base model failed: {e}", exc_info=True)
+                    self.logger.warning(f"⚠️ Analyst base model {i} failed: {e}", exc_info=True)
                     # Create fallback output with explicit logging
                     self.logger.debug(f"Creating fallback output due to model failure")
                     base_outputs.append(AnalystBaseOutput(
@@ -957,7 +1041,11 @@ class SignalGenerationPipeline:
                         liquidity_analysis={},
                         stress_analysis={},
                         base_confidence=0.5,
-                        features={}
+                        features={
+                            'regime_probabilities': regime_output.regime_probabilities,
+                            'primary_regime': regime_output.primary_regime.value,
+                            'regime_confidence': regime_output.confidence
+                        }
                     ))
 
             return base_outputs
@@ -973,19 +1061,64 @@ class SignalGenerationPipeline:
         base_outputs: List[AnalystBaseOutput],
         timestamp: datetime
     ) -> AnalystMetaOutput:
-        """Step 3: Run analyst meta model."""
+        """Step 3: Run analyst meta model and ensemble model with base predictions."""
         try:
+            # Collect base model predictions for ensemble
+            base_confidences = [output.base_confidence for output in base_outputs]
+            base_predictions_array = np.array(base_confidences).reshape(1, -1) if base_confidences else None
+            
+            ensemble_confidence = None
+            ensemble_features = {}
+            
+            # If ensemble model is available, use base model predictions as features
+            if self.analyst_ensemble_model is not None and base_predictions_array is not None:
+                try:
+                    if hasattr(self.analyst_ensemble_model, 'predict'):
+                        ensemble_prediction = self.analyst_ensemble_model.predict(base_predictions_array)
+                        if hasattr(ensemble_prediction, 'confidence'):
+                            ensemble_confidence = float(ensemble_prediction.confidence)
+                        elif isinstance(ensemble_prediction, np.ndarray):
+                            # If array, use mean or max
+                            ensemble_confidence = float(np.mean(ensemble_prediction))
+                        elif isinstance(ensemble_prediction, (int, float)):
+                            ensemble_confidence = float(ensemble_prediction)
+                        
+                        # Try to get probabilities if available
+                        if hasattr(self.analyst_ensemble_model, 'predict_proba'):
+                            ensemble_proba = self.analyst_ensemble_model.predict_proba(base_predictions_array)
+                            ensemble_features['ensemble_probabilities'] = ensemble_proba
+                    
+                    self.logger.debug(f"✅ Analyst ensemble model prediction: {ensemble_confidence}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Analyst ensemble model prediction failed: {e}")
+            
             # Use the existing analyst.analyze_regime method
             meta_result = await self.analyst_meta_model.analyze_regime(market_data)
+            
+            # Merge regime probabilities into meta result
+            meta_result['regime_probabilities'] = regime_output.regime_probabilities
+            meta_result['primary_regime'] = regime_output.primary_regime.value
+            meta_result['regime_confidence'] = regime_output.confidence
 
             # Extract confidence from the result
             analyst_confidence = meta_result.get('confidence', 0.5)
+            
+            # Use ensemble confidence if available, otherwise use meta model confidence
+            if ensemble_confidence is not None:
+                # Combine ensemble and meta model confidence (weighted)
+                ensemble_weight = 0.6  # Weight for ensemble
+                analyst_confidence = (ensemble_weight * ensemble_confidence + 
+                                     (1 - ensemble_weight) * analyst_confidence)
 
             # Apply regime adjustment
             regime_adjusted_confidence = self._apply_regime_adjustment(
                 analyst_confidence,
-                    regime_output.regime_probabilities
+                regime_output.regime_probabilities
             )
+            
+            # Add ensemble features to meta_features
+            if ensemble_features:
+                meta_result.update(ensemble_features)
 
             return AnalystMetaOutput(
                 timestamp=timestamp,
@@ -1007,27 +1140,45 @@ class SignalGenerationPipeline:
         analyst_output: AnalystMetaOutput,
         timestamp: datetime
     ) -> List[TacticianBaseOutput]:
-        """Step 4: Run tactician base models sequentially."""
+        """Step 4: Run tactician base models sequentially with regime probabilities and analyst outputs."""
         try:
             base_outputs = []
 
+            # Prepare inputs for tactician models:
+            # - Regime probabilities
+            # - Analyst confidence and outputs
+            analyst_confidence = analyst_output.analyst_confidence
+            analyst_features = analyst_output.meta_features
+
             # Run the trained tactician base models from training steps
             # These are the models trained in tactician_models_training_refactored.py
-            for model in self.tactician_base_models:
+            for i, model in enumerate(self.tactician_base_models):
                 try:
                     # Use the trained model to make predictions
                     # The model should have a predict method
                     if hasattr(model, 'predict'):
+                        # Prepare input with regime probabilities and analyst outputs
                         prediction = model.predict(market_data)
                         confidence = getattr(prediction, 'confidence', 0.5) if hasattr(prediction, 'confidence') else 0.5
                         scenario_predictions = getattr(prediction, 'scenario_predictions', {}) if hasattr(prediction, 'scenario_predictions') else {}
                         price_targets = getattr(prediction, 'price_targets', {}) if hasattr(prediction, 'price_targets') else {}
                         adversarial_risks = getattr(prediction, 'adversarial_risks', {}) if hasattr(prediction, 'adversarial_risks') else {}
+                        
+                        # Add regime and analyst information to scenario predictions
+                        scenario_predictions['regime_probabilities'] = regime_output.regime_probabilities
+                        scenario_predictions['primary_regime'] = regime_output.primary_regime.value
+                        scenario_predictions['analyst_confidence'] = analyst_confidence
+                        if analyst_features:
+                            scenario_predictions['analyst_features'] = analyst_features
                     else:
                         # Fallback for models without standard predict interface
-                        self.logger.warning(f"⚠️ Tactician base model missing 'predict' method, using fallback confidence")
+                        self.logger.warning(f"⚠️ Tactician base model {i} missing 'predict' method, using fallback confidence")
                         confidence = 0.5
-                        scenario_predictions = {}
+                        scenario_predictions = {
+                            'regime_probabilities': regime_output.regime_probabilities,
+                            'primary_regime': regime_output.primary_regime.value,
+                            'analyst_confidence': analyst_confidence
+                        }
                         price_targets = {}
                         adversarial_risks = {}
 
@@ -1044,12 +1195,16 @@ class SignalGenerationPipeline:
                     base_outputs.append(base_output)
 
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Tactician base model failed: {e}", exc_info=True)
+                    self.logger.warning(f"⚠️ Tactician base model {i} failed: {e}", exc_info=True)
                     # Create fallback output with explicit logging
                     self.logger.debug(f"Creating fallback output due to model failure")
                     base_outputs.append(TacticianBaseOutput(
                         timestamp=timestamp,
-                        scenario_predictions={},
+                        scenario_predictions={
+                            'regime_probabilities': regime_output.regime_probabilities,
+                            'primary_regime': regime_output.primary_regime.value,
+                            'analyst_confidence': analyst_confidence
+                        },
                         price_targets={},
                         adversarial_risks={},
                         base_confidence=0.5,
@@ -1070,19 +1225,64 @@ class SignalGenerationPipeline:
         base_outputs: List[TacticianBaseOutput],
         timestamp: datetime
     ) -> TacticianMetaOutput:
-        """Step 5: Run tactician meta model."""
+        """Step 5: Run tactician meta model and ensemble model with base predictions."""
         try:
+            # Collect base model predictions for ensemble
+            base_confidences = [output.base_confidence for output in base_outputs]
+            base_predictions_array = np.array(base_confidences).reshape(1, -1) if base_confidences else None
+            
+            ensemble_confidence = None
+            ensemble_features = {}
+            
+            # If ensemble model is available, use base model predictions as features
+            if self.tactician_ensemble_model is not None and base_predictions_array is not None:
+                try:
+                    if hasattr(self.tactician_ensemble_model, 'predict'):
+                        ensemble_prediction = self.tactician_ensemble_model.predict(base_predictions_array)
+                        if hasattr(ensemble_prediction, 'confidence'):
+                            ensemble_confidence = float(ensemble_prediction.confidence)
+                        elif isinstance(ensemble_prediction, np.ndarray):
+                            # If array, use mean or max
+                            ensemble_confidence = float(np.mean(ensemble_prediction))
+                        elif isinstance(ensemble_prediction, (int, float)):
+                            ensemble_confidence = float(ensemble_prediction)
+                        
+                        # Try to get probabilities if available
+                        if hasattr(self.tactician_ensemble_model, 'predict_proba'):
+                            ensemble_proba = self.tactician_ensemble_model.predict_proba(base_predictions_array)
+                            ensemble_features['ensemble_probabilities'] = ensemble_proba
+                    
+                    self.logger.debug(f"✅ Tactician ensemble model prediction: {ensemble_confidence}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Tactician ensemble model prediction failed: {e}")
+            
             # Use the existing tactician.generate_enhanced_predictions method
             symbol = "ETHUSDT"  # Default symbol
             if hasattr(market_data, 'columns') and len(market_data.columns) > 0:
                 symbol = market_data.columns[0]
 
+            # Pass regime probabilities and analyst outputs to tactician
+            enhanced_context = {
+                'regime_probabilities': regime_output.regime_probabilities,
+                'primary_regime': regime_output.primary_regime.value,
+                'regime_confidence': regime_output.confidence,
+                'analyst_confidence': analyst_output.analyst_confidence,
+                'analyst_features': analyst_output.meta_features
+            }
+
             meta_result = await self.tactician_meta_model.generate_enhanced_predictions(
-                market_data, {}, symbol, "1m", analyst_output.analyst_confidence
+                market_data, enhanced_context, symbol, "1m", analyst_output.analyst_confidence
             )
 
             # Extract confidence from the result
             tactician_confidence = meta_result.get('confidence', 0.5)
+            
+            # Use ensemble confidence if available, otherwise use meta model confidence
+            if ensemble_confidence is not None:
+                # Combine ensemble and meta model confidence (weighted)
+                ensemble_weight = 0.6  # Weight for ensemble
+                tactician_confidence = (ensemble_weight * ensemble_confidence + 
+                                       (1 - ensemble_weight) * tactician_confidence)
 
             # Calculate combined confidence
             combined_confidence = self._calculate_combined_confidence(
@@ -1094,6 +1294,12 @@ class SignalGenerationPipeline:
             final_signal = 'hold'
             if trading_decisions.get('entry_signal', False):
                 final_signal = 'buy' if trading_decisions.get('direction', '') == 'long' else 'sell'
+            
+            # Add ensemble features to meta_features
+            if ensemble_features:
+                meta_result.update(ensemble_features)
+            meta_result['regime_probabilities'] = regime_output.regime_probabilities
+            meta_result['analyst_confidence'] = analyst_output.analyst_confidence
 
             return TacticianMetaOutput(
                 timestamp=timestamp,

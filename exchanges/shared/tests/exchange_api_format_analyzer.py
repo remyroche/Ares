@@ -107,7 +107,7 @@ class ExchangeAPIFormatAnalyzer:
         self,
         test_symbols: List[str] = None,
         exchanges: List[str] = None,
-        mode: str = 'mock',
+        mode: str = 'testnet',
         save_samples: bool = True,
         output_dir: str = "exchange_format_analysis",
         sequential: bool = False,
@@ -141,6 +141,12 @@ class ExchangeAPIFormatAnalyzer:
         valid_modes = ['mock', 'testnet', 'paper', 'live']
         if self.mode not in valid_modes:
             raise ValueError(f"Invalid mode: {self.mode}. Must be one of: {', '.join(valid_modes)}")
+        
+        # Warn if using mock mode - not useful for format analysis
+        if self.mode == 'mock':
+            tprint_warning("⚠️  WARNING: Mock mode does not make real API calls!")
+            tprint_warning("⚠️  For format analysis, use 'testnet', 'paper', or 'live' mode")
+            tprint_warning("⚠️  Mock mode only useful for testing the analyzer logic itself")
         
         # Test configuration
         self.test_symbols = test_symbols or ['BTCUSDT', 'ETHUSDT']
@@ -179,8 +185,8 @@ class ExchangeAPIFormatAnalyzer:
     def _print_mode_info(self) -> None:
         """Print information about the selected mode."""
         mode_info = {
-            'mock': 'Simulated responses, no API calls, no credentials needed',
-            'testnet': 'Real API calls to testnet, requires credentials',
+            'mock': '⚠️  Simulated responses, no API calls - NOT useful for format analysis!',
+            'testnet': 'Real API calls to testnet, requires credentials (RECOMMENDED)',
             'paper': 'Real API calls with paper trading (simulated trades)',
             'live': '⚠️  Real API calls to PRODUCTION - Use with extreme caution!'
         }
@@ -188,6 +194,9 @@ class ExchangeAPIFormatAnalyzer:
         tprint_info(f"   Mode description: {info}")
         if self.mode == 'live':
             tprint_warning("   ⚠️  LIVE MODE: This will use real production APIs!")
+        elif self.mode == 'mock':
+            tprint_warning("   ⚠️  MOCK MODE: This will NOT call real exchange APIs!")
+            tprint_warning("   ⚠️  Use 'testnet' or 'paper' mode for actual format analysis")
     
     async def initialize_exchanges(self) -> None:
         """Initialize exchange dispatchers."""
@@ -1114,10 +1123,7 @@ async def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Mock mode - simulated responses, no credentials needed
-  python exchange_api_format_analyzer.py --mode mock
-  
-  # Testnet mode - real API calls to testnet (requires credentials)
+  # Testnet mode (DEFAULT) - real API calls to testnet, safe and recommended
   python exchange_api_format_analyzer.py --mode testnet
   
   # Paper trading mode - real API calls but simulated trades
@@ -1125,6 +1131,9 @@ Examples:
   
   # Live mode - real API calls to production (USE WITH CAUTION!)
   python exchange_api_format_analyzer.py --mode live
+  
+  # Mock mode - NOT recommended for format analysis (doesn't call real APIs)
+  python exchange_api_format_analyzer.py --mode mock
   
   # Analyze all exchanges sequentially (one by one) in testnet
   python exchange_api_format_analyzer.py --mode testnet --sequential
@@ -1140,9 +1149,9 @@ Examples:
     parser.add_argument(
         '--mode',
         type=str,
-        default='mock',
+        default='testnet',
         choices=['mock', 'testnet', 'paper', 'live'],
-        help='Test mode: mock (simulated, no API calls), testnet (real API, testnet), paper (real API, paper trading), live (real API, production - use with caution!)'
+        help='Test mode: testnet (default, real API calls to testnet), paper (real API with paper trading), live (production - use with caution!), mock (simulated - NOT useful for format analysis)'
     )
     
     parser.add_argument(
@@ -1195,8 +1204,8 @@ Examples:
     
     # Show mode description
     mode_descriptions = {
-        'mock': 'Simulated responses, no API calls, no credentials needed',
-        'testnet': 'Real API calls to testnet, requires credentials',
+        'mock': '⚠️  Simulated responses, no API calls - NOT useful for format analysis!',
+        'testnet': 'Real API calls to testnet, requires credentials (RECOMMENDED)',
         'paper': 'Real API calls with paper trading (simulated trades)',
         'live': '⚠️  Real API calls to PRODUCTION - Use with extreme caution!'
     }
@@ -1206,6 +1215,9 @@ Examples:
     if args.mode.lower() == 'live':
         tprint_warning("⚠️  LIVE MODE: This will use real production APIs!")
         tprint_warning("⚠️  Make sure you understand the risks before proceeding!")
+    elif args.mode.lower() == 'mock':
+        tprint_warning("⚠️  MOCK MODE: This will NOT call real exchange APIs!")
+        tprint_warning("⚠️  For format analysis, use 'testnet' or 'paper' mode instead")
     
     if args.single_exchange:
         tprint_info(f"Exchange: {args.single_exchange.upper()} (single exchange mode)")

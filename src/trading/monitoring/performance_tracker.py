@@ -6,6 +6,7 @@ Monitors trade performance, calculates key metrics, and provides detailed analyt
 """
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union, Tuple, Callable
@@ -124,6 +125,7 @@ class PerformanceTracker:
 
         # Performance history
         self.balance_history: List[float] = [self.initial_balance]
+        self.balance_timestamps: List[datetime] = [datetime.now()]  # Track timestamps with balance
         self.pnl_history: List[float] = [0.0]
         self.performance_snapshots: List[PerformanceSnapshot] = []
 
@@ -139,6 +141,13 @@ class PerformanceTracker:
         # Benchmark comparison
         self.benchmark_symbol = config.get('benchmark_symbol', 'BTCUSDT')
         self.benchmark_returns = []
+
+        # Thread safety
+        self._lock = asyncio.Lock()
+
+        # Persistence
+        self.persistence_enabled = config.get('persistence_enabled', False)
+        self.persistence_path = config.get('persistence_path', 'monitoring_data')
 
         tprint_info("📊 Initializing Performance Tracker...")
 
@@ -171,20 +180,21 @@ class PerformanceTracker:
             strategy: Trading strategy used
             metadata: Additional trade metadata
         """
-        trade = TradeRecord(
-            trade_id=trade_id,
-            symbol=symbol,
-            side=side,
-            entry_time=entry_time,
-            entry_price=entry_price,
-            quantity=quantity,
-            strategy=strategy,
-            metadata=metadata or {}
-        )
+        async with self._lock:
+            trade = TradeRecord(
+                trade_id=trade_id,
+                symbol=symbol,
+                side=side,
+                entry_time=entry_time,
+                entry_price=entry_price,
+                quantity=quantity,
+                strategy=strategy,
+                metadata=metadata or {}
+            )
 
-        self.trades[trade_id] = trade
-        self.open_trades.append(trade)
-        self.total_trades += 1
+            self.trades[trade_id] = trade
+            self.open_trades.append(trade)
+            self.total_trades += 1
 
         tprint_info(f"📝 Recorded trade: {side} {quantity} {symbol} @ {entry_price}")
 
@@ -241,6 +251,7 @@ class PerformanceTracker:
 
         # Update performance history
         self.balance_history.append(self.current_balance)
+        self.balance_timestamps.append(datetime.now())
         self.pnl_history.append(self.total_pnl)
 
         # Update risk metrics
@@ -295,7 +306,8 @@ class PerformanceTracker:
                                   sum(t.pnl for t in self.closed_trades if t.pnl < 0))
                 metrics[MetricType.PROFIT_FACTOR] = profit_factor
             else:
-                metrics[MetricType.PROFIT_FACTOR] = float('inf') if self.winning_trades > 0 else 0.0
+                # Cap profit factor at 100 when no losses
+                metrics[MetricType.PROFIT_FACTOR] = min(100.0, float('inf') if self.winning_trades > 0 else 0.0)
 
             # Find largest win/loss
             if self.closed_trades:
@@ -431,8 +443,8 @@ class PerformanceTracker:
 
     def _get_date_for_index(self, index: int) -> Optional[datetime]:
         """Get date for balance history index."""
-        if 0 <= index < len(self.closed_trades):
-            return self.closed_trades[index].entry_time
+        if 0 <= index < len(self.balance_timestamps):
+            return self.balance_timestamps[index]
         return None
 
     @handles_errors
@@ -557,6 +569,50 @@ class PerformanceTracker:
             # CSV format
             return pd.DataFrame(report["recent_trades"]).to_csv(index=False)
 
+    async def get_health_status(self) -> Dict[str, Any]:
+        """Get health status of performance tracker."""
+        try:
+            now = datetime.now()
+            
+            # Check data freshness
+            last_trade_time = None
+            if self.closed_trades:
+                last_trade_time = max(t.exit_time or t.entry_time for t in self.closed_trades)
+            
+            data_freshness_hours = None
+            if last_trade_time:
+                data_freshness_hours = (now - last_trade_time).total_seconds() / 3600
+            
+            # Check memory usage
+            trades_count = len(self.trades)
+            closed_trades_count = len(self.closed_trades)
+            history_length = len(self.balance_history)
+            
+            # Calculate health score
+            health_score = 1.0
+            if history_length > 100000:
+                health_score = 0.7  # Too much history
+            elif closed_trades_count > 10000:
+                health_score = 0.85
+            
+            return {
+                'status': 'healthy' if health_score >= 0.8 else 'degraded',
+                'health_score': health_score,
+                'active_trades': trades_count,
+                'closed_trades': closed_trades_count,
+                'history_length': history_length,
+                'data_freshness_hours': data_freshness_hours,
+                'current_balance': self.current_balance,
+                'total_pnl': self.total_pnl,
+                'timestamp': now.isoformat()
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
+
     async def cleanup(self) -> None:
         """Clean up resources."""
         self.trades.clear()
@@ -569,13 +625,18 @@ class PerformanceTracker:
 
         tprint_info("🧹 Performance Tracker cleaned up successfully")
 
+# Global singleton instance
+_global_performance_tracker: Optional[PerformanceTracker] = None
+
 # Factory functions
 async def create_performance_tracker(config: Dict[str, Any]) -> PerformanceTracker:
     """Create and initialize a performance tracker."""
+    global _global_performance_tracker
     tracker = PerformanceTracker(config)
     await tracker.initialize()
+    _global_performance_tracker = tracker
     return tracker
 
 def get_performance_tracker() -> Optional[PerformanceTracker]:
     """Get the global performance tracker instance."""
-    return None
+    return _global_performance_tracker

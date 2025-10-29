@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 
+import numpy as np
+
 from ..utils.logger import system_logger
 from ..core.decorators import handles_errors
-import numpy as np
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
+    tprint_structured, LogLevel
+)
 
 """
 Paper Trading Integration Module
@@ -19,7 +24,7 @@ from src.core.domain import (
 from src.core.domain.decorators import secure_data_processing
 
 from datetime import datetime
-from typing import Any, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 import json
 import os
 from .utils.comprehensive_logger import get_comprehensive_logger
@@ -41,7 +46,7 @@ class PaperTradingIntegration:
     """
     Integration module for paper trading with enhanced reporting.
     """
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize paper trading integration.
 
@@ -85,12 +90,12 @@ class PaperTradingIntegration:
             bool: True if initialization successful, False otherwise
         """
         try:
-            self.logger.info("Initializing Paper Trading Integration...")
+            tprint_info("🚀 Initializing Paper Trading Integration...")
 
             # Initialize paper trader
             self.paper_trader = await setup_paper_trader(self.config)
             if not self.paper_trader:
-                self.logger.error(failed("Failed to initialize paper trader"))
+                tprint_error(failed("Failed to initialize paper trader"))
                 return False
 
             # Initialize detailed reporter
@@ -103,25 +108,25 @@ class PaperTradingIntegration:
 
                     self.reporter = await _setup_reporter(self.config)
                     if not self.reporter:
-                        self.logger.warning(
-                            "Failed to initialize detailed reporter, continuing without detailed reporting",
+                        tprint_warning(
+                            "⚠️ Failed to initialize detailed reporter, continuing without detailed reporting",
                         )
                         self.enable_detailed_reporting = False
                 except Exception as e:
-                    self.logger.warning(
+                    tprint_warning(
                         warning(
-                            f"Detailed reporter unavailable, continuing without it: {e}",
+                            f"⚠️ Detailed reporter unavailable, continuing without it: {e}",
                         ),
                     )
                     self.enable_detailed_reporting = False
 
             # Validate integration
             if not self._validate_integration():
-                self.logger.error(failed("Integration validation failed"))
+                tprint_error(failed("Integration validation failed"))
                 return False
 
             self.is_initialized = True
-            self.logger.info("✅ Paper Trading Integration initialized successfully")
+            tprint_success("✅ Paper Trading Integration initialized successfully")
             return True
 
         except Exception as e:
@@ -139,14 +144,14 @@ class PaperTradingIntegration:
         """Validate integration components."""
         try:
             if not self.paper_trader:
-                self.logger.error(initialization_error("Paper trader not initialized"))
+                tprint_error(initialization_error("Paper trader not initialized"))
                 return False
 
             # If reporter failed to initialize, degrade gracefully (don't block integration)
             if self.enable_detailed_reporting and not self.reporter:
-                self.logger.warning(
+                tprint_warning(
                     warning(
-                        "Detailed reporter not initialized; proceeding without detailed reporting",
+                        "⚠️ Detailed reporter not initialized; proceeding without detailed reporting",
                     ),
                 )
                 self.enable_detailed_reporting = False
@@ -154,7 +159,7 @@ class PaperTradingIntegration:
             return True
 
         except Exception as e:
-            self.logger.error(error(f"Error validating integration: {e}"))
+            tprint_error(error(f"Error validating integration: {e}"))
             return False
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
@@ -172,7 +177,7 @@ class PaperTradingIntegration:
         quantity: float,
         price: float,
         timestamp: datetime,
-        trade_metadata: dict[str, Any] | None = None,
+        trade_metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
         Execute trade with integrated reporting.
@@ -190,7 +195,7 @@ class PaperTradingIntegration:
         """
         try:
             if not self.is_initialized or not self.paper_trader:
-                self.logger.error(initialization_error("Integration not initialized"))
+                tprint_error(initialization_error("Integration not initialized"))
                 return False
 
             # Prepare trade metadata
@@ -235,11 +240,11 @@ class PaperTradingIntegration:
                     timestamp=timestamp,
                 )
             else:
-                self.logger.error(invalid(f"Invalid trade side: {side}"))
+                tprint_error(invalid(f"Invalid trade side: {side}"))
                 return False
 
             if success:
-                self.logger.info(
+                tprint_success(
                     f"✅ Integrated trade executed: {side} {quantity} {symbol} @ ${price:.4f}",
             )
 
@@ -261,7 +266,7 @@ class PaperTradingIntegration:
             return success
 
         except Exception as e:
-            self.logger.error(error(f"Error executing integrated trade: {e}"))
+            tprint_error(error(f"Error executing integrated trade: {e}"))
             return False
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
@@ -277,9 +282,9 @@ class PaperTradingIntegration:
                 await self.reporter.generate_detailed_report("real_time", ["json"])
 
         except Exception as e:
-            self.logger.error(error(f"Error generating real-time report: {e}"))
+            tprint_error(error(f"Error generating real-time report: {e}"))
 
-    def get_performance_metrics(self) -> dict[str, Any]:
+    def get_performance_metrics(self) -> Dict[str, Any]:
         """Get comprehensive performance metrics."""
         try:
             # Get basic performance metrics
@@ -288,7 +293,7 @@ class PaperTradingIntegration:
             )
 
             # Get detailed metrics if reporter is available
-            detailed_metrics: dict[str, Any] = {}
+            detailed_metrics: Dict[str, Any] = {}
             if self.reporter:
                 detailed_metrics = self.reporter.get_performance_metrics()
                 portfolio_summary = self.reporter.get_portfolio_summary()
@@ -312,10 +317,10 @@ class PaperTradingIntegration:
             return combined_metrics
 
         except Exception as e:
-            self.logger.error(error(f"Error getting performance metrics: {e}"))
+            tprint_error(error(f"Error getting performance metrics: {e}"))
             return {}
 
-    def get_trade_history(self, symbol: str | None = None) -> list[dict[str, Any]]:
+    def get_trade_history(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get trade history with optional filtering."""
         try:
             if self.paper_trader:
@@ -323,10 +328,10 @@ class PaperTradingIntegration:
             return []
 
         except Exception as e:
-            self.logger.error(error(f"Error getting trade history: {e}"))
+            tprint_error(error(f"Error getting trade history: {e}"))
             return []
 
-    def get_portfolio_summary(self) -> dict[str, Any]:
+    def get_portfolio_summary(self) -> Dict[str, Any]:
         """Get portfolio summary."""
         try:
             if self.reporter:
@@ -345,15 +350,15 @@ class PaperTradingIntegration:
             return {}
 
         except Exception as e:
-            self.logger.error(error(f"Error getting portfolio summary: {e}"))
+            tprint_error(error(f"Error getting portfolio summary: {e}"))
             return {}
 
     @performance_monitor(level=PerformanceLevel.BASIC)
     async def generate_comprehensive_report(
         self,
         report_type: str = "comprehensive",
-        export_formats: list[str] | None = None,
-    ) -> dict[str, Any]:
+        export_formats: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         """Generate comprehensive trading report."""
         try:
             if export_formats is None:
@@ -368,7 +373,7 @@ class PaperTradingIntegration:
             return await self._generate_basic_report(report_type, export_formats)
 
         except Exception as e:
-            self.logger.error(error(f"Error generating comprehensive report: {e}"))
+            tprint_error(error(f"Error generating comprehensive report: {e}"))
             return {}
 
     @performance_monitor(level=PerformanceLevel.BASIC)
@@ -380,8 +385,8 @@ class PaperTradingIntegration:
     async def _generate_basic_report(
         self,
         report_type: str,
-        export_formats: list[str],
-    ) -> dict[str, Any]:
+        export_formats: List[str],
+    ) -> Dict[str, Any]:
         """Generate basic report when detailed reporter is not available."""
         try:
             # Get basic data
@@ -412,15 +417,15 @@ class PaperTradingIntegration:
                     filepath = os.path.join(report_dir, filename)
                     with open(filepath, "w", encoding="utf-8") as f:
                         json.dump(report_data, f, indent=2, default=str)
-                    self.logger.info(f"✅ Exported basic JSON report: {filepath}")
+                    tprint_success(f"✅ Exported basic JSON report: {filepath}")
 
             return report_data
 
         except Exception as e:
-            self.logger.error(error(f"Error generating basic report: {e}"))
+            tprint_error(error(f"Error generating basic report: {e}"))
             return {}
 
-    def get_integration_status(self) -> dict[str, Any]:
+    def get_integration_status(self) -> Dict[str, Any]:
         """Get integration status."""
         return {
             "is_initialized": self.is_initialized,
@@ -449,10 +454,10 @@ class PaperTradingIntegration:
             # Generate final report
             await self.generate_comprehensive_report("final")
 
-            self.logger.info("✅ Paper Trading Integration stopped successfully")
+            tprint_success("✅ Paper Trading Integration stopped successfully")
 
         except Exception as e:
-            self.logger.error(error(f"Error stopping integration: {e}"))
+            tprint_error(error(f"Error stopping integration: {e}"))
 
 @handles_errors(
     exceptions=(Exception,),
@@ -460,8 +465,8 @@ class PaperTradingIntegration:
     context="paper trading integration setup",
 )
 async def setup_paper_trading_integration(
-    config: dict[str, Any] | None = None,
-) -> PaperTradingIntegration | None:
+    config: Optional[Dict[str, Any]] = None,
+) -> Optional[PaperTradingIntegration]:
     """
     Setup paper trading integration.
 

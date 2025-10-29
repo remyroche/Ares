@@ -510,9 +510,9 @@ asyncio.run(update_daily_loss())
 # Example 3: Hot swap stop loss percentage
 from src.launcher.trading_launcher import hot_swap_stop_loss_percentage
 
-result = hot_swap_stop_loss_percentage(2.5)  # Set stop loss to 2.5%
+result = hot_swap_stop_loss_percentage(5.0)  # Set stop loss to 5%
 print(result)
-# {'success': True, 'parameter': 'stop_loss_percentage', 'old_value': None, 'new_value': 2.5, ...}
+# {'success': True, 'parameter': 'stop_loss_percentage', 'old_value': None, 'new_value': 5.0, ...}
 
 
 # Example 4: Get current parameters

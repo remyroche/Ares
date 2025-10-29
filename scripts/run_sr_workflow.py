@@ -24,7 +24,6 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
-from src.training.steps.base_step import step_registry
 
 # Import SR workflow steps
 from src.training.steps.market_analysis.components.sr_parameter_optimization import SRParameterOptimizationStep
@@ -83,6 +82,40 @@ class SRWorkflowRunner:
         
         self.logger.info("✅ SR workflow runner initialized")
     
+    def _extract_optimized_parameters(self, optimization_result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extract and validate optimized parameters from optimization result.
+        
+        Args:
+            optimization_result: Result dictionary from parameter optimization step
+            
+        Returns:
+            Dictionary containing optimized parameters, or empty dict if not found
+        """
+        try:
+            # Parameters are stored in artifacts, not metrics
+            artifacts = optimization_result.get('artifacts', {})
+            if not artifacts:
+                self.logger.warning("No artifacts found in optimization result")
+                return {}
+            
+            # Extract from nested artifact structure
+            optimization_result_data = artifacts.get('sr_parameter_optimization_result', {})
+            if not optimization_result_data:
+                self.logger.warning("No sr_parameter_optimization_result found in artifacts")
+                return {}
+            
+            optimized_params = optimization_result_data.get('optimized_parameters', {})
+            if not optimized_params or not isinstance(optimized_params, dict):
+                self.logger.warning("No optimized_parameters found in optimization result data")
+                return {}
+            
+            return optimized_params
+            
+        except Exception as e:
+            self.logger.error(f"Failed to extract optimized parameters: {e}")
+            return {}
+    
     async def run_workflow(self) -> Dict[str, Any]:
         """
         Run the complete SR workflow.
@@ -140,9 +173,12 @@ class SRWorkflowRunner:
             workflow_results['artifacts']['optimization'] = optimization_result.get('artifacts', {})
             workflow_results['metrics']['optimization'] = optimization_result.get('metrics', {})
             
-            # Extract optimized parameters
-            optimized_params = optimization_result.get('metrics', {}).get('optimized_parameters', {})
-            self.logger.info(f"📊 Optimized parameters: {optimized_params}")
+            # Extract optimized parameters from artifacts (not metrics)
+            optimized_params = self._extract_optimized_parameters(optimization_result)
+            if optimized_params:
+                self.logger.info(f"📊 Loaded {len(optimized_params)} optimized parameters")
+            else:
+                self.logger.warning("⚠️ No optimized parameters found, detection will use defaults")
             
             # Step 2: SR Detection with optimized parameters
             self.logger.info("\n" + "=" * 80)
@@ -176,8 +212,11 @@ class SRWorkflowRunner:
             workflow_results['artifacts']['detection'] = detection_result.get('artifacts', {})
             workflow_results['metrics']['detection'] = detection_result.get('metrics', {})
             
-            # Extract detected SR levels
+            # Extract detected SR levels with validation
             sr_levels = detection_result.get('detection_result', {})
+            if not sr_levels or not isinstance(sr_levels, dict):
+                self.logger.warning("⚠️ No SR levels detected or invalid detection result format")
+                sr_levels = {'total_levels': 0}
             total_levels = sr_levels.get('total_levels', 0)
             self.logger.info(f"📊 Detected {total_levels} SR levels")
             
@@ -214,8 +253,11 @@ class SRWorkflowRunner:
             workflow_results['artifacts']['clustering'] = clustering_result.get('artifacts', {})
             workflow_results['metrics']['clustering'] = clustering_result.get('metrics', {})
             
-            # Extract clustering results
+            # Extract clustering results with validation
             clusters = clustering_result.get('clustering_result', {})
+            if not clusters or not isinstance(clusters, dict):
+                self.logger.warning("⚠️ No clusters created or invalid clustering result format")
+                clusters = {'total_clusters': 0}
             total_clusters = clusters.get('total_clusters', 0)
             self.logger.info(f"📊 Created {total_clusters} SR clusters")
             
@@ -228,9 +270,12 @@ class SRWorkflowRunner:
             
             self.logger.info("\n" + "=" * 80)
             self.logger.info("✅ SR WORKFLOW COMPLETED SUCCESSFULLY")
-            self.logger.info(f"   Steps completed: {len(workflow_results['steps_completed'])}/3")
+            # Calculate totals for summary
+            total_steps = 3  # Total number of workflow steps
+            param_count = len(optimized_params) if isinstance(optimized_params, dict) else 0
+            self.logger.info(f"   Steps completed: {len(workflow_results['steps_completed'])}/{total_steps}")
             self.logger.info(f"   Total duration: {workflow_results['total_duration']:.2f}s")
-            self.logger.info(f"   Optimized parameters: {len(optimized_params)} params")
+            self.logger.info(f"   Optimized parameters: {param_count} params")
             self.logger.info(f"   Detected SR levels: {total_levels}")
             self.logger.info(f"   Created clusters: {total_clusters}")
             self.logger.info("=" * 80)

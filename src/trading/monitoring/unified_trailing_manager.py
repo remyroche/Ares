@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Any, Dict, Optional
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 
 logger = system_logger.getChild("UnifiedTrailingManager")
 
@@ -162,10 +163,16 @@ class UnifiedTrailingManager:
             state.trailing_stop,
             state.profit_target,
         )
+        tprint_info(f"📌 Registered position {position_id} ({side}) - regime={regime}, stop={state.trailing_stop:.4f}, target={state.profit_target:.4f}")
         return state
 
     def remove_position(self, position_id: str) -> None:
-        self.positions.pop(position_id, None)
+        """Remove a position from tracking."""
+        removed = self.positions.pop(position_id, None)
+        if removed:
+            tprint_info(f"🗑️ Removed position {position_id} from tracking")
+        else:
+            tprint_warning(f"⚠️ Position {position_id} not found for removal")
 
     # ------------------------------------------------------------------
     # Evaluation logic
@@ -188,9 +195,11 @@ class UnifiedTrailingManager:
 
         state = self.positions.get(position_id)
         if state is None:
+            tprint_warning(f"⚠️ Position {position_id} not found for evaluation")
             return TrailingDecision(TrailingAction.NONE, reason="position_not_found")
 
         if atr <= 0 or price <= 0:
+            tprint_error(f"❌ Invalid inputs for position {position_id}: atr={atr}, price={price}")
             return TrailingDecision(TrailingAction.NONE, reason="invalid_inputs")
 
         state.last_update = timestamp
@@ -216,12 +225,14 @@ class UnifiedTrailingManager:
 
         decision = self._check_breakeven(state, atr_move)
         if decision.action != TrailingAction.NONE:
+            tprint_info(f"📊 Position {position_id}: Breakeven decision - {decision.reason}")
             return decision
 
         decision = self._update_trailing_stop(
             state, price, trail_distance, atr_move
         )
         if decision.action != TrailingAction.NONE:
+            tprint_info(f"📊 Position {position_id}: Trailing stop updated - {decision.reason}, stop={decision.stop_price:.4f}")
             return decision
 
         decision = self._check_tp_trail(
@@ -233,14 +244,17 @@ class UnifiedTrailingManager:
             ml_context,
         )
         if decision.action != TrailingAction.NONE:
+            tprint_info(f"📊 Position {position_id}: TP trail decision - {decision.reason}, exit_fraction={decision.exit_fraction:.2%}")
             return decision
 
         decision = self._check_drawdown(state, price, atr)
         if decision.action != TrailingAction.NONE:
+            tprint_warning(f"⚠️ Position {position_id}: Drawdown decision - {decision.reason}")
             return decision
 
         decision = self._check_time_decay(state, timestamp, atr_move)
         if decision.action != TrailingAction.NONE:
+            tprint_warning(f"⚠️ Position {position_id}: Time decay decision - {decision.reason}")
             return decision
 
         return TrailingDecision(TrailingAction.NONE, reason="hold")
@@ -322,6 +336,7 @@ class UnifiedTrailingManager:
                     "⚠️ Regime change detected for %s – scheduling partial exit",
                     state.position_id,
                 )
+                tprint_warning(f"⚠️ Regime change detected for {state.position_id} – scheduling partial exit")
 
         return max(distance, state.profit_buffer)
 
@@ -335,6 +350,7 @@ class UnifiedTrailingManager:
             new_stop = state.entry_price
             updated = self._set_trailing_stop(state, new_stop, force=True)
             if updated:
+                tprint_success(f"✅ Breakeven activated for {state.position_id}, stop moved to entry price")
                 return TrailingDecision(
                     TrailingAction.MOVE_STOP,
                     stop_price=state.trailing_stop,
@@ -356,6 +372,7 @@ class UnifiedTrailingManager:
         candidate = price - state.side_multiplier * trail_distance
         updated = self._set_trailing_stop(state, candidate)
         if updated:
+            tprint_info(f"📈 Trailing stop updated for {state.position_id}: {state.trailing_stop:.4f}")
             return TrailingDecision(
                 TrailingAction.MOVE_STOP,
                 stop_price=state.trailing_stop,
@@ -434,6 +451,7 @@ class UnifiedTrailingManager:
         if atr_move >= trigger and (momentum_condition or rsi_condition or slope_condition or ml_trigger):
             state.partial_taken = True
             fraction = self.config["partial_take_fraction"]
+            tprint_info(f"💰 Partial exit triggered for {state.position_id}: {fraction:.2%} at {atr_move:.2f} ATR")
             return TrailingDecision(
                 TrailingAction.PARTIAL_EXIT,
                 exit_fraction=fraction,
@@ -456,6 +474,7 @@ class UnifiedTrailingManager:
         retrace_atr = retrace / atr if atr > 0 else 0.0
 
         if retrace_atr >= self.config["drawdown_exit_atr"]:
+            tprint_warning(f"⚠️ Drawdown exit triggered for {state.position_id}: {retrace_atr:.2f} ATR retrace")
             return TrailingDecision(
                 TrailingAction.FULL_EXIT, reason="drawdown_exit"
             )
@@ -468,6 +487,7 @@ class UnifiedTrailingManager:
             candidate = price - state.side_multiplier * tighten_distance
             updated = self._set_trailing_stop(state, candidate, force=True)
             if updated:
+                tprint_warning(f"⚠️ Trailing stop tightened for {state.position_id} due to drawdown: {state.trailing_stop:.4f}")
                 return TrailingDecision(
                     TrailingAction.MOVE_STOP,
                     stop_price=state.trailing_stop,
@@ -489,6 +509,7 @@ class UnifiedTrailingManager:
             bars_held >= self.config["time_decay_bars"]
             and atr_move < self.config["time_decay_threshold_atr"]
         ):
+            tprint_warning(f"⚠️ Time decay exit triggered for {state.position_id}: held {bars_held:.1f} bars with {atr_move:.2f} ATR move")
             return TrailingDecision(
                 TrailingAction.FULL_EXIT, reason="time_decay"
             )

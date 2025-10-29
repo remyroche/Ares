@@ -141,9 +141,11 @@ class TradeMonitor:
         """
         try:
             self.logger.info("✅ Trade Monitor initialized")
+            tprint_success("✅ Trade Monitor initialized")
             return True
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize Trade Monitor: {e}")
+            tprint_error(f"❌ Failed to initialize Trade Monitor: {e}")
             return False
 
     async def start_monitoring(self) -> bool:
@@ -271,7 +273,7 @@ class TradeMonitor:
             self.logger.error(f"❌ Failed to update trade status: {e}")
             return False
 
-    async def _monitoring_loop(self):
+    async def _monitoring_loop(self) -> None:
         """Main monitoring loop."""
         while self.is_monitoring:
             try:
@@ -289,9 +291,10 @@ class TradeMonitor:
 
             except Exception as e:
                 self.logger.error(f"❌ Monitoring loop error: {e}")
+                tprint_error(f"❌ Monitoring loop error: {e}")
                 await asyncio.sleep(5)
 
-    async def _update_performance_metrics(self, trade: Trade):
+    async def _update_performance_metrics(self, trade: Trade) -> None:
         """Update performance metrics based on trade."""
         try:
             # Update basic metrics
@@ -349,8 +352,9 @@ class TradeMonitor:
 
         except Exception as e:
             self.logger.error(f"❌ Performance metrics update failed: {e}")
+            tprint_error(f"❌ Performance metrics update failed: {e}")
 
-    async def _check_trade_alerts(self, trade: Trade):
+    async def _check_trade_alerts(self, trade: Trade) -> None:
         """Check for trade-specific alerts."""
         try:
             # Check for large loss
@@ -373,8 +377,9 @@ class TradeMonitor:
 
         except Exception as e:
             self.logger.error(f"❌ Trade alert check failed: {e}")
+            tprint_error(f"❌ Trade alert check failed: {e}")
 
-    async def _check_system_alerts(self):
+    async def _check_system_alerts(self) -> None:
         """Check for system-wide alerts."""
         try:
             # Check drawdown
@@ -404,8 +409,9 @@ class TradeMonitor:
 
         except Exception as e:
             self.logger.error(f"❌ System alert check failed: {e}")
+            tprint_error(f"❌ System alert check failed: {e}")
 
-    async def _check_stale_trades(self):
+    async def _check_stale_trades(self) -> None:
         """Check for stale trades that need attention."""
         try:
             current_time = datetime.now()
@@ -422,8 +428,9 @@ class TradeMonitor:
 
         except Exception as e:
             self.logger.error(f"❌ Stale trade check failed: {e}")
+            tprint_error(f"❌ Stale trade check failed: {e}")
 
-    async def _update_daily_metrics(self):
+    async def _update_daily_metrics(self) -> None:
         """Update daily performance metrics."""
         try:
             current_time = datetime.now()
@@ -461,6 +468,7 @@ class TradeMonitor:
 
         except Exception as e:
             self.logger.error(f"❌ Daily metrics update failed: {e}")
+            tprint_error(f"❌ Daily metrics update failed: {e}")
 
     async def _create_alert(
         self,
@@ -512,9 +520,10 @@ class TradeMonitor:
         except Exception as e:
             self.logger.error(f"❌ Alert creation failed: {e}")
 
-    def add_alert_callback(self, callback: Callable[[Alert], None]):
+    def add_alert_callback(self, callback: Callable[[Alert], None]) -> None:
         """Add an alert callback."""
         self.alert_callbacks.append(callback)
+        tprint_info(f"📝 Added alert callback (total: {len(self.alert_callbacks)})")
 
     def get_trade_history(self, n: int = 100) -> List[Trade]:
         """Get recent trade history."""

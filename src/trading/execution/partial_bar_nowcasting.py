@@ -508,7 +508,7 @@ def create_partial_bar_nowcaster(
     return PartialBarNowcaster(config)
 
 # Example usage
-async def example_nowcasting():
+async def example_nowcasting() -> None:
     """Example of using the partial-bar nowcaster."""
     try:
         # Create nowcaster

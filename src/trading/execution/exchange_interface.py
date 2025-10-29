@@ -20,8 +20,8 @@ import numpy as np
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.utils.tprint import (
-    tprint_info, tprint_warning, tprint_error, tprint_success,
-    tprint_structured, LogLevel
+    tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
+    tprint_debug, tprint_structured, LogLevel
 )
 
 # Import shared exchange utilities
@@ -1240,10 +1240,17 @@ class ExchangeInterface:
         if endpoint not in self.request_counts:
             self.request_counts[endpoint] = 0
             self.last_requests[endpoint] = now
+            tprint_debug(f"📊 Initialized rate limit tracking for {endpoint}")
 
         self.request_counts[endpoint] += 1
         self.last_requests[endpoint] = now
         self.total_requests += 1
+        
+        # Log warning if approaching limit
+        limit = self.rate_limits.get(endpoint, 100)
+        current_count = self.request_counts[endpoint]
+        if current_count >= limit * 0.8:  # 80% of limit
+            tprint_warning(f"⚠️ Rate limit warning for {endpoint}: {current_count}/{limit}")
 
     @handle_async_errors(default_return=None)
     async def _handle_error(self, error: Exception, operation: str) -> None:

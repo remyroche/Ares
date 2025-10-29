@@ -9,7 +9,6 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional, List
 from datetime import datetime
-import logging
 
 from src.utils.artifact_manager import ArtifactManager
 from src.utils.tprint import (
@@ -20,8 +19,6 @@ from src.utils.tprint import (
 # Import MS-DR components
 from .ms_dr_clusterer import MSDRClusterer, MSDRConfig, MSDRResult
 from .ms_dr_auto_tuner import MSDRAutoTuner, MSDRTuningConfig
-
-logger = logging.getLogger(__name__)
 
 
 def perform_ms_dr_clustering_with_artifact_manager(

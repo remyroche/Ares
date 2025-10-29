@@ -72,12 +72,11 @@ from dataclasses import dataclass
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
-import logging
 
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
     tprint_debug, tprint_performance, tprint_structured, tprint_timer,
-    tprint_data_preview, tprint_data_format
+    tprint_data_preview, tprint_data_format, tprint_exception
 )
 
 # Import safe mathematical operations
@@ -271,7 +270,6 @@ class MSDRClusterer:
             config: Configuration for MS-DR clustering
         """
         self.config = config or MSDRConfig()
-        self.logger = logging.getLogger(self.__class__.__name__)
         self.model = None
         self.scaler = None
         self.pca = None
@@ -457,7 +455,7 @@ class MSDRClusterer:
             
         except Exception as e:
             tprint_error(f"❌ MS-DR clustering failed: {e}")
-            self.logger.error(f"MS-DR clustering error: {e}", exc_info=True)
+            tprint_exception(e, "MS-DR clustering error")
             
             # Return failure result
             processing_time = time.time() - start_time

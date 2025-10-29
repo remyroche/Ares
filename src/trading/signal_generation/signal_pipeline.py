@@ -144,18 +144,21 @@ class SignalGenerationPipeline:
         self.model_selector_service = None
 
         # Optimization parameters (from backtesting)
+        # These will be overridden by final_parameters_optimization if available
         self.optimization_params = {
             'analyst_confidence_weight': 0.6,
             'tactician_confidence_weight': 0.4,
-            'regime_confidence_threshold': 0.7,
-            'signal_confidence_threshold': 0.6,
+            'regime_confidence_threshold': DEFAULT_REGIME_CONFIDENCE_THRESHOLD,
+            'signal_confidence_threshold': DEFAULT_SIGNAL_CONFIDENCE_THRESHOLD,
             'meta_model_weight': 0.8,
             'base_model_weight': 0.2,
-            # Exit-specific parameters
-            'exit_confidence_threshold': 0.5,
+            # Exit-specific parameters (will be overridden by final_parameters_optimization)
+            'exit_confidence_threshold': DEFAULT_EXIT_CONFIDENCE_THRESHOLD,
             'tactician_exit_confidence_weight': 0.6,
             'analyst_exit_confidence_weight': 0.4,
-            'exit_confidence_combination_method': 'multiplicative'  # 'multiplicative', 'logarithmic', 'weighted_average'
+            'exit_confidence_combination_method': 'multiplicative',  # 'multiplicative', 'logarithmic', 'weighted_average'
+            # Exit strategy parameters (loaded from final_parameters_optimization)
+            'exit_strategy': {}
         }
 
         # State management
@@ -362,21 +365,21 @@ class SignalGenerationPipeline:
                 )
                 
                 if optimized_params:
-                    # Update optimization parameters with optimized values
+                    # Update optimization parameters with optimized values (overriding defaults)
                     self.optimization_params.update({
-                        'analyst_confidence_weight': optimized_params.get('analyst_confidence_weight', 0.6),
-                        'tactician_confidence_weight': optimized_params.get('tactician_confidence_weight', 0.4),
-                        'regime_confidence_threshold': optimized_params.get('regime_confidence_threshold', 0.7),
-                        'signal_confidence_threshold': optimized_params.get('signal_confidence_threshold', 0.6),
-                        'meta_model_weight': optimized_params.get('meta_model_weight', 0.8),
-                        'base_model_weight': optimized_params.get('base_model_weight', 0.2),
-                        # Exit-specific parameters
-                        'exit_confidence_threshold': optimized_params.get('exit_confidence_threshold', 0.5),
-                        'tactician_exit_confidence_weight': optimized_params.get('tactician_exit_confidence_weight', 0.6),
-                        'analyst_exit_confidence_weight': optimized_params.get('analyst_exit_confidence_weight', 0.4),
-                        'exit_confidence_combination_method': optimized_params.get('exit_confidence_combination_method', 'multiplicative'),
+                        'analyst_confidence_weight': optimized_params.get('analyst_confidence_weight', self.optimization_params.get('analyst_confidence_weight', 0.6)),
+                        'tactician_confidence_weight': optimized_params.get('tactician_confidence_weight', self.optimization_params.get('tactician_confidence_weight', 0.4)),
+                        'regime_confidence_threshold': optimized_params.get('regime_confidence_threshold', DEFAULT_REGIME_CONFIDENCE_THRESHOLD),
+                        'signal_confidence_threshold': optimized_params.get('signal_confidence_threshold', DEFAULT_SIGNAL_CONFIDENCE_THRESHOLD),
+                        'meta_model_weight': optimized_params.get('meta_model_weight', self.optimization_params.get('meta_model_weight', 0.8)),
+                        'base_model_weight': optimized_params.get('base_model_weight', self.optimization_params.get('base_model_weight', 0.2)),
+                        # Exit-specific parameters (override defaults)
+                        'exit_confidence_threshold': optimized_params.get('exit_confidence_threshold', DEFAULT_EXIT_CONFIDENCE_THRESHOLD),
+                        'tactician_exit_confidence_weight': optimized_params.get('tactician_exit_confidence_weight', self.optimization_params.get('tactician_exit_confidence_weight', 0.6)),
+                        'analyst_exit_confidence_weight': optimized_params.get('analyst_exit_confidence_weight', self.optimization_params.get('analyst_exit_confidence_weight', 0.4)),
+                        'exit_confidence_combination_method': optimized_params.get('exit_confidence_combination_method', self.optimization_params.get('exit_confidence_combination_method', 'multiplicative')),
                         # Additional parameters from optimization
-                        'confidence_threshold': optimized_params.get('confidence_threshold', 0.75),
+                        'confidence_threshold': optimized_params.get('confidence_threshold', DEFAULT_CONFIDENCE_THRESHOLD),
                         'position_sizing_factor': optimized_params.get('position_sizing_factor', 0.02),
                         'leverage_multiplier': optimized_params.get('leverage_multiplier', 1.5),
                         'stop_loss_pct': optimized_params.get('stop_loss_pct', 0.03),
@@ -385,7 +388,38 @@ class SignalGenerationPipeline:
                         'ensemble_weight_tactician': optimized_params.get('ensemble_weight_tactician', 0.4)
                     })
                     
+                    # Load exit_strategy parameters from final_parameters_optimization
+                    exit_strategy_results = optimized_params.get('exit_strategy', {})
+                    if isinstance(exit_strategy_results, dict):
+                        exit_strategy_params = exit_strategy_results.get('best_params', {})
+                        if exit_strategy_params:
+                            # Store exit strategy parameters for use in exit condition checking
+                            self.optimization_params['exit_strategy'] = exit_strategy_params
+                            self.logger.info(f"✅ Loaded exit_strategy parameters: {len(exit_strategy_params)} parameters")
+                        else:
+                            # Try to get from position_monitor_exit_strategy format
+                            position_monitor_exit = optimized_params.get('position_monitor_exit_strategy', {})
+                            if position_monitor_exit:
+                                self.optimization_params['exit_strategy'] = position_monitor_exit
+                                self.logger.info("✅ Loaded exit_strategy from position_monitor_exit_strategy format")
+                    
+                    # Also check for raw exit_strategy parameters directly in optimized_params
+                    if 'exit_strategy' not in self.optimization_params or not self.optimization_params['exit_strategy']:
+                        # Check if exit parameters are at top level
+                        if any(key.startswith('exit_') or key.startswith('confidence_') for key in optimized_params.keys()):
+                            # Extract exit-related parameters
+                            exit_params = {k: v for k, v in optimized_params.items() 
+                                         if k.startswith('exit_') or k.startswith('confidence_') or k in 
+                                         ['base_profit_target', 'base_stop_loss', 'max_hold_time', 'min_hold_time',
+                                          'trailing_atr_multiplier', 'profit_buffer_ratio']}
+                            if exit_params:
+                                self.optimization_params['exit_strategy'] = exit_params
+                                self.logger.info(f"✅ Loaded exit_strategy parameters from top-level keys: {len(exit_params)} parameters")
+                    
                     self.logger.info("✅ Loaded optimized parameters from final_parameters_optimization")
+                    self.logger.debug(f"   Regime threshold: {self.optimization_params['regime_confidence_threshold']}")
+                    self.logger.debug(f"   Signal threshold: {self.optimization_params['signal_confidence_threshold']}")
+                    self.logger.debug(f"   Exit threshold: {self.optimization_params['exit_confidence_threshold']}")
                 else:
                     self.logger.warning("⚠️ No optimized parameters found, using defaults")
 
@@ -455,8 +489,14 @@ class SignalGenerationPipeline:
             tactician_meta_output.tactician_confidence
         )
 
-        # Step 7: Check Exit Conditions (if position is open)
-        should_exit, exit_reason = self._check_exit_conditions(exit_confidence)
+        # Step 7: Check Exit Conditions (if position is open) - using comprehensive exit parameters
+        should_exit, exit_reason = self._check_exit_conditions(
+            exit_confidence,
+            analyst_meta_output.analyst_confidence,
+            tactician_meta_output.tactician_confidence,
+            market_data,
+            timestamp
+        )
 
         # Step 8: Final Signal Generation (with position validation)
         final_signal = self._generate_final_signal(
@@ -1206,31 +1246,197 @@ class SignalGenerationPipeline:
             self.logger.error(f"❌ Error in logarithmic exit confidence calculation: {e}")
             return 0.5  # Default fallback
 
-    def _check_exit_conditions(self, exit_confidence: float) -> Tuple[bool, Optional[str]]:
+    def _check_exit_conditions(
+        self,
+        exit_confidence: float,
+        analyst_confidence: float,
+        tactician_confidence: float,
+        market_data: pd.DataFrame,
+        timestamp: datetime
+    ) -> Tuple[bool, Optional[str]]:
         """
-        Check if position should be exited based on exit confidence threshold.
-
+        Check if position should be exited based on comprehensive exit parameters from final_parameters_optimization.
+        
+        This matches the exit logic tested by final_parameters_optimization, checking:
+        - Exit confidence thresholds (multiple levels)
+        - Profit-taking conditions
+        - Stop-loss conditions
+        - Time-based exit conditions
+        - Confidence drop conditions
+        - Regime transition conditions
+        
         Args:
             exit_confidence: Combined exit confidence from analyst and tactician
-
+            analyst_confidence: Current analyst confidence
+            tactician_confidence: Current tactician confidence
+            market_data: Current market data for price/volatility checks
+            timestamp: Current timestamp for time-based checks
+        
         Returns:
             Tuple of (should_exit, exit_reason)
         """
         try:
+            with self._position_lock:
+                current_pos = self.current_position
+            
             # If no position is open, no need to exit
-            if not self.current_position or not self.current_position.is_open:
+            if not current_pos or not current_pos.is_open:
                 return False, None
-
-            exit_threshold = self.optimization_params['exit_confidence_threshold']
-
-            # Check if exit confidence drops below threshold
+            
+            exit_strategy = self.optimization_params.get('exit_strategy', {})
+            exit_reasons = []
+            
+            # 1. Exit confidence threshold check (primary check)
+            exit_threshold = self.optimization_params.get('exit_confidence_threshold', DEFAULT_EXIT_CONFIDENCE_THRESHOLD)
             if exit_confidence < exit_threshold:
-                exit_reason = f"Exit confidence {exit_confidence:.3f} below threshold {exit_threshold:.3f}"
-                self.logger.info(f"🚪 Exit condition triggered: {exit_reason}")
+                exit_reasons.append(f"Exit confidence {exit_confidence:.3f} below threshold {exit_threshold:.3f}")
+            
+            # 2. Confidence drop check (if entry confidence was higher)
+            if current_pos.entry_confidence is not None:
+                confidence_drop = current_pos.entry_confidence - exit_confidence
+                # Check if using exit_strategy parameters
+                if isinstance(exit_strategy, dict):
+                    # Handle both formatted (position_monitor_exit_strategy) and raw formats
+                    confidence_thresholds = exit_strategy.get('confidence_thresholds', {})
+                    
+                    # If no nested confidence_thresholds, check for flat keys (raw format)
+                    if not confidence_thresholds:
+                        # Check for raw format confidence thresholds
+                        confidence_very_low = exit_strategy.get('confidence_very_low')
+                        confidence_low = exit_strategy.get('confidence_low')
+                        confidence_medium = exit_strategy.get('confidence_medium')
+                        confidence_high = exit_strategy.get('confidence_high')
+                        
+                        if confidence_very_low is not None and exit_confidence <= confidence_very_low:
+                            exit_reasons.append(f"Exit confidence very low: {exit_confidence:.3f} <= {confidence_very_low:.3f}")
+                        elif confidence_low is not None and exit_confidence <= confidence_low:
+                            exit_reasons.append(f"Exit confidence low: {exit_confidence:.3f} <= {confidence_low:.3f}")
+                        elif confidence_medium is not None and exit_confidence <= confidence_medium and confidence_drop > 0.2:
+                            exit_reasons.append(f"Significant confidence drop: {confidence_drop:.3f}")
+                    else:
+                        # Use tiered confidence thresholds from formatted format
+                        confidence_very_low = confidence_thresholds.get('very_low', 0.2)
+                        confidence_low = confidence_thresholds.get('low', 0.4)
+                        confidence_medium = confidence_thresholds.get('medium', 0.6)
+                        
+                        if exit_confidence <= confidence_very_low:
+                            exit_reasons.append(f"Exit confidence very low: {exit_confidence:.3f} <= {confidence_very_low:.3f}")
+                        elif exit_confidence <= confidence_low:
+                            exit_reasons.append(f"Exit confidence low: {exit_confidence:.3f} <= {confidence_low:.3f}")
+                        elif exit_confidence <= confidence_medium and confidence_drop > 0.2:
+                            exit_reasons.append(f"Significant confidence drop: {confidence_drop:.3f}")
+                    
+                    # Check for confidence drop threshold (handles both formats)
+                    exit_confidence_drop = exit_strategy.get('exit_confidence_drop')
+                    if exit_confidence_drop and confidence_drop >= exit_confidence_drop:
+                        exit_reasons.append(f"Confidence drop {confidence_drop:.3f} >= threshold {exit_confidence_drop:.3f}")
+            
+            # 3. Time-based exit check
+            if current_pos.entry_timestamp:
+                elapsed_time = (timestamp - current_pos.entry_timestamp).total_seconds()
+                
+                if isinstance(exit_strategy, dict):
+                    # Handle both formatted and raw formats
+                    time_based = exit_strategy.get('time_based', {})
+                    if time_based:
+                        max_hold_time = time_based.get('max_hold_time', 10800)  # Default 3 hours
+                        min_hold_time = time_based.get('min_hold_time', 300)  # Default 5 minutes
+                    else:
+                        # Check for raw format keys
+                        max_hold_time = exit_strategy.get('max_hold_time', 10800)
+                        min_hold_time = exit_strategy.get('min_hold_time', 300)
+                    
+                    if elapsed_time >= max_hold_time:
+                        exit_reasons.append(f"Maximum hold time exceeded: {elapsed_time:.0f}s >= {max_hold_time:.0f}s")
+                    elif elapsed_time < min_hold_time:
+                        # Don't exit if position is too new (unless critical conditions)
+                        # Remove non-critical exit reasons if position is too new
+                        critical_reasons = [r for r in exit_reasons if any(keyword in r.lower() for keyword in ['stop-loss', 'loss', 'critical'])]
+                        if not critical_reasons:
+                            exit_reasons = []
+            
+            # 4. Profit-taking check (if position has profit and exit_strategy has profit_taking params)
+            if current_pos.entry_price is not None and len(market_data) > 0:
+                current_price = market_data['close'].iloc[-1]
+                
+                if current_pos.direction == 'long':
+                    profit_pct = (current_price - current_pos.entry_price) / current_pos.entry_price
+                else:  # short
+                    profit_pct = (current_pos.entry_price - current_price) / current_pos.entry_price
+                
+                if isinstance(exit_strategy, dict):
+                    # Handle both formatted and raw formats
+                    profit_taking = exit_strategy.get('profit_taking', {})
+                    if profit_taking:
+                        base_profit_target = profit_taking.get('base_profit_target', 0.04)
+                        min_confidence_for_profit = profit_taking.get('min_confidence_for_profit', 0.6)
+                        scaling_levels = profit_taking.get('scaling_levels', [0.25, 0.5, 0.75])
+                    else:
+                        # Check for raw format keys
+                        base_profit_target = exit_strategy.get('base_profit_target', 0.04)
+                        min_confidence_for_profit = exit_strategy.get('min_confidence_for_profit', 0.6)
+                        scaling_levels = [
+                            exit_strategy.get('profit_tier_1', 0.25),
+                            exit_strategy.get('profit_tier_2', 0.5),
+                            exit_strategy.get('profit_tier_3', 0.75)
+                        ]
+                    
+                    # Check if profit target reached with sufficient confidence
+                    if profit_pct >= base_profit_target and exit_confidence >= min_confidence_for_profit:
+                        exit_reasons.append(f"Profit target reached: {profit_pct:.3f} >= {base_profit_target:.3f} with confidence {exit_confidence:.3f}")
+                    
+                    # Check profit tiers
+                    if scaling_levels and len(scaling_levels) >= 3:
+                        profit_tier_3 = scaling_levels[2]
+                        if profit_pct >= profit_tier_3 * base_profit_target:
+                            exit_reasons.append(f"Profit tier 3 reached: {profit_pct:.3f} >= {profit_tier_3 * base_profit_target:.3f}")
+            
+            # 5. Stop-loss check (if position has loss)
+            if current_pos.entry_price is not None and len(market_data) > 0:
+                current_price = market_data['close'].iloc[-1]
+                
+                if current_pos.direction == 'long':
+                    loss_pct = (current_pos.entry_price - current_price) / current_pos.entry_price
+                else:  # short
+                    loss_pct = (current_price - current_pos.entry_price) / current_pos.entry_price
+                
+                if isinstance(exit_strategy, dict):
+                    # Handle both formatted and raw formats
+                    stop_loss = exit_strategy.get('stop_loss', {})
+                    if stop_loss:
+                        base_stop_loss = abs(stop_loss.get('base_stop_loss', -0.05))
+                    else:
+                        # Check for raw format key
+                        base_stop_loss = abs(exit_strategy.get('base_stop_loss', -0.05))
+                    
+                    if loss_pct >= base_stop_loss:
+                        exit_reasons.append(f"Stop-loss triggered: {loss_pct:.3f} >= {base_stop_loss:.3f}")
+            
+            # 6. Individual confidence checks (analyst or tactician below threshold)
+            # Check if either analyst or tactician confidence drops significantly
+            if current_pos.entry_confidence is not None:
+                analyst_drop = current_pos.entry_confidence - analyst_confidence if current_pos.entry_confidence > analyst_confidence else 0
+                tactician_drop = current_pos.entry_confidence - tactician_confidence if current_pos.entry_confidence > tactician_confidence else 0
+                
+                # Exit if either component drops significantly
+                if analyst_drop > 0.3 or tactician_drop > 0.3:
+                    if analyst_drop > tactician_drop:
+                        exit_reasons.append(f"Analyst confidence dropped significantly: {analyst_drop:.3f}")
+                    else:
+                        exit_reasons.append(f"Tactician confidence dropped significantly: {tactician_drop:.3f}")
+            
+            # Determine if we should exit based on any exit reason
+            if exit_reasons:
+                # Primary exit reason is the first/most critical one
+                exit_reason = exit_reasons[0]
+                if len(exit_reasons) > 1:
+                    exit_reason += f" (and {len(exit_reasons) - 1} other condition(s))"
+                
+                self.logger.info(f"🚪 Exit condition(s) triggered: {exit_reason}")
                 return True, exit_reason
-
+            
             return False, None
-
+            
         except Exception as e:
             self.logger.error(f"❌ Error checking exit conditions: {e}")
             return False, f"Error checking exit conditions: {e}"
@@ -1364,9 +1570,9 @@ class SignalGenerationPipeline:
                     'reason': f'Exit condition triggered: {exit_reason}'
                 }
 
-            # Use optimization parameters for thresholds
-            regime_threshold = self.optimization_params['regime_confidence_threshold']
-            signal_threshold = self.optimization_params['signal_confidence_threshold']
+            # Use optimization parameters for thresholds (overridden by final_parameters_optimization)
+            regime_threshold = self.optimization_params.get('regime_confidence_threshold', DEFAULT_REGIME_CONFIDENCE_THRESHOLD)
+            signal_threshold = self.optimization_params.get('signal_confidence_threshold', DEFAULT_SIGNAL_CONFIDENCE_THRESHOLD)
 
             # Check regime confidence
             if regime_output.confidence < regime_threshold:

@@ -289,13 +289,14 @@ class UnifiedOHLCVStandardizer:
         # Simple pattern-based column name mappings
         # Uses substring matching: if "low" in column name → map to "low"
         # Priority order matters (e.g., check "quote_volume" before "volume")
+        # All comparisons are case-insensitive (converted to lowercase)
         self.column_patterns = [
             # OHLCV core fields - simple substring matching
             ('open', ['open']),
             ('high', ['high']),
             ('low', ['low']),
             ('close', ['close']),
-            ('volume', ['volume', 'vol']),
+            ('volume', ['volume', 'vol', 'quantity', 'qty']),
             
             # Timestamp - check multiple patterns
             ('timestamp', ['timestamp', 'ts', 'time', 'datetime', 'date']),
@@ -334,6 +335,7 @@ class UnifiedOHLCVStandardizer:
         
         rename_map = {}
         for col in df.columns:
+            # Convert to lowercase for case-insensitive matching
             col_lower = str(col).lower().strip()
             col_clean = col_lower.replace('_', '').replace('-', '').replace(' ', '')
             
@@ -341,10 +343,11 @@ class UnifiedOHLCVStandardizer:
             matched = False
             for standard_name, patterns in self.column_patterns:
                 for pattern in patterns:
-                    pattern_lower = pattern.lower()
+                    # Convert pattern to lowercase for matching
+                    pattern_lower = str(pattern).lower().strip()
                     pattern_clean = pattern_lower.replace('_', '').replace('-', '').replace(' ', '')
                     
-                    # Check if pattern is in column name (case-insensitive)
+                    # Check if pattern is in column name (both lowercase)
                     if pattern_lower in col_lower or pattern_clean in col_clean:
                         rename_map[col] = standard_name
                         matched = True

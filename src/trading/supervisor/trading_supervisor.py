@@ -14,7 +14,7 @@ Responsibilities:
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -32,6 +32,9 @@ from ..utils.error_handling import (
     TradingError, TradingErrorSeverity, trading_error_handler
 )
 from ..sizing.risk_calculator import RiskCalculator
+
+if TYPE_CHECKING:
+    from ..execution.trading_orchestrator import TradingDecision
 
 logger = system_logger.getChild('TradingSupervisor')
 
@@ -102,61 +105,71 @@ class TradingSupervisor:
     - Single-asset position sizing (handled elsewhere)
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize Trading Supervisor.
 
         Args:
             config: Configuration dictionary
         """
-        self.config = config
+        tprint_info("🚀 Initializing Trading Supervisor...")
+        tprint_structured(
+            "Supervisor Configuration",
+            {
+                "phase": "initialization",
+                "config_keys": list(config.keys())
+            },
+            level=LogLevel.INFO
+        )
+        
+        self.config: Dict[str, Any] = config
         self.logger = logger.getChild('TradingSupervisor')
 
         # Extract trading config
         self.trading_config = TradingConfig(**config.get('trading_config', {}))
         
         # Supervisor configuration
-        supervisor_config = config.get('supervisor', {})
+        supervisor_config: Dict[str, Any] = config.get('supervisor', {})
         
         # Risk oversight settings
-        self.max_portfolio_risk = supervisor_config.get('max_portfolio_risk', 0.02)
-        self.max_drawdown = supervisor_config.get('max_drawdown', 0.15)
-        self.max_total_exposure = supervisor_config.get('max_total_exposure', 1.0)  # 100% of portfolio
+        self.max_portfolio_risk: float = supervisor_config.get('max_portfolio_risk', 0.02)
+        self.max_drawdown: float = supervisor_config.get('max_drawdown', 0.15)
+        self.max_total_exposure: float = supervisor_config.get('max_total_exposure', 1.0)  # 100% of portfolio
         
         # Cross-asset limits (to avoid over-correlation)
-        self.max_cross_asset_exposure = supervisor_config.get('max_cross_asset_exposure', 0.5)  # Max 50% in correlated assets
-        self.cross_asset_correlation_threshold = supervisor_config.get('cross_asset_correlation_threshold', 0.7)
+        self.max_cross_asset_exposure: float = supervisor_config.get('max_cross_asset_exposure', 0.5)  # Max 50% in correlated assets
+        self.cross_asset_correlation_threshold: float = supervisor_config.get('cross_asset_correlation_threshold', 0.7)
         
         # Circuit breaker settings
-        circuit_breaker_config = supervisor_config.get('circuit_breakers', {})
-        self.circuit_breakers_enabled = circuit_breaker_config.get('enabled', True)
-        self.max_loss_per_hour = circuit_breaker_config.get('max_loss_per_hour', 0.05)  # 5% max loss per hour
-        self.max_loss_per_day = circuit_breaker_config.get('max_loss_per_day', 0.10)  # 10% max loss per day
-        self.max_rejections_per_minute = circuit_breaker_config.get('max_rejections_per_minute', 5)
-        self.max_slippage_per_trade = circuit_breaker_config.get('max_slippage_per_trade', 0.005)  # 0.5%
-        self.circuit_breaker_cooldown = circuit_breaker_config.get('cooldown_period_seconds', 300)  # 5 minutes
+        circuit_breaker_config: Dict[str, Any] = supervisor_config.get('circuit_breakers', {})
+        self.circuit_breakers_enabled: bool = circuit_breaker_config.get('enabled', True)
+        self.max_loss_per_hour: float = circuit_breaker_config.get('max_loss_per_hour', 0.05)  # 5% max loss per hour
+        self.max_loss_per_day: float = circuit_breaker_config.get('max_loss_per_day', 0.10)  # 10% max loss per day
+        self.max_rejections_per_minute: int = circuit_breaker_config.get('max_rejections_per_minute', 5)
+        self.max_slippage_per_trade: float = circuit_breaker_config.get('max_slippage_per_trade', 0.005)  # 0.5%
+        self.circuit_breaker_cooldown: int = circuit_breaker_config.get('cooldown_period_seconds', 300)  # 5 minutes
         
         # Execution quality settings
-        execution_config = supervisor_config.get('execution_quality', {})
-        self.min_fill_rate = execution_config.get('min_fill_rate', 0.95)  # 95% orders must fill
-        self.max_avg_slippage = execution_config.get('max_avg_slippage', 0.002)  # 0.2% max average slippage
-        self.track_execution_metrics = execution_config.get('track_execution_metrics', True)
+        execution_config: Dict[str, Any] = supervisor_config.get('execution_quality', {})
+        self.min_fill_rate: float = execution_config.get('min_fill_rate', 0.95)  # 95% orders must fill
+        self.max_avg_slippage: float = execution_config.get('max_avg_slippage', 0.002)  # 0.2% max average slippage
+        self.track_execution_metrics: bool = execution_config.get('track_execution_metrics', True)
         
         # System health settings
-        self.monitor_data_quality = supervisor_config.get('monitor_data_quality', True)
-        self.monitor_exchange_health = supervisor_config.get('monitor_exchange_health', True)
+        self.monitor_data_quality: bool = supervisor_config.get('monitor_data_quality', True)
+        self.monitor_exchange_health: bool = supervisor_config.get('monitor_exchange_health', True)
         
         # State management
-        self.status = SupervisorStatus.INITIALIZING
-        self.is_initialized = False
+        self.status: SupervisorStatus = SupervisorStatus.INITIALIZING
+        self.is_initialized: bool = False
         
         # Thread safety locks
-        self._circuit_breaker_lock = asyncio.Lock()
-        self._positions_lock = asyncio.Lock()
-        self._execution_stats_lock = asyncio.Lock()
+        self._circuit_breaker_lock: asyncio.Lock = asyncio.Lock()
+        self._positions_lock: asyncio.Lock = asyncio.Lock()
+        self._execution_stats_lock: asyncio.Lock = asyncio.Lock()
         
         # Circuit breaker state
-        self.circuit_breaker = CircuitBreakerState()
+        self.circuit_breaker: CircuitBreakerState = CircuitBreakerState()
         
         # Account balance tracking
         self.account_balance: Optional[float] = None
@@ -172,7 +185,7 @@ class TradingSupervisor:
         self.recent_rejections: List[datetime] = []  # List of rejection timestamps
         
         # Execution quality tracking
-        self.execution_stats = {
+        self.execution_stats: Dict[str, Any] = {
             'total_orders': 0,
             'filled_orders': 0,
             'rejected_orders': 0,
@@ -183,19 +196,19 @@ class TradingSupervisor:
         
         # Cross-asset correlation tracking
         self.cross_asset_exposure: Dict[str, float] = {}  # Asset group -> exposure
-        self.correlated_asset_groups = supervisor_config.get('correlated_asset_groups', {
+        self.correlated_asset_groups: Dict[str, List[str]] = supervisor_config.get('correlated_asset_groups', {
             'crypto_majors': ['BTCUSDT', 'ETHUSDT'],
             'crypto_altcoins': ['SOLUSDT', 'ADAUSDT', 'DOTUSDT'],
             # Add more groups as needed
         })
         
         # Risk calculator for portfolio-level calculations
-        self.risk_calculator = RiskCalculator(self.trading_config)
+        self.risk_calculator: RiskCalculator = RiskCalculator(self.trading_config)
         
         # Reference to orchestrator (set during integration)
         self.orchestrator_reference: Optional[Any] = None
         
-        tprint_info("🚀 Initializing Trading Supervisor...")
+        tprint_info(f"✓ Supervisor initialized with risk limits: portfolio={self.max_portfolio_risk:.2%}, exposure={self.max_total_exposure:.2%}")
 
     @trading_error_handler(
         error_types=(Exception,),
@@ -209,12 +222,16 @@ class TradingSupervisor:
         Returns:
             bool: True if initialization successful
         """
+        tprint_info("🔄 Starting Supervisor initialization...")
         try:
             # Initialize risk calculator
+            tprint_info("📊 Initializing risk calculator...")
             await self.risk_calculator.initialize()
+            tprint_success("✓ Risk calculator initialized")
             
             # Initialize circuit breaker state
             self.circuit_breaker = CircuitBreakerState()
+            tprint_info(f"🛡️ Circuit breakers: {'enabled' if self.circuit_breakers_enabled else 'disabled'}")
             
             # Clear tracking structures
             self.all_active_positions.clear()
@@ -223,14 +240,28 @@ class TradingSupervisor:
             self.recent_rejections.clear()
             self.execution_stats.clear()
             self.cross_asset_exposure.clear()
+            tprint_info("✓ Tracking structures cleared")
             
             # Initialize account balance from config if available
             self.account_balance = self.config.get('account_balance')
+            if self.account_balance:
+                tprint_info(f"💰 Initial account balance: {self.account_balance:.2f}")
             
             self.status = SupervisorStatus.ACTIVE
             self.is_initialized = True
             
             tprint_success("✅ Trading Supervisor initialized successfully")
+            tprint_structured(
+                "Supervisor Configuration",
+                {
+                    "max_portfolio_risk": f"{self.max_portfolio_risk:.2%}",
+                    "max_drawdown": f"{self.max_drawdown:.2%}",
+                    "max_total_exposure": f"{self.max_total_exposure:.2%}",
+                    "max_cross_asset_exposure": f"{self.max_cross_asset_exposure:.2%}",
+                    "circuit_breakers_enabled": self.circuit_breakers_enabled
+                },
+                level=LogLevel.INFO
+            )
             self.logger.info("Trading Supervisor initialized with configuration:")
             self.logger.info(f"  - Max portfolio risk: {self.max_portfolio_risk}")
             self.logger.info(f"  - Max drawdown: {self.max_drawdown}")
@@ -275,21 +306,25 @@ class TradingSupervisor:
         Returns:
             ValidationResult: Validation result
         """
+        tprint_info(f"🔍 Pre-decision validation for {symbol}...")
+        
         if not self.is_initialized:
+            tprint_warning(f"⚠️ Supervisor not initialized, validation failed for {symbol}")
             return ValidationResult(
                 is_valid=False,
                 reasons=["Supervisor not initialized"],
                 risk_score=1.0
             )
         
-        reasons = []
-        warnings = []
-        risk_score = 0.0
+        reasons: List[str] = []
+        warnings: List[str] = []
+        risk_score: float = 0.0
         
         # Check circuit breaker (with thread safety)
         async with self._circuit_breaker_lock:
             if self.circuit_breaker.triggered:
                 if self.circuit_breaker.cooldown_until and datetime.now() < self.circuit_breaker.cooldown_until:
+                    tprint_warning(f"🚨 Circuit breaker active for {symbol}: {self.circuit_breaker.trigger_reason}")
                     return ValidationResult(
                         is_valid=False,
                         reasons=[f"Circuit breaker active: {self.circuit_breaker.trigger_reason}"],
@@ -304,28 +339,45 @@ class TradingSupervisor:
                     tprint_info("✅ Circuit breaker cooldown expired, resetting")
         
         # Check portfolio-level risk limits
+        tprint_info(f"📊 Checking portfolio risk limits for {symbol}...")
         portfolio_risk_valid, risk_reasons = await self._check_portfolio_risk_limits(
             symbol, current_positions, account_balance
         )
         if not portfolio_risk_valid:
             reasons.extend(risk_reasons)
             risk_score += 0.5
+            tprint_warning(f"⚠️ Portfolio risk check failed for {symbol}: {'; '.join(risk_reasons)}")
+        else:
+            tprint_info(f"✓ Portfolio risk check passed for {symbol}")
         
         # Check total exposure limits
+        tprint_info(f"📈 Checking total exposure limits for {symbol}...")
         exposure_valid, exposure_reasons = await self._check_total_exposure_limits(
             current_positions, account_balance
         )
         if not exposure_valid:
             reasons.extend(exposure_reasons)
             risk_score += 0.3
+            tprint_warning(f"⚠️ Exposure limit check failed for {symbol}: {'; '.join(exposure_reasons)}")
+        else:
+            tprint_info(f"✓ Exposure limit check passed for {symbol}")
         
         # System health checks
         if market_snapshot:
+            tprint_info(f"🏥 Checking system health for {symbol}...")
             health_valid, health_reasons = await self._check_system_health(market_snapshot)
             if not health_valid:
                 warnings.extend(health_reasons)
+                tprint_warning(f"⚠️ System health warnings for {symbol}: {'; '.join(health_reasons)}")
+            else:
+                tprint_info(f"✓ System health check passed for {symbol}")
         
-        is_valid = len(reasons) == 0
+        is_valid: bool = len(reasons) == 0
+        
+        if is_valid:
+            tprint_success(f"✅ Pre-decision validation passed for {symbol}")
+        else:
+            tprint_error(f"❌ Pre-decision validation failed for {symbol}: {'; '.join(reasons)}")
         
         return ValidationResult(
             is_valid=is_valid,
@@ -346,7 +398,7 @@ class TradingSupervisor:
     )
     async def validate_decision(
         self,
-        decision: Any,  # TradingDecision
+        decision: "TradingDecision",
         analyst_signal: Optional[Any] = None,
         tactician_signal: Optional[Any] = None,
         combined_signal: Optional[Dict[str, Any]] = None,
@@ -370,7 +422,12 @@ class TradingSupervisor:
         Returns:
             DecisionApproval: Approval result
         """
+        symbol: str = getattr(decision, 'symbol', 'UNKNOWN')
+        action: str = getattr(decision, 'action', 'UNKNOWN')
+        tprint_info(f"🔍 Validating decision for {symbol} ({action})...")
+        
         if not self.is_initialized:
+            tprint_warning(f"⚠️ Supervisor not initialized, decision validation failed for {symbol}")
             return DecisionApproval(
                 approved=False,
                 reason="Supervisor not initialized",
@@ -378,32 +435,41 @@ class TradingSupervisor:
             )
         
         # Check cross-asset exposure limits
+        tprint_info(f"📊 Checking cross-asset exposure for {symbol}...")
         cross_asset_valid, cross_asset_reason = await self._check_cross_asset_exposure(
             decision, current_positions, account_balance
         )
         
         if not cross_asset_valid:
+            tprint_warning(f"⚠️ Cross-asset exposure check failed for {symbol}: {cross_asset_reason}")
             return DecisionApproval(
                 approved=False,
                 reason=cross_asset_reason,
                 confidence_modifier=0.0,
                 metadata={'validation_type': 'cross_asset_exposure'}
             )
+        else:
+            tprint_info(f"✓ Cross-asset exposure check passed for {symbol}")
         
         # Check portfolio-level risk with new decision
+        tprint_info(f"📈 Checking portfolio risk with decision for {symbol}...")
         portfolio_valid, portfolio_reason = await self._check_portfolio_risk_with_decision(
             decision, current_positions, account_balance
         )
         
         if not portfolio_valid:
+            tprint_warning(f"⚠️ Portfolio risk check failed for {symbol}: {portfolio_reason}")
             return DecisionApproval(
                 approved=False,
                 reason=portfolio_reason,
                 confidence_modifier=0.0,
                 metadata={'validation_type': 'portfolio_risk'}
             )
+        else:
+            tprint_info(f"✓ Portfolio risk check passed for {symbol}")
         
         # All checks passed
+        tprint_success(f"✅ Decision validation passed for {symbol} ({action})")
         return DecisionApproval(
             approved=True,
             reason="All supervisor validations passed",
@@ -422,7 +488,7 @@ class TradingSupervisor:
     )
     async def pre_execution_check(
         self,
-        decision: Any,  # TradingDecision
+        decision: "TradingDecision",
         current_exposure: float,
         risk_metrics: Dict[str, float],
         account_balance: Optional[float] = None
@@ -442,19 +508,25 @@ class TradingSupervisor:
         Returns:
             ExecutionCheck: Check result
         """
+        symbol: str = getattr(decision, 'symbol', 'UNKNOWN')
+        action: str = getattr(decision, 'action', 'UNKNOWN')
+        tprint_info(f"🔍 Pre-execution check for {symbol} ({action})...")
+        
         if not self.is_initialized:
+            tprint_warning(f"⚠️ Supervisor not initialized, pre-execution check failed for {symbol}")
             return ExecutionCheck(
                 can_proceed=False,
                 reason="Supervisor not initialized"
             )
         
-        reasons = []
-        suggested_adjustments = {}
+        reasons: List[str] = []
+        suggested_adjustments: Dict[str, Any] = {}
         
         # Check circuit breaker (critical - must pass, with thread safety)
         async with self._circuit_breaker_lock:
             if self.circuit_breaker.triggered:
                 if self.circuit_breaker.cooldown_until and datetime.now() < self.circuit_breaker.cooldown_until:
+                    tprint_error(f"🚨 Circuit breaker active, blocking execution for {symbol}: {self.circuit_breaker.trigger_reason}")
                     return ExecutionCheck(
                         can_proceed=False,
                         reason=f"Circuit breaker active: {self.circuit_breaker.trigger_reason}",
@@ -466,30 +538,50 @@ class TradingSupervisor:
                     self.circuit_breaker.trigger_time = None
                     self.circuit_breaker.cooldown_until = None
                     self.status = SupervisorStatus.ACTIVE
+                    tprint_info(f"✅ Circuit breaker cooldown expired, execution allowed for {symbol}")
         
         # Check total exposure limit (portfolio-level)
+        tprint_info(f"📊 Checking exposure limit: {current_exposure:.2%} vs {self.max_total_exposure:.2%}")
         if current_exposure > self.max_total_exposure:
-            reasons.append(f"Total exposure {current_exposure:.2%} exceeds limit {self.max_total_exposure:.2%}")
+            reason_msg = f"Total exposure {current_exposure:.2%} exceeds limit {self.max_total_exposure:.2%}"
+            reasons.append(reason_msg)
             suggested_adjustments['reduce_position_size'] = True
             suggested_adjustments['target_exposure'] = self.max_total_exposure * 0.9
+            tprint_warning(f"⚠️ Exposure limit exceeded for {symbol}: {reason_msg}")
+        else:
+            tprint_info(f"✓ Exposure limit check passed for {symbol}")
         
         # Check execution quality (if we have recent poor execution stats)
         if self.track_execution_metrics:
+            tprint_info(f"📈 Checking execution quality trends for {symbol}...")
             quality_check = self._check_execution_quality_trends()
             if not quality_check['acceptable']:
-                reasons.append(f"Execution quality below threshold: {quality_check['reason']}")
+                reason_msg = f"Execution quality below threshold: {quality_check['reason']}"
+                reasons.append(reason_msg)
                 if quality_check.get('suggest_reduce_size'):
                     suggested_adjustments['reduce_position_size'] = True
+                tprint_warning(f"⚠️ Execution quality check failed for {symbol}: {reason_msg}")
+            else:
+                tprint_info(f"✓ Execution quality check passed for {symbol}")
         
         # Check recent rejection rate
-        if len(self.recent_rejections) >= self.max_rejections_per_minute:
+        rejection_count: int = len(self.recent_rejections)
+        if rejection_count >= self.max_rejections_per_minute:
+            tprint_error(f"🚨 Too many rejections ({rejection_count}) in last minute, blocking execution for {symbol}")
             return ExecutionCheck(
                 can_proceed=False,
-                reason=f"Too many rejections in last minute: {len(self.recent_rejections)}",
-                metadata={'rejection_count': len(self.recent_rejections)}
+                reason=f"Too many rejections in last minute: {rejection_count}",
+                metadata={'rejection_count': rejection_count}
             )
+        elif rejection_count > 0:
+            tprint_info(f"⚠️ {rejection_count} rejections in last minute for {symbol} (limit: {self.max_rejections_per_minute})")
         
-        can_proceed = len(reasons) == 0
+        can_proceed: bool = len(reasons) == 0
+        
+        if can_proceed:
+            tprint_success(f"✅ Pre-execution check passed for {symbol} ({action})")
+        else:
+            tprint_error(f"❌ Pre-execution check failed for {symbol}: {'; '.join(reasons)}")
         
         return ExecutionCheck(
             can_proceed=can_proceed,
@@ -519,25 +611,31 @@ class TradingSupervisor:
             order_id: Order ID
             execution_result: Execution result dictionary
         """
+        tprint_info(f"📊 Monitoring execution for order {order_id}...")
         try:
             # Thread-safe execution stats update
             async with self._execution_stats_lock:
                 self.execution_stats['total_orders'] += 1
+                total_orders: int = self.execution_stats['total_orders']
                 
-                status = execution_result.get('status', '').upper()
+                status: str = execution_result.get('status', '').upper()
+                tprint_info(f"📋 Order {order_id} status: {status}")
+                
                 if status in ['FILLED', 'PARTIALLY_FILLED']:
                     self.execution_stats['filled_orders'] += 1
+                    filled_orders: int = self.execution_stats['filled_orders']
+                    fill_rate: float = filled_orders / total_orders if total_orders > 0 else 0.0
+                    tprint_success(f"✅ Order {order_id} filled (fill rate: {fill_rate:.2%})")
                     
                     # Track slippage if available
                     if 'slippage' in execution_result:
-                        slippage = abs(execution_result['slippage'])
-                        # Only track slippage from recent executions for average calculation
-                        # Don't add to total_slippage which accumulates incorrectly
+                        slippage: float = abs(execution_result['slippage'])
+                        tprint_info(f"📈 Order {order_id} slippage: {slippage:.4%}")
                         
                         # Check for excessive slippage
                         if slippage > self.max_slippage_per_trade:
                             tprint_warning(
-                                f"⚠️ High slippage detected: {slippage:.4%} for order {order_id}"
+                                f"⚠️ High slippage detected: {slippage:.4%} for order {order_id} (limit: {self.max_slippage_per_trade:.4%})"
                             )
                         
                         # Update recent executions (keep this list for averaging)
@@ -553,23 +651,31 @@ class TradingSupervisor:
                     self.execution_stats['rejected_orders'] += 1
                     self.recent_rejections.append(datetime.now())
                     
+                    rejection_count: int = len(self.recent_rejections)
+                    tprint_warning(f"⚠️ Order {order_id} {status.lower()} (rejection count: {rejection_count})")
+                    
                     # Clean old rejections (older than 1 minute)
-                    cutoff = datetime.now() - timedelta(minutes=1)
+                    cutoff: datetime = datetime.now() - timedelta(minutes=1)
                     self.recent_rejections = [r for r in self.recent_rejections if r > cutoff]
             
             # Check circuit breaker trigger (outside lock to avoid deadlock)
-            if len(self.recent_rejections) >= self.max_rejections_per_minute:
+            rejection_count = len(self.recent_rejections)
+            if rejection_count >= self.max_rejections_per_minute:
+                tprint_error(f"🚨 Rejection limit reached ({rejection_count}), triggering circuit breaker")
                 await self._trigger_circuit_breaker(
-                    f"Too many rejections: {len(self.recent_rejections)} in last minute"
+                    f"Too many rejections: {rejection_count} in last minute"
                 )
             
             # Track commission if available (thread-safe)
             async with self._execution_stats_lock:
                 if 'commission' in execution_result:
-                    self.execution_stats['total_commissions'] += execution_result['commission']
+                    commission: float = execution_result['commission']
+                    self.execution_stats['total_commissions'] += commission
+                    tprint_info(f"💰 Order {order_id} commission: {commission:.4f}")
                 
         except Exception as e:
             self.logger.warning(f"⚠️ Error monitoring execution: {e}")
+            tprint_error(f"❌ Error monitoring execution for order {order_id}: {e}")
 
     @trading_error_handler(
         error_types=(Exception,),
@@ -588,36 +694,52 @@ class TradingSupervisor:
             trade_id: Trade ID
             trade_outcome: Trade outcome dictionary with PnL, duration, etc.
         """
+        tprint_info(f"📊 Post-trade analysis for trade {trade_id}...")
         try:
             # Extract PnL if available
-            pnl = trade_outcome.get('pnl_absolute', 0.0)
+            pnl: float = trade_outcome.get('pnl_absolute', 0.0)
+            tprint_info(f"💰 Trade {trade_id} PnL: {pnl:.4f}")
+            
             if pnl < 0:  # Loss
-                loss_amount = abs(pnl)
-                now = datetime.now()
+                loss_amount: float = abs(pnl)
+                now: datetime = datetime.now()
+                
+                tprint_warning(f"⚠️ Loss detected for trade {trade_id}: {loss_amount:.4f}")
                 
                 # Track hourly losses
                 self.hourly_losses.append((now, loss_amount))
-                cutoff = now - timedelta(hours=1)
+                cutoff: datetime = now - timedelta(hours=1)
                 self.hourly_losses = [(t, l) for t, l in self.hourly_losses if t > cutoff]
+                hourly_loss_total: float = sum(l for _, l in self.hourly_losses)
+                tprint_info(f"📈 Hourly loss total: {hourly_loss_total:.4f} ({len(self.hourly_losses)} losses)")
                 
                 # Track daily losses
                 self.daily_losses.append((now, loss_amount))
-                daily_cutoff = now - timedelta(days=1)
+                daily_cutoff: datetime = now - timedelta(days=1)
                 self.daily_losses = [(t, l) for t, l in self.daily_losses if t > daily_cutoff]
+                daily_loss_total: float = sum(l for _, l in self.daily_losses)
+                tprint_info(f"📅 Daily loss total: {daily_loss_total:.4f} ({len(self.daily_losses)} losses)")
                 
                 # Check circuit breakers
                 if self.circuit_breakers_enabled:
+                    tprint_info(f"🛡️ Checking loss-based circuit breakers for trade {trade_id}...")
                     await self._check_loss_based_circuit_breakers()
+            else:
+                tprint_success(f"✅ Profit for trade {trade_id}: {pnl:.4f}")
             
             # Update execution quality metrics
             if 'slippage' in trade_outcome:
+                tprint_info(f"📈 Updating execution metrics for trade {trade_id}...")
                 await self.monitor_execution(
                     trade_id,
                     {'status': 'FILLED', 'slippage': trade_outcome['slippage']}
                 )
+            
+            tprint_success(f"✅ Post-trade analysis completed for trade {trade_id}")
                 
         except Exception as e:
             self.logger.warning(f"⚠️ Error in post-trade analysis: {e}")
+            tprint_error(f"❌ Error in post-trade analysis for trade {trade_id}: {e}")
 
     @handles_errors
     async def _check_portfolio_risk_limits(
@@ -638,15 +760,15 @@ class TradingSupervisor:
         # Update account balance tracking
         self.account_balance = account_balance
         
-        reasons = []
+        reasons: List[str] = []
         
         # Calculate total portfolio risk using RiskCalculator for each position
-        total_risk = 0.0
+        total_risk: float = 0.0
         for pos_id, position in current_positions.items():
-            quantity = position.get('quantity', 0)
-            entry_price = position.get('entry_price', 0)
-            stop_loss_price = position.get('stop_loss_price')
-            volatility = position.get('volatility')  # If available
+            quantity: float = position.get('quantity', 0)
+            entry_price: float = position.get('entry_price', 0)
+            stop_loss_price: Optional[float] = position.get('stop_loss_price')
+            volatility: Optional[float] = position.get('volatility')  # If available
             
             if quantity > 0 and entry_price > 0:
                 # Use RiskCalculator for proper risk calculation
@@ -663,7 +785,8 @@ class TradingSupervisor:
                 except Exception as e:
                     # Fallback to simple calculation if RiskCalculator fails
                     self.logger.warning(f"RiskCalculator failed for position {pos_id}: {e}")
-                    pos_value = quantity * entry_price
+                    tprint_warning(f"⚠️ RiskCalculator failed for position {pos_id}: {e}, using fallback")
+                    pos_value: float = quantity * entry_price
                     total_risk += pos_value / account_balance
         
         self.total_portfolio_risk = total_risk
@@ -685,14 +808,14 @@ class TradingSupervisor:
         if not account_balance or account_balance <= 0:
             return True, []  # Skip check if balance unavailable
         
-        reasons = []
+        reasons: List[str] = []
         
         # Calculate total exposure
-        total_exposure = 0.0
+        total_exposure: float = 0.0
         for pos_id, position in current_positions.items():
-            pos_value = position.get('quantity', 0) * position.get('entry_price', 0)
-            leverage = position.get('leverage', 1.0)
-            exposure = (pos_value * leverage) / account_balance
+            pos_value: float = position.get('quantity', 0) * position.get('entry_price', 0)
+            leverage: float = position.get('leverage', 1.0)
+            exposure: float = (pos_value * leverage) / account_balance
             total_exposure += exposure
         
         self.total_portfolio_exposure = total_exposure
@@ -707,7 +830,7 @@ class TradingSupervisor:
     @handles_errors
     async def _check_cross_asset_exposure(
         self,
-        decision: Any,
+        decision: "TradingDecision",
         current_positions: Optional[Dict[str, Dict[str, Any]]],
         account_balance: Optional[float]
     ) -> Tuple[bool, str]:
@@ -786,7 +909,7 @@ class TradingSupervisor:
     @handles_errors
     async def _check_portfolio_risk_with_decision(
         self,
-        decision: Any,
+        decision: "TradingDecision",
         current_positions: Optional[Dict[str, Dict[str, Any]]],
         account_balance: Optional[float]
     ) -> Tuple[bool, str]:
@@ -877,14 +1000,17 @@ class TradingSupervisor:
         market_snapshot: Dict[str, Any]
     ) -> Tuple[bool, List[str]]:
         """Check system health (data quality, exchange connectivity)."""
-        warnings = []
+        warnings: List[str] = []
         
         if self.monitor_data_quality:
             # Check data freshness if timestamp available
             if 'timestamp' in market_snapshot:
-                data_age = (datetime.now() - market_snapshot['timestamp']).total_seconds()
+                snapshot_timestamp: datetime = market_snapshot['timestamp']
+                data_age: float = (datetime.now() - snapshot_timestamp).total_seconds()
                 if data_age > 300:  # 5 minutes
-                    warnings.append(f"Market data is {data_age:.0f}s old")
+                    warning_msg: str = f"Market data is {data_age:.0f}s old"
+                    warnings.append(warning_msg)
+                    tprint_warning(f"⚠️ System health warning: {warning_msg}")
         
         # Add more health checks as needed
         
@@ -892,13 +1018,14 @@ class TradingSupervisor:
 
     def _check_execution_quality_trends(self) -> Dict[str, Any]:
         """Check execution quality trends."""
-        stats = self.execution_stats
+        stats: Dict[str, Any] = self.execution_stats
         
         if stats['total_orders'] == 0:
             return {'acceptable': True, 'reason': 'No execution history'}
         
         # Calculate fill rate
-        fill_rate = stats['filled_orders'] / stats['total_orders']
+        fill_rate: float = stats['filled_orders'] / stats['total_orders']
+        tprint_info(f"📊 Execution quality: fill_rate={fill_rate:.2%}, threshold={self.min_fill_rate:.2%}")
         
         if fill_rate < self.min_fill_rate:
             return {
@@ -909,8 +1036,9 @@ class TradingSupervisor:
         
         # Calculate average slippage from recent executions only
         if len(stats['recent_executions']) > 0:
-            slippage_sum = sum(ex.get('slippage', 0) for ex in stats['recent_executions'])
-            avg_slippage = slippage_sum / len(stats['recent_executions'])
+            slippage_sum: float = sum(ex.get('slippage', 0) for ex in stats['recent_executions'])
+            avg_slippage: float = slippage_sum / len(stats['recent_executions'])
+            tprint_info(f"📊 Average slippage: {avg_slippage:.4%}, threshold={self.max_avg_slippage:.4%}")
             if avg_slippage > self.max_avg_slippage:
                 return {
                     'acceptable': False,
@@ -931,17 +1059,20 @@ class TradingSupervisor:
             return
         
         # Need account balance to calculate percentage losses
-        account_balance = self.account_balance
+        account_balance: Optional[float] = self.account_balance
         if not account_balance or account_balance <= 0:
             self.logger.warning("⚠️ Cannot check loss-based circuit breakers: account balance unavailable")
+            tprint_warning("⚠️ Cannot check loss-based circuit breakers: account balance unavailable")
             return
         
         # Calculate hourly loss percentage
         if self.hourly_losses:
-            hourly_loss_total = sum(loss for _, loss in self.hourly_losses)
-            hourly_loss_pct = hourly_loss_total / account_balance
+            hourly_loss_total: float = sum(loss for _, loss in self.hourly_losses)
+            hourly_loss_pct: float = hourly_loss_total / account_balance
+            tprint_info(f"📊 Hourly loss: {hourly_loss_pct:.2%} (limit: {self.max_loss_per_hour:.2%})")
             
             if hourly_loss_pct > self.max_loss_per_hour:
+                tprint_error(f"🚨 Hourly loss limit exceeded: {hourly_loss_pct:.2%} > {self.max_loss_per_hour:.2%}")
                 await self._trigger_circuit_breaker(
                     f"Hourly loss {hourly_loss_pct:.2%} exceeds limit {self.max_loss_per_hour:.2%}"
                 )
@@ -949,10 +1080,12 @@ class TradingSupervisor:
         
         # Calculate daily loss percentage
         if self.daily_losses:
-            daily_loss_total = sum(loss for _, loss in self.daily_losses)
-            daily_loss_pct = daily_loss_total / account_balance
+            daily_loss_total: float = sum(loss for _, loss in self.daily_losses)
+            daily_loss_pct: float = daily_loss_total / account_balance
+            tprint_info(f"📊 Daily loss: {daily_loss_pct:.2%} (limit: {self.max_loss_per_day:.2%})")
             
             if daily_loss_pct > self.max_loss_per_day:
+                tprint_error(f"🚨 Daily loss limit exceeded: {daily_loss_pct:.2%} > {self.max_loss_per_day:.2%}")
                 await self._trigger_circuit_breaker(
                     f"Daily loss {daily_loss_pct:.2%} exceeds limit {self.max_loss_per_day:.2%}"
                 )
@@ -985,7 +1118,7 @@ class TradingSupervisor:
         self,
         current_positions: Dict[str, Dict[str, Any]],
         account_balance: float,
-        decision: Optional[Any] = None
+        decision: Optional["TradingDecision"] = None
     ) -> None:
         """
         Recalculate cross-asset exposure for all groups from actual positions.
@@ -1040,10 +1173,18 @@ class TradingSupervisor:
             account_balance: Current account balance
         """
         if account_balance > 0:
+            old_balance: Optional[float] = self.account_balance
             self.account_balance = account_balance
+            if old_balance is not None:
+                change: float = account_balance - old_balance
+                change_pct: float = (change / old_balance) * 100 if old_balance > 0 else 0.0
+                tprint_info(f"💰 Account balance updated: {account_balance:.2f} (change: {change:+.2f}, {change_pct:+.2f}%)")
+            else:
+                tprint_info(f"💰 Account balance set: {account_balance:.2f}")
             self.logger.debug(f"Account balance updated: {account_balance:.2f}")
         else:
             self.logger.warning(f"Invalid account balance provided: {account_balance}")
+            tprint_warning(f"⚠️ Invalid account balance provided: {account_balance}")
 
     async def update_positions(
         self,
@@ -1060,6 +1201,8 @@ class TradingSupervisor:
             positions_by_symbol: Dict of symbol -> positions dict
             account_balance: Current account balance
         """
+        tprint_info(f"🔄 Updating positions for {len(positions_by_symbol)} symbols...")
+        
         # Update account balance
         await self.update_account_balance(account_balance)
         
@@ -1069,8 +1212,9 @@ class TradingSupervisor:
                 self.all_active_positions = positions_by_symbol.copy()
                 
                 # Recalculate portfolio metrics
-                total_exposure = 0.0
-                total_risk = 0.0
+                total_exposure: float = 0.0
+                total_risk: float = 0.0
+                position_count: int = 0
                 
                 for symbol, positions in positions_by_symbol.items():
                     # Positions dict may contain multiple position entries
@@ -1078,15 +1222,17 @@ class TradingSupervisor:
                         # Check if it's a single position dict or multiple
                         if 'quantity' in positions:
                             # Single position
-                            quantity = positions.get('quantity', 0)
-                            entry_price = positions.get('entry_price', 0)
-                            leverage = positions.get('leverage', 1.0)
+                            quantity: float = positions.get('quantity', 0)
+                            entry_price: float = positions.get('entry_price', 0)
+                            leverage: float = positions.get('leverage', 1.0)
                             
                             if quantity > 0 and entry_price > 0:
-                                symbol_value = quantity * entry_price
-                                symbol_risk = symbol_value / account_balance
+                                symbol_value: float = quantity * entry_price
+                                symbol_risk: float = symbol_value / account_balance
                                 total_exposure += (symbol_value * leverage) / account_balance
                                 total_risk += symbol_risk
+                                position_count += 1
+                                tprint_info(f"📊 Position {symbol}: exposure={(symbol_value * leverage) / account_balance:.2%}, risk={symbol_risk:.2%}")
                         else:
                             # Multiple positions keyed by position_id
                             for pos_id, position in positions.items():
@@ -1096,13 +1242,25 @@ class TradingSupervisor:
                                     leverage = position.get('leverage', 1.0)
                                     
                                     if quantity > 0 and entry_price > 0:
-                                        pos_value = quantity * entry_price
-                                        pos_risk = pos_value / account_balance
+                                        pos_value: float = quantity * entry_price
+                                        pos_risk: float = pos_value / account_balance
                                         total_exposure += (pos_value * leverage) / account_balance
                                         total_risk += pos_risk
+                                        position_count += 1
                 
                 self.total_portfolio_exposure = total_exposure
                 self.total_portfolio_risk = total_risk
+                
+                tprint_structured(
+                    "Portfolio Metrics Updated",
+                    {
+                        "total_positions": position_count,
+                        "total_exposure": f"{total_exposure:.2%}",
+                        "total_risk": f"{total_risk:.2%}",
+                        "symbols": list(positions_by_symbol.keys())
+                    },
+                    level=LogLevel.INFO
+                )
                 
                 # Recalculate cross-asset exposure from actual positions
                 await self._recalculate_cross_asset_exposure(
@@ -1110,8 +1268,11 @@ class TradingSupervisor:
                     account_balance
                 )
             
+            tprint_success(f"✅ Positions updated: {position_count} positions across {len(positions_by_symbol)} symbols")
+            
         except Exception as e:
             self.logger.warning(f"⚠️ Error updating positions: {e}")
+            tprint_error(f"❌ Error updating positions: {e}")
 
     def _flatten_positions(
         self,
@@ -1126,7 +1287,7 @@ class TradingSupervisor:
         Returns:
             Flattened dict of position_id -> position
         """
-        flattened = {}
+        flattened: Dict[str, Dict[str, Any]] = {}
         for symbol, positions in positions_by_symbol.items():
             if isinstance(positions, dict):
                 if 'quantity' in positions:
@@ -1153,9 +1314,11 @@ class TradingSupervisor:
             position_id: Optional position ID (if None, removes all positions for symbol)
             account_balance: Current account balance (for recalculation)
         """
+        tprint_info(f"🗑️ Removing position for {symbol}" + (f" (position_id: {position_id})" if position_id else " (all positions)"))
+        
         async with self._positions_lock:
             if symbol in self.all_active_positions:
-                positions = self.all_active_positions[symbol]
+                positions: Dict[str, Any] = self.all_active_positions[symbol]
                 
                 if position_id and isinstance(positions, dict) and 'quantity' not in positions:
                     # Multiple positions - remove specific one
@@ -1163,21 +1326,40 @@ class TradingSupervisor:
                         del positions[position_id]
                         if not positions:
                             del self.all_active_positions[symbol]
+                            tprint_info(f"✓ Removed all positions for {symbol}")
+                        else:
+                            tprint_info(f"✓ Removed position {position_id} for {symbol}")
+                    else:
+                        tprint_warning(f"⚠️ Position {position_id} not found for {symbol}")
                 else:
                     # Single position or remove all - remove entire symbol entry
                     del self.all_active_positions[symbol]
+                    tprint_info(f"✓ Removed all positions for {symbol}")
+            else:
+                tprint_warning(f"⚠️ No positions found for {symbol}")
             
             # Recalculate metrics if balance provided
             if account_balance:
+                tprint_info(f"📊 Recalculating portfolio metrics after position removal for {symbol}...")
                 await self.update_account_balance(account_balance)
                 await self._recalculate_cross_asset_exposure(
                     self._flatten_positions(self.all_active_positions),
                     account_balance
                 )
+                tprint_success(f"✅ Portfolio metrics updated after removing position for {symbol}")
 
     def get_supervisor_status(self) -> Dict[str, Any]:
         """Get current supervisor status and metrics."""
-        return {
+        fill_rate: float = (
+            self.execution_stats['filled_orders'] / self.execution_stats['total_orders']
+            if self.execution_stats['total_orders'] > 0 else 0.0
+        )
+        avg_slippage: float = (
+            sum(ex.get('slippage', 0) for ex in self.execution_stats['recent_executions']) / len(self.execution_stats['recent_executions'])
+            if len(self.execution_stats['recent_executions']) > 0 else 0.0
+        )
+        
+        status_dict: Dict[str, Any] = {
             'status': self.status.value,
             'is_initialized': self.is_initialized,
             'circuit_breaker': {
@@ -1197,17 +1379,25 @@ class TradingSupervisor:
                 'total_orders': self.execution_stats['total_orders'],
                 'filled_orders': self.execution_stats['filled_orders'],
                 'rejected_orders': self.execution_stats['rejected_orders'],
-                'fill_rate': (
-                    self.execution_stats['filled_orders'] / self.execution_stats['total_orders']
-                    if self.execution_stats['total_orders'] > 0 else 0.0
-                ),
-                'avg_slippage': (
-                    sum(ex.get('slippage', 0) for ex in self.execution_stats['recent_executions']) / len(self.execution_stats['recent_executions'])
-                    if len(self.execution_stats['recent_executions']) > 0 else 0.0
-                )
+                'fill_rate': fill_rate,
+                'avg_slippage': avg_slippage
             },
             'recent_rejections_count': len(self.recent_rejections)
         }
+        
+        tprint_structured(
+            "Supervisor Status",
+            {
+                "status": status_dict['status'],
+                "portfolio_risk": f"{status_dict['portfolio_metrics']['total_portfolio_risk']:.2%}",
+                "portfolio_exposure": f"{status_dict['portfolio_metrics']['total_portfolio_exposure']:.2%}",
+                "fill_rate": f"{fill_rate:.2%}",
+                "circuit_breaker_triggered": status_dict['circuit_breaker']['triggered']
+            },
+            level=LogLevel.INFO
+        )
+        
+        return status_dict
 
     async def stop(self) -> None:
         """Stop the supervisor."""
@@ -1222,5 +1412,16 @@ class TradingSupervisor:
 
 # Factory function
 def create_trading_supervisor(config: Dict[str, Any]) -> TradingSupervisor:
-    """Create a Trading Supervisor instance."""
-    return TradingSupervisor(config)
+    """
+    Create a Trading Supervisor instance.
+    
+    Args:
+        config: Configuration dictionary
+        
+    Returns:
+        TradingSupervisor: Initialized Trading Supervisor instance
+    """
+    tprint_info("🏭 Creating Trading Supervisor instance...")
+    supervisor: TradingSupervisor = TradingSupervisor(config)
+    tprint_success("✅ Trading Supervisor instance created")
+    return supervisor

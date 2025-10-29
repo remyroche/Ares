@@ -99,6 +99,7 @@ def perform_ms_dr_clustering_with_artifact_manager(
         )
         
         if market_data is None or len(market_data) == 0:
+            tprint_error("❌ No market data loaded")
             raise ValueError("No market data loaded")
         
         tprint_success(f"✅ Loaded {len(market_data)} rows of market data")
@@ -458,6 +459,7 @@ def load_market_data_for_msdr(
     )
     
     if market_data is None or len(market_data) == 0:
+        tprint_error("❌ No market data loaded")
         raise ValueError("No market data loaded")
     
     tprint_success(f"✅ Loaded {len(market_data)} rows")

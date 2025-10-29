@@ -652,61 +652,13 @@ class HDPHMMAutoTuner:
         
         return results
     
-    def run_hierarchical_tuning(
-        self,
-        coarse_grid_points: int = 3,
-        fine_grid_points: int = 3,
-        tpe_trials: int = 50,
-        timeout: Optional[float] = None
-    ) -> TuningResult:
-        """
-        Run hierarchical hyperparameter optimization (ENHANCED).
-        
-        Optimizes 19 parameters in 6 logical groups to avoid curse of dimensionality:
-        1. HDP Structure & States (n_states, alpha, gamma, dirichlet_concentration)
-        2. Emission & Regularization (n_mixtures, cov_type, covariance_floor)
-        3. Persistence & Transitions (kappa)
-        4. Learning & Convergence (n_iterations, learning_rate, batch_size)
-        5. Initialization & Stability (initialization, n_restarts, seed)
-        6. Feature Preprocessing (min/max features, PCA)
-        
-        This is 3-5x faster than flat optimization with same or better quality.
-        
-        Args:
-            coarse_grid_points: Points per parameter in coarse grid (default: 3)
-            fine_grid_points: Points per parameter in fine grid (default: 3)
-            tpe_trials: Number of TPE trials (default: 50)
-            timeout: Optional total timeout in seconds
-            
-        Returns:
-            TuningResult with best parameters and scores
-        """
-        if not HIERARCHICAL_HPO_AVAILABLE:
-            tprint_warning("⚠️ Hierarchical HPO not available, falling back to standard tuning")
-            return self.run_full_tuning(coarse_grid_points, fine_grid_points, tpe_trials, timeout, use_hierarchical=False)
-        
-        tprint_info("🎯 Starting Hierarchical HDP-HMM Hyperparameter Optimization")
-        tprint_info("=" * 70)
-        
-        start_time = time.time()
-        
-        # Define COMPREHENSIVE parameter groups with priorities
-        param_groups = [
-            ParameterGroup(
-                name="hdp_structure_and_states",
-                params={
-                    "n_states": {
-                        "type": "int",
-                        "low": self.search_space.n_states_min,
-                        "high": self.search_space.n_states_max
-                    },
     def run_hierarchical_tuning(self,
                                n_trials: int = 100,
                                timeout: Optional[float] = None) -> TuningResult:
         """
         Run hierarchical 3-phase optimization for HDP-HMM clustering.
         
-        Phase 1: Model structure (alpha, gamma, n_regimes via these params)
+        Phase 1: Model structure (alpha, gamma)
         Phase 2: Sampling parameters (kappa, n_iterations)  
         Phase 3: Feature engineering (min_features, max_features, pca_components)
         
@@ -720,6 +672,21 @@ class HDPHMMAutoTuner:
         Returns:
             TuningResult with best parameters and convergence info
         """
+        # Check if hierarchical optimizer is available
+        if not HIERARCHICAL_HPO_AVAILABLE:
+            tprint_warning("⚠️ Hierarchical HPO not available, falling back to standard tuning")
+            # Calculate equivalent grid points from total trials
+            coarse_points = 3
+            fine_points = 3
+            tpe_trials_calc = max(20, n_trials - coarse_points * fine_points)
+            return self.run_full_tuning(
+                coarse_grid_points=coarse_points,
+                fine_grid_points=fine_points,
+                tpe_trials=tpe_trials_calc,
+                timeout=timeout,
+                use_hierarchical=False
+            )
+        
         tprint_info("=" * 80)
         tprint_info("🚀 HIERARCHICAL HDP-HMM PARAMETER OPTIMIZATION")
         tprint_info("=" * 80)
@@ -744,42 +711,6 @@ class HDPHMMAutoTuner:
                         "type": "float",
                         "low": self.search_space.gamma_min,
                         "high": self.search_space.gamma_max
-                    },
-                    "dirichlet_concentration": {
-                        "type": "float",
-                        "low": self.search_space.dirichlet_concentration_min,
-                        "high": self.search_space.dirichlet_concentration_max,
-                        "log": True
-                    }
-                },
-                priority=1,  # Optimize FIRST - most critical
-                description="HDP structure: number of states, concentration, priors"
-            ),
-            ParameterGroup(
-                name="emission_and_regularization",
-                params={
-                    "n_mixtures_per_state": {
-                        "type": "int",
-                        "low": self.search_space.n_mixtures_min,
-                        "high": self.search_space.n_mixtures_max
-                    },
-                    "emission_cov_type": {
-                        "type": "categorical",
-                        "choices": self.search_space.emission_cov_types
-                    },
-                    "covariance_floor": {
-                        "type": "float",
-                        "low": self.search_space.covariance_floor_min,
-                        "high": self.search_space.covariance_floor_max,
-                        "log": True
-                    }
-                },
-                priority=2,  # Optimize SECOND - emission model
-                depends_on=["hdp_structure_and_states"],
-                description="Emission distributions and regularization"
-            ),
-            ParameterGroup(
-                name="persistence_and_transitions",
                     }
                 },
                 priority=1,
@@ -792,61 +723,11 @@ class HDPHMMAutoTuner:
                         "type": "float",
                         "low": self.search_space.kappa_min,
                         "high": self.search_space.kappa_max
-                    }
-                },
-                priority=3,  # Optimize THIRD - state persistence
-                depends_on=["hdp_structure_and_states", "emission_and_regularization"],
-                description="State stickiness and persistence"
-            ),
-            ParameterGroup(
-                name="learning_and_convergence",
-                params={
                     },
                     "n_iterations": {
                         "type": "int",
                         "low": self.search_space.n_iterations_min,
                         "high": self.search_space.n_iterations_max
-                    },
-                    "learning_rate": {
-                        "type": "float",
-                        "low": self.search_space.learning_rate_min,
-                        "high": self.search_space.learning_rate_max,
-                        "log": True
-                    },
-                    "batch_size": {
-                        "type": "int",
-                        "low": self.search_space.batch_size_min,
-                        "high": self.search_space.batch_size_max
-                    }
-                },
-                priority=4,  # Optimize FOURTH - learning parameters
-                depends_on=["hdp_structure_and_states", "emission_and_regularization"],
-                description="Learning algorithm and convergence parameters"
-            ),
-            ParameterGroup(
-                name="initialization_and_stability",
-                params={
-                    "initialization": {
-                        "type": "categorical",
-                        "choices": self.search_space.initialization_methods
-                    },
-                    "n_restarts": {
-                        "type": "int",
-                        "low": self.search_space.n_restarts_min,
-                        "high": self.search_space.n_restarts_max
-                    },
-                    "seed": {
-                        "type": "int",
-                        "low": self.search_space.seed_min,
-                        "high": self.search_space.seed_max
-                    }
-                },
-                priority=5,  # Optimize FIFTH - initialization
-                depends_on=["hdp_structure_and_states"],
-                description="Initialization scheme and stability parameters"
-            ),
-            ParameterGroup(
-                name="feature_preprocessing",
                     }
                 },
                 priority=2,
@@ -872,85 +753,13 @@ class HDPHMMAutoTuner:
                         "high": self.search_space.pca_components_max
                     }
                 },
-                priority=6,  # Optimize LAST - feature selection
-                depends_on=["hdp_structure_and_states", "emission_and_regularization"],
                 priority=3,
                 depends_on=["model_structure", "sampling"],
                 description="Feature selection and dimensionality reduction"
             )
         ]
         
-        # Create hierarchical optimizer
-        try:
-            optimizer = HierarchicalParameterOptimizer(
-                param_groups=param_groups,
-                objective_func=self.objective_function,
-                backend=OptimizationBackend.OPTUNA if OPTUNA_AVAILABLE else OptimizationBackend.GRID,
-                stages=[
-                    OptimizationStage.COARSE_GRID,
-                    OptimizationStage.FINE_GRID,
-                    OptimizationStage.TPE if OPTUNA_AVAILABLE else OptimizationStage.RANDOM
-                ]
-            )
-            
-            tprint_info("📊 Parameter Groups:")
-            for group in param_groups:
-                tprint_info(f"  {group.priority}. {group.name}: {group.description}")
-                tprint_info(f"     Parameters: {list(group.params.keys())}")
-            tprint_info("")
-            
-            # Run hierarchical optimization
-            best_params = optimizer.optimize(
-                n_coarse_points=coarse_grid_points,
-                n_fine_points=fine_grid_points,
-                n_trials=tpe_trials,
-                timeout=timeout
-            )
-            
-            # Calculate total time
-            total_time = time.time() - start_time
-            
-            # Create result
-            result = TuningResult(
-                best_params=best_params,
-                best_score=self.best_score,
-                coarse_grid_results=[],  # Handled internally by hierarchical optimizer
-                fine_grid_results=[],
-                tpe_results=[],
-                total_time=total_time,
-                n_trials=len(self.trial_history),
-                convergence_info={
-                    'method': 'hierarchical',
-                    'param_groups': len(param_groups),
-                    'total_trials': len(self.trial_history),
-                    'n_parameters': 19
-                }
-            )
-            
-            # Print summary
-            tprint_info("=" * 70)
-            tprint_info("HIERARCHICAL OPTIMIZATION COMPLETE")
-            tprint_info("=" * 70)
-            tprint_structured({
-                "total_trials": result.n_trials,
-                "total_time_seconds": total_time,
-                "trials_per_hour": (result.n_trials / total_time) * 3600 if total_time > 0 else 0,
-                "best_composite_score": self.best_score,
-                "optimization_method": "hierarchical (6-stage)",
-                "parameters_optimized": 19,
-                "speedup_estimate": "3-5x vs flat optimization"
-            }, level="INFO")
-            tprint_info("")
-            tprint_info("Best Parameters:")
-            tprint_structured(best_params, level="INFO")
-            
-            return result
-            
-        except Exception as e:
-            tprint_error(f"❌ Hierarchical optimization failed: {e}")
-            tprint_warning("⚠️ Falling back to standard optimization")
-            return self.run_full_tuning(coarse_grid_points, fine_grid_points, tpe_trials, timeout, use_hierarchical=False)
-        # Define objective function
+        # Define objective function wrapper for hierarchical optimizer
         def objective_func(params, X_train, y_train, X_val=None, y_val=None,
                           model=None, cv_folds=None, scoring_metric=None):
             """Objective function for hierarchical optimizer."""
@@ -1064,7 +873,6 @@ class HDPHMMAutoTuner:
         """
         # Use hierarchical optimization if enabled (default and recommended)
         if use_hierarchical:
-            return self.run_hierarchical_tuning(coarse_grid_points, fine_grid_points, tpe_trials, timeout)
             total_trials = coarse_grid_points * fine_grid_points + tpe_trials
             return self.run_hierarchical_tuning(n_trials=total_trials, timeout=timeout)
         
@@ -1249,10 +1057,9 @@ def run_hdp_hmm_auto_tuning(
     # Run tuning (hierarchical or standard)
     if use_hierarchical and HIERARCHICAL_HPO_AVAILABLE:
         tprint_info("🎯 Using hierarchical hyperparameter optimization (3-5x faster, 19 parameters)")
+        total_trials = coarse_grid_points * fine_grid_points + tpe_trials
         tuning_result = tuner.run_hierarchical_tuning(
-            coarse_grid_points=coarse_grid_points,
-            fine_grid_points=fine_grid_points,
-            tpe_trials=tpe_trials,
+            n_trials=total_trials,
             timeout=timeout
         )
     else:

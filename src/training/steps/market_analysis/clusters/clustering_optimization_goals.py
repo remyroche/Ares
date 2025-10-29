@@ -17,8 +17,8 @@ Key Features:
 Enhanced Features:
 - Gradual Duration Penalties: Prevents noise flips by penalizing short episodes
   - Very high penalty for 1-2 bar episodes (50.0 per episode)
-  - High penalty for 3-4 bar episodes (20.0 per episode)
-  - Low penalty for 5-6 bar episodes (5.0 per episode)
+  - High penalty for 3-4 bar episodes (15.0 per episode)
+  - No penalty for 5-6 bar episodes (0.0 per episode)
   - No penalty for 7+ bar episodes
 - Smooth Transitions: Optimizes for gradual regime changes instead of abrupt jumps
   - Evaluates transition probabilities (if soft labels available)
@@ -213,8 +213,8 @@ class PenaltyConfig:
     # Gradual duration penalties (prevents noise flips)
     # Very high penalty for 1-2 bars, high for 3-4, low for 5-6, none above 6
     duration_penalty_1_2_bars: float = 50.0  # Very high penalty for 1-2 bar episodes
-    duration_penalty_3_4_bars: float = 20.0  # High penalty for 3-4 bar episodes
-    duration_penalty_5_6_bars: float = 5.0   # Low penalty for 5-6 bar episodes
+    duration_penalty_3_4_bars: float = 15.0  # High penalty for 3-4 bar episodes
+    duration_penalty_5_6_bars: float = 0.0   # No penalty for 5-6 bar episodes
     duration_penalty_threshold: int = 6     # No penalty above this threshold
     
     # Turnover penalty
@@ -1043,8 +1043,8 @@ def calculate_gradual_duration_penalty(
     
     Penalty structure:
     - 1-2 bars: Very high penalty (50.0 per episode)
-    - 3-4 bars: High penalty (20.0 per episode)
-    - 5-6 bars: Low penalty (5.0 per episode)
+    - 3-4 bars: High penalty (15.0 per episode)
+    - 5-6 bars: No penalty (0.0 per episode)
     - 7+ bars: No penalty
     
     Args:
@@ -1896,7 +1896,7 @@ if __name__ == "__main__":
     print("=" * 70)
     print(f"  1-2 bars: Very high penalty ({goals.penalty_config.duration_penalty_1_2_bars} per episode)")
     print(f"  3-4 bars: High penalty ({goals.penalty_config.duration_penalty_3_4_bars} per episode)")
-    print(f"  5-6 bars: Low penalty ({goals.penalty_config.duration_penalty_5_6_bars} per episode)")
+    print(f"  5-6 bars: No penalty ({goals.penalty_config.duration_penalty_5_6_bars} per episode)")
     print(f"  7+ bars: No penalty")
     
     print("\n\nSmooth Transitions Configuration:")

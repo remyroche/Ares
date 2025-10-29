@@ -732,6 +732,11 @@ class ExchangeInterface:
     async def get_ticker(self, symbol: str) -> Optional[TickerData]:
         """Get ticker data for symbol."""
         try:
+            # Validate inputs
+            if not symbol or not isinstance(symbol, str):
+                tprint(f"❌ Invalid symbol for ticker: {symbol}", "ERROR")
+                return None
+                
             if self.exchange_type == 'simulated':
                 return await self._get_simulated_ticker(symbol)
 
@@ -739,18 +744,24 @@ class ExchangeInterface:
             if self.market_manager:
                 market_data = await self.market_manager.get_market_data(symbol)
                 if market_data:
+                    price = market_data.get('price', 0)
+                    # Validate price
+                    if price is None or price <= 0:
+                        tprint(f"⚠️ Invalid price in market data for {symbol}: {price}", "WARNING")
+                        return None
+                        
                     return TickerData(
                         symbol=symbol,
-                        price=market_data.get('price', 0),
-                        bid_price=market_data.get('bid', 0),
-                        ask_price=market_data.get('ask', 0),
-                        bid_quantity=market_data.get('bidQty', 0),
-                        ask_quantity=market_data.get('askQty', 0),
-                        volume_24h=market_data.get('volume', 0),
-                        price_change_24h=market_data.get('change', 0),
-                        price_change_percent_24h=market_data.get('changePercent', 0),
-                        high_24h=market_data.get('high', 0),
-                        low_24h=market_data.get('low', 0),
+                        price=float(price),
+                        bid_price=float(market_data.get('bid', 0) or 0),
+                        ask_price=float(market_data.get('ask', 0) or 0),
+                        bid_quantity=float(market_data.get('bidQty', 0) or 0),
+                        ask_quantity=float(market_data.get('askQty', 0) or 0),
+                        volume_24h=float(market_data.get('volume', 0) or 0),
+                        price_change_24h=float(market_data.get('change', 0) or 0),
+                        price_change_percent_24h=float(market_data.get('changePercent', 0) or 0),
+                        high_24h=float(market_data.get('high', 0) or 0),
+                        low_24h=float(market_data.get('low', 0) or 0),
                         timestamp=datetime.now()
                     )
 
@@ -758,18 +769,24 @@ class ExchangeInterface:
             if self.dispatcher:
                 ticker_data = await self.dispatcher.get_ticker(symbol)
                 if ticker_data:
+                    price = ticker_data.get('price', 0)
+                    # Validate price
+                    if price is None or price <= 0:
+                        tprint(f"⚠️ Invalid price in dispatcher ticker for {symbol}: {price}", "WARNING")
+                        return None
+                        
                     return TickerData(
                         symbol=symbol,
-                        price=ticker_data.get('price', 0),
-                        bid_price=ticker_data.get('bid', 0),
-                        ask_price=ticker_data.get('ask', 0),
-                        bid_quantity=ticker_data.get('bidQty', 0),
-                        ask_quantity=ticker_data.get('askQty', 0),
-                        volume_24h=ticker_data.get('volume', 0),
-                        price_change_24h=ticker_data.get('change', 0),
-                        price_change_percent_24h=ticker_data.get('changePercent', 0),
-                        high_24h=ticker_data.get('high', 0),
-                        low_24h=ticker_data.get('low', 0),
+                        price=float(price),
+                        bid_price=float(ticker_data.get('bid', 0) or 0),
+                        ask_price=float(ticker_data.get('ask', 0) or 0),
+                        bid_quantity=float(ticker_data.get('bidQty', 0) or 0),
+                        ask_quantity=float(ticker_data.get('askQty', 0) or 0),
+                        volume_24h=float(ticker_data.get('volume', 0) or 0),
+                        price_change_24h=float(ticker_data.get('change', 0) or 0),
+                        price_change_percent_24h=float(ticker_data.get('changePercent', 0) or 0),
+                        high_24h=float(ticker_data.get('high', 0) or 0),
+                        low_24h=float(ticker_data.get('low', 0) or 0),
                         timestamp=datetime.now()
                     )
 

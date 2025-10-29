@@ -19,6 +19,7 @@ from src.simulator import SimulatorConfig, PaperTradingSimulator
 from live_trading.trading_engine import TradingEngine
 from live_trading.config import TradingConfig, TradingMode as LiveTradingMode
 from src.utils.logger import system_logger
+from src.launcher.trading_launcher import get_parameter_manager
 
 
 # Configure logging
@@ -182,8 +183,17 @@ Examples:
             trading_engine.order_manager.simulator = simulator
             logger.info("✅ Simulator injected into order manager")
         
+        # Initialize parameter manager for hot swapping
+        parameter_manager = get_parameter_manager(trading_engine)
+        parameter_manager.set_trading_engine(trading_engine)
+        
+        logger.info("✅ Trading parameter manager initialized - hot swap enabled")
+        
         # Start the trading engine
         await trading_engine.start()
+        
+        # Start monitoring after engine is running
+        parameter_manager._start_monitoring()
         
         logger.info("=" * 80)
         logger.info("Trading system is running!")
@@ -239,6 +249,13 @@ Examples:
             logger.info("\nReceived stop signal, shutting down...")
         
         finally:
+            # Stop parameter manager monitoring
+            try:
+                parameter_manager = get_parameter_manager()
+                parameter_manager.stop_monitoring()
+            except Exception as e:
+                logger.warning(f"Error stopping parameter manager: {e}")
+            
             # Stop the trading engine
             logger.info("Stopping trading engine...")
             await trading_engine.stop()

@@ -26,6 +26,13 @@ from .utils import (
     calculate_weighted_regime_multiplier
 )
 
+# Shared feature engineering
+from src.feature_generation.shared.feature_engineer import (
+    AnalystFeatureEngineer,
+    TacticianFeatureEngineer
+)
+from src.feature_generation.shared.feature_validator import FeatureValidator
+
 logger = system_logger.getChild('SignalGenerationPipeline')
 
 # Constants
@@ -196,6 +203,11 @@ class SignalGenerationPipeline:
         self.signal_deduplicator: SignalDeduplicator = SignalDeduplicator(
             deduplication_window=getattr(config, 'signal_dedup_window', DEFAULT_SIGNAL_DEDUP_WINDOW)
         )
+        
+        # Shared feature engineers (for consistency with training)
+        self.analyst_feature_engineer = AnalystFeatureEngineer(logger=self.logger)
+        self.tactician_feature_engineer = TacticianFeatureEngineer(logger=self.logger)
+        self.feature_validator = FeatureValidator(logger=self.logger)
 
     @handles_errors
     async def initialize(self) -> bool:
@@ -217,7 +229,10 @@ class SignalGenerationPipeline:
 
             # Load optimization parameters
             await self._load_optimization_parameters()
-
+            
+            # Validate feature engineering setup
+            await self._validate_feature_engineering()
+            
             self.is_initialized = True
             self.logger.info("✅ Signal Generation Pipeline initialized successfully")
             return True
@@ -455,7 +470,59 @@ class SignalGenerationPipeline:
             tprint_warning(f"⚠️ Critical error during parameter loading: {e}")
             tprint_warning("⚠️ Using DEFAULT values - this may not be optimal for trading!")
             self.logger.warning(f"⚠️ Failed to load optimization parameters, using defaults: {e}")
-
+    
+    async def _validate_feature_engineering(self):
+        """Validate feature engineering setup and log expected features."""
+        try:
+            self.logger.info("🔍 Validating feature engineering setup...")
+            
+            # Log expected engineered features for Analyst
+            analyst_features = self.analyst_feature_engineer.get_engineered_feature_names()
+            self.logger.info(f"📊 Analyst engineered features: {analyst_features}")
+            
+            # Log expected engineered features for Tactician
+            tactician_features = self.tactician_feature_engineer.get_engineered_feature_names()
+            self.logger.info(f"📊 Tactician engineered features: {tactician_features}")
+            
+            # Note: Full feature validation will be done when models are loaded
+            # if model metadata includes expected feature names
+            self.logger.info("✅ Feature engineering setup validated")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Feature engineering validation warning: {e}")
+    
+    def validate_features_for_prediction(
+        self,
+        market_data: pd.DataFrame,
+        role: str = "analyst"
+    ) -> bool:
+        """
+        Validate that market_data has required columns for feature engineering.
+        
+        Args:
+            market_data: Market data DataFrame
+            role: Role name ('analyst' or 'tactician')
+            
+        Returns:
+            True if validation passes, False otherwise
+        """
+        try:
+            if role.lower() == "analyst":
+                required = ['close']  # Minimum required for analyst features
+            else:
+                required = ['close']  # Minimum required for tactician features
+            
+            missing = [col for col in required if col not in market_data.columns]
+            if missing:
+                self.logger.warning(f"⚠️ Missing required columns for {role}: {missing}")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Feature validation failed: {e}")
+            return False
+    
     async def _generate_signal_internal(
         self,
         symbol: str,
@@ -993,21 +1060,33 @@ class SignalGenerationPipeline:
                     ])
                     
                     # Create enhanced features by combining market_data with regime probabilities
-                    # Most models expect a 2D array, so we need to prepare it properly
+                    # Use shared feature engineering for consistency with training
                     if hasattr(model, 'predict'):
-                        # Try to extract features from market_data if it's a DataFrame
+                        # Prepare market_data DataFrame (use last row for single prediction)
                         if isinstance(market_data, pd.DataFrame):
-                            # Use numeric columns as features
-                            numeric_data = market_data.select_dtypes(include=[np.number])
+                            # Use last row for prediction
+                            market_data_row = market_data.iloc[[-1]].copy()
+                            
+                            # Apply shared feature engineering (same as training)
+                            # Extract primary regime probability for feature engineering
+                            primary_regime_prob = max(regime_output.regime_probabilities.values()) if regime_output.regime_probabilities else 0.5
+                            
+                            # Engineer features using shared module
+                            engineered_data = self.analyst_feature_engineer.engineer_features(
+                                market_data_row,
+                                regime_probability=primary_regime_prob
+                            )
+                            
+                            # Extract all numeric features (including engineered ones)
+                            numeric_data = engineered_data.select_dtypes(include=[np.number])
                             if len(numeric_data) > 0:
-                                # Take last row (most recent data) and flatten
                                 market_features = numeric_data.iloc[-1].values
                             else:
                                 market_features = np.array([])
                         else:
                             market_features = np.array([])
                         
-                        # Combine market features with regime probabilities
+                        # Combine market features (now includes engineered features) with regime probabilities
                         combined_features = np.concatenate([market_features, regime_probs_values]) if len(market_features) > 0 else regime_probs_values
                         
                         # Reshape to (1, n_features) for single prediction
@@ -1116,9 +1195,22 @@ class SignalGenerationPipeline:
         """
         try:
             # Prepare inputs for ensemble model: features + regime probabilities + base model outputs
-            # 1. Prepare market_data features (same as base models)
+            # Use shared feature engineering (same as base models)
+            # 1. Prepare market_data features with engineered features
             if isinstance(market_data, pd.DataFrame):
-                numeric_data = market_data.select_dtypes(include=[np.number])
+                # Use last row for prediction
+                market_data_row = market_data.iloc[[-1]].copy()
+                
+                # Apply shared feature engineering (same as training and base models)
+                primary_regime_prob = max(regime_output.regime_probabilities.values()) if regime_output.regime_probabilities else 0.5
+                
+                engineered_data = self.analyst_feature_engineer.engineer_features(
+                    market_data_row,
+                    regime_probability=primary_regime_prob
+                )
+                
+                # Extract all numeric features (including engineered ones)
+                numeric_data = engineered_data.select_dtypes(include=[np.number])
                 if len(numeric_data) > 0:
                     market_features = numeric_data.iloc[-1].values
                 else:
@@ -1245,9 +1337,26 @@ class SignalGenerationPipeline:
             for i, model in enumerate(self.tactician_base_models):
                 try:
                     # Prepare input: features + regime probabilities + analyst ensemble outputs
-                    # 1. Market data features
+                    # Use shared feature engineering for consistency with training
+                    # 1. Market data features (with engineered features)
                     if isinstance(market_data, pd.DataFrame):
-                        numeric_data = market_data.select_dtypes(include=[np.number])
+                        # Use last row for prediction
+                        market_data_row = market_data.iloc[[-1]].copy()
+                        
+                        # Apply shared feature engineering (same as training)
+                        engineered_data = self.tactician_feature_engineer.engineer_features(
+                            market_data_row,
+                            timestamp=timestamp,
+                            analyst_confidence=analyst_confidence,
+                            analyst_outputs={
+                                'analyst_confidence': analyst_confidence,
+                                'market_health_score': analyst_output.market_health_score,
+                                'regime_adjusted_confidence': analyst_output.regime_adjusted_confidence
+                            }
+                        )
+                        
+                        # Extract all numeric features (including engineered ones)
+                        numeric_data = engineered_data.select_dtypes(include=[np.number])
                         if len(numeric_data) > 0:
                             market_features = numeric_data.iloc[-1].values
                         else:

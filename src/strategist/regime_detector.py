@@ -459,60 +459,85 @@ class RegimeDetector:
             
             # Load latest artifacts using artifact manager
             # Component name is the class name used in save_artifacts
+            # Artifact name includes "regime" for clarity
             loaded_artifacts = self.artifact_manager.load_artifacts_from_latest_session(
                 component_name='RegimeModelsTrainingComponent',
                 artifact_names=['regime_models_training_result']
             )
             
-            # If not found, try with alternative name patterns
+            # If not found, try with alternative name patterns (all include "regime")
             if not loaded_artifacts.get('regime_models_training_result'):
-                # Try various component name patterns
+                # Try various component name patterns (all regime-related)
                 for alt_name in ['regime_models_training', 'RegimeModelsTraining', 'regime_models_training_step']:
                     alt_artifacts = self.artifact_manager.load_artifacts_from_latest_session(
                         component_name=alt_name,
-                        artifact_names=['regime_models_training_result']
+                        artifact_names=['regime_models_training_result']  # Always use regime artifact name
                     )
                     if alt_artifacts.get('regime_models_training_result'):
                         loaded_artifacts = alt_artifacts
-                        self.logger.info(f"✅ Found artifacts using component name: {alt_name}")
+                        self.logger.info(f"✅ Found regime artifacts using component name: {alt_name}")
                         break
             
             selected_feature_names = self.selected_feature_names
             feature_selection_info = {}
             
-            # Try to extract from loaded artifacts
+            # Try to extract from loaded artifacts (regime-specific)
             if loaded_artifacts.get('regime_models_training_result'):
                 artifact_data = loaded_artifacts['regime_models_training_result']
                 
-                # Check component_result structure
+                # Check component_result structure (with regime prefixes)
                 if isinstance(artifact_data, dict):
                     if 'component_result' in artifact_data:
                         comp_result = artifact_data['component_result']
-                        if isinstance(comp_result, dict) and 'feature_selection_info' in comp_result:
-                            feature_selection_info = comp_result['feature_selection_info']
-                            if isinstance(feature_selection_info, dict):
-                                selected_feature_names = feature_selection_info.get('selected_feature_names', [])
+                        if isinstance(comp_result, dict):
+                            # Try regime-specific fields first
+                            if 'regime_feature_selection_info' in comp_result:
+                                feature_selection_info = comp_result['regime_feature_selection_info']
+                                if isinstance(feature_selection_info, dict):
+                                    selected_feature_names = feature_selection_info.get('selected_feature_names', []) or feature_selection_info.get('regime_selected_feature_names', [])
+                            # Fallback to generic field
+                            elif 'feature_selection_info' in comp_result:
+                                feature_selection_info = comp_result['feature_selection_info']
+                                if isinstance(feature_selection_info, dict):
+                                    selected_feature_names = feature_selection_info.get('selected_feature_names', [])
                     
-                    # Also check direct access
+                    # Also check direct access (try regime-specific first)
+                    if not selected_feature_names and 'regime_feature_selection_info' in artifact_data:
+                        fs_info = artifact_data['regime_feature_selection_info']
+                        if isinstance(fs_info, dict):
+                            selected_feature_names = fs_info.get('selected_feature_names', []) or fs_info.get('regime_selected_feature_names', [])
+                    
                     if not selected_feature_names and 'feature_selection_info' in artifact_data:
                         fs_info = artifact_data['feature_selection_info']
                         if isinstance(fs_info, dict):
                             selected_feature_names = fs_info.get('selected_feature_names', [])
                     
-                    if not selected_feature_names and 'selected_feature_names' in artifact_data:
+                    if not selected_feature_names and 'regime_selected_feature_names' in artifact_data:
+                        selected_feature_names = artifact_data['regime_selected_feature_names']
+                    elif not selected_feature_names and 'selected_feature_names' in artifact_data:
                         selected_feature_names = artifact_data['selected_feature_names']
                 
-                self.logger.info(f"✅ Loaded feature selection from latest artifact session for {self.symbol}/{self.exchange}/{self.timeframe}")
+                self.logger.info(f"✅ Loaded regime feature selection from latest artifact session for {self.symbol}/{self.exchange}/{self.timeframe}")
             
-            # Fallback: try direct file path
+            # Fallback: try direct file path (regime artifact name)
             if not selected_feature_names:
+                # Use regime-specific artifact name
                 artifacts_path = Path(self.models_directory) / "regime_models_training_result.pkl"
                 if not artifacts_path.exists():
                     artifacts_dir = Path(self.models_directory)
                     if artifacts_dir.exists():
+                        # Search for regime-specific artifact files
                         for artifact_file in artifacts_dir.glob("**/regime_models_training_result.pkl"):
                             artifacts_path = artifact_file
                             break
+                        # Also try with explicit regime prefix patterns
+                        if not artifacts_path.exists():
+                            for pattern in ["**/regime_*_training_result.pkl", "**/regime_*models*_result.pkl"]:
+                                for artifact_file in artifacts_dir.glob(pattern):
+                                    artifacts_path = artifact_file
+                                    break
+                                if artifacts_path.exists():
+                                    break
             
             # Create feature engineer
             self.regime_feature_engineer = create_regime_feature_engineer(

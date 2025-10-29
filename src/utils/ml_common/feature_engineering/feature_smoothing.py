@@ -27,13 +27,13 @@ except ImportError:
 
 def _is_smoothed_feature(feature_name: str) -> bool:
     """
-    Check if a feature name indicates it's already smoothed.
+    Check if a feature name indicates it's already smoothed or lagged.
     
     Args:
         feature_name: Feature name to check
         
     Returns:
-        True if feature appears to be smoothed
+        True if feature appears to be smoothed or lagged
     """
     if not feature_name:
         return False
@@ -47,7 +47,20 @@ def _is_smoothed_feature(feature_name: str) -> bool:
         r'_smoothed',    # Generic smoothed suffix
     ]
     
+    # Patterns that indicate lagged features
+    lagged_patterns = [
+        r'^lagged_',     # Prefix: lagged_feature
+        r'_lagged\d*$',  # Suffix: feature_lagged, feature_lagged5, etc.
+        r'_lag\d+$',     # Short form: feature_lag3, feature_lag5, etc.
+    ]
+    
+    # Check smoothed patterns
     for pattern in smoothed_patterns:
+        if re.search(pattern, feature_name):
+            return True
+    
+    # Check lagged patterns
+    for pattern in lagged_patterns:
         if re.search(pattern, feature_name):
             return True
     

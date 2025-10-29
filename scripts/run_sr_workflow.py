@@ -14,8 +14,8 @@ Usage Examples:
     # With lookback period (days)
     python scripts/run_sr_workflow.py --symbol BTCUSDT --exchange binance --timeframe 1h --lookback-days 30
     
-    # With explicit date range
-    python scripts/run_sr_workflow.py --symbol ETHUSDT --exchange binance --timeframe 15m --start-date 2024-01-01 --end-date 2024-01-31
+    # With explicit end date (start date calculated from lookback-days)
+    python scripts/run_sr_workflow.py --symbol ETHUSDT --exchange binance --timeframe 15m --end-date 2024-01-31 --lookback-days 30
     
     # Full mode with all options
     python scripts/run_sr_workflow.py --symbol BTCUSDT --exchange binance --timeframe 1h --direction longs --mode full --lookback-days 60
@@ -56,7 +56,6 @@ class SRWorkflowRunner:
         timeframe: str = "15m",
         direction: str = "longs",
         mode: str = "light",
-        start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         lookback_days: Optional[int] = None
     ):
@@ -69,9 +68,8 @@ class SRWorkflowRunner:
             timeframe: Timeframe (e.g., '15m', '1h', '1d')
             direction: Trading direction ('longs' or 'shorts')
             mode: Execution mode ('light', 'full', or 'blank')
-            start_date: Start date for data range (YYYY-MM-DD format). If None, uses lookback_days or all available data
-            end_date: End date for data range (YYYY-MM-DD format). If None, uses current date
-            lookback_days: Number of days to look back from end_date. If both start_date and lookback_days are provided, lookback_days takes precedence
+            end_date: End date for data range (YYYY-MM-DD format). If None, uses latest available data
+            lookback_days: Number of days to look back from end_date. If provided, calculates start_date automatically
         """
         self.logger = system_logger.getChild('SRWorkflowRunner')
         self.symbol = symbol
@@ -79,21 +77,24 @@ class SRWorkflowRunner:
         self.timeframe = timeframe
         self.direction = direction
         self.mode = mode
-        self.start_date = start_date
         self.end_date = end_date
         self.lookback_days = lookback_days
         
         # Calculate start_date from lookback_days if provided
-        # If both start_date and lookback_days are provided, lookback_days takes precedence
+        self.start_date = None
         if lookback_days:
-            end = datetime.now()
             if end_date:
                 try:
                     end = datetime.strptime(end_date, '%Y-%m-%d')
+                    self.start_date = (end - timedelta(days=lookback_days)).strftime('%Y-%m-%d')
+                    self.logger.info(f"Calculated start_date from lookback_days={lookback_days} and end_date={end_date}: {self.start_date}")
                 except ValueError:
-                    self.logger.warning(f"Invalid end_date format: {end_date}, using current date")
-            self.start_date = (end - timedelta(days=lookback_days)).strftime('%Y-%m-%d')
-            self.logger.info(f"Calculated start_date from lookback_days={lookback_days}: {self.start_date}")
+                    self.logger.warning(f"Invalid end_date format: {end_date}, will use latest available data")
+            else:
+                # If end_date is None, we'll let the data loading components handle it
+                # They will use latest available data and calculate start_date accordingly
+                self.logger.info(f"Lookback_days={lookback_days} provided, will calculate start_date from latest available data")
+                # Pass lookback_days to configs instead of calculating start_date upfront
         
         # Initialize steps
         self.logger.info("🚀 Initializing SR workflow steps...")
@@ -161,12 +162,15 @@ class SRWorkflowRunner:
         self.logger.info(f"   Timeframe: {self.timeframe}")
         self.logger.info(f"   Direction: {self.direction}")
         self.logger.info(f"   Mode: {self.mode}")
-        if self.start_date:
-            self.logger.info(f"   Start Date: {self.start_date}")
         if self.end_date:
             self.logger.info(f"   End Date: {self.end_date}")
-        if self.lookback_days and not self.start_date:
-            self.logger.info(f"   Lookback: {self.lookback_days} days")
+        else:
+            self.logger.info(f"   End Date: Latest available data")
+        if self.lookback_days:
+            if self.start_date:
+                self.logger.info(f"   Lookback: {self.lookback_days} days (start_date: {self.start_date})")
+            else:
+                self.logger.info(f"   Lookback: {self.lookback_days} days (will use latest available data)")
         self.logger.info("=" * 80)
         
         workflow_results = {
@@ -201,6 +205,9 @@ class SRWorkflowRunner:
                 optimization_config['start_date'] = self.start_date
             if self.end_date:
                 optimization_config['end_date'] = self.end_date
+            if self.lookback_days and not self.start_date:
+                # If lookback_days provided but no explicit start_date, pass lookback_days for component to handle
+                optimization_config['lookback_days'] = self.lookback_days
             
             optimization_result = await self.param_optimizer.execute(optimization_config)
             
@@ -246,6 +253,9 @@ class SRWorkflowRunner:
                 detection_config['start_date'] = self.start_date
             if self.end_date:
                 detection_config['end_date'] = self.end_date
+            if self.lookback_days and not self.start_date:
+                # If lookback_days provided but no explicit start_date, pass lookback_days for component to handle
+                detection_config['lookback_days'] = self.lookback_days
             
             detection_result = await self.sr_detector.execute(detection_config)
             
@@ -293,6 +303,9 @@ class SRWorkflowRunner:
                 clustering_config['start_date'] = self.start_date
             if self.end_date:
                 clustering_config['end_date'] = self.end_date
+            if self.lookback_days and not self.start_date:
+                # If lookback_days provided but no explicit start_date, pass lookback_days for component to handle
+                clustering_config['lookback_days'] = self.lookback_days
             
             clustering_result = await self.sr_clusterer.execute(clustering_config)
             
@@ -353,14 +366,14 @@ async def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic usage
+  # Basic usage (uses latest available data)
   python scripts/run_sr_workflow.py --symbol ETHUSDT --exchange binance --timeframe 15m
   
-  # With 30-day lookback
+  # With 30-day lookback from latest available data
   python scripts/run_sr_workflow.py --symbol BTCUSDT --exchange binance --timeframe 1h --lookback-days 30
   
-  # With explicit date range
-  python scripts/run_sr_workflow.py --symbol ETHUSDT --exchange binance --timeframe 15m --start-date 2024-01-01 --end-date 2024-01-31
+  # With explicit end date and lookback
+  python scripts/run_sr_workflow.py --symbol ETHUSDT --exchange binance --timeframe 15m --end-date 2024-01-31 --lookback-days 30
         """
     )
     parser.add_argument('--symbol', type=str, default='ETHUSDT', help='Trading symbol (e.g., ETHUSDT, BTCUSDT)')
@@ -370,23 +383,14 @@ Examples:
     parser.add_argument('--mode', type=str, default='light', choices=['light', 'full', 'blank'], help='Execution mode')
     
     # Date range options
-    parser.add_argument('--start-date', type=str, default=None, 
-                       help='Start date for data range (YYYY-MM-DD format). If not provided, uses lookback-days or all available data')
     parser.add_argument('--end-date', type=str, default=None,
-                       help='End date for data range (YYYY-MM-DD format). If not provided, uses current date')
+                       help='End date for data range (YYYY-MM-DD format). If not provided, uses latest available data')
     parser.add_argument('--lookback-days', type=int, default=None,
-                       help='Number of days to look back from end_date. If both start-date and lookback-days are provided, lookback-days takes precedence')
+                       help='Number of days to look back from end_date. Calculates start_date automatically')
     
     args = parser.parse_args()
     
     # Validate date arguments
-    if args.start_date:
-        try:
-            datetime.strptime(args.start_date, '%Y-%m-%d')
-        except ValueError:
-            print(f"Error: Invalid start-date format: {args.start_date}. Expected YYYY-MM-DD")
-            return 1
-    
     if args.end_date:
         try:
             datetime.strptime(args.end_date, '%Y-%m-%d')
@@ -405,7 +409,6 @@ Examples:
         timeframe=args.timeframe,
         direction=args.direction,
         mode=args.mode,
-        start_date=args.start_date,
         end_date=args.end_date,
         lookback_days=args.lookback_days
     )

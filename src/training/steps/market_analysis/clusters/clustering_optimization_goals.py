@@ -14,6 +14,21 @@ Key Features:
 - Robustness checks and statistical validation
 - Integration with VectorBT, hardware optimization, and ML utilities
 
+Enhanced Features:
+- Gradual Duration Penalties: Prevents noise flips by penalizing short episodes
+  - Very high penalty for 1-2 bar episodes (50.0 per episode)
+  - High penalty for 3-4 bar episodes (20.0 per episode)
+  - Low penalty for 5-6 bar episodes (5.0 per episode)
+  - No penalty for 7+ bar episodes
+- Smooth Transitions: Optimizes for gradual regime changes instead of abrupt jumps
+  - Evaluates transition probabilities (if soft labels available)
+  - Penalizes abrupt transitions (low transition probability)
+  - Encourages smooth regime transitions
+- Noise Handling: Optimizes noise point assignment
+  - Penalizes high noise ratios (>10% default)
+  - Penalizes unassigned noise points
+  - Encourages proper noise point assignment to nearest cluster or neutral class
+
 Used by:
 - iterative_optimization.py
 - iterative_optimization_tuner.py
@@ -191,9 +206,16 @@ class PenaltyConfig:
     min_occupancy_pct: float = 0.01  # 1% minimum (penalize if below)
     min_occupancy_penalty: float = 10.0  # Large penalty for violation
     
-    # Minimum expected duration penalty
-    min_duration_bars: int = 7  # For daily data (tunable)
-    min_duration_penalty: float = 5.0
+    # Minimum expected duration penalty (gradual penalty structure)
+    min_duration_bars: int = 7  # For daily data (tunable) - legacy threshold
+    min_duration_penalty: float = 5.0  # Legacy penalty (kept for backward compatibility)
+    
+    # Gradual duration penalties (prevents noise flips)
+    # Very high penalty for 1-2 bars, high for 3-4, low for 5-6, none above 6
+    duration_penalty_1_2_bars: float = 50.0  # Very high penalty for 1-2 bar episodes
+    duration_penalty_3_4_bars: float = 20.0  # High penalty for 3-4 bar episodes
+    duration_penalty_5_6_bars: float = 5.0   # Low penalty for 5-6 bar episodes
+    duration_penalty_threshold: int = 6     # No penalty above this threshold
     
     # Turnover penalty
     max_monthly_turnover: float = 4.0  # Max regime switches per month
@@ -210,6 +232,17 @@ class PenaltyConfig:
     # Metric stability penalty
     max_cv_variation: float = 0.4  # std/mean < threshold
     cv_variation_penalty: float = 3.0
+    
+    # Smooth transitions penalty
+    smooth_transitions_enabled: bool = True  # Enable smooth transition optimization
+    min_transition_probability: float = 0.3  # Minimum transition probability for smoothness
+    abrupt_transition_penalty: float = 2.0   # Penalty for abrupt transitions (low transition prob)
+    
+    # Noise handling penalty
+    noise_handling_enabled: bool = True  # Enable noise handling optimization
+    max_noise_ratio: float = 0.10  # Maximum acceptable noise ratio (10%)
+    noise_ratio_penalty: float = 15.0  # Penalty for high noise ratio
+    unassigned_noise_penalty: float = 10.0  # Penalty for unassigned noise points
 
 
 @dataclass
@@ -970,6 +1003,172 @@ def calculate_composite_score(
 
 # ===== PENALTY CALCULATOR =====
 
+def calculate_episode_durations(regime_labels: np.ndarray) -> List[int]:
+    """
+    Calculate duration of each episode (consecutive same label).
+    
+    Args:
+        regime_labels: Regime assignments (T,)
+        
+    Returns:
+        List of episode durations in bars
+    """
+    if len(regime_labels) == 0:
+        return []
+    
+    durations = []
+    current_label = regime_labels[0]
+    current_duration = 1
+    
+    for i in range(1, len(regime_labels)):
+        if regime_labels[i] == current_label:
+            current_duration += 1
+        else:
+            durations.append(current_duration)
+            current_label = regime_labels[i]
+            current_duration = 1
+    
+    # Add final episode
+    durations.append(current_duration)
+    
+    return durations
+
+
+def calculate_gradual_duration_penalty(
+    episode_durations: List[int],
+    penalty_config: PenaltyConfig
+) -> float:
+    """
+    Calculate gradual duration penalty based on episode lengths.
+    
+    Penalty structure:
+    - 1-2 bars: Very high penalty (50.0 per episode)
+    - 3-4 bars: High penalty (20.0 per episode)
+    - 5-6 bars: Low penalty (5.0 per episode)
+    - 7+ bars: No penalty
+    
+    Args:
+        episode_durations: List of episode durations
+        penalty_config: Penalty configuration
+        
+    Returns:
+        Total duration penalty
+    """
+    total_penalty = 0.0
+    
+    for duration in episode_durations:
+        if duration <= 2:
+            # Very high penalty for 1-2 bar episodes
+            total_penalty += penalty_config.duration_penalty_1_2_bars
+        elif duration <= 4:
+            # High penalty for 3-4 bar episodes
+            total_penalty += penalty_config.duration_penalty_3_4_bars
+        elif duration <= 6:
+            # Low penalty for 5-6 bar episodes
+            total_penalty += penalty_config.duration_penalty_5_6_bars
+        # No penalty for 7+ bars
+    
+    return total_penalty
+
+
+def calculate_smooth_transition_metrics(
+    regime_labels: np.ndarray,
+    transition_probs: Optional[np.ndarray] = None
+) -> Dict[str, float]:
+    """
+    Calculate smooth transition metrics from regime labels.
+    
+    Args:
+        regime_labels: Regime assignments (T,)
+        transition_probs: Optional transition probabilities (T-1, n_regimes) if soft labels available
+        
+    Returns:
+        Dictionary with transition metrics
+    """
+    metrics = {
+        'n_transitions': 0,
+        'mean_transition_probability': 0.0,
+        'abrupt_transitions': 0,
+        'smooth_transitions': 0
+    }
+    
+    if len(regime_labels) < 2:
+        return metrics
+    
+    # Count transitions
+    transitions = np.diff(regime_labels) != 0
+    n_transitions = np.sum(transitions)
+    metrics['n_transitions'] = int(n_transitions)
+    
+    if transition_probs is not None and transition_probs.shape[0] == len(regime_labels) - 1:
+        # Calculate transition probabilities at transition points
+        transition_probs_at_transitions = []
+        for i, is_transition in enumerate(transitions):
+            if is_transition:
+                # Get transition probability from previous to current regime
+                prev_regime = int(regime_labels[i])
+                curr_regime = int(regime_labels[i + 1])
+                
+                if (prev_regime >= 0 and curr_regime >= 0 and 
+                    prev_regime < transition_probs.shape[1] and 
+                    curr_regime < transition_probs.shape[1]):
+                    prob = transition_probs[i, curr_regime]
+                    transition_probs_at_transitions.append(prob)
+        
+        if len(transition_probs_at_transitions) > 0:
+            metrics['mean_transition_probability'] = float(np.mean(transition_probs_at_transitions))
+            
+            # Count abrupt vs smooth transitions
+            threshold = 0.3  # Threshold for smooth transition
+            metrics['abrupt_transitions'] = int(np.sum(
+                np.array(transition_probs_at_transitions) < threshold
+            ))
+            metrics['smooth_transitions'] = int(np.sum(
+                np.array(transition_probs_at_transitions) >= threshold
+            ))
+    
+    return metrics
+
+
+def calculate_noise_handling_metrics(
+    regime_labels: np.ndarray,
+    noise_label: int = -1
+) -> Dict[str, float]:
+    """
+    Calculate noise handling metrics.
+    
+    Args:
+        regime_labels: Regime assignments (T,)
+        noise_label: Label value for noise points (typically -1)
+        
+    Returns:
+        Dictionary with noise metrics
+    """
+    metrics = {
+        'n_noise_points': 0,
+        'noise_ratio': 0.0,
+        'n_assigned_noise': 0,
+        'n_unassigned_noise': 0
+    }
+    
+    if len(regime_labels) == 0:
+        return metrics
+    
+    # Count noise points
+    noise_mask = regime_labels == noise_label
+    n_noise = np.sum(noise_mask)
+    noise_ratio = float(n_noise / len(regime_labels))
+    
+    metrics['n_noise_points'] = int(n_noise)
+    metrics['noise_ratio'] = noise_ratio
+    
+    # Check if noise points are assigned (all points with noise_label are considered unassigned)
+    metrics['n_unassigned_noise'] = int(n_noise)
+    metrics['n_assigned_noise'] = int(len(regime_labels) - n_noise)
+    
+    return metrics
+
+
 def calculate_penalties(
     regime_labels: np.ndarray,
     n_total_samples: int,
@@ -978,6 +1177,8 @@ def calculate_penalties(
     ari_scores: Optional[List[float]] = None,
     calibration_error: Optional[float] = None,
     metric_cv_variation: Optional[float] = None,
+    transition_probs: Optional[np.ndarray] = None,
+    noise_label: int = -1,
     penalty_config: Optional[PenaltyConfig] = None
 ) -> Dict[str, float]:
     """
@@ -986,11 +1187,13 @@ def calculate_penalties(
     Args:
         regime_labels: Regime assignments
         n_total_samples: Total number of samples
-        regime_durations: Expected durations per regime
+        regime_durations: Expected durations per regime (legacy parameter)
         monthly_turnover: Monthly turnover rate
         ari_scores: ARI scores across restarts
         calibration_error: CRPS or PIT calibration error
         metric_cv_variation: CV variation of metrics (std/mean)
+        transition_probs: Optional transition probabilities for smooth transition evaluation
+        noise_label: Label value for noise points (typically -1)
         penalty_config: Penalty configuration
         
     Returns:
@@ -1003,18 +1206,52 @@ def calculate_penalties(
     
     # Minimum occupancy penalty
     unique, counts = np.unique(regime_labels, return_counts=True)
-    occupancies = counts / n_total_samples
+    # Filter out noise label for occupancy calculation
+    valid_mask = unique != noise_label
+    valid_unique = unique[valid_mask]
+    valid_counts = counts[valid_mask]
     
-    min_occupancy = np.min(occupancies)
-    if min_occupancy < penalty_config.min_occupancy_pct:
-        penalties['min_occupancy'] = penalty_config.min_occupancy_penalty * \
-            (penalty_config.min_occupancy_pct - min_occupancy)
+    if len(valid_unique) > 0:
+        occupancies = valid_counts / n_total_samples
+        min_occupancy = np.min(occupancies)
+        if min_occupancy < penalty_config.min_occupancy_pct:
+            penalties['min_occupancy'] = penalty_config.min_occupancy_penalty * \
+                (penalty_config.min_occupancy_pct - min_occupancy)
     
-    # Minimum duration penalty
-    if regime_durations is not None:
+    # Gradual duration penalty (enhanced with episode-based calculation)
+    episode_durations = calculate_episode_durations(regime_labels)
+    if len(episode_durations) > 0:
+        # Filter out noise episodes for duration calculation
+        # Calculate durations only for non-noise episodes
+        non_noise_durations = []
+        current_label = regime_labels[0]
+        current_duration = 1
+        
+        for i in range(1, len(regime_labels)):
+            if regime_labels[i] == current_label:
+                current_duration += 1
+            else:
+                if current_label != noise_label:
+                    non_noise_durations.append(current_duration)
+                current_label = regime_labels[i]
+                current_duration = 1
+        
+        # Add final episode if not noise
+        if current_label != noise_label:
+            non_noise_durations.append(current_duration)
+        
+        if len(non_noise_durations) > 0:
+            gradual_penalty = calculate_gradual_duration_penalty(
+                non_noise_durations, penalty_config
+            )
+            if gradual_penalty > 0:
+                penalties['duration_episodes'] = gradual_penalty
+    
+    # Legacy minimum duration penalty (backward compatibility)
+    if regime_durations is not None and len(regime_durations) > 0:
         min_duration = np.min(regime_durations)
         if min_duration < penalty_config.min_duration_bars:
-            penalties['min_duration'] = penalty_config.min_duration_penalty * \
+            penalties['min_duration_legacy'] = penalty_config.min_duration_penalty * \
                 (penalty_config.min_duration_bars - min_duration)
     
     # Turnover penalty
@@ -1038,6 +1275,43 @@ def calculate_penalties(
     if metric_cv_variation is not None and metric_cv_variation > penalty_config.max_cv_variation:
         penalties['metric_stability'] = penalty_config.cv_variation_penalty * \
             (metric_cv_variation - penalty_config.max_cv_variation)
+    
+    # Smooth transitions penalty
+    if penalty_config.smooth_transitions_enabled:
+        transition_metrics = calculate_smooth_transition_metrics(
+            regime_labels, transition_probs
+        )
+        
+        # Penalize if mean transition probability is too low (abrupt transitions)
+        if transition_metrics['mean_transition_probability'] > 0:
+            if transition_metrics['mean_transition_probability'] < penalty_config.min_transition_probability:
+                abrupt_factor = (penalty_config.min_transition_probability - 
+                               transition_metrics['mean_transition_probability']) / \
+                               penalty_config.min_transition_probability
+                penalties['abrupt_transitions'] = penalty_config.abrupt_transition_penalty * abrupt_factor
+        
+        # Also penalize based on number of abrupt transitions
+        if transition_metrics['abrupt_transitions'] > 0:
+            # Penalize proportionally to number of abrupt transitions
+            total_transitions = transition_metrics['n_transitions']
+            if total_transitions > 0:
+                abrupt_ratio = transition_metrics['abrupt_transitions'] / total_transitions
+                penalties['abrupt_transition_ratio'] = penalty_config.abrupt_transition_penalty * abrupt_ratio
+    
+    # Noise handling penalty
+    if penalty_config.noise_handling_enabled:
+        noise_metrics = calculate_noise_handling_metrics(regime_labels, noise_label)
+        
+        # Penalize high noise ratio
+        if noise_metrics['noise_ratio'] > penalty_config.max_noise_ratio:
+            excess_noise = noise_metrics['noise_ratio'] - penalty_config.max_noise_ratio
+            penalties['noise_ratio'] = penalty_config.noise_ratio_penalty * excess_noise
+        
+        # Penalize unassigned noise points
+        if noise_metrics['n_unassigned_noise'] > 0:
+            # Penalize per unassigned noise point (normalized)
+            unassigned_ratio = noise_metrics['n_unassigned_noise'] / len(regime_labels)
+            penalties['unassigned_noise'] = penalty_config.unassigned_noise_penalty * unassigned_ratio
     
     return penalties
 
@@ -1618,6 +1892,26 @@ if __name__ == "__main__":
     print(f"  Min Duration: {goals.penalty_config.min_duration_bars} bars (penalty: {goals.penalty_config.min_duration_penalty})")
     print(f"  Max Turnover: {goals.penalty_config.max_monthly_turnover}/month (penalty: {goals.penalty_config.turnover_penalty})")
     
+    print("\n\nEnhanced Duration Penalties (Gradual):")
+    print("=" * 70)
+    print(f"  1-2 bars: Very high penalty ({goals.penalty_config.duration_penalty_1_2_bars} per episode)")
+    print(f"  3-4 bars: High penalty ({goals.penalty_config.duration_penalty_3_4_bars} per episode)")
+    print(f"  5-6 bars: Low penalty ({goals.penalty_config.duration_penalty_5_6_bars} per episode)")
+    print(f"  7+ bars: No penalty")
+    
+    print("\n\nSmooth Transitions Configuration:")
+    print("=" * 70)
+    print(f"  Enabled: {goals.penalty_config.smooth_transitions_enabled}")
+    print(f"  Min Transition Probability: {goals.penalty_config.min_transition_probability}")
+    print(f"  Abrupt Transition Penalty: {goals.penalty_config.abrupt_transition_penalty}")
+    
+    print("\n\nNoise Handling Configuration:")
+    print("=" * 70)
+    print(f"  Enabled: {goals.penalty_config.noise_handling_enabled}")
+    print(f"  Max Noise Ratio: {goals.penalty_config.max_noise_ratio:.1%}")
+    print(f"  Noise Ratio Penalty: {goals.penalty_config.noise_ratio_penalty}")
+    print(f"  Unassigned Noise Penalty: {goals.penalty_config.unassigned_noise_penalty}")
+    
     # Example: Calculate composite score
     print("\n\nExample Metrics Evaluation:")
     print("=" * 70)
@@ -1627,6 +1921,43 @@ if __name__ == "__main__":
     n_clust = 6
     
     composite = calculate_composite_score(rolling_ll, one_step_ll, sharpe)
+    
+    # Example: Calculate penalties with new features
+    print("\n\nExample Penalty Calculation with Enhanced Features:")
+    print("=" * 70)
+    
+    # Create sample regime labels with short episodes and noise
+    sample_labels = np.array([0, 0, 0, 1, 1, 0, 0, 2, 2, 2, 2, 2, -1, -1, 3, 3, 3, 3, 3, 3, 3])
+    sample_penalties = calculate_penalties(
+        regime_labels=sample_labels,
+        n_total_samples=len(sample_labels),
+        penalty_config=goals.penalty_config
+    )
+    
+    print(f"Sample labels: {sample_labels}")
+    print(f"\nPenalties calculated:")
+    for penalty_name, penalty_value in sample_penalties.items():
+        print(f"  {penalty_name}: {penalty_value:.4f}")
+    
+    # Example: Episode durations
+    episode_durations = calculate_episode_durations(sample_labels)
+    print(f"\nEpisode durations: {episode_durations}")
+    
+    # Example: Smooth transition metrics
+    transition_metrics = calculate_smooth_transition_metrics(sample_labels)
+    print(f"\nSmooth transition metrics:")
+    print(f"  N transitions: {transition_metrics['n_transitions']}")
+    print(f"  Mean transition probability: {transition_metrics['mean_transition_probability']:.4f}")
+    print(f"  Abrupt transitions: {transition_metrics['abrupt_transitions']}")
+    print(f"  Smooth transitions: {transition_metrics['smooth_transitions']}")
+    
+    # Example: Noise handling metrics
+    noise_metrics = calculate_noise_handling_metrics(sample_labels)
+    print(f"\nNoise handling metrics:")
+    print(f"  N noise points: {noise_metrics['n_noise_points']}")
+    print(f"  Noise ratio: {noise_metrics['noise_ratio']:.2%}")
+    print(f"  Assigned noise: {noise_metrics['n_assigned_noise']}")
+    print(f"  Unassigned noise: {noise_metrics['n_unassigned_noise']}")
     
     report = format_metrics_report(
         rolling_ll, one_step_ll, sharpe, n_clust, composite

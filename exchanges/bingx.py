@@ -501,12 +501,154 @@ class BingXExchange(BaseExchange):
         return await self._get_position_risk_raw(symbol)
 
     @handles_errors
+    async def get_positions(self) -> list[dict[str, Any]]:
+        """Get all open positions - public interface method."""
+        return await self._get_positions_raw()
+
+    @handles_errors
+    async def set_leverage(self, symbol: str, leverage: float) -> bool:
+        """Set leverage for a symbol - public interface method."""
+        return await self._set_leverage_raw(symbol, leverage)
+
+    @handles_errors
+    async def set_margin_mode(self, symbol: str, mode: str) -> bool:
+        """Set margin mode for a symbol - public interface method."""
+        return await self._set_margin_mode_raw(symbol, mode)
+
+    @handles_errors
+    async def close_position(self, symbol: str, side: str | None = None) -> dict[str, Any]:
+        """Close a position - public interface method."""
+        return await self._close_position_raw(symbol, side)
+
+    @handles_errors
+    async def modify_position(self, symbol: str, quantity: float, side: str) -> dict[str, Any]:
+        """Modify a position - public interface method."""
+        return await self._modify_position_raw(symbol, quantity, side)
+
+    @handles_errors
     async def close(self) -> None:
         """Close the exchange connection."""
         if self.session:
             await self.session.close()
             self.session = None
         self.logger.info("BingX exchange connection closed")
+
+    # Raw implementation methods for perp trading
+    @handles_errors
+    async def _get_positions_raw(self) -> list[dict[str, Any]]:
+        """Get raw positions data from BingX."""
+        data = await self._make_request("GET", "/openApi/swap/v2/user/positions", {})
+        
+        if not data:
+            raise BingXAPIError("No positions data received")
+        
+        positions = []
+        for pos in data:
+            positions.append({
+                "symbol": pos.get("symbol", ""),
+                "side": pos.get("side", ""),
+                "size": float(pos.get("size", 0)),
+                "entryPrice": float(pos.get("entryPrice", 0)),
+                "markPrice": float(pos.get("markPrice", 0)),
+                "pnl": float(pos.get("pnl", 0)),
+                "percentage": float(pos.get("percentage", 0)),
+                "margin": float(pos.get("margin", 0)),
+                "leverage": float(pos.get("leverage", 1)),
+                "liquidationPrice": float(pos.get("liquidationPrice", 0)),
+                "timestamp": pos.get("timestamp", 0)
+            })
+        
+        return positions
+
+    @handles_errors
+    async def _set_leverage_raw(self, symbol: str, leverage: float) -> bool:
+        """Set leverage for a symbol on BingX."""
+        params = {
+            "symbol": symbol.upper(),
+            "leverage": int(leverage)
+        }
+        
+        data = await self._make_request("POST", "/openApi/swap/v2/trade/leverage", params)
+        
+        if not data:
+            raise BingXAPIError("Failed to set leverage")
+        
+        return data.get("success", False)
+
+    @handles_errors
+    async def _set_margin_mode_raw(self, symbol: str, mode: str) -> bool:
+        """Set margin mode for a symbol on BingX."""
+        params = {
+            "symbol": symbol.upper(),
+            "marginMode": mode.upper()  # ISOLATED or CROSSED
+        }
+        
+        data = await self._make_request("POST", "/openApi/swap/v2/trade/marginMode", params)
+        
+        if not data:
+            raise BingXAPIError("Failed to set margin mode")
+        
+        return data.get("success", False)
+
+    @handles_errors
+    async def _close_position_raw(self, symbol: str, side: str | None = None) -> dict[str, Any]:
+        """Close a position on BingX."""
+        # Get current position to determine side if not provided
+        if not side:
+            positions = await self._get_positions_raw()
+            for pos in positions:
+                if pos["symbol"] == symbol.upper() and float(pos["size"]) > 0:
+                    side = "SELL" if pos["side"] == "LONG" else "BUY"
+                    break
+        
+        if not side:
+            raise BingXAPIError(f"No open position found for {symbol}")
+        
+        # Create a market order to close the position
+        params = {
+            "symbol": symbol.upper(),
+            "side": side,
+            "type": "MARKET",
+            "quantity": "0",  # Close entire position
+            "reduceOnly": True
+        }
+        
+        data = await self._make_request("POST", "/openApi/swap/v2/trade/order", params)
+        
+        if not data:
+            raise BingXAPIError("Failed to close position")
+        
+        return {
+            "orderId": data.get("orderId", ""),
+            "symbol": symbol,
+            "side": side,
+            "status": "FILLED",
+            "message": "Position closed successfully"
+        }
+
+    @handles_errors
+    async def _modify_position_raw(self, symbol: str, quantity: float, side: str) -> dict[str, Any]:
+        """Modify a position on BingX."""
+        params = {
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "type": "MARKET",
+            "quantity": str(quantity)
+        }
+        
+        data = await self._make_request("POST", "/openApi/swap/v2/trade/order", params)
+        
+        if not data:
+            raise BingXAPIError("Failed to modify position")
+        
+        return {
+            "orderId": data.get("orderId", ""),
+            "symbol": symbol,
+            "side": side,
+            "quantity": quantity,
+            "status": "FILLED",
+            "message": "Position modified successfully"
+        }
 
 
 # Factory function for creating BingX exchange instances

@@ -322,7 +322,7 @@ class ResamplingConfig:
 class PipelineConfig:
     """Configuration for the enhanced klines processing pipeline."""
     data_dir: str = "historical_data"
-    exchange: str = "binance"
+    exchange: str = "binance"  # Default to Binance, but supports any exchange
     enable_logging: bool = True
     max_gap_minutes: int = 1
     enable_gap_filling: bool = True
@@ -950,7 +950,7 @@ class EnhancedKlinesProcessingPipeline:
                 tprint_info(f"📥 Processing {years} years of {symbol} {interval} data")
 
             # Check if we have existing data first
-            data_dir = Path(self.config.data_dir) / "binance" / symbol.lower() / "raw"
+            data_dir = Path(self.config.data_dir) / self.exchange / symbol.lower() / "raw"
             parquet_files = list(data_dir.glob(f"{symbol.lower()}_{interval}_*.parquet")) if data_dir.exists() else []
             
             if parquet_files and not getattr(self.config, 'force_download', False):
@@ -2173,8 +2173,9 @@ if __name__ == "__main__":
             )
 
             # Create enhanced exchange interface for data downloading
+            # Supports: 'binance', 'bingx', 'okx', 'mexc', 'gateio', 'phemex'
             exchange_config = {
-                'exchange_type': 'binance',
+                'exchange_type': 'binance',  # Change to 'bingx' for BingX
                 'api_key': "",  # Add your API key here
                 'api_secret': "",  # Add your API secret here
                 'testnet': True,

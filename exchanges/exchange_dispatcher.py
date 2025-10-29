@@ -29,6 +29,7 @@ class ExchangeType(Enum):
     """Supported exchange types."""
     OKX = "okx"
     BINANCE = "binance"
+    BINGX = "bingx"
     GATEIO = "gateio"
     MEXC = "mexc"
     PHEMEX = "phemex"
@@ -161,6 +162,16 @@ class ExchangeDispatcher:
             elif self.config.exchange_type == ExchangeType.BINANCE:
                 from .binance import create_binance_exchange
                 return create_binance_exchange(
+                    api_key=self.config.api_key,
+                    api_secret=self.config.api_secret,
+                    trade_symbol=self.config.trade_symbol,
+                    password=self.config.password,
+                    subaccount_id=self.config.subaccount_id,
+                    use_testnet=self.config.use_testnet
+                )
+            elif self.config.exchange_type == ExchangeType.BINGX:
+                from .bingx import create_bingx_exchange
+                return create_bingx_exchange(
                     api_key=self.config.api_key,
                     api_secret=self.config.api_secret,
                     trade_symbol=self.config.trade_symbol,
@@ -596,6 +607,24 @@ def create_phemex_dispatcher(
         exchange_type=ExchangeType.PHEMEX,
         api_key=api_key,
         api_secret=api_secret,
+        trade_symbol=trade_symbol
+    )
+    return create_exchange_dispatcher(config)
+
+
+# Convenience function for creating BingX dispatcher
+def create_bingx_dispatcher(
+    api_key: str,
+    api_secret: str,
+    trade_symbol: str,
+    use_testnet: bool = True
+) -> ExchangeDispatcher:
+    """Create a BingX exchange dispatcher."""
+    config = ExchangeConfig(
+        exchange_type=ExchangeType.BINGX,
+        api_key=api_key,
+        api_secret=api_secret,
+        use_testnet=use_testnet,
         trade_symbol=trade_symbol
     )
     return create_exchange_dispatcher(config)

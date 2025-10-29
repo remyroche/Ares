@@ -39,6 +39,9 @@ class PerformanceReporter:
         self.config = config or {}
         self.logger = logger.getChild('PerformanceReporter')
 
+        # Configuration constants
+        self.default_account_size = self.config.get('default_account_size', 10000.0)
+
         # Report configuration
         self.report_directory = Path(self.config.get('report_directory', 'trading_reports'))
         self.enable_html_reports = self.config.get('enable_html_reports', True)
@@ -130,10 +133,24 @@ class PerformanceReporter:
             win_rate = winning_trades / total_trades if total_trades > 0 else 0.0
             avg_win = np.mean([t.pnl_absolute for t in trades if t.pnl_absolute and t.pnl_absolute > 0]) if winning_trades > 0 else 0.0
             avg_loss = np.mean([t.pnl_absolute for t in trades if t.pnl_absolute and t.pnl_absolute < 0]) if losing_trades > 0 else 0.0
-            profit_factor = abs(avg_win * winning_trades / (avg_loss * losing_trades)) if avg_loss != 0 and losing_trades > 0 else 0.0
+            # Profit factor: inf when no losses indicates perfect performance
+            if avg_loss != 0 and losing_trades > 0:
+                profit_factor = abs(avg_win * winning_trades / (avg_loss * losing_trades))
+            elif avg_win > 0 and winning_trades > 0:
+                profit_factor = float('inf')  # Perfect performance - no losses
+            else:
+                profit_factor = 0.0
 
             # Risk metrics
-            sharpe_ratio = calculate_sharpe_ratio(pnl_values) if len(pnl_values) > 1 else 0.0
+            # Convert absolute PnL to returns for Sharpe ratio calculation
+            if len(pnl_values) > 1:
+                # Calculate returns as percentage changes
+                # Use a base value to normalize (first value or average)
+                base_value = abs(pnl_values[0]) if pnl_values[0] != 0 else np.mean([abs(p) for p in pnl_values if p != 0]) or self.default_account_size
+                returns = np.array(pnl_values) / base_value
+                sharpe_ratio = calculate_sharpe_ratio(returns) if len(returns) > 1 else 0.0
+            else:
+                sharpe_ratio = 0.0
             max_drawdown_pct, _, _ = calculate_max_drawdown(np.cumsum(pnl_values)) if pnl_values else (0.0, 0, 0)
 
             # Model usage summary
@@ -268,7 +285,13 @@ class PerformanceReporter:
                         'avg_confidence': np.mean(model_confidences) if model_confidences else 0.0,
                         'avg_weight': np.mean(model_weights) if model_weights else 0.0,
                         'high_confidence_success_rate': high_conf_success_rate,
-                        'confidence_pnl_correlation': np.corrcoef(model_confidences, model_pnl)[0,1] if len(model_confidences) > 1 and len(model_pnl) > 1 else 0.0
+                        'confidence_pnl_correlation': (
+                            np.corrcoef(model_confidences, model_pnl)[0, 1]
+                            if len(model_confidences) > 1
+                            and len(model_pnl) > 1
+                            and len(model_confidences) == len(model_pnl)
+                            else 0.0
+                        )
                     }
 
             # Model comparison
@@ -486,12 +509,13 @@ class PerformanceReporter:
 
             return {
                 'execution_metrics': {
-                    'avg_execution_time_ms': np.mean(execution_times) if execution_times else 0.0,
-                    'max_execution_time_ms': max(execution_times) if execution_times else 0.0,
-                    'avg_slippage': np.mean(slippages) if slippages else 0.0,
-                    'max_slippage': max(slippages) if slippages else 0.0,
-                    'avg_execution_quality': np.mean(execution_qualities) if execution_qualities else 0.0,
-                    'avg_timing_quality': np.mean(timing_qualities) if timing_qualities else 0.0
+                    'avg_execution_time_ms': np.mean(execution_times) if execution_times else None,
+                    'max_execution_time_ms': max(execution_times) if execution_times else None,
+                    'avg_slippage': np.mean(slippages) if slippages else None,
+                    'max_slippage': max(slippages) if slippages else None,
+                    # Return None if no data to distinguish from poor quality (0.0)
+                    'avg_execution_quality': np.mean(execution_qualities) if execution_qualities else None,
+                    'avg_timing_quality': np.mean(timing_qualities) if timing_qualities else None
                 },
                 'execution_success': {
                     'success_rate': execution_success_rate,

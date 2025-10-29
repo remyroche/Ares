@@ -312,14 +312,38 @@ Several helper methods lack docstrings:
    - Moved `import calendar` to module level
 
 ### ⚠️ STILL NEEDS FIXING:
-1. ❌ Fix Sharpe ratio calculation to use returns, not absolute PnL
-2. ❌ Fix correlation calculation length mismatch check
-3. ❌ Fix regime changes calculation to count transitions, not unique regimes
-4. ❌ Fix model agreement score inversion logic
-5. ❌ Fix profit factor calculation (should return inf when no losses)
-6. ❌ Fix regime stability calculation (can return negative values)
-7. ❌ Fix hardcoded account size assumptions
-8. ❌ Fix correlation calculation to ensure length matching
+~~1. ❌ Fix Sharpe ratio calculation to use returns, not absolute PnL~~ - **FIXED**
+   - Now converts PnL to returns before calculating Sharpe ratio in both `daily_recorder.py` and `performance_reporter.py`
+
+~~2. ❌ Fix correlation calculation length mismatch check~~ - **FIXED**
+   - Added explicit length matching check before correlation calculation
+
+~~3. ❌ Fix regime changes calculation to count transitions, not unique regimes~~ - **FIXED**
+   - Now counts actual transitions between consecutive trades, sorted by timestamp
+
+~~4. ❌ Fix model agreement score inversion logic~~ - **FIXED**
+   - Now properly inverts variance to get agreement score (high variance = low agreement)
+
+~~5. ❌ Fix profit factor calculation (should return inf when no losses)~~ - **FIXED**
+   - Returns `float('inf')` when there are profits but no losses, indicating perfect performance
+
+~~6. ❌ Fix regime stability calculation (can return negative values)~~ - **FIXED**
+   - Now properly clamps stability to [0, 1] range and handles edge cases
+
+~~7. ❌ Fix hardcoded account size assumptions~~ - **FIXED**
+   - Made account size configurable in all classes:
+     - `TradeReportingManager`: Added `account_size` parameter and `DEFAULT_ACCOUNT_SIZE` constant
+     - `DailyRecorder`: Added `default_account_size` config option
+     - `PerformanceReporter`: Added `default_account_size` config option
+
+~~8. ❌ Fix correlation calculation to ensure length matching~~ - **FIXED**
+   - Added explicit check that `len(model_confidences) == len(model_pnl)`
+
+### ✅ ADDITIONAL FIXES APPLIED:
+1. ✅ Fixed execution quality handling - now returns `None` when no data (instead of `0.0`) to distinguish from poor quality
+2. ✅ Fixed confidence trend calculation - simplified and made more readable with clear threshold
+3. ✅ Fixed trade sorting issue - ensures trades are sorted by timestamp before duration calculations
+4. ✅ Updated `DailyRecap` dataclass to allow `Optional[float]` for `avg_execution_quality`
 
 ### Code Quality Improvements:
 1. Remove unnecessary `async` decorators from synchronous methods

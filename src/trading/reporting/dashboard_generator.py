@@ -139,7 +139,9 @@ class DashboardGenerator:
 
             # Trading velocity
             if trades:
-                trading_duration = (trades[-1].timestamp - trades[0].timestamp).total_seconds() / 3600  # hours
+                # Sort trades by timestamp to ensure correct order
+                sorted_trades = sorted(trades, key=lambda t: t.timestamp)
+                trading_duration = (sorted_trades[-1].timestamp - sorted_trades[0].timestamp).total_seconds() / 3600  # hours
                 trades_per_hour = total_trades / trading_duration if trading_duration > 0 else 0.0
             else:
                 trades_per_hour = 0.0
@@ -257,6 +259,16 @@ class DashboardGenerator:
                     # Confidence tracking
                     confidences = [t.model_confidences.get(model_id, 0.0) for t in model_trades]
                     recent_confidences = [t.model_confidences.get(model_id, 0.0) for t in recent_model_trades]
+                    
+                    # Confidence trend: compare recent average to historical average
+                    confidence_trend = 'stable'
+                    if len(recent_confidences) > 0 and len(confidences) > len(recent_confidences):
+                        recent_avg = np.mean(recent_confidences)
+                        historical_avg = np.mean(confidences[:-len(recent_confidences)])
+                        if recent_avg > historical_avg + 0.05:  # 5% threshold
+                            confidence_trend = 'improving'
+                        elif recent_avg < historical_avg - 0.05:
+                            confidence_trend = 'declining'
 
                     model_dashboard[model_id] = {
                         'usage_stats': {
@@ -273,7 +285,7 @@ class DashboardGenerator:
                         'confidence_stats': {
                             'avg_confidence': np.mean(confidences) if confidences else 0.0,
                             'recent_avg_confidence': np.mean(recent_confidences) if recent_confidences else 0.0,
-                            'confidence_trend': 'improving' if len(recent_confidences) > 0 and len(confidences) > len(recent_confidences) and np.mean(recent_confidences) > np.mean(confidences[:-len(recent_confidences)]) else 'stable'
+                            'confidence_trend': confidence_trend
                         },
                         'feature_importance': await self._get_model_feature_importance(model_id, model_trades)
                     }

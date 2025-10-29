@@ -15,8 +15,22 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_structured, LogLevel
 from ..config.trading_config import TradingConfig
+from .leverage_manager import LeverageManager
+from .risk_calculator import RiskCalculator
 
 logger = system_logger.getChild('PositionSizer')
+
+# Constants for position sizing calculations
+DEFAULT_INTENSITY_FACTOR_MIN = 0.8
+DEFAULT_INTENSITY_FACTOR_MAX = 1.2
+DEFAULT_RELIABILITY_FACTOR_MIN = 0.8
+DEFAULT_RELIABILITY_FACTOR_MAX = 1.2
+DEFAULT_RISK_FACTOR_MIN = 0.7
+DEFAULT_RISK_FACTOR_MAX = 1.0
+DEFAULT_CONFIDENCE_MULTIPLIER_MIN = 0.5
+DEFAULT_CONFIDENCE_MULTIPLIER_MAX = 1.0
+DEFAULT_CONFIDENCE_SCALE_MIN = 0.8
+DEFAULT_CONFIDENCE_SCALE_MAX = 1.2
 
 @dataclass
 class PositionSizeResult:
@@ -39,23 +53,39 @@ class PositionSizer:
     Based on existing tactician approach:
     - Uses ML confidence scores for position sizing
     - Implements Kelly criterion for optimal position sizing
-    - Simple leverage management with configurable limits
+    - Integrates with LeverageManager and RiskCalculator
     """
 
-    def __init__(self, config: TradingConfig):
+    def __init__(self, config: TradingConfig, leverage_manager: Optional[LeverageManager] = None, risk_calculator: Optional[RiskCalculator] = None):
         self.config = config
         self.logger = logger.getChild('PositionSizer')
+        
+        # External dependencies (optional, can be set later)
+        self.leverage_manager = leverage_manager
+        self.risk_calculator = risk_calculator
 
-        # Position sizing configuration
+        # Position sizing configuration - read from config with defaults
         self.kelly_multiplier: float = 0.25  # Kelly fraction multiplier
-        self.max_position_size: float = 0.5  # Maximum position size (50% of portfolio)
-        self.min_position_size: float = 0.01  # Minimum position size (1% of portfolio)
+        self.max_position_size: float = getattr(config, 'max_position_size', 0.5)  # Maximum position size (50% of portfolio)
+        self.min_position_size: float = getattr(config, 'min_position_size', 0.01)  # Minimum position size (1% of portfolio)
         self.confidence_threshold: float = 0.6  # Minimum confidence threshold
         self.ml_weight: float = 0.7  # Weight for ML-based sizing vs Kelly
+        
+        # Position size rounding configuration
+        self.min_order_size: float = 0.0  # Minimum order size (exchange-specific, set via config)
+        self.tick_size: float = 0.0  # Tick size for rounding (exchange-specific, set via config)
 
         # State management
         self.is_initialized: bool = False
         self.position_sizing_history: list[dict[str, Any]] = []
+
+    def set_leverage_manager(self, leverage_manager: LeverageManager):
+        """Set the leverage manager for integration."""
+        self.leverage_manager = leverage_manager
+
+    def set_risk_calculator(self, risk_calculator: RiskCalculator):
+        """Set the risk calculator for integration."""
+        self.risk_calculator = risk_calculator
 
     @handles_errors
     async def initialize(self) -> bool:
@@ -93,155 +123,136 @@ class PositionSizer:
             if self.confidence_threshold <= 0 or self.confidence_threshold > 1:
                 self.logger.error("confidence_threshold must be between 0 and 1")
                 return False
+            if self.ml_weight < 0 or self.ml_weight > 1:
+                self.logger.error("ml_weight must be between 0 and 1")
+                return False
             return True
         except Exception as e:
             self.logger.error(f"Configuration validation failed: {e}")
             return False
 
-    @handles_errors
-    @log_execution_time()
-    @traced(span_name="calculate_position_size")
-    async def calculate_position_size(
+    def _validate_inputs(
         self,
         symbol: str,
-        ml_predictions: Dict[str, Any],
         current_price: float,
         account_balance: float,
-        analyst_confidence: float = 0.5,
-        tactician_confidence: float = 0.5
-    ) -> PositionSizeResult:
+        analyst_confidence: float,
+        tactician_confidence: float
+    ) -> None:
+        """Validate inputs for position sizing."""
+        if not symbol or not isinstance(symbol, str):
+            raise ValueError(f"symbol must be a non-empty string, got {symbol}")
+        if not math.isfinite(current_price) or current_price <= 0:
+            raise ValueError(f"current_price must be a positive finite number, got {current_price}")
+        if not math.isfinite(account_balance) or account_balance <= 0:
+            raise ValueError(f"account_balance must be a positive finite number, got {account_balance}")
+        if not math.isfinite(analyst_confidence) or not (0 <= analyst_confidence <= 1):
+            raise ValueError(f"analyst_confidence must be between 0 and 1, got {analyst_confidence}")
+        if not math.isfinite(tactician_confidence) or not (0 <= tactician_confidence <= 1):
+            raise ValueError(f"tactician_confidence must be between 0 and 1, got {tactician_confidence}")
+
+    def _extract_confidence_levels(
+        self,
+        confidence_dict: Dict[str, float],
+        target_levels: list[float],
+        default_value: float = 0.5
+    ) -> list[float]:
         """
-        Calculate position size using ML confidence scores and Kelly criterion.
-
-        Args:
-            symbol: Trading symbol
-            ml_predictions: ML confidence predictions
-            current_price: Current market price
-            account_balance: Account balance for position sizing
-            analyst_confidence: Analyst confidence score
-            tactician_confidence: Tactician confidence score
-
-        Returns:
-            PositionSizeResult: Position sizing recommendation
+        Extract confidence values for target levels from dictionary.
+        
+        Safely handles empty dictionaries and missing keys.
         """
-        try:
-            if not self.is_initialized:
-                raise RuntimeError("Position Sizer not initialized")
-
-            # Extract ML predictions
-            combined_confidence = ml_predictions.get('combined_confidence', 0.5)
-            price_target_confidences = ml_predictions.get('price_target_confidences', {})
-            adversarial_confidences = ml_predictions.get('adversarial_confidences', {})
-            intensity = ml_predictions.get('intensity', 1.0)
-            reliability = ml_predictions.get('reliability', 1.0)
-            risk_score = ml_predictions.get('risk_score', 0.0)
-
-            # Calculate Kelly position size
-            kelly_size = self._calculate_kelly_position_size(price_target_confidences, adversarial_confidences)
-
-            # Calculate ML-based position size
-            ml_size = self._calculate_ml_position_size(price_target_confidences, adversarial_confidences)
-
-            # Calculate weighted position size
-            base_size = self._calculate_weighted_position_size(kelly_size, ml_size)
-
-            # Apply confidence multiplier
-            confidence_multiplier = self._calculate_confidence_multiplier(
-                combined_confidence, intensity, reliability, risk_score
-            )
-            confidence_adjusted_size = base_size * confidence_multiplier
-
-            # Apply final modifiers
-            final_size = self._apply_position_size_modifiers(
-                confidence_adjusted_size, analyst_confidence, tactician_confidence
-            )
-
-            # Calculate leverage
-            leverage = self._calculate_leverage(final_size, account_balance)
-
-            # Create result
-            result = PositionSizeResult(
-                symbol=symbol,
-                recommended_size=final_size,
-                max_size=self.max_position_size,
-                min_size=self.min_position_size,
-                leverage=leverage,
-                confidence=combined_confidence,
-                kelly_size=kelly_size,
-                ml_size=ml_size,
-                sizing_method="ml_kelly_hybrid",
-                metadata={
-                    'current_price': current_price,
-                    'account_balance': account_balance,
-                    'analyst_confidence': analyst_confidence,
-                    'tactician_confidence': tactician_confidence,
-                    'confidence_multiplier': confidence_multiplier,
-                    'intensity': intensity,
-                    'reliability': reliability,
-                    'risk_score': risk_score
-                }
-            )
-
-            # Store in history
-            self.position_sizing_history.append({
-                'timestamp': datetime.now(),
-                'symbol': symbol,
-                'final_size': final_size,
-                'kelly_size': kelly_size,
-                'ml_size': ml_size,
-                'combined_confidence': combined_confidence,
-                'current_price': current_price,
-                'account_balance': account_balance
-            })
-
-            # Maintain history size
-            if len(self.position_sizing_history) > 100:
-                self.position_sizing_history = self.position_sizing_history[-100:]
-
-            self.logger.debug(f"Position size calculated for {symbol}: {final_size:.4f}")
-
-            return result
-
-        except Exception as e:
-            self.logger.error(f"❌ Position sizing failed for {symbol}: {e}")
-            raise
-
-    def _calculate_kelly_position_size(self, price_target_confidences: Dict[str, float], adversarial_confidences: Dict[str, float]) -> float:
-        """Calculate position size using Kelly criterion based on ML confidence scores."""
-        try:
-            # Simplified Kelly calculation based on ML confidence scores
-            # This is a simplified version of the Kelly criterion adapted for ML predictions
-
-            # Get average confidence from price targets
-            target_levels = [0.25, 0.5, 0.75, 1.0]
-            confidences = []
-            for level in target_levels:
-                # Find closest confidence level
-                closest_level = min(price_target_confidences.keys(),
-                                  key=lambda x: abs(float(x.replace('%', '')) - level))
-                confidence = price_target_confidences.get(closest_level, 0.5)
+        if not confidence_dict:
+            return [default_value] * len(target_levels)
+        
+        confidences = []
+        for level in target_levels:
+            try:
+                # Try to find closest key
+                closest_key = None
+                min_diff = float('inf')
+                
+                for key in confidence_dict.keys():
+                    try:
+                        # Try to parse key as percentage or number
+                        key_value = float(str(key).replace('%', '').replace(' ', ''))
+                        diff = abs(key_value - level)
+                        if diff < min_diff:
+                            min_diff = diff
+                            closest_key = key
+                    except (ValueError, AttributeError):
+                        continue
+                
+                if closest_key is not None:
+                    confidence = confidence_dict.get(closest_key, default_value)
+                else:
+                    confidence = default_value
+                    
                 confidences.append(confidence)
+            except Exception as e:
+                self.logger.debug(f"Error extracting confidence for level {level}: {e}")
+                confidences.append(default_value)
+        
+        return confidences
 
-            avg_confidence = sum(confidences) / len(confidences)
-
-            # Get average risk from adversarial confidences
-            adverse_risks = []
-            for level in target_levels:
-                closest_level = min(adversarial_confidences.keys(),
-                                  key=lambda x: abs(float(x.replace('%', '')) - level))
-                risk = adversarial_confidences.get(closest_level, 0.3)
-                adverse_risks.append(risk)
-
-            avg_adverse_risk = sum(adverse_risks) / len(adverse_risks)
-
-            # Kelly formula: f = (bp - q) / b
-            # where b = odds (1/avg_adverse_risk), p = win probability (avg_confidence), q = loss probability (avg_adverse_risk)
-            if avg_adverse_risk > 0:
-                odds = 1.0 / avg_adverse_risk
-                kelly_fraction = (odds * avg_confidence - avg_adverse_risk) / odds
+    def _calculate_kelly_position_size(
+        self,
+        price_target_confidences: Dict[str, float],
+        adversarial_confidences: Dict[str, float]
+    ) -> float:
+        """
+        Calculate position size using Kelly criterion based on ML confidence scores.
+        
+        Kelly formula: f = (bp - q) / b
+        where:
+            f = fraction of capital to bet
+            b = net odds (win_amount / loss_amount)
+            p = win probability
+            q = loss probability (1 - p)
+        
+        Simplified adaptation for ML:
+            p = average confidence from price targets
+            q = average adversarial risk (probability of loss)
+            b = risk/reward ratio (estimated from confidences)
+        """
+        try:
+            target_levels = [0.25, 0.5, 0.75, 1.0]
+            
+            # Extract confidences safely
+            confidences = self._extract_confidence_levels(price_target_confidences, target_levels, 0.5)
+            avg_confidence = sum(confidences) / len(confidences) if confidences else 0.5
+            
+            # Extract adversarial risks safely
+            adverse_risks = self._extract_confidence_levels(adversarial_confidences, target_levels, 0.3)
+            avg_adverse_risk = sum(adverse_risks) / len(adverse_risks) if adverse_risks else 0.3
+            
+            # Calculate win and loss probabilities
+            win_probability = avg_confidence
+            loss_probability = max(0.0, min(1.0, avg_adverse_risk))
+            
+            # Estimate risk/reward ratio from confidences
+            # Higher confidence difference suggests better risk/reward
+            if loss_probability > 0:
+                # Estimate odds: if win prob is much higher than loss prob, better odds
+                if win_probability > loss_probability:
+                    # Estimated odds ratio
+                    odds_ratio = win_probability / loss_probability
+                else:
+                    odds_ratio = 1.0
+                
+                # Kelly formula: f = (bp - q) / b
+                # Simplified: f = p - q/b, where b = odds_ratio
+                if odds_ratio > 0:
+                    kelly_fraction = win_probability - (loss_probability / odds_ratio)
+                else:
+                    kelly_fraction = win_probability - loss_probability
             else:
-                kelly_fraction = avg_confidence - 0.5  # Simplified fallback
-
+                # No loss probability data, use simplified calculation
+                kelly_fraction = win_probability - 0.5
+            
+            # Ensure Kelly fraction is non-negative
+            kelly_fraction = max(0.0, kelly_fraction)
+            
             # Apply Kelly multiplier and clamp to limits
             kelly_position_size = kelly_fraction * self.kelly_multiplier
             return max(self.min_position_size, min(self.max_position_size, kelly_position_size))
@@ -250,34 +261,26 @@ class PositionSizer:
             self.logger.error(f"❌ Kelly position size calculation failed: {e}")
             return self.min_position_size
 
-    def _calculate_ml_position_size(self, price_target_confidences: Dict[str, float], adversarial_confidences: Dict[str, float]) -> float:
+    def _calculate_ml_position_size(
+        self,
+        price_target_confidences: Dict[str, float],
+        adversarial_confidences: Dict[str, float]
+    ) -> float:
         """Calculate position size based on ML confidence scores."""
         try:
             target_levels = [0.25, 0.5, 0.75, 1.0]
-            confidences = []
-            for level in target_levels:
-                closest_level = min(price_target_confidences.keys(),
-                                  key=lambda x: abs(float(x.replace('%', '')) - level))
-                confidence = price_target_confidences.get(closest_level, 0.5)
-                confidences.append(confidence)
-
-            avg_confidence = sum(confidences) / len(confidences)
-
-            adverse_risks = []
-            for level in target_levels:
-                closest_level = min(adversarial_confidences.keys(),
-                                  key=lambda x: abs(float(x.replace('%', '')) - level))
-                risk = adversarial_confidences.get(closest_level, 0.3)
-                adverse_risks.append(risk)
-
-            avg_adverse_risk = sum(adverse_risks) / len(adverse_risks)
+            
+            # Extract confidences safely (reuse helper method)
+            confidences = self._extract_confidence_levels(price_target_confidences, target_levels, 0.5)
+            avg_confidence = sum(confidences) / len(confidences) if confidences else 0.5
+            
+            # Extract adversarial risks safely
+            adverse_risks = self._extract_confidence_levels(adversarial_confidences, target_levels, 0.3)
+            avg_adverse_risk = sum(adverse_risks) / len(adverse_risks) if adverse_risks else 0.3
 
             # Calculate confidence factor
             confidence_factor = avg_confidence / self.confidence_threshold if self.confidence_threshold > 0 else 1.0
-            risk_factor = 1.0 - avg_adverse_risk
-
-            # Ensure risk factor is positive
-            risk_factor = max(0.0, min(1.0, risk_factor))
+            risk_factor = max(0.0, min(1.0, 1.0 - avg_adverse_risk))
 
             # Calculate position size
             base_position_size = self.min_position_size + (self.max_position_size - self.min_position_size) * confidence_factor * risk_factor
@@ -309,18 +312,32 @@ class PositionSizer:
             self.logger.error(f"❌ Weighted position size calculation failed: {e}")
             return max(self.min_position_size, min(self.max_position_size, kelly_position_size))
 
-    def _calculate_confidence_multiplier(self, combined_confidence: float, intensity: float, reliability: float, risk_score: float) -> float:
+    def _calculate_confidence_multiplier(
+        self,
+        combined_confidence: float,
+        intensity: float,
+        reliability: float,
+        risk_score: float
+    ) -> float:
         """Calculate confidence multiplier for position size adjustment."""
         try:
             # Base multiplier from combined confidence
-            base_multiplier = 0.5 + (combined_confidence * 0.5)  # 0.5 to 1.0
+            base_multiplier = DEFAULT_CONFIDENCE_MULTIPLIER_MIN + (
+                combined_confidence * (DEFAULT_CONFIDENCE_MULTIPLIER_MAX - DEFAULT_CONFIDENCE_MULTIPLIER_MIN)
+            )
 
             # Adjust for intensity and reliability
-            intensity_factor = 0.8 + (intensity * 0.4)  # 0.8 to 1.2
-            reliability_factor = 0.8 + (reliability * 0.4)  # 0.8 to 1.2
+            intensity_factor = DEFAULT_INTENSITY_FACTOR_MIN + (
+                intensity * (DEFAULT_INTENSITY_FACTOR_MAX - DEFAULT_INTENSITY_FACTOR_MIN)
+            )
+            reliability_factor = DEFAULT_RELIABILITY_FACTOR_MIN + (
+                reliability * (DEFAULT_RELIABILITY_FACTOR_MAX - DEFAULT_RELIABILITY_FACTOR_MIN)
+            )
 
             # Adjust for risk score (higher risk = lower multiplier)
-            risk_factor = 1.0 - (risk_score * 0.3)  # 0.7 to 1.0
+            risk_factor = DEFAULT_RISK_FACTOR_MAX - (
+                risk_score * (DEFAULT_RISK_FACTOR_MAX - DEFAULT_RISK_FACTOR_MIN)
+            )
 
             # Combine all factors
             final_multiplier = base_multiplier * intensity_factor * reliability_factor * risk_factor
@@ -331,12 +348,19 @@ class PositionSizer:
             self.logger.error(f"❌ Confidence multiplier calculation failed: {e}")
             return 1.0
 
-    def _apply_position_size_modifiers(self, base_size: float, analyst_confidence: float, tactician_confidence: float) -> float:
+    def _apply_position_size_modifiers(
+        self,
+        base_size: float,
+        analyst_confidence: float,
+        tactician_confidence: float
+    ) -> float:
         """Apply final position size modifiers."""
         try:
             # Use raw confidence inputs to determine scaling
-            confidence_values = [value for value in (analyst_confidence, tactician_confidence)
-                                 if value is not None and math.isfinite(value)]
+            confidence_values = [
+                value for value in (analyst_confidence, tactician_confidence)
+                if value is not None and math.isfinite(value)
+            ]
 
             if confidence_values:
                 average_confidence = sum(confidence_values) / len(confidence_values)
@@ -346,8 +370,10 @@ class PositionSizer:
             # Clamp the average confidence to a sensible range (0 to 1)
             average_confidence = max(0.0, min(1.0, average_confidence))
 
-            # Calculate confidence scale directly from the raw scores (0.8 to 1.2 window)
-            confidence_scale = 0.8 + 0.4 * average_confidence
+            # Calculate confidence scale directly from the raw scores
+            confidence_scale = DEFAULT_CONFIDENCE_SCALE_MIN + (
+                average_confidence * (DEFAULT_CONFIDENCE_SCALE_MAX - DEFAULT_CONFIDENCE_SCALE_MIN)
+            )
 
             # Apply logarithmic adjustment with safeguarded base size
             epsilon = 1e-8
@@ -361,18 +387,209 @@ class PositionSizer:
             self.logger.error(f"❌ Position size modifiers application failed: {e}")
             return max(self.min_position_size, min(self.max_position_size, base_size))
 
-    def _calculate_leverage(self, position_size: float, account_balance: float) -> float:
-        """Calculate leverage for position."""
+    def _round_position_size(
+        self,
+        position_size: float,
+        current_price: float,
+        account_balance: float
+    ) -> float:
+        """
+        Round position size to exchange-acceptable values.
+        
+        Args:
+            position_size: Position size as fraction of account balance (0-1)
+            current_price: Current market price
+            account_balance: Account balance
+            
+        Returns:
+            Rounded position size as fraction of account balance
+        """
         try:
-            if account_balance <= 0:
-                return 1.0
+            # Convert fractional position size to units
+            position_value = position_size * account_balance
+            position_units = position_value / current_price if current_price > 0 else 0.0
+            
+            # Apply minimum order size constraint
+            if self.min_order_size > 0 and position_units < self.min_order_size:
+                position_units = self.min_order_size
+            
+            # Round to tick size if specified
+            if self.tick_size > 0:
+                position_units = round(position_units / self.tick_size) * self.tick_size
+            
+            # Convert back to fractional position size
+            rounded_value = position_units * current_price
+            rounded_size = rounded_value / account_balance if account_balance > 0 else 0.0
+            
+            # Ensure within limits
+            return max(self.min_position_size, min(self.max_position_size, rounded_size))
+            
+        except Exception as e:
+            self.logger.warning(f"Position size rounding failed: {e}, using original size")
+            return position_size
 
-            leverage = position_size / account_balance
-            return min(leverage, 10.0)  # Cap at 10x leverage
+    @handles_errors
+    @log_execution_time()
+    @traced(span_name="calculate_position_size")
+    async def calculate_position_size(
+        self,
+        symbol: str,
+        ml_predictions: Dict[str, Any],
+        current_price: float,
+        account_balance: float,
+        analyst_confidence: float = 0.5,
+        tactician_confidence: float = 0.5,
+        stop_loss_price: Optional[float] = None,
+        volatility: Optional[float] = None
+    ) -> PositionSizeResult:
+        """
+        Calculate position size using ML confidence scores and Kelly criterion.
+
+        Args:
+            symbol: Trading symbol
+            ml_predictions: ML confidence predictions
+            current_price: Current market price
+            account_balance: Account balance for position sizing
+            analyst_confidence: Analyst confidence score
+            tactician_confidence: Tactician confidence score
+            stop_loss_price: Stop loss price (optional, for risk validation)
+            volatility: Market volatility (optional, for risk validation)
+
+        Returns:
+            PositionSizeResult: Position sizing recommendation
+        """
+        try:
+            if not self.is_initialized:
+                raise RuntimeError("Position Sizer not initialized")
+
+            # Validate inputs
+            self._validate_inputs(symbol, current_price, account_balance, analyst_confidence, tactician_confidence)
+
+            # Extract ML predictions
+            combined_confidence = ml_predictions.get('combined_confidence', 0.5)
+            price_target_confidences = ml_predictions.get('price_target_confidences', {})
+            adversarial_confidences = ml_predictions.get('adversarial_confidences', {})
+            intensity = ml_predictions.get('intensity', 1.0)
+            reliability = ml_predictions.get('reliability', 1.0)
+            risk_score = ml_predictions.get('risk_score', 0.0)
+
+            # Calculate Kelly position size
+            kelly_size = self._calculate_kelly_position_size(price_target_confidences, adversarial_confidences)
+
+            # Calculate ML-based position size
+            ml_size = self._calculate_ml_position_size(price_target_confidences, adversarial_confidences)
+
+            # Calculate weighted position size
+            base_size = self._calculate_weighted_position_size(kelly_size, ml_size)
+
+            # Apply confidence multiplier
+            confidence_multiplier = self._calculate_confidence_multiplier(
+                combined_confidence, intensity, reliability, risk_score
+            )
+            confidence_adjusted_size = base_size * confidence_multiplier
+
+            # Apply final modifiers
+            final_size = self._apply_position_size_modifiers(
+                confidence_adjusted_size, analyst_confidence, tactician_confidence
+            )
+
+            # Round position size to exchange requirements
+            final_size = self._round_position_size(final_size, current_price, account_balance)
+
+            # Calculate leverage using LeverageManager if available
+            leverage = 1.0
+            if self.leverage_manager:
+                try:
+                    leverage_result = await self.leverage_manager.calculate_leverage(
+                        symbol=symbol,
+                        ml_predictions=ml_predictions,
+                        current_price=current_price,
+                        account_balance=account_balance,
+                        analyst_confidence=analyst_confidence,
+                        tactician_confidence=tactician_confidence
+                    )
+                    leverage = leverage_result.recommended_leverage
+                except Exception as e:
+                    self.logger.warning(f"Failed to calculate leverage: {e}, using default 1.0")
+
+            # Validate risk if RiskCalculator is available
+            risk_warnings = []
+            if self.risk_calculator and stop_loss_price:
+                try:
+                    # Convert fractional position size to units for risk calculation
+                    position_value = final_size * account_balance
+                    position_units = position_value / current_price if current_price > 0 else 0.0
+                    
+                    risk_validation = await self.risk_calculator.validate_position_risk(
+                        position_size=position_units,
+                        current_price=current_price,
+                        account_balance=account_balance,
+                        volatility=volatility,
+                        stop_loss_price=stop_loss_price,
+                        leverage=leverage
+                    )
+                    
+                    if not risk_validation.get('is_valid', False):
+                        risk_warnings = risk_validation.get('warnings', [])
+                        self.logger.warning(f"Position size exceeds risk limits: {risk_warnings}")
+                        # Optionally reduce position size if risk is too high
+                        if risk_validation.get('position_risk', 0) > self.risk_calculator.max_position_risk:
+                            reduction_factor = self.risk_calculator.max_position_risk / risk_validation.get('position_risk', 1.0)
+                            final_size = final_size * reduction_factor
+                            final_size = max(self.min_position_size, min(self.max_position_size, final_size))
+                except Exception as e:
+                    self.logger.warning(f"Risk validation failed: {e}")
+
+            # Create result
+            result = PositionSizeResult(
+                symbol=symbol,
+                recommended_size=final_size,
+                max_size=self.max_position_size,
+                min_size=self.min_position_size,
+                leverage=leverage,
+                confidence=combined_confidence,
+                kelly_size=kelly_size,
+                ml_size=ml_size,
+                sizing_method="ml_kelly_hybrid",
+                metadata={
+                    'current_price': current_price,
+                    'account_balance': account_balance,
+                    'analyst_confidence': analyst_confidence,
+                    'tactician_confidence': tactician_confidence,
+                    'confidence_multiplier': confidence_multiplier,
+                    'intensity': intensity,
+                    'reliability': reliability,
+                    'risk_score': risk_score,
+                    'stop_loss_price': stop_loss_price,
+                    'volatility': volatility,
+                    'risk_warnings': risk_warnings
+                }
+            )
+
+            # Store in history
+            self.position_sizing_history.append({
+                'timestamp': datetime.now(),
+                'symbol': symbol,
+                'final_size': final_size,
+                'kelly_size': kelly_size,
+                'ml_size': ml_size,
+                'combined_confidence': combined_confidence,
+                'current_price': current_price,
+                'account_balance': account_balance,
+                'leverage': leverage
+            })
+
+            # Maintain history size
+            if len(self.position_sizing_history) > 100:
+                self.position_sizing_history = self.position_sizing_history[-100:]
+
+            self.logger.debug(f"Position size calculated for {symbol}: {final_size:.4f} (leverage: {leverage:.1f}x)")
+
+            return result
 
         except Exception as e:
-            self.logger.error(f"❌ Leverage calculation failed: {e}")
-            return 1.0
+            self.logger.error(f"❌ Position sizing failed for {symbol}: {e}")
+            raise
 
     def get_position_sizing_history(self, limit: Optional[int] = None) -> list[dict[str, Any]]:
         """Get position sizing history."""
@@ -398,6 +615,7 @@ class PositionSizer:
             avg_confidence = sum(h['combined_confidence'] for h in recent_history) / len(recent_history)
             avg_kelly = sum(h['kelly_size'] for h in recent_history) / len(recent_history)
             avg_ml = sum(h['ml_size'] for h in recent_history) / len(recent_history)
+            avg_leverage = sum(h.get('leverage', 1.0) for h in recent_history) / len(recent_history)
 
             return {
                 'total_sizings': len(self.position_sizing_history),
@@ -405,6 +623,7 @@ class PositionSizer:
                 'avg_confidence': avg_confidence,
                 'kelly_usage': avg_kelly,
                 'ml_usage': avg_ml,
+                'avg_leverage': avg_leverage,
                 'kelly_multiplier': self.kelly_multiplier,
                 'ml_weight': self.ml_weight,
                 'confidence_threshold': self.confidence_threshold
@@ -413,6 +632,29 @@ class PositionSizer:
         except Exception as e:
             self.logger.error(f"❌ Performance metrics calculation failed: {e}")
             return {}
+
+    def update_configuration(self, new_config: Dict[str, Any]):
+        """Update position sizing configuration."""
+        try:
+            if 'kelly_multiplier' in new_config:
+                self.kelly_multiplier = new_config['kelly_multiplier']
+            if 'max_position_size' in new_config:
+                self.max_position_size = new_config['max_position_size']
+            if 'min_position_size' in new_config:
+                self.min_position_size = new_config['min_position_size']
+            if 'confidence_threshold' in new_config:
+                self.confidence_threshold = new_config['confidence_threshold']
+            if 'ml_weight' in new_config:
+                self.ml_weight = new_config['ml_weight']
+            if 'min_order_size' in new_config:
+                self.min_order_size = new_config['min_order_size']
+            if 'tick_size' in new_config:
+                self.tick_size = new_config['tick_size']
+            
+            self.logger.info("✅ Position sizing configuration updated")
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to update position sizing configuration: {e}")
 
     async def stop(self):
         """Stop position sizer."""
@@ -425,10 +667,14 @@ class PositionSizer:
             self.logger.error(f"❌ Error stopping Position Sizer: {e}")
 
 # Convenience function
-async def setup_position_sizer(config: TradingConfig) -> Optional[PositionSizer]:
+async def setup_position_sizer(
+    config: TradingConfig,
+    leverage_manager: Optional[LeverageManager] = None,
+    risk_calculator: Optional[RiskCalculator] = None
+) -> Optional[PositionSizer]:
     """Setup and initialize position sizer."""
     try:
-        position_sizer = PositionSizer(config)
+        position_sizer = PositionSizer(config, leverage_manager, risk_calculator)
         success = await position_sizer.initialize()
         if success:
             return position_sizer

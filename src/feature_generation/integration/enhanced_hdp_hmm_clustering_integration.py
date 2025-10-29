@@ -16,7 +16,8 @@ import pandas as pd
 # Import tprint utilities
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
-    tprint_debug, tprint_performance, tprint_structured, tprint_timer
+    tprint_debug, tprint_performance, tprint_structured, tprint_timer,
+    tprint_data_preview, tprint_data_format
 )
 
 # Import feature bank integration

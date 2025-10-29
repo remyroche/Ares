@@ -6,6 +6,7 @@ Handles alert creation, routing, escalation, and notification delivery.
 """
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union, Tuple, Callable
@@ -118,6 +119,13 @@ class AlertManager:
         self.active_alerts: Dict[str, Alert] = {}
         self.alert_history: List[Alert] = []
         self.alert_rules: Dict[str, AlertRule] = {}
+        
+        # Alert aggregation
+        self.alert_groups: Dict[str, List[str]] = {}  # group_key -> list of alert_ids
+        self.aggregation_window_minutes = config.get('aggregation_window_minutes', 60)
+
+        # Thread safety
+        self._lock = asyncio.Lock()
 
         # Notification settings
         self.notification_channels = config.get('notification_channels', {})
@@ -126,6 +134,14 @@ class AlertManager:
         # Rate limiting
         self.notification_history: Dict[NotificationChannel, List[datetime]] = {}
         self.cooldowns: Dict[str, datetime] = {}  # rule_id -> last_trigger_time
+        self.rate_limits: Dict[NotificationChannel, Dict[str, Any]] = config.get(
+            'rate_limits', {
+                NotificationChannel.EMAIL: {'max_per_minute': 10, 'max_per_hour': 100},
+                NotificationChannel.SMS: {'max_per_minute': 5, 'max_per_hour': 50},
+                NotificationChannel.WEBHOOK: {'max_per_minute': 60, 'max_per_hour': 1000},
+                NotificationChannel.PUSH: {'max_per_minute': 30, 'max_per_hour': 500},
+            }
+        )
 
         # Performance tracking
         self.notification_success_rate = 1.0
@@ -211,23 +227,34 @@ class AlertManager:
         Returns:
             Alert ID
         """
-        alert_id = f"alert_{datetime.now().timestamp()}_{len(self.active_alerts)}"
+        async with self._lock:
+            alert_id = f"alert_{datetime.now().timestamp()}_{len(self.active_alerts)}"
 
-        alert = Alert(
-            alert_id=alert_id,
-            alert_type=alert_type,
-            priority=priority,
-            title=title,
-            message=message,
-            timestamp=datetime.now(),
-            data=data,
-            rule_id=rule_id
-        )
+            alert = Alert(
+                alert_id=alert_id,
+                alert_type=alert_type,
+                priority=priority,
+                title=title,
+                message=message,
+                timestamp=datetime.now(),
+                data=data,
+                rule_id=rule_id
+            )
 
-        self.active_alerts[alert_id] = alert
-        self.alert_history.append(alert)
+            # Check for duplicate/similar alerts
+            duplicate_group = await self._find_duplicate_group(alert)
+            if duplicate_group:
+                self.alert_groups[duplicate_group].append(alert_id)
+                self.logger.debug(f"Alert {alert_id} grouped with existing alerts: {duplicate_group}")
+            else:
+                # Create new group
+                group_key = self._generate_group_key(alert)
+                self.alert_groups[group_key] = [alert_id]
 
-        # Check if alert should trigger notifications
+            self.active_alerts[alert_id] = alert
+            self.alert_history.append(alert)
+
+        # Check if alert should trigger notifications (outside lock)
         if await self._should_send_notifications(alert):
             await self._send_notifications(alert)
 
@@ -250,6 +277,100 @@ class AlertManager:
 
         return True
 
+    def _generate_group_key(self, alert: Alert) -> str:
+        """Generate a key for grouping similar alerts."""
+        # Group by type, priority, and rule_id (if present)
+        return f"{alert.alert_type.value}:{alert.priority.value}:{alert.rule_id or 'none'}"
+
+    async def _find_duplicate_group(self, alert: Alert) -> Optional[str]:
+        """Find if alert belongs to an existing group."""
+        group_key = self._generate_group_key(alert)
+        now = datetime.now()
+        
+        # Check existing groups
+        for key, alert_ids in self.alert_groups.items():
+            if key == group_key:
+                # Check if alerts in group are recent
+                recent_alerts = [
+                    aid for aid in alert_ids
+                    if aid in self.active_alerts or
+                    (aid in [a.alert_id for a in self.alert_history[-100:]] and
+                     (now - next((a.timestamp for a in self.alert_history if a.alert_id == aid), now)).total_seconds() < self.aggregation_window_minutes * 60)
+                ]
+                if recent_alerts:
+                    return key
+        
+        return None
+
+    async def get_aggregated_alerts(self) -> Dict[str, Dict[str, Any]]:
+        """Get aggregated alert statistics."""
+        aggregated = {}
+        now = datetime.now()
+        
+        for group_key, alert_ids in self.alert_groups.items():
+            # Count recent alerts
+            recent_count = sum(
+                1 for alert_id in alert_ids
+                if alert_id in self.active_alerts or
+                any((now - a.timestamp).total_seconds() < self.aggregation_window_minutes * 60
+                    for a in self.alert_history[-100:]
+                    if a.alert_id == alert_id)
+            )
+            
+            if recent_count > 0:
+                # Get latest alert in group
+                latest_alert_id = None
+                latest_timestamp = None
+                for alert_id in alert_ids:
+                    if alert_id in self.active_alerts:
+                        alert = self.active_alerts[alert_id]
+                        if latest_timestamp is None or alert.timestamp > latest_timestamp:
+                            latest_timestamp = alert.timestamp
+                            latest_alert_id = alert_id
+                
+                if latest_alert_id:
+                    aggregated[group_key] = {
+                        'count': recent_count,
+                        'latest_alert_id': latest_alert_id,
+                        'latest_timestamp': latest_timestamp.isoformat() if latest_timestamp else None,
+                        'alert_ids': alert_ids[:10]  # First 10 alert IDs
+                    }
+        
+        return aggregated
+
+    async def _check_rate_limit(self, channel: NotificationChannel) -> bool:
+        """Check if rate limit allows sending notification."""
+        if channel not in self.rate_limits:
+            return True  # No rate limit configured
+
+        limits = self.rate_limits[channel]
+        now = datetime.now()
+        
+        # Clean old history
+        if channel in self.notification_history:
+            cutoff_minute = now - timedelta(minutes=1)
+            cutoff_hour = now - timedelta(hours=1)
+            self.notification_history[channel] = [
+                ts for ts in self.notification_history[channel]
+                if ts > cutoff_hour
+            ]
+
+        # Check minute limit
+        if channel in self.notification_history:
+            recent_minute = [ts for ts in self.notification_history[channel]
+                           if ts > now - timedelta(minutes=1)]
+            if len(recent_minute) >= limits.get('max_per_minute', float('inf')):
+                return False
+
+        # Check hour limit
+        if channel in self.notification_history:
+            recent_hour = [ts for ts in self.notification_history[channel]
+                          if ts > now - timedelta(hours=1)]
+            if len(recent_hour) >= limits.get('max_per_hour', float('inf')):
+                return False
+
+        return True
+
     async def _send_notifications(self, alert: Alert) -> None:
         """Send notifications for alert."""
         # Determine channels
@@ -264,6 +385,11 @@ class AlertManager:
 
         for channel in channels:
             try:
+                # Check rate limit before sending
+                if not await self._check_rate_limit(channel):
+                    self.logger.warning(f"Rate limit exceeded for {channel.value}, skipping notification")
+                    continue
+
                 result = await self._send_notification(alert, channel)
                 results.append(result)
                 alert.notifications_sent[channel] = datetime.now()
@@ -329,17 +455,122 @@ Data: {alert.data}
 
     async def _send_email_notification(self, alert: Alert) -> NotificationResult:
         """Send notification via email."""
-        # Placeholder for email notification
-        # In real implementation, would use SMTP or email service
-        tprint_info(f"📧 Would send email for alert: {alert.title}")
-        return NotificationResult(NotificationChannel.EMAIL, True, "Email sent (simulated)")
+        try:
+            email_config = self.notification_channels.get('email', {})
+            if not email_config.get('enabled', False):
+                return NotificationResult(NotificationChannel.EMAIL, False, "Email notifications disabled")
+
+            # Try to import email sending library
+            try:
+                import smtplib
+                from email.mime.text import MIMEText
+                from email.mime.multipart import MIMEMultipart
+            except ImportError:
+                return NotificationResult(NotificationChannel.EMAIL, False, "Email library not available")
+
+            smtp_server = email_config.get('smtp_server', 'smtp.gmail.com')
+            smtp_port = email_config.get('smtp_port', 587)
+            sender_email = email_config.get('sender_email')
+            sender_password = email_config.get('sender_password')
+            recipient_emails = email_config.get('recipient_emails', [])
+
+            if not sender_email or not recipient_emails:
+                return NotificationResult(NotificationChannel.EMAIL, False, "Email configuration incomplete")
+
+            # Create message
+            msg = MIMEMultipart()
+            msg['From'] = sender_email
+            msg['To'] = ', '.join(recipient_emails)
+            msg['Subject'] = f"[{alert.priority.value.upper()}] {alert.title}"
+
+            body = f"""
+{alert.message}
+
+Priority: {alert.priority.value.upper()}
+Type: {alert.alert_type.value}
+Time: {alert.timestamp}
+Alert ID: {alert.alert_id}
+
+Data:
+{json.dumps(alert.data, indent=2)}
+"""
+            msg.attach(MIMEText(body, 'plain'))
+
+            # Send email
+            with smtplib.SMTP(smtp_server, smtp_port) as server:
+                server.starttls()
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+
+            tprint_info(f"📧 Email sent for alert: {alert.title}")
+            return NotificationResult(NotificationChannel.EMAIL, True, "Email sent successfully")
+
+        except Exception as e:
+            self.logger.error(f"Failed to send email: {e}")
+            return NotificationResult(NotificationChannel.EMAIL, False, str(e))
 
     async def _send_webhook_notification(self, alert: Alert) -> NotificationResult:
         """Send notification via webhook."""
-        # Placeholder for webhook notification
-        # In real implementation, would POST to webhook URL
-        tprint_info(f"🔗 Would send webhook for alert: {alert.title}")
-        return NotificationResult(NotificationChannel.WEBHOOK, True, "Webhook sent (simulated)")
+        try:
+            webhook_config = self.notification_channels.get('webhook', {})
+            if not webhook_config.get('enabled', False):
+                return NotificationResult(NotificationChannel.WEBHOOK, False, "Webhook notifications disabled")
+
+            webhook_url = webhook_config.get('url')
+            if not webhook_url:
+                return NotificationResult(NotificationChannel.WEBHOOK, False, "Webhook URL not configured")
+
+            # Try to import HTTP library
+            try:
+                import aiohttp
+            except ImportError:
+                try:
+                    import requests
+                    use_aiohttp = False
+                except ImportError:
+                    return NotificationResult(NotificationChannel.WEBHOOK, False, "HTTP library not available")
+            else:
+                use_aiohttp = True
+
+            # Prepare payload
+            payload = {
+                'alert_id': alert.alert_id,
+                'alert_type': alert.alert_type.value,
+                'priority': alert.priority.value,
+                'title': alert.title,
+                'message': alert.message,
+                'timestamp': alert.timestamp.isoformat(),
+                'data': alert.data,
+                'rule_id': alert.rule_id,
+            }
+
+            headers = webhook_config.get('headers', {'Content-Type': 'application/json'})
+
+            # Send webhook
+            if use_aiohttp:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        webhook_url,
+                        json=payload,
+                        headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=10)
+                    ) as response:
+                        if response.status == 200:
+                            tprint_info(f"🔗 Webhook sent for alert: {alert.title}")
+                            return NotificationResult(NotificationChannel.WEBHOOK, True, f"Webhook sent (status: {response.status})")
+                        else:
+                            return NotificationResult(NotificationChannel.WEBHOOK, False, f"Webhook returned status {response.status}")
+            else:
+                response = requests.post(webhook_url, json=payload, headers=headers, timeout=10)
+                if response.status_code == 200:
+                    tprint_info(f"🔗 Webhook sent for alert: {alert.title}")
+                    return NotificationResult(NotificationChannel.WEBHOOK, True, f"Webhook sent (status: {response.status_code})")
+                else:
+                    return NotificationResult(NotificationChannel.WEBHOOK, False, f"Webhook returned status {response.status_code}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to send webhook: {e}")
+            return NotificationResult(NotificationChannel.WEBHOOK, False, str(e))
 
     @handles_errors
     async def acknowledge_alert(self, alert_id: str, user: str) -> bool:
@@ -563,6 +794,45 @@ Data: {alert.data}
         else:
             return pd.DataFrame(data["recent_alerts"]).to_csv(index=False)
 
+    async def get_health_status(self) -> Dict[str, Any]:
+        """Get health status of alert manager."""
+        try:
+            now = datetime.now()
+            
+            # Check for stale cooldowns
+            stale_cooldowns = sum(
+                1 for last_trigger in self.cooldowns.values()
+                if (now - last_trigger).total_seconds() > 86400  # 24 hours
+            )
+            
+            # Check memory usage
+            alerts_count = len(self.active_alerts)
+            history_count = len(self.alert_history)
+            
+            # Check notification success rate
+            health_score = 1.0
+            if self.notification_success_rate < 0.8:
+                health_score = 0.7
+            elif self.notification_success_rate < 0.9:
+                health_score = 0.85
+            
+            return {
+                'status': 'healthy' if health_score >= 0.8 else 'degraded',
+                'health_score': health_score,
+                'active_alerts': alerts_count,
+                'alert_history_count': history_count,
+                'stale_cooldowns': stale_cooldowns,
+                'notification_success_rate': self.notification_success_rate,
+                'alert_groups_count': len(self.alert_groups),
+                'timestamp': now.isoformat()
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
+
     async def cleanup(self) -> None:
         """Clean up resources."""
         self.active_alerts.clear()
@@ -573,13 +843,18 @@ Data: {alert.data}
 
         tprint_info("🧹 Alert Manager cleaned up successfully")
 
+# Global singleton instance
+_global_alert_manager: Optional[AlertManager] = None
+
 # Factory functions
 async def create_alert_manager(config: Dict[str, Any]) -> AlertManager:
     """Create and initialize an alert manager."""
+    global _global_alert_manager
     manager = AlertManager(config)
     await manager.initialize()
+    _global_alert_manager = manager
     return manager
 
 def get_alert_manager() -> Optional[AlertManager]:
     """Get the global alert manager instance."""
-    return None
+    return _global_alert_manager

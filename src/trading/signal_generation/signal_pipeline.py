@@ -15,6 +15,14 @@ import numpy as np
 import pandas as pd
 
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.logger import system_logger
+from src.trading.config.regime_config import RegimeType
+from src.trading.config.trading_config import TradingConfig
+from src.trading.model_selection.model_selector_service import ModelSelectionResult, get_model_selector_service
+from src.core.decorators import handles_errors, traced, log_execution_time
+from .utils import CircuitBreaker, RateLimiter, SignalDeduplicator, validate_regime_probabilities, validate_market_data, validate_signal_parameters
+
+logger = system_logger.getChild('SignalGenerationPipeline')
 
 # Constants
 DEFAULT_CONFIDENCE_THRESHOLD = 0.6
@@ -127,14 +135,14 @@ class SignalGenerationPipeline:
         self.logger = logger.getChild('SignalGenerationPipeline')
 
         # Pipeline components
-        self.regime_detector = None
-        self.analyst_base_models = []
-        self.analyst_meta_model = None
-        self.tactician_base_models = []
-        self.tactician_meta_model = None
+        self.regime_detector: Optional[Any] = None
+        self.analyst_base_models: List[Any] = []
+        self.analyst_meta_model: Optional[Any] = None
+        self.tactician_base_models: List[Any] = []
+        self.tactician_meta_model: Optional[Any] = None
 
         # Model selection
-        self.model_selector_service = None
+        self.model_selector_service: Optional[Any] = None
 
         # Optimization parameters (from backtesting)
         # These will be overridden by final_parameters_optimization if available
@@ -155,28 +163,28 @@ class SignalGenerationPipeline:
         }
 
         # State management
-        self.is_initialized = False
-        self.signal_history: deque = deque(maxlen=getattr(config, 'max_history', DEFAULT_MAX_HISTORY))
+        self.is_initialized: bool = False
+        self.signal_history: deque[SignalGenerationResult] = deque(maxlen=getattr(config, 'max_history', DEFAULT_MAX_HISTORY))
 
         # Position state management (thread-safe)
         self.current_position: Optional[PositionState] = None
-        self.position_history: deque = deque(maxlen=getattr(config, 'max_history', DEFAULT_MAX_HISTORY))
-        self._position_lock = Lock()
+        self.position_history: deque[PositionState] = deque(maxlen=getattr(config, 'max_history', DEFAULT_MAX_HISTORY))
+        self._position_lock: Lock = Lock()
 
         # Circuit breaker for failure handling
-        self.circuit_breaker = CircuitBreaker(
+        self.circuit_breaker: CircuitBreaker = CircuitBreaker(
             failure_threshold=getattr(config, 'circuit_breaker_failures', DEFAULT_CIRCUIT_BREAKER_FAILURES),
             recovery_timeout=getattr(config, 'circuit_breaker_timeout', DEFAULT_CIRCUIT_BREAKER_TIMEOUT)
         )
 
         # Rate limiter
-        self.rate_limiter = RateLimiter(
+        self.rate_limiter: RateLimiter = RateLimiter(
             max_calls=getattr(config, 'rate_limit_calls', DEFAULT_RATE_LIMIT_CALLS),
             time_window=getattr(config, 'rate_limit_window', DEFAULT_RATE_LIMIT_WINDOW)
         )
 
         # Signal deduplicator
-        self.signal_deduplicator = SignalDeduplicator(
+        self.signal_deduplicator: SignalDeduplicator = SignalDeduplicator(
             deduplication_window=getattr(config, 'signal_dedup_window', DEFAULT_SIGNAL_DEDUP_WINDOW)
         )
 

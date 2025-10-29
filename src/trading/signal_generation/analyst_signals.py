@@ -20,14 +20,6 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 
-# Import NAS components for enhanced signal generation
-from src.training.steps.market_analysis.nas_regime.core.enhanced_perfect_nas_regime_detector import (
-    EnhancedPerfectNASRegimeDetector, EnhancedPerfectNASResult
-)
-from src.training.steps.market_analysis.nas_regime.core.perfect_nas_config import (
-    PerfectNASConfig, NeuralArchitectureType
-)
-
 logger = system_logger.getChild('AnalystSignals')
 
 class SignalType(Enum):
@@ -59,22 +51,18 @@ class AnalystSignal:
     liquidation_risk_score: float = 0.0
     feature_importance: Dict[str, float] = field(default_factory=dict)
     ml_predictions: Dict[str, Any] = field(default_factory=dict)
-    # NAS enhancement fields
-    nas_prediction: Optional[Dict[str, Any]] = None
-    nas_confidence: float = 0.0
-    nas_architecture_type: Optional[str] = None
     regime_id: Optional[int] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 class AnalystSignalGenerator:
     """
     Analyst Signal Generator that integrates with the Analyst component
-    and NAS for enhanced trading signal generation.
+    for trading signal generation.
     """
 
     def __init__(self, config: Dict[str, Any]):
         """
-        Initialize the analyst signal generator with NAS enhancement.
+        Initialize the analyst signal generator.
 
         Args:
             config: Configuration dictionary
@@ -83,16 +71,10 @@ class AnalystSignalGenerator:
         self.logger = logger.getChild('AnalystSignalGenerator')
 
         # Analyst component (will be injected)
-        self.analyst = None
-
-        # NAS engine for enhanced signal generation
-        self.nas_engine = None
-        self.nas_models = {}  # Per-regime NAS models
-        self.nas_architectures = {}  # Per-regime NAS architectures
+        self.analyst: Optional[Any] = None
 
         # Signal generation parameters
-        self.confidence_threshold = config.get('confidence_threshold', 0.6)
-        self.nas_confidence_threshold = config.get('nas_confidence_threshold', 0.7)
+        self.confidence_threshold: float = config.get('confidence_threshold', 0.6)
         self.signal_strength_thresholds = {
             SignalStrength.WEAK: 0.5,
             SignalStrength.MODERATE: 0.65,
@@ -100,80 +82,40 @@ class AnalystSignalGenerator:
             SignalStrength.VERY_STRONG: 0.9
         }
 
-        # NAS configuration
-        self.enable_nas_enhancement = config.get('enable_nas_enhancement', True)
-        self.nas_timeframe = config.get('nas_timeframe', '5m')
-        self.regime_timeframe = config.get('regime_timeframe', '15m')
+        self.regime_timeframe: str = config.get('regime_timeframe', '15m')
 
         # Signal history (using deque for efficient O(1) operations)
-        self.max_history = config.get('max_history', 1000)
-        self.signal_history: deque = deque(maxlen=self.max_history)
+        self.max_history: int = config.get('max_history', 1000)
+        self.signal_history: deque[AnalystSignal] = deque(maxlen=self.max_history)
 
         # Performance tracking
-        self.signal_count = 0
-        self.successful_signals = 0
-        self.failed_signals = 0
-        self.nas_enhanced_signals = 0
+        self.signal_count: int = 0
+        self.successful_signals: int = 0
+        self.failed_signals: int = 0
 
-    async def initialize(self, analyst_component, nas_models: Optional[Dict[str, Any]] = None) -> bool:
+    async def initialize(self, analyst_component: Any) -> bool:
         """
-        Initialize the signal generator with analyst component and NAS models.
+        Initialize the signal generator with analyst component.
 
         Args:
             analyst_component: Initialized Analyst component
-            nas_models: Pre-trained NAS models for per-regime signal generation
 
         Returns:
             bool: True if initialization successful
         """
         try:
+            tprint_info("🔄 Initializing Analyst Signal Generator...")
             self.analyst = analyst_component
 
-            # Initialize NAS engine if enhancement is enabled
-            if self.enable_nas_enhancement:
-                await self._initialize_nas_engine(nas_models)
-
-            self.logger.info("✅ Analyst Signal Generator initialized with NAS enhancement")
+            tprint_success("✅ Analyst Signal Generator initialized")
+            self.logger.info("✅ Analyst Signal Generator initialized")
             return True
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize Analyst Signal Generator: {e}")
+            error_msg = f"❌ Failed to initialize Analyst Signal Generator: {e}"
+            tprint_error(error_msg)
+            self.logger.error(error_msg)
             return False
 
-    async def _initialize_nas_engine(self, nas_models: Optional[Dict[str, Any]] = None):
-        """Initialize NAS engine for enhanced signal generation."""
-        try:
-            # Create NAS configuration
-            nas_config = PerfectNASConfig(
-                primary_architecture=NeuralArchitectureType.HYBRID,
-                n_regimes=8,
-                primary_timeframe=self.nas_timeframe,
-                enable_neural_odes=True,
-                enable_vision_transformers=True,
-                enable_state_space_models=True,
-                enable_micro_regime_detection=True,
-                population_size=30,
-                generations=50
-            )
-
-            # Initialize NAS engine
-            self.nas_engine = EnhancedPerfectNASRegimeDetector(nas_config)
-
-            # Load pre-trained NAS models if provided
-            if nas_models:
-                self.nas_models = nas_models
-                self.logger.info(f"✅ Loaded {len(nas_models)} NAS models for signal generation")
-            else:
-                self.logger.warning("⚠️ No NAS models provided, using fallback analysis")
-
-            self.logger.info("✅ NAS engine initialized for signal generation")
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to initialize NAS engine: {e}")
-            self.enable_nas_enhancement = False
-
-    @handles_errors
-    @traced(span_name="analyst_signal_generation")
-    @log_execution_time()
     async def generate_signal(
         self,
         symbol: str,
@@ -209,16 +151,9 @@ class AnalystSignalGenerator:
                 tprint_warning(f"⚠️ No analysis result for {symbol}")
                 return None
 
-            # Enhance with NAS prediction if available
-            nas_prediction = None
-            if self.enable_nas_enhancement and self.nas_engine:
-                nas_prediction = await self._generate_nas_prediction(
-                    symbol, market_data, regime_data
-                )
-
-            # Generate signal based on analysis and NAS prediction
+            # Generate signal based on analysis
             signal = await self._generate_signal_from_analysis(
-                symbol, analysis_result, market_data, nas_prediction
+                symbol, analysis_result, market_data
             )
 
             if signal:
@@ -304,17 +239,6 @@ class AnalystSignalGenerator:
         except Exception as e:
             self.logger.error(f"❌ Fallback analysis failed: {e}")
             return None
-
-    async def _generate_nas_prediction(
-        self,
-        symbol: str,
-        market_data: pd.DataFrame,
-        regime_data: Optional[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
-        """Generate NAS prediction for enhanced signal generation."""
-        try:
-            if not self.nas_engine:
-                return None
 
             # Ensure we have enough data to build a sliding window for regime detection
             if market_data is None or len(market_data) < 10:
@@ -437,54 +361,6 @@ class AnalystSignalGenerator:
             self.logger.error(f"❌ NAS prediction failed for {symbol}: {e}")
             return None
 
-    def _prepare_nas_features(self, market_data: pd.DataFrame, regime_data: Optional[Dict[str, Any]]) -> np.ndarray:
-        """Prepare features for NAS prediction."""
-        try:
-            # Extract basic features from market data
-            features = []
-
-            # Price features
-            if len(market_data) >= 20:
-                close_prices = market_data['close'].values
-                returns = np.diff(close_prices) / close_prices[:-1]
-
-                # Recent returns
-                features.extend([
-                    returns[-1],  # Latest return
-                    returns[-5:].mean(),  # 5-period average return
-                    returns[-10:].mean(),  # 10-period average return
-                    returns[-20:].mean(),  # 20-period average return
-                ])
-
-                # Volatility features
-                features.extend([
-                    np.std(returns[-5:]),  # 5-period volatility
-                    np.std(returns[-10:]),  # 10-period volatility
-                    np.std(returns[-20:]),  # 20-period volatility
-                ])
-
-                # Price momentum
-                features.extend([
-                    (close_prices[-1] - close_prices[-5]) / close_prices[-5],  # 5-period momentum
-                    (close_prices[-1] - close_prices[-10]) / close_prices[-10],  # 10-period momentum
-                    (close_prices[-1] - close_prices[-20]) / close_prices[-20],  # 20-period momentum
-                ])
-            else:
-                # Fallback features
-                features = [0.0] * 10
-
-            # Add regime information if available
-            if regime_data:
-                features.append(regime_data.get('regime_id', 0))
-                features.append(regime_data.get('regime_stability', 0.5))
-            else:
-                features.extend([0, 0.5])
-
-            return np.array(features)
-
-        except Exception as e:
-            self.logger.error(f"❌ Feature preparation failed: {e}")
-            return np.zeros(12)  # Fallback features
 
     async def _generate_signal_from_analysis(
         self,
@@ -499,29 +375,9 @@ class AnalystSignalGenerator:
             signal_direction = analysis_result.get('signal_direction', 'hold')
             confidence_score = analysis_result.get('confidence_score', 0.0)
 
-            # Enhance with NAS prediction if available
-            if nas_prediction:
-                nas_confidence = nas_prediction.get('nas_confidence', 0.0)
-                nas_prediction_value = nas_prediction.get('nas_prediction', {})
-
-                # Combine confidence scores (weighted average: 60% analysis, 40% NAS)
-                combined_confidence = (confidence_score * 0.6) + (nas_confidence * 0.4)
-
-                # Use NAS prediction to enhance signal direction if confidence is high
-                if nas_confidence >= self.nas_confidence_threshold:
-                    nas_direction = nas_prediction_value.get('direction', signal_direction)
-                    if nas_direction != signal_direction:
-                        # NAS overrides if it's more confident
-                        signal_direction = nas_direction
-                        self.nas_enhanced_signals += 1
-                    # Use combined confidence when NAS is confident
-                    confidence_score = combined_confidence
-                else:
-                    # NAS confidence is low, but still use combined for slight enhancement
-                    confidence_score = combined_confidence
-
             # Check confidence threshold
             if confidence_score < self.confidence_threshold:
+                tprint_warning(f\"⚠️ Signal confidence {confidence_score:.3f} below threshold {self.confidence_threshold:.3f}\")
                 return None
 
             # Determine signal type
@@ -536,7 +392,7 @@ class AnalystSignalGenerator:
                 signal_type, current_price, analysis_result
             )
 
-            # Create signal with NAS enhancement
+            # Create signal
             signal = AnalystSignal(
                 timestamp=datetime.now(),
                 symbol=symbol,
@@ -550,14 +406,10 @@ class AnalystSignalGenerator:
                 liquidation_risk_score=analysis_result.get('liquidation_risk_score', 0.0),
                 feature_importance=analysis_result.get('feature_importance', {}),
                 ml_predictions=analysis_result.get('ml_predictions', {}),
-                # NAS enhancement fields
-                nas_prediction=nas_prediction,
-                nas_confidence=nas_prediction.get('nas_confidence', 0.0) if nas_prediction else 0.0,
-                nas_architecture_type=nas_prediction.get('nas_architecture', {}).get('type') if nas_prediction else None,
-                regime_id=nas_prediction.get('regime_id') if nas_prediction else None,
+                regime_id=analysis_result.get('regime_id'),
                 metadata=analysis_result.get('analysis_metadata', {})
             )
-
+            tprint_success(f\"✅ Signal generated from analysis: {signal_type.value} (confidence: {confidence_score:.3f})\")
             return signal
 
         except Exception as e:

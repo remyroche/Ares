@@ -8,7 +8,7 @@ circuit breaking, and signal deduplication.
 import time
 from collections import deque
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Callable, TypeVar
 from threading import Lock
 from enum import Enum
 
@@ -16,8 +16,11 @@ import pandas as pd
 import numpy as np
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 
 logger = system_logger.getChild('SignalGenerationUtils')
+
+T = TypeVar('T')
 
 
 class CircuitState(Enum):
@@ -54,11 +57,11 @@ class CircuitBreaker:
         self.last_failure_time: Optional[float] = None
         self._lock = Lock()
     
-    def call(self, func, *args, **kwargs):
+    def call(self, func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         """Execute function with circuit breaker protection."""
         with self._lock:
             if self.state == CircuitState.OPEN:
-                if time.time() - self.last_failure_time >= self.recovery_timeout:
+                if self.last_failure_time is not None and time.time() - self.last_failure_time >= self.recovery_timeout:
                     self.state = CircuitState.HALF_OPEN
                     self.success_count = 0
                     logger.info("🔄 Circuit breaker transitioning to HALF_OPEN")
@@ -73,7 +76,7 @@ class CircuitBreaker:
             self._on_failure()
             raise
     
-    def _on_success(self):
+    def _on_success(self) -> None:
         """Handle successful call."""
         with self._lock:
             if self.state == CircuitState.HALF_OPEN:
@@ -85,7 +88,7 @@ class CircuitBreaker:
             elif self.state == CircuitState.CLOSED:
                 self.failure_count = 0
     
-    def _on_failure(self):
+    def _on_failure(self) -> None:
         """Handle failed call."""
         with self._lock:
             self.failure_count += 1
@@ -103,13 +106,14 @@ class CircuitBreaker:
         """Get current circuit breaker state."""
         return self.state
     
-    def reset(self):
+    def reset(self) -> None:
         """Manually reset circuit breaker."""
         with self._lock:
             self.state = CircuitState.CLOSED
             self.failure_count = 0
             self.success_count = 0
             self.last_failure_time = None
+            tprint_info(\"🔄 Circuit breaker manually reset\")
 
 
 class RateLimiter:
@@ -125,7 +129,7 @@ class RateLimiter:
         """
         self.max_calls = max_calls
         self.time_window = time_window
-        self.call_times: deque = deque(maxlen=max_calls)
+        self.call_times: deque[float] = deque(maxlen=max_calls)
         self._lock = Lock()
     
     def acquire(self) -> bool:
@@ -143,6 +147,7 @@ class RateLimiter:
                 self.call_times.popleft()
             
             if len(self.call_times) >= self.max_calls:
+                tprint_warning(f\"⚠️ Rate limit exceeded: {len(self.call_times)}/{self.max_calls} calls in {self.time_window}s window\")
                 return False
             
             self.call_times.append(now)
@@ -170,7 +175,7 @@ class SignalDeduplicator:
             deduplication_window: Time window in seconds for deduplication
         """
         self.deduplication_window = deduplication_window
-        self.recent_signals: deque = deque(maxlen=100)
+        self.recent_signals: deque[Dict[str, Any]] = deque(maxlen=100)
         self._lock = Lock()
     
     def is_duplicate(

@@ -506,6 +506,31 @@ class BingXExchange(BaseExchange):
         return await self._get_positions_raw()
 
     @handles_errors
+    async def get_price(self, symbol: str) -> float | None:
+        """Get current price for symbol - public interface method."""
+        return await self._get_price_raw(symbol)
+
+    @handles_errors
+    async def get_ticker(self, symbol: str) -> dict[str, Any] | None:
+        """Get ticker data for symbol - public interface method."""
+        return await self._get_ticker_raw(symbol)
+
+    @handles_errors
+    async def get_order_book(self, symbol: str, limit: int = 20) -> dict[str, Any] | None:
+        """Get order book for symbol - public interface method."""
+        return await self._get_order_book_raw(symbol, limit)
+
+    @handles_errors
+    async def get_balance(self, currency: str = "USDT") -> float:
+        """Get balance for currency - public interface method."""
+        return await self._get_balance_raw(currency)
+
+    @handles_errors
+    async def get_liquidation_risk(self, symbol: str) -> dict[str, Any] | None:
+        """Get liquidation risk for symbol - public interface method."""
+        return await self._get_liquidation_risk_raw(symbol)
+
+    @handles_errors
     async def set_leverage(self, symbol: str, leverage: float) -> bool:
         """Set leverage for a symbol - public interface method."""
         return await self._set_leverage_raw(symbol, leverage)
@@ -649,6 +674,92 @@ class BingXExchange(BaseExchange):
             "status": "FILLED",
             "message": "Position modified successfully"
         }
+
+    @handles_errors
+    async def _get_price_raw(self, symbol: str) -> float | None:
+        """Get raw price data from BingX."""
+        data = await self._make_request("GET", "/openApi/swap/v2/quote/ticker", {"symbol": symbol.upper()})
+        
+        if not data:
+            return None
+        
+        return float(data.get("lastPrice", 0))
+
+    @handles_errors
+    async def _get_ticker_raw(self, symbol: str) -> dict[str, Any] | None:
+        """Get raw ticker data from BingX."""
+        data = await self._make_request("GET", "/openApi/swap/v2/quote/ticker", {"symbol": symbol.upper()})
+        
+        if not data:
+            return None
+        
+        return {
+            "symbol": data.get("symbol", ""),
+            "price": float(data.get("lastPrice", 0)),
+            "bid": float(data.get("bidPrice", 0)),
+            "ask": float(data.get("askPrice", 0)),
+            "volume": float(data.get("volume", 0)),
+            "quoteVolume": float(data.get("quoteVolume", 0)),
+            "high": float(data.get("highPrice", 0)),
+            "low": float(data.get("lowPrice", 0)),
+            "change": float(data.get("priceChange", 0)),
+            "changePercent": float(data.get("priceChangePercent", 0)),
+            "timestamp": data.get("time", 0)
+        }
+
+    @handles_errors
+    async def _get_order_book_raw(self, symbol: str, limit: int = 20) -> dict[str, Any] | None:
+        """Get raw order book data from BingX."""
+        params = {
+            "symbol": symbol.upper(),
+            "limit": min(limit, 100)  # BingX max limit is 100
+        }
+        
+        data = await self._make_request("GET", "/openApi/swap/v2/quote/depth", params)
+        
+        if not data:
+            return None
+        
+        return {
+            "symbol": data.get("symbol", ""),
+            "bids": [[float(bid[0]), float(bid[1])] for bid in data.get("bids", [])],
+            "asks": [[float(ask[0]), float(ask[1])] for ask in data.get("asks", [])],
+            "timestamp": data.get("time", 0)
+        }
+
+    @handles_errors
+    async def _get_balance_raw(self, currency: str = "USDT") -> float:
+        """Get raw balance data from BingX."""
+        data = await self._make_request("GET", "/openApi/swap/v2/user/balance", {})
+        
+        if not data:
+            return 0.0
+        
+        # Find the currency in the balance list
+        for balance in data:
+            if balance.get("asset", "").upper() == currency.upper():
+                return float(balance.get("balance", 0))
+        
+        return 0.0
+
+    @handles_errors
+    async def _get_liquidation_risk_raw(self, symbol: str) -> dict[str, Any] | None:
+        """Get raw liquidation risk data from BingX."""
+        # Get position data to calculate liquidation risk
+        positions = await self._get_positions_raw()
+        
+        for pos in positions:
+            if pos["symbol"] == symbol.upper() and float(pos["size"]) > 0:
+                return {
+                    "symbol": pos["symbol"],
+                    "liquidationPrice": float(pos["liquidationPrice"]),
+                    "marginRatio": float(pos["margin"]) / float(pos["size"]) if float(pos["size"]) > 0 else 0,
+                    "leverage": float(pos["leverage"]),
+                    "unrealizedPnl": float(pos["pnl"]),
+                    "riskLevel": "HIGH" if float(pos["liquidationPrice"]) > 0 else "LOW"
+                }
+        
+        return None
 
 
 # Factory function for creating BingX exchange instances

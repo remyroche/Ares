@@ -28,6 +28,35 @@ from ..core.feature_generator import FeatureGenerator
 from ..core.feature_generator import FeatureConfig, FeatureCategory
 from ..base_calculations.base_calculator import BaseCalculationType
 
+# VectorBT optimization imports
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    )
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    get_vectorbt_rolling_optimizer = None
+    VectorBTRollingOptimizer = None
+
+# UnifiedVectorizationManager imports
+try:
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, get_unified_vectorization_manager
+    )
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    UnifiedVectorizationManager = None
+    get_unified_vectorization_manager = None
+
+# tprint for logging
+try:
+    from src.utils.tprint import tprint
+except ImportError:
+    def tprint(*args, **kwargs):
+        pass
+
 
 class RegimeType(Enum):
     """Enumeration of regime types."""
@@ -83,6 +112,28 @@ class RegimeFeatureIntegration(FeatureGenerator):
         self.regime_config = config
         self.current_regime = RegimeType.UNKNOWN
         self.regime_history = []
+        
+        # Initialize VectorBT rolling optimizer
+        self.vectorbt_rolling_optimizer = None
+        if VECTORBT_AVAILABLE:
+            try:
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=getattr(feature_config, 'gpu_accelerated', False),
+                    enable_parallel=True,
+                    memory_efficient=True
+                )
+                tprint("✅ VectorBT Rolling Optimizer initialized for RegimeFeatureIntegration")
+            except Exception as e:
+                tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
+        
+        # Initialize UnifiedVectorizationManager
+        self.unified_vectorization_manager = None
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            try:
+                self.unified_vectorization_manager = get_unified_vectorization_manager()
+                tprint("✅ UnifiedVectorizationManager initialized for RegimeFeatureIntegration")
+            except Exception as e:
+                tprint(f"⚠️ UnifiedVectorizationManager initialization failed: {e}")
         
     def _detect_regime(self, data: pd.DataFrame) -> RegimeType:
         """Detect current market regime."""
@@ -150,6 +201,7 @@ class RegimeFeatureIntegration(FeatureGenerator):
         Generate lagged features: windowed features for past 3-5 bars.
         
         Includes moving averages and volatility over past 3-5 bars to give the model context.
+        Uses VectorBTRollingOptimizer for optimized performance.
         """
         features = {}
         
@@ -159,36 +211,76 @@ class RegimeFeatureIntegration(FeatureGenerator):
         try:
             # Lagged windows: 3, 4, 5 bars
             windows = [3, 4, 5]
+            close_series = data['close']
             
             for window in windows:
                 if len(data) >= window:
-                    # Moving averages over past N bars
-                    ma = data['close'].rolling(window=window).mean()
+                    # Moving averages over past N bars - OPTIMIZED with VectorBT
+                    if self.vectorbt_rolling_optimizer:
+                        try:
+                            ma = self.vectorbt_rolling_optimizer.rolling_mean(close_series, window)
+                        except Exception:
+                            ma = close_series.rolling(window=window).mean()
+                    else:
+                        ma = close_series.rolling(window=window).mean()
+                    
                     if not ma.empty:
                         features[f'lagged_ma_{window}'] = ma.iloc[-1] if not pd.isna(ma.iloc[-1]) else 0.0
                     
-                    # Volatility over past N bars
-                    returns = data['close'].pct_change().dropna()
+                    # Volatility over past N bars - OPTIMIZED with VectorBT
+                    returns = close_series.pct_change().dropna()
                     if len(returns) >= window:
-                        vol = returns.rolling(window=window).std()
+                        if self.vectorbt_rolling_optimizer:
+                            try:
+                                vol = self.vectorbt_rolling_optimizer.rolling_std(returns, window)
+                            except Exception:
+                                vol = returns.rolling(window=window).std()
+                        else:
+                            vol = returns.rolling(window=window).std()
+                        
                         if not vol.empty:
                             features[f'lagged_volatility_{window}'] = vol.iloc[-1] if not pd.isna(vol.iloc[-1]) else 0.0
                     
-                    # Price range over past N bars
+                    # Price range over past N bars - OPTIMIZED with VectorBT
                     if 'high' in data.columns and 'low' in data.columns:
-                        price_range = (data['high'] - data['low']).rolling(window=window).mean()
+                        price_range_series = data['high'] - data['low']
+                        if self.vectorbt_rolling_optimizer:
+                            try:
+                                price_range = self.vectorbt_rolling_optimizer.rolling_mean(price_range_series, window)
+                            except Exception:
+                                price_range = price_range_series.rolling(window=window).mean()
+                        else:
+                            price_range = price_range_series.rolling(window=window).mean()
+                        
                         if not price_range.empty:
                             features[f'lagged_range_{window}'] = price_range.iloc[-1] if not pd.isna(price_range.iloc[-1]) else 0.0
                     
-                    # Volume moving average over past N bars
+                    # Volume moving average over past N bars - OPTIMIZED with VectorBT
                     if 'volume' in data.columns:
-                        vol_ma = data['volume'].rolling(window=window).mean()
+                        volume_series = data['volume']
+                        if self.vectorbt_rolling_optimizer:
+                            try:
+                                vol_ma = self.vectorbt_rolling_optimizer.rolling_mean(volume_series, window)
+                            except Exception:
+                                vol_ma = volume_series.rolling(window=window).mean()
+                        else:
+                            vol_ma = volume_series.rolling(window=window).mean()
+                        
                         if not vol_ma.empty:
                             features[f'lagged_volume_ma_{window}'] = vol_ma.iloc[-1] if not pd.isna(vol_ma.iloc[-1]) else 0.0
                     
-                    # Maximum and minimum prices over past N bars
-                    max_price = data['close'].rolling(window=window).max()
-                    min_price = data['close'].rolling(window=window).min()
+                    # Maximum and minimum prices over past N bars - OPTIMIZED with VectorBT
+                    if self.vectorbt_rolling_optimizer:
+                        try:
+                            max_price = self.vectorbt_rolling_optimizer.rolling_max(close_series, window)
+                            min_price = self.vectorbt_rolling_optimizer.rolling_min(close_series, window)
+                        except Exception:
+                            max_price = close_series.rolling(window=window).max()
+                            min_price = close_series.rolling(window=window).min()
+                    else:
+                        max_price = close_series.rolling(window=window).max()
+                        min_price = close_series.rolling(window=window).min()
+                    
                     if not max_price.empty:
                         features[f'lagged_max_{window}'] = max_price.iloc[-1] if not pd.isna(max_price.iloc[-1]) else 0.0
                     if not min_price.empty:
@@ -217,11 +309,20 @@ class RegimeFeatureIntegration(FeatureGenerator):
             if len(returns) < 5:
                 return features
             
-            # Normalized price position (Z-score relative to recent window)
+            # Normalized price position (Z-score relative to recent window) - OPTIMIZED with VectorBT
             window = min(20, len(data))
+            close_series = data['close']
             if window >= 5:
-                price_mean = data['close'].rolling(window=window).mean()
-                price_std = data['close'].rolling(window=window).std()
+                if self.vectorbt_rolling_optimizer:
+                    try:
+                        price_mean = self.vectorbt_rolling_optimizer.rolling_mean(close_series, window)
+                        price_std = self.vectorbt_rolling_optimizer.rolling_std(close_series, window)
+                    except Exception:
+                        price_mean = close_series.rolling(window=window).mean()
+                        price_std = close_series.rolling(window=window).std()
+                else:
+                    price_mean = close_series.rolling(window=window).mean()
+                    price_std = close_series.rolling(window=window).std()
                 if not price_mean.empty and not price_std.empty:
                     current_price = data['close'].iloc[-1]
                     mean_val = price_mean.iloc[-1]
@@ -231,10 +332,16 @@ class RegimeFeatureIntegration(FeatureGenerator):
                     else:
                         features['price_zscore'] = 0.0
             
-            # Price-to-Moving Average Ratio (normalized indicator)
+            # Price-to-Moving Average Ratio (normalized indicator) - OPTIMIZED with VectorBT
             for window in [5, 10, 20]:
                 if len(data) >= window:
-                    ma = data['close'].rolling(window=window).mean()
+                    if self.vectorbt_rolling_optimizer:
+                        try:
+                            ma = self.vectorbt_rolling_optimizer.rolling_mean(close_series, window)
+                        except Exception:
+                            ma = close_series.rolling(window=window).mean()
+                    else:
+                        ma = close_series.rolling(window=window).mean()
                     if not ma.empty and not pd.isna(ma.iloc[-1]) and ma.iloc[-1] > 1e-8:
                         current_price = data['close'].iloc[-1]
                         features[f'price_to_ma_ratio_{window}'] = current_price / ma.iloc[-1]
@@ -354,12 +461,23 @@ class RegimeFeatureIntegration(FeatureGenerator):
                         roc = (current_price - past_price) / past_price
                         features[f'roc_{period}'] = roc if not pd.isna(roc) else 0.0
             
-            # Temporal volatility trend (volatility change over time)
+            # Temporal volatility trend (volatility change over time) - OPTIMIZED with VectorBT
             if len(returns) >= 10:
-                short_vol = returns.tail(3).std()
-                long_vol = returns.tail(10).std()
-                if not pd.isna(short_vol) and not pd.isna(long_vol):
-                    vol_change = short_vol - long_vol
+                if self.vectorbt_rolling_optimizer:
+                    try:
+                        short_vol = self.vectorbt_rolling_optimizer.rolling_std(returns.tail(3), 3)
+                        long_vol = self.vectorbt_rolling_optimizer.rolling_std(returns.tail(10), 10)
+                        short_vol_val = short_vol.iloc[-1] if not short_vol.empty else returns.tail(3).std()
+                        long_vol_val = long_vol.iloc[-1] if not long_vol.empty else returns.tail(10).std()
+                    except Exception:
+                        short_vol_val = returns.tail(3).std()
+                        long_vol_val = returns.tail(10).std()
+                else:
+                    short_vol_val = returns.tail(3).std()
+                    long_vol_val = returns.tail(10).std()
+                
+                if not pd.isna(short_vol_val) and not pd.isna(long_vol_val):
+                    vol_change = short_vol_val - long_vol_val
                     features['volatility_trend'] = vol_change if not pd.isna(vol_change) else 0.0
             
             # Volume momentum

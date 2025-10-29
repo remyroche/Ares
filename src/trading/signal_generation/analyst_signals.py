@@ -38,7 +38,7 @@ class SignalStrength(Enum):
 
 @dataclass
 class AnalystSignal:
-    """Analyst-generated trading signal with NAS enhancement."""
+    """Analyst-generated trading signal."""
     timestamp: datetime
     symbol: str
     signal_type: SignalType
@@ -240,136 +240,14 @@ class AnalystSignalGenerator:
             self.logger.error(f"❌ Fallback analysis failed: {e}")
             return None
 
-            # Ensure we have enough data to build a sliding window for regime detection
-            if market_data is None or len(market_data) < 10:
-                self.logger.debug("⚠️ Insufficient market data for NAS prediction")
-                return None
-
-            window_size = min(len(market_data), 240)
-            sliding_window = market_data.tail(window_size).copy()
-
-            # Focus on numeric columns (prefer OHLCV if available)
-            ohlcv_columns = [col for col in ['open', 'high', 'low', 'close', 'volume'] if col in sliding_window.columns]
-            if ohlcv_columns:
-                nas_input = sliding_window[ohlcv_columns]
-            else:
-                numeric_cols = sliding_window.select_dtypes(include=[np.number]).columns
-                if len(numeric_cols) == 0:
-                    self.logger.debug("⚠️ No numeric columns available for NAS prediction")
-                    return None
-                nas_input = sliding_window[numeric_cols]
-
-            nas_input = nas_input.replace([np.inf, -np.inf], np.nan).dropna()
-            if len(nas_input) < 8:
-                self.logger.debug("⚠️ Sliding window after cleaning is too small for NAS prediction")
-                return None
-
-            # Get current regime for NAS model selection
-            regime_id = regime_data.get('regime_id', 0) if regime_data else 0
-            nas_model = self.nas_models.get(regime_id)
-
-            # Generate NAS prediction for trading signals using recent market window
-            nas_result = self.nas_engine.detect_regimes(
-                nas_input,
-                optimize_architecture=False,  # Use pre-trained model
-                enable_meta_learning=False
-            )
-
-            if not nas_result.success or nas_result.regime_predictions.size == 0:
-                return None
-
-            predicted_regime = int(nas_result.regime_predictions[-1])
-
-            last_probabilities = None
-            if isinstance(nas_result.regime_probabilities, np.ndarray) and nas_result.regime_probabilities.size > 0:
-                if nas_result.regime_probabilities.ndim == 1:
-                    last_probabilities = nas_result.regime_probabilities
-                else:
-                    last_probabilities = nas_result.regime_probabilities[-1]
-
-            nas_confidence = 0.0
-            if last_probabilities is not None and len(last_probabilities) > 0:
-                # Validate predicted_regime is within valid bounds
-                if isinstance(predicted_regime, (int, np.integer)):
-                    if 0 <= predicted_regime < len(last_probabilities):
-                        nas_confidence = float(last_probabilities[predicted_regime])
-                    else:
-                        # Index out of bounds - use max probability as fallback
-                        self.logger.warning(
-                            f"⚠️ Predicted regime {predicted_regime} out of bounds [0, {len(last_probabilities)}), "
-                            f"using max probability as fallback"
-                        )
-                        nas_confidence = float(np.max(last_probabilities))
-                else:
-                    # Invalid predicted_regime type - use max probability
-                    self.logger.warning(
-                        f"⚠️ Invalid predicted_regime type: {type(predicted_regime)}, using max probability"
-                    )
-                    nas_confidence = float(np.max(last_probabilities))
-            else:
-                self.logger.debug("⚠️ No valid regime probabilities available for NAS confidence")
-
-            close_direction = 'hold'
-            if 'close' in nas_input.columns and len(nas_input['close']) >= 2:
-                price_change = nas_input['close'].iloc[-1] - nas_input['close'].iloc[0]
-                if price_change > 0:
-                    close_direction = 'buy'
-                elif price_change < 0:
-                    close_direction = 'sell'
-
-            architecture_metadata: Dict[str, Any] = {}
-            if nas_model:
-                if isinstance(nas_model, dict):
-                    architecture = nas_model.get('architecture')
-                    if isinstance(architecture, dict):
-                        architecture_metadata.update(architecture)
-                        if 'type' not in architecture_metadata and 'name' in architecture_metadata:
-                            architecture_metadata['type'] = architecture_metadata.get('name')
-                    elif architecture is not None:
-                        architecture_metadata['type'] = getattr(architecture, 'type', None) or str(architecture)
-                    architecture_metadata.setdefault('model_type', nas_model.get('model_type'))
-                    architecture_metadata.setdefault('trained', nas_model.get('trained'))
-                    if nas_model.get('performance_score') is not None:
-                        architecture_metadata.setdefault('performance_score', nas_model.get('performance_score'))
-                else:
-                    architecture_metadata['type'] = getattr(nas_model, 'architecture_type', None) or str(type(nas_model))
-
-            timestamp = None
-            if hasattr(market_data, 'index') and len(market_data.index) > 0:
-                last_index = market_data.index[-1]
-                if isinstance(last_index, (datetime, np.datetime64, pd.Timestamp)):
-                    timestamp = pd.Timestamp(last_index).isoformat()
-
-            nas_prediction_payload = {
-                'predicted_regime': predicted_regime,
-                'regime_probabilities': last_probabilities.tolist() if last_probabilities is not None else [],
-                'direction': close_direction,
-                'window_size': len(nas_input),
-                'timestamp': timestamp,
-                'current_regime_id': regime_id
-            }
-
-            return {
-                'nas_prediction': nas_prediction_payload,
-                'nas_confidence': nas_confidence,
-                'nas_architecture': architecture_metadata,
-                'regime_id': predicted_regime,
-                'nas_contribution': 'trading_signals'
-            }
-
-        except Exception as e:
-            self.logger.error(f"❌ NAS prediction failed for {symbol}: {e}")
-            return None
-
 
     async def _generate_signal_from_analysis(
         self,
         symbol: str,
         analysis_result: Dict[str, Any],
-        market_data: pd.DataFrame,
-        nas_prediction: Optional[Dict[str, Any]] = None
+        market_data: pd.DataFrame
     ) -> Optional[AnalystSignal]:
-        """Generate signal from analysis result with NAS enhancement."""
+        """Generate signal from analysis result."""
         try:
             # Extract signal information
             signal_direction = analysis_result.get('signal_direction', 'hold')

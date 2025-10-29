@@ -283,13 +283,13 @@ async def _log_trading_error(
         # Also log to system logger
         logger.critical(f"CRITICAL TRADING ERROR: {error}")
         if log_traceback and error.original_exception:
-            logger.critical(f"Traceback: {traceback.format_exc()}")
+            logger.critical(f"Traceback: {''.join(traceback.format_exception(type(error.original_exception), error.original_exception, error.original_exception.__traceback__))}")
 
     elif error.severity == TradingErrorSeverity.HIGH:
         tprint_error(f"❌ HIGH SEVERITY ERROR in {func.__name__}: {error.message}")
         logger.error(f"HIGH SEVERITY TRADING ERROR: {error}")
         if log_traceback and error.original_exception:
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Traceback: {''.join(traceback.format_exception(type(error.original_exception), error.original_exception, error.original_exception.__traceback__))}")
 
     elif error.severity == TradingErrorSeverity.MEDIUM:
         tprint_warning(f"⚠️ MEDIUM SEVERITY ERROR in {func.__name__}: {error.message}")
@@ -321,13 +321,13 @@ def _log_trading_error_sync(
         # Also log to system logger
         logger.critical(f"CRITICAL TRADING ERROR: {error}")
         if log_traceback and error.original_exception:
-            logger.critical(f"Traceback: {traceback.format_exc()}")
+            logger.critical(f"Traceback: {''.join(traceback.format_exception(type(error.original_exception), error.original_exception, error.original_exception.__traceback__))}")
 
     elif error.severity == TradingErrorSeverity.HIGH:
         tprint_error(f"❌ HIGH SEVERITY ERROR in {func.__name__}: {error.message}")
         logger.error(f"HIGH SEVERITY TRADING ERROR: {error}")
         if log_traceback and error.original_exception:
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Traceback: {''.join(traceback.format_exception(type(error.original_exception), error.original_exception, error.original_exception.__traceback__))}")
 
     elif error.severity == TradingErrorSeverity.MEDIUM:
         tprint_warning(f"⚠️ MEDIUM SEVERITY ERROR in {func.__name__}: {error.message}")
@@ -386,6 +386,8 @@ def require_no_fallback(message: str = "Operation failed with no fallback availa
     Decorator that ensures no fallback behavior is used.
     Raises TradingError immediately on any exception.
     """
+    import asyncio
+    
     def decorator(func):
         @wraps(func)
         async def async_wrapper(*args, **kwargs):

@@ -422,7 +422,7 @@ def calculate_technical_indicators(
         delta = result['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
+        rs = gain / loss.replace(to_replace=0, value=np.nan)
         result['rsi'] = 100 - (100 / (1 + rs))
 
     # MACD
@@ -654,9 +654,24 @@ def save_trading_data(
     """
     try:
         import os
-        return os.path.exists(file_path)
+        from pathlib import Path
+        
+        # Create directory if it doesn't exist
+        dir_path = Path(directory)
+        dir_path.mkdir(parents=True, exist_ok=True)
+        
+        # Construct full file path
+        file_path = dir_path / f"{filename}.json"
+        
+        # Save data as JSON
+        with open(file_path, 'w') as f:
+            json.dump(data, f, indent=2, default=str)
+        
+        return True
     except Exception as e:
-        logger.error(f"Error checking file existence: {e}")
+        from src.utils.logger import system_logger
+        logger = system_logger.getChild('TradingHelpers')
+        logger.error(f"Error saving trading data: {e}")
         return False
 
 # VectorBT imports for native optimization
@@ -684,10 +699,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
 
 def calculate_atr14(data: pd.DataFrame, period: int = 14) -> pd.Series:
     """Calculate the Average True Range (ATR) for OHLCV input data."""
@@ -776,64 +787,3 @@ def calculate_volatility_slope(
 
     slope_series = volatility.rolling(window=slope_window, min_periods=2).apply(_slope, raw=True)
     return slope_series
-
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
-                VECTORBT_AVAILABLE)
-
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")
-
-    def _vectorbt_apply_operation(self, data: pd.Series, func,
-                                 window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling apply operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return data.rolling(window=window).apply(func, **kwargs)
-
-        try:
-            return rolling_apply(data, func, window=window, **kwargs)
-        except Exception as e:
-            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
-            return data.rolling(window=window).apply(func, **kwargs)

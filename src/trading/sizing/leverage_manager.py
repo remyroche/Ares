@@ -73,6 +73,15 @@ class LeverageManager:
     def _validate_configuration(self) -> bool:
         """Validate leverage manager configuration."""
         try:
+            from src.config.leverage_constants import LEVERAGE_LOWER_BOUND, LEVERAGE_UPPER_BOUND
+            
+            # Ensure instance limits are within centralized bounds
+            if self.min_leverage < LEVERAGE_LOWER_BOUND or self.min_leverage > LEVERAGE_UPPER_BOUND:
+                self.logger.error(f"min_leverage {self.min_leverage} must be between {LEVERAGE_LOWER_BOUND} and {LEVERAGE_UPPER_BOUND}")
+                return False
+            if self.max_leverage < LEVERAGE_LOWER_BOUND or self.max_leverage > LEVERAGE_UPPER_BOUND:
+                self.logger.error(f"max_leverage {self.max_leverage} must be between {LEVERAGE_LOWER_BOUND} and {LEVERAGE_UPPER_BOUND}")
+                return False
             if self.min_leverage <= 0 or self.min_leverage >= self.max_leverage:
                 self.logger.error("Invalid leverage range configuration")
                 return False
@@ -117,6 +126,9 @@ class LeverageManager:
             if not self.is_initialized:
                 raise RuntimeError("Leverage Manager not initialized")
 
+            # Validate inputs
+            self._validate_leverage_inputs(symbol, current_price, account_balance, analyst_confidence, tactician_confidence)
+
             # Extract ML predictions
             combined_confidence = ml_predictions.get('combined_confidence', 0.5)
             intensity = ml_predictions.get('intensity', 1.0)
@@ -135,9 +147,12 @@ class LeverageManager:
 
             # Calculate final leverage
             adjusted_leverage = base_leverage * intensity_factor * reliability_factor * risk_factor
+            
             # Validate and clamp leverage to centralized limits
-            final_leverage = validate_leverage(adjusted_leverage)
-            final_leverage = max(self.min_leverage, min(self.max_leverage, final_leverage))
+            # Note: validate_leverage clamps to 5-100, then we apply instance limits
+            # Instance limits should be within centralized bounds (enforced during init)
+            validated_leverage = validate_leverage(adjusted_leverage)
+            final_leverage = max(self.min_leverage, min(self.max_leverage, validated_leverage))
 
             # Create result
             result = LeverageResult(
@@ -177,6 +192,9 @@ class LeverageManager:
             if len(self.leverage_history) > 100:
                 self.leverage_history = self.leverage_history[-100:]
 
+            # Add reason to metadata
+            result.metadata['reason'] = self._generate_leverage_reason(final_leverage, combined_confidence, base_leverage)
+
             self.logger.debug(f"Leverage calculated for {symbol}: {final_leverage:.1f}x (confidence: {combined_confidence:.3f})")
 
             return result
@@ -199,6 +217,28 @@ class LeverageManager:
         except Exception as e:
             self.logger.error(f"❌ Error generating leverage reason: {e}")
             return f'Leverage: {final_leverage:.1f}x (Error generating reason)'
+    
+    def _validate_leverage_inputs(
+        self,
+        symbol: str,
+        current_price: float,
+        account_balance: float,
+        analyst_confidence: float,
+        tactician_confidence: float
+    ) -> None:
+        """Validate inputs for leverage calculation."""
+        import math
+        
+        if not symbol or not isinstance(symbol, str):
+            raise ValueError(f"symbol must be a non-empty string, got {symbol}")
+        if not math.isfinite(current_price) or current_price <= 0:
+            raise ValueError(f"current_price must be a positive finite number, got {current_price}")
+        if not math.isfinite(account_balance) or account_balance <= 0:
+            raise ValueError(f"account_balance must be a positive finite number, got {account_balance}")
+        if not math.isfinite(analyst_confidence) or not (0 <= analyst_confidence <= 1):
+            raise ValueError(f"analyst_confidence must be between 0 and 1, got {analyst_confidence}")
+        if not math.isfinite(tactician_confidence) or not (0 <= tactician_confidence <= 1):
+            raise ValueError(f"tactician_confidence must be between 0 and 1, got {tactician_confidence}")
 
     def get_leverage_history(self, limit: Optional[int] = None) -> list[dict[str, Any]]:
         """Get leverage calculation history."""

@@ -75,8 +75,23 @@ class OptimizedParametersIntegration:
                 if factor < 0 or factor > 1.0:
                     raise ValueError(f"position_sizing_factor must be between 0.0 and 1.0, got {factor}")
                 position_sizer.max_position_size = min(base_max, factor * 10)  # Scale appropriately
+            
+            # Set confidence multiplier from final_parameters_optimization
+            # Check for various parameter names that might contain the multiplier
+            confidence_multiplier = (
+                params.get('confidence_multiplier') or
+                params.get('position_size_confidence_multiplier') or
+                params.get('long_position_size_multiplier') or  # For long trades
+                params.get('short_position_size_multiplier') or  # For short trades
+                1.0  # Default if not found
+            )
+            
+            if hasattr(position_sizer, 'set_confidence_multiplier'):
+                position_sizer.set_confidence_multiplier(confidence_multiplier)
+            elif hasattr(position_sizer, 'confidence_multiplier'):
+                position_sizer.confidence_multiplier = confidence_multiplier
                 
-            self.logger.info("✅ Applied optimized parameters to PositionSizer")
+            self.logger.info(f"✅ Applied optimized parameters to PositionSizer (confidence_multiplier: {confidence_multiplier})")
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to apply parameters to PositionSizer: {e}")
             raise

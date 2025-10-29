@@ -41,9 +41,9 @@ class RiskCalculator:
         self.config = config
         self.logger = logger.getChild('RiskCalculator')
 
-        # Risk parameters
-        self.max_portfolio_risk: float = 0.02  # 2% max portfolio risk
-        self.max_position_risk: float = 0.01  # 1% max position risk
+        # Risk parameters - read from config with defaults
+        self.max_portfolio_risk: float = getattr(config, 'max_portfolio_risk', 0.02)  # 2% max portfolio risk
+        self.max_position_risk: float = 0.01  # 1% max position risk per trade
         self.default_volatility: float = 0.02  # 2% default volatility
 
         # State management
@@ -84,6 +84,31 @@ class RiskCalculator:
             self.logger.error(f"Configuration validation failed: {e}")
             return False
 
+    def _validate_inputs(
+        self,
+        position_size: float,
+        current_price: float,
+        account_balance: float,
+        volatility: Optional[float] = None,
+        stop_loss_price: Optional[float] = None,
+        take_profit_price: Optional[float] = None
+    ) -> None:
+        """Validate input parameters for risk calculations."""
+        import math
+        
+        if not math.isfinite(position_size) or position_size <= 0:
+            raise ValueError(f"position_size must be a positive finite number, got {position_size}")
+        if not math.isfinite(current_price) or current_price <= 0:
+            raise ValueError(f"current_price must be a positive finite number, got {current_price}")
+        if not math.isfinite(account_balance) or account_balance <= 0:
+            raise ValueError(f"account_balance must be a positive finite number, got {account_balance}")
+        if volatility is not None and (not math.isfinite(volatility) or volatility < 0 or volatility > 1):
+            raise ValueError(f"volatility must be between 0 and 1, got {volatility}")
+        if stop_loss_price is not None and (not math.isfinite(stop_loss_price) or stop_loss_price <= 0):
+            raise ValueError(f"stop_loss_price must be a positive finite number, got {stop_loss_price}")
+        if take_profit_price is not None and (not math.isfinite(take_profit_price) or take_profit_price <= 0):
+            raise ValueError(f"take_profit_price must be a positive finite number, got {take_profit_price}")
+
     @handles_errors
     async def calculate_risk_metrics(
         self,
@@ -92,7 +117,8 @@ class RiskCalculator:
         account_balance: float,
         volatility: Optional[float] = None,
         stop_loss_price: Optional[float] = None,
-        take_profit_price: Optional[float] = None
+        take_profit_price: Optional[float] = None,
+        leverage: float = 1.0
     ) -> RiskMetrics:
         """
         Calculate risk metrics for a position.
@@ -104,6 +130,7 @@ class RiskCalculator:
             volatility: Market volatility (optional)
             stop_loss_price: Stop loss price (optional)
             take_profit_price: Take profit price (optional)
+            leverage: Leverage multiplier (default 1.0)
 
         Returns:
             RiskMetrics: Risk metrics for the position
@@ -112,6 +139,9 @@ class RiskCalculator:
             if not self.is_initialized:
                 raise RuntimeError("Risk Calculator not initialized")
 
+            # Validate inputs
+            self._validate_inputs(position_size, current_price, account_balance, volatility, stop_loss_price, take_profit_price)
+
             # Use default volatility if not provided
             if volatility is None:
                 volatility = self.default_volatility
@@ -119,13 +149,22 @@ class RiskCalculator:
             # Calculate position value
             position_value = position_size * current_price
 
-            # Calculate position risk
-            position_risk = position_value / account_balance
+            # Calculate position exposure (as fraction of account balance)
+            position_exposure = position_value / account_balance if account_balance > 0 else 0.0
 
-            # Calculate portfolio risk
-            portfolio_risk = position_risk * volatility
+            # Calculate actual position risk (based on stop loss distance)
+            if stop_loss_price:
+                # Real risk: potential loss as fraction of account balance
+                stop_loss_distance_pct = abs(current_price - stop_loss_price) / current_price if current_price > 0 else 0.0
+                position_risk = position_exposure * stop_loss_distance_pct * leverage
+            else:
+                # Use volatility-based stop loss
+                position_risk = position_exposure * volatility * leverage
 
-            # Calculate maximum loss
+            # Calculate portfolio risk (volatility-adjusted exposure)
+            portfolio_risk = position_exposure * volatility * leverage
+
+            # Calculate maximum loss in account currency
             if stop_loss_price:
                 max_loss = abs(position_size * (current_price - stop_loss_price))
             else:
@@ -141,8 +180,9 @@ class RiskCalculator:
                 if potential_loss > 0:
                     risk_reward_ratio = potential_profit / potential_loss
 
-            # Calculate volatility risk
-            volatility_risk = volatility * position_risk
+            # Calculate volatility-adjusted risk (VaR-like metric)
+            # This represents the potential loss at the volatility level
+            volatility_risk = position_exposure * volatility * leverage
 
             # Create result
             result = RiskMetrics(
@@ -153,9 +193,11 @@ class RiskCalculator:
                 volatility_risk=volatility_risk,
                 metadata={
                     'position_value': position_value,
+                    'position_exposure': position_exposure,
                     'volatility': volatility,
                     'stop_loss_price': stop_loss_price,
                     'take_profit_price': take_profit_price,
+                    'leverage': leverage,
                     'max_portfolio_risk': self.max_portfolio_risk,
                     'max_position_risk': self.max_position_risk
                 }
@@ -175,7 +217,9 @@ class RiskCalculator:
         position_size: float,
         current_price: float,
         account_balance: float,
-        volatility: Optional[float] = None
+        volatility: Optional[float] = None,
+        stop_loss_price: Optional[float] = None,
+        leverage: float = 1.0
     ) -> Dict[str, Any]:
         """
         Validate if position risk is within acceptable limits.
@@ -192,7 +236,7 @@ class RiskCalculator:
         try:
             # Calculate risk metrics
             risk_metrics = await self.calculate_risk_metrics(
-                position_size, current_price, account_balance, volatility
+                position_size, current_price, account_balance, volatility, stop_loss_price, None, leverage
             )
 
             # Validate position risk

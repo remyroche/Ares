@@ -4933,47 +4933,52 @@ except ImportError:
 
     cp = None
 
-        level_data = np.array([[level.price, level.strength] for level in levels])
-        avg_price = data['close'].mean()
-        # Use volatility from the same time period as SR levels
-        price_volatility = self._calculate_level_period_volatility(levels, data)
+def _optimize_clustering_parameters(self, levels, data):
+    """Optimize clustering parameters using Bayesian optimization."""
+    if not levels:
+        return 0.01, 2
+    
+    level_data = np.array([[level.price, level.strength] for level in levels])
+    avg_price = data['close'].mean()
+    # Use volatility from the same time period as SR levels
+    price_volatility = self._calculate_level_period_volatility(levels, data)
 
-        def objective(params):
-            eps_relative, min_samples = params
-            eps = eps_relative * avg_price
+    def objective(params):
+        eps_relative, min_samples = params
+        eps = eps_relative * avg_price
 
-            clustering = DBSCAN(eps=eps, min_samples=int(min_samples), metric=self._strength_aware_distance)
-            labels = clustering.fit_predict(level_data)
+        clustering = DBSCAN(eps=eps, min_samples=int(min_samples), metric=self._strength_aware_distance)
+        labels = clustering.fit_predict(level_data)
 
-            n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-            n_noise = list(labels).count(-1)
+        n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+        n_noise = list(labels).count(-1)
 
-            if n_clusters == 0:
-                return 100  # Minimize this (gp_minimize minimizes)
+        if n_clusters == 0:
+            return 100  # Minimize this (gp_minimize minimizes)
 
-            cluster_ratio = n_clusters / max(1, len(levels) - n_noise)
-            noise_ratio = n_noise / len(levels)
+        cluster_ratio = n_clusters / max(1, len(levels) - n_noise)
+        noise_ratio = n_noise / len(levels)
 
-            score = -(cluster_ratio * 0.7 - noise_ratio * 0.3)  # Negative for minimization
-            return score
+        score = -(cluster_ratio * 0.7 - noise_ratio * 0.3)  # Negative for minimization
+        return score
 
-        # Define search space with proper bounds - much less aggressive
-        min_samples_upper = max(2, min(6, len(levels) // 8))  # More conservative
-        space = [
-            Real(0.005, 0.10, name='eps_relative'),  # 0.5% to 10% of price (much wider range)
-            Integer(2, min_samples_upper, name='min_samples')
-        ]
+    # Define search space with proper bounds - much less aggressive
+    min_samples_upper = max(2, min(6, len(levels) // 8))  # More conservative
+    space = [
+        Real(0.005, 0.10, name='eps_relative'),  # 0.5% to 10% of price (much wider range)
+        Integer(2, min_samples_upper, name='min_samples')
+    ]
 
-        # Run optimization
-        res = gp_minimize(objective, space, n_calls=min(15, len(levels)), random_state=42)
+    # Run optimization
+    res = gp_minimize(objective, space, n_calls=min(15, len(levels)), random_state=42)
 
-        best_eps_relative = res.x[0]
-        best_min_samples = int(res.x[1])
-        best_eps = best_eps_relative * avg_price
+    best_eps_relative = res.x[0]
+    best_min_samples = int(res.x[1])
+    best_eps = best_eps_relative * avg_price
 
-        self.logger.info(f'🔧 Optimized DBSCAN params (skopt) - eps: {best_eps:.6f}, min_samples: {best_min_samples}')
+    self.logger.info(f'🔧 Optimized DBSCAN params (skopt) - eps: {best_eps:.6f}, min_samples: {best_min_samples}')
 
-        return best_eps, best_min_samples
+    return best_eps, best_min_samples
 
     def _get_heuristic_dbscan_params(self, levels: List[SRLevel], data: pd.DataFrame) -> Tuple[float, int]:
         """Get heuristic DBSCAN parameters when optimization is not available."""

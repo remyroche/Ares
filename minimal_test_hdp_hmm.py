@@ -14,7 +14,7 @@ print("=" * 80)
 
 # Check if HMM libraries are available
 try:
-    from src.training.steps.market_analysis.hdp_hmm_clustering import (
+    from src.training.steps.market_analysis.hdp_hmm_clustering.hdp_hmm_clusterer import (
         HDPHMMClusterer, HDPHMMConfig, HMM_AVAILABLE, HMM_LIBRARY
     )
     print(f"✅ HDP-HMM module imported successfully")
@@ -22,6 +22,8 @@ try:
     print(f"   Library used: {HMM_LIBRARY}")
 except Exception as e:
     print(f"❌ Failed to import HDP-HMM module: {e}")
+    import traceback
+    traceback.print_exc()
     exit(1)
 
 if not HMM_AVAILABLE:

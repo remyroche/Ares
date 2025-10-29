@@ -118,13 +118,13 @@ tprint, tprint_info, tprint_warning, tprint_error, tprint_success = get_tprint_f
 
 # Global variables for lazy-loaded quality utilities with type annotations
 QUALITY_UTILITIES_AVAILABLE: bool = False
-_COMPREHENSIVE_DUPLICATE_ANALYZER: Optional[ComprehensiveDuplicateAnalyzer] = None
-_DATA_QUALITY_FRAMEWORK: Optional[DataQualityFramework] = None
-_COMPREHENSIVE_QUALITY_SCORER: Optional[ComprehensiveQualityScorer] = None
-_ADVANCED_QUALITY_METRICS: Optional[AdvancedQualityMetrics] = None
-_DATA_CLEANER: Optional[DataCleaner] = None
-_STATISTICAL_VALIDATOR: Optional[StatisticalValidator] = None
-_QUALITY_ALERT_SYSTEM: Optional[QualityAlertManager] = None
+_COMPREHENSIVE_DUPLICATE_ANALYZER: Optional[Any] = None
+_DATA_QUALITY_FRAMEWORK: Optional[Any] = None
+_COMPREHENSIVE_QUALITY_SCORER: Optional[Any] = None
+_ADVANCED_QUALITY_METRICS: Optional[Any] = None
+_DATA_CLEANER: Optional[Any] = None
+_STATISTICAL_VALIDATOR: Optional[Any] = None
+_QUALITY_ALERT_SYSTEM: Optional[Any] = None
 _ANALYZE_DUPLICATES_COMPREHENSIVE = None
 
 def _lazy_import_quality_utilities():
@@ -2294,14 +2294,14 @@ if __name__ == "__main__":
             # Process data using simplified interface
             results = await pipeline.process_klines_data_simple(
                 exchange="bingx",  # Exchange name
-                asset="BTC",       # Asset (will create BTCUSDT symbol)
-                lookback_period="1y",  # Lookback period: "1y", "6m", "30d", "7d"
+                asset="ETH",       # Asset (will create ETHUSDT symbol)
+                lookback_period="4y",  # Lookback period: 4 years
                 interval="1m",     # Data interval
                 api_key="",        # Your API key
                 api_secret="",     # Your API secret
                 use_testnet=True,  # Use testnet
                 resampling_config=resampling_config,
-                batch_id="simple_test"
+                batch_id="ethusdt_4y_bingx"
             )
             
             print(f"🎉 Simple processing completed: {results['pipeline_success']}")

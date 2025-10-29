@@ -9,6 +9,7 @@ It downloads and consolidates all required data for training.
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Tuple
+import time
 
 from src.core.decorators import handles_errors
 from src.training.base_step import BaseStep

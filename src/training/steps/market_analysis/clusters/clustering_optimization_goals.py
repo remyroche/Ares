@@ -31,6 +31,7 @@ from scipy.special import logsumexp
 import logging
 
 # VectorBT imports for efficient computations
+# NOTE: Currently unused in calculations but kept for potential future use
 try:
     from src.vectorbt import (
         vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
@@ -39,6 +40,14 @@ try:
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
+    # Suppress unused import warnings
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
 
 # Import Pareto front utilities
 try:
@@ -80,6 +89,16 @@ except ImportError:
     HARDWARE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+
+# ===== CONSTANTS =====
+
+class Constants:
+    """Constants used throughout the optimization module."""
+    LOG_LIKELIHOOD_MIN = -50.0
+    LOG_LIKELIHOOD_MAX = 50.0
+    TRADING_DAYS_PER_YEAR = 252
+    MIN_BLOCK_SIZE = 1  # Minimum block size for bootstrap
 
 
 class OptimizationGoal(Enum):
@@ -490,8 +509,15 @@ class MetricCalculator:
     """Calculator for predictive and economic metrics."""
     
     def __init__(self, use_vectorbt: bool = True):
-        """Initialize metric calculator."""
+        """
+        Initialize metric calculator.
+        
+        Args:
+            use_vectorbt: Whether to use VectorBT for calculations (currently unused)
+        """
         self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
+        if self.use_vectorbt:
+            self.logger.debug("VectorBT available but not currently used in calculations")
         self.logger = logging.getLogger(self.__class__.__name__)
     
     def calculate_rolling_log_likelihood(
@@ -521,8 +547,10 @@ class MetricCalculator:
             ll_per_regime = []
             
             for regime_id in range(n_regimes):
-                mean = regime_params[regime_id].get('mean', np.zeros(n_features))
-                cov = regime_params[regime_id].get('cov', np.eye(n_features))
+                # Safe access to regime parameters
+                regime_param = regime_params.get(regime_id, {})
+                mean = regime_param.get('mean', np.zeros(n_features))
+                cov = regime_param.get('cov', np.eye(n_features))
                 
                 # Multivariate normal log-likelihood
                 try:
@@ -533,7 +561,10 @@ class MetricCalculator:
                         diff.T @ np.linalg.inv(cov + np.eye(n_features) * 1e-6) @ diff
                     )
                     ll_per_regime.append(ll)
-                except:
+                except (ValueError, np.linalg.LinAlgError, OverflowError, RuntimeError) as e:
+                    self.logger.debug(
+                        f"Numerical issue in log-likelihood calculation for regime {regime_id}: {e}"
+                    )
                     ll_per_regime.append(-1e6)  # Numerical issues
             
             # Weighted log-likelihood (mixture)
@@ -546,7 +577,11 @@ class MetricCalculator:
         log_likelihoods = np.array(log_likelihoods)
         
         # Filter out extreme outliers
-        log_likelihoods = np.clip(log_likelihoods, -50, 50)
+        log_likelihoods = np.clip(
+            log_likelihoods,
+            Constants.LOG_LIKELIHOOD_MIN,
+            Constants.LOG_LIKELIHOOD_MAX
+        )
         
         return float(np.mean(log_likelihoods)), float(np.std(log_likelihoods))
     
@@ -574,24 +609,32 @@ class MetricCalculator:
             # Predict from previous regime
             prev_regime = int(regime_labels[t-1])
             
-            if prev_regime in regime_params:
-                mean = regime_params[prev_regime].get('mean', np.zeros(n_features))
-                cov = regime_params[prev_regime].get('cov', np.eye(n_features))
-                
-                # Log-likelihood of current observation given previous regime
-                try:
-                    diff = data[t] - mean
-                    ll = -0.5 * (
-                        n_features * np.log(2 * np.pi) +
-                        np.log(np.linalg.det(cov) + 1e-8) +
-                        diff.T @ np.linalg.inv(cov + np.eye(n_features) * 1e-6) @ diff
-                    )
-                    log_likelihoods.append(ll)
-                except:
-                    log_likelihoods.append(-1e6)
+            # Safe access to regime parameters
+            regime_param = regime_params.get(prev_regime, {})
+            mean = regime_param.get('mean', np.zeros(n_features))
+            cov = regime_param.get('cov', np.eye(n_features))
+            
+            # Log-likelihood of current observation given previous regime
+            try:
+                diff = data[t] - mean
+                ll = -0.5 * (
+                    n_features * np.log(2 * np.pi) +
+                    np.log(np.linalg.det(cov) + 1e-8) +
+                    diff.T @ np.linalg.inv(cov + np.eye(n_features) * 1e-6) @ diff
+                )
+                log_likelihoods.append(ll)
+            except (ValueError, np.linalg.LinAlgError, OverflowError, RuntimeError) as e:
+                self.logger.debug(
+                    f"Numerical issue in one-step log-likelihood calculation for regime {prev_regime}: {e}"
+                )
+                log_likelihoods.append(-1e6)
         
         log_likelihoods = np.array(log_likelihoods)
-        log_likelihoods = np.clip(log_likelihoods, -50, 50)
+        log_likelihoods = np.clip(
+            log_likelihoods,
+            Constants.LOG_LIKELIHOOD_MIN,
+            Constants.LOG_LIKELIHOOD_MAX
+        )
         
         return float(np.mean(log_likelihoods)), float(np.std(log_likelihoods))
     
@@ -645,18 +688,32 @@ class MetricCalculator:
             'monthly_turnover': turnover,
             'win_rate': win_rate,
             'total_return': np.sum(strategy_returns),
-            'volatility': np.std(strategy_returns) * np.sqrt(252)  # Annualized
+            'volatility': np.std(strategy_returns) * np.sqrt(Constants.TRADING_DAYS_PER_YEAR)  # Annualized
         }
     
-    def _calculate_sharpe(self, returns: np.ndarray, periods_per_year: int = 252) -> float:
+    def _calculate_sharpe(
+        self,
+        returns: np.ndarray,
+        periods_per_year: int = Constants.TRADING_DAYS_PER_YEAR
+    ) -> float:
         """Calculate annualized Sharpe ratio."""
-        if len(returns) == 0 or np.std(returns) == 0:
+        if len(returns) == 0:
+            return 0.0
+        
+        std_return = np.std(returns)
+        if std_return == 0 or np.isnan(std_return) or np.isinf(std_return):
             return 0.0
         
         mean_return = np.mean(returns)
-        std_return = np.std(returns)
+        if np.isnan(mean_return) or np.isinf(mean_return):
+            return 0.0
         
         sharpe = (mean_return / std_return) * np.sqrt(periods_per_year)
+        
+        # Handle edge cases
+        if np.isnan(sharpe) or np.isinf(sharpe):
+            return 0.0
+        
         return float(sharpe)
     
     def _calculate_max_drawdown(self, returns: np.ndarray) -> float:
@@ -1143,7 +1200,8 @@ def select_knee_point(
     sharpes = [s['metrics']['sharpe'] for s in pareto_solutions]
     
     # Normalize to [0, 1]
-    def normalize(values):
+    def normalize(values: np.ndarray) -> np.ndarray:
+        """Normalize values to [0, 1] range."""
         min_val, max_val = np.min(values), np.max(values)
         if max_val == min_val:
             return np.ones_like(values) * 0.5
@@ -1298,7 +1356,8 @@ def statistical_significance_test(
     strategy_returns: np.ndarray,
     baseline_returns: np.ndarray,
     n_bootstrap: int = 100,
-    alpha: float = 0.10
+    alpha: float = 0.10,
+    random_state: Optional[int] = None
 ) -> Tuple[bool, float, Dict[str, float]]:
     """
     Test statistical significance of Sharpe improvement using block bootstrap.
@@ -1308,25 +1367,59 @@ def statistical_significance_test(
         baseline_returns: Returns from baseline (e.g., buy-and-hold)
         n_bootstrap: Number of bootstrap samples
         alpha: Significance level
+        random_state: Optional random seed for reproducibility
         
     Returns:
         (is_significant, p_value, metrics)
     """
     logger.info(f"🔍 Testing statistical significance with {n_bootstrap} bootstrap samples...")
     
+    # Set random seed for reproducibility
+    if random_state is not None:
+        np.random.seed(random_state)
+    
     # Calculate observed Sharpe difference
-    def sharpe(returns):
-        if len(returns) == 0 or np.std(returns) == 0:
+    def sharpe(returns: np.ndarray) -> float:
+        """Calculate annualized Sharpe ratio."""
+        if len(returns) == 0:
             return 0.0
-        return np.mean(returns) / np.std(returns) * np.sqrt(252)
+        
+        std_return = np.std(returns)
+        if std_return == 0 or np.isnan(std_return) or np.isinf(std_return):
+            return 0.0
+        
+        mean_return = np.mean(returns)
+        if np.isnan(mean_return) or np.isinf(mean_return):
+            return 0.0
+        
+        sharpe_val = (mean_return / std_return) * np.sqrt(Constants.TRADING_DAYS_PER_YEAR)
+        
+        if np.isnan(sharpe_val) or np.isinf(sharpe_val):
+            return 0.0
+        
+        return float(sharpe_val)
     
     observed_strategy_sharpe = sharpe(strategy_returns)
     observed_baseline_sharpe = sharpe(baseline_returns)
     observed_diff = observed_strategy_sharpe - observed_baseline_sharpe
     
     # Block bootstrap (preserve autocorrelation)
-    block_size = int(np.sqrt(len(strategy_returns)))
+    # Ensure minimum block size
+    block_size = max(Constants.MIN_BLOCK_SIZE, int(np.sqrt(len(strategy_returns))))
     n_blocks = len(strategy_returns) // block_size
+    
+    if n_blocks < 2:
+        logger.warning(
+            f"⚠️ Insufficient data for block bootstrap: n_blocks={n_blocks}, "
+            f"block_size={block_size}, len={len(strategy_returns)}"
+        )
+        # Fall back to simple bootstrap if blocks don't make sense
+        block_size = max(1, len(strategy_returns) // 10)
+        n_blocks = len(strategy_returns) // block_size
+    
+    # Handle remainder samples
+    remainder = len(strategy_returns) % block_size
+    effective_length = len(strategy_returns) - remainder
     
     bootstrap_diffs = []
     for _ in range(n_bootstrap):
@@ -1338,9 +1431,20 @@ def statistical_significance_test(
         
         for block_idx in block_indices:
             start = block_idx * block_size
-            end = start + block_size
-            boot_strategy.extend(strategy_returns[start:end])
-            boot_baseline.extend(baseline_returns[start:end])
+            end = min(start + block_size, effective_length)  # Ensure we don't go out of bounds
+            if start < effective_length:
+                boot_strategy.extend(strategy_returns[start:end])
+                boot_baseline.extend(baseline_returns[start:end])
+        
+        # If we have remainder, randomly sample additional points
+        if remainder > 0:
+            additional_indices = np.random.choice(
+                effective_length,
+                size=min(remainder, effective_length),
+                replace=True
+            )
+            boot_strategy.extend(strategy_returns[additional_indices])
+            boot_baseline.extend(baseline_returns[additional_indices])
         
         boot_strategy = np.array(boot_strategy)
         boot_baseline = np.array(boot_baseline)

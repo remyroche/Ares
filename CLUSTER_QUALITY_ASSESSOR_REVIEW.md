@@ -1,360 +1,426 @@
-# Cluster Quality Assessor - Code Review
-
-**File:** `src/training/steps/market_analysis/clusters/cluster_quality_assessor.py`  
-**Date:** 2024  
-**Lines:** ~2009
+# Cluster Quality Assessor Code Review
 
 ## Executive Summary
 
-The `cluster_quality_assessor.py` module is a comprehensive, well-structured implementation for assessing cluster quality in regime analysis. The code demonstrates good design patterns, comprehensive feature coverage, and thoughtful error handling. However, there are several areas for improvement related to type safety, error handling edge cases, and code organization.
+The `cluster_quality_assessor.py` file is a comprehensive, well-structured module for assessing cluster quality. It demonstrates good software engineering practices with extensive documentation, type hints, and error handling. However, there are several areas for improvement related to code organization, potential bugs, and performance optimizations.
 
-**Overall Assessment:** ✅ **Good** - Production-ready with minor improvements recommended.
+**Overall Assessment:** ✅ **Good** (with suggested improvements)
 
 ---
 
-## Strengths
+## 1. Code Structure & Organization
 
-### 1. **Comprehensive Metrics Coverage**
-- Extensive metrics including silhouette scores, DBI, CH index, CV metrics, temporal analysis, and economic validation
-- Well-structured `ClusterQualityMetrics` dataclass with clear documentation
-- Support for both standard and HMM-specific quality assessment
+### ✅ Strengths
+- Clear separation of concerns (dataclass for metrics, main class for assessment)
+- Well-organized imports grouped by purpose
+- Comprehensive docstrings for all public methods
+- Good use of type hints throughout
 
-### 2. **Good Error Handling**
-- Try-except blocks around critical operations prevent crashes
-- Graceful degradation when optional dependencies unavailable
-- Informative error messages using tprint utilities
+### ⚠️ Issues
 
-### 3. **Well-Documented Code**
-- Comprehensive docstrings for classes and methods
+#### 1.1 Large Class Size (2133 lines)
+The `ClusterQualityAssessor` class is quite large (~1700 lines). Consider:
+- **Recommendation**: Split into smaller, focused classes:
+  - `ClusterQualityAssessor` - Main orchestrator
+  - `MetricCalculator` - Core clustering metrics (silhouette, DBI, CH)
+  - `TemporalAnalyzer` - Temporal metrics calculation
+  - `EconomicValidator` - Economic validation logic
+  - `ReportGenerator` - Markdown report generation
+
+#### 1.2 Unused Imports
+```python
+# Line 68-71: Vectorization utilities imported but not consistently used
+from src.features_common.utils import (
+    VectorBTRollingOptimizer,  # Imported but never used
+    UnifiedVectorizationManager,
+    get_vectorbt_rolling_optimizer,  # Imported but never used
+    get_unified_vectorization_manager
+)
+```
+
+**Recommendation**: Remove unused imports or document why they're kept for future use.
+
+---
+
+## 2. Potential Bugs & Logic Issues
+
+### 🔴 Critical Issues
+
+#### 2.1 Index Alignment Bug in `_validate_regime_quality` (Lines 1544-1622)
+```python
+# Line 1592-1595: Potential index misalignment
+if hasattr(forward_returns, 'iloc'):
+    regime_returns = forward_returns.iloc[regime_mask]
+else:
+    regime_returns = forward_returns[regime_mask]
+```
+
+**Issue**: When using `iloc[regime_mask]`, `regime_mask` is a boolean array. If `regime_labels` and `forward_returns` have different indices, this will cause misalignment.
+
+**Recommendation**: 
+```python
+# Ensure alignment before masking
+if hasattr(forward_returns, 'index') and hasattr(feature_data, 'index'):
+    if not forward_returns.index.equals(feature_data.index):
+        # Reindex or use positional indexing consistently
+        forward_returns = forward_returns.reset_index(drop=True)
+        feature_data = feature_data.reset_index(drop=True)
+        
+regime_mask = (regime_labels == regime_id)
+if hasattr(forward_returns, 'iloc'):
+    regime_returns = forward_returns.iloc[regime_mask]
+```
+
+#### 2.2 Division by Zero Risk in `_calculate_cv_metrics` (Lines 936-942)
+```python
+denominator = np.abs(cluster_mean) + 1e-8
+cv_values = np.divide(
+    cluster_std,
+    denominator,
+    out=np.zeros_like(cluster_std),
+    where=denominator != 0
+)
+```
+
+**Issue**: `np.divide` with `where` parameter behavior is correct, but the check `denominator != 0` is redundant since we add `1e-8`. However, if `cluster_mean` contains all zeros, this could still produce misleading CV values.
+
+**Recommendation**: Add explicit check for zero variance:
+```python
+if np.all(np.abs(cluster_mean) < 1e-10):
+    # Handle zero mean case explicitly
+    continue  # Skip this cluster or set CV to NaN
+```
+
+#### 2.3 Predictive Power Calculation Edge Case (Lines 1624-1692)
+```python
+# Line 1656: Potential issue with get_dummies
+X = pd.get_dummies(regime_labels[:max_predictable])
+```
+
+**Issue**: `pd.get_dummies` on a 1D array creates columns for each unique value. If regime_labels contains values not in the training set, this could cause dimension mismatches.
+
+**Recommendation**: 
+```python
+# Use categorical encoding instead
+from sklearn.preprocessing import LabelEncoder
+encoder = LabelEncoder()
+X = encoder.fit_transform(regime_labels[:max_predictable]).reshape(-1, 1)
+```
+
+### ⚠️ Moderate Issues
+
+#### 2.4 Regime Persistence Calculation (Line 1045)
+```python
+avg_regime_duration = 1.0 / (np.mean(regime_changes) + 1e-8)
+```
+
+**Issue**: This formula assumes transitions occur uniformly. For regimes with varying durations, this may not accurately represent persistence.
+
+**Recommendation**: Calculate actual regime durations:
+```python
+# Calculate actual regime durations
+durations = []
+current_regime = regime_labels[0]
+duration = 1
+for label in regime_labels[1:]:
+    if label == current_regime:
+        duration += 1
+    else:
+        if current_regime != -1:  # Skip noise
+            durations.append(duration)
+        current_regime = label
+        duration = 1
+if current_regime != -1:
+    durations.append(duration)
+
+avg_regime_duration = np.mean(durations) if durations else 0.0
+```
+
+#### 2.5 Quality Score Normalization (Lines 1721-1770)
+```python
+# Line 1736: CH normalization
+ch_normalized = np.tanh(metrics.calinski_harabasz_score / 100)
+```
+
+**Issue**: The normalization constants (100, etc.) are hardcoded and may not be appropriate for all datasets. CH scores can vary widely.
+
+**Recommendation**: Use adaptive normalization based on data characteristics:
+```python
+# Calculate reasonable bounds from training data or use percentile-based normalization
+def normalize_ch_score(ch_score, min_ch=0, max_ch=1000):
+    """Normalize CH score with configurable bounds."""
+    return np.tanh((ch_score - min_ch) / (max_ch - min_ch + 1e-8))
+```
+
+---
+
+## 3. Performance Considerations
+
+### ⚠️ Performance Issues
+
+#### 3.1 Inefficient Per-Regime Metrics Calculation (Lines 1270-1354)
+```python
+# Line 1310-1312: Recalculating cluster sizes for each regime
+'balance_contribution': float(regime_size / (np.mean([np.sum(regime_labels == r) 
+                                                       for r in set(regime_labels) 
+                                                       if r != -1]) + 1e-8))
+```
+
+**Issue**: This recalculates cluster sizes for every regime, resulting in O(n²) complexity.
+
+**Recommendation**: Pre-calculate cluster sizes once:
+```python
+# Pre-calculate all cluster sizes
+cluster_sizes = {r: np.sum(regime_labels == r) 
+                 for r in set(regime_labels) if r != -1}
+mean_cluster_size = np.mean(list(cluster_sizes.values()))
+
+# Then use in loop
+'balance_contribution': float(regime_size / (mean_cluster_size + 1e-8))
+```
+
+#### 3.2 Missing Vectorization Opportunities
+The code imports vectorization utilities but doesn't consistently use them. Many loops could benefit from vectorization:
+
+**Example** (Line 927-950):
+```python
+# Current: Loop-based calculation
+for cluster_id in set(labels_clean):
+    cluster_mask = labels_clean == cluster_id
+    cluster_data = features_clean[cluster_mask]
+    # ... calculations
+```
+
+**Recommendation**: Use vectorized operations where possible:
+```python
+# Vectorized approach
+unique_labels = np.unique(labels_clean)
+for cluster_id in unique_labels:
+    cluster_mask = labels_clean == cluster_id
+    cluster_data = features_clean[cluster_mask].values  # Convert to numpy array
+    # Use vectorized numpy operations
+```
+
+#### 3.3 Redundant Data Conversions
+```python
+# Line 726: Converting DataFrame to array multiple times
+data_array = feature_data.select_dtypes(include=[np.number]).values
+```
+
+**Issue**: This conversion happens in multiple methods. Consider caching the cleaned numeric features.
+
+**Recommendation**: Add a cached property:
+```python
+@property
+def _numeric_features_array(self):
+    """Cached numeric features array."""
+    if not hasattr(self, '_cached_features'):
+        self._cached_features = self.feature_data.select_dtypes(
+            include=[np.number]
+        ).values
+    return self._cached_features
+```
+
+---
+
+## 4. Code Quality & Best Practices
+
+### ✅ Good Practices
+- Comprehensive error handling with try-except blocks
+- Informative logging with tprint utilities
+- Type hints throughout
+- Consistent naming conventions
+
+### ⚠️ Improvements Needed
+
+#### 4.1 Magic Numbers
+Several hardcoded thresholds throughout the code:
+- Line 1149: `volatility_level > 0.02`
+- Line 1155: `trend_strength > 0.5 and metrics['trend_persistence'] > 0.2`
+- Line 2079-2091: Quality score thresholds (0.7, 0.5, 0.3)
+
+**Recommendation**: Extract to configuration constants:
+```python
+class QualityThresholds:
+    """Configuration for quality assessment thresholds."""
+    MIN_SILHOUETTE = 0.3
+    MAX_DBI = 2.0
+    MIN_CH = 50.0
+    MAX_NOISE_RATIO = 0.3
+    HIGH_VOLATILITY_THRESHOLD = 0.02
+    TREND_STRENGTH_THRESHOLD = 0.5
+    # ... etc
+```
+
+#### 4.2 Duplicate Code
+The regime type detection logic appears in multiple places with slight variations.
+
+**Recommendation**: Consolidate into a single, well-tested method.
+
+#### 4.3 Missing Input Validation
+Several methods don't validate input types or ranges before processing.
+
+**Recommendation**: Add validation decorators or methods:
+```python
+def validate_inputs(func):
+    """Decorator to validate inputs."""
+    def wrapper(self, regime_labels, feature_data, **kwargs):
+        if not isinstance(regime_labels, np.ndarray):
+            raise TypeError("regime_labels must be numpy array")
+        if not isinstance(feature_data, pd.DataFrame):
+            raise TypeError("feature_data must be pandas DataFrame")
+        # ... more validations
+        return func(self, regime_labels, feature_data, **kwargs)
+    return wrapper
+```
+
+---
+
+## 5. Documentation
+
+### ✅ Strengths
+- Comprehensive docstrings
 - Clear parameter descriptions
-- Good use of type hints (though incomplete in some places)
+- Good use of type hints
 
-### 4. **Separation of Concerns**
-- Factory function pattern (`create_cluster_quality_assessor`)
-- Modular helper methods (_calculate_* pattern)
-- Clear separation between standard and HMM-specific assessment
+### ⚠️ Improvements
 
-### 5. **Extensibility**
-- HMM-specific enhancements via `assess_hmm_regime_quality()`
-- Optional hardware optimization and vectorization
-- Artifact manager integration for persistence
+#### 5.1 Missing Examples
+The docstrings lack usage examples. Adding examples would help users understand how to use the class effectively.
 
----
-
-## Issues and Recommendations
-
-### 🔴 **Critical Issues**
-
-#### 1. **Potential Data Type Mismatch in `load_metrics()` (Line 1707)**
-**Problem:**
+**Recommendation**: Add usage examples to class docstring:
 ```python
-return ClusterQualityMetrics(**metrics_dict)
-```
-This assumes all dictionary keys match the dataclass fields exactly. If the saved artifact has extra keys or missing required fields, this will fail.
+"""
+Unified cluster quality assessor...
 
-**Recommendation:**
-```python
-# Filter to only valid dataclass fields
-from dataclasses import fields
-valid_fields = {f.name for f in fields(ClusterQualityMetrics)}
-filtered_dict = {k: v for k, v in metrics_dict.items() if k in valid_fields}
-return ClusterQualityMetrics(**filtered_dict)
+Examples:
+    >>> assessor = ClusterQualityAssessor()
+    >>> metrics = assessor.assess_quality(
+    ...     regime_labels=labels,
+    ...     feature_data=features,
+    ...     forward_returns=returns
+    ... )
+    >>> print(f"Quality score: {metrics.quality_score:.3f}")
+"""
 ```
 
-#### 2. **Unsafe NumPy Array Conversion in `to_dict()` (Line 300)**
-**Problem:**
-```python
-'one_step_ahead_scores': self.one_step_ahead_scores.tolist() if self.one_step_ahead_scores is not None else None,
-```
-If `one_step_ahead_scores` is not a numpy array, `.tolist()` will fail.
+#### 5.2 Incomplete Type Hints
+Some return types use `Any` or could be more specific.
 
-**Recommendation:**
+**Recommendation**: Use more specific types:
 ```python
-'one_step_ahead_scores': (
-    self.one_step_ahead_scores.tolist() 
-    if isinstance(self.one_step_ahead_scores, np.ndarray) 
-    else list(self.one_step_ahead_scores) if self.one_step_ahead_scores is not None 
-    else None
-),
-```
+# Instead of Dict[str, Any]
+from typing import TypedDict
 
-Similar issue exists for `pit_values` on line 349.
-
-#### 3. **Division by Zero Risk in `_calculate_predictive_power()` (Line 1569)**
-**Problem:**
-```python
-cv_score = cross_val_score(rf, X, y, cv=min(5, len(y) // 2)).mean()
-```
-If `len(y) // 2` is 0, cv will be 0, causing issues. Also, if cross_val_score returns empty array, `.mean()` will error.
-
-**Recommendation:**
-```python
-min_fold_size = max(2, len(y) // 5)  # Ensure at least 2 samples per fold
-cv_folds = min(5, max(2, len(y) // min_fold_size))
-if cv_folds < 2:
-    return 0.0
-cv_scores = cross_val_score(rf, X, y, cv=cv_folds)
-return float(cv_scores.mean()) if len(cv_scores) > 0 else 0.0
+class PerRegimeMetrics(TypedDict):
+    size: int
+    percentage: float
+    mean_return: float
+    # ... etc
 ```
 
 ---
 
-### 🟡 **Medium Priority Issues**
+## 6. Testing Considerations
 
-#### 4. **Missing Type Hints in Some Methods**
-Several helper methods lack return type hints:
-- `_detect_regime_type()` - Has Tuple return type, but tuple contents unclear
-- `_calculate_regime_specific_metrics()` - Return type is Dict[str, Any] but could be more specific
-- `_generate_economic_interpretation()` - Same issue
+### ⚠️ Missing Edge Cases
+The code handles some edge cases but could be more robust:
 
-**Recommendation:** Add more specific type hints using TypedDict or create custom types.
+1. **Empty feature data**: Currently handled, but could provide more informative error messages
+2. **Single cluster**: Handled with early returns, but metrics might be misleading
+3. **All noise points**: Should explicitly handle this case
+4. **Very large datasets**: No memory management considerations
 
-#### 5. **Magic Numbers in Threshold Checks**
-Hard-coded thresholds throughout the code:
-- Line 1110: `volatility_level > 0.02` (2% daily volatility)
-- Line 1115: `trend_strength > 0.5 and metrics['trend_persistence'] > 0.2`
-- Line 1569: `cv=min(5, len(y) // 2)`
-
-**Recommendation:** Extract to configuration constants or make them parameters:
+### Recommendation
+Add explicit checks and informative error messages:
 ```python
-# At class level
-DEFAULT_VOLATILITY_THRESHOLD = 0.02
-DEFAULT_TREND_STRENGTH_THRESHOLD = 0.5
-DEFAULT_TREND_PERSISTENCE_THRESHOLD = 0.2
-```
-
-#### 6. **Potential Index Misalignment in `_calculate_predictive_power()` (Line 1558-1559)**
-**Problem:**
-```python
-X = pd.get_dummies(regime_labels[:min_len-1])
-y = (forward_returns[1:min_len] > 0).astype(int).values
-```
-The alignment assumes regime_labels[t] predicts forward_returns[t+1], but if timestamps don't align, this could be incorrect.
-
-**Recommendation:** Add explicit alignment check or use timestamps if available.
-
-#### 7. **Inefficient Data Copying in CV Calculation (Line 931-932)**
-**Problem:**
-Multiple iterations over cluster data could be optimized:
-```python
-within_regime_cv_mean = float(np.mean(within_cvs)) if within_cvs else 0.0
-within_regime_cv_std = float(np.std(within_cvs)) if len(within_cvs) > 1 else 0.0
-```
-
-**Recommendation:** Compute mean and std in single pass when possible, or use numpy for vectorized operations.
-
-#### 8. **Silent Failure in `_calculate_regime_specific_metrics()` (Line 1167)**
-**Problem:**
-```python
-if returns is None or len(returns) < 2:
-    return specific_metrics  # Returns empty dict
-```
-This silently returns empty metrics, which might hide issues.
-
-**Recommendation:** Add logging/warning or make the requirement explicit in docstring.
-
----
-
-### 🟢 **Minor Issues / Code Quality**
-
-#### 9. **Inconsistent Error Messages**
-Some errors use `tprint_error()`, others use `logger.warning()`. Standardize on one approach or document when to use each.
-
-#### 10. **Long Method - `assess_quality()` (Lines 458-635)**
-Method is ~177 lines. While not excessive, consider breaking into logical sections:
-- Input validation
-- Core metrics calculation
-- Optional metrics calculation
-- Final score calculation
-
-#### 11. **Complex Markdown Generation (Lines 1713-1988)**
-The `_build_markdown_content()` method is very long (~274 lines). Consider using Jinja2 template or breaking into smaller methods per section.
-
-#### 12. **Hardcoded Output Directory (Line 1715)**
-Default `output_dir="outcomes"` might conflict with other parts of the system. Consider making configurable or using artifact manager.
-
-#### 13. **Missing Validation in `_calculate_temporal_smoothness()`**
-**Problem:**
-```python
-def _calculate_temporal_smoothness(self, regime_labels, timestamps):
-```
-The `timestamps` parameter is not used in the function body, but it's required for temporal analysis.
-
-**Recommendation:** Either use timestamps (for time-aware smoothness) or remove parameter.
-
-#### 14. **Type Safety: Optional Handling**
-Several places check `is not None` but then immediately access attributes without additional validation:
-- Line 1604-1607: `metrics.silhouette_score` check is good
-- But some nested dict accesses could fail if structure unexpected
-
-**Recommendation:** Add defensive checks for nested dictionaries.
-
----
-
-## Performance Considerations
-
-### ✅ **Good Practices**
-1. Use of hardware optimization manager
-2. Vectorization support
-3. Efficient numpy operations where possible
-
-### ⚠️ **Potential Optimizations**
-1. **Silhouette Calculation (Line 838)**: Can be expensive for large datasets. Consider sampling or using approximate methods for very large clusters.
-2. **Cross-validation in Predictive Power (Line 1569)**: Consider early stopping or reduced n_estimators for RandomForest.
-3. **Multiple Regime Iterations**: Loops over clusters could potentially be vectorized.
-
----
-
-## Testing Recommendations
-
-The code would benefit from:
-1. **Unit tests** for each `_calculate_*` method
-2. **Integration tests** for `assess_quality()` with various inputs
-3. **Edge case tests**: Empty inputs, single cluster, all noise, etc.
-4. **Type validation tests** for `load_metrics()` reconstruction
-
----
-
-## Documentation Suggestions
-
-1. **Add Examples**: Include usage examples in docstrings
-2. **Document Thresholds**: Explain rationale behind quality thresholds
-3. **Parameter Tuning Guide**: Document which parameters affect which metrics
-4. **Performance Notes**: Document expected computation time for large datasets
-
----
-
-## Specific Code Fixes
-
-### Fix 1: Safe `load_metrics()` method
-```python
-def load_metrics(self, artifact_name: str = "cluster_quality_metrics") -> Optional[ClusterQualityMetrics]:
-    """..."""
-    if self.artifact_manager is None:
-        tprint_warning("⚠️ No artifact manager available - cannot load metrics")
-        return None
-    
-    try:
-        metrics_dict = self.artifact_manager.get_artifact(
-            artifact_name=artifact_name,
-            artifact_type="data"
-        )
-        
-        if metrics_dict is None:
-            return None
-        
-        tprint_data_preview(metrics_dict, "Loaded Cluster Quality Metrics")
-        
-        # Filter to only valid dataclass fields
-        from dataclasses import fields
-        valid_fields = {f.name for f in fields(ClusterQualityMetrics)}
-        filtered_dict = {
-            k: v for k, v in metrics_dict.items() 
-            if k in valid_fields
-        }
-        
-        # Reconstruct ClusterQualityMetrics from dict
-        return ClusterQualityMetrics(**filtered_dict)
-        
-    except Exception as e:
-        tprint_error(f"❌ Failed to load cluster quality metrics: {e}")
-        return None
-```
-
-### Fix 2: Safe array conversion in `to_dict()`
-```python
-def _safe_array_to_list(self, arr: Any) -> Optional[List]:
-    """Safely convert numpy array to list."""
-    if arr is None:
-        return None
-    if isinstance(arr, np.ndarray):
-        return arr.tolist()
-    try:
-        return list(arr)
-    except (TypeError, ValueError):
-        return None
-
-# Then in to_dict():
-'one_step_ahead_scores': self._safe_array_to_list(self.one_step_ahead_scores),
-'pit_values': self._safe_array_to_list(self.pit_values),
-```
-
-### Fix 3: Improved `_calculate_predictive_power()`
-```python
-def _calculate_predictive_power(self,
-                               regime_labels: np.ndarray,
-                               forward_returns: pd.Series) -> float:
-    """
-    Calculate predictive power: can current regime predict future returns?
-    
-    Uses Random Forest classifier to predict return sign from regime labels.
-    """
-    try:
-        # Use current regime to predict next period's return sign
-        if len(regime_labels) < 10 or len(forward_returns) < 10:
-            return 0.0
-        
-        # Ensure arrays are aligned and valid
-        min_len = min(len(regime_labels), len(forward_returns))
-        if min_len < 10:
-            return 0.0
-        
-        X = pd.get_dummies(regime_labels[:min_len-1])
-        y = (forward_returns[1:min_len] > 0).astype(int).values
-        
-        if len(X) != len(y):
-            return 0.0
-        
-        # Check if we have enough samples and variation
-        if len(y) < 10 or len(set(y)) < 2:
-            return 0.0
-        
-        # Calculate safe number of CV folds
-        min_samples_per_fold = 3
-        max_folds = min(5, max(2, len(y) // min_samples_per_fold))
-        
-        if max_folds < 2:
-            return 0.0
-        
-        rf = RandomForestClassifier(n_estimators=100, random_state=42)
-        cv_scores = cross_val_score(rf, X, y, cv=max_folds)
-        
-        if len(cv_scores) == 0:
-            return 0.0
-        
-        return float(cv_scores.mean())
-        
-    except Exception as e:
-        self.logger.warning(f"Failed to calculate predictive power: {e}")
-        return 0.0
+if len(regime_labels) == 0:
+    raise ValueError("Cannot assess quality: regime_labels is empty")
+if feature_data.empty:
+    raise ValueError("Cannot assess quality: feature_data is empty")
+if np.all(regime_labels == -1):
+    raise ValueError("Cannot assess quality: all points are noise")
 ```
 
 ---
 
-## Positive Highlights
+## 7. Security & Robustness
 
-1. **Excellent use of decorators**: `@tprint_logged` for automatic logging
-2. **Thoughtful error recovery**: Methods continue processing even when some metrics fail
-3. **Comprehensive reporting**: Markdown report generation is thorough
-4. **Economic focus**: Good integration of economic validation and interpretation
-5. **Extensible design**: Easy to add new metrics or validators
+### ✅ Good Practices
+- Safe division operations
+- Input validation in some places
+- Error handling with graceful degradation
+
+### ⚠️ Potential Issues
+
+#### 7.1 File Path Handling (Line 1853)
+```python
+output_path = Path(output_dir)
+output_path.mkdir(parents=True, exist_ok=True)
+```
+
+**Issue**: No validation of `output_dir` path. Could be vulnerable to path traversal.
+
+**Recommendation**: Validate and sanitize paths:
+```python
+output_path = Path(output_dir).resolve()
+if not str(output_path).startswith(str(Path.cwd().resolve())):
+    raise ValueError(f"Invalid output directory: {output_dir}")
+```
 
 ---
 
-## Conclusion
+## 8. Specific Recommendations
 
-This is a well-written, production-quality module with comprehensive functionality. The main improvements needed are:
+### High Priority
+1. ✅ Fix index alignment bugs in `_validate_regime_quality` and `_calculate_per_regime_metrics`
+2. ✅ Optimize per-regime metrics calculation (remove redundant loops)
+3. ✅ Extract magic numbers to configuration constants
+4. ✅ Add input validation decorators
 
-1. **Type safety**: Better handling of data reconstruction and array conversions
-2. **Edge cases**: More robust handling of boundary conditions
-3. **Code organization**: Break down very long methods
-4. **Configuration**: Externalize magic numbers
+### Medium Priority
+5. ⚠️ Split large class into smaller components
+6. ⚠️ Add usage examples to docstrings
+7. ⚠️ Improve regime persistence calculation
+8. ⚠️ Add vectorization where beneficial
 
-**Priority Actions:**
-1. ✅ Fix `load_metrics()` to safely handle dict reconstruction
-2. ✅ Fix array conversion safety in `to_dict()`
-3. ✅ Improve `_calculate_predictive_power()` robustness
-4. ⚠️ Consider extracting thresholds to configuration
-5. ⚠️ Add unit tests for core calculation methods
+### Low Priority
+9. 📝 Remove unused imports
+10. 📝 Add more specific type hints
+11. 📝 Add path validation for file operations
+12. 📝 Consider caching cleaned feature arrays
 
-The code demonstrates solid engineering practices and is ready for production with the recommended fixes applied.
+---
+
+## 9. Code Metrics
+
+- **Lines of Code**: ~2133
+- **Cyclomatic Complexity**: Moderate (some methods could be simplified)
+- **Test Coverage**: Unknown (needs verification)
+- **Documentation Coverage**: Excellent (~95%+)
+
+---
+
+## 10. Conclusion
+
+The `cluster_quality_assessor.py` file is well-written and demonstrates good software engineering practices. The main areas for improvement are:
+
+1. **Code organization**: Split large class into smaller components
+2. **Bug fixes**: Index alignment issues need attention
+3. **Performance**: Several optimization opportunities
+4. **Maintainability**: Extract magic numbers and reduce code duplication
+
+The code is production-ready with minor fixes, but would benefit from the suggested improvements for long-term maintainability and performance.
+
+---
+
+## Review Checklist
+
+- [x] Code structure and organization
+- [x] Potential bugs and logic issues
+- [x] Performance considerations
+- [x] Code quality and best practices
+- [x] Documentation
+- [x] Testing considerations
+- [x] Security and robustness
+- [x] Specific recommendations provided

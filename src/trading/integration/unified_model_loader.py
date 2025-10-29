@@ -40,7 +40,7 @@ class UnifiedModelLoader:
     and standardized_model_manager with proper context filtering and timestamp selection.
     """
 
-    def __init__(self, artifact_manager: Optional[ArtifactManager] = None):
+    def __init__(self, artifact_manager: Optional[ArtifactManager] = None) -> None:
         """
         Initialize unified model loader.
 
@@ -49,6 +49,7 @@ class UnifiedModelLoader:
                              If None, will create one using BaseStep pattern.
         """
         self.logger = logger.getChild('UnifiedModelLoader')
+        tprint_info("🔄 Initializing unified model loader")
         
         # Initialize artifact manager
         if artifact_manager is None:
@@ -65,7 +66,7 @@ class UnifiedModelLoader:
         self.optimized_parameters: Dict[str, Any] = {}
 
         # Step name mappings
-        self.step_mappings = {
+        self.step_mappings: Dict[str, str] = {
             'regime_base': 'regime_models_training',
             'regime_ensemble': 'regime_ensemble_training',
             'analyst_base': 'analyst_base_training',
@@ -73,6 +74,7 @@ class UnifiedModelLoader:
             'tactician_base': 'tactician_base_training',
             'tactician_ensemble': 'tactician_ensemble_training'
         }
+        tprint_success("✅ Unified model loader initialized")
 
     def _find_most_recent_artifact_file(
         self,
@@ -248,9 +250,11 @@ class UnifiedModelLoader:
                 import joblib
                 return joblib.load(path)
             else:
+                tprint_warning(f"⚠️ Unknown file extension: {path.suffix}")
                 self.logger.warning(f"Unknown file extension: {path.suffix}")
                 return None
         except Exception as e:
+            tprint_error(f"❌ Failed to load artifact from {path}: {e}")
             self.logger.error(f"Failed to load artifact from {path}: {e}")
             return None
 
@@ -335,6 +339,7 @@ class UnifiedModelLoader:
                             models[model_id] = model
                             self.model_metadata[model_id] = metadata
                     except Exception as e:
+                        tprint_warning(f"⚠️ Could not load regime model {model_id}: {e}")
                         self.logger.debug(f"Could not load regime model {model_id}: {e}")
 
             # Try common artifact names
@@ -435,6 +440,7 @@ class UnifiedModelLoader:
                                 self.model_metadata[model_id] = metadata
                                 break
                         except Exception as e:
+                            tprint_warning(f"⚠️ Could not load regime ensemble model {model_id}: {e}")
                             self.logger.debug(f"Could not load regime ensemble model {model_id}: {e}")
 
             # Try common artifact names
@@ -541,6 +547,7 @@ class UnifiedModelLoader:
                             models[model_id] = model
                             self.model_metadata[model_id] = metadata
                     except Exception as e:
+                        tprint_warning(f"⚠️ Could not load analyst model {model_id}: {e}")
                         self.logger.debug(f"Could not load analyst model {model_id}: {e}")
 
             # Try common artifact names
@@ -646,6 +653,7 @@ class UnifiedModelLoader:
                                 self.model_metadata[model_id] = metadata
                                 break
                         except Exception as e:
+                            tprint_warning(f"⚠️ Could not load analyst ensemble model {model_id}: {e}")
                             self.logger.debug(f"Could not load analyst ensemble model {model_id}: {e}")
 
             # Try common artifact names
@@ -753,6 +761,7 @@ class UnifiedModelLoader:
                             models[model_id] = model
                             self.model_metadata[model_id] = metadata
                     except Exception as e:
+                        tprint_warning(f"⚠️ Could not load tactician model {model_id}: {e}")
                         self.logger.debug(f"Could not load tactician model {model_id}: {e}")
 
             # Try common artifact names
@@ -858,6 +867,7 @@ class UnifiedModelLoader:
                                 self.model_metadata[model_id] = metadata
                                 break
                         except Exception as e:
+                            tprint_warning(f"⚠️ Could not load tactician ensemble model {model_id}: {e}")
                             self.logger.debug(f"Could not load tactician ensemble model {model_id}: {e}")
 
             # Try common artifact names
@@ -978,6 +988,7 @@ class UnifiedModelLoader:
             return self._get_default_parameters()
 
         except Exception as e:
+            tprint_warning(f"⚠️ Failed to load optimized parameters: {e}")
             self.logger.warning(f"⚠️ Failed to load optimized parameters: {e}")
             return self._get_default_parameters()
 

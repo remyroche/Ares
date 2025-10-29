@@ -136,14 +136,14 @@ class LiveDataCollector:
     for real-time analysis and prediction. Defaults to ETH symbol.
     """
 
-    def __init__(self, config: LiveDataConfig):
-        self.config = config
+    def __init__(self, config: LiveDataConfig) -> None:
+        self.config: LiveDataConfig = config
         self.logger = logger.getChild(f'{config.symbol}_{config.exchange}')
 
         # Core components
-        self.exchange_client = None
-        self.ml_model = None
-        self.feature_engineer = None
+        self.exchange_client: Optional[Any] = None
+        self.ml_model: Optional[Any] = None
+        self.feature_engineer: Optional[Any] = None
 
         # Data buffers for different timeframes
         self.data_buffer: List[LiveDataPoint] = []
@@ -153,10 +153,10 @@ class LiveDataCollector:
         self.tactician_buffer: List[LiveDataPoint] = []  # 1m data for Tactician
 
         # State management
-        self.is_running = False
+        self.is_running: bool = False
         self.last_collection_time: Optional[datetime] = None
-        self.collection_count = 0
-        self.error_count = 0
+        self.collection_count: int = 0
+        self.error_count: int = 0
         self._collection_task: Optional[asyncio.Task] = None
 
         # Rate limiting
@@ -197,7 +197,7 @@ class LiveDataCollector:
         from .quality_metrics import DataQualityMetricsTracker
         self.quality_metrics = DataQualityMetricsTracker()
 
-    async def _initialize_components(self):
+    async def _initialize_components(self) -> None:
         """Initialize exchange client and ML components."""
         try:
             # Initialize exchange client (skip for simulated mode)
@@ -253,7 +253,7 @@ class LiveDataCollector:
             self.logger.error(f"❌ Failed to initialize components: {e}")
             raise
 
-    def _load_ml_model(self):
+    def _load_ml_model(self) -> None:
         """Load ML model for real-time predictions."""
         try:
             import joblib
@@ -269,7 +269,7 @@ class LiveDataCollector:
         except Exception as e:
             self.logger.error(f"❌ Failed to load ML model: {e}")
 
-    def _initialize_feature_engineering(self):
+    def _initialize_feature_engineering(self) -> None:
         """Initialize real-time feature engineering."""
         try:
             # Import feature engineering components
@@ -343,7 +343,7 @@ class LiveDataCollector:
         await asyncio.sleep(0.1)
         return True
 
-    async def _collection_loop(self):
+    async def _collection_loop(self) -> None:
         """Main data collection loop."""
         while self.is_running:
             try:
@@ -540,9 +540,10 @@ class LiveDataCollector:
         """Validate raw data from exchange."""
         try:
             # Check required fields
-            required_fields = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-            missing_fields = [field for field in required_fields if field not in raw_data]
+            required_fields: List[str] = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            missing_fields: List[str] = [field for field in required_fields if field not in raw_data]
             if missing_fields:
+                tprint_error(f"❌ Missing required fields: {missing_fields}")
                 self.logger.error(f"Missing required fields: {missing_fields}")
                 return False
             
@@ -552,11 +553,13 @@ class LiveDataCollector:
                     raw_data['high'] >= raw_data['close'] and
                     raw_data['low'] <= raw_data['open'] and
                     raw_data['low'] <= raw_data['close']):
+                tprint_error("❌ Invalid OHLC relationships")
                 self.logger.error("Invalid OHLC relationships")
                 return False
             
             # Validate positive values
             if any(raw_data[field] <= 0 for field in ['open', 'high', 'low', 'close', 'volume']):
+                tprint_error("❌ Non-positive values detected")
                 self.logger.error("Non-positive values detected")
                 return False
             
@@ -610,10 +613,11 @@ class LiveDataCollector:
         """Calculate price returns."""
         try:
             if len(self.data_buffer) > 0:
-                prev_close = self.data_buffer[-1].raw_data.get('close', data['close'])
-                return (data['close'] - prev_close) / prev_close
+                prev_close: float = self.data_buffer[-1].raw_data.get('close', data['close'])
+                returns: float = (data['close'] - prev_close) / prev_close
+                return returns
             return 0.0
-        except:
+        except Exception:
             return 0.0
 
     def _calculate_volatility(self) -> float:
@@ -696,7 +700,7 @@ class LiveDataCollector:
         # Add any additional features your model expects
         return features
 
-    def _update_buffers(self, data_point: LiveDataPoint):
+    def _update_buffers(self, data_point: LiveDataPoint) -> None:
         """Update data buffers for different timeframes."""
         self.data_buffer.append(data_point)
 
@@ -713,7 +717,7 @@ class LiveDataCollector:
         # Update timeframe-specific buffers
         self._update_timeframe_buffers(data_point)
 
-    def _update_timeframe_buffers(self, data_point: LiveDataPoint):
+    def _update_timeframe_buffers(self, data_point: LiveDataPoint) -> None:
         """Update buffers for different model timeframes."""
         # HMM buffer (1h data) - add every 60th data point
         if self.collection_count % 60 == 0:
@@ -732,7 +736,7 @@ class LiveDataCollector:
         if len(self.tactician_buffer) > 1000:  # Keep last 1000 minutes
             self.tactician_buffer.pop(0)
 
-    async def _trigger_callbacks(self, data_point: LiveDataPoint):
+    async def _trigger_callbacks(self, data_point: LiveDataPoint) -> None:
         """Trigger data callbacks."""
         for callback in self.on_data_callbacks:
             try:
@@ -743,7 +747,7 @@ class LiveDataCollector:
             except Exception as e:
                 self.logger.warning(f"⚠️ Callback failed: {e}")
 
-    async def _handle_error(self, error: Exception):
+    async def _handle_error(self, error: Exception) -> None:
         """Handle collection errors."""
         for callback in self.on_error_callbacks:
             try:
@@ -754,11 +758,11 @@ class LiveDataCollector:
             except Exception as e:
                 self.logger.warning(f"⚠️ Error callback failed: {e}")
 
-    def add_data_callback(self, callback: Callable[[LiveDataPoint], None]):
+    def add_data_callback(self, callback: Callable[[LiveDataPoint], None]) -> None:
         """Add a callback for new data points."""
         self.on_data_callbacks.append(callback)
 
-    def add_error_callback(self, callback: Callable[[Exception], None]):
+    def add_error_callback(self, callback: Callable[[Exception], None]) -> None:
         """Add a callback for errors."""
         self.on_error_callbacks.append(callback)
 

@@ -49,14 +49,15 @@ class DataQualityMetricsTracker:
     Provides metrics for monitoring, alerting, and quality analysis.
     """
     
-    def __init__(self, max_history: int = 10000):
+    def __init__(self, max_history: int = 10000) -> None:
         """
         Initialize quality metrics tracker.
         
         Args:
             max_history: Maximum number of metrics to keep in memory
         """
-        self.max_history = max_history
+        tprint_info(f"🔍 Initializing Data Quality Metrics Tracker (max_history: {max_history})")
+        self.max_history: int = max_history
         self.logger = logger.getChild('Tracker')
         
         # Per-symbol metrics storage
@@ -66,11 +67,12 @@ class DataQualityMetricsTracker:
         self._stats: Dict[str, Dict[str, Any]] = defaultdict(dict)
         
         # Alert thresholds
-        self.quality_threshold_warning = 0.7
-        self.quality_threshold_error = 0.5
-        self.error_rate_threshold = 0.1  # 10% error rate
+        self.quality_threshold_warning: float = 0.7
+        self.quality_threshold_error: float = 0.5
+        self.error_rate_threshold: float = 0.1  # 10% error rate
+        tprint_info("✅ Data Quality Metrics Tracker initialized")
     
-    def record_metric(self, metric: QualityMetric):
+    def record_metric(self, metric: QualityMetric) -> None:
         """
         Record a quality metric.
         
@@ -78,7 +80,7 @@ class DataQualityMetricsTracker:
             metric: Quality metric to record
         """
         try:
-            symbol = metric.symbol
+            symbol: str = metric.symbol
             self._metrics[symbol].append(metric)
             
             # Update statistics
@@ -87,43 +89,55 @@ class DataQualityMetricsTracker:
             # Check for alerts
             self._check_alerts(metric)
             
+            tprint_info(f"📊 Recorded quality metric for {symbol}: score={metric.quality_score:.3f}, errors={metric.validation_errors}, warnings={metric.validation_warnings}")
+            
         except Exception as e:
+            tprint_error(f"❌ Failed to record metric: {e}")
             self.logger.error(f"❌ Failed to record metric: {e}")
     
-    def _update_stats(self, symbol: str):
+    def _update_stats(self, symbol: str) -> None:
         """Update statistics for a symbol."""
-        metrics = list(self._metrics[symbol])
+        metrics: List[QualityMetric] = list(self._metrics[symbol])
         if not metrics:
             return
         
-        scores = [m.quality_score for m in metrics]
-        errors = [m.validation_errors for m in metrics]
-        warnings = [m.validation_warnings for m in metrics]
+        scores: List[float] = [m.quality_score for m in metrics]
+        errors: List[int] = [m.validation_errors for m in metrics]
+        warnings: List[int] = [m.validation_warnings for m in metrics]
+        
+        avg_score: float = sum(scores) / len(scores)
+        error_rate: float = sum(errors) / len(metrics) if metrics else 0.0
         
         self._stats[symbol] = {
-            'avg_quality_score': sum(scores) / len(scores),
+            'avg_quality_score': avg_score,
             'min_quality_score': min(scores),
             'max_quality_score': max(scores),
             'total_samples': len(metrics),
             'total_errors': sum(errors),
             'total_warnings': sum(warnings),
-            'error_rate': sum(errors) / len(metrics) if metrics else 0.0,
+            'error_rate': error_rate,
             'last_update': datetime.now(timezone.utc)
         }
+        
+        if error_rate > self.error_rate_threshold:
+            tprint_warning(f"⚠️ High error rate for {symbol}: {error_rate:.2%} (threshold: {self.error_rate_threshold:.2%})")
     
-    def _check_alerts(self, metric: QualityMetric):
+    def _check_alerts(self, metric: QualityMetric) -> None:
         """Check if metric triggers alerts."""
         if metric.quality_score < self.quality_threshold_error:
+            tprint_error(f"🔴 Low quality score for {metric.symbol}: {metric.quality_score:.2f}")
             self.logger.error(
                 f"🔴 Low quality score for {metric.symbol}: {metric.quality_score:.2f}"
             )
         
         if metric.quality_score < self.quality_threshold_warning:
+            tprint_warning(f"⚠️ Quality warning for {metric.symbol}: {metric.quality_score:.2f}")
             self.logger.warning(
                 f"⚠️ Quality warning for {metric.symbol}: {metric.quality_score:.2f}"
             )
         
         if metric.validation_errors > 0:
+            tprint_warning(f"⚠️ Validation errors for {metric.symbol}: {metric.validation_errors}")
             self.logger.warning(
                 f"⚠️ Validation errors for {metric.symbol}: {metric.validation_errors}"
             )
@@ -147,15 +161,18 @@ class DataQualityMetricsTracker:
         if not metrics:
             return None
         
-        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=period_hours)
-        recent_metrics = [m for m in metrics if m.timestamp >= cutoff_time]
+        cutoff_time: datetime = datetime.now(timezone.utc) - timedelta(hours=period_hours)
+        recent_metrics: List[QualityMetric] = [m for m in metrics if m.timestamp >= cutoff_time]
         
         if not recent_metrics:
+            tprint_info(f"⚠️ No metrics found for {symbol} in the last {period_hours} hours")
             return None
         
-        scores = [m.quality_score for m in recent_metrics]
-        errors = [m.validation_errors for m in recent_metrics]
-        warnings = [m.validation_warnings for m in recent_metrics]
+        scores: List[float] = [m.quality_score for m in recent_metrics]
+        errors: List[int] = [m.validation_errors for m in recent_metrics]
+        warnings: List[int] = [m.validation_warnings for m in recent_metrics]
+        
+        tprint_info(f"📊 Generated quality summary for {symbol}: {len(recent_metrics)} samples over {period_hours}h")
         
         return QualitySummary(
             symbol=symbol,
@@ -224,24 +241,29 @@ class DataQualityMetricsTracker:
         
         return trends
     
-    def clear_old_metrics(self, days: int = 30):
+    def clear_old_metrics(self, days: int = 30) -> None:
         """
         Clear metrics older than specified days.
         
         Args:
             days: Number of days to keep
         """
-        cutoff_time = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff_time: datetime = datetime.now(timezone.utc) - timedelta(days=days)
+        cleared_count: int = 0
         
         for symbol in list(self._metrics.keys()):
+            before_count: int = len(self._metrics[symbol])
             self._metrics[symbol] = deque(
                 (m for m in self._metrics[symbol] if m.timestamp >= cutoff_time),
                 maxlen=self.max_history
             )
+            after_count: int = len(self._metrics[symbol])
+            cleared_count += (before_count - after_count)
         
+        tprint_info(f"🧹 Cleared {cleared_count} metrics older than {days} days")
         self.logger.info(f"🧹 Cleared metrics older than {days} days")
     
-    def export_metrics(self, symbol: str, file_path: str):
+    def export_metrics(self, symbol: str, file_path: str) -> None:
         """
         Export metrics to CSV file.
         
@@ -252,12 +274,13 @@ class DataQualityMetricsTracker:
         try:
             import pandas as pd
             
-            metrics = list(self._metrics[symbol])
+            metrics: List[QualityMetric] = list(self._metrics[symbol])
             if not metrics:
+                tprint_warning(f"⚠️ No metrics to export for {symbol}")
                 self.logger.warning(f"No metrics to export for {symbol}")
                 return
             
-            data = []
+            data: List[Dict[str, Any]] = []
             for m in metrics:
                 data.append({
                     'timestamp': m.timestamp,
@@ -268,9 +291,11 @@ class DataQualityMetricsTracker:
                     'failed_rules': ','.join(m.failed_rules)
                 })
             
-            df = pd.DataFrame(data)
+            df: pd.DataFrame = pd.DataFrame(data)
             df.to_csv(file_path, index=False)
+            tprint_success(f"✅ Exported {len(metrics)} metrics for {symbol} to {file_path}")
             self.logger.info(f"✅ Exported {len(metrics)} metrics to {file_path}")
             
         except Exception as e:
+            tprint_error(f"❌ Failed to export metrics: {e}")
             self.logger.error(f"❌ Failed to export metrics: {e}")

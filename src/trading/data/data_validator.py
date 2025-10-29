@@ -75,25 +75,26 @@ class DataValidator:
     and data freshness validation.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize data validator.
 
         Args:
             config: Configuration dictionary
         """
-        self.config = config
+        tprint_info("🔍 Initializing Data Validator...")
+        self.config: Dict[str, Any] = config
         self.logger = logger.getChild('DataValidator')
 
         # Validation thresholds
-        self.price_tolerance = config.get('price_tolerance', 0.1)  # 10%
-        self.volume_tolerance = config.get('volume_tolerance', 5.0)  # 500%
-        self.missing_data_threshold = config.get('missing_data_threshold', 0.05)  # 5%
-        self.outlier_threshold = config.get('outlier_threshold', 3.0)  # 3 std devs
-        self.freshness_threshold_minutes = config.get('freshness_threshold_minutes', 5)
+        self.price_tolerance: float = config.get('price_tolerance', 0.1)  # 10%
+        self.volume_tolerance: float = config.get('volume_tolerance', 5.0)  # 500%
+        self.missing_data_threshold: float = config.get('missing_data_threshold', 0.05)  # 5%
+        self.outlier_threshold: float = config.get('outlier_threshold', 3.0)  # 3 std devs
+        self.freshness_threshold_minutes: int = config.get('freshness_threshold_minutes', 5)
 
         # Quality scoring weights
-        self.quality_weights = {
+        self.quality_weights: Dict[ValidationRule, float] = {
             ValidationRule.OHLC_CONSISTENCY: 0.25,
             ValidationRule.MISSING_DATA: 0.20,
             ValidationRule.EXTREME_VALUES: 0.20,
@@ -107,8 +108,6 @@ class DataValidator:
         # Historical data for validation
         self.price_history: Dict[str, List[float]] = {}
         self.volume_history: Dict[str, List[float]] = {}
-
-        tprint_info("🔍 Initializing Data Validator...")
 
     async def initialize(self) -> None:
         """Initialize data validator."""
@@ -235,14 +234,16 @@ class DataValidator:
 
     async def _validate_ohlc_consistency(self, df: pd.DataFrame, symbol: str) -> ValidationResult:
         """Validate OHLC data consistency."""
-        errors = []
-        warnings = []
+        errors: List[str] = []
+        warnings: List[str] = []
 
-        required_columns = ['open', 'high', 'low', 'close']
-        missing_columns = [col for col in required_columns if col not in df.columns]
+        required_columns: List[str] = ['open', 'high', 'low', 'close']
+        missing_columns: List[str] = [col for col in required_columns if col not in df.columns]
 
         if missing_columns:
-            errors.append(f"Missing required columns: {missing_columns}")
+            error_msg: str = f"Missing required columns: {missing_columns}"
+            errors.append(error_msg)
+            tprint_error(f"❌ OHLC validation failed for {symbol}: {error_msg}")
 
         if not errors and len(df) > 0:
             # Check for logical OHLC relationships
@@ -275,11 +276,13 @@ class DataValidator:
 
     async def _validate_missing_data(self, df: pd.DataFrame) -> ValidationResult:
         """Validate for missing data."""
-        errors = []
-        warnings = []
+        errors: List[str] = []
+        warnings: List[str] = []
 
         if df.empty:
-            errors.append("DataFrame is empty")
+            error_msg: str = "DataFrame is empty"
+            errors.append(error_msg)
+            tprint_error(f"❌ Missing data validation failed: {error_msg}")
             return ValidationResult(
                 is_valid=False,
                 quality_score=0.0,
@@ -290,14 +293,18 @@ class DataValidator:
 
         # Check for missing values
         missing_counts = df.isnull().sum()
-        total_cells = df.size
-        missing_percentage = missing_counts.sum() / total_cells
+        total_cells: int = df.size
+        missing_percentage: float = missing_counts.sum() / total_cells
 
         if missing_percentage > self.missing_data_threshold:
-            errors.append(f"Missing data percentage ({missing_percentage:.2%}) exceeds threshold ({self.missing_data_threshold:.2%})")
+            error_msg = f"Missing data percentage ({missing_percentage:.2%}) exceeds threshold ({self.missing_data_threshold:.2%})"
+            errors.append(error_msg)
+            tprint_error(f"❌ Missing data validation failed: {error_msg}")
 
         if missing_percentage > 0:
-            warnings.append(f"Missing data in {missing_counts[missing_counts > 0].to_dict()}")
+            warning_msg: str = f"Missing data in {missing_counts[missing_counts > 0].to_dict()}"
+            warnings.append(warning_msg)
+            tprint_warning(f"⚠️ Missing data detected: {warning_msg}")
 
         return ValidationResult(
             is_valid=len(errors) == 0,
@@ -309,8 +316,8 @@ class DataValidator:
 
     async def _validate_extreme_values(self, df: pd.DataFrame, symbol: str) -> ValidationResult:
         """Validate for extreme values."""
-        warnings = []
-        errors = []
+        warnings: List[str] = []
+        errors: List[str] = []
 
         if df.empty:
             return ValidationResult(
@@ -326,23 +333,27 @@ class DataValidator:
             if col in df.columns:
                 if not df[col].empty:
                     # Use IQR method for outlier detection
-                    Q1 = df[col].quantile(0.25)
-                    Q3 = df[col].quantile(0.75)
-                    IQR = Q3 - Q1
-                    lower_bound = Q1 - (self.outlier_threshold * IQR)
-                    upper_bound = Q3 + (self.outlier_threshold * IQR)
+                    Q1: float = df[col].quantile(0.25)
+                    Q3: float = df[col].quantile(0.75)
+                    IQR: float = Q3 - Q1
+                    lower_bound: float = Q1 - (self.outlier_threshold * IQR)
+                    upper_bound: float = Q3 + (self.outlier_threshold * IQR)
 
                     outliers = df[(df[col] < lower_bound) | (df[col] > upper_bound)]
 
                     if not outliers.empty:
-                        warnings.append(f"Outliers detected in {col}: {len(outliers)} values")
+                        warning_msg: str = f"Outliers detected in {col}: {len(outliers)} values"
+                        warnings.append(warning_msg)
+                        tprint_warning(f"⚠️ Extreme values validation warning for {symbol}: {warning_msg}")
 
         # Check for zero or negative prices
-        price_columns = [col for col in ['open', 'high', 'low', 'close'] if col in df.columns]
+        price_columns: List[str] = [col for col in ['open', 'high', 'low', 'close'] if col in df.columns]
         if price_columns:
             negative_prices = df[(df[price_columns] <= 0).any(axis=1)]
             if not negative_prices.empty:
-                errors.append(f"Zero or negative prices detected: {len(negative_prices)} rows")
+                error_msg: str = f"Zero or negative prices detected: {len(negative_prices)} rows"
+                errors.append(error_msg)
+                tprint_error(f"❌ Extreme values validation failed for {symbol}: {error_msg}")
 
         return ValidationResult(
             is_valid=len(errors) == 0,
@@ -354,8 +365,8 @@ class DataValidator:
 
     async def _validate_volume_spikes(self, df: pd.DataFrame, symbol: str) -> ValidationResult:
         """Validate for volume spikes."""
-        warnings = []
-        errors = []
+        warnings: List[str] = []
+        errors: List[str] = []
 
         if 'volume' not in df.columns or df.empty:
             return ValidationResult(
@@ -367,22 +378,26 @@ class DataValidator:
             )
 
         # Calculate volume statistics
-        mean_volume = df['volume'].mean()
-        std_volume = df['volume'].std()
+        mean_volume: float = df['volume'].mean()
+        std_volume: float = df['volume'].std()
 
         if std_volume > 0:
             # Detect volume spikes using configured tolerance
             # Convert tolerance to multiplier (5.0 = 500% = 5x multiplier)
-            volume_multiplier = self.volume_tolerance if self.volume_tolerance > 1.0 else 1.0 + self.volume_tolerance
+            volume_multiplier: float = self.volume_tolerance if self.volume_tolerance > 1.0 else 1.0 + self.volume_tolerance
             volume_spikes = df[df['volume'] > mean_volume * volume_multiplier]
 
             if not volume_spikes.empty:
-                warnings.append(f"Volume spikes detected: {len(volume_spikes)} occurrences")
+                warning_msg: str = f"Volume spikes detected: {len(volume_spikes)} occurrences"
+                warnings.append(warning_msg)
+                tprint_warning(f"⚠️ Volume spikes validation warning for {symbol}: {warning_msg}")
 
         # Check for zero volume periods
         zero_volume = df[df['volume'] == 0]
         if not zero_volume.empty:
-            warnings.append(f"Zero volume periods: {len(zero_volume)} occurrences")
+            warning_msg = f"Zero volume periods: {len(zero_volume)} occurrences"
+            warnings.append(warning_msg)
+            tprint_warning(f"⚠️ Volume spikes validation warning for {symbol}: {warning_msg}")
 
         return ValidationResult(
             is_valid=len(errors) == 0,
@@ -627,15 +642,17 @@ class DataValidator:
 
     async def _calculate_quality_score(self, validation_results: Dict[ValidationRule, ValidationResult]) -> float:
         """Calculate overall data quality score."""
-        total_weight = sum(self.quality_weights.values())
-        weighted_score = 0.0
+        total_weight: float = sum(self.quality_weights.values())
+        weighted_score: float = 0.0
 
         for rule, result in validation_results.items():
             if rule in self.quality_weights:
-                weight = self.quality_weights[rule]
+                weight: float = self.quality_weights[rule]
                 weighted_score += weight * result.quality_score
 
-        return weighted_score / total_weight if total_weight > 0 else 0.0
+        score: float = weighted_score / total_weight if total_weight > 0 else 0.0
+        tprint_info(f"📊 Calculated quality score: {score:.3f}")
+        return score
 
     async def generate_quality_report(
         self,
@@ -681,7 +698,7 @@ class DataValidator:
 
     async def _generate_recommendations(self, validation_result: ValidationResult) -> List[str]:
         """Generate data quality recommendations."""
-        recommendations = []
+        recommendations: List[str] = []
 
         if ValidationRule.MISSING_DATA in validation_result.failed_rules:
             recommendations.append("Consider implementing data imputation strategies")
@@ -703,12 +720,13 @@ class DataValidator:
 
     async def _calculate_data_stats(self, data: Union[pd.DataFrame, Dict[str, Any]]) -> Dict[str, Any]:
         """Calculate basic data statistics."""
+        df: pd.DataFrame
         if isinstance(data, dict):
             df = pd.DataFrame([data])
         else:
             df = data.copy()
 
-        stats = {
+        stats: Dict[str, Any] = {
             'row_count': len(df),
             'column_count': len(df.columns),
             'missing_data_percentage': (df.isnull().sum().sum() / df.size * 100) if df.size > 0 else 0,

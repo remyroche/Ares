@@ -101,7 +101,9 @@ class ExchangeAPIFormatAnalyzer:
         exchanges: List[str] = None,
         mode: str = 'mock',
         save_samples: bool = True,
-        output_dir: str = "exchange_format_analysis"
+        output_dir: str = "exchange_format_analysis",
+        sequential: bool = False,
+        single_exchange: Optional[str] = None
     ):
         """
         Initialize the analyzer.
@@ -112,12 +114,16 @@ class ExchangeAPIFormatAnalyzer:
             mode: Test mode - 'real' for actual exchange calls, 'mock' for mock data
             save_samples: Whether to save response samples to files
             output_dir: Directory for saving analysis results
+            sequential: If True, test exchanges one by one (cleanup after each)
+            single_exchange: If provided, test only this exchange
         """
         self.logger = system_logger.getChild('ExchangeAPIFormatAnalyzer')
         self.mode = mode.lower()
         self.save_samples = save_samples
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.sequential = sequential
+        self.single_exchange = single_exchange.lower() if single_exchange else None
         
         # Test configuration
         self.test_symbols = test_symbols or ['BTCUSDT', 'ETHUSDT']
@@ -128,6 +134,13 @@ class ExchangeAPIFormatAnalyzer:
             self.exchanges = [e.lower() for e in exchanges if e.lower() in supported_exchanges]
         else:
             self.exchanges = supported_exchanges
+        
+        # Filter to single exchange if specified
+        if self.single_exchange:
+            if self.single_exchange not in self.exchanges:
+                raise ValueError(f"Exchange '{self.single_exchange}' not in supported exchanges: {', '.join(self.exchanges)}")
+            self.exchanges = [self.single_exchange]
+            tprint_info(f"🎯 Single exchange mode: testing only {self.single_exchange.upper()}")
         
         # Response samples storage
         self.response_samples: List[APIResponseSample] = []
@@ -140,17 +153,29 @@ class ExchangeAPIFormatAnalyzer:
         tprint_info(f"   Exchanges: {', '.join(self.exchanges)}")
         tprint_info(f"   Symbols: {', '.join(self.test_symbols)}")
         tprint_info(f"   Mode: {self.mode.upper()}")
+        if self.sequential:
+            tprint_info(f"   Sequential mode: testing exchanges one by one")
+        if self.single_exchange:
+            tprint_info(f"   Single exchange mode: {self.single_exchange.upper()}")
     
     async def initialize_exchanges(self) -> None:
         """Initialize exchange dispatchers."""
-        tprint_info("🔧 Initializing exchange connections...")
-        tprint_info(f"   Processing {len(self.exchanges)} exchanges...")
+        if self.sequential:
+            tprint_info("🔧 Sequential mode: Will initialize exchanges one at a time")
+            tprint_info(f"   Total exchanges to process: {len(self.exchanges)}")
+        else:
+            tprint_info("🔧 Initializing exchange connections...")
+            tprint_info(f"   Processing {len(self.exchanges)} exchanges...")
         
         initialized_count = 0
         skipped_count = 0
         failed_count = 0
         
-        for exchange_name in self.exchanges:
+        for idx, exchange_name in enumerate(self.exchanges, 1):
+            if self.sequential:
+                tprint_info("")
+                tprint_info(f"[{idx}/{len(self.exchanges)}] Processing {exchange_name.upper()}...")
+            
             tprint_debug(f"   Initializing {exchange_name.upper()}...")
             try:
                 # Get API credentials from environment
@@ -205,7 +230,16 @@ class ExchangeAPIFormatAnalyzer:
     
     async def collect_api_responses(self) -> None:
         """Collect API responses from all exchanges."""
-        tprint_info("📊 Collecting API responses from exchanges...")
+        if self.sequential:
+            # Sequential mode: test one exchange at a time
+            await self._collect_responses_sequential()
+        else:
+            # Parallel mode: test all exchanges together
+            await self._collect_responses_parallel()
+    
+    async def _collect_responses_parallel(self) -> None:
+        """Collect responses from all exchanges in parallel."""
+        tprint_info("📊 Collecting API responses from exchanges (parallel mode)...")
         tprint_info(f"   Testing {len(self.dispatchers)} exchanges with {len(self.test_symbols)} symbols")
         
         # Test different response types
@@ -258,6 +292,159 @@ class ExchangeAPIFormatAnalyzer:
         if self.save_samples:
             tprint_info("")
             await self._save_response_samples()
+    
+    async def _collect_responses_sequential(self) -> None:
+        """Collect responses from exchanges one by one."""
+        tprint_info("📊 Collecting API responses from exchanges (sequential mode)...")
+        tprint_info(f"   Testing {len(self.exchanges)} exchanges one by one")
+        tprint_info("")
+        
+        # Test different response types
+        response_types = [
+            (ResponseType.TICKER, self._test_ticker),
+            (ResponseType.KLINES, self._test_klines),
+            (ResponseType.ORDERBOOK, self._test_orderbook),
+            (ResponseType.BALANCE, self._test_balance),
+            (ResponseType.ACCOUNT_INFO, self._test_account_info),
+        ]
+        
+        # For mock mode, also test order-related endpoints
+        if self.mode == 'mock':
+            tprint_debug("   Mock mode: Including order-related endpoints")
+            response_types.extend([
+                (ResponseType.ORDER_STATUS, self._test_order_status),
+                (ResponseType.OPEN_ORDERS, self._test_open_orders),
+                (ResponseType.POSITIONS, self._test_positions),
+            ])
+        
+        total_exchanges = len(self.exchanges)
+        total_successful = 0
+        total_errors = 0
+        
+        for exchange_idx, exchange_name in enumerate(self.exchanges, 1):
+            tprint_info("=" * 70)
+            tprint_info(f"[{exchange_idx}/{total_exchanges}] Testing {exchange_name.upper()}")
+            tprint_info("=" * 70)
+            
+            # Initialize this exchange
+            tprint_info(f"   Initializing {exchange_name.upper()}...")
+            try:
+                api_key = os.getenv(f'{exchange_name.upper()}_API_KEY', '')
+                api_secret = os.getenv(f'{exchange_name.upper()}_API_SECRET', '')
+                
+                if not api_key or not api_secret:
+                    if self.mode == 'real':
+                        tprint_warning(f"   ⚠️  Missing credentials, skipping {exchange_name.upper()}")
+                        continue
+                    api_key = 'mock_key'
+                    api_secret = 'mock_secret'
+                
+                exchange_type = ExchangeType[exchange_name.upper()]
+                config = ExchangeConfig(
+                    exchange_type=exchange_type,
+                    api_key=api_key,
+                    api_secret=api_secret,
+                    use_testnet=(self.mode == 'real'),
+                    trade_symbol=self.test_symbols[0],
+                    mode=TradingMode.PAPER if self.mode == 'mock' else TradingMode.PAPER
+                )
+                
+                dispatcher = ExchangeDispatcher(config)
+                success = await dispatcher.initialize()
+                
+                if not success:
+                    tprint_error(f"   ❌ Failed to initialize {exchange_name.upper()}")
+                    continue
+                
+                # Store dispatcher temporarily for this exchange
+                self.dispatchers[exchange_name] = dispatcher
+                tprint_success(f"   ✅ {exchange_name.upper()} initialized")
+                
+            except Exception as e:
+                tprint_error(f"   ❌ Error initializing {exchange_name.upper()}: {e}")
+                continue
+            
+            # Test all response types for this exchange
+            exchange_samples_before = len(self.response_samples)
+            successful_samples = 0
+            error_samples = 0
+            
+            for idx, (response_type, test_func) in enumerate(response_types, 1):
+                tprint_info(f"   📋 [{idx}/{len(response_types)}] Testing {response_type.value}...")
+                
+                for symbol in self.test_symbols:
+                    try:
+                        await test_func(exchange_name, symbol, response_type)
+                        successful_samples += 1
+                    except Exception as e:
+                        error_samples += 1
+                        tprint_error(f"      ❌ Error testing {response_type.value} ({symbol}): {e}")
+                        self.logger.error(f"Error testing {response_type.value} on {exchange_name}: {e}")
+            
+            exchange_samples = len(self.response_samples) - exchange_samples_before
+            total_successful += successful_samples
+            total_errors += error_samples
+            
+            tprint_info("")
+            tprint_info(f"   {exchange_name.upper()} Summary:")
+            tprint_info(f"      Samples collected: {exchange_samples}")
+            tprint_info(f"      Successful: {successful_samples}")
+            if error_samples > 0:
+                tprint_warning(f"      Errors: {error_samples}")
+            
+            # Save samples for this exchange before cleanup
+            if self.save_samples:
+                tprint_info(f"   💾 Saving samples for {exchange_name.upper()}...")
+                await self._save_response_samples_for_exchange(exchange_name, exchange_samples_before)
+            
+            # Cleanup this exchange before moving to next
+            tprint_info(f"   🧹 Cleaning up {exchange_name.upper()}...")
+            try:
+                await dispatcher.close()
+                tprint_debug(f"      ✅ {exchange_name.upper()} closed")
+            except Exception as e:
+                tprint_warning(f"      ⚠️  Error closing {exchange_name.upper()}: {e}")
+            
+            # Remove from dispatchers dict
+            if exchange_name in self.dispatchers:
+                del self.dispatchers[exchange_name]
+            
+            tprint_info("")
+        
+        tprint_info("=" * 70)
+        tprint_success("✅ Sequential response collection complete:")
+        tprint_info(f"   Total samples collected: {len(self.response_samples)}")
+        tprint_info(f"   Total successful: {total_successful}")
+        if total_errors > 0:
+            tprint_warning(f"   Total errors: {total_errors}")
+    
+    async def _save_response_samples_for_exchange(self, exchange_name: str, start_index: int) -> None:
+        """Save response samples for a specific exchange."""
+        samples_dir = self.output_dir / "samples"
+        samples_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Get samples for this exchange starting from start_index
+        exchange_samples = self.response_samples[start_index:]
+        
+        # Group by response type
+        grouped_samples: Dict[str, List[Dict]] = defaultdict(list)
+        
+        for sample in exchange_samples:
+            if sample.exchange == exchange_name:
+                grouped_samples[sample.response_type.value].append({
+                    'symbol': sample.symbol,
+                    'timestamp': sample.timestamp.isoformat(),
+                    'response_time_ms': sample.response_time_ms,
+                    'error': sample.error,
+                    'raw_response': sample.raw_response
+                })
+        
+        # Save grouped samples
+        for response_type, samples in grouped_samples.items():
+            filename = samples_dir / f"{exchange_name}_{response_type}_samples.json"
+            with open(filename, 'w') as f:
+                json.dump(samples, f, indent=2, default=str)
+            tprint_debug(f"      Saved {filename.name} ({len(samples)} samples)")
     
     async def _test_ticker(self, exchange_name: str, symbol: str, response_type: ResponseType) -> None:
         """Test ticker API call."""
@@ -880,14 +1067,20 @@ async def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Analyze all exchanges in mock mode
+  # Analyze all exchanges in mock mode (parallel)
   python exchange_api_format_analyzer.py --mode mock
   
-  # Analyze specific exchanges in real mode
-  python exchange_api_format_analyzer.py --mode real --exchanges binance okx
+  # Analyze all exchanges sequentially (one by one)
+  python exchange_api_format_analyzer.py --mode mock --sequential
   
-  # Analyze with custom symbols
-  python exchange_api_format_analyzer.py --mode mock --symbols BTCUSDT ETHUSDT ADAUSDT
+  # Analyze only Binance exchange
+  python exchange_api_format_analyzer.py --mode mock --single-exchange binance
+  
+  # Analyze specific exchanges sequentially
+  python exchange_api_format_analyzer.py --mode real --exchanges binance okx --sequential
+  
+  # Analyze single exchange with custom symbols
+  python exchange_api_format_analyzer.py --mode mock --single-exchange bingx --symbols BTCUSDT ETHUSDT ADAUSDT
         """
     )
     
@@ -921,14 +1114,39 @@ Examples:
         help='Output directory for analysis results'
     )
     
+    parser.add_argument(
+        '--sequential',
+        action='store_true',
+        help='Test exchanges one by one (sequential mode) instead of all at once'
+    )
+    
+    parser.add_argument(
+        '--single-exchange',
+        type=str,
+        help='Test only a single exchange (e.g., binance, okx, bingx)'
+    )
+    
     args = parser.parse_args()
+    
+    # Validate single exchange if provided
+    if args.single_exchange:
+        supported = [e.value for e in ExchangeType]
+        if args.single_exchange.lower() not in supported:
+            tprint_error(f"❌ Invalid exchange: {args.single_exchange}")
+            tprint_info(f"   Supported exchanges: {', '.join(supported)}")
+            return 1
     
     tprint_info("🚀 Exchange API Format Analyzer")
     tprint_info("=" * 70)
     tprint_info(f"Mode: {args.mode.upper()}")
-    tprint_info(f"Exchanges: {', '.join(args.exchanges) if args.exchanges else 'all supported'}")
+    if args.single_exchange:
+        tprint_info(f"Exchange: {args.single_exchange.upper()} (single exchange mode)")
+    else:
+        tprint_info(f"Exchanges: {', '.join(args.exchanges) if args.exchanges else 'all supported'}")
     tprint_info(f"Symbols: {', '.join(args.symbols)}")
     tprint_info(f"Output directory: {args.output_dir}")
+    if args.sequential:
+        tprint_info(f"Sequential mode: ON (testing exchanges one by one)")
     tprint_info("=" * 70)
     tprint_info("")
     
@@ -937,7 +1155,9 @@ Examples:
         test_symbols=args.symbols,
         exchanges=args.exchanges,
         mode=args.mode,
-        output_dir=args.output_dir
+        output_dir=args.output_dir,
+        sequential=args.sequential,
+        single_exchange=args.single_exchange
     )
     
     try:
@@ -945,7 +1165,7 @@ Examples:
         tprint_info("")
         await analyzer.initialize_exchanges()
         
-        if not analyzer.dispatchers:
+        if not analyzer.dispatchers and not analyzer.sequential:
             tprint_error("❌ No exchanges initialized. Exiting.")
             return 1
         

@@ -7,7 +7,7 @@ data providers, and historical data sources.
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass
 import pandas as pd
@@ -47,6 +47,7 @@ class MarketDataProvider:
         # Data sources
         self.exchange_client = None
         self.historical_data_cache: Dict[str, pd.DataFrame] = {}
+        self._cache_lock = asyncio.Lock()  # Lock for thread-safe cache operations
 
         # Configuration
         self.cache_size = 10000  # Maximum candles to cache
@@ -172,12 +173,13 @@ class MarketDataProvider:
             if not self.is_initialized:
                 raise RuntimeError("Market Data Provider not initialized")
 
-            # Check cache first
+            # Check cache first (thread-safe)
             cache_key = f"{symbol}_{interval}"
-            if cache_key in self.historical_data_cache:
-                cached_data = self.historical_data_cache[cache_key]
-                if self._is_cache_valid(cached_data, start_time, end_time):
-                    return self._filter_cached_data(cached_data, start_time, end_time, limit)
+            async with self._cache_lock:
+                if cache_key in self.historical_data_cache:
+                    cached_data = self.historical_data_cache[cache_key].copy()
+                    if self._is_cache_valid(cached_data, start_time, end_time):
+                        return self._filter_cached_data(cached_data, start_time, end_time, limit)
 
             # Fetch from exchange
             if self.exchange_client:
@@ -207,8 +209,9 @@ class MarketDataProvider:
                     df = pd.DataFrame(data)
                     df.set_index('timestamp', inplace=True)
 
-                    # Update cache
-                    self._update_cache(cache_key, df)
+                    # Update cache (thread-safe)
+                    async with self._cache_lock:
+                        self._update_cache(cache_key, df)
 
                     return df
 
@@ -307,8 +310,8 @@ class MarketDataProvider:
             if end_time and cache_end < end_time:
                 return False
 
-            # Check cache age
-            cache_age = (datetime.now() - cache_end).total_seconds()
+            # Check cache age (use UTC consistently)
+            cache_age = (datetime.now(timezone.utc) - cache_end).total_seconds()
             return cache_age < self.cache_ttl
 
         except:
@@ -358,7 +361,7 @@ class MarketDataProvider:
                 combined_data = combined_data.tail(self.cache_size)
 
             self.historical_data_cache[cache_key] = combined_data
-            self.last_update_time[cache_key] = datetime.utcnow()
+            self.last_update_time[cache_key] = datetime.now(timezone.utc)
 
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to update cache for {cache_key}: {e}")
@@ -369,22 +372,26 @@ class MarketDataProvider:
         if last_update is None:
             return False
         try:
-            return (datetime.utcnow() - last_update).total_seconds() < self.cache_ttl
+            # Ensure timezone-aware comparison
+            if last_update.tzinfo is None:
+                last_update = last_update.replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - last_update).total_seconds() < self.cache_ttl
         except Exception:
             return False
 
-    def _get_cached_dataframe(self, cache_key: str, limit: int, allow_stale: bool = False) -> Optional[pd.DataFrame]:
-        """Retrieve cached OHLCV data respecting TTL constraints."""
-        cached = self.historical_data_cache.get(cache_key)
-        if cached is None or cached.empty:
-            return None
-        if not allow_stale and not self._is_cache_fresh(cache_key):
-            return None
-        return ensure_ohlcv_dataframe(
-            cached,
-            required_columns=self._default_ohlcv_columns,
-            limit=limit,
-        )
+    async def _get_cached_dataframe(self, cache_key: str, limit: int, allow_stale: bool = False) -> Optional[pd.DataFrame]:
+        """Retrieve cached OHLCV data respecting TTL constraints (thread-safe)."""
+        async with self._cache_lock:
+            cached = self.historical_data_cache.get(cache_key)
+            if cached is None or cached.empty:
+                return None
+            if not allow_stale and not self._is_cache_fresh(cache_key):
+                return None
+            return ensure_ohlcv_dataframe(
+                cached.copy(),
+                required_columns=self._default_ohlcv_columns,
+                limit=limit,
+            )
 
     async def _get_symbol_interval_dataframe(
         self,
@@ -398,7 +405,7 @@ class MarketDataProvider:
         cache_key = f"{symbol}_{interval}"
 
         if not force_refresh:
-            cached_df = self._get_cached_dataframe(cache_key, limit)
+            cached_df = await self._get_cached_dataframe(cache_key, limit)
             if cached_df is not None and not cached_df.empty:
                 return cached_df
 
@@ -406,7 +413,7 @@ class MarketDataProvider:
 
         if df is None or df.empty:
             # Optionally return stale cache to avoid gaps if available
-            cached_df = self._get_cached_dataframe(cache_key, limit, allow_stale=True)
+            cached_df = await self._get_cached_dataframe(cache_key, limit, allow_stale=True)
             if cached_df is not None:
                 return cached_df
             return pd.DataFrame(columns=self._default_ohlcv_columns)
@@ -529,3 +536,60 @@ class MarketDataProvider:
 
         except Exception as e:
             self.logger.error(f"❌ Error stopping Market Data Provider: {e}")
+    
+    async def health_check(self) -> Dict[str, Any]:
+        """
+        Perform health check.
+        
+        Returns:
+            Dictionary with health status and metrics
+        """
+        health = {
+            'status': 'healthy',
+            'timestamp': datetime.now(timezone.utc),
+            'checks': {}
+        }
+        
+        # Check initialization
+        health['checks']['initialized'] = {
+            'status': 'ok' if self.is_initialized else 'failed',
+            'value': self.is_initialized
+        }
+        
+        # Check exchange client
+        if self.exchange_client:
+            health['checks']['exchange_client'] = {
+                'status': 'ok',
+                'value': 'connected'
+            }
+        else:
+            health['checks']['exchange_client'] = {
+                'status': 'warning',
+                'value': 'not_connected'
+            }
+        
+        # Check cache health
+        cache_stats = self.get_cache_stats()
+        cache_usage = cache_stats.get('total_candles', 0) / (self.cache_size * len(cache_stats.get('cache_keys', [])) + 1)
+        health['checks']['cache_usage'] = {
+            'status': 'ok' if cache_usage < 0.9 else 'warning',
+            'value': f"{cache_usage:.1%}"
+        }
+        
+        # Check cache freshness
+        if self.last_update_time:
+            oldest_update = min(self.last_update_time.values())
+            if isinstance(oldest_update, datetime):
+                if oldest_update.tzinfo is None:
+                    oldest_update = oldest_update.replace(tzinfo=timezone.utc)
+                age_hours = (datetime.now(timezone.utc) - oldest_update).total_seconds() / 3600
+                health['checks']['cache_freshness'] = {
+                    'status': 'ok' if age_hours < 24 else 'warning',
+                    'value': f"{age_hours:.1f} hours"
+                }
+        
+        # Overall status
+        if any(c['status'] != 'ok' for c in health['checks'].values()):
+            health['status'] = 'degraded'
+        
+        return health

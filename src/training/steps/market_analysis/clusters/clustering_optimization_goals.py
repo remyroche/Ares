@@ -30,6 +30,14 @@ from scipy import stats
 from scipy.special import logsumexp
 import logging
 
+# sklearn metrics import (used in robustness validation)
+try:
+    from sklearn.metrics import adjusted_rand_score
+    SKLEARN_METRICS_AVAILABLE = True
+except ImportError:
+    SKLEARN_METRICS_AVAILABLE = False
+    adjusted_rand_score = None
+
 # VectorBT imports for efficient computations
 # NOTE: Currently unused in calculations but kept for potential future use
 try:
@@ -422,6 +430,10 @@ class TimeSeriesCrossValidator:
     
     def _rolling_split(self, data: pd.DataFrame) -> List[Tuple[np.ndarray, np.ndarray]]:
         """Generate rolling window splits."""
+        if len(data) == 0:
+            self.logger.warning("⚠️ Empty data provided for rolling split")
+            return []
+        
         # Calculate samples per window
         freq = pd.infer_freq(data.index)
         if freq is None:
@@ -434,7 +446,18 @@ class TimeSeriesCrossValidator:
         else:
             freq_td = freq
         
-        samples_per_month = int(pd.Timedelta(days=30) / freq_td)
+        # Handle zero or invalid frequency
+        if freq_td.total_seconds() <= 0:
+            self.logger.warning("⚠️ Invalid frequency detected, using default daily frequency")
+            freq_td = pd.Timedelta(days=1)
+        
+        try:
+            samples_per_month = int(pd.Timedelta(days=30) / freq_td)
+        except (ZeroDivisionError, ValueError) as e:
+            self.logger.warning(f"⚠️ Error calculating samples per month: {e}, using default")
+            samples_per_month = 30  # Default to daily data
+        
+        samples_per_month = max(1, samples_per_month)  # Ensure at least 1
         
         train_size = self.cv_config.train_months * samples_per_month
         val_size = self.cv_config.val_months * samples_per_month
@@ -458,36 +481,70 @@ class TimeSeriesCrossValidator:
                len(val_idx) >= self.cv_config.min_val_samples:
                 splits.append((train_idx, val_idx))
         
+        if len(splits) == 0:
+            self.logger.warning("⚠️ No valid splits generated. Check data size and CV configuration.")
+        
         self.logger.info(f"✅ Generated {len(splits)} rolling CV splits")
         return splits
     
     def _expanding_split(self, data: pd.DataFrame) -> List[Tuple[np.ndarray, np.ndarray]]:
         """Generate expanding window splits."""
+        if len(data) == 0:
+            self.logger.warning("⚠️ Empty data provided for expanding split")
+            return []
+        
         n_samples = len(data)
+        
+        # Ensure we have enough data for splits
+        if n_samples < self.cv_config.min_train_samples + self.cv_config.min_val_samples:
+            self.logger.warning(
+                f"⚠️ Insufficient data for expanding split: {n_samples} samples "
+                f"(need at least {self.cv_config.min_train_samples + self.cv_config.min_val_samples})"
+            )
+            return []
+        
         val_size = n_samples // (self.cv_config.n_splits + 1)
+        val_size = max(val_size, self.cv_config.min_val_samples)
         
         splits = []
         for i in range(1, self.cv_config.n_splits + 1):
             train_idx = np.arange(0, i * val_size)
-            val_idx = np.arange(i * val_size, (i + 1) * val_size)
+            val_idx = np.arange(i * val_size, min((i + 1) * val_size, n_samples))
             
             if len(train_idx) >= self.cv_config.min_train_samples and \
                len(val_idx) >= self.cv_config.min_val_samples:
                 splits.append((train_idx, val_idx))
+        
+        if len(splits) == 0:
+            self.logger.warning("⚠️ No valid splits generated. Check data size and CV configuration.")
         
         self.logger.info(f"✅ Generated {len(splits)} expanding CV splits")
         return splits
     
     def _blocked_split(self, data: pd.DataFrame) -> List[Tuple[np.ndarray, np.ndarray]]:
         """Generate non-overlapping blocked splits."""
+        if len(data) == 0:
+            self.logger.warning("⚠️ Empty data provided for blocked split")
+            return []
+        
         n_samples = len(data)
+        
+        # Ensure we have enough data for splits
+        if n_samples < self.cv_config.min_train_samples + self.cv_config.min_val_samples:
+            self.logger.warning(
+                f"⚠️ Insufficient data for blocked split: {n_samples} samples "
+                f"(need at least {self.cv_config.min_train_samples + self.cv_config.min_val_samples})"
+            )
+            return []
+        
         block_size = n_samples // self.cv_config.n_splits
+        block_size = max(block_size, self.cv_config.min_val_samples)
         
         splits = []
         for i in range(self.cv_config.n_splits - 1):
             # Use all other blocks for training
             val_start = i * block_size
-            val_end = (i + 1) * block_size
+            val_end = min((i + 1) * block_size, n_samples)
             
             train_idx = np.concatenate([
                 np.arange(0, val_start),
@@ -498,6 +555,9 @@ class TimeSeriesCrossValidator:
             if len(train_idx) >= self.cv_config.min_train_samples and \
                len(val_idx) >= self.cv_config.min_val_samples:
                 splits.append((train_idx, val_idx))
+        
+        if len(splits) == 0:
+            self.logger.warning("⚠️ No valid splits generated. Check data size and CV configuration.")
         
         self.logger.info(f"✅ Generated {len(splits)} blocked CV splits")
         return splits
@@ -515,10 +575,10 @@ class MetricCalculator:
         Args:
             use_vectorbt: Whether to use VectorBT for calculations (currently unused)
         """
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
         if self.use_vectorbt:
             self.logger.debug("VectorBT available but not currently used in calculations")
-        self.logger = logging.getLogger(self.__class__.__name__)
     
     def calculate_rolling_log_likelihood(
         self,
@@ -555,10 +615,13 @@ class MetricCalculator:
                 # Multivariate normal log-likelihood
                 try:
                     diff = data[t] - mean
+                    # Use solve() instead of inv() for better numerical stability
+                    stabilized_cov = cov + np.eye(n_features) * 1e-6
+                    quadratic_form = diff.T @ np.linalg.solve(stabilized_cov, diff)
                     ll = -0.5 * (
                         n_features * np.log(2 * np.pi) +
-                        np.log(np.linalg.det(cov) + 1e-8) +
-                        diff.T @ np.linalg.inv(cov + np.eye(n_features) * 1e-6) @ diff
+                        np.log(np.linalg.det(stabilized_cov) + 1e-8) +
+                        quadratic_form
                     )
                     ll_per_regime.append(ll)
                 except (ValueError, np.linalg.LinAlgError, OverflowError, RuntimeError) as e:
@@ -617,10 +680,13 @@ class MetricCalculator:
             # Log-likelihood of current observation given previous regime
             try:
                 diff = data[t] - mean
+                # Use solve() instead of inv() for better numerical stability
+                stabilized_cov = cov + np.eye(n_features) * 1e-6
+                quadratic_form = diff.T @ np.linalg.solve(stabilized_cov, diff)
                 ll = -0.5 * (
                     n_features * np.log(2 * np.pi) +
-                    np.log(np.linalg.det(cov) + 1e-8) +
-                    diff.T @ np.linalg.inv(cov + np.eye(n_features) * 1e-6) @ diff
+                    np.log(np.linalg.det(stabilized_cov) + 1e-8) +
+                    quadratic_form
                 )
                 log_likelihoods.append(ll)
             except (ValueError, np.linalg.LinAlgError, OverflowError, RuntimeError) as e:
@@ -805,9 +871,14 @@ class MetricNormalizer:
     
     def _zscore_normalize(self, values: np.ndarray) -> np.ndarray:
         """Z-score normalization."""
+        # Handle NaN values
+        if np.any(np.isnan(values)):
+            self.logger.warning("⚠️ NaN values detected in z-score normalization, replacing with 0")
+            values = np.nan_to_num(values, nan=0.0)
+        
         mean = np.mean(values)
         std = np.std(values)
-        if std == 0:
+        if std == 0 or np.isnan(std) or np.isinf(std):
             return np.zeros_like(values)
         return (values - mean) / std
     
@@ -815,6 +886,11 @@ class MetricNormalizer:
         """Rank-based normalization to [0, 1]."""
         if len(values) <= 1:
             return np.ones_like(values) * 0.5
+        
+        # Handle NaN values
+        if np.any(np.isnan(values)):
+            self.logger.warning("⚠️ NaN values detected in rank normalization, replacing with 0")
+            values = np.nan_to_num(values, nan=0.0)
         
         # Rank (higher is better after objective adjustment)
         ranks = stats.rankdata(values)
@@ -824,17 +900,28 @@ class MetricNormalizer:
     
     def _robust_zscore_normalize(self, values: np.ndarray) -> np.ndarray:
         """Robust z-score using median and MAD."""
+        # Handle NaN values
+        if np.any(np.isnan(values)):
+            self.logger.warning("⚠️ NaN values detected in robust z-score normalization, replacing with 0")
+            values = np.nan_to_num(values, nan=0.0)
+        
         median = np.median(values)
         mad = np.median(np.abs(values - median))
-        if mad == 0:
+        if mad == 0 or np.isnan(mad) or np.isinf(mad):
             return np.zeros_like(values)
         return (values - median) / (1.4826 * mad)  # 1.4826 for normal consistency
     
     def _minmax_normalize(self, values: np.ndarray) -> np.ndarray:
         """Min-max normalization to [0, 1]."""
+        # Handle NaN values
+        if np.any(np.isnan(values)):
+            self.logger.warning("⚠️ NaN values detected in min-max normalization, replacing with 0")
+            values = np.nan_to_num(values, nan=0.0)
+        
         min_val = np.min(values)
         max_val = np.max(values)
-        if max_val == min_val:
+        if max_val == min_val or np.isnan(min_val) or np.isnan(max_val) or \
+           np.isinf(min_val) or np.isinf(max_val):
             return np.ones_like(values) * 0.5
         return (values - min_val) / (max_val - min_val)
 
@@ -1294,7 +1381,9 @@ def validate_robustness(
     Returns:
         (is_robust, robustness_metrics)
     """
-    from sklearn.metrics import adjusted_rand_score
+    if not SKLEARN_METRICS_AVAILABLE or adjusted_rand_score is None:
+        logger.error("❌ sklearn.metrics not available. Cannot perform robustness validation.")
+        return False, {'error': 'sklearn_not_available', 'median_ari': 0.0}
     
     logger.info(f"🔍 Validating robustness with {n_seeds} seeds...")
     
@@ -1415,7 +1504,18 @@ def statistical_significance_test(
         )
         # Fall back to simple bootstrap if blocks don't make sense
         block_size = max(1, len(strategy_returns) // 10)
-        n_blocks = len(strategy_returns) // block_size
+        n_blocks = max(1, len(strategy_returns) // block_size)
+        if n_blocks < 2:
+            logger.warning(
+                f"⚠️ Insufficient data for block bootstrap: n_blocks={n_blocks}, "
+                f"block_size={block_size}, len={len(strategy_returns)}"
+            )
+            return False, 1.0, {
+                'error': 'insufficient_data',
+                'strategy_sharpe': observed_strategy_sharpe,
+                'baseline_sharpe': observed_baseline_sharpe,
+                'sharpe_diff': observed_diff
+            }
     
     # Handle remainder samples
     remainder = len(strategy_returns) % block_size
@@ -1456,6 +1556,11 @@ def statistical_significance_test(
     
     # Calculate p-value (one-sided: strategy > baseline)
     p_value = np.mean(bootstrap_diffs <= 0)
+    
+    # Validate p-value
+    if np.isnan(p_value) or np.isinf(p_value):
+        logger.warning("⚠️ Invalid p-value calculated")
+        p_value = 1.0  # Conservative default
     
     is_significant = p_value < alpha
     

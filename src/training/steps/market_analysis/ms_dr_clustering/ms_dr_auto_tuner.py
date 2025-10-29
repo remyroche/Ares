@@ -11,7 +11,7 @@ Optimizes the composite quality score from cluster_quality_assessor.py.
 
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Union
 from dataclasses import dataclass
 import logging
 
@@ -212,7 +212,7 @@ class MSDRAutoTuner:
             random_state=self.tuning_config.random_state
         )
     
-    def _evaluate_params(self, params: Dict[str, Any], data: np.ndarray) -> float:
+    def _evaluate_params(self, params: Dict[str, Any], data: np.ndarray) -> Union[float, Dict[str, Any]]:
         """
         Evaluate a set of parameters by running MS-DR clustering
         and computing the composite quality score.
@@ -222,8 +222,15 @@ class MSDRAutoTuner:
             data: Input data
             
         Returns:
-            Composite quality score (higher is better)
+            Composite quality score (higher is better), or error dict with details
         """
+        error_info = {
+            'error_type': None,
+            'error_message': None,
+            'error_category': None,
+            'params': params.copy()
+        }
+        
         try:
             # Create config from parameters
             config = self._create_ms_dr_config(params)
@@ -233,7 +240,19 @@ class MSDRAutoTuner:
             result = clusterer.fit_predict(data)
             
             if not result.success:
+                error_info.update({
+                    'error_type': 'clustering_failure',
+                    'error_message': result.error_message,
+                    'error_category': 'model_fitting'
+                })
                 tprint_warning(f"⚠️ MS-DR clustering failed: {result.error_message}")
+                # Store error info in trial history
+                self.trial_history.append({
+                    'params': params,
+                    'composite_score': float('-inf'),
+                    'error': error_info,
+                    'success': False
+                })
                 return float('-inf')
             
             # Assess quality using cluster_quality_assessor
@@ -260,7 +279,8 @@ class MSDRAutoTuner:
                 'n_clusters': result.n_clusters,
                 'silhouette_score': quality_metrics.silhouette_score,
                 'davies_bouldin_score': quality_metrics.davies_bouldin_score,
-                'balance_score': quality_metrics.balance_score
+                'balance_score': quality_metrics.balance_score,
+                'success': True
             })
             
             # Update best result
@@ -278,38 +298,151 @@ class MSDRAutoTuner:
             
             return composite_score
             
+        except ValueError as e:
+            error_info.update({
+                'error_type': 'invalid_parameters',
+                'error_message': str(e),
+                'error_category': 'validation'
+            })
+            tprint_warning(f"⚠️ Invalid parameters: {e}")
+            self.trial_history.append({
+                'params': params,
+                'composite_score': float('-inf'),
+                'error': error_info,
+                'success': False
+            })
+            return float('-inf')
+            
+        except MemoryError as e:
+            error_info.update({
+                'error_type': 'memory_error',
+                'error_message': str(e),
+                'error_category': 'resource'
+            })
+            tprint_error(f"❌ Memory error evaluating params: {e}")
+            self.trial_history.append({
+                'params': params,
+                'composite_score': float('-inf'),
+                'error': error_info,
+                'success': False
+            })
+            return float('-inf')
+            
         except Exception as e:
+            error_info.update({
+                'error_type': 'unexpected_error',
+                'error_message': str(e),
+                'error_category': 'unknown'
+            })
             tprint_error(f"❌ Error evaluating params: {e}")
             import traceback
             tprint_debug(traceback.format_exc())
+            error_info['traceback'] = traceback.format_exc()
+            self.trial_history.append({
+                'params': params,
+                'composite_score': float('-inf'),
+                'error': error_info,
+                'success': False
+            })
             return float('-inf')
     
-    def auto_tune_hierarchical(
+    def _auto_tune_hierarchical_via_wrapper(
+        self,
+        data: pd.DataFrame,
+        n_trials_per_group: Optional[int] = None,
+        timeout_minutes: Optional[float] = None,
+        use_adaptive_bounds: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Internal method: Hierarchical optimization using MSDRHierarchicalOptimizer wrapper.
+        
+        This is the preferred implementation when hierarchical HPO is available.
+        """
+        if not HIERARCHICAL_HPO_AVAILABLE:
+            tprint_warning("⚠️ Hierarchical HPO not available, falling back to standard auto_tune")
+            return self.auto_tune(data, timeout_minutes=timeout_minutes, use_hierarchical=False)
+        
+        tprint_info("🚀 Starting Hierarchical MS-DR Auto-Tuning (Wrapper Mode)")
+        
+        # Override config if specified
+        if n_trials_per_group is not None:
+            self.tuning_config.n_trials_per_group = n_trials_per_group
+        if timeout_minutes is not None:
+            self.tuning_config.timeout_minutes = timeout_minutes
+        
+        # Convert data to numpy if needed
+        if isinstance(data, pd.DataFrame):
+            data_array = data.values
+        else:
+            data_array = data
+        
+        # Reset history
+        self.trial_history = []
+        self.best_score = float('-inf')
+        self.best_params = None
+        self.best_result = None
+        
+        # Create parameter groups (adaptive or default)
+        if use_adaptive_bounds:
+            tprint_info("📊 Using adaptive parameter bounds based on data")
+            hierarchical_opt = MSDRHierarchicalOptimizer(
+                objective_func=lambda params: self._evaluate_params(params, data_array)
+            )
+            param_groups = hierarchical_opt.get_adaptive_search_space(data_array)
+        else:
+            param_groups = create_msdr_parameter_groups()
+        
+        # Create optimization stages
+        stages = create_msdr_optimization_stages(
+            n_trials_per_group=self.tuning_config.n_trials_per_group
+        )
+        
+        # Create hierarchical optimizer
+        hierarchical_optimizer = MSDRHierarchicalOptimizer(
+            objective_func=lambda params: self._evaluate_params(params, data_array),
+            param_groups=param_groups,
+            stages=stages
+        )
+        
+        # Run hierarchical optimization
+        with tprint_timer("Hierarchical Optimization", level="PERFORMANCE"):
+            hierarchical_results = hierarchical_optimizer.optimize(
+                data=data_array,
+                timeout_minutes=self.tuning_config.timeout_minutes,
+                n_trials_per_group=self.tuning_config.n_trials_per_group,
+                show_progress=True
+            )
+        
+        # Update best results from hierarchical optimization
+        self.best_params = hierarchical_results.get('best_params', {})
+        self.best_score = hierarchical_results.get('best_score', float('-inf'))
+        
+        # Generate summary
+        summary = self._generate_summary()
+        summary['optimization_method'] = 'hierarchical_wrapper'
+        summary['groups_optimized'] = len(param_groups)
+        
+        return {
+            'best_params': self.best_params,
+            'best_score': self.best_score,
+            'best_result': self.best_result,
+            'trial_history': self.trial_history,
+            'hierarchical_results': hierarchical_results,
+            'optimization_summary': summary
+        }
+    
+    def _auto_tune_hierarchical_direct(
         self,
         data: pd.DataFrame,
         n_trials: Optional[int] = None,
         timeout_minutes: Optional[float] = None
     ) -> Dict[str, Any]:
         """
-        Automatically tune MS-DR clustering using hierarchical 3-phase optimization.
+        Internal method: Hierarchical optimization using HierarchicalParameterOptimizer directly.
         
-        Phase 1: Model selection (n_regimes, model_type, order)
-        Phase 2: Variance modeling (switching_variance)
-        Phase 3: Dimensionality reduction (pca_components, pca_variance_threshold)
-        
-        This approach achieves ~30-50% faster convergence by optimizing parameter
-        groups sequentially rather than all 6 parameters simultaneously.
-        
-        Args:
-            data: Market data DataFrame
-            n_trials: Total number of trials (uses config default if None)
-            timeout_minutes: Timeout in minutes (uses config default if None)
-            
-        Returns:
-            Dictionary with tuning results including best_params and best_score
+        Fallback implementation when wrapper is not available.
         """
-        tprint_info("=" * 80)
-        tprint_info("🚀 HIERARCHICAL MS-DR PARAMETER OPTIMIZATION")
+        tprint_info("🚀 Starting Hierarchical MS-DR Auto-Tuning (Direct Mode)")
         tprint_info("=" * 80)
         tprint_info("Phase 1: Model Selection (n_regimes, model_type, order)")
         tprint_info("Phase 2: Variance Modeling (switching_variance)")
@@ -455,7 +588,16 @@ class MSDRAutoTuner:
         """
         # Use hierarchical optimization if enabled (default and recommended)
         if use_hierarchical:
-            return self.auto_tune_hierarchical(data, n_trials, timeout_minutes)
+            # Try wrapper first, fallback to direct if not available
+            if HIERARCHICAL_HPO_AVAILABLE:
+                # Convert n_trials to n_trials_per_group if needed
+                n_trials_per_group = None
+                if n_trials is not None:
+                    # Distribute trials across groups (default 3 groups)
+                    n_trials_per_group = max(10, n_trials // 3)
+                return self._auto_tune_hierarchical_via_wrapper(data, n_trials_per_group, timeout_minutes)
+            else:
+                return self._auto_tune_hierarchical_direct(data, n_trials, timeout_minutes)
         
         # Legacy staged optimization
         tprint_info("🚀 Starting MS-DR Auto-Tuning (Legacy Mode)")
@@ -575,89 +717,18 @@ class MSDRAutoTuner:
                 - trial_history: History of all trials
                 - optimization_summary: Summary statistics
         """
-        if not HIERARCHICAL_HPO_AVAILABLE:
-            tprint_warning("⚠️ Hierarchical HPO not available, falling back to standard auto_tune")
-            return self.auto_tune(data, timeout_minutes=timeout_minutes)
-        
-        tprint_info("🚀 Starting Hierarchical MS-DR Auto-Tuning")
-        
-        # Override config if specified
-        if n_trials_per_group is not None:
-            self.tuning_config.n_trials_per_group = n_trials_per_group
-        if timeout_minutes is not None:
-            self.tuning_config.timeout_minutes = timeout_minutes
-        
-        # Log configuration
-        tprint_structured({
-            'n_trials_per_group': self.tuning_config.n_trials_per_group,
-            'timeout_minutes': self.tuning_config.timeout_minutes,
-            'use_adaptive_bounds': use_adaptive_bounds,
-            'data_shape': data.shape
-        }, level="INFO")
-        
-        # Convert data to numpy if needed
-        if isinstance(data, pd.DataFrame):
-            data_array = data.values
-        else:
-            data_array = data
-        
-        # Reset history
-        self.trial_history = []
-        self.best_score = float('-inf')
-        self.best_params = None
-        self.best_result = None
-        
-        # Create parameter groups (adaptive or default)
-        if use_adaptive_bounds:
-            tprint_info("📊 Using adaptive parameter bounds based on data")
-            hierarchical_opt = MSDRHierarchicalOptimizer(
-                objective_func=lambda params: self._evaluate_params(params, data_array)
+        # Use wrapper if available, otherwise fallback to direct
+        if HIERARCHICAL_HPO_AVAILABLE:
+            return self._auto_tune_hierarchical_via_wrapper(
+                data, n_trials_per_group, timeout_minutes, use_adaptive_bounds
             )
-            param_groups = hierarchical_opt.get_adaptive_search_space(data_array)
         else:
-            param_groups = create_msdr_parameter_groups()
-        
-        # Create optimization stages
-        stages = create_msdr_optimization_stages(
-            n_trials_per_group=self.tuning_config.n_trials_per_group
-        )
-        
-        # Create hierarchical optimizer
-        hierarchical_optimizer = MSDRHierarchicalOptimizer(
-            objective_func=lambda params: self._evaluate_params(params, data_array),
-            param_groups=param_groups,
-            stages=stages
-        )
-        
-        # Run hierarchical optimization
-        with tprint_timer("Hierarchical Optimization", level="PERFORMANCE"):
-            hierarchical_results = hierarchical_optimizer.optimize(
-                data=data_array,
-                timeout_minutes=self.tuning_config.timeout_minutes,
-                n_trials_per_group=self.tuning_config.n_trials_per_group,
-                show_progress=True
-            )
-        
-        # Update best results from hierarchical optimization
-        self.best_params = hierarchical_results.get('best_params', {})
-        self.best_score = hierarchical_results.get('best_score', float('-inf'))
-        
-        # Generate summary
-        summary = self._generate_summary()
-        summary['optimization_method'] = 'hierarchical'
-        summary['groups_optimized'] = len(param_groups)
-        
-        tprint_success(f"🎉 Hierarchical Auto-Tuning Complete!")
-        tprint_structured(summary, level="INFO")
-        
-        return {
-            'best_params': self.best_params,
-            'best_score': self.best_score,
-            'best_result': self.best_result,
-            'trial_history': self.trial_history,
-            'hierarchical_results': hierarchical_results,
-            'optimization_summary': summary
-        }
+            tprint_warning("⚠️ Hierarchical HPO wrapper not available, using direct method")
+            # Convert n_trials_per_group to n_trials if needed
+            n_trials = None
+            if n_trials_per_group is not None:
+                n_trials = n_trials_per_group * 3  # Estimate total trials
+            return self._auto_tune_hierarchical_direct(data, n_trials, timeout_minutes)
     
     def _coarse_grid_search(
         self,

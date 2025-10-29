@@ -30,6 +30,22 @@ from src.utils.ml_common.unified_vectorization_manager import (
 from src.utils.ml_common.optimization.hpo_utils import (
     HyperparameterOptimization
 )
+from src.utils.ml_common.optimization.transition_aware_scoring import (
+    create_transition_aware_scorer,
+    create_multi_objective_scorer
+)
+try:
+    from src.utils.ml_common.optimization.pareto import (
+        ParetoOptimizer,
+        Solution,
+        ObjectiveDirection
+    )
+    PARETO_AVAILABLE = True
+except ImportError:
+    PARETO_AVAILABLE = False
+    ParetoOptimizer = None
+    Solution = None
+    ObjectiveDirection = None
 from src.utils.ml_common.validation.universal_temporal_validation import (
     UniversalTemporalValidator, TemporalValidationConfig
 )
@@ -40,6 +56,15 @@ from src.utils.hardware.unified_hardware_manager import (
 )
 from src.utils.ml_common.evaluation.evaluation_utils import (
     EvaluationUtils
+)
+from src.utils.ml_common.evaluation.regime_temporal_metrics import (
+    RegimeTemporalMetricsCalculator,
+    calculate_temporal_smoothness_penalty,
+    create_soft_labels
+)
+from src.utils.ml_common.feature_engineering.feature_smoothing import (
+    add_smoothed_features,
+    apply_ewm_smoothing
 )
 from src.utils.ml_common.explainability.model_explainability import ModelExplainabilityManager
 from src.utils.ml_common.explainability.shap_lime_integration import SHAPLIMEExplainer as SHAPLIMEIntegration
@@ -211,6 +236,18 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             }
         )
         tprint("🔧 [REGIME_MODELS] HPO optimizer initialized", color="green")
+        
+        # Initialize Pareto optimizer for multi-objective HPO
+        if PARETO_AVAILABLE:
+            self.pareto_optimizer = ParetoOptimizer()
+            tprint("✅ [REGIME_MODELS] Pareto optimizer initialized for multi-objective HPO", color="green")
+        else:
+            self.pareto_optimizer = None
+            tprint("⚠️ [REGIME_MODELS] Pareto optimizer not available", color="yellow")
+        
+        # Enable transition-aware multi-objective HPO by default
+        self.enable_multi_objective_hpo = True
+        self.use_pareto_optimization = PARETO_AVAILABLE
 
         # Initialize temporal validator for data leakage prevention
         self.temporal_validator = UniversalTemporalValidator(
@@ -231,6 +268,18 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         # Initialize model evaluator
         self.model_evaluator = EvaluationUtils()
         tprint("🔧 [REGIME_MODELS] Model evaluator initialized", color="green")
+        
+        # Initialize regime temporal metrics calculator
+        self.temporal_metrics_calc = RegimeTemporalMetricsCalculator(min_episode_length=3)
+        tprint("✅ [REGIME_MODELS] Temporal metrics calculator initialized", color="green")
+        
+        # Enhanced training configuration
+        self.enable_temporal_smoothing = True
+        self.temporal_smoothing_alpha = 0.1  # Default smoothness penalty weight
+        self.enable_soft_labels = True
+        self.soft_label_smoothing = 0.1  # Label smoothing factor
+        self.enable_smoothed_features = True
+        self.smoothing_window_sizes = [3, 5, 7]
 
         # Initialize model validator
         self.model_validator = ModelValidator(
@@ -291,8 +340,8 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 'ExtraTrees': {
                     'n_estimators': 100,
                     'max_depth': None,
-                    'min_samples_split': 2,
-                    'min_samples_leaf': 1,
+                    'min_samples_split': 5,  # Increased for stability
+                    'min_samples_leaf': 5,    # Increased for stability (was 1)
                     'max_features': 'sqrt',
                     'random_state': 42,
                     'n_jobs': -1
@@ -304,7 +353,8 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'max_depth': 8,    # Increased depth
                     'learning_rate': 0.05,  # Reduced for better convergence
                     'n_estimators': 200,    # More estimators
-                    'min_child_samples': 20,  # Prevent overfitting
+                    'min_child_samples': 50,  # Increased for stability (was 20)
+                    'min_data_in_leaf': 50,    # Increased for stability
                     'subsample': 0.8,        # Stochastic sampling
                     'colsample_bytree': 0.8,  # Feature sampling
                     'reg_alpha': 0.1,        # L1 regularization
@@ -404,12 +454,31 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         verbose=False
                     )
                 
+                # Use transition-aware scorer or multi-objective optimization
+                if self.enable_multi_objective_hpo and self.use_pareto_optimization:
+                    # Use multi-objective scorer with Pareto optimization
+                    multi_scorer = create_multi_objective_scorer(min_episode_length=3)
+                    # Note: Full Pareto integration would require Optuna multi-objective study
+                    # For now, use transition-aware composite scorer
+                    scoring = create_transition_aware_scorer(
+                        alpha=self.temporal_smoothing_alpha,
+                        accuracy_weight=0.7,
+                        stability_weight=0.3
+                    )
+                else:
+                    # Use transition-aware composite scorer (single objective)
+                    scoring = create_transition_aware_scorer(
+                        alpha=self.temporal_smoothing_alpha,
+                        accuracy_weight=0.7,
+                        stability_weight=0.3
+                    )
+                
                 hpo_result = self.hpo_optimizer.optimize(
                     model_factory=create_catboost_model,
                     X=X_train,
                     y=y_train,
                     cv_folds=3,
-                    scoring='accuracy',
+                    scoring=scoring,  # Use transition-aware scorer
                     n_trials=15
                 )
                 
@@ -447,12 +516,19 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         n_jobs=-1
                     )
                 
+                # Use transition-aware scorer
+                scoring = create_transition_aware_scorer(
+                    alpha=self.temporal_smoothing_alpha,
+                    accuracy_weight=0.7,
+                    stability_weight=0.3
+                )
+                
                 hpo_result = self.hpo_optimizer.optimize(
                     model_factory=create_extratrees_model,
                     X=X_train,
                     y=y_train,
                     cv_folds=3,
-                    scoring='accuracy',
+                    scoring=scoring,  # Use transition-aware scorer
                     n_trials=15
                 )
                 
@@ -495,12 +571,19 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         verbosity=0
                     )
                 
+                # Use transition-aware scorer
+                scoring = create_transition_aware_scorer(
+                    alpha=self.temporal_smoothing_alpha,
+                    accuracy_weight=0.7,
+                    stability_weight=0.3
+                )
+                
                 hpo_result = self.hpo_optimizer.optimize(
                     model_factory=create_xgboost_model,
                     X=X_train,
                     y=y_train,
                     cv_folds=3,
-                    scoring='accuracy',
+                    scoring=scoring,  # Use transition-aware scorer
                     n_trials=15
                 )
                 
@@ -1467,6 +1550,16 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 'data_shape': X.shape,
                 'report_type': 'regime_probability_analysis'
             }
+            
+            # Add comprehensive metrics if available
+            if hasattr(self, 'model_metrics') and model_name in self.model_metrics:
+                model_metrics = self.model_metrics[model_name]
+                if 'classification' in model_metrics:
+                    report['classification_metrics'] = model_metrics['classification']
+                if 'temporal' in model_metrics:
+                    report['temporal_metrics'] = model_metrics['temporal']
+                if 'persistence' in model_metrics:
+                    report['persistence_metrics'] = model_metrics['persistence']
 
             # Generate text report
             text_report = self._generate_text_report(report)
@@ -1502,6 +1595,48 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             lines.append(f"Prediction Confidence: {overall.get('prediction_confidence', 0):.3f}")
             lines.append(f"Uncertainty Entropy: {overall.get('uncertainty_entropy', 0):.3f}")
             lines.append("")
+
+            # Classification Metrics
+            if 'classification_metrics' in report:
+                cls_metrics = report['classification_metrics']
+                lines.append("🎯 CLASSIFICATION METRICS")
+                lines.append("-" * 40)
+                lines.append(f"Accuracy: {cls_metrics.get('accuracy', 'N/A'):.4f}")
+                lines.append(f"Balanced Accuracy: {cls_metrics.get('balanced_accuracy', 'N/A'):.4f}")
+                lines.append(f"Precision (Weighted): {cls_metrics.get('precision', 'N/A'):.4f}")
+                lines.append(f"Recall (Weighted): {cls_metrics.get('recall', 'N/A'):.4f}")
+                lines.append(f"F1-Score (Weighted): {cls_metrics.get('f1_score', 'N/A'):.4f}")
+                if 'log_loss' in cls_metrics and cls_metrics['log_loss'] is not None:
+                    lines.append(f"Log Loss: {cls_metrics['log_loss']:.4f}")
+                lines.append("")
+
+            # Temporal/Stability Metrics
+            if 'temporal_metrics' in report:
+                temp_metrics = report['temporal_metrics']
+                lines.append("⏱️ TEMPORAL/STABILITY METRICS")
+                lines.append("-" * 40)
+                lines.append(f"Mean Episode Length: {temp_metrics.get('mean_episode_length', 'N/A'):.2f}")
+                lines.append(f"Transition Rate: {temp_metrics.get('transition_rate', 'N/A'):.4f}")
+                lines.append(f"Short Episode Count: {temp_metrics.get('short_episode_count', 'N/A')}")
+                lines.append(f"Switch False Positive Rate: {temp_metrics.get('switch_false_positive_rate', 'N/A'):.4f}")
+                if temp_metrics.get('entropy') is not None:
+                    lines.append(f"Entropy: {temp_metrics.get('entropy', 'N/A'):.4f}")
+                if temp_metrics.get('confidence') is not None:
+                    lines.append(f"Confidence: {temp_metrics.get('confidence', 'N/A'):.4f}")
+                lines.append(f"Number of Episodes: {temp_metrics.get('n_episodes', 'N/A')}")
+                lines.append(f"Number of Transitions: {temp_metrics.get('n_transitions', 'N/A')}")
+                lines.append("")
+
+            # Regime-Persistence Metrics
+            if 'persistence_metrics' in report:
+                pers_metrics = report['persistence_metrics']
+                lines.append("🔄 REGIME-PERSISTENCE METRICS")
+                lines.append("-" * 40)
+                lines.append(f"Stability Index: {pers_metrics.get('stability_index', 'N/A'):.4f}")
+                lines.append(f"Persistence Ratio: {pers_metrics.get('persistence_ratio', 'N/A'):.4f}")
+                lines.append(f"Lag to Detection: {pers_metrics.get('lag_to_detection', 'N/A'):.2f}")
+                lines.append(f"Episode Purity: {pers_metrics.get('episode_purity', 'N/A'):.4f}")
+                lines.append("")
 
             # Regime Statistics
             regime_stats = report.get('regime_statistics', {})
@@ -2111,6 +2246,17 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             if not all_features.empty:
                 X = all_features.values
                 feature_names = list(all_features.columns)
+                
+                # Add smoothed features if enabled
+                if self.enable_smoothed_features:
+                    tprint("🔧 [REGIME_MODELS] Adding smoothed features", color="cyan")
+                    X, feature_names = add_smoothed_features(
+                        X, 
+                        window_sizes=self.smoothing_window_sizes,
+                        feature_names=feature_names
+                    )
+                    tprint(f"✅ [REGIME_MODELS] Smoothed features added: {X.shape[1]} total features", color="green")
+                
                 tprint(f"✅ [REGIME_MODELS] Feature bank generated {X.shape[1]} features from {len(categories)} categories", color="green")
                 tprint(f"📊 [REGIME_MODELS] Feature matrix shape: {X.shape}", color="blue")
                 return X, feature_names
@@ -2357,15 +2503,29 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     y_pred = model.predict(X_test_scaled)
                     y_pred_proba = model.predict_proba(X_test_scaled) if hasattr(model, 'predict_proba') else None
 
-                # Calculate metrics
+                # Calculate comprehensive metrics
                 accuracy = accuracy_score(y_test, y_pred)
-
+                
+                # Calculate comprehensive temporal and regime-persistence metrics
+                comprehensive_metrics = self.temporal_metrics_calc.calculate_comprehensive_metrics(
+                    y_test, y_pred, y_pred_proba
+                )
+                
+                # Calculate temporal smoothness penalty
+                smoothness_penalty = calculate_temporal_smoothness_penalty(
+                    y_pred, alpha=self.temporal_smoothing_alpha
+                )
+                
                 # Store detailed metrics
                 model_metrics = {
                     'accuracy': accuracy,
                     'test_samples': len(y_test),
                     'train_samples': len(y_train),
-                    'n_features': X.shape[1]
+                    'n_features': X.shape[1],
+                    'classification': comprehensive_metrics.get('classification', {}),
+                    'temporal': comprehensive_metrics.get('temporal', {}),
+                    'persistence': comprehensive_metrics.get('persistence', {}),
+                    'smoothness_penalty': smoothness_penalty
                 }
 
                 # Add comprehensive prediction probabilities if available
@@ -2651,7 +2811,11 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         labels: np.ndarray,
         feature_names: List[str]
     ) -> Dict[str, Any]:
-        """Run model-based feature selection to identify informative inputs."""
+        """
+        Run model-based feature selection optimizing for both accuracy and temporal smoothness.
+        
+        Selects 60-80 features that maximize both classification accuracy and temporal stability.
+        """
         selection_start = time.time()
 
         info: Dict[str, Any] = {
@@ -2672,85 +2836,187 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             return info
 
         try:
-            selector = SelectFromModel(
-                lgb.LGBMClassifier(
-                    n_estimators=200,
-                    learning_rate=0.05,
-                    random_state=self.model_config.get('random_state', 42),
-                    class_weight='balanced',
-                    importance_type='gain',
-                    verbose=-1
-                ),
-                threshold='median',  # Use median threshold for feature selection
-                max_features=min(100, features.shape[1]) if features.shape[1] > 0 else None
-            )
-
-            selector.fit(features, labels)
-
-            fitted_estimator = getattr(selector, 'estimator_', None)
-            if fitted_estimator is None and hasattr(selector, 'estimator'):
-                fitted_estimator = selector.estimator
-
-            if fitted_estimator is not None and hasattr(fitted_estimator, 'feature_importances_'):
-                importances = np.asarray(fitted_estimator.feature_importances_)
+            tprint("🎯 [REGIME_MODELS] Starting dual-objective feature selection (accuracy + temporal smoothness)", color="cyan")
+            
+            # Target: 60-80 features
+            if features.shape[1] < 60:
+                target_feature_count = features.shape[1]  # Use all if less than 60
             else:
-                importances = np.zeros(features.shape[1])
-
-            support_mask = selector.get_support()
-            if not np.any(support_mask):
-                sorted_indices = np.argsort(importances)[::-1]
-                # Only apply aggressive feature selection for large feature sets (>100 features)
-                if features.shape[1] > 100:
-                    # For large feature sets, use minimum 90 features
-                    min_features = max(90, min(110, features.shape[1]))
-                    top_k = min(max(min_features, int(np.ceil(features.shape[1] * 0.8))), features.shape[1])
-                else:
-                    # For smaller feature sets, keep at least 75% of features
-                    top_k = max(1, int(np.ceil(features.shape[1] * 0.75)))
-                support_mask = np.zeros_like(importances, dtype=bool)
-                support_mask[sorted_indices[:top_k]] = True
-
-            selected_indices = np.where(support_mask)[0]
+                target_feature_count = min(80, max(60, int(features.shape[1] * 0.3)))
+            tprint(f"📊 [REGIME_MODELS] Target feature count: {target_feature_count}", color="blue")
+            
+            # Step 1: Get accuracy-based importance (LightGBM)
+            tprint("🔍 [REGIME_MODELS] Step 1: Evaluating accuracy-based importance", color="cyan")
+            accuracy_model = lgb.LGBMClassifier(
+                n_estimators=200,
+                learning_rate=0.05,
+                random_state=self.model_config.get('random_state', 42),
+                class_weight='balanced',
+                importance_type='gain',
+                verbose=-1,
+                min_child_samples=50,  # Increased for stability
+                min_data_in_leaf=50
+            )
+            accuracy_model.fit(features, labels)
+            
+            if hasattr(accuracy_model, 'feature_importances_'):
+                accuracy_importances = np.asarray(accuracy_model.feature_importances_)
+            else:
+                accuracy_importances = np.zeros(features.shape[1])
+            
+            # Normalize accuracy importances
+            if accuracy_importances.sum() > 0:
+                accuracy_scores = accuracy_importances / accuracy_importances.sum()
+            else:
+                accuracy_scores = np.ones(features.shape[1]) / features.shape[1]
+            
+            # Step 2: Evaluate temporal smoothness for each feature
+            tprint("🔍 [REGIME_MODELS] Step 2: Evaluating temporal smoothness", color="cyan")
+            temporal_scores = np.zeros(features.shape[1])
+            
+            # Optimize: Only evaluate temporal smoothness for top features by accuracy
+            # This speeds up evaluation significantly
+            top_accuracy_features = np.argsort(accuracy_scores)[::-1][:min(150, features.shape[1])]
+            tprint(f"📊 [REGIME_MODELS] Evaluating temporal smoothness for top {len(top_accuracy_features)} features by accuracy", color="blue")
+            
+            # Use quick temporal CV to evaluate smoothness
+            from sklearn.model_selection import TimeSeriesSplit
+            tscv = TimeSeriesSplit(n_splits=3)
+            
+            # Evaluate temporal smoothness for top accuracy features
+            for feat_idx in top_accuracy_features:
+                try:
+                    # Train quick model on single feature
+                    X_single = features[:, feat_idx].reshape(-1, 1)
+                    
+                    temp_model = lgb.LGBMClassifier(
+                        n_estimators=50,
+                        learning_rate=0.1,
+                        random_state=42,
+                        class_weight='balanced',
+                        verbose=-1,
+                        min_child_samples=50,
+                        min_data_in_leaf=50
+                    )
+                    
+                    # Evaluate temporal smoothness using CV
+                    smoothness_scores = []
+                    for train_idx, val_idx in tscv.split(X_single):
+                        if len(train_idx) < 10 or len(val_idx) < 5:
+                            continue
+                        
+                        temp_model.fit(X_single[train_idx], labels[train_idx])
+                        y_pred_val = temp_model.predict(X_single[val_idx])
+                        
+                        # Calculate transition rate (lower is better for smoothness)
+                        if len(y_pred_val) > 1:
+                            transitions = sum(1 for i in range(1, len(y_pred_val)) 
+                                            if y_pred_val[i] != y_pred_val[i-1])
+                            transition_rate = transitions / len(y_pred_val)
+                            # Convert to smoothness score (lower transition rate = higher smoothness)
+                            smoothness = 1.0 - min(transition_rate, 1.0)
+                            smoothness_scores.append(smoothness)
+                    
+                    if smoothness_scores:
+                        temporal_scores[feat_idx] = np.mean(smoothness_scores)
+                    else:
+                        temporal_scores[feat_idx] = 0.5  # Default neutral score
+                        
+                except Exception:
+                    temporal_scores[feat_idx] = 0.5  # Default neutral score
+            
+            # For features not evaluated, use accuracy score as proxy
+            for feat_idx in range(features.shape[1]):
+                if feat_idx not in top_accuracy_features:
+                    # Use accuracy score as proxy for temporal smoothness
+                    temporal_scores[feat_idx] = accuracy_scores[feat_idx] * 0.7  # Slight discount
+            
+            # Normalize temporal scores
+            if temporal_scores.sum() > 0:
+                temporal_scores = temporal_scores / (temporal_scores.sum() + 1e-10)
+            
+            # Step 3: Combine accuracy and temporal smoothness scores
+            tprint("🔍 [REGIME_MODELS] Step 3: Combining accuracy and temporal smoothness scores", color="cyan")
+            accuracy_weight = 0.6  # 60% weight on accuracy
+            temporal_weight = 0.4   # 40% weight on temporal smoothness
+            
+            combined_scores = (
+                accuracy_weight * accuracy_scores + 
+                temporal_weight * temporal_scores
+            )
+            
+            # Step 4: Select top features based on combined score
+            sorted_indices = np.argsort(combined_scores)[::-1]
+            selected_indices = sorted_indices[:target_feature_count]
             selected_feature_names = [feature_names[idx] for idx in selected_indices]
-
+            
+            # Build importance dictionaries
+            accuracy_importance_dict = {
+                feature_names[i]: float(accuracy_scores[i]) 
+                for i in range(len(feature_names))
+            }
+            temporal_importance_dict = {
+                feature_names[i]: float(temporal_scores[i]) 
+                for i in range(len(feature_names))
+            }
+            combined_importance_dict = {
+                feature_names[i]: float(combined_scores[i]) 
+                for i in range(len(feature_names))
+            }
+            
+            # Create ranking preview
+            top_preview = [
+                {
+                    'feature': feature_names[sorted_indices[i]],
+                    'combined_score': float(combined_scores[sorted_indices[i]]),
+                    'accuracy_score': float(accuracy_scores[sorted_indices[i]]),
+                    'temporal_score': float(temporal_scores[sorted_indices[i]]),
+                    'rank': i + 1
+                }
+                for i in range(min(20, len(sorted_indices)))
+            ]
+            
             info.update({
                 'selection_performed': True,
-                'selection_method': 'lightgbm_selectfrommodel',
+                'selection_method': 'dual_objective_accuracy_temporal',
                 'selected_indices': [int(idx) for idx in selected_indices],
                 'selected_feature_names': selected_feature_names,
                 'retained_feature_count': int(len(selected_indices)),
                 'total_feature_count': int(features.shape[1]),
-                'selection_threshold': float(getattr(selector, 'threshold_', 0.0)) if hasattr(selector, 'threshold_') else None,
+                'target_feature_count': target_feature_count,
+                'accuracy_weight': accuracy_weight,
+                'temporal_weight': temporal_weight,
+                'feature_importances': combined_importance_dict,
+                'accuracy_importances': accuracy_importance_dict,
+                'temporal_importances': temporal_importance_dict,
+                'importance_ranking': top_preview,
+                'top_features_preview': ', '.join(
+                    f"{item['feature']} (acc:{item['accuracy_score']:.3f},temp:{item['temporal_score']:.3f})" 
+                    for item in top_preview[:5]
+                ),
                 'selection_time_seconds': time.time() - selection_start
             })
-
-            if importances.size:
-                info['feature_importances'] = {
-                    feature_names[i]: float(importances[i]) for i in range(len(feature_names))
-                }
-                sorted_indices = np.argsort(importances)[::-1]
-                top_preview = [
-                    {
-                        'feature': feature_names[idx],
-                        'importance': float(importances[idx]),
-                        'rank': int(rank + 1)
-                    }
-                    for rank, idx in enumerate(sorted_indices[: min(20, len(sorted_indices))])
-                ]
-                info['importance_ranking'] = top_preview
-                info['top_features_preview'] = ', '.join(
-                    f"{item['feature']} ({item['importance']:.4f})" for item in top_preview[:5]
-                )
-
+            
             tprint(
-                f"🎯 [REGIME_MODELS] Feature selection completed in {info['selection_time_seconds']:.3f}s - retained {info['retained_feature_count']}/{info['total_feature_count']} features",
+                f"✅ [REGIME_MODELS] Dual-objective feature selection completed in {info['selection_time_seconds']:.3f}s",
                 color="green"
             )
+            tprint(
+                f"🎯 [REGIME_MODELS] Retained {info['retained_feature_count']}/{info['total_feature_count']} features "
+                f"(target: {target_feature_count})",
+                color="green"
+            )
+            tprint(
+                f"📊 [REGIME_MODELS] Top 5 features: {info['top_features_preview']}",
+                color="cyan"
+            )
+            
             self.logger.info(
-                "Feature selection summary",
+                "Dual-objective feature selection completed",
                 extra={
                     'retained_features': info['retained_feature_count'],
                     'total_features': info['total_feature_count'],
+                    'target_features': target_feature_count,
                     'selection_method': info['selection_method'],
                     'selection_time_seconds': info['selection_time_seconds']
                 }
@@ -2758,43 +3024,91 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
         except Exception as e:
             info['selection_time_seconds'] = time.time() - selection_start
-            tprint(f"⚠️ [REGIME_MODELS] Feature selection failed ({e}); using fallback selection", color="yellow")
-            self.logger.warning("Feature selection failed; using fallback selection", exc_info=True)
+            tprint(f"⚠️ [REGIME_MODELS] Dual-objective feature selection failed ({e}); using fallback", color="yellow")
+            self.logger.warning("Dual-objective feature selection failed; using fallback", exc_info=True)
 
-            # Fallback: Select top features by variance if available, otherwise use all
-            if features.shape[1] > 0:
-                try:
-                    # Use variance-based selection as fallback
-                    variances = np.var(features, axis=0)
-                    sorted_indices = np.argsort(variances)[::-1]
-                    # Select at least 90% of features or minimum 90 features
-                    min_features = max(90, min(110, features.shape[1]))
-                    top_k = min(max(min_features, int(np.ceil(features.shape[1] * 0.9))), features.shape[1])
-                    selected_indices = sorted_indices[:top_k]
+            # Fallback: Use accuracy-based selection with 60-80 feature limit
+            try:
+                # Ensure target_feature_count is set (in case of early failure)
+                if 'target_feature_count' not in locals():
+                    if features.shape[1] < 60:
+                        target_feature_count = features.shape[1]
+                    else:
+                        target_feature_count = min(80, max(60, int(features.shape[1] * 0.3)))
+                
+                selector = SelectFromModel(
+                    lgb.LGBMClassifier(
+                        n_estimators=200,
+                        learning_rate=0.05,
+                        random_state=self.model_config.get('random_state', 42),
+                        class_weight='balanced',
+                        importance_type='gain',
+                        verbose=-1,
+                        min_child_samples=50,
+                        min_data_in_leaf=50
+                    ),
+                    threshold='median',
+                    max_features=target_feature_count  # Use target count
+                )
 
-                    info.update({
-                        'selection_performed': True,
-                        'selection_method': 'variance_fallback',
-                        'selected_indices': [int(idx) for idx in selected_indices],
-                        'selected_feature_names': [feature_names[idx] for idx in selected_indices],
-                        'retained_feature_count': int(len(selected_indices)),
-                        'total_feature_count': int(features.shape[1]),
-                        'selection_time_seconds': time.time() - selection_start
-                    })
+                selector.fit(features, labels)
+                fitted_estimator = getattr(selector, 'estimator_', None)
+                if fitted_estimator is None and hasattr(selector, 'estimator'):
+                    fitted_estimator = selector.estimator
 
-                    tprint(f"✅ [REGIME_MODELS] Fallback selection retained {len(selected_indices)}/{features.shape[1]} features", color="green")
-                except Exception as fallback_error:
-                    tprint(f"⚠️ [REGIME_MODELS] Fallback selection also failed ({fallback_error}); using all features", color="yellow")
-                    # Ultimate fallback: use all features
-                    info.update({
-                        'selection_performed': False,
-                        'selection_method': 'all_features_fallback',
-                        'selected_indices': list(range(features.shape[1])),
-                        'selected_feature_names': feature_names.copy(),
-                        'retained_feature_count': int(features.shape[1]),
-                        'total_feature_count': int(features.shape[1]),
-                        'selection_time_seconds': time.time() - selection_start
-                    })
+                if fitted_estimator is not None and hasattr(fitted_estimator, 'feature_importances_'):
+                    importances = np.asarray(fitted_estimator.feature_importances_)
+                else:
+                    importances = np.zeros(features.shape[1])
+
+                support_mask = selector.get_support()
+                if not np.any(support_mask):
+                    # If no features selected, take top N by importance
+                    sorted_indices = np.argsort(importances)[::-1]
+                    support_mask = np.zeros_like(importances, dtype=bool)
+                    support_mask[sorted_indices[:target_feature_count]] = True
+
+                selected_indices = np.where(support_mask)[0]
+                
+                # Ensure we have exactly 60-80 features
+                if len(selected_indices) < 60 and features.shape[1] >= 60:
+                    sorted_indices = np.argsort(importances)[::-1]
+                    selected_indices = sorted_indices[:min(80, features.shape[1])]
+                
+                if len(selected_indices) > 80:
+                    sorted_indices = np.argsort(importances)[::-1]
+                    selected_indices = sorted_indices[:80]
+                
+                selected_feature_names = [feature_names[idx] for idx in selected_indices]
+
+                info.update({
+                    'selection_performed': True,
+                    'selection_method': 'accuracy_based_fallback',
+                    'selected_indices': [int(idx) for idx in selected_indices],
+                    'selected_feature_names': selected_feature_names,
+                    'retained_feature_count': int(len(selected_indices)),
+                    'total_feature_count': int(features.shape[1]),
+                    'target_feature_count': target_feature_count,
+                    'feature_importances': {
+                        feature_names[i]: float(importances[i]) 
+                        for i in range(len(feature_names))
+                    },
+                    'selection_time_seconds': time.time() - selection_start
+                })
+                
+                tprint(f"✅ [REGIME_MODELS] Fallback selection retained {len(selected_indices)} features", color="green")
+                
+            except Exception as fallback_error:
+                tprint(f"⚠️ [REGIME_MODELS] Fallback selection also failed ({fallback_error}); using all features", color="yellow")
+                # Ultimate fallback: use all features
+                info.update({
+                    'selection_performed': False,
+                    'selection_method': 'all_features_fallback',
+                    'selected_indices': list(range(features.shape[1])),
+                    'selected_feature_names': feature_names.copy(),
+                    'retained_feature_count': int(features.shape[1]),
+                    'selection_time_seconds': time.time() - selection_start
+                })
 
         return info
 

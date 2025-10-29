@@ -120,10 +120,11 @@ class TradingModelManager:
     def _initialize_model_loader(self):
         """Initialize model loader."""
         try:
-            # This would integrate with the actual model loading system
-            # For now, we'll use a placeholder
-            self.model_loader = "model_loader_placeholder"
-            self.logger.info("✅ Model loader initialized")
+            # Use unified model loader for accessing models from artifact_manager
+            from src.trading.integration.unified_model_loader import get_unified_model_loader
+            
+            self.model_loader = get_unified_model_loader()
+            self.logger.info("✅ Model loader initialized (using unified model loader)")
 
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize model loader: {e}")
@@ -244,21 +245,75 @@ class TradingModelManager:
             return None
 
     def _load_model_from_storage(self, model_name: str, model_type: str, timeframe: str) -> Optional[Any]:
-        """Load model from storage (placeholder implementation)."""
+        """Load model from storage using unified model loader."""
         try:
-            # This would load the actual model from storage
-            # For now, we'll return a placeholder
-            class PlaceholderModel:
-                def __init__(self, name, model_type, timeframe):
-                    self.name = name
-                    self.model_type = model_type
-                    self.timeframe = timeframe
-
-                def predict(self, data):
-                    # Placeholder prediction
-                    return np.random.randint(0, 2, len(data))
-
-            return PlaceholderModel(model_name, model_type, timeframe)
+            if not self.model_loader:
+                self.logger.warning("⚠️ Model loader not initialized")
+                return None
+            
+            # Use unified model loader to load models
+            import asyncio
+            
+            # Determine symbol and timeframe
+            symbol = "ETHUSDT"  # Default, could be passed in config
+            
+            try:
+                # Create event loop if needed
+                loop = None
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                # Load models based on type
+                if model_type == 'regime':
+                    if 'ensemble' in model_name.lower():
+                        model = loop.run_until_complete(
+                            self.model_loader.load_regime_ensemble_model(symbol, timeframe)
+                        )
+                    else:
+                        models_dict = loop.run_until_complete(
+                            self.model_loader.load_regime_base_models(symbol, timeframe)
+                        )
+                        model = models_dict.get(model_name) if models_dict else None
+                
+                elif model_type == 'analyst':
+                    if 'ensemble' in model_name.lower():
+                        model = loop.run_until_complete(
+                            self.model_loader.load_analyst_ensemble_model(symbol, timeframe)
+                        )
+                    else:
+                        models_dict = loop.run_until_complete(
+                            self.model_loader.load_analyst_base_models(symbol, timeframe)
+                        )
+                        model = models_dict.get(model_name) if models_dict else None
+                
+                elif model_type == 'tactician':
+                    if 'ensemble' in model_name.lower():
+                        model = loop.run_until_complete(
+                            self.model_loader.load_tactician_ensemble_model(symbol, timeframe)
+                        )
+                    else:
+                        models_dict = loop.run_until_complete(
+                            self.model_loader.load_tactician_base_models(symbol, timeframe)
+                        )
+                        model = models_dict.get(model_name) if models_dict else None
+                
+                else:
+                    self.logger.warning(f"⚠️ Unknown model type: {model_type}")
+                    return None
+                
+                if model:
+                    self.logger.info(f"✅ Loaded {model_type} model: {model_name}")
+                    return model
+                else:
+                    self.logger.warning(f"⚠️ Model {model_name} not found in storage")
+                    return None
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Failed to load model from storage: {e}")
+                return None
 
         except Exception as e:
             self.logger.error(f"❌ Failed to load model from storage: {e}")

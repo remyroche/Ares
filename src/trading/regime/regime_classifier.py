@@ -67,21 +67,61 @@ class RegimeClassifier:
     async def _load_classification_models(self):
         """Load pre-trained classification models."""
         try:
-            # Try to load models from standardized model manager
-            from src.utils.standardized_model_manager import standardized_model_manager
+            # Load models using unified model loader
+            from src.trading.integration.unified_model_loader import get_unified_model_loader
+            
+            unified_loader = get_unified_model_loader()
+            
+            symbol = getattr(self.config, 'symbol', 'ETHUSDT')
+            exchange = getattr(self.config, 'exchange', 'binance')
+            regime_timeframe = getattr(self.config, 'regime_timeframe', '1h')
+            direction = getattr(self.config, 'direction', 'long')
+            
+            try:
+                # Load regime base models
+                regime_base_models = await unified_loader.load_regime_base_models(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=regime_timeframe,
+                    direction=direction
+                )
+                
+                # Load regime ensemble model
+                regime_ensemble_model = await unified_loader.load_regime_ensemble_model(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=regime_timeframe,
+                    direction=direction
+                )
+                
+                # Add base models to list
+                for model_name, model in regime_base_models.items():
+                    self.models.append(model)
+                    self.logger.info(f"✅ Loaded regime base model: {model_name}")
+                
+                # Add ensemble model if available
+                if regime_ensemble_model:
+                    self.models.append(regime_ensemble_model)
+                    self.logger.info("✅ Loaded regime ensemble model")
+                
+                # Also try standardized model manager for backward compatibility
+                from src.utils.standardized_model_manager import standardized_model_manager
+                
+                model_ids = ["regime_classifier_1", "regime_classifier_2", "regime_classifier_hmm"]
+                
+                for model_id in model_ids:
+                    try:
+                        model_result = standardized_model_manager.load_model(model_id, "regime_classification")
+                        if model_result:
+                            model, metadata = model_result
+                            if model not in self.models:  # Avoid duplicates
+                                self.models.append(model)
+                                self.logger.info(f"✅ Loaded regime classification model: {model_id}")
+                    except Exception as e:
+                        self.logger.debug(f"Could not load regime model {model_id}: {e}")
 
-            # Load regime classification models
-            model_ids = ["regime_classifier_1", "regime_classifier_2", "regime_classifier_hmm"]
-
-            for model_id in model_ids:
-                try:
-                    model_result = standardized_model_manager.load_model(model_id, "regime_classification")
-                    if model_result:
-                        model, metadata = model_result
-                        self.models.append(model)
-                        self.logger.info(f"✅ Loaded regime classification model: {model_id}")
-                except Exception as e:
-                    self.logger.debug(f"Could not load regime model {model_id}: {e}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to load models via unified loader: {e}")
 
             # If no models loaded, create fallback classifiers
             if not self.models:

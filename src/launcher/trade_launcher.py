@@ -78,13 +78,20 @@ Examples:
                        help='Reset/clear previous simulator state')
     
     # Logging and config
-    parser.add_argument('--log-level', default='INFO',
+    parser.add_argument('--log-level', default=None,
                        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
-                       help='Logging level (default: INFO)')
+                       help='Logging level (default: DEBUG for paper mode, INFO for trade mode)')
     parser.add_argument('--dry-run', action='store_true',
                        help='Validate configuration without starting trading')
     
     args = parser.parse_args()
+    
+    # Set default log level based on mode if not explicitly provided
+    if args.log_level is None:
+        if args.mode == 'paper':
+            args.log_level = 'DEBUG'
+        else:
+            args.log_level = 'INFO'
     
     # Set logging level
     logging.getLogger().setLevel(getattr(logging, args.log_level))

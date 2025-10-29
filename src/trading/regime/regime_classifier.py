@@ -73,19 +73,25 @@ class RegimeClassifier:
             unified_loader = get_unified_model_loader()
             
             symbol = getattr(self.config, 'symbol', 'ETHUSDT')
+            exchange = getattr(self.config, 'exchange', 'binance')
             regime_timeframe = getattr(self.config, 'regime_timeframe', '1h')
+            direction = getattr(self.config, 'direction', 'long')
             
             try:
                 # Load regime base models
                 regime_base_models = await unified_loader.load_regime_base_models(
                     symbol=symbol,
-                    timeframe=regime_timeframe
+                    exchange=exchange,
+                    timeframe=regime_timeframe,
+                    direction=direction
                 )
                 
                 # Load regime ensemble model
                 regime_ensemble_model = await unified_loader.load_regime_ensemble_model(
                     symbol=symbol,
-                    timeframe=regime_timeframe
+                    exchange=exchange,
+                    timeframe=regime_timeframe,
+                    direction=direction
                 )
                 
                 # Add base models to list

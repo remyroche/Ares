@@ -216,16 +216,22 @@ class SignalGenerationPipeline:
             
             # Load analyst base models and ensemble model
             symbol = getattr(self.config, 'symbol', 'ETHUSDT')
+            exchange = getattr(self.config, 'exchange', 'binance')
             analyst_timeframe = getattr(self.config, 'analyst_timeframe', '15m')
+            direction = getattr(self.config, 'direction', 'long')
             
             try:
                 analyst_base_models_dict = await unified_loader.load_analyst_base_models(
                     symbol=symbol,
-                    timeframe=analyst_timeframe
+                    exchange=exchange,
+                    timeframe=analyst_timeframe,
+                    direction=direction
                 )
                 analyst_ensemble_model = await unified_loader.load_analyst_ensemble_model(
                     symbol=symbol,
-                    timeframe=analyst_timeframe
+                    exchange=exchange,
+                    timeframe=analyst_timeframe,
+                    direction=direction
                 )
                 
                 # Convert dict to list for base models
@@ -261,16 +267,22 @@ class SignalGenerationPipeline:
             
             # Load tactician base models and ensemble model
             symbol = getattr(self.config, 'symbol', 'ETHUSDT')
+            exchange = getattr(self.config, 'exchange', 'binance')
             tactician_timeframe = getattr(self.config, 'tactician_timeframe', '5m')
+            direction = getattr(self.config, 'direction', 'long')
             
             try:
                 tactician_base_models_dict = await unified_loader.load_tactician_base_models(
                     symbol=symbol,
-                    timeframe=tactician_timeframe
+                    exchange=exchange,
+                    timeframe=tactician_timeframe,
+                    direction=direction
                 )
                 tactician_ensemble_model = await unified_loader.load_tactician_ensemble_model(
                     symbol=symbol,
-                    timeframe=tactician_timeframe
+                    exchange=exchange,
+                    timeframe=tactician_timeframe,
+                    direction=direction
                 )
                 
                 # Convert dict to list for base models
@@ -312,12 +324,16 @@ class SignalGenerationPipeline:
             unified_loader = get_unified_model_loader()
             
             symbol = getattr(self.config, 'symbol', 'ETHUSDT')
+            exchange = getattr(self.config, 'exchange', 'binance')
             timeframe = getattr(self.config, 'timeframe', '15m')
+            direction = getattr(self.config, 'direction', 'long')
             
             try:
                 optimized_params = await unified_loader.load_optimized_parameters(
                     symbol=symbol,
-                    timeframe=timeframe
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    direction=direction
                 )
                 
                 if optimized_params:

@@ -44,7 +44,9 @@ class TrainingModelLoader:
         model_ids: Optional[List[str]] = None,
         step_name: str = "analyst_base_training",
         symbol: str = "ETHUSDT",
-        timeframe: str = "15m"
+        exchange: str = "binance",
+        timeframe: str = "15m",
+        direction: str = "long"
     ) -> Dict[str, Any]:
         """
         Load trained analyst models from the training pipeline.
@@ -64,8 +66,8 @@ class TrainingModelLoader:
 
         try:
             # First try unified model loader (accesses artifact_manager and standardized_model_manager)
-            base_models = await self.unified_loader.load_analyst_base_models(symbol, timeframe)
-            ensemble_model = await self.unified_loader.load_analyst_ensemble_model(symbol, timeframe)
+            base_models = await self.unified_loader.load_analyst_base_models(symbol, exchange, timeframe, direction)
+            ensemble_model = await self.unified_loader.load_analyst_ensemble_model(symbol, exchange, timeframe, direction)
             
             loaded_models.update(base_models)
             if ensemble_model:
@@ -118,7 +120,9 @@ class TrainingModelLoader:
         model_ids: Optional[List[str]] = None,
         step_name: str = "tactician_base_training",
         symbol: str = "ETHUSDT",
-        timeframe: str = "5m"
+        exchange: str = "binance",
+        timeframe: str = "5m",
+        direction: str = "long"
     ) -> Dict[str, Any]:
         """
         Load trained tactician models from the training pipeline.
@@ -138,8 +142,8 @@ class TrainingModelLoader:
 
         try:
             # First try unified model loader (accesses artifact_manager and standardized_model_manager)
-            base_models = await self.unified_loader.load_tactician_base_models(symbol, timeframe)
-            ensemble_model = await self.unified_loader.load_tactician_ensemble_model(symbol, timeframe)
+            base_models = await self.unified_loader.load_tactician_base_models(symbol, exchange, timeframe, direction)
+            ensemble_model = await self.unified_loader.load_tactician_ensemble_model(symbol, exchange, timeframe, direction)
             
             loaded_models.update(base_models)
             if ensemble_model:

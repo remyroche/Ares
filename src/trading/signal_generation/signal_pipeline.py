@@ -985,17 +985,62 @@ class SignalGenerationPipeline:
 
             for i, model in enumerate(self.analyst_base_models):
                 try:
-                    # Use the trained model to make predictions
-                    # The model should have a predict method
+                    # Prepare input: features + regime probabilities
+                    # Combine market_data features with regime probabilities
+                    regime_probs_values = np.array([
+                        regime_output.regime_probabilities.get(rt, 0.0) 
+                        for rt in RegimeType
+                    ])
+                    
+                    # Create enhanced features by combining market_data with regime probabilities
+                    # Most models expect a 2D array, so we need to prepare it properly
                     if hasattr(model, 'predict'):
-                        # Prepare input with regime probabilities
-                        # Models may accept regime probabilities as features
-                        prediction = model.predict(market_data)
+                        # Try to extract features from market_data if it's a DataFrame
+                        if isinstance(market_data, pd.DataFrame):
+                            # Use numeric columns as features
+                            numeric_data = market_data.select_dtypes(include=[np.number])
+                            if len(numeric_data) > 0:
+                                # Take last row (most recent data) and flatten
+                                market_features = numeric_data.iloc[-1].values
+                            else:
+                                market_features = np.array([])
+                        else:
+                            market_features = np.array([])
+                        
+                        # Combine market features with regime probabilities
+                        combined_features = np.concatenate([market_features, regime_probs_values]) if len(market_features) > 0 else regime_probs_values
+                        
+                        # Reshape to (1, n_features) for single prediction
+                        if combined_features.ndim == 1:
+                            combined_features = combined_features.reshape(1, -1)
+                        
+                        # Predict with combined features (market_data + regime probabilities)
+                        # Some models might accept the original market_data + regime_probs separately
+                        # Try combined first, fallback to market_data if needed
+                        try:
+                            prediction = model.predict(combined_features)
+                            self.logger.debug(
+                                f"Analyst base model {i}: used combined features "
+                                f"({len(market_features)} market + {len(regime_probs_values)} regime = {combined_features.shape[1]} total)"
+                            )
+                        except Exception:
+                            # Fallback: try with market_data only (model might handle regime internally)
+                            prediction = model.predict(market_data)
+                            self.logger.debug(
+                                f"Analyst base model {i}: fallback to market_data only "
+                                f"(model may handle regime probabilities internally)"
+                            )
+                        
                         confidence = getattr(prediction, 'confidence', 0.5) if hasattr(prediction, 'confidence') else 0.5
+                        if isinstance(prediction, np.ndarray) and prediction.size == 1:
+                            confidence = float(prediction[0])
+                        elif isinstance(prediction, (int, float)):
+                            confidence = float(prediction)
+                        
                         features = getattr(prediction, 'features', {}) if hasattr(prediction, 'features') else {}
                         
-                        # Add regime probabilities to features
-                        features['regime_probabilities'] = regime_output.regime_probabilities
+                        # Store regime information in features dict
+                        features['regime_probabilities'] = dict(regime_output.regime_probabilities)
                         features['primary_regime'] = regime_output.primary_regime.value
                         features['regime_confidence'] = regime_output.confidence
                     else:
@@ -1061,22 +1106,61 @@ class SignalGenerationPipeline:
         
         Flow:
         1. Base models produce predictions (already done in _run_analyst_base_models)
-        2. Ensemble ML model takes base predictions as features, produces ensemble confidence
-        3. Use ensemble confidence directly (no meta model combination)
+        2. Ensemble ML model receives: market features + regime probabilities + base model outputs
+        3. Ensemble produces confidence directly (no meta model combination)
+        
+        Inputs to Analyst Ensemble:
+        - Market data features (from market_data DataFrame)
+        - Regime probabilities (from regime detector)
+        - Base model outputs (confidences from all base models)
         """
         try:
-            # Collect base model predictions for ensemble
+            # Prepare inputs for ensemble model: features + regime probabilities + base model outputs
+            # 1. Prepare market_data features (same as base models)
+            if isinstance(market_data, pd.DataFrame):
+                numeric_data = market_data.select_dtypes(include=[np.number])
+                if len(numeric_data) > 0:
+                    market_features = numeric_data.iloc[-1].values
+                else:
+                    market_features = np.array([])
+            else:
+                market_features = np.array([])
+            
+            # 2. Prepare regime probabilities
+            regime_probs_values = np.array([
+                regime_output.regime_probabilities.get(rt, 0.0) 
+                for rt in RegimeType
+            ])
+            
+            # 3. Collect base model predictions/outputs
             base_confidences = [output.base_confidence for output in base_outputs]
-            base_predictions_array = np.array(base_confidences).reshape(1, -1) if base_confidences else None
+            base_predictions_array = np.array(base_confidences).reshape(1, -1) if base_confidences else np.array([]).reshape(1, 0)
+            
+            # Combine all inputs: market_features + regime_probs + base_outputs
+            ensemble_input_parts = []
+            if len(market_features) > 0:
+                ensemble_input_parts.append(market_features)
+            ensemble_input_parts.append(regime_probs_values)
+            if len(base_predictions_array.flatten()) > 0:
+                ensemble_input_parts.append(base_predictions_array.flatten())
+            
+            ensemble_input = np.concatenate(ensemble_input_parts) if ensemble_input_parts else np.array([])
+            ensemble_input = ensemble_input.reshape(1, -1) if ensemble_input.ndim == 1 else ensemble_input
+            
+            self.logger.debug(
+                f"Analyst ensemble input prepared: "
+                f"{len(market_features)} market + {len(regime_probs_values)} regime + "
+                f"{len(base_predictions_array.flatten())} base outputs = {ensemble_input.shape[1]} total features"
+            )
             
             ensemble_confidence = None
             ensemble_features = {}
             
-            # If ensemble model is available, use base model predictions as features
-            if self.analyst_ensemble_model is not None and base_predictions_array is not None:
+            # If ensemble model is available, use combined features as input
+            if self.analyst_ensemble_model is not None and len(ensemble_input.flatten()) > 0:
                 try:
                     if hasattr(self.analyst_ensemble_model, 'predict'):
-                        ensemble_prediction = self.analyst_ensemble_model.predict(base_predictions_array)
+                        ensemble_prediction = self.analyst_ensemble_model.predict(ensemble_input)
                         if hasattr(ensemble_prediction, 'confidence'):
                             ensemble_confidence = float(ensemble_prediction.confidence)
                         elif isinstance(ensemble_prediction, np.ndarray):
@@ -1087,7 +1171,7 @@ class SignalGenerationPipeline:
                         
                         # Try to get probabilities if available
                         if hasattr(self.analyst_ensemble_model, 'predict_proba'):
-                            ensemble_proba = self.analyst_ensemble_model.predict_proba(base_predictions_array)
+                            ensemble_proba = self.analyst_ensemble_model.predict_proba(ensemble_input)
                             ensemble_features['ensemble_probabilities'] = ensemble_proba
                     
                     self.logger.debug(f"✅ Analyst ensemble model prediction: {ensemble_confidence}")
@@ -1160,20 +1244,74 @@ class SignalGenerationPipeline:
             # These are the models trained in tactician_models_training_refactored.py
             for i, model in enumerate(self.tactician_base_models):
                 try:
+                    # Prepare input: features + regime probabilities + analyst ensemble outputs
+                    # 1. Market data features
+                    if isinstance(market_data, pd.DataFrame):
+                        numeric_data = market_data.select_dtypes(include=[np.number])
+                        if len(numeric_data) > 0:
+                            market_features = numeric_data.iloc[-1].values
+                        else:
+                            market_features = np.array([])
+                    else:
+                        market_features = np.array([])
+                    
+                    # 2. Regime probabilities
+                    regime_probs_values = np.array([
+                        regime_output.regime_probabilities.get(rt, 0.0) 
+                        for rt in RegimeType
+                    ])
+                    
+                    # 3. Analyst ensemble outputs (confidence + features)
+                    analyst_ensemble_inputs = np.array([
+                        analyst_confidence,
+                        analyst_output.market_health_score,
+                        analyst_output.regime_adjusted_confidence
+                    ])
+                    
+                    # Combine all inputs for tactician base models
+                    combined_features_parts = []
+                    if len(market_features) > 0:
+                        combined_features_parts.append(market_features)
+                    combined_features_parts.append(regime_probs_values)
+                    combined_features_parts.append(analyst_ensemble_inputs)
+                    
+                    combined_features = np.concatenate(combined_features_parts) if combined_features_parts else np.array([])
+                    if combined_features.ndim == 1:
+                        combined_features = combined_features.reshape(1, -1)
+                    
                     # Use the trained model to make predictions
-                    # The model should have a predict method
                     if hasattr(model, 'predict'):
-                        # Prepare input with regime probabilities and analyst outputs
-                        prediction = model.predict(market_data)
+                        # Predict with combined features (market_data + regime probabilities + analyst ensemble outputs)
+                        # Try combined features first, fallback to market_data if needed
+                        try:
+                            prediction = model.predict(combined_features)
+                            self.logger.debug(
+                                f"Tactician base model {i}: used combined features "
+                                f"({len(market_features)} market + {len(regime_probs_values)} regime + "
+                                f"{len(analyst_ensemble_inputs)} analyst = {combined_features.shape[1]} total)"
+                            )
+                        except Exception:
+                            prediction = model.predict(market_data)
+                            self.logger.debug(
+                                f"Tactician base model {i}: fallback to market_data only "
+                                f"(model may handle additional inputs internally)"
+                            )
+                        
                         confidence = getattr(prediction, 'confidence', 0.5) if hasattr(prediction, 'confidence') else 0.5
+                        if isinstance(prediction, np.ndarray) and prediction.size == 1:
+                            confidence = float(prediction[0])
+                        elif isinstance(prediction, (int, float)):
+                            confidence = float(prediction)
+                        
                         scenario_predictions = getattr(prediction, 'scenario_predictions', {}) if hasattr(prediction, 'scenario_predictions') else {}
                         price_targets = getattr(prediction, 'price_targets', {}) if hasattr(prediction, 'price_targets') else {}
                         adversarial_risks = getattr(prediction, 'adversarial_risks', {}) if hasattr(prediction, 'adversarial_risks') else {}
                         
-                        # Add regime and analyst information to scenario predictions
-                        scenario_predictions['regime_probabilities'] = regime_output.regime_probabilities
+                        # Store regime and analyst information in scenario predictions
+                        scenario_predictions['regime_probabilities'] = dict(regime_output.regime_probabilities)
                         scenario_predictions['primary_regime'] = regime_output.primary_regime.value
                         scenario_predictions['analyst_confidence'] = analyst_confidence
+                        scenario_predictions['analyst_market_health_score'] = analyst_output.market_health_score
                         if analyst_features:
                             scenario_predictions['analyst_features'] = analyst_features
                     else:
@@ -1240,23 +1378,72 @@ class SignalGenerationPipeline:
         
         Flow:
         1. Base models produce predictions with analyst outputs (already done in _run_tactician_base_models)
-        2. Ensemble ML model takes base predictions as features, produces ensemble confidence
-        3. Use ensemble confidence directly (no meta model combination)
+        2. Ensemble ML model receives: market features + regime probabilities + analyst ensemble outputs + base model outputs
+        3. Ensemble produces confidence directly (no meta model combination)
         4. Generate final signal based on confidence thresholds
+        
+        Inputs to Tactician Ensemble:
+        - Market data features (from market_data DataFrame)
+        - Regime probabilities (from regime detector)
+        - Analyst ensemble outputs (confidence, market_health_score, regime_adjusted_confidence)
+        - Base model outputs (confidences from all tactician base models)
         """
         try:
-            # Collect base model predictions for ensemble
+            # Prepare inputs for tactician ensemble: features + regime probabilities + analyst ensemble outputs + tactician base outputs
+            # 1. Market data features
+            if isinstance(market_data, pd.DataFrame):
+                numeric_data = market_data.select_dtypes(include=[np.number])
+                if len(numeric_data) > 0:
+                    market_features = numeric_data.iloc[-1].values
+                else:
+                    market_features = np.array([])
+            else:
+                market_features = np.array([])
+            
+            # 2. Regime probabilities
+            regime_probs_values = np.array([
+                regime_output.regime_probabilities.get(rt, 0.0) 
+                for rt in RegimeType
+            ])
+            
+            # 3. Analyst ensemble outputs
+            analyst_ensemble_inputs = np.array([
+                analyst_output.analyst_confidence,
+                analyst_output.market_health_score,
+                analyst_output.regime_adjusted_confidence
+            ])
+            
+            # 4. Tactician base model outputs
             base_confidences = [output.base_confidence for output in base_outputs]
-            base_predictions_array = np.array(base_confidences).reshape(1, -1) if base_confidences else None
+            base_predictions_array = np.array(base_confidences).reshape(1, -1) if base_confidences else np.array([]).reshape(1, 0)
+            
+            # Combine all inputs: market_features + regime_probs + analyst_outputs + base_outputs
+            ensemble_input_parts = []
+            if len(market_features) > 0:
+                ensemble_input_parts.append(market_features)
+            ensemble_input_parts.append(regime_probs_values)
+            ensemble_input_parts.append(analyst_ensemble_inputs)
+            if len(base_predictions_array.flatten()) > 0:
+                ensemble_input_parts.append(base_predictions_array.flatten())
+            
+            ensemble_input = np.concatenate(ensemble_input_parts) if ensemble_input_parts else np.array([])
+            ensemble_input = ensemble_input.reshape(1, -1) if ensemble_input.ndim == 1 else ensemble_input
+            
+            self.logger.debug(
+                f"Tactician ensemble input prepared: "
+                f"{len(market_features)} market + {len(regime_probs_values)} regime + "
+                f"{len(analyst_ensemble_inputs)} analyst + {len(base_predictions_array.flatten())} base = "
+                f"{ensemble_input.shape[1]} total features"
+            )
             
             ensemble_confidence = None
             ensemble_features = {}
             
-            # If ensemble model is available, use base model predictions as features
-            if self.tactician_ensemble_model is not None and base_predictions_array is not None:
+            # If ensemble model is available, use combined features as input
+            if self.tactician_ensemble_model is not None and len(ensemble_input.flatten()) > 0:
                 try:
                     if hasattr(self.tactician_ensemble_model, 'predict'):
-                        ensemble_prediction = self.tactician_ensemble_model.predict(base_predictions_array)
+                        ensemble_prediction = self.tactician_ensemble_model.predict(ensemble_input)
                         if hasattr(ensemble_prediction, 'confidence'):
                             ensemble_confidence = float(ensemble_prediction.confidence)
                         elif isinstance(ensemble_prediction, np.ndarray):
@@ -1267,7 +1454,7 @@ class SignalGenerationPipeline:
                         
                         # Try to get probabilities if available
                         if hasattr(self.tactician_ensemble_model, 'predict_proba'):
-                            ensemble_proba = self.tactician_ensemble_model.predict_proba(base_predictions_array)
+                            ensemble_proba = self.tactician_ensemble_model.predict_proba(ensemble_input)
                             ensemble_features['ensemble_probabilities'] = ensemble_proba
                     
                     self.logger.debug(f"✅ Tactician ensemble model prediction: {ensemble_confidence}")

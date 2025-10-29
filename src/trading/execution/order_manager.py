@@ -545,13 +545,6 @@ class OrderManager:
                     severity=TradingErrorSeverity.HIGH
                 )
             
-            # Check if exchange is connected
-            if not await self.exchange_interface.is_connected():
-                raise ExecutionError(
-                    "Exchange interface not connected",
-                    severity=TradingErrorSeverity.HIGH
-                )
-            
             # Cancel order via exchange interface
             if order.exchange_order_id:
                 success = await self.exchange_interface.cancel_order(

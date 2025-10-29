@@ -262,40 +262,6 @@ class ExchangeInterface:
             'low_24h': 48000.0
         }
 
-    @handle_errors(default_return=None)
-    def _initialize_shared_utilities(self) -> None:
-        """Initialize shared exchange utilities."""
-        try:
-            # Initialize shared utilities with proper configuration
-            exchange_config = {
-                'exchange_type': self.exchange_type,
-                'api_key': self.api_key,
-                'api_secret': self.api_secret,
-                'testnet': self.testnet,
-                'rate_limits': self.rate_limits
-            }
-
-            # Initialize each utility with correct parameters
-            self.auth_manager = HighLevelAuthManager(self.exchange_type)
-            self.market_manager = HighLevelMarketManager(self.exchange_type)
-            self.order_manager = HighLevelOrderManager(self.exchange_type)
-            self.risk_manager = HighLevelRiskManager(self.exchange_type)
-            self.balance_manager = HighLevelBalanceManager(self.exchange_type)
-            self.rate_limit_manager = HighLevelRateLimitManager(self.exchange_type)
-
-            # Initialize all utilities
-            for manager in [self.auth_manager, self.market_manager, self.order_manager,
-                          self.risk_manager, self.balance_manager, self.rate_limit_manager]:
-                if manager:
-                    manager.initialize()
-
-            tprint("✅ Shared exchange utilities initialized successfully", "INFO")
-
-        except Exception as e:
-            tprint(f"❌ Failed to initialize shared utilities: {e}", "ERROR")
-            # Continue without shared utilities for simulated mode
-            if self.exchange_type != 'simulated':
-                raise
 
     @handle_async_errors(default_return=False)
     async def connect(self) -> bool:

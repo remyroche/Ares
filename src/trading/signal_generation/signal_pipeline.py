@@ -458,6 +458,20 @@ class SignalGenerationPipeline:
     async def _detect_hmm_regime(self, market_data: pd.DataFrame, timestamp: datetime) -> HMMRegimeOutput:
         """Step 1: Detect regime using NAS/TAS (replaces HMM approach)."""
         try:
+            # Check if regime detector is available
+            if self.hmm_regime_detector is None:
+                # Fallback to default regime when detector is disabled
+                self.logger.warning("⚠️ HMM regime detector disabled, using fallback regime")
+                return HMMRegimeOutput(
+                    timestamp=timestamp,
+                    regime_probabilities={"regime_0": 1.0},  # Default to single regime
+                    primary_regime=0,
+                    confidence=0.5,  # Moderate confidence
+                    regime_strength=0.5,
+                    transition_probability=0.5,
+                    features_used={'fallback': True, 'reason': 'detector_disabled'}
+                )
+            
             # Use NAS/TAS regime detector
             regime_detection = self.hmm_regime_detector.detect_regimes(
                 market_data=market_data,

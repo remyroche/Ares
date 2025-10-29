@@ -157,7 +157,6 @@ class PaperTradingIntegration:
             return False
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
-    @secure_data_processing
     @comprehensive_validation()
     @handles_errors(
         exceptions=(ValueError, AttributeError),

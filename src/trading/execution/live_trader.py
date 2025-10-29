@@ -139,10 +139,9 @@ class LiveTrader:
         """Initialize live trader components."""
         try:
             # Initialize exchange interface first
-            exchange_type = ExchangeType(self.config.get('exchange_type', 'simulated'))
-            self.exchange_interface = await create_exchange_interface(
-                exchange_type, self.config
-            )
+            exchange_config = self.config.copy()
+            exchange_config['exchange_type'] = self.config.get('exchange_type', 'simulated')
+            self.exchange_interface = create_exchange_interface(exchange_config)
 
             if not await self.exchange_interface.connect():
                 raise ExecutionError("Failed to connect to exchange")
@@ -471,8 +470,12 @@ class LiveTrader:
             return False
 
     async def update_positions(self) -> None:
-        """Update position information with current prices."""
+        """Update position information with current prices and reconcile with exchange."""
         try:
+            # Reconcile positions with exchange
+            await self._reconcile_positions()
+            
+            # Update position prices
             for symbol, position in self.positions.items():
                 current_price = await self._get_current_price(symbol)
 
@@ -485,6 +488,72 @@ class LiveTrader:
 
         except Exception as e:
             tprint_warning(f"⚠️ Failed to update positions: {str(e)}")
+    
+    async def _reconcile_positions(self) -> None:
+        """Reconcile local positions with exchange positions."""
+        try:
+            if not self.exchange_interface:
+                return
+            
+            # Get positions from exchange
+            exchange_positions = await self.exchange_interface.get_open_positions()
+            if not exchange_positions:
+                return
+            
+            # Build exchange position map
+            exchange_pos_map = {}
+            for pos in exchange_positions:
+                symbol = pos.get('symbol', '')
+                if symbol:
+                    exchange_pos_map[symbol] = pos
+            
+            # Check local positions against exchange
+            for symbol, local_pos in list(self.positions.items()):
+                exchange_pos = exchange_pos_map.get(symbol)
+                
+                if not exchange_pos:
+                    # Position doesn't exist on exchange - might have been closed externally
+                    tprint_warning(f"⚠️ Position {symbol} not found on exchange, removing from local tracking")
+                    del self.positions[symbol]
+                    continue
+                
+                # Compare quantities
+                exchange_qty = float(exchange_pos.get('positionAmt', 0))
+                local_qty = local_pos.quantity
+                
+                if abs(exchange_qty - local_qty) > 0.0001:  # Tolerance for floating point
+                    tprint_warning(
+                        f"⚠️ Position {symbol} quantity mismatch: "
+                        f"local={local_qty}, exchange={exchange_qty}"
+                    )
+                    # Update local position with exchange data
+                    local_pos.quantity = exchange_qty
+                    if exchange_qty == 0:
+                        del self.positions[symbol]
+            
+            # Check for new positions on exchange
+            for symbol, exchange_pos in exchange_pos_map.items():
+                if symbol not in self.positions:
+                    exchange_qty = float(exchange_pos.get('positionAmt', 0))
+                    if abs(exchange_qty) > 0.0001:
+                        tprint_warning(f"⚠️ New position {symbol} found on exchange, adding to local tracking")
+                        # Create new position from exchange data
+                        entry_price = float(exchange_pos.get('entryPrice', 0))
+                        current_price = await self._get_current_price(symbol)
+                        
+                        self.positions[symbol] = Position(
+                            symbol=symbol,
+                            side='long' if exchange_qty > 0 else 'short',
+                            quantity=abs(exchange_qty),
+                            entry_price=entry_price,
+                            current_price=current_price,
+                            unrealized_pnl=float(exchange_pos.get('unrealizedPnl', 0)),
+                            realized_pnl=0.0,
+                            timestamp=datetime.now()
+                        )
+                        
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to reconcile positions: {str(e)}")
 
     async def monitor_positions(self) -> None:
         """Monitor positions and execute risk management."""

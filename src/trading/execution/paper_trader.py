@@ -8,6 +8,8 @@ from ..utils.error_handling import (
     critical_operation, require_no_fallback
 )
 from ..utils.validation import validate_trading_config, validate_market_data
+from ..monitoring.comprehensive_trade_monitor import EnhancedMonitoringOrchestrator
+from src.utils.warning_symbols import invalid
 
 # src/paper_trader.py
 """

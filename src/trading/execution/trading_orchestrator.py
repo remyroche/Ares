@@ -1077,9 +1077,25 @@ class TradingOrchestrator:
             # Simulate execution delay
             await asyncio.sleep(0.1)
 
-            # Simulate execution success (95% success rate)
-            import random
-            return random.random() > 0.05
+            # Deterministic simulation based on decision confidence and market conditions
+            # Higher confidence = higher success rate
+            base_success_rate = 0.95  # 95% base success rate
+            
+            # Adjust success rate based on confidence
+            confidence_factor = decision.confidence if decision.confidence <= 1.0 else 1.0
+            adjusted_success_rate = base_success_rate * confidence_factor
+            
+            # Use deterministic hash-based decision instead of random
+            decision_hash = hash(f"{decision.timestamp.isoformat()}{decision.symbol}{decision.action}")
+            decision_value = (decision_hash % 10000) / 10000.0  # Convert to 0-1 range
+            
+            # Success if hash value is below success rate threshold
+            success = decision_value < adjusted_success_rate
+            
+            if not success:
+                tprint_warning(f"⚠️ Simulated order execution failed (confidence: {decision.confidence:.2f})")
+            
+            return success
 
         except Exception as e:
             self.logger.error(f"❌ Order execution simulation failed: {e}")

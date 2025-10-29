@@ -695,9 +695,11 @@ class MSDRClusterer:
         
         with tprint_timer("Model Selection", level="PERFORMANCE"):
             for k in iterator:
+                model_fitted = False
                 try:
-                    # Fit model without storing in fitted_models dict
+                    # Fit model without storing in fitted_models dict initially
                     result = self._fit_ms_model(data, k, store_model=False)
+                    model_fitted = True
                     
                     ic_value = result.get(self.config.ic_criterion)
                     if ic_value is None:
@@ -736,6 +738,12 @@ class MSDRClusterer:
                 except Exception as e:
                     tprint_warning(f"   k={k}: failed ({e})")
                     # Skip failed models (don't add to ic_values)
+                finally:
+                    # Clean up intermediate models that are not the best
+                    # This ensures memory is freed even if an exception occurs
+                    # Note: Only cleanup if model was actually fitted and stored but is no longer best
+                    if model_fitted and k != best_k and k in self.fitted_models:
+                        del self.fitted_models[k]
         
         # Validate that we found at least one valid model
         if not ic_values:

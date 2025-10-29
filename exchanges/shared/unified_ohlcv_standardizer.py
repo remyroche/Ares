@@ -286,7 +286,239 @@ class UnifiedOHLCVStandardizer:
             }
         }
         
+        # Comprehensive column name mappings for normalization
+        # Supports all common variations across exchanges
+        self.column_name_mappings = {
+            # OHLCV core fields - case-insensitive and underscore variations
+            'open': ['open', 'Open', 'OPEN', 'o', 'O', 'open_price', 'openPrice'],
+            'high': ['high', 'High', 'HIGH', 'h', 'H', 'high_price', 'highPrice'],
+            'low': ['low', 'Low', 'LOW', 'l', 'L', 'low_price', 'lowPrice'],
+            'close': ['close', 'Close', 'CLOSE', 'c', 'C', 'close_price', 'closePrice', 'last'],
+            'volume': ['volume', 'Volume', 'VOLUME', 'v', 'V', 'vol', 'Vol', 'VOL', 'quantity', 'qty'],
+            
+            # Timestamp fields - various names and formats
+            'timestamp': [
+                'timestamp', 'Timestamp', 'TIMESTAMP', 'ts', 'TS', 'time', 'Time', 'TIME',
+                'open_time', 'openTime', 'OpenTime', 'opentime', 'datetime', 'DateTime', 'date',
+                'start_time', 'startTime', 't', 'T'
+            ],
+            
+            # Additional fields
+            'quote_volume': ['quote_volume', 'quoteVolume', 'QuoteVolume', 'quote_vol', 'vol_ccy', 'volCcy', 'qty_quote'],
+            'trades_count': ['trades', 'Trades', 'trades_count', 'tradesCount', 'count', 'number_of_trades', 'confirm'],
+            'taker_buy_base_volume': ['taker_buy_base', 'takerBuyBase', 'taker_buy_base_volume', 'buy_base_vol'],
+            'taker_buy_quote_volume': ['taker_buy_quote', 'takerBuyQuote', 'taker_buy_quote_volume', 'buy_quote_vol'],
+            
+            # Metadata fields
+            'symbol': ['symbol', 'Symbol', 'SYMBOL', 'pair', 'Pair', 'instrument', 'market'],
+            'interval': ['interval', 'Interval', 'INTERVAL', 'timeframe', 'Timeframe', 'period'],
+            'exchange': ['exchange', 'Exchange', 'EXCHANGE', 'exchange_name', 'source']
+        }
+        
+        # Create reverse lookup for fast column name detection
+        self.column_name_lookup = {}
+        for standard_name, variations in self.column_name_mappings.items():
+            for variation in variations:
+                self.column_name_lookup[variation.lower()] = standard_name
+        
         self.logger.info(f"✅ UnifiedOHLCVStandardizer initialized with {quality_level.value} quality level")
+    
+    def _normalize_column_names(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Normalize column names to standard format using automatic detection.
+        
+        This is the most important normalization step - it ensures all exchanges
+        use the same column names regardless of their original format.
+        
+        Args:
+            df: DataFrame with potentially non-standard column names
+            
+        Returns:
+            DataFrame with normalized column names
+        """
+        if df.empty:
+            return df
+        
+        rename_map = {}
+        for col in df.columns:
+            col_lower = str(col).lower().strip()
+            # Remove common prefixes/suffixes
+            col_clean = col_lower.replace('_', '').replace('-', '').replace(' ', '')
+            
+            # Try exact match first
+            if col_lower in self.column_name_lookup:
+                rename_map[col] = self.column_name_lookup[col_lower]
+            # Try partial match
+            elif col_clean in self.column_name_lookup:
+                rename_map[col] = self.column_name_lookup[col_clean]
+            else:
+                # Try fuzzy matching for common patterns
+                found_match = False
+                for standard_name, variations in self.column_name_mappings.items():
+                    for variation in variations:
+                        if col_lower == variation.lower() or col_clean == variation.lower().replace('_', '').replace('-', ''):
+                            rename_map[col] = standard_name
+                            found_match = True
+                            break
+                    if found_match:
+                        break
+                
+                # If no match found, keep original name but log warning
+                if not found_match:
+                    self.logger.debug(f"No standard mapping found for column: {col}")
+        
+        if rename_map:
+            df_renamed = df.rename(columns=rename_map)
+            self.logger.debug(f"Renamed columns: {rename_map}")
+            return df_renamed
+        
+        return df
+    
+    def _normalize_timestamp_format(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Detect and normalize timestamp format to always use UTC datetime index.
+        
+        Handles various timestamp formats:
+        - Unix timestamps (seconds, milliseconds, microseconds)
+        - Datetime strings (various formats)
+        - Datetime objects (with or without timezone)
+        - Integer/float timestamps
+        
+        Always converts to UTC timezone-aware DatetimeIndex.
+        
+        Args:
+            df: DataFrame with timestamp data
+            
+        Returns:
+            DataFrame with UTC datetime index
+        """
+        if df.empty:
+            return df
+        
+        timestamp_col = None
+        is_index = False
+        
+        # Check if index is already datetime
+        if isinstance(df.index, pd.DatetimeIndex):
+            # Ensure UTC timezone
+            if df.index.tz is None:
+                df.index = df.index.tz_localize('UTC')
+            elif df.index.tz != timezone.utc:
+                df.index = df.index.tz_convert('UTC')
+            return df
+        
+        # Check for timestamp column
+        for col_name in ['timestamp', 'time', 'datetime', 'date', 'ts', 'open_time', 'start_time']:
+            if col_name in df.columns:
+                timestamp_col = col_name
+                break
+        
+        # Check index name
+        if timestamp_col is None and df.index.name:
+            index_name_lower = str(df.index.name).lower()
+            if any(name in index_name_lower for name in ['time', 'date', 'timestamp', 'ts']):
+                is_index = True
+                timestamp_col = df.index.name
+        
+        # Try to detect timestamp from first non-null value
+        if timestamp_col is None:
+            for col in df.columns:
+                sample_value = df[col].dropna().iloc[0] if len(df[col].dropna()) > 0 else None
+                if sample_value is not None:
+                    # Check if it looks like a timestamp
+                    if isinstance(sample_value, (int, float)):
+                        # Could be unix timestamp - check if reasonable range
+                        if 1e9 < abs(sample_value) < 1e15:  # Rough range for unix timestamps
+                            timestamp_col = col
+                            self.logger.info(f"Auto-detected timestamp column: {col}")
+                            break
+                    elif isinstance(sample_value, (str, pd.Timestamp, datetime)):
+                        try:
+                            pd.to_datetime(sample_value)
+                            timestamp_col = col
+                            self.logger.info(f"Auto-detected timestamp column: {col}")
+                            break
+                        except:
+                            pass
+        
+        # Extract and convert timestamp
+        if timestamp_col:
+            if is_index:
+                # Convert index to datetime
+                try:
+                    # Try parsing as various formats
+                    if pd.api.types.is_numeric_dtype(df.index):
+                        # Assume unix timestamp - detect unit
+                        sample_val = df.index[0]
+                        if isinstance(sample_val, (int, float)):
+                            if sample_val > 1e12:  # Likely milliseconds
+                                df.index = pd.to_datetime(df.index, unit='ms', utc=True)
+                            elif sample_val > 1e9:  # Likely seconds
+                                df.index = pd.to_datetime(df.index, unit='s', utc=True)
+                            else:
+                                df.index = pd.to_datetime(df.index, unit='s', utc=True)
+                        else:
+                            df.index = pd.to_datetime(df.index, utc=True)
+                    else:
+                        df.index = pd.to_datetime(df.index, utc=True)
+                except Exception as e:
+                    self.logger.warning(f"Failed to convert index to datetime: {e}, trying column extraction")
+                    if timestamp_col not in df.columns:
+                        df[timestamp_col] = df.index
+                    timestamp_col = timestamp_col  # Continue with column processing
+            
+            if timestamp_col in df.columns:
+                # Convert timestamp column
+                ts_series = df[timestamp_col]
+                
+                # Detect timestamp format and convert
+                sample_val = ts_series.dropna().iloc[0] if len(ts_series.dropna()) > 0 else None
+                
+                if sample_val is not None:
+                    try:
+                        if isinstance(sample_val, (int, float)):
+                            # Unix timestamp - detect unit
+                            if sample_val > 1e12:  # Likely milliseconds
+                                df[timestamp_col] = pd.to_datetime(ts_series, unit='ms', utc=True)
+                            elif sample_val > 1e9:  # Likely seconds (unix epoch)
+                                df[timestamp_col] = pd.to_datetime(ts_series, unit='s', utc=True)
+                            elif sample_val > 1e6:  # Likely microseconds
+                                df[timestamp_col] = pd.to_datetime(ts_series, unit='us', utc=True)
+                            else:
+                                # Try as seconds anyway
+                                df[timestamp_col] = pd.to_datetime(ts_series, unit='s', utc=True)
+                        elif isinstance(sample_val, str):
+                            # String format - let pandas infer
+                            df[timestamp_col] = pd.to_datetime(ts_series, utc=True, infer_datetime_format=True)
+                        elif isinstance(sample_val, (datetime, pd.Timestamp)):
+                            # Already datetime-like
+                            df[timestamp_col] = pd.to_datetime(ts_series, utc=True)
+                        else:
+                            # Try general conversion
+                            df[timestamp_col] = pd.to_datetime(ts_series, utc=True)
+                    except Exception as e:
+                        self.logger.warning(f"Timestamp conversion failed, trying alternative: {e}")
+                        # Fallback: try various formats
+                        try:
+                            df[timestamp_col] = pd.to_datetime(ts_series, errors='coerce', utc=True)
+                        except:
+                            self.logger.error(f"Could not convert timestamp column {timestamp_col}")
+                
+                # Set as index and ensure UTC
+                df = df.set_index(timestamp_col)
+                if not isinstance(df.index, pd.DatetimeIndex):
+                    df.index = pd.to_datetime(df.index, utc=True)
+            
+            # Ensure UTC timezone
+            if isinstance(df.index, pd.DatetimeIndex):
+                if df.index.tz is None:
+                    df.index = df.index.tz_localize('UTC')
+                elif df.index.tz != timezone.utc:
+                    df.index = df.index.tz_convert('UTC')
+        else:
+            self.logger.warning("No timestamp column detected - cannot normalize timestamp format")
+        
+        return df
     
     def standardize_data(
         self,
@@ -363,35 +595,61 @@ class UnifiedOHLCVStandardizer:
         """
         Standardize an already-formatted DataFrame to ensure consistency.
         
-        This is a lightweight method for DataFrames that are already mostly standardized
-        (e.g., coming from parquet files or already processed data). It:
-        - Validates OHLCV data consistency
-        - Ensures proper column types
-        - Applies data optimizations
-        - Validates with data quality framework
+        This method performs comprehensive normalization:
+        1. Column name normalization (MOST IMPORTANT) - converts all column name variations to standard format
+        2. Timestamp format normalization - ensures UTC datetime index with automatic detection
+        3. Data type validation and conversion
+        4. OHLCV relationship validation
+        5. Data optimizations
         
         Args:
-            df: DataFrame with OHLCV columns (open, high, low, close, volume)
+            df: DataFrame with OHLCV data (can have any column names)
             exchange: Optional exchange type or name for context
             
         Returns:
-            Standardized and validated DataFrame
+            Fully standardized DataFrame with:
+            - Standardized column names (open, high, low, close, volume, etc.)
+            - UTC datetime index (automatically detected and converted)
+            - Validated data types
+            - Corrected OHLC relationships
         """
         try:
             if df.empty:
                 return df
             
-            # Validate required columns
+            # Step 1: Normalize column names (MOST IMPORTANT)
+            # This handles all variations: Open, OPEN, open_price, openPrice, etc.
+            df = self._normalize_column_names(df)
+            self.logger.debug(f"Column names after normalization: {list(df.columns)}")
+            
+            # Step 2: Normalize timestamp format (always UTC datetime index)
+            # Automatically detects timestamp format and converts to UTC
+            df = self._normalize_timestamp_format(df)
+            
+            # Step 3: Validate required columns exist after normalization
             required_cols = ['open', 'high', 'low', 'close', 'volume']
             missing_cols = [col for col in required_cols if col not in df.columns]
             if missing_cols:
-                raise ValueError(f"Missing required OHLCV columns: {missing_cols}")
+                # Try to find alternative column names
+                available_cols = [col.lower() for col in df.columns]
+                for missing_col in missing_cols[:]:  # Copy list to iterate
+                    for col in df.columns:
+                        if missing_col in col.lower() or col.lower() in missing_col:
+                            rename_map = {col: missing_col}
+                            df = df.rename(columns=rename_map)
+                            missing_cols.remove(missing_col)
+                            self.logger.info(f"Auto-mapped column '{col}' to '{missing_col}'")
+                            break
+                
+                if missing_cols:
+                    raise ValueError(f"Missing required OHLCV columns after normalization: {missing_cols}. Available columns: {list(df.columns)}")
             
-            # Ensure numeric types
+            # Step 4: Ensure numeric types
             for col in required_cols:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
             
-            # Validate OHLC relationships
+            # Step 5: Validate OHLC relationships
             invalid_mask = (
                 (df['high'] < df[['open', 'close']].max(axis=1)) |
                 (df['low'] > df[['open', 'close']].min(axis=1)) |
@@ -404,21 +662,25 @@ class UnifiedOHLCVStandardizer:
                 df.loc[invalid_mask, 'high'] = df.loc[invalid_mask, ['open', 'close']].max(axis=1)
                 df.loc[invalid_mask, 'low'] = df.loc[invalid_mask, ['open', 'close']].min(axis=1)
             
-            # Ensure timestamp index is datetime
+            # Step 6: Ensure timestamp index is UTC datetime (double-check)
             if not isinstance(df.index, pd.DatetimeIndex):
-                if 'timestamp' in df.columns:
-                    df['timestamp'] = pd.to_datetime(df['timestamp'])
-                    df = df.set_index('timestamp')
-                else:
-                    self.logger.warning("No timestamp column or index found")
+                self.logger.warning("Timestamp index missing after normalization, attempting recovery")
+                df = self._normalize_timestamp_format(df)
+            else:
+                # Ensure UTC timezone
+                if df.index.tz is None:
+                    df.index = df.index.tz_localize('UTC')
+                elif df.index.tz != timezone.utc:
+                    df.index = df.index.tz_convert('UTC')
             
-            # Apply data processing optimizations
+            # Step 7: Apply data processing optimizations
             df = self._apply_data_processing_optimizations(df)
             
-            # Validate with src/utils/data/ framework
+            # Step 8: Validate with src/utils/data/ framework
             context = f"{exchange.value if hasattr(exchange, 'value') else exchange}" if exchange else "dataframe"
             self._validate_with_data_framework(df, f"{context} standardization")
             
+            self.logger.info(f"✅ Standardization complete: {df.shape}, columns: {list(df.columns)}, index type: {type(df.index).__name__}")
             return df
             
         except Exception as e:

@@ -208,17 +208,26 @@ class TradingOrchestrator:
             self.tactician = Tactician(tactician_config)
             await self.tactician.initialize()
 
-            # Initialize Supervisor
-            from src.supervisor.main import Supervisor
+            # Initialize Trading Supervisor
+            from ..supervisor.trading_supervisor import create_trading_supervisor
             supervisor_config = self.config.get('supervisor', {})
-            # Note: Supervisor requires additional parameters
-            # self.supervisor = Supervisor(supervisor_config)
+            supervisor_config['trading_config'] = self.config
+            self.supervisor = create_trading_supervisor(supervisor_config)
+            await self.supervisor.initialize()
+            self.supervisor.orchestrator_reference = self
 
-            # Initialize Strategist
+            # Initialize Strategist (for regime detection)
             from src.strategist.strategist import Strategist
             strategist_config = self.config.get('strategist', {})
             self.strategist = Strategist(strategist_config)
             await self.strategist.initialize()
+            
+            # Connect Strategist's regime detector to signal pipeline (if signal pipeline exists)
+            # The regime detector will be used by _detect_regime in signal_pipeline.py
+            if hasattr(self, 'signal_pipeline') and self.signal_pipeline:
+                if self.strategist and self.strategist.regime_detector:
+                    self.signal_pipeline.regime_detector = self.strategist.regime_detector
+                    self.logger.info("✅ Connected Strategist regime detector to signal pipeline")
 
             tprint_success("✅ Core components initialized")
 
@@ -402,6 +411,10 @@ class TradingOrchestrator:
 
             # Stop trading scheduler
             await self.trading_scheduler.stop_scheduler()
+            
+            # Stop Supervisor
+            if self.supervisor:
+                await self.supervisor.stop()
 
             # End current session
             if self.current_session:
@@ -444,9 +457,62 @@ class TradingOrchestrator:
                 if market_snapshot:
                     await self._evaluate_trailing_positions(market_snapshot)
 
+                # Pre-decision validation with Supervisor
+                if self.supervisor and self.supervisor.is_initialized:
+                    validation = await self.supervisor.pre_decision_validation(
+                        symbol=self.symbol,
+                        current_positions={self.symbol: self.active_positions},
+                        market_snapshot=market_snapshot,
+                        account_balance=self.account_balance
+                    )
+                    if not validation.is_valid:
+                        self.logger.warning(
+                            f"⚠️ Pre-decision validation failed: {', '.join(validation.reasons)}"
+                        )
+                        if validation.warnings:
+                            for warning in validation.warnings:
+                                tprint_warning(f"⚠️ {warning}")
+                        await asyncio.sleep(polling_interval)
+                        continue
+
                 decision = await self._generate_trading_decision(market_snapshot)
+                
+                # Validate decision with Supervisor
+                if decision and self.supervisor and self.supervisor.is_initialized:
+                    approval = await self.supervisor.validate_decision(
+                        decision=decision,
+                        analyst_signal=decision.analyst_signal,
+                        tactician_signal=decision.tactician_signal,
+                        combined_signal=decision.combined_signal,
+                        current_positions={self.symbol: self.active_positions},
+                        account_balance=self.account_balance
+                    )
+                    
+                    if not approval.approved:
+                        self.logger.warning(
+                            f"⚠️ Decision not approved by Supervisor: {approval.reason}"
+                        )
+                        tprint_warning(f"⚠️ Decision rejected by Supervisor: {approval.reason}")
+                        await self._trigger_trade_callbacks(decision, event="supervisor_rejected")
+                        await asyncio.sleep(polling_interval)
+                        continue
+                    
+                    # Apply confidence modifier if provided
+                    if approval.confidence_modifier != 1.0:
+                        decision.confidence *= approval.confidence_modifier
+                        self.logger.info(
+                            f"📊 Supervisor adjusted confidence: {approval.confidence_modifier:.2f}x"
+                        )
+                
                 if decision and market_snapshot:
                     await self._execute_trading_decision(decision, market_snapshot)
+                
+                # Update Supervisor with current positions
+                if self.supervisor and self.supervisor.is_initialized:
+                    await self.supervisor.update_positions(
+                        positions_by_symbol={self.symbol: self.active_positions},
+                        account_balance=self.account_balance
+                    )
 
                 await asyncio.sleep(polling_interval)
             except Exception as e:
@@ -466,8 +532,15 @@ class TradingOrchestrator:
             market_data: pd.DataFrame = market_snapshot['market_data']
             self._latest_market_snapshot = market_snapshot
 
-            # Get regime data from HMM
-            regime_data = self.trading_scheduler.hmm_data
+            # Get regime prediction from Strategist
+            regime_data = None
+            if self.strategist and hasattr(self.strategist, 'predict_regime'):
+                try:
+                    regime_prediction = await self.strategist.predict_regime(market_data)
+                    if regime_prediction:
+                        regime_data = regime_prediction
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to get regime prediction from Strategist: {e}")
 
             # Generate Analyst signal
             analyst_signal = await self.analyst_signal_generator.generate_signal(
@@ -604,8 +677,64 @@ class TradingOrchestrator:
             # Trigger pre-execution callback
             await self._trigger_trade_callbacks(decision, event="pre_execute")
 
+            # Pre-execution check with Supervisor
+            # Calculate current exposure (existing positions + new decision)
+            current_exposure = 0.0
+            if self.account_balance > 0:
+                # Calculate exposure from existing positions
+                for pos_id, position in self.active_positions.items():
+                    pos_value = position.get('quantity', 0) * position.get('entry_price', 0)
+                    leverage = position.get('leverage', 1.0)
+                    current_exposure += (pos_value * leverage) / self.account_balance
+                # Add exposure from new decision
+                decision_value = decision.quantity * decision.price
+                decision_leverage = decision.metadata.get('leverage', 1.0)
+                current_exposure += (decision_value * decision_leverage) / self.account_balance
+            
+            if self.supervisor and self.supervisor.is_initialized:
+                execution_check = await self.supervisor.pre_execution_check(
+                    decision=decision,
+                    current_exposure=current_exposure,
+                    risk_metrics=decision.risk_metrics,
+                    account_balance=self.account_balance
+                )
+                
+                if not execution_check.can_proceed:
+                    self.logger.warning(
+                        f"⚠️ Pre-execution check failed: {execution_check.reason}"
+                    )
+                    tprint_warning(f"⚠️ Execution blocked by Supervisor: {execution_check.reason}")
+                    await self._trigger_trade_callbacks(decision, event="pre_execution_blocked")
+                    
+                    # Apply suggested adjustments if available
+                    if execution_check.suggested_adjustments:
+                        if execution_check.suggested_adjustments.get('reduce_position_size'):
+                            reduction_factor = 0.5  # Reduce by 50%
+                            decision.quantity *= reduction_factor
+                            self.logger.info(
+                                f"📉 Position size reduced by Supervisor: {reduction_factor:.0%}"
+                            )
+                            tprint_info(f"📉 Position size adjusted: {decision.quantity:.4f}")
+                    
+                    # Retry with adjustments or skip
+                    if execution_check.suggested_adjustments.get('reduce_position_size') and decision.quantity > 0:
+                        # Continue with reduced size
+                        pass
+                    else:
+                        return  # Skip execution entirely
+
             # Simulate execution (in real trading, this would place actual orders)
             execution_success = await self._simulate_order_execution(decision)
+
+            # Monitor execution with Supervisor
+            if self.supervisor and self.supervisor.is_initialized:
+                execution_result = {
+                    'status': 'FILLED' if execution_success else 'REJECTED',
+                    'order_id': trade_id,
+                    'slippage': 0.001 if execution_success else 0.0,  # Default slippage
+                    'commission': decision.quantity * decision.price * 0.001 if execution_success else 0.0
+                }
+                await self.supervisor.monitor_execution(trade_id, execution_result)
 
             # Update trade outcome
             if execution_success:
@@ -621,6 +750,10 @@ class TradingOrchestrator:
                 }
 
                 await update_trade_outcome(trade_id, outcome_data)
+                
+                # Post-trade analysis with Supervisor (for filled orders)
+                if self.supervisor and self.supervisor.is_initialized:
+                    await self.supervisor.post_trade_analysis(trade_id, outcome_data)
 
                 if self.current_session:
                     self.current_session.total_trades += 1
@@ -717,26 +850,47 @@ class TradingOrchestrator:
         action = decision.action.lower()
 
         if action in {"close", "exit"}:
-            self._close_position_by_symbol(decision.symbol, reason=action)
+            # Close all positions for this symbol
+            self._close_all_positions_for_symbol(decision.symbol, reason=action)
             return
 
         if action not in {"buy", "sell"}:
             return
 
         side = "long" if action == "buy" else "short"
-        existing = self._find_position_for_symbol(decision.symbol)
-        if existing:
-            position_id, position = existing
-            if position["side"] != side:
-                self._close_position(position_id, reason="opposite_signal")
-            else:
-                # Treat as scaling into existing position
-                position["quantity"] += decision.quantity
-                state = self.trailing_manager.positions.get(position_id)
-                if state:
-                    state.quantity = position["quantity"]
-                return
+        
+        # Find all positions for this symbol
+        existing_positions = self._find_all_positions_for_symbol(decision.symbol)
+        
+        # Check for opposite side positions - close them first
+        opposite_positions = [(pos_id, pos) for pos_id, pos in existing_positions if pos["side"] != side]
+        for position_id, position in opposite_positions:
+            self._close_position(position_id, reason="opposite_signal")
+        
+        # Find positions of the same side (keep tuple structure)
+        same_side_positions = [(pos_id, pos) for pos_id, pos in existing_positions if pos["side"] == side]
+        
+        if same_side_positions:
+            # Strategy: Scale into the most recent position (or largest, configurable)
+            # For now, scale into the most recent position based on entry_time
+            # same_side_positions is list of (position_id, position) tuples
+            position_id, position = max(
+                same_side_positions,
+                key=lambda x: x[1].get('entry_time', datetime.min) if isinstance(x[1].get('entry_time'), datetime) else datetime.min
+            )
+            
+            # Treat as scaling into existing position
+            position["quantity"] += decision.quantity
+            state = self.trailing_manager.positions.get(position_id)
+            if state:
+                state.quantity = position["quantity"]
+            
+            self.logger.info(
+                f"📈 Scaled into position {position_id}: +{decision.quantity} (total: {position['quantity']})"
+            )
+            return
 
+        # No existing position - open new one
         self._open_position(decision, trade_id, feature_bundle, side)
 
     def _open_position(
@@ -804,17 +958,50 @@ class TradingOrchestrator:
         )
 
     def _close_position_by_symbol(self, symbol: str, reason: str) -> None:
+        """Close a single position for symbol (first found). Use _close_all_positions_for_symbol for all."""
         existing = self._find_position_for_symbol(symbol)
         if existing:
             self._close_position(existing[0], reason)
+    
+    def _close_all_positions_for_symbol(self, symbol: str, reason: str) -> None:
+        """Close all positions for a given symbol."""
+        positions_to_close = [
+            (position_id, position) 
+            for position_id, position in self.active_positions.items()
+            if position.get('symbol') == symbol
+        ]
+        
+        if not positions_to_close:
+            self.logger.warning(f"⚠️ No positions found for symbol {symbol}")
+            return
+        
+        for position_id, position in positions_to_close:
+            self._close_position(position_id, reason)
+        
+        self.logger.info(f"🚪 Closed {len(positions_to_close)} position(s) for {symbol}: {reason}")
 
     def _find_position_for_symbol(
         self, symbol: str
     ) -> Optional[Tuple[str, Dict[str, Any]]]:
+        """Find first position for symbol. Returns (position_id, position) or None."""
         for position_id, position in self.active_positions.items():
             if position.get('symbol') == symbol:
                 return position_id, position
         return None
+    
+    def _find_all_positions_for_symbol(
+        self, symbol: str
+    ) -> List[Tuple[str, Dict[str, Any]]]:
+        """Find all positions for a given symbol. Returns list of (position_id, position) tuples."""
+        return [
+            (position_id, position)
+            for position_id, position in self.active_positions.items()
+            if position.get('symbol') == symbol
+        ]
+    
+    def _find_position_by_id(self, position_id: str) -> Optional[Dict[str, Any]]:
+        """Find position by position ID."""
+        return self.active_positions.get(position_id)
 
     def _build_ml_context(self, position: Dict[str, Any]) -> Dict[str, Any]:
         context: Dict[str, Any] = {
@@ -945,7 +1132,8 @@ class TradingOrchestrator:
             'data_collector_stats': self.data_collector.get_stats() if self.data_collector else None,
             'scheduler_stats': self.trading_scheduler.get_scheduler_stats() if self.trading_scheduler else None,
             'recent_decisions': len(self.trading_decisions),
-            'monitoring_stats': comprehensive_trade_monitor.get_monitor_stats() if comprehensive_trade_monitor.is_initialized else None
+            'monitoring_stats': comprehensive_trade_monitor.get_monitor_stats() if comprehensive_trade_monitor.is_initialized else None,
+            'supervisor_stats': self.supervisor.get_supervisor_status() if self.supervisor and self.supervisor.is_initialized else None
         }
 
     async def generate_live_dashboard(self) -> Dict[str, Any]:
@@ -1083,15 +1271,53 @@ class TradingOrchestrator:
         self._on_trade_decision_callbacks.append(callback)
 
     async def _trigger_trade_callbacks(self, decision: TradingDecision, event: str, **kwargs):
+        """Trigger trade decision callbacks with proper error handling."""
         for cb in self._on_trade_decision_callbacks:
             try:
                 if asyncio.iscoroutinefunction(cb):
                     await cb(decision, event=event, **kwargs)
                 else:
                     cb(decision, event=event, **kwargs)
-            except Exception:
-                # Swallow to not interrupt trading flow
-                pass
+            except Exception as e:
+                # Log error with context but don't crash trading loop
+                error_context = {
+                    'callback': cb.__name__ if hasattr(cb, '__name__') else str(cb),
+                    'event': event,
+                    'decision_symbol': decision.symbol,
+                    'decision_action': decision.action,
+                    'error': str(e),
+                    'error_type': type(e).__name__
+                }
+                
+                # Check if this is a critical event that requires fast failing
+                critical_events = {'pre_execute', 'post_execute'}
+                is_critical = event in critical_events
+                
+                if is_critical:
+                    # Critical events: log error and potentially fail fast
+                    tprint_error(
+                        f"❌ CRITICAL: Callback error in {error_context['callback']} during {event}: {e}"
+                    )
+                    self.logger.error(
+                        f"Critical callback error: {error_context}",
+                        exc_info=True
+                    )
+                    # For critical execution events, we may want to stop trading
+                    # For now, log but continue - can be made configurable
+                    if event == 'pre_execute':
+                        # Pre-execution errors could mean we shouldn't execute
+                        tprint_warning(
+                            f"⚠️ Pre-execution callback failed - proceeding with caution"
+                        )
+                else:
+                    # Non-critical events: just log
+                    tprint_warning(
+                        f"⚠️ Callback error in {error_context['callback']} during {event}: {e}"
+                    )
+                    self.logger.warning(
+                        f"Callback error (non-critical): {error_context}",
+                        exc_info=False
+                    )
 
 # Convenience functions
 

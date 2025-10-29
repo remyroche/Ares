@@ -21,7 +21,7 @@ from ..model_selection import get_model_selector_service, ModelSelectionResult
 logger = system_logger.getChild('SignalGenerationPipeline')
 
 @dataclass
-class HMMRegimeOutput:
+class RegimeOutput:
     """HMM regime detection output."""
     timestamp: datetime
     regime_probabilities: Dict[RegimeType, float]
@@ -115,7 +115,7 @@ class SignalGenerationPipeline:
         self.logger = logger.getChild('SignalGenerationPipeline')
 
         # Pipeline components
-        self.hmm_regime_detector = None
+        self.regime_detector = None
         self.analyst_base_models = []
         self.analyst_meta_model = None
         self.tactician_base_models = []
@@ -153,8 +153,8 @@ class SignalGenerationPipeline:
         try:
             self.logger.info("Initializing Signal Generation Pipeline...")
 
-            # Initialize HMM regime detector
-            await self._initialize_hmm_regime_detector()
+            # Initialize regime detector
+            await self._initialize_regime_detector()
 
             # Initialize analyst models
             await self._initialize_analyst_models()
@@ -176,29 +176,17 @@ class SignalGenerationPipeline:
             self.logger.error(f"❌ Failed to initialize Signal Generation Pipeline: {e}")
             return False
 
-    async def _initialize_hmm_regime_detector(self):
-        """Initialize NAS/TAS regime detector (replaces HMM-based approach)."""
+    async def _initialize_regime_detector(self):
+        """Initialize regime detector (loads models from market_analysis training)."""
         try:
-            # Import and initialize NAS/TAS regime detector (disabled due to missing dependency)
-            # Note: Removed dependency on hybrid_nas_tas_regime module
-            # from src.training.steps.market_analysis.hybrid_nas_tas_regime.core.hybrid_regime_detector import (
-            #     HybridNASTASRegimeDetector
-            # )
-            # from src.training.steps.market_analysis.hybrid_nas_tas_regime.config.hybrid_regime_config import (
-            #     HybridRegimeConfig, RegimeCombinationStrategy
-            # )
-
-            # regime_config = HybridRegimeConfig(
-            #     n_regimes=8,
-            #     combination_strategy=RegimeCombinationStrategy.ADAPTIVE_FUSION
-            # )
-            # self.hmm_regime_detector = HybridNASTASRegimeDetector(regime_config)
-            self.hmm_regime_detector = None  # Disabled due to missing dependency
-
-            self.logger.info("⚠️ NAS/TAS regime detector disabled (missing dependency)")
+            # Regime detector will be initialized by Strategist
+            # The Strategist handles loading models from market_analysis/regime_models_training
+            # and regime_ensemble_training, and provides regime predictions
+            self.regime_detector = None
+            self.logger.info("ℹ️ Regime detector will be provided by Strategist")
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize NAS/TAS regime detector: {e}")
+            self.logger.error(f"❌ Failed to initialize regime detector: {e}")
             raise
 
     async def _initialize_analyst_models(self):
@@ -399,7 +387,7 @@ class SignalGenerationPipeline:
             timestamp = datetime.now()
 
             # Step 1: HMM Regime Detection
-            hmm_output = await self._detect_hmm_regime(market_data, timestamp)
+            regime_output = await self._detect_regime(market_data, timestamp)
 
             # Step 1.5: Model Selection
             model_selection_result = await self._select_models_for_trading(
@@ -408,22 +396,22 @@ class SignalGenerationPipeline:
 
             # Step 2: Analyst Base Models
             analyst_base_outputs = await self._run_analyst_base_models(
-                market_data, hmm_output, additional_features, timestamp, model_selection_result
+                market_data, regime_output, additional_features, timestamp, model_selection_result
             )
 
             # Step 3: Analyst Meta Model
             analyst_meta_output = await self._run_analyst_meta_model(
-                market_data, hmm_output, analyst_base_outputs, timestamp
+                market_data, regime_output, analyst_base_outputs, timestamp
             )
 
             # Step 4: Tactician Base Models
             tactician_base_outputs = await self._run_tactician_base_models(
-                market_data, hmm_output, analyst_meta_output, timestamp
+                market_data, regime_output, analyst_meta_output, timestamp
             )
 
             # Step 5: Tactician Meta Model
             tactician_meta_output = await self._run_tactician_meta_model(
-                market_data, hmm_output, analyst_meta_output, tactician_base_outputs, timestamp
+                market_data, regime_output, analyst_meta_output, tactician_base_outputs, timestamp
             )
 
             # Step 6: Calculate Exit Confidence (for position management)
@@ -437,7 +425,7 @@ class SignalGenerationPipeline:
 
             # Step 8: Final Signal Generation
             final_signal = self._generate_final_signal(
-                hmm_output, analyst_meta_output, tactician_meta_output, should_exit, exit_reason
+                regime_output, analyst_meta_output, tactician_meta_output, should_exit, exit_reason
             )
 
             # Update position state based on signal
@@ -447,7 +435,7 @@ class SignalGenerationPipeline:
             result = SignalGenerationResult(
                 timestamp=timestamp,
                 symbol=symbol,
-                hmm_output=hmm_output,
+                regime_output=regime_output,
                 analyst_output=analyst_meta_output,
                 tactician_output=tactician_meta_output,
                 final_signal=final_signal['signal'],
@@ -479,53 +467,36 @@ class SignalGenerationPipeline:
             self.logger.error(f"❌ Signal generation failed for {symbol}: {e}")
             raise
 
-    async def _detect_hmm_regime(self, market_data: pd.DataFrame, timestamp: datetime) -> HMMRegimeOutput:
-        """Step 1: Detect regime using NAS/TAS (replaces HMM approach)."""
+    async def _detect_regime(self, market_data: pd.DataFrame, timestamp: datetime) -> RegimeOutput:
+        """Step 1: Detect regime using regime detector (loads models from market_analysis training)."""
+        # Fast fail: regime detector must be provided by Strategist
+        if self.regime_detector is None:
+            error_msg = "Regime detector not initialized. Strategist must provide regime detector."
+            self.logger.error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg)
+        
         try:
-            # Use NAS/TAS regime detector
-            regime_detection = self.hmm_regime_detector.detect_regimes(
-                market_data=market_data,
-                validate_economic_significance=True,
-                validate_financial_relevance=True
-            )
-
-            if not regime_detection.success:
-                raise RuntimeError(f"NAS/TAS regime detection failed: {regime_detection.error_message}")
-
-            # Convert NAS/TAS result to HMMRegimeOutput format
-            regime_predictions = regime_detection.regime_predictions
-            regime_probabilities = regime_detection.regime_probabilities
-
-            # Get primary regime (most recent prediction)
-            primary_regime = regime_predictions[-1] if len(regime_predictions) > 0 else 0
-
-            # Calculate confidence from regime probabilities
-            confidence = regime_probabilities[-1, primary_regime] if len(regime_probabilities) > 0 else 0.5
-
-            # Calculate regime strength from economic significance
-            regime_strength = np.mean(regime_detection.economic_significance_scores) if len(regime_detection.economic_significance_scores) > 0 else 0.5
-
-            # Calculate transition probability
-            transition_probability = np.mean(regime_detection.transition_probabilities[primary_regime]) if len(regime_detection.transition_probabilities) > 0 else 0.5
-
-            return HMMRegimeOutput(
+            # Use regime detector to predict regime
+            regime_prediction = await self.regime_detector.predict_regime(market_data)
+            
+            if regime_prediction is None:
+                raise RuntimeError("Regime detector returned None prediction")
+            
+            # Convert to RegimeOutput format
+            return RegimeOutput(
                 timestamp=timestamp,
-                regime_probabilities={f"regime_{i}": prob for i, prob in enumerate(regime_probabilities[-1])},
-                primary_regime=primary_regime,
-                confidence=confidence,
-                regime_strength=regime_strength,
-                transition_probability=transition_probability,
-                features_used={
-                    'nas_contributions': regime_detection.nas_contributions,
-                    'tas_contributions': regime_detection.tas_contributions,
-                    'economic_significance': regime_detection.economic_significance_scores.tolist(),
-                    'financial_relevance': regime_detection.financial_relevance_scores.tolist()
-                }
+                regime_probabilities=regime_prediction.get('regime_probabilities', {}),
+                primary_regime=regime_prediction.get('primary_regime', 0),
+                confidence=regime_prediction.get('confidence', 0.5),
+                regime_strength=regime_prediction.get('regime_strength', 0.5),
+                transition_probability=regime_prediction.get('transition_probability', 0.5),
+                features_used=regime_prediction.get('features_used', {})
             )
 
         except Exception as e:
-            self.logger.error(f"❌ NAS/TAS regime detection failed: {e}")
-            raise
+            error_msg = f"Regime detection failed: {e}"
+            self.logger.error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
 
     async def _select_models_for_trading(
         self,
@@ -736,7 +707,7 @@ class SignalGenerationPipeline:
     async def _run_analyst_base_models(
         self,
         market_data: pd.DataFrame,
-        hmm_output: HMMRegimeOutput,
+        regime_output: RegimeOutput,
         additional_features: Optional[Dict[str, Any]],
         timestamp: datetime,
         model_selection_result: Optional[ModelSelectionResult] = None
@@ -801,7 +772,7 @@ class SignalGenerationPipeline:
     async def _run_analyst_meta_model(
         self,
         market_data: pd.DataFrame,
-        hmm_output: HMMRegimeOutput,
+        regime_output: RegimeOutput,
         base_outputs: List[AnalystBaseOutput],
         timestamp: datetime
     ) -> AnalystMetaOutput:
@@ -816,7 +787,7 @@ class SignalGenerationPipeline:
             # Apply regime adjustment
             regime_adjusted_confidence = self._apply_regime_adjustment(
                 analyst_confidence,
-                hmm_output.regime_probabilities
+                    regime_output.regime_probabilities
             )
 
             return AnalystMetaOutput(
@@ -835,7 +806,7 @@ class SignalGenerationPipeline:
     async def _run_tactician_base_models(
         self,
         market_data: pd.DataFrame,
-        hmm_output: HMMRegimeOutput,
+        regime_output: RegimeOutput,
         analyst_output: AnalystMetaOutput,
         timestamp: datetime
     ) -> List[TacticianBaseOutput]:
@@ -895,7 +866,7 @@ class SignalGenerationPipeline:
     async def _run_tactician_meta_model(
         self,
         market_data: pd.DataFrame,
-        hmm_output: HMMRegimeOutput,
+        regime_output: RegimeOutput,
         analyst_output: AnalystMetaOutput,
         base_outputs: List[TacticianBaseOutput],
         timestamp: datetime
@@ -1177,7 +1148,7 @@ class SignalGenerationPipeline:
 
     def _generate_final_signal(
         self,
-        hmm_output: HMMRegimeOutput,
+        regime_output: RegimeOutput,
         analyst_output: AnalystMetaOutput,
         tactician_output: TacticianMetaOutput,
         should_exit: bool = False,
@@ -1199,12 +1170,12 @@ class SignalGenerationPipeline:
             signal_threshold = self.optimization_params['signal_confidence_threshold']
 
             # Check regime confidence
-            if hmm_output.confidence < regime_threshold:
+            if regime_output.confidence < regime_threshold:
                 return {
                     'signal': 'hold',
                     'confidence': 0.0,
                     'strength': 0.0,
-                    'reason': f'Low regime confidence: {hmm_output.confidence:.3f} < {regime_threshold:.3f}'
+                    'reason': f'Low regime confidence: {regime_output.confidence:.3f} < {regime_threshold:.3f}'
                 }
 
             # Check signal confidence
@@ -1335,8 +1306,8 @@ class SignalGenerationPipeline:
             self.logger.info("🛑 Stopping Signal Generation Pipeline...")
 
             # Stop all components
-            if self.hmm_regime_detector:
-                await self.hmm_regime_detector.stop()
+            if self.regime_detector:
+                await self.regime_detector.stop()
 
             for model in self.analyst_base_models:
                 if hasattr(model, 'stop'):

@@ -430,6 +430,10 @@ class TimeSeriesCrossValidator:
     
     def _rolling_split(self, data: pd.DataFrame) -> List[Tuple[np.ndarray, np.ndarray]]:
         """Generate rolling window splits."""
+        if len(data) == 0:
+            self.logger.warning("⚠️ Empty data provided for rolling split")
+            return []
+        
         # Calculate samples per window
         freq = pd.infer_freq(data.index)
         if freq is None:
@@ -442,7 +446,18 @@ class TimeSeriesCrossValidator:
         else:
             freq_td = freq
         
-        samples_per_month = int(pd.Timedelta(days=30) / freq_td)
+        # Handle zero or invalid frequency
+        if freq_td.total_seconds() <= 0:
+            self.logger.warning("⚠️ Invalid frequency detected, using default daily frequency")
+            freq_td = pd.Timedelta(days=1)
+        
+        try:
+            samples_per_month = int(pd.Timedelta(days=30) / freq_td)
+        except (ZeroDivisionError, ValueError) as e:
+            self.logger.warning(f"⚠️ Error calculating samples per month: {e}, using default")
+            samples_per_month = 30  # Default to daily data
+        
+        samples_per_month = max(1, samples_per_month)  # Ensure at least 1
         
         train_size = self.cv_config.train_months * samples_per_month
         val_size = self.cv_config.val_months * samples_per_month
@@ -466,36 +481,70 @@ class TimeSeriesCrossValidator:
                len(val_idx) >= self.cv_config.min_val_samples:
                 splits.append((train_idx, val_idx))
         
+        if len(splits) == 0:
+            self.logger.warning("⚠️ No valid splits generated. Check data size and CV configuration.")
+        
         self.logger.info(f"✅ Generated {len(splits)} rolling CV splits")
         return splits
     
     def _expanding_split(self, data: pd.DataFrame) -> List[Tuple[np.ndarray, np.ndarray]]:
         """Generate expanding window splits."""
+        if len(data) == 0:
+            self.logger.warning("⚠️ Empty data provided for expanding split")
+            return []
+        
         n_samples = len(data)
+        
+        # Ensure we have enough data for splits
+        if n_samples < self.cv_config.min_train_samples + self.cv_config.min_val_samples:
+            self.logger.warning(
+                f"⚠️ Insufficient data for expanding split: {n_samples} samples "
+                f"(need at least {self.cv_config.min_train_samples + self.cv_config.min_val_samples})"
+            )
+            return []
+        
         val_size = n_samples // (self.cv_config.n_splits + 1)
+        val_size = max(val_size, self.cv_config.min_val_samples)
         
         splits = []
         for i in range(1, self.cv_config.n_splits + 1):
             train_idx = np.arange(0, i * val_size)
-            val_idx = np.arange(i * val_size, (i + 1) * val_size)
+            val_idx = np.arange(i * val_size, min((i + 1) * val_size, n_samples))
             
             if len(train_idx) >= self.cv_config.min_train_samples and \
                len(val_idx) >= self.cv_config.min_val_samples:
                 splits.append((train_idx, val_idx))
+        
+        if len(splits) == 0:
+            self.logger.warning("⚠️ No valid splits generated. Check data size and CV configuration.")
         
         self.logger.info(f"✅ Generated {len(splits)} expanding CV splits")
         return splits
     
     def _blocked_split(self, data: pd.DataFrame) -> List[Tuple[np.ndarray, np.ndarray]]:
         """Generate non-overlapping blocked splits."""
+        if len(data) == 0:
+            self.logger.warning("⚠️ Empty data provided for blocked split")
+            return []
+        
         n_samples = len(data)
+        
+        # Ensure we have enough data for splits
+        if n_samples < self.cv_config.min_train_samples + self.cv_config.min_val_samples:
+            self.logger.warning(
+                f"⚠️ Insufficient data for blocked split: {n_samples} samples "
+                f"(need at least {self.cv_config.min_train_samples + self.cv_config.min_val_samples})"
+            )
+            return []
+        
         block_size = n_samples // self.cv_config.n_splits
+        block_size = max(block_size, self.cv_config.min_val_samples)
         
         splits = []
         for i in range(self.cv_config.n_splits - 1):
             # Use all other blocks for training
             val_start = i * block_size
-            val_end = (i + 1) * block_size
+            val_end = min((i + 1) * block_size, n_samples)
             
             train_idx = np.concatenate([
                 np.arange(0, val_start),
@@ -506,6 +555,9 @@ class TimeSeriesCrossValidator:
             if len(train_idx) >= self.cv_config.min_train_samples and \
                len(val_idx) >= self.cv_config.min_val_samples:
                 splits.append((train_idx, val_idx))
+        
+        if len(splits) == 0:
+            self.logger.warning("⚠️ No valid splits generated. Check data size and CV configuration.")
         
         self.logger.info(f"✅ Generated {len(splits)} blocked CV splits")
         return splits
@@ -819,9 +871,14 @@ class MetricNormalizer:
     
     def _zscore_normalize(self, values: np.ndarray) -> np.ndarray:
         """Z-score normalization."""
+        # Handle NaN values
+        if np.any(np.isnan(values)):
+            self.logger.warning("⚠️ NaN values detected in z-score normalization, replacing with 0")
+            values = np.nan_to_num(values, nan=0.0)
+        
         mean = np.mean(values)
         std = np.std(values)
-        if std == 0:
+        if std == 0 or np.isnan(std) or np.isinf(std):
             return np.zeros_like(values)
         return (values - mean) / std
     
@@ -829,6 +886,11 @@ class MetricNormalizer:
         """Rank-based normalization to [0, 1]."""
         if len(values) <= 1:
             return np.ones_like(values) * 0.5
+        
+        # Handle NaN values
+        if np.any(np.isnan(values)):
+            self.logger.warning("⚠️ NaN values detected in rank normalization, replacing with 0")
+            values = np.nan_to_num(values, nan=0.0)
         
         # Rank (higher is better after objective adjustment)
         ranks = stats.rankdata(values)
@@ -838,17 +900,28 @@ class MetricNormalizer:
     
     def _robust_zscore_normalize(self, values: np.ndarray) -> np.ndarray:
         """Robust z-score using median and MAD."""
+        # Handle NaN values
+        if np.any(np.isnan(values)):
+            self.logger.warning("⚠️ NaN values detected in robust z-score normalization, replacing with 0")
+            values = np.nan_to_num(values, nan=0.0)
+        
         median = np.median(values)
         mad = np.median(np.abs(values - median))
-        if mad == 0:
+        if mad == 0 or np.isnan(mad) or np.isinf(mad):
             return np.zeros_like(values)
         return (values - median) / (1.4826 * mad)  # 1.4826 for normal consistency
     
     def _minmax_normalize(self, values: np.ndarray) -> np.ndarray:
         """Min-max normalization to [0, 1]."""
+        # Handle NaN values
+        if np.any(np.isnan(values)):
+            self.logger.warning("⚠️ NaN values detected in min-max normalization, replacing with 0")
+            values = np.nan_to_num(values, nan=0.0)
+        
         min_val = np.min(values)
         max_val = np.max(values)
-        if max_val == min_val:
+        if max_val == min_val or np.isnan(min_val) or np.isnan(max_val) or \
+           np.isinf(min_val) or np.isinf(max_val):
             return np.ones_like(values) * 0.5
         return (values - min_val) / (max_val - min_val)
 
@@ -1483,6 +1556,11 @@ def statistical_significance_test(
     
     # Calculate p-value (one-sided: strategy > baseline)
     p_value = np.mean(bootstrap_diffs <= 0)
+    
+    # Validate p-value
+    if np.isnan(p_value) or np.isinf(p_value):
+        logger.warning("⚠️ Invalid p-value calculated")
+        p_value = 1.0  # Conservative default
     
     is_significant = p_value < alpha
     

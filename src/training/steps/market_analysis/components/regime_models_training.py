@@ -1372,15 +1372,22 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             artifacts = {
                 'regime_models_training_result': {
                     'regime_models': training_results['models'],
-                    'metrics': training_results['metrics'],
+                    'regime_metrics': training_results['metrics'],  # Explicit regime metrics
+                    'metrics': training_results['metrics'],  # Keep for backward compatibility
                     'training_time': training_results['training_time'],
+                    'regime_training_time': training_results['training_time'],  # Explicit regime training time
                     'success': True,
                     'model_count': len(training_results['models']),
+                    'regime_model_count': len(training_results['models']),  # Explicit regime model count
                     'feature_count': X.shape[1],
                     'sample_count': X.shape[0],
                     'regime_models_config': self.regime_models_config,
                     'feature_selection': training_results.get('feature_selection', feature_selection_info),
-                    'selected_feature_names': feature_selection_info.get('selected_feature_names', []) if feature_selection_info else []
+                    'regime_feature_selection': training_results.get('feature_selection', feature_selection_info),  # Explicit regime feature selection
+                    'feature_selection_info': feature_selection_info,  # Full feature selection info
+                    'regime_feature_selection_info': feature_selection_info,  # Explicit regime feature selection info
+                    'selected_feature_names': feature_selection_info.get('selected_feature_names', []) if feature_selection_info else [],
+                    'regime_selected_feature_names': feature_selection_info.get('selected_feature_names', []) if feature_selection_info else []  # Explicit regime feature names
                 }
             }
 
@@ -1413,12 +1420,17 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             try:
                 save_report = await self.save_artifacts(artifacts, {
                     'component_type': 'regime_models_training',
+                    'regime_component': True,  # Explicitly mark as regime component
+                    'regime_feature_selection': True,  # Mark that this includes regime feature selection
                     'execution_time': execution_time,
                     'training_time': training_results['training_time'],
                     'model_count': len(training_results['models']),
+                    'regime_model_count': len(training_results['models']),  # Explicit regime model count
                     'feature_count': X.shape[1],
                     'sample_count': X.shape[0],
-                    'selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1]
+                    'selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1],
+                    'regime_selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1],  # Explicit regime feature count
+                    'regime_feature_selection_info_available': bool(feature_selection_info),
                 })
                 tprint(
                     f"💾 [REGIME_MODELS] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}",
@@ -1427,18 +1439,42 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             except Exception as e:
                 tprint(f"⚠️ [REGIME_MODELS] Failed to save artifacts persistently: {e}", color="yellow")
 
+            # Create component_result structure that includes feature_selection_info
+            component_result = {
+                'regime_models': training_results['models'],  # Explicit regime models
+                'regime_metrics': training_results['metrics'],  # Explicit regime metrics
+                'models': training_results['models'],  # Keep for backward compatibility
+                'metrics': training_results['metrics'],  # Keep for backward compatibility
+                'feature_selection_info': feature_selection_info,  # Ensure this is in component_result
+                'regime_feature_selection_info': feature_selection_info,  # Explicit regime feature selection info
+                'selected_feature_names': feature_selection_info.get('selected_feature_names', []) if feature_selection_info else [],
+                'regime_selected_feature_names': feature_selection_info.get('selected_feature_names', []) if feature_selection_info else [],  # Explicit regime feature names
+                'feature_count': X.shape[1],
+                'selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1],
+                'regime_selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1],  # Explicit regime count
+            }
+            
+            # Add component_result to artifacts for easy access
+            artifacts['component_result'] = component_result
+            
             return ComponentResult(
                 success=True,
                 artifacts=artifacts,
                 metadata={
                     'component_type': 'regime_models_training',
+                    'regime_component': True,  # Explicitly mark as regime component
                     'execution_time': execution_time,
-                    'training_time': training_results['training_time'],
+                    'regime_training_time': training_results['training_time'],  # Explicit regime training time
+                    'training_time': training_results['training_time'],  # Keep for backward compatibility
                     'model_count': len(training_results['models']),
+                    'regime_model_count': len(training_results['models']),  # Explicit regime model count
                     'feature_count': X.shape[1],
                     'sample_count': X.shape[0],
                     'selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1],
-                    'artifacts_saved_persistently': True
+                    'regime_selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1],  # Explicit regime feature count
+                    'regime_feature_selection_info_available': bool(feature_selection_info),
+                    'artifacts_saved_persistently': True,
+                    'regime_artifacts_saved': True  # Explicit regime artifact save confirmation
                 }
             )
 

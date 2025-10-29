@@ -39,6 +39,12 @@ from .base_trainer import (
 )
 from .training_metrics_collector import TrainingMetricsCollector, ModelMetrics
 
+# Shared feature engineering
+from src.feature_generation.shared.feature_engineer import (
+    AnalystFeatureEngineer,
+    TacticianFeatureEngineer
+)
+
 
 class ModelTrainer(BaseTrainer):
     """
@@ -62,6 +68,10 @@ class ModelTrainer(BaseTrainer):
         
         # Metrics collector
         self._metrics_collector = TrainingMetricsCollector(logger)
+        
+        # Shared feature engineers
+        self._analyst_feature_engineer = AnalystFeatureEngineer(logger=logger)
+        self._tactician_feature_engineer = TacticianFeatureEngineer(logger=logger)
     
     def _setup_role_specific_config(self):
         """Setup role-specific configuration."""
@@ -395,57 +405,30 @@ class ModelTrainer(BaseTrainer):
             return model, {}
     
     def _engineer_analyst_features(self, data: pd.DataFrame, targets: pd.Series) -> pd.DataFrame:
-        """Engineer features specific to Analyst role."""
+        """Engineer features specific to Analyst role using shared module."""
         try:
-            # Add regime-based features
-            if 'regime_probability' in data.columns:
-                data['regime_strength'] = data['regime_probability'].abs()
-                data['regime_confidence'] = np.where(
-                    data['regime_probability'] > 0.5, 
-                    data['regime_probability'], 
-                    1 - data['regime_probability']
-                )
-            
-            # Add market condition features
-            if 'volume' in data.columns and 'close' in data.columns:
-                data['volume_price_trend'] = data['volume'] * data['close'].pct_change()
-                data['volume_momentum'] = data['volume'].rolling(5).mean() / data['volume'].rolling(20).mean()
-            
-            # Add volatility features
-            if 'close' in data.columns:
-                data['volatility_5d'] = data['close'].rolling(5).std()
-                data['volatility_20d'] = data['close'].rolling(20).std()
-                data['volatility_ratio'] = data['volatility_5d'] / data['volatility_20d']
-            
-            self.logger.info(f"Engineered {len(data.columns)} features for Analyst")
-            return data
+            # Use shared feature engineer for consistency with inference
+            engineered_data = self._analyst_feature_engineer.engineer_features(data)
+            return engineered_data
             
         except Exception as e:
             self.logger.warning(f"Analyst feature engineering failed: {e}")
             return data
     
     def _engineer_tactician_features(self, data: pd.DataFrame, targets: pd.Series) -> pd.DataFrame:
-        """Engineer features specific to Tactician role."""
+        """Engineer features specific to Tactician role using shared module."""
         try:
-            # Add timing features
-            if 'timestamp' in data.columns:
-                data['hour'] = pd.to_datetime(data['timestamp']).dt.hour
-                data['day_of_week'] = pd.to_datetime(data['timestamp']).dt.dayofweek
-                data['is_weekend'] = data['day_of_week'].isin([5, 6]).astype(int)
+            # Use shared feature engineer for consistency with inference
+            # Extract analyst confidence from data if available
+            analyst_confidence = None
+            if 'analyst_confidence' in data.columns:
+                analyst_confidence = data['analyst_confidence'].iloc[-1] if len(data) > 0 else None
             
-            # Add analyst signal features
-            analyst_columns = [col for col in data.columns if 'analyst' in col.lower()]
-            if analyst_columns:
-                data['analyst_signal_strength'] = data[analyst_columns].mean(axis=1)
-                data['analyst_signal_consistency'] = data[analyst_columns].std(axis=1)
-            
-            # Add risk features
-            if 'close' in data.columns:
-                data['price_momentum'] = data['close'].pct_change(5)
-                data['risk_adjusted_return'] = data['price_momentum'] / data['close'].rolling(20).std()
-            
-            self.logger.info(f"Engineered {len(data.columns)} features for Tactician")
-            return data
+            engineered_data = self._tactician_feature_engineer.engineer_features(
+                data,
+                analyst_confidence=analyst_confidence
+            )
+            return engineered_data
             
         except Exception as e:
             self.logger.warning(f"Tactician feature engineering failed: {e}")

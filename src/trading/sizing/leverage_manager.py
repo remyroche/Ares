@@ -6,12 +6,13 @@ Based on existing tactician approach with simple confidence-based leverage calcu
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from datetime import datetime
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
+from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_structured, tprint_debug, LogLevel
 from ..config.trading_config import TradingConfig
 from src.config.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE, validate_leverage
 
@@ -50,23 +51,27 @@ class LeverageManager:
 
         # State management
         self.is_initialized: bool = False
-        self.leverage_history: list[dict[str, Any]] = []
+        self.leverage_history: List[Dict[str, Any]] = []
 
     @handles_errors
     async def initialize(self) -> bool:
         """Initialize leverage manager."""
         try:
+            tprint_info("🔄 Initializing Leverage Manager...")
             self.logger.info("Initializing Leverage Manager...")
 
             # Validate configuration
             if not self._validate_configuration():
+                tprint_error("❌ Leverage Manager configuration validation failed")
                 return False
 
             self.is_initialized = True
+            tprint_success("✅ Leverage Manager initialized successfully")
             self.logger.info("✅ Leverage Manager initialized successfully")
             return True
 
         except Exception as e:
+            tprint_error(f"❌ Failed to initialize Leverage Manager: {e}")
             self.logger.error(f"❌ Failed to initialize Leverage Manager: {e}")
             return False
 
@@ -77,22 +82,29 @@ class LeverageManager:
             
             # Ensure instance limits are within centralized bounds
             if self.min_leverage < LEVERAGE_LOWER_BOUND or self.min_leverage > LEVERAGE_UPPER_BOUND:
+                tprint_error(f"min_leverage {self.min_leverage} must be between {LEVERAGE_LOWER_BOUND} and {LEVERAGE_UPPER_BOUND}")
                 self.logger.error(f"min_leverage {self.min_leverage} must be between {LEVERAGE_LOWER_BOUND} and {LEVERAGE_UPPER_BOUND}")
                 return False
             if self.max_leverage < LEVERAGE_LOWER_BOUND or self.max_leverage > LEVERAGE_UPPER_BOUND:
+                tprint_error(f"max_leverage {self.max_leverage} must be between {LEVERAGE_LOWER_BOUND} and {LEVERAGE_UPPER_BOUND}")
                 self.logger.error(f"max_leverage {self.max_leverage} must be between {LEVERAGE_LOWER_BOUND} and {LEVERAGE_UPPER_BOUND}")
                 return False
             if self.min_leverage <= 0 or self.min_leverage >= self.max_leverage:
+                tprint_error("Invalid leverage range configuration")
                 self.logger.error("Invalid leverage range configuration")
                 return False
             if self.leverage_multiplier <= 0:
+                tprint_error("Invalid leverage_multiplier configuration")
                 self.logger.error("Invalid leverage_multiplier configuration")
                 return False
             if self.leverage_combined_threshold <= 0 or self.leverage_combined_threshold > 1:
+                tprint_error("Invalid leverage_combined_threshold configuration")
                 self.logger.error("Invalid leverage_combined_threshold configuration")
                 return False
+            tprint_debug("✅ Leverage Manager configuration validated")
             return True
         except Exception as e:
+            tprint_error(f"Configuration validation failed: {e}")
             self.logger.error(f"Configuration validation failed: {e}")
             return False
 
@@ -195,11 +207,13 @@ class LeverageManager:
             # Add reason to metadata
             result.metadata['reason'] = self._generate_leverage_reason(final_leverage, combined_confidence, base_leverage)
 
+            tprint_debug(f"Leverage calculated for {symbol}: {final_leverage:.1f}x (confidence: {combined_confidence:.3f})")
             self.logger.debug(f"Leverage calculated for {symbol}: {final_leverage:.1f}x (confidence: {combined_confidence:.3f})")
 
             return result
 
         except Exception as e:
+            tprint_error(f"❌ Leverage calculation failed for {symbol}: {e}")
             self.logger.error(f"❌ Leverage calculation failed for {symbol}: {e}")
             raise
 
@@ -215,6 +229,7 @@ class LeverageManager:
             else:
                 return f'Leverage: {final_leverage:.1f}x (ML confidence: {combined_confidence:.3f} * multiplier: {self.leverage_multiplier:.2f} = {base_leverage:.1f}x, capped)'
         except Exception as e:
+            tprint_warning(f"❌ Error generating leverage reason: {e}")
             self.logger.error(f"❌ Error generating leverage reason: {e}")
             return f'Leverage: {final_leverage:.1f}x (Error generating reason)'
     
@@ -240,7 +255,7 @@ class LeverageManager:
         if not math.isfinite(tactician_confidence) or not (0 <= tactician_confidence <= 1):
             raise ValueError(f"tactician_confidence must be between 0 and 1, got {tactician_confidence}")
 
-    def get_leverage_history(self, limit: Optional[int] = None) -> list[dict[str, Any]]:
+    def get_leverage_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """Get leverage calculation history."""
         if limit:
             return self.leverage_history[-limit:]
@@ -274,10 +289,11 @@ class LeverageManager:
             }
 
         except Exception as e:
+            tprint_error(f"❌ Performance metrics calculation failed: {e}")
             self.logger.error(f"❌ Performance metrics calculation failed: {e}")
             return {}
 
-    def update_configuration(self, new_config: Dict[str, Any]):
+    def update_configuration(self, new_config: Dict[str, Any]) -> None:
         """Update leverage configuration."""
         try:
             if 'min_leverage' in new_config:
@@ -289,30 +305,39 @@ class LeverageManager:
             if 'leverage_combined_threshold' in new_config:
                 self.leverage_combined_threshold = new_config['leverage_combined_threshold']
 
+            tprint_success("✅ Leverage configuration updated")
             self.logger.info("✅ Leverage configuration updated")
 
         except Exception as e:
+            tprint_error(f"❌ Failed to update leverage configuration: {e}")
             self.logger.error(f"❌ Failed to update leverage configuration: {e}")
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Stop leverage manager."""
         try:
+            tprint_info("🛑 Stopping Leverage Manager...")
             self.logger.info("🛑 Stopping Leverage Manager...")
             self.is_initialized = False
+            tprint_success("✅ Leverage Manager stopped successfully")
             self.logger.info("✅ Leverage Manager stopped successfully")
 
         except Exception as e:
+            tprint_error(f"❌ Error stopping Leverage Manager: {e}")
             self.logger.error(f"❌ Error stopping Leverage Manager: {e}")
 
 # Convenience function
 async def setup_leverage_manager(config: TradingConfig) -> Optional[LeverageManager]:
     """Setup and initialize leverage manager."""
     try:
+        tprint_info("🔄 Setting up Leverage Manager...")
         leverage_manager = LeverageManager(config)
         success = await leverage_manager.initialize()
         if success:
+            tprint_success("✅ Leverage Manager setup completed successfully")
             return leverage_manager
+        tprint_warning("⚠️ Leverage Manager setup completed but initialization failed")
         return None
     except Exception as e:
+        tprint_error(f"❌ Failed to setup leverage manager: {e}")
         logger.error(f"❌ Failed to setup leverage manager: {e}")
         return None

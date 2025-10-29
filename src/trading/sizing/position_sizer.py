@@ -6,14 +6,14 @@ Based on existing tactician approach with ML confidence and Kelly calculations.
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from datetime import datetime
 import math
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
-from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_structured, LogLevel
+from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_structured, tprint_debug, LogLevel
 from ..config.trading_config import TradingConfig
 from .leverage_manager import LeverageManager
 from .risk_calculator import RiskCalculator
@@ -69,15 +69,17 @@ class PositionSizer:
 
         # State management
         self.is_initialized: bool = False
-        self.position_sizing_history: list[dict[str, Any]] = []
+        self.position_sizing_history: List[Dict[str, Any]] = []
 
-    def set_leverage_manager(self, leverage_manager: LeverageManager):
+    def set_leverage_manager(self, leverage_manager: LeverageManager) -> None:
         """Set the leverage manager for integration."""
         self.leverage_manager = leverage_manager
+        tprint_debug("Leverage manager set for Position Sizer")
 
-    def set_risk_calculator(self, risk_calculator: RiskCalculator):
+    def set_risk_calculator(self, risk_calculator: RiskCalculator) -> None:
         """Set the risk calculator for integration."""
         self.risk_calculator = risk_calculator
+        tprint_debug("Risk calculator set for Position Sizer")
 
     @handles_errors
     async def initialize(self) -> bool:
@@ -107,19 +109,25 @@ class PositionSizer:
         """Validate position sizer configuration."""
         try:
             if self.max_position_size <= self.min_position_size:
+                tprint_error("max_position_size must be greater than min_position_size")
                 self.logger.error("max_position_size must be greater than min_position_size")
                 return False
             if self.kelly_multiplier <= 0 or self.kelly_multiplier > 1:
+                tprint_error("kelly_multiplier must be between 0 and 1")
                 self.logger.error("kelly_multiplier must be between 0 and 1")
                 return False
             if self.confidence_threshold <= 0 or self.confidence_threshold > 1:
+                tprint_error("confidence_threshold must be between 0 and 1")
                 self.logger.error("confidence_threshold must be between 0 and 1")
                 return False
             if self.ml_weight < 0 or self.ml_weight > 1:
+                tprint_error("ml_weight must be between 0 and 1")
                 self.logger.error("ml_weight must be between 0 and 1")
                 return False
+            tprint_debug("✅ Position Sizer configuration validated")
             return True
         except Exception as e:
+            tprint_error(f"Configuration validation failed: {e}")
             self.logger.error(f"Configuration validation failed: {e}")
             return False
 
@@ -146,9 +154,9 @@ class PositionSizer:
     def _extract_confidence_levels(
         self,
         confidence_dict: Dict[str, float],
-        target_levels: list[float],
+        target_levels: List[float],
         default_value: float = 0.5
-    ) -> list[float]:
+    ) -> List[float]:
         """
         Extract confidence values for target levels from dictionary.
         
@@ -250,6 +258,7 @@ class PositionSizer:
             return max(self.min_position_size, min(self.max_position_size, kelly_position_size))
 
         except Exception as e:
+            tprint_warning(f"❌ Kelly position size calculation failed: {e}, using min_position_size")
             self.logger.error(f"❌ Kelly position size calculation failed: {e}")
             return self.min_position_size
 
@@ -279,6 +288,7 @@ class PositionSizer:
             return max(self.min_position_size, min(self.max_position_size, base_position_size))
 
         except Exception as e:
+            tprint_warning(f"❌ ML position size calculation failed: {e}, using min_position_size")
             self.logger.error(f"❌ ML position size calculation failed: {e}")
             return self.min_position_size
 
@@ -295,12 +305,14 @@ class PositionSizer:
 
             # Ensure result is finite
             if not math.isfinite(weighted_size):
+                tprint_warning("Non-finite result in weighted position size calculation, using Kelly size")
                 self.logger.warning("Non-finite result in weighted position size calculation")
                 return max(self.min_position_size, min(self.max_position_size, kelly_position_size))
 
             return max(self.min_position_size, min(self.max_position_size, weighted_size))
 
         except Exception as e:
+            tprint_warning(f"❌ Weighted position size calculation failed: {e}, using Kelly size")
             self.logger.error(f"❌ Weighted position size calculation failed: {e}")
             return max(self.min_position_size, min(self.max_position_size, kelly_position_size))
 
@@ -343,6 +355,7 @@ class PositionSizer:
             return max(0.1, min(2.0, final_multiplier))
 
         except Exception as e:
+            tprint_warning(f"❌ Confidence multiplier calculation failed: {e}, using default 1.0")
             self.logger.error(f"❌ Confidence multiplier calculation failed: {e}")
             return 1.0
 
@@ -381,6 +394,7 @@ class PositionSizer:
             return max(self.min_position_size, min(self.max_position_size, adjusted))
 
         except Exception as e:
+            tprint_warning(f"❌ Position size modifiers application failed: {e}, using base size")
             self.logger.error(f"❌ Position size modifiers application failed: {e}")
             return max(self.min_position_size, min(self.max_position_size, base_size))
 
@@ -422,6 +436,7 @@ class PositionSizer:
             return max(self.min_position_size, min(self.max_position_size, rounded_size))
             
         except Exception as e:
+            tprint_warning(f"Position size rounding failed: {e}, using original size")
             self.logger.warning(f"Position size rounding failed: {e}, using original size")
             return position_size
 
@@ -507,6 +522,7 @@ class PositionSizer:
                     )
                     leverage = leverage_result.recommended_leverage
                 except Exception as e:
+                    tprint_warning(f"Failed to calculate leverage: {e}, using default 1.0")
                     self.logger.warning(f"Failed to calculate leverage: {e}, using default 1.0")
 
             # Validate risk if RiskCalculator is available
@@ -528,13 +544,16 @@ class PositionSizer:
                     
                     if not risk_validation.get('is_valid', False):
                         risk_warnings = risk_validation.get('warnings', [])
+                        tprint_warning(f"Position size exceeds risk limits: {risk_warnings}")
                         self.logger.warning(f"Position size exceeds risk limits: {risk_warnings}")
                         # Optionally reduce position size if risk is too high
                         if risk_validation.get('position_risk', 0) > self.risk_calculator.max_position_risk:
                             reduction_factor = self.risk_calculator.max_position_risk / risk_validation.get('position_risk', 1.0)
                             final_size = final_size * reduction_factor
                             final_size = max(self.min_position_size, min(self.max_position_size, final_size))
+                            tprint_info(f"Position size reduced by risk validation to {final_size:.4f}")
                 except Exception as e:
+                    tprint_warning(f"Risk validation failed: {e}")
                     self.logger.warning(f"Risk validation failed: {e}")
 
             # Create result
@@ -580,15 +599,17 @@ class PositionSizer:
             if len(self.position_sizing_history) > 100:
                 self.position_sizing_history = self.position_sizing_history[-100:]
 
+            tprint_debug(f"Position size calculated for {symbol}: {final_size:.4f} (leverage: {leverage:.1f}x)")
             self.logger.debug(f"Position size calculated for {symbol}: {final_size:.4f} (leverage: {leverage:.1f}x)")
 
             return result
 
         except Exception as e:
+            tprint_error(f"❌ Position sizing failed for {symbol}: {e}")
             self.logger.error(f"❌ Position sizing failed for {symbol}: {e}")
             raise
 
-    def get_position_sizing_history(self, limit: Optional[int] = None) -> list[dict[str, Any]]:
+    def get_position_sizing_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """Get position sizing history."""
         if limit:
             return self.position_sizing_history[-limit:]
@@ -627,10 +648,11 @@ class PositionSizer:
             }
 
         except Exception as e:
+            tprint_error(f"❌ Performance metrics calculation failed: {e}")
             self.logger.error(f"❌ Performance metrics calculation failed: {e}")
             return {}
 
-    def set_confidence_multiplier(self, multiplier: float):
+    def set_confidence_multiplier(self, multiplier: float) -> None:
         """
         Set the confidence multiplier from final_parameters_optimization.
         
@@ -641,13 +663,15 @@ class PositionSizer:
             multiplier: Confidence multiplier from optimized parameters
         """
         if not isinstance(multiplier, (int, float)) or multiplier <= 0:
+            tprint_warning(f"Invalid confidence multiplier: {multiplier}, using default 1.0")
             self.logger.warning(f"Invalid confidence multiplier: {multiplier}, using default 1.0")
             self.confidence_multiplier = 1.0
         else:
             self.confidence_multiplier = float(multiplier)
+            tprint_info(f"✅ Confidence multiplier set to {self.confidence_multiplier}")
             self.logger.info(f"✅ Confidence multiplier set to {self.confidence_multiplier}")
 
-    def update_configuration(self, new_config: Dict[str, Any]):
+    def update_configuration(self, new_config: Dict[str, Any]) -> None:
         """Update position sizing configuration."""
         try:
             if 'kelly_multiplier' in new_config:
@@ -667,19 +691,24 @@ class PositionSizer:
             if 'tick_size' in new_config:
                 self.tick_size = new_config['tick_size']
             
+            tprint_success("✅ Position sizing configuration updated")
             self.logger.info("✅ Position sizing configuration updated")
 
         except Exception as e:
+            tprint_error(f"❌ Failed to update position sizing configuration: {e}")
             self.logger.error(f"❌ Failed to update position sizing configuration: {e}")
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Stop position sizer."""
         try:
+            tprint_info("🛑 Stopping Position Sizer...")
             self.logger.info("🛑 Stopping Position Sizer...")
             self.is_initialized = False
+            tprint_success("✅ Position Sizer stopped successfully")
             self.logger.info("✅ Position Sizer stopped successfully")
 
         except Exception as e:
+            tprint_error(f"❌ Error stopping Position Sizer: {e}")
             self.logger.error(f"❌ Error stopping Position Sizer: {e}")
 
 # Convenience function
@@ -690,11 +719,15 @@ async def setup_position_sizer(
 ) -> Optional[PositionSizer]:
     """Setup and initialize position sizer."""
     try:
+        tprint_info("🔄 Setting up Position Sizer...")
         position_sizer = PositionSizer(config, leverage_manager, risk_calculator)
         success = await position_sizer.initialize()
         if success:
+            tprint_success("✅ Position Sizer setup completed successfully")
             return position_sizer
+        tprint_warning("⚠️ Position Sizer setup completed but initialization failed")
         return None
     except Exception as e:
+        tprint_error(f"❌ Failed to setup position sizer: {e}")
         logger.error(f"❌ Failed to setup position sizer: {e}")
         return None

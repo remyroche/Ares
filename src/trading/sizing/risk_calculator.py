@@ -6,12 +6,13 @@ Basic risk metrics without complex regime-based calculations.
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 import math
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
+from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_structured, tprint_debug, LogLevel
 from ..config.trading_config import TradingConfig
 
 logger = system_logger.getChild('RiskCalculator')
@@ -53,17 +54,21 @@ class RiskCalculator:
     async def initialize(self) -> bool:
         """Initialize risk calculator."""
         try:
+            tprint_info("🔄 Initializing Risk Calculator...")
             self.logger.info("Initializing Risk Calculator...")
 
             # Validate configuration
             if not self._validate_configuration():
+                tprint_error("❌ Risk Calculator configuration validation failed")
                 return False
 
             self.is_initialized = True
+            tprint_success("✅ Risk Calculator initialized successfully")
             self.logger.info("✅ Risk Calculator initialized successfully")
             return True
 
         except Exception as e:
+            tprint_error(f"❌ Failed to initialize Risk Calculator: {e}")
             self.logger.error(f"❌ Failed to initialize Risk Calculator: {e}")
             return False
 
@@ -71,16 +76,21 @@ class RiskCalculator:
         """Validate risk calculator configuration."""
         try:
             if self.max_portfolio_risk <= 0 or self.max_portfolio_risk > 1:
+                tprint_error("Invalid max_portfolio_risk configuration")
                 self.logger.error("Invalid max_portfolio_risk configuration")
                 return False
             if self.max_position_risk <= 0 or self.max_position_risk > 1:
+                tprint_error("Invalid max_position_risk configuration")
                 self.logger.error("Invalid max_position_risk configuration")
                 return False
             if self.default_volatility <= 0 or self.default_volatility > 1:
+                tprint_error("Invalid default_volatility configuration")
                 self.logger.error("Invalid default_volatility configuration")
                 return False
+            tprint_debug("✅ Risk Calculator configuration validated")
             return True
         except Exception as e:
+            tprint_error(f"Configuration validation failed: {e}")
             self.logger.error(f"Configuration validation failed: {e}")
             return False
 
@@ -203,11 +213,13 @@ class RiskCalculator:
                 }
             )
 
+            tprint_debug(f"Risk metrics calculated: position_risk={position_risk:.4f}, portfolio_risk={portfolio_risk:.4f}")
             self.logger.debug(f"Risk metrics calculated: position_risk={position_risk:.4f}, portfolio_risk={portfolio_risk:.4f}")
 
             return result
 
         except Exception as e:
+            tprint_error(f"❌ Risk metrics calculation failed: {e}")
             self.logger.error(f"❌ Risk metrics calculation failed: {e}")
             raise
 
@@ -260,27 +272,36 @@ class RiskCalculator:
             }
 
         except Exception as e:
+            tprint_error(f"❌ Position risk validation failed: {e}")
             self.logger.error(f"❌ Position risk validation failed: {e}")
             return {
                 'is_valid': False,
                 'error': str(e)
             }
 
-    def _generate_risk_warnings(self, risk_metrics: RiskMetrics) -> list[str]:
+    def _generate_risk_warnings(self, risk_metrics: RiskMetrics) -> List[str]:
         """Generate risk warnings based on metrics."""
-        warnings = []
+        warnings: List[str] = []
 
         if risk_metrics.position_risk > self.max_position_risk * 0.8:
-            warnings.append(f"High position risk: {risk_metrics.position_risk:.4f}")
+            warning_msg = f"High position risk: {risk_metrics.position_risk:.4f}"
+            warnings.append(warning_msg)
+            tprint_warning(warning_msg)
 
         if risk_metrics.portfolio_risk > self.max_portfolio_risk * 0.8:
-            warnings.append(f"High portfolio risk: {risk_metrics.portfolio_risk:.4f}")
+            warning_msg = f"High portfolio risk: {risk_metrics.portfolio_risk:.4f}"
+            warnings.append(warning_msg)
+            tprint_warning(warning_msg)
 
         if risk_metrics.volatility_risk > 0.01:
-            warnings.append(f"High volatility risk: {risk_metrics.volatility_risk:.4f}")
+            warning_msg = f"High volatility risk: {risk_metrics.volatility_risk:.4f}"
+            warnings.append(warning_msg)
+            tprint_warning(warning_msg)
 
         if risk_metrics.risk_reward_ratio > 0 and risk_metrics.risk_reward_ratio < 1.0:
-            warnings.append(f"Low risk-reward ratio: {risk_metrics.risk_reward_ratio:.2f}")
+            warning_msg = f"Low risk-reward ratio: {risk_metrics.risk_reward_ratio:.2f}"
+            warnings.append(warning_msg)
+            tprint_warning(warning_msg)
 
         return warnings
 
@@ -292,7 +313,7 @@ class RiskCalculator:
             'default_volatility': self.default_volatility
         }
 
-    def update_risk_limits(self, new_limits: Dict[str, float]):
+    def update_risk_limits(self, new_limits: Dict[str, float]) -> None:
         """Update risk limits."""
         try:
             if 'max_portfolio_risk' in new_limits:
@@ -302,30 +323,39 @@ class RiskCalculator:
             if 'default_volatility' in new_limits:
                 self.default_volatility = new_limits['default_volatility']
 
+            tprint_success("✅ Risk limits updated")
             self.logger.info("✅ Risk limits updated")
 
         except Exception as e:
+            tprint_error(f"❌ Failed to update risk limits: {e}")
             self.logger.error(f"❌ Failed to update risk limits: {e}")
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Stop risk calculator."""
         try:
+            tprint_info("🛑 Stopping Risk Calculator...")
             self.logger.info("🛑 Stopping Risk Calculator...")
             self.is_initialized = False
+            tprint_success("✅ Risk Calculator stopped successfully")
             self.logger.info("✅ Risk Calculator stopped successfully")
 
         except Exception as e:
+            tprint_error(f"❌ Error stopping Risk Calculator: {e}")
             self.logger.error(f"❌ Error stopping Risk Calculator: {e}")
 
 # Convenience function
 async def setup_risk_calculator(config: TradingConfig) -> Optional[RiskCalculator]:
     """Setup and initialize risk calculator."""
     try:
+        tprint_info("🔄 Setting up Risk Calculator...")
         risk_calculator = RiskCalculator(config)
         success = await risk_calculator.initialize()
         if success:
+            tprint_success("✅ Risk Calculator setup completed successfully")
             return risk_calculator
+        tprint_warning("⚠️ Risk Calculator setup completed but initialization failed")
         return None
     except Exception as e:
+        tprint_error(f"❌ Failed to setup risk calculator: {e}")
         logger.error(f"❌ Failed to setup risk calculator: {e}")
         return None

@@ -10,7 +10,7 @@ import logging
 import os
 import json
 import warnings
-from typing import Dict, Any, List, Optional, Union, Tuple
+from typing import Dict, Any, List, Optional, Union, Tuple, Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 import pandas as pd
@@ -56,7 +56,7 @@ class TrainingDataProvider:
         model_check_interval: timedelta = DEFAULT_MODEL_CHECK_INTERVAL,
         use_vectorbt: bool = True,
         vectorbt_threshold: int = 1000
-    ):
+    ) -> None:
         """
         Initialize training data provider.
 
@@ -235,7 +235,7 @@ class TrainingDataProvider:
             tprint_warning(f"⚠️ Training pipeline sync failed: {e}")
             return False
 
-    async def _export_trading_performance(self, trading_data: Dict[str, Any]):
+    async def _export_trading_performance(self, trading_data: Dict[str, Any]) -> None:
         """Export trading performance data for training pipeline."""
         try:
             # Prepare data for training pipeline
@@ -263,7 +263,7 @@ class TrainingDataProvider:
             self.logger.error(f"Error exporting trading performance: {e}")
             raise
 
-    async def _update_feature_cache(self):
+    async def _update_feature_cache(self) -> None:
         """Update feature cache from training pipeline."""
         try:
             tprint_info("🔄 Checking for feature updates...")
@@ -300,7 +300,7 @@ class TrainingDataProvider:
             tprint_warning(f"⚠️ Feature cache update failed: {e}")
             self.logger.warning(f"Feature cache update failed: {e}")
 
-    async def _check_model_updates(self):
+    async def _check_model_updates(self) -> None:
         """Check for updated models from training pipeline."""
         try:
             tprint_info("🔄 Checking for model updates...")
@@ -345,13 +345,95 @@ class TrainingDataProvider:
             tprint_warning(f"⚠️ Model update check failed: {e}")
             self.logger.warning(f"Model update check failed: {e}")
 
+    def _should_use_vectorbt(self, data: pd.Series) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
+                VECTORBT_AVAILABLE)
+
+    def _vectorbt_rolling_operation(
+        self,
+        data: pd.Series,
+        operation: str,
+        window: int,
+        **kwargs: Any
+    ) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                tprint_error(f"❌ Unsupported operation: {operation}")
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT operation failed: {e}, using pandas fallback")
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+
+    def _pandas_rolling_operation(
+        self,
+        data: pd.Series,
+        operation: str,
+        window: int,
+        **kwargs: Any
+    ) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            tprint_error(f"❌ Unsupported operation: {operation}")
+            raise ValueError(f"Unsupported operation: {operation}")
+
+    def _vectorbt_apply_operation(
+        self,
+        data: pd.Series,
+        func: Callable,
+        window: int,
+        **kwargs: Any
+    ) -> pd.Series:
+        """Perform VectorBT rolling apply operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return data.rolling(window=window).apply(func, **kwargs)
+
+        try:
+            return rolling_apply(data, func, window=window, **kwargs)
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT rolling apply failed: {e}, using pandas fallback")
+            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
+            return data.rolling(window=window).apply(func, **kwargs)
+
 class TradingDataExporter:
     """
     Exports trading data for use in training pipeline.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize trading data exporter."""
         self.logger = logger.getChild('TradingDataExporter')
+        tprint_info("🔄 Trading data exporter initialized")
 
     @trading_error_handler(
         error_types=(Exception,),
@@ -426,25 +508,6 @@ class TradingDataExporter:
             tprint_error(f"❌ Trading data export failed: {e}")
             self.logger.error(f"Trading data export failed: {e}", exc_info=True)
             return False
-
-    async def cleanup(self):
-        """Cleanup resources."""
-        try:
-            self.logger.info("Cleaning up TradingDataExporter")
-        except Exception as e:
-            self.logger.warning(f"Cleanup failed: {e}")
-
-    def __enter__(self):
-        """Context manager entry."""
-        return self
-
-    async def __aenter__(self):
-        """Async context manager entry."""
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
-        await self.cleanup()
 
     @trading_error_handler(
         error_types=(Exception,),
@@ -521,22 +584,30 @@ class TradingDataExporter:
             tprint_error(f"❌ Training data preparation failed: {e}")
             return pd.DataFrame(), pd.Series()
 
-    async def cleanup(self):
+    async def cleanup(self) -> None:
         """Cleanup resources."""
         try:
+            tprint_info("🔄 Cleaning up TradingDataExporter")
             self.logger.info("Cleaning up TradingDataExporter")
+            tprint_success("✅ TradingDataExporter cleaned up")
         except Exception as e:
+            tprint_warning(f"⚠️ Cleanup failed: {e}")
             self.logger.warning(f"Cleanup failed: {e}")
 
-    def __enter__(self):
+    def __enter__(self) -> "TradingDataExporter":
         """Context manager entry."""
         return self
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "TradingDataExporter":
         """Async context manager entry."""
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: Optional[type],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[Any]
+    ) -> None:
         """Async context manager exit."""
         await self.cleanup()
 
@@ -577,64 +648,3 @@ async def prepare_training_data(
     return await trading_data_exporter.prepare_training_data(
         trading_history, feature_data, target_column
     )
-
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
-                VECTORBT_AVAILABLE)
-
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")
-
-    def _vectorbt_apply_operation(self, data: pd.Series, func,
-                                 window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling apply operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return data.rolling(window=window).apply(func, **kwargs)
-
-        try:
-            return rolling_apply(data, func, window=window, **kwargs)
-        except Exception as e:
-            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
-            return data.rolling(window=window).apply(func, **kwargs)

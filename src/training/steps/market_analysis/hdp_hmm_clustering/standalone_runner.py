@@ -39,7 +39,7 @@ from pathlib import Path
 
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
-    tprint_structured, tprint_timer
+    tprint_structured, tprint_timer, tprint_data_preview
 )
 
 # Import HDP-HMM components
@@ -154,9 +154,9 @@ def run_hdp_hmm_clustering(
         )
         
         # Access results
-        print(f"Discovered {results['n_clusters']} regimes")
-        print(f"Quality score: {results['quality_metrics']['composite_score']:.3f}")
-        print(f"Meets constraints: {results['quality_metrics']['meets_constraints']}")
+        tprint_info(f"Discovered {results['n_clusters']} regimes")
+        tprint_info(f"Quality score: {results['quality_metrics']['composite_score']:.3f}")
+        tprint_info(f"Meets constraints: {results['quality_metrics']['meets_constraints']}")
         ```
     """
     tprint_info("🚀 Starting HDP-HMM Clustering Pipeline")
@@ -167,6 +167,7 @@ def run_hdp_hmm_clustering(
     
     # Validate input data
     if market_data is None or market_data.empty:
+        tprint_error("❌ market_data cannot be None or empty")
         raise ValueError("market_data cannot be None or empty")
     
     tprint_structured({
@@ -365,6 +366,7 @@ def run_hdp_hmm_clustering_from_artifacts(
         )
         
         if market_data is None:
+            tprint_error(f"❌ Could not load artifact: {artifact_name}")
             raise ValueError(f"Could not load artifact: {artifact_name}")
         
         tprint_success(f"✅ Loaded market data: {market_data.shape}")
@@ -418,7 +420,7 @@ def load_market_data_for_clustering(
             timeframe="30m"
         )
         
-        print(df.head())
+        tprint_data_preview(df, "Market Data Preview", max_rows=5)
         ```
     """
     config = {
@@ -441,6 +443,7 @@ def load_market_data_for_clustering(
     )
     
     if market_data is None:
+        tprint_error(f"❌ Could not load market data artifact: {artifact_name}")
         raise ValueError(f"Could not load market data artifact: {artifact_name}")
     
     return market_data

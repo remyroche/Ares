@@ -71,6 +71,7 @@ class HDPHMMRegimeDiscoveryStep(BaseStep):
         # Validate HMM library availability
         if not HMM_AVAILABLE:
             self.logger.error("HMM libraries (pyhsmm or ssm) not available")
+            tprint_error("❌ HMM libraries (pyhsmm or ssm) not available")
             raise ImportError(
                 "HMM libraries required for HDP-HMM clustering. "
                 "Install with: pip install ssm-jax or pyhsmm"
@@ -153,6 +154,7 @@ class HDPHMMRegimeDiscoveryStep(BaseStep):
             market_data = self._load_market_data(symbol, exchange, timeframe, config)
             
             if market_data is None or market_data.empty:
+                tprint_error(f"❌ No market data available for {symbol} on {timeframe}")
                 raise ValueError(f"No market data available for {symbol} on {timeframe}")
             
             tprint(f"✅ Loaded {len(market_data)} samples of market data", "SUCCESS")
@@ -533,11 +535,13 @@ class HDPHMMRegimeDiscoveryStep(BaseStep):
         missing_keys = [key for key in required_keys if key not in config]
         
         if missing_keys:
+            tprint_error(f"❌ Missing required configuration keys: {missing_keys}")
             raise ValueError(f"Missing required configuration keys: {missing_keys}")
         
         # Validate symbol
         symbol = config.get('symbol')
         if not symbol or not isinstance(symbol, str):
+            tprint_error(f"❌ Invalid symbol: {symbol}")
             raise ValueError(f"Invalid symbol: {symbol}")
         
         # Validate exchange
@@ -603,8 +607,8 @@ async def run_hdp_hmm_step(config: Dict[str, Any]) -> Dict[str, Any]:
         }
         
         results = await run_hdp_hmm_step(config)
-        print(f"Success: {results['success']}")
-        print(f"Regimes: {results.get('n_regimes', 0)}")
+        tprint_info(f"Success: {results['success']}")
+        tprint_info(f"Regimes: {results.get('n_regimes', 0)}")
         ```
     """
     step = HDPHMMRegimeDiscoveryStep()

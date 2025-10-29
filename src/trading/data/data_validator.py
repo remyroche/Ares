@@ -7,7 +7,7 @@ Ensures data integrity, consistency, and quality before processing.
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union, Tuple, Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -25,6 +25,7 @@ from ..utils.error_handling import (
     TradingError, TradingErrorSeverity, trading_error_handler,
     critical_operation, require_no_fallback
 )
+from ..utils.validation import validate_market_data
 
 logger = system_logger.getChild('DataValidator')
 
@@ -204,15 +205,8 @@ class DataValidator:
             quality_score = await self._calculate_quality_score(validation_results)
 
             # Determine if data is valid (critical errors)
-            # Check if any critical validation rules failed
-            critical_rules = {ValidationRule.OHLC_CONSISTENCY, ValidationRule.MISSING_DATA}
-            failed_critical = any(
-                critical_rule in r.failed_rules 
-                for r in validation_results.values() 
-                if not r.is_valid
-                for critical_rule in critical_rules
-            )
-            is_valid = not failed_critical
+            is_valid = len([r for r in validation_results.values() if not r.is_valid and
+                          r.failed_rules in [ValidationRule.OHLC_CONSISTENCY, ValidationRule.MISSING_DATA]]) == 0
 
             return ValidationResult(
                 is_valid=is_valid,
@@ -371,10 +365,8 @@ class DataValidator:
         std_volume = df['volume'].std()
 
         if std_volume > 0:
-            # Detect volume spikes using configured tolerance
-            # Convert tolerance to multiplier (5.0 = 500% = 5x multiplier)
-            volume_multiplier = self.volume_tolerance if self.volume_tolerance > 1.0 else 1.0 + self.volume_tolerance
-            volume_spikes = df[df['volume'] > mean_volume * volume_multiplier]
+            # Detect volume spikes (3+ standard deviations)
+            volume_spikes = df[df['volume'] > mean_volume + 3 * std_volume]
 
             if not volume_spikes.empty:
                 warnings.append(f"Volume spikes detected: {len(volume_spikes)} occurrences")
@@ -407,29 +399,9 @@ class DataValidator:
             )
 
         # Calculate price gaps between consecutive periods
-        # Only if we have timestamp information to verify continuity
-        timestamp_cols = [col for col in df.columns if 'timestamp' in col.lower()]
-        
-        if timestamp_cols and len(df) > 1:
-            timestamp_col = timestamp_cols[0]
-            timestamps = pd.to_datetime(df[timestamp_col], errors='coerce')
-            time_diffs = timestamps.diff().dropna()
-            
-            # Only check gaps for consecutive periods (no missing time periods)
-            consecutive_mask = pd.Series([True] * len(df))
-            if len(time_diffs) > 0:
-                expected_interval = time_diffs.median()
-                # Mark rows where time gap is reasonable (within 2x expected)
-                consecutive_mask[1:] = time_diffs <= (2 * expected_interval)
-            
-            # Calculate price changes only for consecutive periods
-            price_changes = df['close'].pct_change().abs()
-            price_changes = price_changes[consecutive_mask]
-        else:
-            # Fallback to simple pct_change if no timestamp info
-            price_changes = df['close'].pct_change().abs()
-        
+        price_changes = df['close'].pct_change().abs()
         gap_threshold = 0.05  # 5% gap
+
         significant_gaps = price_changes[price_changes > gap_threshold]
 
         if not significant_gaps.empty:
@@ -471,37 +443,20 @@ class DataValidator:
             )
 
         timestamp_col = timestamp_cols[0]
-        
-        # Normalize timestamps to UTC for comparison
-        try:
-            timestamps = df[timestamp_col].copy()
-            # Convert to datetime if needed
-            if not pd.api.types.is_datetime64_any_dtype(timestamps):
-                timestamps = pd.to_datetime(timestamps, errors='coerce')
-            
-            # Ensure timezone-aware (UTC)
-            if timestamps.dt.tz is None:
-                timestamps = timestamps.dt.tz_localize('UTC')
-            else:
-                timestamps = timestamps.dt.tz_convert('UTC')
-            
-            # Check if monotonic increasing
-            if timestamps.is_monotonic_increasing:
-                # Check for reasonable time intervals
-                if len(timestamps) > 1:
-                    time_diffs = timestamps.diff().dropna()
-                    if len(time_diffs) > 0:
-                        expected_interval = time_diffs.median()
 
-                        # Check for large gaps (more than 2x expected interval)
-                        large_gaps = time_diffs[time_diffs > 2 * expected_interval]
+        if df[timestamp_col].is_monotonic_increasing:
+            # Check for reasonable time intervals
+            if len(df) > 1:
+                time_diffs = df[timestamp_col].diff().dropna()
+                expected_interval = time_diffs.median()
 
-                        if not large_gaps.empty:
-                            warnings.append(f"Large time gaps detected: {len(large_gaps)} occurrences")
-            else:
-                errors.append("Timestamps are not in chronological order")
-        except Exception as e:
-            errors.append(f"Failed to validate timestamp order: {str(e)}")
+                # Check for large gaps (more than 2x expected interval)
+                large_gaps = time_diffs[time_diffs > 2 * expected_interval]
+
+                if not large_gaps.empty:
+                    warnings.append(f"Large time gaps detected: {len(large_gaps)} occurrences")
+        else:
+            errors.append("Timestamps are not in chronological order")
 
         return ValidationResult(
             is_valid=len(errors) == 0,
@@ -575,41 +530,7 @@ class DataValidator:
 
         timestamp_col = timestamp_cols[0]
         latest_timestamp = df[timestamp_col].max()
-        
-        # Ensure latest_timestamp is a datetime object
-        if not isinstance(latest_timestamp, datetime):
-            try:
-                # Try to convert if it's a pandas Timestamp
-                if hasattr(latest_timestamp, 'to_pydatetime'):
-                    latest_timestamp = latest_timestamp.to_pydatetime()
-                elif isinstance(latest_timestamp, pd.Timestamp):
-                    latest_timestamp = latest_timestamp.to_pydatetime()
-                else:
-                    errors.append(f"Timestamp column contains non-datetime values: {type(latest_timestamp)}")
-                    return ValidationResult(
-                        is_valid=False,
-                        quality_score=0.0,
-                        failed_rules=[ValidationRule.DATA_FRESHNESS],
-                        warnings=warnings,
-                        errors=errors
-                    )
-            except Exception as e:
-                errors.append(f"Failed to convert timestamp: {str(e)}")
-                return ValidationResult(
-                    is_valid=False,
-                    quality_score=0.0,
-                    failed_rules=[ValidationRule.DATA_FRESHNESS],
-                    warnings=warnings,
-                    errors=errors
-                )
-        
-        # Ensure timezone-aware (use UTC)
-        if latest_timestamp.tzinfo is None:
-            latest_timestamp = latest_timestamp.replace(tzinfo=timezone.utc)
-        elif latest_timestamp.tzinfo != timezone.utc:
-            latest_timestamp = latest_timestamp.astimezone(timezone.utc)
-        
-        now = datetime.now(timezone.utc)
+        now = datetime.now()
 
         # Calculate age of latest data
         age_minutes = (now - latest_timestamp).total_seconds() / 60
@@ -672,7 +593,7 @@ class DataValidator:
 
         return DataQualityReport(
             symbol=symbol,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(),
             overall_quality=overall_quality,
             validation_results=validation_result.metadata.get('validation_results', {}),
             recommendations=recommendations,

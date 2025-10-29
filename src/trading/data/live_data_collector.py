@@ -9,11 +9,10 @@ Enhanced version with multi-timeframe support and ML integration.
 import asyncio
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Callable, Union
 from dataclasses import dataclass, field
 from enum import Enum
-from collections import defaultdict
 
 import pandas as pd
 import numpy as np
@@ -71,44 +70,7 @@ class LiveDataConfig:
     feature_engineering: bool = True
     real_time_validation: bool = True
     error_recovery: bool = True
-    enable_persistence: bool = False
-    persistence_backend: str = "sqlite"
-    persistence_path: Optional[str] = None
     custom_params: Dict[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self):
-        """Validate configuration after initialization."""
-        self._validate()
-    
-    def _validate(self):
-        """Validate configuration parameters."""
-        errors = []
-        
-        # Validate symbol
-        if not isinstance(self.symbol, str) or len(self.symbol) < 2:
-            errors.append(f"Invalid symbol: {self.symbol}")
-        
-        # Validate exchange
-        valid_exchanges = ['binance', 'binance_testnet', 'simulated']
-        if self.exchange.lower() not in valid_exchanges:
-            errors.append(f"Invalid exchange: {self.exchange}. Must be one of {valid_exchanges}")
-        
-        # Validate buffer size
-        if not isinstance(self.buffer_size, int) or self.buffer_size < 10:
-            errors.append(f"Buffer size must be >= 10, got {self.buffer_size}")
-        
-        # Validate interval
-        if not isinstance(self.interval, CollectionInterval):
-            errors.append(f"Invalid interval: {self.interval}")
-        
-        # Validate ML model path if ML is enabled
-        if self.enable_ml_predictions and self.ml_model_path:
-            from pathlib import Path
-            if not Path(self.ml_model_path).exists():
-                errors.append(f"ML model path does not exist: {self.ml_model_path}")
-        
-        if errors:
-            raise ValueError(f"Configuration validation failed: {'; '.join(errors)}")
 
     @property
     def interval_seconds(self) -> int:
@@ -157,14 +119,6 @@ class LiveDataCollector:
         self.last_collection_time: Optional[datetime] = None
         self.collection_count = 0
         self.error_count = 0
-        self._collection_task: Optional[asyncio.Task] = None
-
-        # Rate limiting
-        self._rate_limiter: Dict[str, List[float]] = defaultdict(list)
-        self._rate_limit_config: Dict[str, Dict[str, int]] = {
-            'binance': {'max_calls': 1200, 'window_seconds': 60},  # 1200 calls per minute
-            'default': {'max_calls': 100, 'window_seconds': 60}
-        }
 
         # Callbacks
         self.on_data_callbacks: List[Callable[[LiveDataPoint], None]] = []
@@ -177,25 +131,8 @@ class LiveDataCollector:
 
         # Performance optimization
         self.memory_optimized = True
-        
-        # Data persistence
-        self.persistence = None
-        if config.enable_persistence:
-            from .data_persistence import DataPersistence, PersistenceBackend
-            backend_map = {
-                'sqlite': PersistenceBackend.SQLITE,
-                'parquet': PersistenceBackend.PARQUET,
-                'csv': PersistenceBackend.CSV
-            }
-            backend = backend_map.get(config.persistence_backend.lower(), PersistenceBackend.SQLITE)
-            self.persistence = DataPersistence(
-                backend=backend,
-                storage_path=config.persistence_path
-            )
-        
-        # Quality metrics tracking
-        from .quality_metrics import DataQualityMetricsTracker
-        self.quality_metrics = DataQualityMetricsTracker()
+
+        # Note: Components will be initialized asynchronously in start_collection()
 
     async def _initialize_components(self):
         """Initialize exchange client and ML components."""
@@ -312,8 +249,8 @@ class LiveDataCollector:
             self.is_running = True
             self.logger.info(f"🚀 Starting live data collection for {self.config.symbol}")
 
-            # Start collection loop and store task reference
-            self._collection_task = asyncio.create_task(self._collection_loop())
+            # Start collection loop
+            asyncio.create_task(self._collection_loop())
 
             return True
 
@@ -330,14 +267,6 @@ class LiveDataCollector:
 
         self.is_running = False
         self.logger.info("🛑 Stopping live data collection")
-
-        # Cancel collection task
-        if self._collection_task and not self._collection_task.done():
-            self._collection_task.cancel()
-            try:
-                await self._collection_task
-            except asyncio.CancelledError:
-                pass
 
         # Wait for cleanup
         await asyncio.sleep(0.1)
@@ -378,21 +307,9 @@ class LiveDataCollector:
             if not raw_data:
                 return
 
-            # Use timestamp from exchange data, fallback to current time
-            data_timestamp = raw_data.get('timestamp')
-            if isinstance(data_timestamp, datetime):
-                # Ensure UTC timezone
-                if data_timestamp.tzinfo is None:
-                    data_timestamp = data_timestamp.replace(tzinfo=timezone.utc)
-                elif data_timestamp.tzinfo != timezone.utc:
-                    data_timestamp = data_timestamp.astimezone(timezone.utc)
-            else:
-                # Fallback to current UTC time
-                data_timestamp = datetime.now(timezone.utc)
-
             # Create data point
             data_point = LiveDataPoint(
-                timestamp=data_timestamp,
+                timestamp=datetime.now(),
                 symbol=self.config.symbol,
                 exchange=self.config.exchange,
                 raw_data=raw_data,
@@ -426,23 +343,6 @@ class LiveDataCollector:
 
             # Trigger callbacks
             await self._trigger_callbacks(data_point)
-            
-            # Record quality metrics
-            if self.config.real_time_validation:
-                from .quality_metrics import QualityMetric
-                metric = QualityMetric(
-                    timestamp=data_point.timestamp,
-                    symbol=data_point.symbol,
-                    quality_score=data_point.quality_score,
-                    validation_errors=0,  # Would be populated from validator
-                    validation_warnings=0,
-                    failed_rules=[]
-                )
-                self.quality_metrics.record_metric(metric)
-            
-            # Persist data if enabled
-            if self.persistence and data_point.processed_data:
-                await self.persistence.save_data_point(data_point.processed_data)
 
             # Log progress
             if self.collection_count % 10 == 0:  # Log every 10 collections
@@ -453,53 +353,10 @@ class LiveDataCollector:
             self.logger.error(f"❌ Data point collection failed: {e}")
             raise
 
-    async def _check_rate_limit(self, endpoint: str) -> bool:
-        """Check if rate limit allows API call."""
-        exchange_config = self._rate_limit_config.get(
-            self.config.exchange.lower(),
-            self._rate_limit_config['default']
-        )
-        
-        max_calls = exchange_config['max_calls']
-        window_seconds = exchange_config['window_seconds']
-        now = time.time()
-        
-        # Clean old entries
-        self._rate_limiter[endpoint] = [
-            ts for ts in self._rate_limiter[endpoint]
-            if now - ts < window_seconds
-        ]
-        
-        # Check if limit exceeded
-        if len(self._rate_limiter[endpoint]) >= max_calls:
-            return False
-        
-        # Record this call
-        self._rate_limiter[endpoint].append(now)
-        return True
-    
-    async def _wait_for_rate_limit(self, endpoint: str, max_wait_seconds: int = 60):
-        """Wait until rate limit allows API call."""
-        wait_time = 0
-        while not await self._check_rate_limit(endpoint) and wait_time < max_wait_seconds:
-            await asyncio.sleep(1)
-            wait_time += 1
-        
-        if wait_time >= max_wait_seconds:
-            self.logger.warning(f"⚠️ Rate limit wait timeout for {endpoint}")
-            return False
-        return True
-
     async def _fetch_latest_data(self) -> Optional[Dict[str, Any]]:
         """Fetch latest market data."""
         try:
             if self.config.collection_mode == CollectionMode.LIVE:
-                # Check rate limit
-                endpoint = f"{self.config.exchange}_klines"
-                if not await self._wait_for_rate_limit(endpoint):
-                    self.logger.warning("⚠️ Rate limit exceeded, skipping fetch")
-                    return None
-                
                 # Get latest 1m kline
                 klines = await self.exchange_client.get_klines(
                     symbol=self.config.symbol,
@@ -510,7 +367,7 @@ class LiveDataCollector:
                 if klines:
                     # Convert to dict format
                     latest_kline = klines[0]
-                    raw_data = {
+                    return {
                         'timestamp': latest_kline.timestamp,
                         'open': latest_kline.open,
                         'high': latest_kline.high,
@@ -520,13 +377,6 @@ class LiveDataCollector:
                         'symbol': self.config.symbol,
                         'exchange': self.config.exchange
                     }
-                    
-                    # Validate raw data before returning
-                    if not self._validate_raw_data(raw_data):
-                        self.logger.warning("⚠️ Raw data validation failed")
-                        return None
-                    
-                    return raw_data
 
             elif self.config.collection_mode == CollectionMode.SIMULATED:
                 # Use historical data for testing
@@ -536,53 +386,20 @@ class LiveDataCollector:
             self.logger.error(f"❌ Data fetch failed: {e}")
             return None
 
-    def _validate_raw_data(self, raw_data: Dict[str, Any]) -> bool:
-        """Validate raw data from exchange."""
-        try:
-            # Check required fields
-            required_fields = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-            missing_fields = [field for field in required_fields if field not in raw_data]
-            if missing_fields:
-                self.logger.error(f"Missing required fields: {missing_fields}")
-                return False
-            
-            # Validate OHLC relationships
-            if not (raw_data['high'] >= raw_data['low'] and
-                    raw_data['high'] >= raw_data['open'] and
-                    raw_data['high'] >= raw_data['close'] and
-                    raw_data['low'] <= raw_data['open'] and
-                    raw_data['low'] <= raw_data['close']):
-                self.logger.error("Invalid OHLC relationships")
-                return False
-            
-            # Validate positive values
-            if any(raw_data[field] <= 0 for field in ['open', 'high', 'low', 'close', 'volume']):
-                self.logger.error("Non-positive values detected")
-                return False
-            
-            return True
-        except Exception as e:
-            self.logger.error(f"Validation error: {e}")
-            return False
-
     async def _simulate_data_fetch(self) -> Optional[Dict[str, Any]]:
         """Simulate data fetch for testing."""
         # This would load historical data and replay it
         # For now, return mock data
-        mock_data = {
-            'timestamp': datetime.now(timezone.utc),
-            'open': max(0.01, 50000.0 + np.random.normal(0, 100)),
-            'high': max(0.01, 50100.0 + np.random.normal(0, 50)),
-            'low': max(0.01, 49900.0 + np.random.normal(0, 50)),
-            'close': max(0.01, 50000.0 + np.random.normal(0, 100)),
-            'volume': max(0.01, 100.0 + np.random.normal(0, 20)),
+        return {
+            'timestamp': datetime.now(),
+            'open': 50000.0 + np.random.normal(0, 100),
+            'high': 50100.0 + np.random.normal(0, 50),
+            'low': 49900.0 + np.random.normal(0, 50),
+            'close': 50000.0 + np.random.normal(0, 100),
+            'volume': 100.0 + np.random.normal(0, 20),
             'symbol': self.config.symbol,
             'exchange': self.config.exchange
         }
-        # Ensure high >= low, etc.
-        mock_data['high'] = max(mock_data['high'], mock_data['low'], mock_data['open'], mock_data['close'])
-        mock_data['low'] = min(mock_data['low'], mock_data['open'], mock_data['close'])
-        return mock_data
 
     async def _process_data_point(self, data_point: LiveDataPoint):
         """Process raw data point."""
@@ -807,7 +624,7 @@ class LiveDataCollector:
 
     def get_stats(self) -> Dict[str, Any]:
         """Get collection statistics."""
-        stats = {
+        return {
             'is_running': self.is_running,
             'collection_count': self.collection_count,
             'error_count': self.error_count,
@@ -818,90 +635,8 @@ class LiveDataCollector:
             'last_collection_time': self.last_collection_time,
             'avg_processing_time_ms': np.mean([dp.processing_time_ms for dp in self.data_buffer[-100:]]) if self.data_buffer else 0,
             'ml_predictions_enabled': self.ml_model is not None,
-            'feature_engineering_enabled': self.feature_engineer is not None,
-            'persistence_enabled': self.persistence is not None
+            'feature_engineering_enabled': self.feature_engineer is not None
         }
-        
-        # Add quality metrics stats
-        if self.quality_metrics:
-            quality_stats = self.quality_metrics.get_stats(self.config.symbol)
-            stats['quality_metrics'] = quality_stats
-        
-        return stats
-    
-    async def health_check(self) -> Dict[str, Any]:
-        """
-        Perform health check.
-        
-        Returns:
-            Dictionary with health status and metrics
-        """
-        health = {
-            'status': 'healthy',
-            'timestamp': datetime.now(timezone.utc),
-            'checks': {}
-        }
-        
-        # Check if running
-        health['checks']['is_running'] = {
-            'status': 'ok' if self.is_running else 'stopped',
-            'value': self.is_running
-        }
-        
-        # Check collection task
-        if self._collection_task:
-            health['checks']['collection_task'] = {
-                'status': 'ok' if not self._collection_task.done() else 'stopped',
-                'value': 'running' if not self._collection_task.done() else 'stopped'
-            }
-        else:
-            health['checks']['collection_task'] = {
-                'status': 'warning',
-                'value': 'not_started'
-            }
-        
-        # Check exchange client
-        if self.exchange_client:
-            health['checks']['exchange_client'] = {
-                'status': 'ok',
-                'value': 'connected'
-            }
-        else:
-            health['checks']['exchange_client'] = {
-                'status': 'warning',
-                'value': 'not_connected'
-            }
-        
-        # Check buffer health
-        buffer_usage = len(self.data_buffer) / self.config.buffer_size if self.config.buffer_size > 0 else 0
-        health['checks']['buffer_usage'] = {
-            'status': 'ok' if buffer_usage < 0.9 else 'warning',
-            'value': f"{buffer_usage:.1%}"
-        }
-        
-        # Check error rate
-        if self.collection_count > 0:
-            error_rate = self.error_count / self.collection_count
-            health['checks']['error_rate'] = {
-                'status': 'ok' if error_rate < 0.1 else 'warning',
-                'value': f"{error_rate:.1%}"
-            }
-        
-        # Check data quality
-        if self.quality_metrics:
-            quality_stats = self.quality_metrics.get_stats(self.config.symbol)
-            if quality_stats:
-                avg_quality = quality_stats.get('avg_quality_score', 1.0)
-                health['checks']['data_quality'] = {
-                    'status': 'ok' if avg_quality >= 0.7 else 'warning',
-                    'value': f"{avg_quality:.2f}"
-                }
-        
-        # Overall status
-        if any(c['status'] != 'ok' for c in health['checks'].values()):
-            health['status'] = 'degraded'
-        
-        return health
 
     async def _optimize_memory_usage(self):
         """Optimize memory usage of data buffers."""

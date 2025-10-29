@@ -65,10 +65,14 @@ class RegimeDetector:
         self.base_models: Dict[str, Any] = {}  # CatBoost, GreedyRuleLists, ExtraTrees
         self.ensemble_model: Any = None  # stacker_lgbm_calibrated
         self.feature_names: List[str] = []
+        self.selected_feature_names: List[str] = []  # LGBM-filtered features
         self.regime_count: int = 0
         
         # Model Manager for loading
         self.model_manager: Optional[ModelManager] = None
+        
+        # Regime feature engineer for consistent feature generation
+        self.regime_feature_engineer = None
         
         # State
         self.is_initialized = False
@@ -98,6 +102,9 @@ class RegimeDetector:
             
             # Load feature names and metadata
             await self._load_metadata()
+            
+            # Initialize regime feature engineer with selected features
+            await self._initialize_regime_feature_engineer()
             
             if not self.base_models and self.ensemble_model is None:
                 error_msg = "Failed to load any regime detection models"
@@ -164,8 +171,18 @@ class RegimeDetector:
                         if 'models' in result and isinstance(result['models'], dict):
                             self.base_models.update(result['models'])
                             self.logger.debug(f"Found models in component_result: {list(result['models'].keys())}")
-                        # Also check if component_result itself contains model-like objects
-                        self._extract_models_from_dict(result, 'component_result')
+                            # Also check if component_result itself contains model-like objects
+                            self._extract_models_from_dict(result, 'component_result')
+                        
+                        # Extract selected feature names from component_result
+                        if 'feature_selection_info' in result:
+                            fs_info = result['feature_selection_info']
+                            if isinstance(fs_info, dict) and 'selected_feature_names' in fs_info:
+                                self.selected_feature_names = fs_info['selected_feature_names']
+                                self.logger.debug(f"Found {len(self.selected_feature_names)} selected feature names")
+                        
+                        if 'selected_feature_names' in result and not self.selected_feature_names:
+                            self.selected_feature_names = result['selected_feature_names']
                 
                 # Strategy 3: Check for training_result structure
                 if 'training_result' in artifacts:
@@ -174,7 +191,14 @@ class RegimeDetector:
                         if 'models' in result and isinstance(result['models'], dict):
                             self.base_models.update(result['models'])
                             self.logger.debug(f"Found models in training_result: {list(result['models'].keys())}")
-                        self._extract_models_from_dict(result, 'training_result')
+                            self._extract_models_from_dict(result, 'training_result')
+                        
+                        # Extract selected feature names from training_result
+                        if 'feature_selection' in result:
+                            fs_info = result['feature_selection']
+                            if isinstance(fs_info, dict) and 'selected_feature_names' in fs_info:
+                                self.selected_feature_names = fs_info['selected_feature_names']
+                                self.logger.debug(f"Found {len(self.selected_feature_names)} selected feature names in training_result")
                 
                 # Strategy 4: Search entire artifact dict for model-like objects
                 self._extract_models_from_dict(artifacts, 'root')
@@ -385,6 +409,7 @@ class RegimeDetector:
                 with open(metadata_path, 'r') as f:
                     metadata = json.load(f)
                     self.feature_names = metadata.get('feature_names', [])
+                    self.selected_feature_names = metadata.get('selected_feature_names', self.selected_feature_names)
                     self.regime_count = metadata.get('regime_count', 0)
             else:
                 # Try to infer from models
@@ -407,6 +432,41 @@ class RegimeDetector:
                 
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to load metadata: {e}")
+    
+    async def _initialize_regime_feature_engineer(self) -> None:
+        """Initialize regime feature engineer with selected features from training."""
+        try:
+            from src.feature_generation.shared.regime_feature_engineer import (
+                create_regime_feature_engineer
+            )
+            
+            # Try to load selected features from artifacts
+            artifacts_path = Path(self.models_directory) / "regime_models_training_result.pkl"
+            if not artifacts_path.exists():
+                # Try alternative paths
+                artifacts_dir = Path(self.models_directory)
+                if artifacts_dir.exists():
+                    for artifact_file in artifacts_dir.glob("**/regime_models_training_result.pkl"):
+                        artifacts_path = artifact_file
+                        break
+            
+            # Create feature engineer
+            self.regime_feature_engineer = create_regime_feature_engineer(
+                selected_feature_names=self.selected_feature_names,
+                artifacts_path=artifacts_path if artifacts_path.exists() else None,
+                logger=self.logger
+            )
+            
+            # Update selected_feature_names if loaded from artifacts
+            if self.regime_feature_engineer.selected_feature_names:
+                self.selected_feature_names = self.regime_feature_engineer.selected_feature_names
+                self.logger.info(f"✅ Initialized regime feature engineer with {len(self.selected_feature_names)} selected features")
+            else:
+                self.logger.warning("⚠️ No selected features loaded, will use all generated features")
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to initialize regime feature engineer: {e}. Will use simplified features.")
+            self.regime_feature_engineer = None
 
     async def predict_regime(
         self,
@@ -435,11 +495,43 @@ class RegimeDetector:
             raise RuntimeError("Regime Detector not initialized. Call initialize() first.")
         
         try:
-            # Prepare features from market data
-            features = self._prepare_features(market_data)
+            # Prepare features from market data using shared feature engineer
+            if self.regime_feature_engineer:
+                # Use shared feature engineer (same as training)
+                result = self.regime_feature_engineer.generate_features(
+                    market_data,
+                    apply_selection=True  # Apply LGBM-filtered feature selection
+                )
+                
+                if result.errors:
+                    self.logger.error(f"Feature generation errors: {result.errors}")
+                
+                if result.selected_features is not None and result.selected_features.size > 0:
+                    # Use selected features (LGBM-filtered)
+                    features = result.selected_features
+                    self.feature_names = result.selected_feature_names or []
+                elif result.features.size > 0:
+                    # Fallback to all features if selection failed
+                    features = result.features
+                    self.feature_names = result.feature_names or []
+                    self.logger.warning("Using all features (selection not applied)")
+                else:
+                    raise ValueError("No features generated")
+            else:
+                # Fallback to simplified features if engineer not available
+                self.logger.warning("Using simplified feature preparation (feature engineer not available)")
+                features = self._prepare_features(market_data)
             
-            if len(features) == 0:
+            if len(features) == 0 or (hasattr(features, 'shape') and features.shape[0] == 0):
                 raise ValueError("No features extracted from market data")
+            
+            # Ensure features are in correct shape for single prediction
+            if hasattr(features, 'shape') and len(features.shape) == 2:
+                if features.shape[0] > 1:
+                    # Take last row if multiple rows
+                    features = features[-1:]
+                elif features.shape[0] == 0:
+                    raise ValueError("Empty feature matrix")
             
             # Get predictions from base models (flexible - works with any model type)
             base_predictions = {}
@@ -486,13 +578,59 @@ class RegimeDetector:
             # Use ensemble model if available, otherwise use voting from base models
             if self.ensemble_model is not None:
                 try:
-                    # Prepare features for ensemble (base model predictions)
-                    # Get predictions in consistent order
-                    model_names = list(self.base_models.keys())
-                    ensemble_features = np.array([
-                        base_predictions.get(name, 0) for name in model_names
-                    ])
-                    ensemble_features = ensemble_features.reshape(1, -1)
+                    # Prepare features for ensemble (base model outputs as in training)
+                    # Training uses predict_proba for models that support it, otherwise predict
+                    base_outputs = []
+                    model_names = []
+                    
+                    for name, model in self.base_models.items():
+                        try:
+                            # Same logic as training: prefer predict_proba, fallback to predict
+                            if hasattr(model, 'predict_proba') and callable(getattr(model, 'predict_proba', None)):
+                                if return_probabilities:
+                                    # Use probability predictions (multi-class probabilities)
+                                    proba = model.predict_proba(features)
+                                    if isinstance(proba, np.ndarray) and len(proba.shape) == 2:
+                                        base_outputs.append(proba[0])  # Take first row if multiple
+                                    else:
+                                        base_outputs.append(proba.flatten())
+                                    model_names.append(f"{name}_proba")
+                            else:
+                                # Use class predictions and convert to one-hot if needed
+                                pred = model.predict(features)
+                                # Get unique classes from labels or model
+                                if hasattr(model, 'classes_'):
+                                    unique_classes = model.classes_
+                                else:
+                                    # Infer from predictions
+                                    all_predictions = []
+                                    for n, m in self.base_models.items():
+                                        if hasattr(m, 'predict'):
+                                            all_predictions.extend(m.predict(features).flatten())
+                                    unique_classes = np.unique(all_predictions) if all_predictions else [0, 1]
+                                
+                                pred_val = int(pred[0]) if isinstance(pred, np.ndarray) and len(pred) > 0 else int(pred)
+                                # Convert to one-hot
+                                pred_onehot = np.zeros(len(unique_classes))
+                                if pred_val in unique_classes:
+                                    idx = np.where(unique_classes == pred_val)[0]
+                                    if len(idx) > 0:
+                                        pred_onehot[idx[0]] = 1.0
+                                
+                                base_outputs.append(pred_onehot)
+                                model_names.append(f"{name}_class")
+                        except Exception as e:
+                            self.logger.warning(f"Failed to get output from {name}: {e}")
+                            continue
+                    
+                    if not base_outputs:
+                        raise RuntimeError("No base model outputs generated for ensemble")
+                    
+                    # Stack base model outputs (same as training)
+                    ensemble_features = np.column_stack(base_outputs) if len(base_outputs) > 1 else np.array(base_outputs[0]).reshape(1, -1)
+                    
+                    if len(ensemble_features.shape) == 1:
+                        ensemble_features = ensemble_features.reshape(1, -1)
                     
                     # Predict with ensemble
                     if hasattr(self.ensemble_model, 'predict') and callable(getattr(self.ensemble_model, 'predict', None)):
@@ -564,11 +702,17 @@ class RegimeDetector:
         feature engineering pipeline as used during training.
         """
         try:
-            # Basic feature extraction (should match training pipeline)
+            """
+            Simplified feature preparation (fallback only).
+            
+            This method should NOT be used if regime_feature_engineer is available.
+            It only provides basic features as a fallback when the full feature
+            engineering system is not available.
+            """
             if 'close' not in market_data.columns:
                 raise ValueError("Market data must contain 'close' column")
             
-            # Calculate basic features
+            # Calculate basic features (simplified fallback)
             features = []
             close = market_data['close'].values
             
@@ -594,6 +738,11 @@ class RegimeDetector:
                         features.append(col_values[-1])
             
             features_array = np.array(features).reshape(1, -1)
+            
+            self.logger.warning(
+                "Using simplified feature preparation (full feature engineering not available). "
+                "This will result in feature mismatch with training!"
+            )
             
             return features_array
             

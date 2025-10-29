@@ -17,6 +17,11 @@ from .feature_validator import (
     validate_feature_set,
     compare_feature_sets
 )
+from .regime_feature_engineer import (
+    RegimeFeatureEngineer,
+    RegimeFeatureEngineeringResult,
+    create_regime_feature_engineer
+)
 
 __all__ = [
     'FeatureEngineer',
@@ -27,4 +32,7 @@ __all__ = [
     'FeatureValidator',
     'validate_feature_set',
     'compare_feature_sets',
+    'RegimeFeatureEngineer',
+    'RegimeFeatureEngineeringResult',
+    'create_regime_feature_engineer',
 ]

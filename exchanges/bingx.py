@@ -479,9 +479,12 @@ class BingXExchange(BaseExchange):
         return await self._convert_to_market_data(raw_data, symbol, interval)
 
     @handles_errors
-    async def get_account_info(self) -> dict[str, Any]:
+    async def get_account_info(self) -> dict[str, Any] | None:
         """Get account information - public interface method."""
-        return await self._get_account_info_raw()
+        try:
+            return await self._get_account_info_raw()
+        except Exception:
+            return None
 
     @handles_errors
     async def create_order(
@@ -494,6 +497,31 @@ class BingXExchange(BaseExchange):
     ) -> dict[str, Any]:
         """Create a trading order - public interface method."""
         return await self._create_order_raw(symbol, side, order_type, quantity, price, None)
+
+    @handles_errors
+    async def cancel_order(self, symbol: str, order_id: str) -> bool:
+        """Cancel an order - public interface method."""
+        try:
+            result = await self._cancel_order_raw(symbol, order_id)
+            return result is not None and result.get("success", False)
+        except Exception:
+            return False
+
+    @handles_errors
+    async def get_order_status(self, symbol: str, order_id: str) -> dict[str, Any] | None:
+        """Get order status - public interface method."""
+        try:
+            return await self._get_order_status_raw(symbol, order_id)
+        except Exception:
+            return None
+
+    @handles_errors
+    async def get_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+        """Get open orders - public interface method."""
+        try:
+            return await self._get_open_orders_raw(symbol)
+        except Exception:
+            return []
 
     @handles_errors
     async def get_position_risk(self, symbol: str) -> dict[str, Any]:

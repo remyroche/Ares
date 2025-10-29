@@ -550,6 +550,11 @@ class TradingOrchestrator:
             market_data: pd.DataFrame = market_snapshot['market_data']
             self._latest_market_snapshot = market_snapshot
 
+            # Validate market data is not empty
+            if market_data is None or len(market_data) == 0:
+                self.logger.warning("⚠️ Market data is empty, cannot generate trading decision")
+                return None
+
             # Get regime prediction from Strategist
             regime_data = None
             if self.strategist and hasattr(self.strategist, 'predict_regime'):
@@ -593,6 +598,11 @@ class TradingOrchestrator:
             )
 
             # Create trading decision
+            # Validate we have price data
+            if 'close' not in market_data.columns or len(market_data) == 0:
+                self.logger.warning("⚠️ No close price available in market data")
+                return None
+            
             decision = TradingDecision(
                 timestamp=datetime.now(),
                 symbol=self.symbol,

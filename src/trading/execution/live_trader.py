@@ -306,6 +306,11 @@ class LiveTrader:
         # Get current portfolio value
         portfolio_value = await self._get_portfolio_value()
 
+        # Prevent division by zero
+        if portfolio_value <= 0:
+            tprint_warning(f"⚠️ Portfolio value is {portfolio_value}, cannot validate position limits")
+            return False
+
         # Calculate position size as percentage of portfolio
         current_price = await self._get_current_price(symbol)
         position_value = quantity * current_price

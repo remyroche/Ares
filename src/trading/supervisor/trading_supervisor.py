@@ -150,8 +150,16 @@ class TradingSupervisor:
         self.status = SupervisorStatus.INITIALIZING
         self.is_initialized = False
         
+        # Thread safety locks
+        self._circuit_breaker_lock = asyncio.Lock()
+        self._positions_lock = asyncio.Lock()
+        self._execution_stats_lock = asyncio.Lock()
+        
         # Circuit breaker state
         self.circuit_breaker = CircuitBreakerState()
+        
+        # Account balance tracking
+        self.account_balance: Optional[float] = None
         
         # Portfolio tracking
         self.all_active_positions: Dict[str, Dict[str, Any]] = {}  # symbol -> position dict
@@ -216,6 +224,9 @@ class TradingSupervisor:
             self.execution_stats.clear()
             self.cross_asset_exposure.clear()
             
+            # Initialize account balance from config if available
+            self.account_balance = self.config.get('account_balance')
+            
             self.status = SupervisorStatus.ACTIVE
             self.is_initialized = True
             
@@ -275,20 +286,22 @@ class TradingSupervisor:
         warnings = []
         risk_score = 0.0
         
-        # Check circuit breaker
-        if self.circuit_breaker.triggered:
-            if self.circuit_breaker.cooldown_until and datetime.now() < self.circuit_breaker.cooldown_until:
-                return ValidationResult(
-                    is_valid=False,
-                    reasons=[f"Circuit breaker active: {self.circuit_breaker.trigger_reason}"],
-                    risk_score=1.0
-                )
-            else:
-                # Circuit breaker cooldown expired, reset
-                self.circuit_breaker.triggered = False
-                self.circuit_breaker.trigger_time = None
-                self.circuit_breaker.cooldown_until = None
-                tprint_info("✅ Circuit breaker cooldown expired, resetting")
+        # Check circuit breaker (with thread safety)
+        async with self._circuit_breaker_lock:
+            if self.circuit_breaker.triggered:
+                if self.circuit_breaker.cooldown_until and datetime.now() < self.circuit_breaker.cooldown_until:
+                    return ValidationResult(
+                        is_valid=False,
+                        reasons=[f"Circuit breaker active: {self.circuit_breaker.trigger_reason}"],
+                        risk_score=1.0
+                    )
+                else:
+                    # Circuit breaker cooldown expired, reset atomically
+                    self.circuit_breaker.triggered = False
+                    self.circuit_breaker.trigger_time = None
+                    self.circuit_breaker.cooldown_until = None
+                    self.status = SupervisorStatus.ACTIVE
+                    tprint_info("✅ Circuit breaker cooldown expired, resetting")
         
         # Check portfolio-level risk limits
         portfolio_risk_valid, risk_reasons = await self._check_portfolio_risk_limits(
@@ -438,14 +451,21 @@ class TradingSupervisor:
         reasons = []
         suggested_adjustments = {}
         
-        # Check circuit breaker (critical - must pass)
-        if self.circuit_breaker.triggered:
-            if self.circuit_breaker.cooldown_until and datetime.now() < self.circuit_breaker.cooldown_until:
-                return ExecutionCheck(
-                    can_proceed=False,
-                    reason=f"Circuit breaker active: {self.circuit_breaker.trigger_reason}",
-                    metadata={'circuit_breaker_triggered': True}
-                )
+        # Check circuit breaker (critical - must pass, with thread safety)
+        async with self._circuit_breaker_lock:
+            if self.circuit_breaker.triggered:
+                if self.circuit_breaker.cooldown_until and datetime.now() < self.circuit_breaker.cooldown_until:
+                    return ExecutionCheck(
+                        can_proceed=False,
+                        reason=f"Circuit breaker active: {self.circuit_breaker.trigger_reason}",
+                        metadata={'circuit_breaker_triggered': True}
+                    )
+                else:
+                    # Cooldown expired, reset
+                    self.circuit_breaker.triggered = False
+                    self.circuit_breaker.trigger_time = None
+                    self.circuit_breaker.cooldown_until = None
+                    self.status = SupervisorStatus.ACTIVE
         
         # Check total exposure limit (portfolio-level)
         if current_exposure > self.max_total_exposure:
@@ -500,49 +520,53 @@ class TradingSupervisor:
             execution_result: Execution result dictionary
         """
         try:
-            self.execution_stats['total_orders'] += 1
+            # Thread-safe execution stats update
+            async with self._execution_stats_lock:
+                self.execution_stats['total_orders'] += 1
+                
+                status = execution_result.get('status', '').upper()
+                if status in ['FILLED', 'PARTIALLY_FILLED']:
+                    self.execution_stats['filled_orders'] += 1
+                    
+                    # Track slippage if available
+                    if 'slippage' in execution_result:
+                        slippage = abs(execution_result['slippage'])
+                        # Only track slippage from recent executions for average calculation
+                        # Don't add to total_slippage which accumulates incorrectly
+                        
+                        # Check for excessive slippage
+                        if slippage > self.max_slippage_per_trade:
+                            tprint_warning(
+                                f"⚠️ High slippage detected: {slippage:.4%} for order {order_id}"
+                            )
+                        
+                        # Update recent executions (keep this list for averaging)
+                        if len(self.execution_stats['recent_executions']) >= 100:
+                            self.execution_stats['recent_executions'].pop(0)
+                        self.execution_stats['recent_executions'].append({
+                            'order_id': order_id,
+                            'slippage': slippage,
+                            'timestamp': datetime.now()
+                        })
+                        
+                elif status in ['REJECTED', 'CANCELLED']:
+                    self.execution_stats['rejected_orders'] += 1
+                    self.recent_rejections.append(datetime.now())
+                    
+                    # Clean old rejections (older than 1 minute)
+                    cutoff = datetime.now() - timedelta(minutes=1)
+                    self.recent_rejections = [r for r in self.recent_rejections if r > cutoff]
             
-            status = execution_result.get('status', '').upper()
-            if status in ['FILLED', 'PARTIALLY_FILLED']:
-                self.execution_stats['filled_orders'] += 1
-                
-                # Track slippage if available
-                if 'slippage' in execution_result:
-                    slippage = abs(execution_result['slippage'])
-                    self.execution_stats['total_slippage'] += slippage
-                    
-                    # Check for excessive slippage
-                    if slippage > self.max_slippage_per_trade:
-                        tprint_warning(
-                            f"⚠️ High slippage detected: {slippage:.4%} for order {order_id}"
-                        )
-                    
-                    # Update recent executions
-                    if len(self.execution_stats['recent_executions']) >= 100:
-                        self.execution_stats['recent_executions'].pop(0)
-                    self.execution_stats['recent_executions'].append({
-                        'order_id': order_id,
-                        'slippage': slippage,
-                        'timestamp': datetime.now()
-                    })
-                    
-            elif status in ['REJECTED', 'CANCELLED']:
-                self.execution_stats['rejected_orders'] += 1
-                self.recent_rejections.append(datetime.now())
-                
-                # Clean old rejections (older than 1 minute)
-                cutoff = datetime.now() - timedelta(minutes=1)
-                self.recent_rejections = [r for r in self.recent_rejections if r > cutoff]
-                
-                # Check circuit breaker trigger
-                if len(self.recent_rejections) >= self.max_rejections_per_minute:
-                    await self._trigger_circuit_breaker(
-                        f"Too many rejections: {len(self.recent_rejections)} in last minute"
-                    )
+            # Check circuit breaker trigger (outside lock to avoid deadlock)
+            if len(self.recent_rejections) >= self.max_rejections_per_minute:
+                await self._trigger_circuit_breaker(
+                    f"Too many rejections: {len(self.recent_rejections)} in last minute"
+                )
             
-            # Track commission if available
-            if 'commission' in execution_result:
-                self.execution_stats['total_commissions'] += execution_result['commission']
+            # Track commission if available (thread-safe)
+            async with self._execution_stats_lock:
+                if 'commission' in execution_result:
+                    self.execution_stats['total_commissions'] += execution_result['commission']
                 
         except Exception as e:
             self.logger.warning(f"⚠️ Error monitoring execution: {e}")
@@ -602,18 +626,45 @@ class TradingSupervisor:
         current_positions: Dict[str, Dict[str, Any]],
         account_balance: Optional[float]
     ) -> Tuple[bool, List[str]]:
-        """Check portfolio-level risk limits."""
+        """
+        Check portfolio-level risk limits using RiskCalculator.
+        
+        Uses proper risk calculation that accounts for volatility and stop-loss distances,
+        not just simple exposure.
+        """
         if not account_balance or account_balance <= 0:
             return True, []  # Skip check if balance unavailable
         
+        # Update account balance tracking
+        self.account_balance = account_balance
+        
         reasons = []
         
-        # Calculate total portfolio risk
+        # Calculate total portfolio risk using RiskCalculator for each position
         total_risk = 0.0
         for pos_id, position in current_positions.items():
-            pos_value = position.get('quantity', 0) * position.get('entry_price', 0)
-            pos_risk = pos_value / account_balance
-            total_risk += pos_risk
+            quantity = position.get('quantity', 0)
+            entry_price = position.get('entry_price', 0)
+            stop_loss_price = position.get('stop_loss_price')
+            volatility = position.get('volatility')  # If available
+            
+            if quantity > 0 and entry_price > 0:
+                # Use RiskCalculator for proper risk calculation
+                try:
+                    risk_metrics = await self.risk_calculator.calculate_risk_metrics(
+                        position_size=quantity * entry_price,
+                        current_price=entry_price,
+                        account_balance=account_balance,
+                        volatility=volatility,
+                        stop_loss_price=stop_loss_price
+                    )
+                    # Use position_risk from metrics (which accounts for stop-loss)
+                    total_risk += risk_metrics.position_risk
+                except Exception as e:
+                    # Fallback to simple calculation if RiskCalculator fails
+                    self.logger.warning(f"RiskCalculator failed for position {pos_id}: {e}")
+                    pos_value = quantity * entry_price
+                    total_risk += pos_value / account_balance
         
         self.total_portfolio_risk = total_risk
         
@@ -665,15 +716,21 @@ class TradingSupervisor:
         
         This checks that we don't have too much exposure in correlated asset groups.
         Single-asset limits are handled elsewhere.
+        
+        Note: Recalculates exposure from actual positions instead of accumulating.
         """
         if not account_balance or account_balance <= 0:
             return True, ""  # Skip check if balance unavailable
         
+        # Update account balance tracking
+        self.account_balance = account_balance
+        
         if not current_positions:
             current_positions = {}
         
-        # Calculate exposure per asset group
+        # Get decision details
         symbol = getattr(decision, 'symbol', '')
+        decision_action = getattr(decision, 'action', '').lower()
         decision_quantity = getattr(decision, 'quantity', 0)
         decision_price = getattr(decision, 'price', 0)
         decision_value = decision_quantity * decision_price
@@ -689,10 +746,9 @@ class TradingSupervisor:
             # Symbol not in any correlated group - allow
             return True, ""
         
-        # Calculate current exposure for this asset group
+        # Recalculate current exposure for this asset group from actual positions
         current_group_exposure = 0.0
         
-        # Add existing positions in this group
         for pos_id, position in current_positions.items():
             pos_symbol = position.get('symbol', '')
             if pos_symbol in self.correlated_asset_groups.get(symbol_group, []):
@@ -701,9 +757,18 @@ class TradingSupervisor:
                 exposure = (pos_value * leverage) / account_balance
                 current_group_exposure += exposure
         
-        # Add new decision exposure
-        decision_exposure = decision_value / account_balance
-        new_group_exposure = current_group_exposure + decision_exposure
+        # Calculate new exposure based on decision action
+        if decision_action in ['buy', 'open']:
+            # Adding new position
+            decision_exposure = decision_value / account_balance
+            new_group_exposure = current_group_exposure + decision_exposure
+        elif decision_action in ['sell', 'close']:
+            # Closing/reducing position - subtract exposure
+            decision_exposure = decision_value / account_balance
+            new_group_exposure = max(0.0, current_group_exposure - decision_exposure)
+        else:
+            # Hold or unknown action - no change
+            new_group_exposure = current_group_exposure
         
         # Check against limit
         if new_group_exposure > self.max_cross_asset_exposure:
@@ -713,8 +778,8 @@ class TradingSupervisor:
                 f"Current exposure: {current_group_exposure:.2%}"
             )
         
-        # Update tracking
-        self.cross_asset_exposure[symbol_group] = new_group_exposure
+        # Update tracking (recalculate all groups)
+        await self._recalculate_cross_asset_exposure(current_positions, account_balance, decision)
         
         return True, ""
 
@@ -725,23 +790,78 @@ class TradingSupervisor:
         current_positions: Optional[Dict[str, Dict[str, Any]]],
         account_balance: Optional[float]
     ) -> Tuple[bool, str]:
-        """Check portfolio risk including the new decision."""
+        """
+        Check portfolio risk including the new decision.
+        
+        Properly handles position openings, closings, and modifications.
+        """
         if not account_balance or account_balance <= 0:
             return True, ""  # Skip check if balance unavailable
+        
+        # Update account balance tracking
+        self.account_balance = account_balance
         
         if not current_positions:
             current_positions = {}
         
-        # Calculate total risk including new decision
-        total_risk = self.total_portfolio_risk
-        
-        # Add risk from new decision
+        # Get decision details
+        decision_action = getattr(decision, 'action', '').lower()
+        decision_symbol = getattr(decision, 'symbol', '')
         decision_quantity = getattr(decision, 'quantity', 0)
         decision_price = getattr(decision, 'price', 0)
         decision_value = decision_quantity * decision_price
-        decision_risk = decision_value / account_balance
         
-        new_total_risk = total_risk + decision_risk
+        # Calculate risk from decision
+        decision_risk = 0.0
+        if decision_action in ['buy', 'open']:
+            # Adding new position - calculate risk
+            stop_loss_price = getattr(decision, 'stop_loss_price', None)
+            volatility = getattr(decision, 'volatility', None)
+            
+            try:
+                risk_metrics = await self.risk_calculator.calculate_risk_metrics(
+                    position_size=decision_value,
+                    current_price=decision_price,
+                    account_balance=account_balance,
+                    volatility=volatility,
+                    stop_loss_price=stop_loss_price
+                )
+                decision_risk = risk_metrics.position_risk
+            except Exception as e:
+                # Fallback to simple calculation
+                self.logger.warning(f"RiskCalculator failed for decision: {e}")
+                decision_risk = decision_value / account_balance
+        
+        # Calculate current portfolio risk (excluding the symbol being modified)
+        current_risk = 0.0
+        for pos_id, position in current_positions.items():
+            pos_symbol = position.get('symbol', '')
+            # Skip risk from position being closed or modified
+            if decision_action in ['sell', 'close'] and pos_symbol == decision_symbol:
+                continue
+            
+            quantity = position.get('quantity', 0)
+            entry_price = position.get('entry_price', 0)
+            stop_loss_price = position.get('stop_loss_price')
+            volatility = position.get('volatility')
+            
+            if quantity > 0 and entry_price > 0:
+                try:
+                    risk_metrics = await self.risk_calculator.calculate_risk_metrics(
+                        position_size=quantity * entry_price,
+                        current_price=entry_price,
+                        account_balance=account_balance,
+                        volatility=volatility,
+                        stop_loss_price=stop_loss_price
+                    )
+                    current_risk += risk_metrics.position_risk
+                except Exception as e:
+                    # Fallback
+                    pos_value = quantity * entry_price
+                    current_risk += pos_value / account_balance
+        
+        # Calculate new total risk
+        new_total_risk = current_risk + decision_risk
         
         if new_total_risk > self.max_portfolio_risk:
             return False, (
@@ -787,9 +907,10 @@ class TradingSupervisor:
                 'suggest_reduce_size': True
             }
         
-        # Calculate average slippage
+        # Calculate average slippage from recent executions only
         if len(stats['recent_executions']) > 0:
-            avg_slippage = stats['total_slippage'] / len(stats['recent_executions'])
+            slippage_sum = sum(ex.get('slippage', 0) for ex in stats['recent_executions'])
+            avg_slippage = slippage_sum / len(stats['recent_executions'])
             if avg_slippage > self.max_avg_slippage:
                 return {
                     'acceptable': False,
@@ -800,47 +921,129 @@ class TradingSupervisor:
         return {'acceptable': True, 'reason': 'Execution quality acceptable'}
 
     async def _check_loss_based_circuit_breakers(self) -> None:
-        """Check if loss-based circuit breakers should trigger."""
+        """
+        Check if loss-based circuit breakers should trigger.
+        
+        Checks hourly and daily loss limits against account balance.
+        Triggers circuit breaker if thresholds exceeded.
+        """
         if not self.circuit_breakers_enabled:
             return
         
-        # Calculate hourly loss
+        # Need account balance to calculate percentage losses
+        account_balance = self.account_balance
+        if not account_balance or account_balance <= 0:
+            self.logger.warning("⚠️ Cannot check loss-based circuit breakers: account balance unavailable")
+            return
+        
+        # Calculate hourly loss percentage
         if self.hourly_losses:
             hourly_loss_total = sum(loss for _, loss in self.hourly_losses)
-            # Assuming we have account balance somewhere
-            # For now, check absolute loss thresholds
-            if hourly_loss_total > 0:  # We'd need account_balance to calculate percentage
-                # This would need account_balance to properly calculate
-                pass
+            hourly_loss_pct = hourly_loss_total / account_balance
+            
+            if hourly_loss_pct > self.max_loss_per_hour:
+                await self._trigger_circuit_breaker(
+                    f"Hourly loss {hourly_loss_pct:.2%} exceeds limit {self.max_loss_per_hour:.2%}"
+                )
+                return  # Don't check daily if hourly already triggered
         
-        # Calculate daily loss
+        # Calculate daily loss percentage
         if self.daily_losses:
             daily_loss_total = sum(loss for _, loss in self.daily_losses)
-            if daily_loss_total > 0:
-                # This would need account_balance to properly calculate percentage
-                pass
+            daily_loss_pct = daily_loss_total / account_balance
+            
+            if daily_loss_pct > self.max_loss_per_day:
+                await self._trigger_circuit_breaker(
+                    f"Daily loss {daily_loss_pct:.2%} exceeds limit {self.max_loss_per_day:.2%}"
+                )
 
     async def _trigger_circuit_breaker(self, reason: str) -> None:
-        """Trigger circuit breaker."""
+        """Trigger circuit breaker with thread safety."""
         if not self.circuit_breakers_enabled:
             return
         
-        self.circuit_breaker.triggered = True
-        self.circuit_breaker.trigger_time = datetime.now()
-        self.circuit_breaker.trigger_reason = reason
-        self.circuit_breaker.cooldown_until = datetime.now() + timedelta(seconds=self.circuit_breaker_cooldown)
-        self.circuit_breaker.trigger_count += 1
-        
-        self.status = SupervisorStatus.CIRCUIT_BREAKER_TRIGGERED
+        # Thread-safe circuit breaker trigger
+        async with self._circuit_breaker_lock:
+            # Don't re-trigger if already triggered
+            if self.circuit_breaker.triggered:
+                return
+            
+            self.circuit_breaker.triggered = True
+            self.circuit_breaker.trigger_time = datetime.now()
+            self.circuit_breaker.trigger_reason = reason
+            self.circuit_breaker.cooldown_until = datetime.now() + timedelta(seconds=self.circuit_breaker_cooldown)
+            self.circuit_breaker.trigger_count += 1
+            
+            self.status = SupervisorStatus.CIRCUIT_BREAKER_TRIGGERED
         
         tprint_error(f"🚨 CIRCUIT BREAKER TRIGGERED: {reason}")
         tprint_error(f"⏸️ Trading paused for {self.circuit_breaker_cooldown}s")
         self.logger.critical(f"Circuit breaker triggered: {reason}")
         self.logger.critical(f"Cooldown until: {self.circuit_breaker.cooldown_until}")
 
+    async def _recalculate_cross_asset_exposure(
+        self,
+        current_positions: Dict[str, Dict[str, Any]],
+        account_balance: float,
+        decision: Optional[Any] = None
+    ) -> None:
+        """
+        Recalculate cross-asset exposure for all groups from actual positions.
+        
+        This ensures exposure tracking is accurate when positions change.
+        """
+        # Clear existing exposure tracking
+        self.cross_asset_exposure.clear()
+        
+        # Calculate exposure per asset group
+        for pos_id, position in current_positions.items():
+            pos_symbol = position.get('symbol', '')
+            pos_value = position.get('quantity', 0) * position.get('entry_price', 0)
+            leverage = position.get('leverage', 1.0)
+            exposure = (pos_value * leverage) / account_balance
+            
+            # Find which asset group this symbol belongs to
+            for group_name, symbols in self.correlated_asset_groups.items():
+                if pos_symbol in symbols:
+                    if group_name not in self.cross_asset_exposure:
+                        self.cross_asset_exposure[group_name] = 0.0
+                    self.cross_asset_exposure[group_name] += exposure
+                    break
+        
+        # If decision is adding a position, include it
+        if decision:
+            decision_action = getattr(decision, 'action', '').lower()
+            if decision_action in ['buy', 'open']:
+                decision_symbol = getattr(decision, 'symbol', '')
+                decision_quantity = getattr(decision, 'quantity', 0)
+                decision_price = getattr(decision, 'price', 0)
+                decision_value = decision_quantity * decision_price
+                decision_exposure = decision_value / account_balance
+                
+                # Find which asset group this symbol belongs to
+                for group_name, symbols in self.correlated_asset_groups.items():
+                    if decision_symbol in symbols:
+                        if group_name not in self.cross_asset_exposure:
+                            self.cross_asset_exposure[group_name] = 0.0
+                        self.cross_asset_exposure[group_name] += decision_exposure
+                        break
+
     def _calculate_cross_asset_exposure(self) -> Dict[str, float]:
         """Calculate current cross-asset exposure per group."""
         return self.cross_asset_exposure.copy()
+
+    async def update_account_balance(self, account_balance: float) -> None:
+        """
+        Update account balance tracking.
+        
+        Args:
+            account_balance: Current account balance
+        """
+        if account_balance > 0:
+            self.account_balance = account_balance
+            self.logger.debug(f"Account balance updated: {account_balance:.2f}")
+        else:
+            self.logger.warning(f"Invalid account balance provided: {account_balance}")
 
     async def update_positions(
         self,
@@ -851,48 +1054,126 @@ class TradingSupervisor:
         Update supervisor's view of all active positions across all symbols.
         
         This allows the Supervisor to track portfolio-level exposure.
+        Thread-safe version that properly handles position structure.
         
         Args:
             positions_by_symbol: Dict of symbol -> positions dict
             account_balance: Current account balance
         """
+        # Update account balance
+        await self.update_account_balance(account_balance)
+        
         try:
-            self.all_active_positions = positions_by_symbol.copy()
-            
-            # Recalculate portfolio metrics
-            total_exposure = 0.0
-            total_risk = 0.0
-            
-            for symbol, positions in positions_by_symbol.items():
-                # Aggregate positions for symbol (if multiple)
-                symbol_value = 0.0
-                symbol_risk = 0.0
+            # Thread-safe positions update
+            async with self._positions_lock:
+                self.all_active_positions = positions_by_symbol.copy()
                 
-                # Positions dict may contain multiple position entries
-                if isinstance(positions, dict):
-                    # Check if it's a single position dict or multiple
-                    if 'quantity' in positions:
-                        # Single position
-                        symbol_value = positions.get('quantity', 0) * positions.get('entry_price', 0)
-                        leverage = positions.get('leverage', 1.0)
-                        symbol_risk = symbol_value / account_balance
-                        total_exposure += (symbol_value * leverage) / account_balance
-                        total_risk += symbol_risk
-                    else:
-                        # Multiple positions keyed by position_id
-                        for pos_id, position in positions.items():
-                            if isinstance(position, dict) and 'quantity' in position:
-                                pos_value = position.get('quantity', 0) * position.get('entry_price', 0)
-                                leverage = position.get('leverage', 1.0)
-                                pos_risk = pos_value / account_balance
-                                total_exposure += (pos_value * leverage) / account_balance
-                                total_risk += pos_risk
-            
-            self.total_portfolio_exposure = total_exposure
-            self.total_portfolio_risk = total_risk
+                # Recalculate portfolio metrics
+                total_exposure = 0.0
+                total_risk = 0.0
+                
+                for symbol, positions in positions_by_symbol.items():
+                    # Positions dict may contain multiple position entries
+                    if isinstance(positions, dict):
+                        # Check if it's a single position dict or multiple
+                        if 'quantity' in positions:
+                            # Single position
+                            quantity = positions.get('quantity', 0)
+                            entry_price = positions.get('entry_price', 0)
+                            leverage = positions.get('leverage', 1.0)
+                            
+                            if quantity > 0 and entry_price > 0:
+                                symbol_value = quantity * entry_price
+                                symbol_risk = symbol_value / account_balance
+                                total_exposure += (symbol_value * leverage) / account_balance
+                                total_risk += symbol_risk
+                        else:
+                            # Multiple positions keyed by position_id
+                            for pos_id, position in positions.items():
+                                if isinstance(position, dict) and 'quantity' in position:
+                                    quantity = position.get('quantity', 0)
+                                    entry_price = position.get('entry_price', 0)
+                                    leverage = position.get('leverage', 1.0)
+                                    
+                                    if quantity > 0 and entry_price > 0:
+                                        pos_value = quantity * entry_price
+                                        pos_risk = pos_value / account_balance
+                                        total_exposure += (pos_value * leverage) / account_balance
+                                        total_risk += pos_risk
+                
+                self.total_portfolio_exposure = total_exposure
+                self.total_portfolio_risk = total_risk
+                
+                # Recalculate cross-asset exposure from actual positions
+                await self._recalculate_cross_asset_exposure(
+                    self._flatten_positions(positions_by_symbol),
+                    account_balance
+                )
             
         except Exception as e:
             self.logger.warning(f"⚠️ Error updating positions: {e}")
+
+    def _flatten_positions(
+        self,
+        positions_by_symbol: Dict[str, Dict[str, Any]]
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Flatten positions_by_symbol into a single dict keyed by position_id.
+        
+        Args:
+            positions_by_symbol: Dict of symbol -> positions dict
+            
+        Returns:
+            Flattened dict of position_id -> position
+        """
+        flattened = {}
+        for symbol, positions in positions_by_symbol.items():
+            if isinstance(positions, dict):
+                if 'quantity' in positions:
+                    # Single position - use symbol as key
+                    flattened[f"{symbol}_0"] = {**positions, 'symbol': symbol}
+                else:
+                    # Multiple positions
+                    for pos_id, position in positions.items():
+                        if isinstance(position, dict) and 'quantity' in position:
+                            flattened[pos_id] = {**position, 'symbol': symbol}
+        return flattened
+
+    async def remove_position(
+        self,
+        symbol: str,
+        position_id: Optional[str] = None,
+        account_balance: Optional[float] = None
+    ) -> None:
+        """
+        Remove a position from tracking.
+        
+        Args:
+            symbol: Trading symbol
+            position_id: Optional position ID (if None, removes all positions for symbol)
+            account_balance: Current account balance (for recalculation)
+        """
+        async with self._positions_lock:
+            if symbol in self.all_active_positions:
+                positions = self.all_active_positions[symbol]
+                
+                if position_id and isinstance(positions, dict) and 'quantity' not in positions:
+                    # Multiple positions - remove specific one
+                    if position_id in positions:
+                        del positions[position_id]
+                        if not positions:
+                            del self.all_active_positions[symbol]
+                else:
+                    # Single position or remove all - remove entire symbol entry
+                    del self.all_active_positions[symbol]
+            
+            # Recalculate metrics if balance provided
+            if account_balance:
+                await self.update_account_balance(account_balance)
+                await self._recalculate_cross_asset_exposure(
+                    self._flatten_positions(self.all_active_positions),
+                    account_balance
+                )
 
     def get_supervisor_status(self) -> Dict[str, Any]:
         """Get current supervisor status and metrics."""
@@ -921,7 +1202,7 @@ class TradingSupervisor:
                     if self.execution_stats['total_orders'] > 0 else 0.0
                 ),
                 'avg_slippage': (
-                    self.execution_stats['total_slippage'] / len(self.execution_stats['recent_executions'])
+                    sum(ex.get('slippage', 0) for ex in self.execution_stats['recent_executions']) / len(self.execution_stats['recent_executions'])
                     if len(self.execution_stats['recent_executions']) > 0 else 0.0
                 )
             },

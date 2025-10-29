@@ -15,6 +15,14 @@ from src.utils.logger import system_logger
 from src.interfaces.base_interfaces import MarketData
 
 from .base_exchange import BaseExchange
+from .shared.UnifiedTradingStandardizer import (
+    UnifiedTradingStandardizer,
+    StandardizedOrder,
+    StandardizedPosition,
+    StandardizedBalance,
+    StandardizedAccountInfo,
+    StandardizedTrade,
+)
 # from .okx import create_okx_exchange, OkxExchange  # Commented out to avoid circular import
 from .shared.auth import AuthenticationManager
 from .shared.market import MarketMetadataManager
@@ -94,6 +102,9 @@ class ExchangeDispatcher:
         # Initialization state
         self._initialized = False
         self._initializing = False
+        
+        # Initialize trading standardizer
+        self.trading_standardizer = UnifiedTradingStandardizer()
     
     def set_simulator_callback(self, callback: Callable) -> None:
         """
@@ -406,6 +417,186 @@ class ExchangeDispatcher:
             return await self.exchange.get_liquidation_risk(symbol)
         
         return None
+    
+    # ============================================================================
+    # STANDARDIZED TRADING METHODS
+    # ============================================================================
+    # These methods return standardized data structures that are consistent
+    # across all exchanges, using UnifiedTradingStandardizer.
+    
+    async def get_standardized_order(
+        self,
+        symbol: str,
+        order_id: str
+    ) -> Optional[StandardizedOrder]:
+        """
+        Get standardized order status.
+        
+        Returns StandardizedOrder with unified format across all exchanges.
+        """
+        raw_order = await self.get_order_status(symbol, order_id)
+        if not raw_order:
+            return None
+        
+        try:
+            return self.trading_standardizer.standardize_order(
+                raw_order, self.config.exchange_type, symbol
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to standardize order: {e}")
+            return None
+    
+    async def get_standardized_orders(
+        self,
+        symbol: Optional[str] = None
+    ) -> List[StandardizedOrder]:
+        """
+        Get standardized open orders.
+        
+        Returns list of StandardizedOrder objects with unified format.
+        """
+        raw_orders = await self.get_open_orders(symbol)
+        if not raw_orders:
+            return []
+        
+        try:
+            return self.trading_standardizer.standardize_orders(
+                raw_orders, self.config.exchange_type, symbol
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to standardize orders: {e}")
+            return []
+    
+    async def get_standardized_positions(self) -> List[StandardizedPosition]:
+        """
+        Get standardized positions.
+        
+        Returns list of StandardizedPosition objects with unified format.
+        """
+        raw_positions = await self.get_positions()
+        if not raw_positions:
+            return []
+        
+        try:
+            return self.trading_standardizer.standardize_positions(
+                raw_positions, self.config.exchange_type
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to standardize positions: {e}")
+            return []
+    
+    async def get_standardized_balance(
+        self,
+        currency: str = "USDT"
+    ) -> Optional[StandardizedBalance]:
+        """
+        Get standardized balance for a currency.
+        
+        Returns StandardizedBalance with unified format.
+        """
+        # Get raw balance response (need full dict, not just float)
+        if hasattr(self.exchange, 'get_balance_details'):
+            raw_balance = await self.exchange.get_balance_details(currency)
+        elif hasattr(self.balance_manager, 'get_balance_details'):
+            raw_balance = self.balance_manager.get_balance_details(currency, "spot")
+        else:
+            # Fallback: create balance dict from float
+            balance_float = await self.get_balance(currency)
+            raw_balance = {
+                'currency': currency,
+                'free': balance_float,
+                'used': 0.0,
+                'total': balance_float,
+            }
+        
+        if not raw_balance:
+            return None
+        
+        try:
+            return self.trading_standardizer.standardize_balance(
+                raw_balance, self.config.exchange_type, currency
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to standardize balance: {e}")
+            return None
+    
+    async def get_standardized_balances(self) -> List[StandardizedBalance]:
+        """
+        Get all standardized balances.
+        
+        Returns list of StandardizedBalance objects with unified format.
+        """
+        # Get all balances from account info or balance manager
+        raw_balances = None
+        
+        if hasattr(self.balance_manager, 'get_all_balance_details'):
+            raw_balances = self.balance_manager.get_all_balance_details("spot")
+        elif hasattr(self.exchange, 'get_all_balances'):
+            raw_balances = await self.exchange.get_all_balances()
+        else:
+            # Fallback: get from account info
+            account_info = await self.get_account_info()
+            if account_info:
+                raw_balances = account_info.get('balances', [])
+        
+        if not raw_balances:
+            return []
+        
+        try:
+            return self.trading_standardizer.standardize_balances(
+                raw_balances, self.config.exchange_type
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to standardize balances: {e}")
+            return []
+    
+    async def get_standardized_account_info(self) -> Optional[StandardizedAccountInfo]:
+        """
+        Get standardized account information.
+        
+        Returns StandardizedAccountInfo with unified format.
+        """
+        raw_account = await self.get_account_info()
+        if not raw_account:
+            return None
+        
+        try:
+            return self.trading_standardizer.standardize_account_info(
+                raw_account, self.config.exchange_type
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to standardize account info: {e}")
+            return None
+    
+    async def get_standardized_trades(
+        self,
+        symbol: str,
+        order_id: Optional[str] = None
+    ) -> List[StandardizedTrade]:
+        """
+        Get standardized trade history.
+        
+        Note: This method requires exchange support for trade history.
+        """
+        # Try to get trades from exchange
+        if hasattr(self.exchange, 'get_trades'):
+            raw_trades = await self.exchange.get_trades(symbol, order_id)
+        elif hasattr(self.exchange, 'get_order_trades'):
+            raw_trades = await self.exchange.get_order_trades(order_id) if order_id else []
+        else:
+            self.logger.warning("Exchange does not support trade history")
+            return []
+        
+        if not raw_trades:
+            return []
+        
+        try:
+            return self.trading_standardizer.standardize_trades(
+                raw_trades, self.config.exchange_type, symbol
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to standardize trades: {e}")
+            return []
     
     # Market Metadata Operations
     async def get_instrument_info(self, symbol: str) -> Optional[Dict[str, Any]]:

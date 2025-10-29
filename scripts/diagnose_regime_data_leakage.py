@@ -112,7 +112,7 @@ def check_regime_labels(df):
 
 
 def extract_features(df, feature_prefix):
-    """Extract features for a given prefix (nas or tas)."""
+    """Extract features for a given prefix."""
     feature_cols = [col for col in df.columns if col.startswith(f"{feature_prefix}_feature_")]
     
     if not feature_cols:
@@ -127,7 +127,7 @@ def extract_features(df, feature_prefix):
     return features, feature_cols
 
 
-def check_features(df, feature_prefix="nas"):
+def check_features(df, feature_prefix="regime"):
     """Check feature characteristics."""
     print("\n" + "="*80)
     print(f"3️⃣  {feature_prefix.upper()} FEATURE CHECK")

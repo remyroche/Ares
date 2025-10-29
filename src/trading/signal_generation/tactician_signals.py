@@ -20,11 +20,6 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 
-# Import TAS components for enhanced signal generation
-from src.training.steps.market_analysis.tas_regime.core.enhanced_tas_regime_detector import (
-    EnhancedTASRegimeDetector, EnhancedTASResult
-)
-from src.training.steps.market_analysis.tas_regime.core.tas_config import TASConfig
 
 logger = system_logger.getChild('TacticianSignals')
 
@@ -56,7 +51,7 @@ class PositionSizing:
 
 @dataclass
 class TacticianSignal:
-    """Tactician-generated timing signal with TAS enhancement."""
+    """Tactician-generated timing signal."""
     timestamp: datetime
     symbol: str
     timing_signal: TimingSignal
@@ -66,22 +61,18 @@ class TacticianSignal:
     scenario_predictions: Dict[str, Any] = field(default_factory=dict)
     risk_metrics: Dict[str, float] = field(default_factory=dict)
     timing_indicators: Dict[str, float] = field(default_factory=dict)
-    # TAS enhancement fields
-    tas_prediction: Optional[Dict[str, Any]] = None
-    tas_confidence: float = 0.0
-    tas_architecture_type: Optional[str] = None
     signal_type: Optional[int] = None  # Analyst signal type (long/short)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 class TacticianSignalGenerator:
     """
     Tactician Signal Generator that integrates with the Tactician component
-    and TAS for enhanced timing signal generation.
+    for timing signal generation.
     """
 
     def __init__(self, config: Dict[str, Any]):
         """
-        Initialize the tactician signal generator with TAS enhancement.
+        Initialize the tactician signal generator.
 
         Args:
             config: Configuration dictionary
@@ -92,14 +83,8 @@ class TacticianSignalGenerator:
         # Tactician component (will be injected)
         self.tactician = None
 
-        # TAS engine for enhanced signal generation
-        self.tas_engine = None
-        self.tas_models = {}  # Per-signal-type TAS models
-        self.tas_architectures = {}  # Per-signal-type TAS architectures
-
         # Signal generation parameters
         self.confidence_threshold = config.get('confidence_threshold', 0.6)
-        self.tas_confidence_threshold = config.get('tas_confidence_threshold', 0.7)
         self.risk_per_trade = config.get('risk_per_trade', 0.02)  # 2% risk per trade
         self.max_leverage = config.get('max_leverage', 3.0)
         self.kelly_fraction = config.get('kelly_fraction', 0.25)  # Conservative Kelly
@@ -112,10 +97,6 @@ class TacticianSignalGenerator:
             TimingConfidence.VERY_HIGH: 0.9
         }
 
-        # TAS configuration
-        self.enable_tas_enhancement = config.get('enable_tas_enhancement', True)
-        self.tas_timeframe = config.get('tas_timeframe', '1m')
-
         # Signal history (using deque for efficient O(1) operations)
         self.max_history = config.get('max_history', 1000)
         self.signal_history: deque = deque(maxlen=self.max_history)
@@ -124,61 +105,24 @@ class TacticianSignalGenerator:
         self.signal_count = 0
         self.successful_signals = 0
         self.failed_signals = 0
-        self.tas_enhanced_signals = 0
 
-    async def initialize(self, tactician_component, tas_models: Optional[Dict[str, Any]] = None) -> bool:
+    async def initialize(self, tactician_component) -> bool:
         """
-        Initialize the signal generator with tactician component and TAS models.
+        Initialize the signal generator with tactician component.
 
         Args:
             tactician_component: Initialized Tactician component
-            tas_models: Pre-trained TAS models for per-signal-type timing generation
 
         Returns:
             bool: True if initialization successful
         """
         try:
             self.tactician = tactician_component
-
-            # Initialize TAS engine if enhancement is enabled
-            if self.enable_tas_enhancement:
-                await self._initialize_tas_engine(tas_models)
-
-            self.logger.info("✅ Tactician Signal Generator initialized with TAS enhancement")
+            self.logger.info("✅ Tactician Signal Generator initialized")
             return True
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize Tactician Signal Generator: {e}")
             return False
-
-    async def _initialize_tas_engine(self, tas_models: Optional[Dict[str, Any]] = None):
-        """Initialize TAS engine for enhanced timing signal generation."""
-        try:
-            # Create TAS configuration
-            tas_config = TASConfig(
-                n_regimes=8,
-                primary_timeframe=self.tas_timeframe,
-                enable_tree_ensemble=True,
-                enable_boosted_trees=True,
-                enable_random_forest=True,
-                population_size=30,
-                generations=50
-            )
-
-            # Initialize TAS engine
-            self.tas_engine = EnhancedTASRegimeDetector(tas_config)
-
-            # Load pre-trained TAS models if provided
-            if tas_models:
-                self.tas_models = tas_models
-                self.logger.info(f"✅ Loaded {len(tas_models)} TAS models for timing signal generation")
-            else:
-                self.logger.warning("⚠️ No TAS models provided, using fallback analysis")
-
-            self.logger.info("✅ TAS engine initialized for timing signal generation")
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to initialize TAS engine: {e}")
-            self.enable_tas_enhancement = False
 
     @handles_errors
     @traced(span_name="tactician_signal_generation")
@@ -222,21 +166,14 @@ class TacticianSignalGenerator:
                 tprint_warning(f"⚠️ No timing analysis result for {symbol}")
                 return None
 
-            # Enhance with TAS prediction if available
-            tas_prediction = None
-            if self.enable_tas_enhancement and self.tas_engine:
-                tas_prediction = await self._generate_tas_prediction(
-                    symbol, analyst_signal, market_data, current_position
-                )
-
             # Calculate position sizing
             position_sizing = await self._calculate_position_sizing(
                 symbol, analyst_signal, timing_analysis, account_balance
             )
 
-            # Generate timing signal with TAS enhancement
+            # Generate timing signal
             signal = await self._generate_timing_signal_from_analysis(
-                symbol, timing_analysis, position_sizing, current_position, tas_prediction
+                symbol, timing_analysis, position_sizing, current_position
             )
 
             if signal:
@@ -426,150 +363,19 @@ class TacticianSignalGenerator:
                 confidence_multiplier=0.5
             )
 
-    async def _generate_tas_prediction(
-        self,
-        symbol: str,
-        analyst_signal: Dict[str, Any],
-        market_data: pd.DataFrame,
-        current_position: Optional[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
-        """Generate TAS prediction for enhanced timing signal generation."""
-        try:
-            if not self.tas_engine:
-                return None
-
-            # Determine signal type from analyst signal
-            signal_type = self._map_analyst_signal_to_type(analyst_signal)
-
-            # Use TAS model for this signal type if available
-            if signal_type in self.tas_models:
-                tas_model = self.tas_models[signal_type]
-
-                # Prepare features for TAS prediction
-                features = self._prepare_tas_features(market_data, analyst_signal, current_position)
-
-                # Generate TAS prediction for timing signals
-                tas_result = self.tas_engine.search(
-                    train_data=(features.reshape(1, -1), np.array([0])),  # Dummy training data
-                    validation_data=(features.reshape(1, -1), np.array([0])),  # Dummy validation data
-                    regime_data={'analyst_signals': [signal_type]}
-                )
-
-                if tas_result.best_score > 0:
-                    return {
-                        'tas_prediction': tas_result.best_prediction,
-                        'tas_confidence': tas_result.best_score,
-                        'tas_architecture': tas_result.best_architecture,
-                        'signal_type': signal_type,
-                        'tas_contribution': 'timing_signals'
-                    }
-
-            return None
-
-        except Exception as e:
-            self.logger.error(f"❌ TAS prediction failed for {symbol}: {e}")
-            return None
-
-    def _map_analyst_signal_to_type(self, analyst_signal: Dict[str, Any]) -> int:
-        """Map analyst signal to signal type for TAS model selection."""
-        signal_type = analyst_signal.get('signal_type', 'hold')
-        if signal_type == 'buy':
-            return 1  # Long signal
-        elif signal_type == 'sell':
-            return -1  # Short signal
-        else:
-            return 0  # Hold signal
-
-    def _prepare_tas_features(self, market_data: pd.DataFrame, analyst_signal: Dict[str, Any], current_position: Optional[Dict[str, Any]]) -> np.ndarray:
-        """Prepare features for TAS prediction."""
-        try:
-            features = []
-
-            # Market data features
-            if len(market_data) >= 20:
-                close_prices = market_data['close'].values
-                returns = np.diff(close_prices) / close_prices[:-1]
-                volumes = market_data['volume'].values
-
-                # Price features
-                features.extend([
-                    returns[-1],  # Latest return
-                    returns[-5:].mean(),  # 5-period average return
-                    returns[-10:].mean(),  # 10-period average return
-                    np.std(returns[-10:]),  # 10-period volatility
-                ])
-
-                # Volume features
-                features.extend([
-                    volumes[-1] / volumes[-5:].mean(),  # Volume ratio
-                    volumes[-5:].mean() / volumes[-20:].mean(),  # Volume trend
-                ])
-
-                # Price momentum
-                features.extend([
-                    (close_prices[-1] - close_prices[-5]) / close_prices[-5],  # 5-period momentum
-                    (close_prices[-1] - close_prices[-10]) / close_prices[-10],  # 10-period momentum
-                ])
-            else:
-                # Fallback features
-                features = [0.0] * 8
-
-            # Analyst signal features
-            features.extend([
-                analyst_signal.get('confidence_score', 0.0),
-                1.0 if analyst_signal.get('signal_type') == 'buy' else -1.0 if analyst_signal.get('signal_type') == 'sell' else 0.0
-            ])
-
-            # Position features
-            if current_position:
-                features.extend([
-                    1.0,  # Has position
-                    current_position.get('quantity', 0.0),
-                    current_position.get('unrealized_pnl', 0.0)
-                ])
-            else:
-                features.extend([0.0, 0.0, 0.0])
-
-            return np.array(features)
-
-        except Exception as e:
-            self.logger.error(f"❌ TAS feature preparation failed: {e}")
-            return np.zeros(13)  # Fallback features
 
     async def _generate_timing_signal_from_analysis(
         self,
         symbol: str,
         timing_analysis: Dict[str, Any],
         position_sizing: PositionSizing,
-        current_position: Optional[Dict[str, Any]],
-        tas_prediction: Optional[Dict[str, Any]] = None
+        current_position: Optional[Dict[str, Any]]
     ) -> Optional[TacticianSignal]:
-        """Generate timing signal from analysis result with TAS enhancement."""
+        """Generate timing signal from analysis result."""
         try:
             # Extract timing information
             timing_signal_str = timing_analysis.get('timing_signal', 'hold')
             confidence_score = timing_analysis.get('confidence_score', 0.0)
-
-            # Enhance with TAS prediction if available
-            if tas_prediction:
-                tas_confidence = tas_prediction.get('tas_confidence', 0.0)
-                tas_prediction_value = tas_prediction.get('tas_prediction', {})
-
-                # Combine confidence scores (weighted average: 60% analysis, 40% TAS)
-                combined_confidence = (confidence_score * 0.6) + (tas_confidence * 0.4)
-
-                # Use TAS prediction to enhance timing if confidence is high
-                if tas_confidence >= self.tas_confidence_threshold:
-                    tas_timing = tas_prediction_value.get('timing', timing_signal_str)
-                    if tas_timing != timing_signal_str:
-                        # TAS overrides if it's more confident
-                        timing_signal_str = tas_timing
-                        self.tas_enhanced_signals += 1
-                    # Use combined confidence when TAS is confident
-                    confidence_score = combined_confidence
-                else:
-                    # TAS confidence is low, but still use combined for slight enhancement
-                    confidence_score = combined_confidence
 
             # Check confidence threshold
             if confidence_score < self.confidence_threshold:
@@ -581,7 +387,7 @@ class TacticianSignalGenerator:
             # Determine confidence level
             confidence = self._determine_confidence_level(confidence_score)
 
-            # Create signal with TAS enhancement
+            # Create signal
             signal = TacticianSignal(
                 timestamp=datetime.now(),
                 symbol=symbol,
@@ -592,11 +398,6 @@ class TacticianSignalGenerator:
                 scenario_predictions=timing_analysis.get('scenario_predictions', {}),
                 risk_metrics=timing_analysis.get('risk_metrics', {}),
                 timing_indicators=timing_analysis.get('timing_indicators', {}),
-                # TAS enhancement fields
-                tas_prediction=tas_prediction,
-                tas_confidence=tas_prediction.get('tas_confidence', 0.0) if tas_prediction else 0.0,
-                tas_architecture_type=tas_prediction.get('tas_architecture', {}).get('type') if tas_prediction else None,
-                signal_type=tas_prediction.get('signal_type') if tas_prediction else None,
                 metadata=timing_analysis.get('analysis_metadata', {})
             )
 

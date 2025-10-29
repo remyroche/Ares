@@ -69,7 +69,7 @@ class MLDiscoveryMethod(Enum):
     TRANSFORMER_ENCODER = "transformer_encoder"
     MANIFOLD_LEARNING = "manifold_learning"
     DEEP_CLUSTERING = "deep_clustering"
-    NEURAL_ARCHITECTURE_SEARCH = "nas"
+    NEURAL_ARCHITECTURE_SEARCH = "neural_architecture_search"
     REINFORCEMENT_CLUSTERING = "rl_clustering"
     ENSEMBLE_DISCOVERY = "ensemble_discovery"
 

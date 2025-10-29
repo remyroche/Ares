@@ -2,7 +2,7 @@
 Regime Consensus Validator for Pipeline-Level Semantic Consensus Validation.
 
 This module provides pipeline-level validation of regime consensus using semantic
-consensus approach to detect and resolve regime disagreements between TAS and NAS systems.
+consensus approach to detect and resolve regime disagreements between different systems.
 """
 
 import numpy as np
@@ -52,7 +52,7 @@ class RegimeConsensusValidator:
     Pipeline-level regime consensus validator using semantic consensus approach.
 
     This validator provides end-to-end validation of regime consensus between
-    TAS and NAS systems, detecting disagreements and providing semantic mapping
+    different systems, detecting disagreements and providing semantic mapping
     to resolve apparent conflicts.
     """
 
@@ -152,17 +152,17 @@ class RegimeConsensusValidator:
     )
     async def validate_regime_consensus(
         self,
-        tas_assignments: List[int],
-        nas_assignments: List[int],
+        system_a_assignments: List[int],
+        system_b_assignments: List[int],
         market_data: Optional[pd.DataFrame] = None,
         context: str = "pipeline_validation"
     ) -> Dict[str, Any]:
         """
-        Validate regime consensus between TAS and NAS systems using semantic approach.
+        Validate regime consensus between two systems using semantic approach.
 
         Args:
-            tas_assignments: TAS regime assignments
-            nas_assignments: NAS regime assignments
+            system_a_assignments: System A regime assignments
+            system_b_assignments: System B regime assignments
             market_data: Optional market data for feature-based mapping
             context: Context for validation (e.g., "pipeline_validation", "training_step")
 
@@ -178,7 +178,7 @@ class RegimeConsensusValidator:
             self.logger.info(f"🧠 Validating regime consensus (context: {context})")
 
             # Validate input data
-            if not self._validate_input_data(tas_assignments, nas_assignments):
+            if not self._validate_input_data(system_a_assignments, system_b_assignments):
                 self.failed_validations += 1
                 return self._create_validation_result(
                     success=False,
@@ -187,7 +187,7 @@ class RegimeConsensusValidator:
                 )
 
             # Check minimum samples requirement
-            min_samples = min(len(tas_assignments), len(nas_assignments))
+            min_samples = min(len(system_a_assignments), len(system_b_assignments))
             if min_samples < self.config.min_samples_for_validation:
                 self.logger.warning(f"⚠️ Insufficient samples for validation: {min_samples} < {self.config.min_samples_for_validation}")
                 self.failed_validations += 1
@@ -200,11 +200,11 @@ class RegimeConsensusValidator:
             # Perform semantic consensus validation
             if self.config.enable_semantic_consensus and SEMANTIC_CONSENSUS_AVAILABLE:
                 validation_result = await self._perform_semantic_consensus_validation(
-                    tas_assignments, nas_assignments, market_data, context
+                    system_a_assignments, system_b_assignments, market_data, context
                 )
             else:
                 validation_result = await self._perform_basic_consensus_validation(
-                    tas_assignments, nas_assignments, context
+                    system_a_assignments, system_b_assignments, context
                 )
 
             # Check for consensus alerts
@@ -232,24 +232,24 @@ class RegimeConsensusValidator:
                 context=context
             )
 
-    def _validate_input_data(self, tas_assignments: List[int], nas_assignments: List[int]) -> bool:
+    def _validate_input_data(self, system_a_assignments: List[int], system_b_assignments: List[int]) -> bool:
         """Validate input data for regime consensus validation."""
         try:
-            if not tas_assignments or not nas_assignments:
+            if not system_a_assignments or not system_b_assignments:
                 self.logger.error("❌ Empty assignments provided")
                 return False
 
-            if len(tas_assignments) == 0 or len(nas_assignments) == 0:
+            if len(system_a_assignments) == 0 or len(system_b_assignments) == 0:
                 self.logger.error("❌ Zero-length assignments provided")
                 return False
 
             # Check for valid regime IDs (non-negative integers)
-            if any(not isinstance(x, int) or x < 0 for x in tas_assignments):
-                self.logger.error("❌ Invalid TAS regime assignments (must be non-negative integers)")
+            if any(not isinstance(x, int) or x < 0 for x in system_a_assignments):
+                self.logger.error("❌ Invalid system A regime assignments (must be non-negative integers)")
                 return False
 
-            if any(not isinstance(x, int) or x < 0 for x in nas_assignments):
-                self.logger.error("❌ Invalid NAS regime assignments (must be non-negative integers)")
+            if any(not isinstance(x, int) or x < 0 for x in system_b_assignments):
+                self.logger.error("❌ Invalid system B regime assignments (must be non-negative integers)")
                 return False
 
             return True
@@ -260,8 +260,8 @@ class RegimeConsensusValidator:
 
     async def _perform_semantic_consensus_validation(
         self,
-        tas_assignments: List[int],
-        nas_assignments: List[int],
+        system_a_assignments: List[int],
+        system_b_assignments: List[int],
         market_data: Optional[pd.DataFrame],
         context: str
     ) -> Dict[str, Any]:
@@ -271,20 +271,20 @@ class RegimeConsensusValidator:
 
             # Perform semantic divergence assessment
             semantic_assessment = await self._perform_semantic_divergence_assessment(
-                tas_assignments, nas_assignments, market_data
+                system_a_assignments, system_b_assignments, market_data
             )
 
             # Calculate semantic consensus metrics
             regime_mapping = semantic_assessment.get('regime_mapping', {})
             consensus_metrics = calculate_consensus_metrics(
-                tas_assignments, nas_assignments,
+                system_a_assignments, system_b_assignments,
                 regime_mapping=regime_mapping,
                 verbose=True
             )
 
             # Calculate disagreement metrics
             disagreement_metrics = calculate_disagreement_metrics(
-                tas_assignments, nas_assignments,
+                system_a_assignments, system_b_assignments,
                 verbose=True
             )
 
@@ -305,9 +305,9 @@ class RegimeConsensusValidator:
                 'context': context,
                 'timestamp': datetime.now().isoformat(),
                 'statistics': {
-                    'tas_regime_count': len(set(tas_assignments)),
-                    'nas_regime_count': len(set(nas_assignments)),
-                    'total_samples': min(len(tas_assignments), len(nas_assignments)),
+                    'system_a_regime_count': len(set(system_a_assignments)),
+                    'system_b_regime_count': len(set(system_b_assignments)),
+                    'total_samples': min(len(system_a_assignments), len(system_b_assignments)),
                     'mapping_quality': semantic_assessment.get('mapping_quality', 0.0),
                     'consensus_improvement': semantic_assessment.get('consensus_improvement', 0.0)
                 }
@@ -325,8 +325,8 @@ class RegimeConsensusValidator:
 
     async def _perform_basic_consensus_validation(
         self,
-        tas_assignments: List[int],
-        nas_assignments: List[int],
+        system_a_assignments: List[int],
+        system_b_assignments: List[int],
         context: str
     ) -> Dict[str, Any]:
         """Perform basic consensus validation without semantic mapping."""
@@ -334,8 +334,8 @@ class RegimeConsensusValidator:
             self.logger.info("📊 Performing basic consensus validation")
 
             # Simple consensus calculation
-            min_length = min(len(tas_assignments), len(nas_assignments))
-            agreements = sum(1 for i in range(min_length) if tas_assignments[i] == nas_assignments[i])
+            min_length = min(len(system_a_assignments), len(system_b_assignments))
+            agreements = sum(1 for i in range(min_length) if system_a_assignments[i] == system_b_assignments[i])
             consensus_score = agreements / min_length if min_length > 0 else 0.0
 
             # Determine validation success
@@ -359,29 +359,29 @@ class RegimeConsensusValidator:
 
     async def _perform_semantic_divergence_assessment(
         self,
-        tas_assignments: List[int],
-        nas_assignments: List[int],
+        system_a_assignments: List[int],
+        system_b_assignments: List[int],
         market_data: Optional[pd.DataFrame]
     ) -> Dict[str, Any]:
         """Perform semantic divergence assessment for regime mapping."""
         try:
-            min_length = min(len(tas_assignments), len(nas_assignments))
-            tas_assignments = np.array(tas_assignments[:min_length])
-            nas_assignments = np.array(nas_assignments[:min_length])
+            min_length = min(len(system_a_assignments), len(system_b_assignments))
+            system_a_assignments = np.array(system_a_assignments[:min_length])
+            system_b_assignments = np.array(system_b_assignments[:min_length])
 
             # For pipeline-level validation, we'll use a distribution-based approach
             # since we may not have direct access to market data features
 
             # Calculate regime distributions
-            tas_distribution = self._calculate_regime_distribution(tas_assignments)
-            nas_distribution = self._calculate_regime_distribution(nas_assignments)
+            system_a_distribution = self._calculate_regime_distribution(system_a_assignments)
+            system_b_distribution = self._calculate_regime_distribution(system_b_assignments)
 
             # Find optimal regime mapping using distribution similarity
-            regime_mapping = self._find_optimal_regime_mapping_by_distribution(tas_distribution, nas_distribution)
+            regime_mapping = self._find_optimal_regime_mapping_by_distribution(system_a_distribution, system_b_distribution)
 
             if not regime_mapping:
                 # Fallback to numerical comparison
-                disagreement_mask = tas_assignments != nas_assignments
+                disagreement_mask = system_a_assignments != system_b_assignments
                 semantic_divergence_rate = np.mean(disagreement_mask)
 
                 return {
@@ -395,17 +395,17 @@ class RegimeConsensusValidator:
                 }
 
             # Calculate semantic divergence using mapped regimes
-            semantic_assignments = self._apply_regime_mapping(nas_assignments, regime_mapping)
-            semantic_disagreement_mask = tas_assignments != semantic_assignments
+            semantic_assignments = self._apply_regime_mapping(system_b_assignments, regime_mapping)
+            semantic_disagreement_mask = system_a_assignments != semantic_assignments
             semantic_divergence_rate = np.mean(semantic_disagreement_mask)
 
             # Calculate mapping quality metrics
-            mapping_quality = self._calculate_mapping_quality_by_distribution(tas_distribution, nas_distribution, regime_mapping)
+            mapping_quality = self._calculate_mapping_quality_by_distribution(system_a_distribution, system_b_distribution, regime_mapping)
 
             # Calculate semantic consensus improvement
-            raw_agreements = np.sum(tas_assignments == nas_assignments)
+            raw_agreements = np.sum(system_a_assignments == system_b_assignments)
             raw_consensus = raw_agreements / min_length if min_length > 0 else 0.0
-            semantic_agreements = np.sum(tas_assignments == semantic_assignments)
+            semantic_agreements = np.sum(system_a_assignments == semantic_assignments)
             semantic_consensus = semantic_agreements / min_length if min_length > 0 else 0.0
             consensus_improvement = semantic_consensus - raw_consensus
 
@@ -417,8 +417,8 @@ class RegimeConsensusValidator:
                 'semantic_consensus': semantic_consensus,
                 'consensus_improvement': consensus_improvement,
                 'assessment_method': 'distribution_based',
-                'tas_distribution': tas_distribution,
-                'nas_distribution': nas_distribution
+                'system_a_distribution': system_a_distribution,
+                'system_b_distribution': system_b_distribution
             }
 
         except Exception as e:
@@ -458,38 +458,38 @@ class RegimeConsensusValidator:
             self.logger.warning(f"⚠️ Distribution calculation failed: {e}")
             return {}
 
-    def _find_optimal_regime_mapping_by_distribution(self, tas_distribution: Dict[str, float], nas_distribution: Dict[str, float]) -> Dict[int, int]:
-        """Find optimal mapping between NAS and TAS regimes using distribution similarity."""
+    def _find_optimal_regime_mapping_by_distribution(self, system_a_distribution: Dict[str, float], system_b_distribution: Dict[str, float]) -> Dict[int, int]:
+        """Find optimal mapping between two systems' regimes using distribution similarity."""
         try:
-            if not tas_distribution or not nas_distribution:
+            if not system_a_distribution or not system_b_distribution:
                 return {}
 
             # Extract regime IDs and their percentages
-            tas_regimes = {}
-            nas_regimes = {}
+            system_a_regimes = {}
+            system_b_regimes = {}
 
-            for key, percentage in tas_distribution.items():
+            for key, percentage in system_a_distribution.items():
                 regime_id = int(key.replace('regime_', ''))
-                tas_regimes[regime_id] = percentage
+                system_a_regimes[regime_id] = percentage
 
-            for key, percentage in nas_distribution.items():
+            for key, percentage in system_b_distribution.items():
                 regime_id = int(key.replace('regime_', ''))
-                nas_regimes[regime_id] = percentage
+                system_b_regimes[regime_id] = percentage
 
             # Create mapping based on distribution similarity
             regime_mapping = {}
-            used_tas_regimes = set()
+            used_system_a_regimes = set()
 
             # Sort regimes by size (largest first) for better mapping
-            tas_sorted = sorted(tas_regimes.items(), key=lambda x: x[1], reverse=True)
-            nas_sorted = sorted(nas_regimes.items(), key=lambda x: x[1], reverse=True)
+            system_a_sorted = sorted(system_a_regimes.items(), key=lambda x: x[1], reverse=True)
+            system_b_sorted = sorted(system_b_regimes.items(), key=lambda x: x[1], reverse=True)
 
-            # Map largest NAS regime to largest TAS regime, etc.
-            for i, (nas_regime, nas_percentage) in enumerate(nas_sorted):
-                if i < len(tas_sorted) and tas_sorted[i][0] not in used_tas_regimes:
-                    tas_regime = tas_sorted[i][0]
-                    regime_mapping[nas_regime] = tas_regime
-                    used_tas_regimes.add(tas_regime)
+            # Map largest system B regime to largest system A regime, etc.
+            for i, (system_b_regime, system_b_percentage) in enumerate(system_b_sorted):
+                if i < len(system_a_sorted) and system_a_sorted[i][0] not in used_system_a_regimes:
+                    system_a_regime = system_a_sorted[i][0]
+                    regime_mapping[system_b_regime] = system_a_regime
+                    used_system_a_regimes.add(system_a_regime)
 
             return regime_mapping
 
@@ -497,22 +497,22 @@ class RegimeConsensusValidator:
             self.logger.warning(f"⚠️ Distribution-based mapping failed: {e}")
             return {}
 
-    def _apply_regime_mapping(self, nas_assignments: np.ndarray, regime_mapping: Dict[int, int]) -> np.ndarray:
-        """Apply regime mapping to NAS assignments."""
+    def _apply_regime_mapping(self, system_b_assignments: np.ndarray, regime_mapping: Dict[int, int]) -> np.ndarray:
+        """Apply regime mapping to system B assignments."""
         try:
-            mapped_assignments = nas_assignments.copy()
+            mapped_assignments = system_b_assignments.copy()
 
-            for nas_regime, tas_regime in regime_mapping.items():
-                mask = nas_assignments == nas_regime
-                mapped_assignments[mask] = tas_regime
+            for system_b_regime, system_a_regime in regime_mapping.items():
+                mask = system_b_assignments == system_b_regime
+                mapped_assignments[mask] = system_a_regime
 
             return mapped_assignments
 
         except Exception as e:
             self.logger.warning(f"⚠️ Regime mapping application failed: {e}")
-            return nas_assignments
+            return system_b_assignments
 
-    def _calculate_mapping_quality_by_distribution(self, tas_distribution: Dict[str, float], nas_distribution: Dict[str, float], regime_mapping: Dict[int, int]) -> float:
+    def _calculate_mapping_quality_by_distribution(self, system_a_distribution: Dict[str, float], system_b_distribution: Dict[str, float], regime_mapping: Dict[int, int]) -> float:
         """Calculate quality metrics for the regime mapping based on distribution similarity."""
         try:
             if not regime_mapping:
@@ -521,16 +521,16 @@ class RegimeConsensusValidator:
             total_similarity = 0.0
             mapping_count = 0
 
-            for nas_regime, tas_regime in regime_mapping.items():
-                nas_key = f'regime_{nas_regime}'
-                tas_key = f'regime_{tas_regime}'
+            for system_b_regime, system_a_regime in regime_mapping.items():
+                system_b_key = f'regime_{system_b_regime}'
+                system_a_key = f'regime_{system_a_regime}'
 
-                if nas_key in nas_distribution and tas_key in tas_distribution:
-                    nas_percentage = nas_distribution[nas_key]
-                    tas_percentage = tas_distribution[tas_key]
+                if system_b_key in system_b_distribution and system_a_key in system_a_distribution:
+                    system_b_percentage = system_b_distribution[system_b_key]
+                    system_a_percentage = system_a_distribution[system_a_key]
 
                     # Calculate similarity (higher is better, max difference is 100%)
-                    similarity = 1.0 - abs(nas_percentage - tas_percentage) / 100.0
+                    similarity = 1.0 - abs(system_b_percentage - system_a_percentage) / 100.0
                     total_similarity += similarity
                     mapping_count += 1
 

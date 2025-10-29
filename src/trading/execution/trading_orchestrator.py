@@ -216,11 +216,18 @@ class TradingOrchestrator:
             await self.supervisor.initialize()
             self.supervisor.orchestrator_reference = self
 
-            # Initialize Strategist
+            # Initialize Strategist (for regime detection)
             from src.strategist.strategist import Strategist
             strategist_config = self.config.get('strategist', {})
             self.strategist = Strategist(strategist_config)
             await self.strategist.initialize()
+            
+            # Connect Strategist's regime detector to signal pipeline (if signal pipeline exists)
+            # The regime detector will be used by _detect_regime in signal_pipeline.py
+            if hasattr(self, 'signal_pipeline') and self.signal_pipeline:
+                if self.strategist and self.strategist.regime_detector:
+                    self.signal_pipeline.regime_detector = self.strategist.regime_detector
+                    self.logger.info("✅ Connected Strategist regime detector to signal pipeline")
 
             tprint_success("✅ Core components initialized")
 
@@ -525,8 +532,15 @@ class TradingOrchestrator:
             market_data: pd.DataFrame = market_snapshot['market_data']
             self._latest_market_snapshot = market_snapshot
 
-            # Get regime data from HMM
-            regime_data = self.trading_scheduler.hmm_data
+            # Get regime prediction from Strategist
+            regime_data = None
+            if self.strategist and hasattr(self.strategist, 'predict_regime'):
+                try:
+                    regime_prediction = await self.strategist.predict_regime(market_data)
+                    if regime_prediction:
+                        regime_data = regime_prediction
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to get regime prediction from Strategist: {e}")
 
             # Generate Analyst signal
             analyst_signal = await self.analyst_signal_generator.generate_signal(

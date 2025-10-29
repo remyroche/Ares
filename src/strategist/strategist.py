@@ -50,12 +50,15 @@ if TYPE_CHECKING:
 
 class Strategist:
     """
-    Strategy-Level Strategist component responsible for:
-    - Strategy Generation: Create trading strategies based on market analysis
-    - Market Analysis Integration: Combine analyst and tactician inputs
-    - Strategy History Management: Track and store strategy performance
-
-    Note: Position sizing is handled by the Tactician component
+    Strategist component responsible for:
+    - Regime Detection: Load ML models from market_analysis/ and generate regime predictions
+    - Regime Distribution: Send regime predictions to Analyst & Tactician
+    
+    Note: Does NOT:
+    - Generate trading strategies (removed)
+    - Calculate market indicators (removed)
+    - Apply risk management (done by Supervisor)
+    - Provide regime-specific strategy adjustments (removed)
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -79,22 +82,19 @@ class Strategist:
             cache_ttl = self.strategist_config.cache_ttl,
         )
 
-        # Component extractor for reducing complexity
-        self.component_extractor = StrategyComponentExtractor()
-
-        # Strategist state
-        self.is_running: bool = False
-        self.strategy_results: dict[str, Any] = {}
-        self.strategy_history: list[dict[str, Any]] = []
-        self.current_strategy: dict[str, Any] = {}
-
+        # Regime detector (loads models from market_analysis/)
+        self.regime_detector: Any = None
+        
         # Component references (will be set during initialization)
         self.analyst: Analyst | None = None
         self.tactician: Tactician | None = None
-
-        # Enhanced regime classifier (lazily imported during initialize)
-        self.regime_classifier: "EnhancedRegimeClassifier" | None = None
-        self.enable_regime_detection = self.strategist_config.dict().get("enable_regime_detection", True)
+        
+        # Signal pipeline reference (for sending regime predictions)
+        self.signal_pipeline: Any = None
+        
+        # Strategist state
+        self.is_running: bool = False
+        self.current_regime_prediction: dict[str, Any] | None = None
 
         # Live trading utilities
         self.model_manager: ModelManager | None = None
@@ -128,23 +128,8 @@ class Strategist:
             # Configuration is already validated by Pydantic
             self.logger.info("✅ Configuration validated successfully")
 
-            # Initialize strategy components
-            await self._initialize_strategy_components()
-
-            # Initialize regime classifier if enabled
-            if self.enable_regime_detection:
-                regime_config = self.config.get("strategist", {}).get("regime_classifier", {})
-                try:
-
-                    self.regime_classifier = EnhancedRegimeClassifier(regime_config)
-                    await self.regime_classifier.initialize()
-                    self.logger.info("✅ Enhanced regime classifier initialized")
-                except Exception as e:
-                    self.logger.warning(
-                        f"Regime classifier unavailable or failed to initialize ({e}); disabling regime detection"
-                    )
-                    self.enable_regime_detection = False
-                    self.regime_classifier = None
+            # Initialize regime detector (loads models from market_analysis/)
+            await self._initialize_regime_detector()
 
             # Initialize live trading utilities
             await self._initialize_live_trading_utilities()
@@ -159,142 +144,108 @@ class Strategist:
             log_error(self.logger, "❌ Strategist initialization failed", e)
             return False
 
-    async def _initialize_strategy_components(self) -> None:
-        """Initialize strategy components."""
+    async def _initialize_regime_detector(self) -> None:
+        """Initialize regime detector (loads models from market_analysis/)."""
         try:
-            # Initialize risk management
-            if self.strategist_config.enable_risk_management:
-                self.logger.info("Initializing risk management components...")
-
-            # Position sizing is handled by the Tactician component
-            self.logger.info("✅ Strategy components initialized successfully")
+            from .regime_detector import RegimeDetector
+            
+            # Get regime detector config
+            regime_config = self.config.get("strategist", {}).get("regime_detector", {})
+            regime_config.setdefault("models_directory", "artifacts/regime_models")
+            
+            self.regime_detector = RegimeDetector(regime_config)
+            await self.regime_detector.initialize()
+            
+            self.logger.info("✅ Regime detector initialized")
+            tprint("✅ Regime detector initialized")
 
         except Exception as e:
-            log_error(self.logger, "Error initializing strategy components", e)
-            raise
+            error_msg = f"Failed to initialize regime detector: {e}"
+            log_error(self.logger, error_msg, e)
+            raise RuntimeError(error_msg) from e
 
     @handle_specific_errors(
         error_handlers={
-            ValidationError: (None, "Invalid market data for strategy generation"),
-            CalculationError: (None, "Error in market calculations"),
-            Exception: (None, "Unexpected error in strategy generation"),
+            ValidationError: (None, "Invalid market data for regime detection"),
+            Exception: (None, "Unexpected error in regime detection"),
         },
         default_return = None,
-        context="strategy generation",
+        context="regime detection",
     )
-    @create_strategy_validator(min_confidence = 0.0, max_confidence = 1.0)
-    @cached(ttl=120, key_func=lambda self, market_data, current_price, analysis_results: f"strategy_{current_price}_{hash(str(market_data.tail(10).values.tolist()))}")
+    @cached(ttl=60, key_func=lambda self, market_data: f"regime_{hash(str(market_data.tail(10).values.tolist()))}")
     @global_monitor.track_function
-    async def generate_strategy(
+    async def predict_regime(
         self,
         market_data: pd.DataFrame,
-        current_price: float,
-        analysis_results: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         """
-        Generate trading strategy based on market data and analysis results.
-
+        Predict market regime using ML models from market_analysis/.
+        
+        This is the ONLY responsibility of Strategist now.
+        
         Args:
-            market_data: Market data for analysis
-            current_price: Current asset price
-            analysis_results: Results from market analysis (Step 1)
+            market_data: Market data DataFrame (OHLCV format)
 
         Returns:
-            Generated strategy or None if failed
+            Regime prediction dictionary or None if failed
         """
         try:
             # Start performance monitoring
             if self.performance_monitor:
-                self.performance_monitor.start_timer("strategy_generation")
+                self.performance_monitor.start_timer("regime_detection")
 
-            # Validate market data
-            self._validate_market_data(market_data)
+            # Fast fail if regime detector not initialized
+            if self.regime_detector is None or not self.regime_detector.is_initialized:
+                error_msg = "Regime detector not initialized"
+                self.logger.error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
 
-            self.logger.info("🎯 Generating trading strategy...")
-            tprint("🎯 Generating trading strategy...")
+            self.logger.info("🔍 Detecting market regime...")
+            tprint("🔍 Detecting market regime...")
 
-            # Extract market indicators using performance optimizer
-            market_indicators = await self._extract_market_indicators_optimized(
-                market_data,
-                current_price,
-            )
+            # Predict regime using loaded models
+            regime_prediction = await self.regime_detector.predict_regime(market_data)
+            
+            if regime_prediction is None:
+                error_msg = "Regime detector returned None prediction"
+                self.logger.error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
 
-            # Detect market regime if enabled
-            regime = "MODERATE_BULL"  # Default
-            regime_confidence = 0.5
-            regime_metadata = {}
-            regime_params = {}
+            # Store current prediction
+            self.current_regime_prediction = regime_prediction
 
-            if self.enable_regime_detection and self.regime_classifier:
-                regime, regime_confidence, regime_metadata = await self.regime_classifier.predict_regime(market_data)
-                regime_params = self.regime_classifier.get_regime_strategy_params(regime)
-                self.logger.info(f"Detected regime: {regime} (confidence: {regime_confidence:.2%})")
-
-            # Generate base strategy
-            base_strategy = self._generate_base_strategy_simplified(
-                market_indicators,
-                current_price,
-            )
-
-            # Apply regime-specific adjustments
-            if self.enable_regime_detection:
-                base_strategy = self._apply_regime_adjustments(
-                    base_strategy,
-                    regime,
-                    regime_confidence,
-                    regime_params,
-                    regime_metadata
-                )
-
-            # Integrate analysis results if available
-            if analysis_results:
-                base_strategy = self._integrate_analysis_results_simplified(
-                    base_strategy,
-                    analysis_results,
-                )
-
-            # Apply risk management
-            if self.strategist_config.enable_risk_management:
-                base_strategy = self._apply_risk_management_simplified(
-                    base_strategy,
-                    current_price,
-                )
-
-            # Store results
-            self._store_strategy_results(base_strategy)
+            # Send regime prediction to Analyst & Tactician via signal pipeline
+            if self.signal_pipeline:
+                self.signal_pipeline.regime_detector = self.regime_detector
+                self.logger.info("✅ Regime prediction sent to signal pipeline")
 
             # End performance monitoring
             if self.performance_monitor:
-                execution_time = self.performance_monitor.end_timer("strategy_generation")
-                self.logger.info(f"Strategy generation completed in {execution_time:.3f}s")
-                tprint(f"Strategy generation completed in {execution_time:.3f}s")
+                execution_time = self.performance_monitor.end_timer("regime_detection")
+                self.logger.info(f"Regime detection completed in {execution_time:.3f}s")
 
-            self.logger.info(f"✅ Strategy generated: {base_strategy.get('direction', 'UNKNOWN')} with confidence {base_strategy.get('confidence', 0.0):.3f}")
-            tprint(f"✅ Strategy generated: {base_strategy.get('direction', 'UNKNOWN')} with confidence {base_strategy.get('confidence', 0.0):.3f}")
-            return base_strategy
+            self.logger.info(
+                f"✅ Regime detected: {regime_prediction.get('primary_regime', 'UNKNOWN')} "
+                f"(confidence: {regime_prediction.get('confidence', 0.0):.3f})"
+            )
+            tprint(
+                f"✅ Regime detected: regime_{regime_prediction.get('primary_regime', 0)} "
+                f"(confidence: {regime_prediction.get('confidence', 0.0):.3f})"
+            )
+            
+            return regime_prediction
 
-        except ValidationError as e:
-            error_msg = f"Validation error in strategy generation: {e}"
-            self.logger.error(error_msg)
-            tprint(f"❌ {error_msg}")
-            log_error(self.logger, "Validation error in strategy generation", e)
-
-            # End performance monitoring even on error
-            if self.performance_monitor:
-                self.performance_monitor.end_timer("strategy_generation")
-
-            return None
         except Exception as e:
-            error_msg = f"Error generating strategy: {e}"
+            error_msg = f"Regime detection failed: {e}"
             self.logger.error(error_msg)
             tprint(f"❌ {error_msg}")
-            log_error(self.logger, "Error generating strategy", e)
+            log_error(self.logger, "Regime detection failed", e)
 
             # End performance monitoring even on error
             if self.performance_monitor:
-                self.performance_monitor.end_timer("strategy_generation")
+                self.performance_monitor.end_timer("regime_detection")
 
-            return None
+            raise RuntimeError(error_msg) from e
 
     def _validate_market_data(self, market_data: pd.DataFrame) -> None:
         """

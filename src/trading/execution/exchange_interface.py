@@ -170,7 +170,6 @@ class ExchangeInterface:
         self.risk_manager: Optional[IHighLevelRiskManager] = None
         self.balance_manager: Optional[IHighLevelBalanceManager] = None
         self.rate_limit_manager: Optional[IHighLevelRateLimitManager] = None
-        self._initialize_shared_utilities()
 
         # Connection state
         self.connection_status = ConnectionStatus.DISCONNECTED
@@ -198,7 +197,7 @@ class ExchangeInterface:
         # Initialize simulated data
         self._initialize_simulated_data()
 
-        # Initialize shared utilities
+        # Initialize shared utilities (only once)
         self._initialize_shared_utilities()
 
         self.logger = logger.getChild(f'{self.exchange_type}')
@@ -284,8 +283,7 @@ class ExchangeInterface:
                     tprint("❌ Authentication failed", "ERROR")
                     self.connection_status = ConnectionStatus.ERROR
                     return False
-                tprint(f"Connected to {self.exchange_type} (simulated)", "INFO")
-                return True
+                tprint(f"✅ Authenticated to {self.exchange_type}", "INFO")
 
             # Initialize shared utilities for real exchanges
             await self._initialize_exchange_utilities()
@@ -306,7 +304,6 @@ class ExchangeInterface:
             if success:
                 self.connection_status = ConnectionStatus.CONNECTED
                 tprint(f"✅ Connected to {self.exchange_type}", "INFO")
-                tprint(f"Connected to {self.exchange_type}", "INFO")
                 return True
             else:
                 self.connection_status = ConnectionStatus.ERROR
@@ -495,8 +492,11 @@ class ExchangeInterface:
             # Close shared utilities
             for manager in [self.auth_manager, self.market_manager, self.order_manager,
                           self.risk_manager, self.balance_manager, self.rate_limit_manager]:
-                if manager:
-                    manager.close()
+                if manager and hasattr(manager, 'close'):
+                    try:
+                        manager.close()
+                    except Exception as e:
+                        tprint(f"⚠️ Error closing manager: {e}", "WARNING")
 
             self.connection_status = ConnectionStatus.DISCONNECTED
             tprint(f"📴 Disconnected from {self.exchange_type}", "INFO")
@@ -504,9 +504,6 @@ class ExchangeInterface:
         except Exception as e:
             tprint(f"❌ Error during disconnect: {e}", "ERROR")
             self.connection_status = ConnectionStatus.DISCONNECTED
-            tprint(f"Disconnected from {self.exchange_type}", "INFO")
-        except Exception as e:
-            tprint(f"Error disconnecting from exchange: {e}", "ERROR")
 
     # Exchange-specific methods for shared utilities
     async def _get_server_time(self) -> Optional[int]:
@@ -904,6 +901,27 @@ class ExchangeInterface:
             return await self.dispatcher.get_open_orders(symbol)
 
         return []
+    
+    async def get_open_positions(self) -> List[Dict[str, Any]]:
+        """Get open positions from exchange."""
+        try:
+            if self.exchange_type == 'simulated':
+                # For simulated exchange, return empty list (positions tracked separately)
+                return []
+            
+            if self.dispatcher:
+                # Use dispatcher to get positions
+                if hasattr(self.dispatcher, 'get_open_positions'):
+                    return await self.dispatcher.get_open_positions()
+                # Fallback: try to get from balance manager
+                if self.balance_manager and hasattr(self.balance_manager, 'get_positions'):
+                    return await self.balance_manager.get_positions()
+            
+            return []
+            
+        except Exception as e:
+            tprint(f"❌ Error getting open positions: {e}", "ERROR")
+            return []
 
     # Simulated exchange methods
     async def _get_simulated_ticker(self, symbol: str) -> Optional[TickerData]:

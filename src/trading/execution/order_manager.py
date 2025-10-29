@@ -23,13 +23,17 @@ from src.utils.tprint import (
     tprint_info, tprint_warning, tprint_error, tprint_success,
     tprint_structured, LogLevel
 )
-from ..config.trading_config import TradingConfig
+from ..config.trading_config import TradingConfig, TradingMode
 from ..config.execution_config import ExecutionConfig
 from ..utils.error_handling import (
     ExecutionError, TradingErrorSeverity, trading_error_handler,
     critical_operation, require_no_fallback
 )
 from ..utils.validation import validate_trading_config, validate_order_params
+from .order_execution_utils import (
+    CircuitBreaker, CircuitBreakerConfig, with_timeout, retry_with_backoff,
+    check_order_expiry
+)
 
 logger = system_logger.getChild('OrderManager')
 
@@ -148,6 +152,12 @@ class OrderManager:
         self.exchange_interfaces: Dict[str, Any] = {}
         self.exchange_interface: Optional[Any] = config.get('exchange_interface')  # Optional ExchangeInterface
 
+        # Circuit breaker for exchange operations
+        self.circuit_breaker = CircuitBreaker(CircuitBreakerConfig())
+
+        # Order expiry checking
+        self._expiry_check_task: Optional[asyncio.Task] = None
+
         # Performance tracking
         self.order_count = 0
         self.execution_count = 0
@@ -168,6 +178,9 @@ class OrderManager:
 
             # Load order history if resuming
             await self._load_order_history()
+            
+            # Start order expiry checking task
+            self._expiry_check_task = asyncio.create_task(self._check_order_expiries())
 
             tprint_success("✅ Order Manager initialized successfully")
 
@@ -230,6 +243,13 @@ class OrderManager:
             price=price,
             stop_price=stop_price
         )
+        
+        # Check if order expires immediately
+        if expires_at and check_order_expiry(expires_at):
+            raise ExecutionError(
+                f"Order expiration time {expires_at} is in the past",
+                severity=TradingErrorSeverity.MEDIUM
+            )
 
         # Create order object
         order = Order(
@@ -313,6 +333,34 @@ class OrderManager:
             # For limit orders, we'd need more complex simulation
             order.status = OrderStatus.PENDING
             tprint_warning(f"⚠️ Limit orders not yet implemented in paper trading mode")
+
+    async def _execute_live_order_with_retry(self, order: Order) -> None:
+        \"\"\"Execute order on live exchange with retry logic.\"\"\"
+        timeout = getattr(self.execution_config, 'order_timeout', 30.0)
+        
+        async def execute():
+            return await self._execute_live_order(order)
+        
+        try:
+            # Execute with timeout and retry
+            await with_timeout(
+                retry_with_backoff(
+                    execute,
+                    max_retries=3,
+                    initial_delay=1.0,
+                    exceptions=(Exception,)
+                ),
+                timeout=timeout,
+                error_message=f"Order {order.order_id} execution timed out"
+            )
+            
+            # Record success
+            self.circuit_breaker.record_success()
+            
+        except Exception as e:
+            # Record failure
+            self.circuit_breaker.record_failure()
+            raise
 
     async def _execute_live_order(self, order: Order) -> None:
         """Execute order on live exchange using ExchangeInterface/ExchangeDispatcher."""
@@ -490,8 +538,44 @@ class OrderManager:
 
     async def _cancel_live_order(self, order: Order) -> None:
         """Cancel order on live exchange."""
-        # Placeholder for live order cancellation
-        tprint_warning(f"⚠️ Live order cancellation not yet implemented")
+        try:
+            if not self.exchange_interface:
+                raise ExecutionError(
+                    "No exchange interface available for order cancellation",
+                    severity=TradingErrorSeverity.HIGH
+                )
+            
+            # Check if exchange is connected
+            if not await self.exchange_interface.is_connected():
+                raise ExecutionError(
+                    "Exchange interface not connected",
+                    severity=TradingErrorSeverity.HIGH
+                )
+            
+            # Cancel order via exchange interface
+            if order.exchange_order_id:
+                success = await self.exchange_interface.cancel_order(
+                    order.symbol,
+                    order.exchange_order_id
+                )
+                
+                if success:
+                    order.status = OrderStatus.CANCELLED
+                    tprint_success(f"✅ Live order {order.order_id} cancelled successfully")
+                else:
+                    order.status = OrderStatus.ERROR
+                    order.error_message = "Failed to cancel order on exchange"
+                    tprint_error(f"❌ Failed to cancel live order {order.order_id}")
+            else:
+                tprint_warning(f"⚠️ Order {order.order_id} has no exchange order ID")
+                order.status = OrderStatus.ERROR
+                order.error_message = "No exchange order ID available"
+                
+        except Exception as e:
+            order.status = OrderStatus.ERROR
+            order.error_message = str(e)
+            tprint_error(f"❌ Error cancelling live order {order.order_id}: {str(e)}")
+            raise
 
     @handles_errors
     async def get_order_status(self, order_id: str) -> Optional[OrderStatus]:
@@ -601,6 +685,14 @@ class OrderManager:
     async def cleanup(self) -> None:
         """Clean up resources."""
         try:
+            # Cancel expiry checking task
+            if self._expiry_check_task:
+                self._expiry_check_task.cancel()
+                try:
+                    await self._expiry_check_task
+                except asyncio.CancelledError:
+                    pass
+            
             # Cancel all active orders
             active_orders = list(self.active_orders.keys())
             for order_id in active_orders:
@@ -614,6 +706,46 @@ class OrderManager:
 
         except Exception as e:
             tprint_error(f"❌ Error during Order Manager cleanup: {str(e)}")
+    
+    async def _check_order_expiries(self) -> None:
+        """Background task to check for expired orders."""
+        while True:
+            try:
+                await asyncio.sleep(10)  # Check every 10 seconds
+                
+                now = datetime.now()
+                expired_orders = []
+                
+                for order_id, order in list(self.active_orders.items()):
+                    if order.expires_at and check_order_expiry(order.expires_at):
+                        expired_orders.append(order_id)
+                
+                # Cancel expired orders
+                for order_id in expired_orders:
+                    order = self.active_orders[order_id]
+                    order.status = OrderStatus.EXPIRED
+                    order.error_message = f"Order expired at {order.expires_at}"
+                    
+                    # Try to cancel on exchange if live trading
+                    if (self.trading_config.mode != TradingMode.PAPER and 
+                        order.exchange_order_id and 
+                        order.status in [OrderStatus.PENDING, OrderStatus.SUBMITTED, OrderStatus.PARTIALLY_FILLED]):
+                        try:
+                            await self._cancel_live_order(order)
+                        except Exception as e:
+                            self.logger.warning(f"Failed to cancel expired order {order_id}: {e}")
+                    
+                    # Move to history
+                    self.order_history[order_id] = order
+                    del self.active_orders[order_id]
+                    
+                    tprint_warning(f"⏰ Order {order_id} expired and cancelled")
+                    
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.logger.error(f"Error checking order expiries: {e}")
+                await asyncio.sleep(5)  # Wait before retrying
 
 # Factory functions for easy instantiation
 async def create_order_manager(config: Dict[str, Any]) -> OrderManager:

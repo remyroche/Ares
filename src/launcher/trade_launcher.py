@@ -7,6 +7,7 @@ Command-line interface for launching trading in PAPER or TRADE mode.
 import asyncio
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -20,6 +21,7 @@ from live_trading.trading_engine import TradingEngine
 from live_trading.config import TradingConfig, TradingMode as LiveTradingMode
 from src.utils.logger import system_logger
 from src.launcher.trading_launcher import get_parameter_manager
+from src.utils.api_key_loader import get_api_keys
 
 
 # Configure logging
@@ -64,11 +66,6 @@ Examples:
     parser.add_argument('--asset', required=False, default='ETHUSDT',
                        help='Trading symbol (e.g., BTCUSDT, ETHUSDT) (default: ETHUSDT)')
     
-    # API credentials (optional for paper mode, required for trade mode)
-    parser.add_argument('--api-key', help='Exchange API key')
-    parser.add_argument('--api-secret', help='Exchange API secret')
-    parser.add_argument('--api-password', help='Exchange API password (if required)')
-    
     # Paper trading specific
     parser.add_argument('--initial-balance', type=float, default=1000.0,
                        help='Initial balance for paper trading (default: 1000 USDT)')
@@ -109,18 +106,44 @@ Examples:
         exchange_mode = ExchangeTradingMode.PAPER if args.mode == "paper" else ExchangeTradingMode.TRADE
         live_trading_mode = LiveTradingMode.PAPER if args.mode == "paper" else LiveTradingMode.LIVE
         
+        # Set TRADE/LIVE flags as environment variables for other components
+        use_live = (args.mode == "trade")
+        os.environ["TRADE"] = "1" if use_live else "0"
+        os.environ["LIVE"] = "1" if use_live else "0"
+        logger.info(f"Using {'LIVE' if use_live else 'TESTNET'} API keys")
+        
+        # Load API keys from secret/api_keys.json
+        api_keys = get_api_keys(args.exchange, use_live=use_live)
+        api_key = api_keys.get("api_key") or ""
+        api_secret = api_keys.get("api_secret") or ""
+        api_password = api_keys.get("password")
+        
         # Validate credentials for trade mode
         if exchange_mode == ExchangeTradingMode.TRADE:
-            if not args.api_key or not args.api_secret:
-                logger.error("API key and secret are required for TRADE mode")
+            if not api_key or not api_secret:
+                logger.error(
+                    f"API key and secret are required for TRADE mode. "
+                    f"Please ensure secret/api_keys.json contains {args.exchange}.live.api_key and api_secret"
+                )
                 return 1
+        
+        # For paper mode, use testnet keys if available, otherwise use dummy keys
+        if exchange_mode == ExchangeTradingMode.PAPER:
+            if not api_key or not api_secret:
+                logger.warning(
+                    f"Testnet API keys not found for {args.exchange}. "
+                    f"Using dummy keys for paper trading simulation. "
+                    f"Consider adding testnet keys to secret/api_keys.json for better data access."
+                )
+                api_key = "paper_key"
+                api_secret = "paper_secret"
         
         # Initialize exchange config
         exchange_config = ExchangeConfig(
             exchange_type=ExchangeType[args.exchange.upper()],
-            api_key=args.api_key or "paper_key",
-            api_secret=args.api_secret or "paper_secret",
-            password=args.api_password,
+            api_key=api_key,
+            api_secret=api_secret,
+            password=api_password,
             use_testnet=(exchange_mode == ExchangeTradingMode.PAPER),  # Use testnet for paper trading
             trade_symbol=args.asset,
             mode=exchange_mode

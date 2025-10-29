@@ -390,7 +390,7 @@ class UnifiedVectorizationManager:
     """
 
     def __init__(self, config: Optional[VectorizationConfig] = None,
-                 fast_fail: bool = True, enable_logging: bool = True):
+                 fast_fail: bool = True, enable_logging: bool = True, verbose: bool = False):
         """
         Initialize unified vectorization manager with enhanced logging and fast failing.
 
@@ -398,12 +398,14 @@ class UnifiedVectorizationManager:
             config: Vectorization configuration
             fast_fail: Enable fast failing instead of silent fallbacks
             enable_logging: Enable comprehensive logging with tprint
+            verbose: Enable verbose success messages (default: False for reduced output)
         """
         tprint_info("🚀 Initializing UnifiedVectorizationManager with enhanced logging and fast failing")
 
         self.config = config or VectorizationConfig()
         self.fast_fail = fast_fail
         self.enable_logging = enable_logging
+        self.verbose = verbose
 
         # Validate configuration
         self._validate_config(self.config)
@@ -437,7 +439,8 @@ class UnifiedVectorizationManager:
                     memory_efficient=self.config.memory_efficient,
                     chunk_size=self.config.chunk_size,
                     fast_fail=self.fast_fail,
-                    enable_logging=self.enable_logging
+                    enable_logging=self.enable_logging,
+                    verbose=self.verbose
                 )
                 tprint_success("✅ Rolling optimizer initialized")
             else:
@@ -646,7 +649,8 @@ class UnifiedVectorizationManager:
                 self._put_in_cache(cache_key, result)
                 tprint_debug("💾 Result cached successfully")
 
-            tprint_success(f"✅ Rolling {operation} completed successfully")
+            if self.verbose:
+                tprint_success(f"✅ Rolling {operation} completed successfully")
             return result
 
         except Exception as e:

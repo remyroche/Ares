@@ -15,14 +15,7 @@ from src.utils.logger import system_logger
 from src.interfaces.base_interfaces import MarketData
 
 from .base_exchange import BaseExchange
-from .shared.UnifiedTradingStandardizer import (
-    UnifiedTradingStandardizer,
-    StandardizedOrder,
-    StandardizedPosition,
-    StandardizedBalance,
-    StandardizedAccountInfo,
-    StandardizedTrade,
-)
+from .exchange_types import ExchangeType
 # from .okx import create_okx_exchange, OkxExchange  # Commented out to avoid circular import
 from .shared.auth import AuthenticationManager
 from .shared.market import MarketMetadataManager
@@ -270,6 +263,25 @@ class ExchangeDispatcher:
         
         return []
     
+    async def get_klines(
+        self,
+        symbol: str,
+        interval: str,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        limit: int = 1000
+    ) -> List[MarketData]:
+        """Get klines data for symbol."""
+        if not self._ensure_initialized():
+            return []
+            
+        if hasattr(self.exchange, 'get_klines'):
+            return await self.exchange.get_klines(symbol, interval, limit)
+        elif hasattr(self.exchange, 'get_historical_klines') and start_time and end_time:
+            return await self.exchange.get_historical_klines(symbol, interval, start_time, end_time, limit)
+        
+        return []
+    
     async def get_ticker(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get ticker data for symbol."""
         if not self._ensure_initialized():
@@ -428,7 +440,7 @@ class ExchangeDispatcher:
         self,
         symbol: str,
         order_id: str
-    ) -> Optional[StandardizedOrder]:
+    ) -> Optional["StandardizedOrder"]:
         """
         Get standardized order status.
         
@@ -449,7 +461,7 @@ class ExchangeDispatcher:
     async def get_standardized_orders(
         self,
         symbol: Optional[str] = None
-    ) -> List[StandardizedOrder]:
+    ) -> List["StandardizedOrder"]:
         """
         Get standardized open orders.
         
@@ -467,7 +479,7 @@ class ExchangeDispatcher:
             self.logger.error(f"Failed to standardize orders: {e}")
             return []
     
-    async def get_standardized_positions(self) -> List[StandardizedPosition]:
+    async def get_standardized_positions(self) -> List["StandardizedPosition"]:
         """
         Get standardized positions.
         
@@ -488,7 +500,7 @@ class ExchangeDispatcher:
     async def get_standardized_balance(
         self,
         currency: str = "USDT"
-    ) -> Optional[StandardizedBalance]:
+    ) -> Optional["StandardizedBalance"]:
         """
         Get standardized balance for a currency.
         
@@ -520,7 +532,7 @@ class ExchangeDispatcher:
             self.logger.error(f"Failed to standardize balance: {e}")
             return None
     
-    async def get_standardized_balances(self) -> List[StandardizedBalance]:
+    async def get_standardized_balances(self) -> List["StandardizedBalance"]:
         """
         Get all standardized balances.
         
@@ -550,7 +562,7 @@ class ExchangeDispatcher:
             self.logger.error(f"Failed to standardize balances: {e}")
             return []
     
-    async def get_standardized_account_info(self) -> Optional[StandardizedAccountInfo]:
+    async def get_standardized_account_info(self) -> Optional["StandardizedAccountInfo"]:
         """
         Get standardized account information.
         
@@ -572,7 +584,7 @@ class ExchangeDispatcher:
         self,
         symbol: str,
         order_id: Optional[str] = None
-    ) -> List[StandardizedTrade]:
+    ) -> List["StandardizedTrade"]:
         """
         Get standardized trade history.
         

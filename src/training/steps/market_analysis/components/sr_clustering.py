@@ -191,7 +191,7 @@ class EnhancedSRClusteringConfig:
     min_cluster_size: int = 2
     min_samples: int = 2
     eps: float = 0.01
-    n_clusters: int = 5
+    # Removed n_clusters - let algorithms determine cluster count naturally
     
     # Hardware optimization settings
     workload_type: str = 'ml_training'
@@ -228,13 +228,22 @@ class EnhancedSRClusteringConfig:
     
     # Ensemble clustering
     enable_ensemble_clustering: bool = True
-    ensemble_algorithms: List[str] = field(default_factory=lambda: ['hdbscan', 'dbscan', 'kmeans', 'spectral'])
-    ensemble_weights: List[float] = field(default_factory=lambda: [0.3, 0.2, 0.2, 0.3])
+    # Restrict ensemble to density-based methods to base clustering on price closeness
+    ensemble_algorithms: List[str] = field(default_factory=lambda: ['hdbscan', 'dbscan'])
+    ensemble_weights: List[float] = field(default_factory=lambda: [0.5, 0.5])
+
+    # Feature policy
+    # When True, use price proximity and strength/score only for clustering features
+    price_strength_only: bool = True
     
     # Quality thresholds
     min_silhouette_score: float = 0.3
     min_cluster_quality: float = 0.5
     max_cluster_ratio: float = 0.8
+    
+    # Ensemble clustering consensus threshold
+    # Minimum agreement between algorithms to group levels together (0.0-1.0)
+    consensus_threshold: float = 0.25
 
 class SRClusteringComponent(BaseStep):
     """
@@ -455,6 +464,9 @@ class SRClusteringComponent(BaseStep):
                 step_name=self.step_name,
                 datetime=datetime.now()
             )
+            
+            # Persist config for downstream feature extraction
+            self._current_clustering_config = enhanced_config
             
             # Perform enhanced SR clustering
             clustering_result = await self._perform_enhanced_sr_clustering(
@@ -1173,7 +1185,13 @@ class SRClusteringComponent(BaseStep):
             return await self._simple_proximity_clustering(sr_levels, enhanced_config)
 
     def _extract_clustering_features(self, sr_levels: List[Dict[str, Any]]) -> np.ndarray:
-        """Extract enhanced features for clustering with VectorBT optimization and proper normalization."""
+        """Extract clustering features.
+
+        When `price_strength_only` is enabled in the current config, features are limited to:
+        - Normalized price (relative to average)
+        - Strength/score (capped to [0,1])
+        This aligns clustering with price closeness and level strength.
+        """
         with tprint_timer("Feature extraction"):
             try:
                 tprint_debug(f"Extracting features from {len(sr_levels)} SR levels")
@@ -1188,41 +1206,41 @@ class SRClusteringComponent(BaseStep):
                 
                 tprint_data_preview(prices, "Price data", max_rows=5)
                 
-                # Use VectorBT optimization for large datasets
+                # Use simplified features when requested
+                cfg = getattr(self, '_current_clustering_config', None)
+                if cfg is not None and getattr(cfg, 'price_strength_only', False):
+                    for level in sr_levels:
+                        price = level.get('price', 0.0)
+                        # Use absolute price instead of ratio for proper distance calculation
+                        price_absolute = price  # Keep absolute price for clustering
+                        strength_norm = max(0.0, min(float(level.get('strength', 0.0)), 1.0))
+                        features.append([price_absolute, strength_norm])
+                    return np.asarray(features, dtype=float)
+
+                # Default: original extended feature set
                 if VECTORBT_AVAILABLE and len(sr_levels) > 100 and self.vectorbt_rolling_optimizer:
                     tprint_info("Using VectorBT optimization for feature extraction")
                     return self._extract_features_vectorbt_optimized(sr_levels, prices, current_price)
                 
                 for level in sr_levels:
                     price = level.get('price', 0.0)
-                    
-                    # Price-relative features (normalized)
-                    price_ratio = price / current_price if current_price > 0 else 1.0
+                    # Use absolute price instead of ratio for proper distance calculation
+                    price_absolute = price  # Keep absolute price for clustering
                     log_price = np.log(price) if price > 0 else 0
-                
-                    # Normalized features (0-1 range)
-                    strength_norm = min(level.get('strength', 0.0), 1.0)  # Cap at 1.0
-                    confidence_norm = min(level.get('confidence', 0.0), 1.0)  # Cap at 1.0
-                    touches_norm = min(level.get('touches', 0) / 10.0, 1.0)  # Normalize touches (cap at 10)
-                
-                # Temporal features
+                    strength_norm = min(level.get('strength', 0.0), 1.0)
+                    confidence_norm = min(level.get('confidence', 0.0), 1.0)
+                    touches_norm = min(level.get('touches', 0) / 10.0, 1.0)
                 first_touch = level.get('first_touch', datetime.now())
                 last_touch = level.get('last_touch', datetime.now())
-                
-                # Calculate age and recency in normalized units
                 if isinstance(first_touch, datetime) and isinstance(last_touch, datetime):
-                    age_days = (datetime.now() - first_touch).days / 365.0  # Years, normalized
-                    recency_days = (datetime.now() - last_touch).days / 30.0  # Months, normalized
+                        age_days = (datetime.now() - first_touch).days / 365.0
+                        recency_days = (datetime.now() - last_touch).days / 30.0
                 else:
                     age_days = 0.0
                     recency_days = 0.0
-                
-                # Type encoding (one-hot)
                 level_type = level.get('type', 'unknown').lower()
                 is_support = 1.0 if level_type == 'support' else 0.0
                 is_resistance = 1.0 if level_type == 'resistance' else 0.0
-                
-                # Additional features from features dict
                 features_dict = level.get('features', {})
                 volume_profile = min(features_dict.get('volume_profile', 0.0), 1.0)
                 price_action = min(features_dict.get('price_action', 0.0), 1.0)
@@ -1230,7 +1248,7 @@ class SRClusteringComponent(BaseStep):
                 
                 level_features = [
                     log_price,           # Log-transformed price (scale-invariant)
-                    price_ratio,         # Price relative to current (normalized)
+                    price_absolute,      # Absolute price for proper distance calculation
                     strength_norm,       # Normalized strength (0-1)
                     confidence_norm,     # Normalized confidence (0-1)
                     touches_norm,        # Normalized touches (0-1)
@@ -1282,8 +1300,8 @@ class SRClusteringComponent(BaseStep):
             for i, level in enumerate(sr_levels):
                 price = level.get('price', 0.0)
                 
-                # Price-relative features (normalized)
-                price_ratio = price / current_price if current_price > 0 else 1.0
+                # Use absolute price for proper distance calculation
+                price_absolute = price  # Keep absolute price for clustering
                 log_price = np.log(price) if price > 0 else 0
                 
                 # Normalized features (0-1 range)
@@ -1335,7 +1353,7 @@ class SRClusteringComponent(BaseStep):
                 
                 level_features = [
                     log_price,           # Log-transformed price (scale-invariant)
-                    price_ratio,         # Price relative to current price
+                    price_absolute,      # Absolute price for proper distance calculation
                     strength_norm,       # Normalized strength (0-1)
                     confidence_norm,     # Normalized confidence (0-1)
                     touches_norm,        # Normalized touches (0-1)
@@ -1375,8 +1393,8 @@ class SRClusteringComponent(BaseStep):
             for level in sr_levels:
                 price = level.get('price', 0.0)
                 
-                # Price-relative features (normalized)
-                price_ratio = price / current_price if current_price > 0 else 1.0
+                # Use absolute price for proper distance calculation
+                price_absolute = price  # Keep absolute price for clustering
                 log_price = np.log(price) if price > 0 else 0
                 
                 # Normalized features (0-1 range)
@@ -1419,7 +1437,7 @@ class SRClusteringComponent(BaseStep):
                 technical_indicators = min(features_dict.get('technical_indicators', 0.0), 1.0)
                 
                 level_features = [
-                    log_price, price_ratio, strength_norm, confidence_norm, touches_norm,
+                    log_price, price_absolute, strength_norm, confidence_norm, touches_norm,
                     age_days, recency_days, is_support, is_resistance,
                     volume_profile, price_action, technical_indicators
                 ]
@@ -1909,11 +1927,9 @@ class SRClusteringComponent(BaseStep):
 
                     other_price = other_level.get('price', 0.0)
                     
-                    # Enhanced distance calculation with division by zero protection
-                    if level_price > 0:
-                        price_diff = abs(level_price - other_price) / level_price
-                    else:
-                        price_diff = float('inf')
+                    # Use absolute price difference for proper distance calculation
+                    # This ensures 10% price difference = 0.1, not 0.1% = 0.001
+                    price_diff = abs(level_price - other_price) / level_price
                     
                     # Time-based proximity (if timestamps available)
                     time_proximity = self._calculate_time_proximity(level, other_level)
@@ -2429,7 +2445,8 @@ class SRClusteringComponent(BaseStep):
             
             # Use consensus matrix for final clustering
             # Simple approach: use threshold to determine clusters
-            threshold = 0.5
+            # Lower threshold allows more granular clustering while still requiring consensus
+            threshold = config.consensus_threshold
             clusters = []
             used_indices = set()
             

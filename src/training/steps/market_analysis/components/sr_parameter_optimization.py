@@ -425,6 +425,8 @@ class SRParameterOptimizationStep(BaseStep):
             # Override with user config if provided
             if 'enable_bayesian_hpo' in config:
                 enhanced_config.enable_bayesian_hpo = config['enable_bayesian_hpo']
+            if 'enable_hierarchical_hpo' in config:
+                enhanced_config.enable_hierarchical_hpo = config['enable_hierarchical_hpo']
             if 'enable_vectorbt' in config:
                 enhanced_config.enable_vectorbt_optimization = config['enable_vectorbt']
             if 'enable_hardware_optimization' in config:
@@ -568,6 +570,24 @@ class SRParameterOptimizationStep(BaseStep):
                 if 'timestamp' not in market_data.columns and isinstance(market_data.index, pd.DatetimeIndex):
                     market_data = market_data.copy()
                     market_data['timestamp'] = market_data.index
+                
+                # Remove duplicate indices
+                initial_rows = len(market_data)
+                market_data = market_data[~market_data.index.duplicated(keep='last')]
+                if len(market_data) < initial_rows:
+                    self.logger.warning(f"Removed {initial_rows - len(market_data)} duplicate index entries")
+                
+                # Filter out invalid epoch timestamps (1970-01-01)
+                epoch_date = pd.Timestamp('1970-01-01')
+                invalid_timestamps = market_data.index == epoch_date
+                if invalid_timestamps.any():
+                    invalid_count = invalid_timestamps.sum()
+                    market_data = market_data[~invalid_timestamps]
+                    self.logger.warning(f"Removed {invalid_count} rows with invalid epoch timestamps (1970-01-01)")
+                
+                if len(market_data) == 0:
+                    self.logger.error("No valid data remaining after cleaning duplicate indices and invalid timestamps")
+                    return None
 
                 return market_data
             else:
@@ -746,8 +766,16 @@ class SRParameterOptimizationStep(BaseStep):
             # Split data for optimization with temporal validation
             train_data, test_data = self._split_data_for_optimization(market_data, enhanced_config.temporal_gap_hours)
             
-            # Run Bayesian HPO if enabled
-            if enhanced_config.enable_bayesian_hpo and self.bayesian_optimizer:
+            # Run Hierarchical HPO if enabled (recommended for 6+ parameters)
+            if enhanced_config.enable_hierarchical_hpo and HIERARCHICAL_HPO_AVAILABLE:
+                self.logger.info("🚀 Running Hierarchical HPO optimization...")
+                hierarchical_result = await self._run_hierarchical_optimization(
+                    market_data, search_space, enhanced_config
+                )
+                optimization_result.update(hierarchical_result)
+            
+            # Run Bayesian HPO if enabled (fallback or when hierarchical is disabled)
+            elif enhanced_config.enable_bayesian_hpo and self.bayesian_optimizer:
                 self.logger.info("🧠 Running Bayesian HPO optimization...")
                 bayesian_result = await self._run_bayesian_optimization(
                     search_space, train_data, test_data, enhanced_config, config, market_data, input_artifacts
@@ -1170,15 +1198,18 @@ class SRParameterOptimizationStep(BaseStep):
                 try:
                     # Use SR detector to evaluate parameters
                     if SR_DETECTION_AVAILABLE:
-                        detector = EnhancedSRDetector(
-                            min_touches=int(params.get('min_touches', 2)),
-                            strength_threshold=float(params.get('strength_threshold', 0.5)),
-                            distance_threshold=float(params.get('distance_threshold', 0.01)),
-                            lookback_periods=int(params.get('lookback_periods', 50))
-                        )
+                        # Create config dict for EnhancedSRDetector
+                        detector_config = {
+                            'min_touches': int(params.get('min_touches', 2)),
+                            'strength_threshold': float(params.get('strength_threshold', 0.5)),
+                            'distance_threshold': float(params.get('distance_threshold', 0.01)),
+                            'lookback_periods': int(params.get('lookback_periods', 50))
+                        }
+                        
+                        detector = EnhancedSRDetector(detector_config)
                         
                         # Detect SR levels
-                        sr_levels = detector.detect_levels(market_data)
+                        sr_levels = detector.detect_sr_levels(market_data)
                         
                         # Calculate quality score
                         if len(sr_levels) == 0:
@@ -1237,6 +1268,7 @@ class SRParameterOptimizationStep(BaseStep):
             return {
                 'success': True,
                 'best_params': result.best_params,
+                'optimized_parameters': result.best_params,  # Also include as optimized_parameters for consistency
                 'best_score': result.best_score,
                 'total_trials': result.total_trials,
                 'total_time': result.total_time,

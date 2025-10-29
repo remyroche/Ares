@@ -986,10 +986,8 @@ class SRDetectionOptimizer:
 
 # VectorBT imports for native optimization
 try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
+    from src.vectorbt import vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from src.vectorbt import scale, rank, zscore, winsorize, clip, quantile, VECTORBT_AVAILABLE
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
@@ -1009,8 +1007,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
 
     cp = None
         keys = list(param_ranges.keys())

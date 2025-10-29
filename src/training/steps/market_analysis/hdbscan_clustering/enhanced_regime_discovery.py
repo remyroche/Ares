@@ -43,7 +43,7 @@ from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
 
 # Import our enhanced components
 from unified_config import UnifiedHDBSCANConfig, create_unified_config
-from quality_assessment import ComprehensiveQualityAssessor, QualityMetrics
+from src.training.steps.market_analysis.clusters.cluster_quality_assessor import ClusterQualityAssessor, ClusterQualityMetrics
 from feature_engineering import EnhancedFeatureEngineeringPipeline, FeatureEngineeringConfig
 from chunked_processing import EnhancedChunkedProcessor, ChunkProcessingConfig
 
@@ -65,7 +65,7 @@ class EnhancedRegimeResult:
     n_clusters: int
     n_noise_points: int
     noise_ratio: float
-    quality_metrics: QualityMetrics
+    quality_metrics: ClusterQualityMetrics
     processing_info: Dict[str, Any]
     config: UnifiedHDBSCANConfig
     cluster_profiles: Optional[Dict[str, Any]] = None
@@ -82,7 +82,7 @@ class EnhancedHDBSCANRegimeDiscovery:
     
     def __init__(self, config: Optional[UnifiedHDBSCANConfig] = None):
         self.config = config or create_unified_config()
-        self.quality_assessor = ComprehensiveQualityAssessor()
+        self.quality_assessor = ClusterQualityAssessor()
         self.logger = logging.getLogger(self.__class__.__name__)
         self.hardware_manager = UnifiedHardwareManager()
         self.memory_optimizer = M1MemoryOptimizer()

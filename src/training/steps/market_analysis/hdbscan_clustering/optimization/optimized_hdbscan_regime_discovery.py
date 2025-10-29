@@ -28,9 +28,9 @@ from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, WorkloadType
 
 # Import comprehensive quality assessor
-from ..quality_assessment import (
-    create_quality_assessor,
-    QualityMetrics
+from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
+    create_cluster_quality_assessor,
+    ClusterQualityMetrics
 )
 
 # Import optimization components
@@ -125,7 +125,7 @@ class OptimizedHDBSCANRegimeDiscoveryConfig:
 
     # Regime count optimization
     target_regime_count_min: int = 4  # Minimum desired regimes
-    target_regime_count_max: int = 8  # Maximum desired regimes
+    target_regime_count_max: int = 5  # Maximum desired regimes
     regime_count_penalty: float = 0.2  # Penalty weight for deviating from target range
     enable_regime_count_objective: bool = True  # Enable regime count objective
 
@@ -1743,12 +1743,12 @@ def create_optimized_hdbscan_regime_discovery(
         """
         Assess clustering quality using comprehensive quality assessor.
         
-        Uses the standardized ComprehensiveQualityAssessor from quality_assessment.py
-        which includes DBCV, predictive power, temporal metrics, and composite scoring.
+        Uses the standardized ClusterQualityAssessor from cluster_quality_assessor.py
+        which includes CV ratio, temporal smoothness, balance, and composite scoring.
         """
         try:
             # Create comprehensive quality assessor
-            quality_assessor = create_quality_assessor()
+            quality_assessor = create_cluster_quality_assessor()
             
             # Prepare data for assessment
             if hasattr(result, 'features_df') and result.features_df is not None:

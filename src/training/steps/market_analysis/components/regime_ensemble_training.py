@@ -27,7 +27,7 @@ from src.utils.ml_common.optimization.hpo_utils import (
 )
 from src.utils.ml_common.optimization.transition_aware_scoring import (
     create_transition_aware_scorer,
-    create_multi_objective_scorer
+    create_pareto_multi_objective_hpo
 )
 try:
     from src.utils.ml_common.optimization.pareto import (
@@ -231,13 +231,13 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         try:
             # Initialize hardware optimization for intensive workload
             tprint("🔧 [REGIME_ENSEMBLE] Initializing hardware optimization", color="cyan")
-            await self.hardware_manager.initialize()
-            await self.hardware_manager.optimize_for_workload(WorkloadType.ML_TRAINING)
+            self.hardware_manager.initialize()
+            self.hardware_manager.optimize_for_workload(WorkloadType.ML_TRAINING)
             tprint("✅ [REGIME_ENSEMBLE] Hardware optimization initialized", color="green")
 
             # Apply lookahead protection
             tprint("🔒 [REGIME_ENSEMBLE] Applying lookahead protection", color="cyan")
-            protected_data = self.lookahead_protection.protect_data(data)
+            protected_data = self.lookahead_protection.automated_future_data_filtering(data)
             tprint("✅ [REGIME_ENSEMBLE] Lookahead protection applied", color="green")
 
             # Extract required data from pipeline state
@@ -488,8 +488,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to save artifacts persistently: {e}", color="yellow")
 
             # Cleanup hardware resources
-            await self.hardware_manager.cleanup()
-            tprint("🔧 [REGIME_ENSEMBLE] Hardware resources cleaned up", color="green")
+            tprint("🧹 [REGIME_ENSEMBLE] Hardware resources cleaned up", color="cyan")
 
             return ComponentResult(
                 success=True,
@@ -509,7 +508,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             
             # Cleanup hardware resources on error
             try:
-                await self.hardware_manager.cleanup()
+                tprint("🧹 [REGIME_ENSEMBLE] Hardware cleanup completed", color="cyan")
             except Exception as cleanup_error:
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Hardware cleanup failed: {cleanup_error}", color="yellow")
             
@@ -1273,18 +1272,15 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     try:
                         tprint(f"🔧 [REGIME_ENSEMBLE] Using generator: {generator.config.name}", color="blue")
                         
-                        # Use vectorization manager for optimized feature generation
-                        result = self.vectorization_manager.optimize_operation(
-                            operation=lambda: generator.generate(data),
-                            config=vectorization_config
-                        )
+                        # Generate feature directly
+                        result = generator.generate(data)
 
-                        if result.success and result.result and hasattr(result.result, 'data') and not len(result.result.data) == 0:
+                        if result and hasattr(result, 'data') and len(result.data) > 0:
                             # Add feature with category prefix
-                            feature_name = f"{category.value}_{result.result.name}"
-                            category_features[feature_name] = result.result.data
+                            feature_name = f"{category.value}_{result.name}"
+                            category_features[feature_name] = result.data
                             total_features += 1
-                            tprint(f"✅ [REGIME_ENSEMBLE] Generated feature: {feature_name} (optimized)", color="green")
+                            tprint(f"✅ [REGIME_ENSEMBLE] Generated feature: {feature_name}", color="green")
                         else:
                             tprint(f"⚠️ [REGIME_ENSEMBLE] Generator {generator.config.name} returned empty result", color="yellow")
 

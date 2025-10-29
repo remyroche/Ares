@@ -1090,14 +1090,65 @@ class EnhancedRegimeFeatureSelector(BaseStep):
                     artifact_name=f'features_{symbol}_{exchange}',
                     artifact_type='data'
                 )
-                regime_labels = self._get_artifact(
-                    artifact_name=f'regime_labels_{symbol}_{exchange}',
-                    artifact_type='data'
-                )
-                tprint_info("Loaded data from artifacts")
-                return features_data, regime_labels
+                # Only return if features_data was actually loaded
+                if features_data is not None and not features_data.empty:
+                    regime_labels = self._get_artifact(
+                        artifact_name=f'regime_labels_{symbol}_{exchange}',
+                        artifact_type='data'
+                    )
+                    tprint_info("Loaded data from artifacts")
+                    return features_data, regime_labels
             except Exception as e:
                 self.logger.debug(f"Could not load data from artifacts: {e}")
+            
+            # Try to load from feature_generation step artifacts
+            try:
+                from datetime import datetime
+                timeframes = config.get('timeframes', ['15m'])
+                primary_timeframe = timeframes[0] if timeframes else '15m'
+                
+                # Save current context
+                original_step_name = self.artifact_manager._current_step_name
+                original_symbol = self.artifact_manager._current_symbol
+                original_exchange = self.artifact_manager._current_exchange
+                original_datetime = self.artifact_manager._current_datetime
+                original_information = self.artifact_manager._current_information
+                original_direction = self.artifact_manager._current_direction
+                original_model = self.artifact_manager._current_model
+                
+                # Set context to feature_generation step
+                self.artifact_manager.set_context(
+                    step_name="feature_generation_feature_generation_step",
+                    symbol=symbol,
+                    exchange=exchange,
+                    datetime=datetime.now(),
+                    information="feature_generation",
+                    direction="long",
+                    model="Analyst"
+                )
+                
+                try:
+                    # Try to get generated features for the primary timeframe
+                    artifact_name = f"generated_features_{primary_timeframe}"
+                    features_data = self._get_artifact(artifact_name, artifact_type="data")
+                    
+                    if features_data is not None and not features_data.empty:
+                        tprint_info(f"Loaded features from feature_generation step (timeframe: {primary_timeframe})")
+                        # Regime labels will be None for unsupervised mode
+                        return features_data, None
+                finally:
+                    # Restore original context
+                    self.artifact_manager.set_context(
+                        step_name=original_step_name,
+                        symbol=original_symbol,
+                        exchange=original_exchange,
+                        datetime=original_datetime,
+                        information=original_information,
+                        direction=original_direction,
+                        model=original_model
+                    )
+            except Exception as e:
+                self.logger.debug(f"Could not load data from feature_generation artifacts: {e}")
             
             # Try to load from feature bank
             try:

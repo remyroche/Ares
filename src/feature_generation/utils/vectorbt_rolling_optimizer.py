@@ -137,7 +137,8 @@ class VectorBTRollingOptimizer:
     def __init__(self, enable_gpu: bool = False, enable_parallel: bool = True,
                  memory_efficient: bool = True, chunk_size: int = 1000,
                  fast_fail: bool = True, enable_logging: bool = True,
-                 enable_hardware_optimization: bool = True, workload_type: WorkloadType = None):
+                 enable_hardware_optimization: bool = True, workload_type: WorkloadType = None,
+                 verbose: bool = False):
         """
         Initialize VectorBT rolling optimizer with enhanced optimization and logging.
 
@@ -149,6 +150,7 @@ class VectorBTRollingOptimizer:
             fast_fail: Enable fast failing instead of silent fallbacks
             enable_logging: Enable comprehensive logging with tprint
             enable_hardware_optimization: Enable hardware optimization integration
+            verbose: Enable verbose success messages (default: False for reduced output)
             workload_type: Workload type for hardware optimization
         """
         tprint_info("🚀 Initializing VectorBTRollingOptimizer with enhanced logging and fast failing")
@@ -181,6 +183,7 @@ class VectorBTRollingOptimizer:
         self.use_vectorbt = VECTORBT_AVAILABLE
         self.fast_fail = fast_fail
         self.enable_logging = enable_logging
+        self.verbose = verbose
 
         # Enhanced performance tracking with error tracking
         self.performance_stats = {
@@ -250,7 +253,8 @@ class VectorBTRollingOptimizer:
 
         try:
             result = self._rolling_operation(data, 'mean', window, **kwargs)
-            tprint_success(f"✅ Rolling mean completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
+            if self.verbose:
+                tprint_success(f"✅ Rolling mean completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
             return result
         except Exception as e:
             error_msg = f"Rolling mean calculation failed"
@@ -268,7 +272,8 @@ class VectorBTRollingOptimizer:
         self._validate_rolling_inputs(data, window, 'std')
         try:
             result = self._rolling_operation(data, 'std', window, **kwargs)
-            tprint_success(f"✅ Rolling std completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
+            if self.verbose:
+                tprint_success(f"✅ Rolling std completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
             return result
         except Exception as e:
             error_msg = f"Rolling std calculation failed"
@@ -286,7 +291,8 @@ class VectorBTRollingOptimizer:
         self._validate_rolling_inputs(data, window, 'var')
         try:
             result = self._rolling_operation(data, 'var', window, **kwargs)
-            tprint_success(f"✅ Rolling var completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
+            if self.verbose:
+                tprint_success(f"✅ Rolling var completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
             return result
         except Exception as e:
             error_msg = f"Rolling var calculation failed"
@@ -304,7 +310,8 @@ class VectorBTRollingOptimizer:
         self._validate_rolling_inputs(data, window, 'min')
         try:
             result = self._rolling_operation(data, 'min', window, **kwargs)
-            tprint_success(f"✅ Rolling min completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
+            if self.verbose:
+                tprint_success(f"✅ Rolling min completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
             return result
         except Exception as e:
             error_msg = f"Rolling min calculation failed"
@@ -1222,7 +1229,8 @@ class VectorBTRollingOptimizer:
                 if len(non_numeric_cols) > 0:
                     raise VectorBTValidationError(f"All columns must be numeric for {operation}, found: {list(non_numeric_cols)}", "dtype_check", list(non_numeric_cols))
 
-        tprint_success(f"✅ Rolling inputs validated for {operation}")
+        if self.verbose:
+            tprint_success(f"✅ Rolling inputs validated for {operation}")
 
     def _validate_rolling_result(self, result: Union[pd.Series, pd.DataFrame],
                                 operation: str, window: int):
@@ -1245,7 +1253,8 @@ class VectorBTRollingOptimizer:
             if inf_counts.any():
                 tprint_warning(f"⚠️ Infinite values detected in {operation} result: {inf_counts[inf_counts > 0].to_dict()}")
 
-        tprint_success(f"✅ Rolling result validated for {operation}")
+        if self.verbose:
+            tprint_success(f"✅ Rolling result validated for {operation}")
 
     def _select_processing_strategy(self, data: Union[pd.Series, pd.DataFrame],
                                    window: int, operation: str) -> str:
@@ -2437,7 +2446,8 @@ _global_optimizer = None
 def get_vectorbt_rolling_optimizer(enable_gpu: bool = False, enable_parallel: bool = True,
                                  memory_efficient: bool = True, chunk_size: int = 1000,
                                  fast_fail: bool = True, enable_logging: bool = True,
-                                 enable_hardware_optimization: bool = True, workload_type: WorkloadType = None) -> VectorBTRollingOptimizer:
+                                 enable_hardware_optimization: bool = True, workload_type: WorkloadType = None,
+                                 verbose: bool = False) -> VectorBTRollingOptimizer:
     """Get global VectorBT rolling optimizer instance."""
     global _global_optimizer
     if _global_optimizer is None:
@@ -2457,7 +2467,8 @@ def get_vectorbt_rolling_optimizer(enable_gpu: bool = False, enable_parallel: bo
             fast_fail=fast_fail,
             enable_logging=enable_logging,
             enable_hardware_optimization=enable_hardware_optimization,
-            workload_type=workload_type
+            workload_type=workload_type,
+            verbose=verbose
         )
     return _global_optimizer
 

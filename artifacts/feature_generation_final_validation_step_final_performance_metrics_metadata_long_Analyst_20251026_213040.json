@@ -1,8 +1,0 @@
-{
-  "artifact_name": "final_performance_metrics",
-  "artifact_type": "data",
-  "file_path": "artifacts/pre_training/long/Analyst/feature_generation_final_validation_step/feature_generation_final_validation_step_final_performance_metrics_long_Analyst_20251026_213040.parquet",
-  "file_size": 975,
-  "timestamp": "2025-10-26T21:30:40.671041",
-  "compression": "auto"
-}

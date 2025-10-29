@@ -44,7 +44,7 @@ from src.utils.tprint import (
     tprint_info, tprint_error, tprint_data_preview, tprint_data_format,
     tprint_feature_counts, tprint_structured, tprint_timer, tprint_progress
 )
-from src.utils.ml_common.utils.feature_selection import FeatureImportanceRanker
+from src.training.utils.feature_selection.selection_methods import FeatureImportanceRanker
 
 logger = logging.getLogger(__name__)
 

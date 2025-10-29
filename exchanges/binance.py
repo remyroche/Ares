@@ -53,9 +53,9 @@ from src.interfaces.base_interfaces import MarketData
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 
-from .base_exchange import BaseExchange
-from .shared.interfaces_typed import tprint, handle_async_errors, handle_errors
-from .shared import (
+from exchanges.base_exchange import BaseExchange
+from exchanges.shared.interfaces_typed import tprint, handle_async_errors, handle_errors
+from exchanges.shared import (
     # Auth
     AuthenticationManager, APIKeyManager, TimeSyncManager, SubaccountManager,
     # Market
@@ -73,7 +73,7 @@ from .shared import (
     # Reliability
     RateLimitManager, AuditLogger, SystemStatusManager
 )
-from .shared.interfaces_typed import (
+from exchanges.shared.interfaces_typed import (
     IHighLevelAuthManager, IHighLevelMarketManager, IHighLevelOrderManager,
     IHighLevelRiskManager, IHighLevelBalanceManager, IHighLevelRateLimitManager,
     tprint, DataSource, ValidationResult
@@ -213,7 +213,7 @@ class BinanceExchange(BaseExchange):
     def _setup_rate_limiting(self) -> None:
         """Set up rate limiting for different endpoints."""
         try:
-            from .shared.reliability.rate_limit_manager import RateLimit, RateLimitStrategy
+            from exchanges.shared.reliability.rate_limit_manager import RateLimit, RateLimitStrategy
             
             # General API rate limits
             general_limit = RateLimit(
@@ -270,7 +270,7 @@ class BinanceExchange(BaseExchange):
     async def _authenticate(self) -> None:
         """Authenticate with Binance using shared auth manager."""
         try:
-            from .shared.auth.auth_manager import AuthConfig, APIKeyPermission
+            from exchanges.shared.auth.auth_manager import AuthConfig, APIKeyPermission
             
             # Create auth config
             auth_config = AuthConfig(
@@ -311,7 +311,7 @@ class BinanceExchange(BaseExchange):
     async def _setup_precision_configs(self) -> None:
         """Set up precision configurations for symbols."""
         try:
-            from .shared.market.precision_helper import PrecisionConfig
+            from exchanges.shared.market.precision_helper import PrecisionConfig
             
             instruments = self.market_metadata.get_active_instruments()
             for instrument in instruments:
@@ -332,7 +332,7 @@ class BinanceExchange(BaseExchange):
     async def _setup_risk_tiers(self) -> None:
         """Set up risk tiers for symbols."""
         try:
-            from .shared.market.risk_tier_manager import SymbolRiskProfile, RiskTier
+            from exchanges.shared.market.risk_tier_manager import SymbolRiskProfile, RiskTier
             
             instruments = self.market_metadata.get_active_instruments()
             for instrument in instruments:

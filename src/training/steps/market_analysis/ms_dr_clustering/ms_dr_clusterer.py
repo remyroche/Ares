@@ -172,7 +172,7 @@ except ImportError:
 class MSDRConfig:
     """Configuration for Markov-Switching Dynamic Regression."""
     # Model parameters
-    n_regimes: int = 5  # Number of regimes (can be optimized)
+    n_regimes: int = 4  # Number of regimes (can be optimized)
     switching_variance: bool = True  # Allow variance to switch across regimes
     
     # Model type
@@ -191,8 +191,8 @@ class MSDRConfig:
     
     # Model selection
     auto_select_regimes: bool = True  # Auto-select number of regimes using IC
-    min_regimes: int = 2
-    max_regimes: int = 10
+    min_regimes: int = 3
+    max_regimes: int = 5
     ic_criterion: str = 'aic'  # Information criterion: 'aic', 'bic', 'hqic'
     
     # Validation (enhanced from code review)
@@ -879,7 +879,30 @@ class MSDRClusterer:
                     regime_durations.append(0)
             
             # Calculate transition persistence
-            transition_persistence = np.mean(np.diag(transition_matrix))
+            if hasattr(transition_matrix, 'values'):
+                # If it's a DataFrame, get values
+                transition_matrix_array = transition_matrix.values
+            else:
+                transition_matrix_array = np.array(transition_matrix)
+            
+            # Debug: print the shape and type
+            tprint_debug(f"Transition matrix shape: {transition_matrix_array.shape}, ndim: {transition_matrix_array.ndim}")
+            tprint_debug(f"Transition matrix type: {type(transition_matrix_array)}")
+            tprint_debug(f"Transition matrix content: {transition_matrix_array}")
+            
+            # Ensure it's 2D
+            if transition_matrix_array.ndim == 1:
+                # If 1D, reshape to square matrix
+                n = int(np.sqrt(len(transition_matrix_array)))
+                transition_matrix_array = transition_matrix_array.reshape(n, n)
+            elif transition_matrix_array.ndim > 2:
+                # If more than 2D, flatten first
+                transition_matrix_array = transition_matrix_array.flatten()
+                n = int(np.sqrt(len(transition_matrix_array)))
+                transition_matrix_array = transition_matrix_array.reshape(n, n)
+            
+            tprint_debug(f"Final transition matrix shape: {transition_matrix_array.shape}")
+            transition_persistence = np.mean(np.diag(transition_matrix_array))
             
             tprint_success(f"✅ MS model fitted: {n_regimes} regimes")
             
@@ -887,7 +910,7 @@ class MSDRClusterer:
                 'labels': labels,
                 'probabilities': smoothed_probs.values,
                 'n_regimes': n_regimes,
-                'transition_matrix': transition_matrix,
+                'transition_matrix': transition_matrix_array,
                 'regime_params': regime_params,
                 'regime_variances': regime_variances,
                 'regime_durations': np.array(regime_durations),
@@ -938,6 +961,12 @@ class MSDRClusterer:
                 feature_df = pd.DataFrame(data_for_metrics)
             else:
                 feature_df = data_for_metrics
+            
+            # Adjust feature data to match labels length (MS-DR returns n-1 labels)
+            if len(labels) < feature_df.shape[0]:
+                # Use only the first n-1 samples to match labels
+                feature_df = feature_df.iloc[:len(labels)]
+                tprint_debug(f"Adjusted feature data shape to match labels: {feature_df.shape}")
             
             # Assess quality using the unified assessor
             quality_metrics = quality_assessor.assess_quality(
@@ -1044,13 +1073,13 @@ class MSDRClusterer:
 
 # Convenience functions
 def create_ms_dr_clusterer(
-    n_regimes: int = 5,
+    n_regimes: int = 4,
     model_type: str = 'autoregression',
     order: int = 1,
     switching_variance: bool = True,
     auto_select_regimes: bool = True,
-    min_regimes: int = 2,
-    max_regimes: int = 10,
+    min_regimes: int = 3,
+    max_regimes: int = 5,
     enable_pca: bool = True,
     pca_components: int = 10,
     random_state: int = 42

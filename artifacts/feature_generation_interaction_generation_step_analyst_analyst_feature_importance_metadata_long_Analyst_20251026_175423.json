@@ -1,9 +1,0 @@
-{
-  "created_at": "2025-10-26T17:54:38.025450",
-  "artifact_name": "analyst_feature_importance",
-  "artifact_type": "metadata",
-  "file_path": "artifacts/pre_training/long/Analyst/feature_generation_interaction_generation_step_analyst/feature_generation_interaction_generation_step_analyst_analyst_feature_importance_long_Analyst_20251026_175423.parquet",
-  "file_size": 975,
-  "timestamp": "2025-10-26T17:54:38.026304",
-  "compression": "auto"
-}

@@ -23,8 +23,15 @@ def create_sample_data(n_samples=1000, n_features=10, n_regimes=3):
     """Create sample market data with regime switching."""
     np.random.seed(42)
     
-    # Create regime-dependent data
-    regime_lengths = np.random.multinomial(n_samples, [1/n_regimes] * n_regimes)
+    # Create regime-dependent data with equal distribution
+    samples_per_regime = n_samples // n_regimes
+    remainder = n_samples % n_regimes
+    
+    regime_lengths = [samples_per_regime] * n_regimes
+    # Distribute remainder samples across first few regimes
+    for i in range(remainder):
+        regime_lengths[i] += 1
+    
     regime_starts = np.cumsum([0] + regime_lengths[:-1])
     
     data = np.zeros((n_samples, n_features))

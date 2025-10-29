@@ -170,6 +170,7 @@ class SimplifiedAresLauncher:
             'MARKET_ANALYSIS': [
                 'sr_detection', 'sr_clustering', 'sr_parameter_optimization',  # Fixed order: detection -> clustering -> optimization
                 'hdbscan_regime_discovery',  # New HDBSCAN-based regime discovery
+                'gmm_regime_discovery',  # GMM-based regime discovery with correlation reduction
                 'regime_feature_selection',  # Enhanced regime feature selection
                 'regime_models_training', 'regime_ensemble_training'
             ],
@@ -282,6 +283,7 @@ Examples:
     # Regime discovery options
     regime_group = parser.add_mutually_exclusive_group()
     regime_group.add_argument('--hdbscan-regime-discovery', action='store_true', help='Run HDBSCAN regime discovery (replaces NAS/TAS)')
+    regime_group.add_argument('--gmm-regime-discovery', action='store_true', help='Run GMM regime discovery with correlation-based feature reduction')
     regime_group.add_argument('--legacy-nas-tas', action='store_true', help='Run legacy NAS/TAS regime discovery (deprecated)')
     
     # Common parameters
@@ -443,7 +445,7 @@ async def main():
         args.train_analyst_base, args.train_analyst_ensemble, 
         args.train_tactician_base, args.train_tactician_ensemble,
         args.run_tactician_interaction, args.run_analyst_interaction, args.run_both_interaction_modes,
-        args.hdbscan_regime_discovery, args.legacy_nas_tas
+        args.hdbscan_regime_discovery, args.gmm_regime_discovery, args.legacy_nas_tas
     ])
     
     if not has_execution_mode:
@@ -532,6 +534,12 @@ async def main():
             logger.info("Running HDBSCAN regime discovery (replaces NAS/TAS)")
             result = await launcher.run_step('hdbscan_regime_discovery', config)
             print(f"HDBSCAN regime discovery completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
+            
+        elif args.gmm_regime_discovery:
+            # GMM regime discovery execution
+            logger.info("Running GMM regime discovery with correlation-based feature reduction")
+            result = await launcher.run_step('gmm_regime_discovery', config)
+            print(f"GMM regime discovery completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
         elif args.legacy_nas_tas:
             # Legacy NAS/TAS regime discovery execution (deprecated)

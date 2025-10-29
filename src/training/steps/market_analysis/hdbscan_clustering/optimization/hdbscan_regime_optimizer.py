@@ -25,9 +25,9 @@ from sklearn.preprocessing import StandardScaler
 import warnings
 
 # Import comprehensive quality assessor
-from ..quality_assessment import (
-    create_quality_assessor,
-    QualityMetrics
+from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
+    create_cluster_quality_assessor,
+    ClusterQualityMetrics
 )
 
 # Import optimization modules
@@ -88,7 +88,7 @@ class HDBSCANRegimeOptimizerConfig:
     pca_variance_threshold: float = 0.95
     
     # HDBSCAN configuration (aligned with unified goals)
-    # Cluster count constraints: 6-8 preferred (5-10 absolute)
+    # Cluster count constraints: 4-5 preferred (3-6 absolute)
     min_cluster_size: int = 20  # Will be validated against 2% min constraint
     min_samples: int = 10
     cluster_selection_epsilon: Optional[float] = None
@@ -98,9 +98,9 @@ class HDBSCANRegimeOptimizerConfig:
     n_jobs: int = -1
     
     # Unified constraint targets (from clustering_optimization_goals.py)
-    target_n_clusters: Tuple[int, int] = (6, 8)  # Preferred range
-    min_n_clusters: int = 5  # Absolute minimum
-    max_n_clusters: int = 10  # Absolute maximum
+    target_n_clusters: Tuple[int, int] = (4, 5)  # Preferred range
+    min_n_clusters: int = 3  # Absolute minimum
+    max_n_clusters: int = 6  # Absolute maximum
     min_cluster_size_pct: float = 0.02  # 2% minimum
     max_cluster_size_pct: float = 0.20  # 20% maximum
     
@@ -359,7 +359,7 @@ class HDBSCANRegimeOptimizer:
         """
         try:
             # Create comprehensive quality assessor
-            quality_assessor = create_quality_assessor()
+            quality_assessor = create_cluster_quality_assessor()
             
             # Convert to DataFrame if needed
             if isinstance(clustering_data, np.ndarray):

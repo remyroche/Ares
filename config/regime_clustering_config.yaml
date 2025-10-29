@@ -2,7 +2,7 @@
 
 # Clustering parameters
 min_clusters: 4
-max_clusters: 8
+max_clusters: 5
 regime_timeframe: "1h"  # Timeframe for regime analysis
 
 # Quality targets
@@ -55,7 +55,7 @@ tuning_method: "bayesian"
 # Tuning constraints (relaxed from defaults for more flexibility)
 tuning_min_balance: 0.45  # Minimum balance score to accept (default: 0.5)
 tuning_min_temporal: 0.80  # Minimum temporal smoothness to accept (default: 0.85)
-tuning_target_clusters: [5, 9]  # Acceptable cluster range (default: [6, 8])
+tuning_target_clusters: [4, 5]  # Acceptable cluster range (default: [4, 5])
 
 # Tuning weights for composite score
 tuning_weights:

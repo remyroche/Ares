@@ -23,7 +23,7 @@ from src.interfaces.base_interfaces import MarketData
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 
-from .base_exchange import BaseExchange
+from exchanges.base_exchange import BaseExchange
 
 
 class BingXAPIError(Exception):
@@ -87,14 +87,18 @@ class BingXExchange(BaseExchange):
         self.request_window_start = time.time()
 
     @handles_errors
+    async def connect(self) -> None:
+        """Connect to the BingX exchange."""
+        await self._initialize_exchange()
+
     async def _initialize_exchange(self) -> None:
         """Initialize the BingX exchange client."""
         if aiohttp is None:
             raise BingXConnectionError("aiohttp is required but not installed")
         
-        # Initialize aiohttp session
+        # Initialize aiohttp session with SSL verification disabled for public data
         timeout = aiohttp.ClientTimeout(total=30)
-        connector = aiohttp.TCPConnector(verify_ssl=True)
+        connector = aiohttp.TCPConnector(ssl=False)
         self.session = aiohttp.ClientSession(timeout=timeout, connector=connector)
         
         # Test connection
@@ -232,34 +236,48 @@ class BingXExchange(BaseExchange):
         limit: int,
     ) -> list[dict[str, Any]]:
         """Get raw kline data from BingX."""
+        # Convert symbol format for BingX (ETHUSDT -> ETH-USDT)
+        bingx_symbol = self._convert_symbol_format(symbol)
+        
         params = {
-            "symbol": symbol.upper(),
+            "symbol": bingx_symbol,
             "interval": self._convert_interval(interval),
             "limit": min(limit, 1000)  # BingX max limit is 1000
         }
         
-        data = await self._make_request("GET", "/openApi/swap/v2/quote/klines", params)
+        response = await self._make_request("GET", "/openApi/swap/v2/quote/klines", params)
         
-        if not data:
+        if not response:
             raise BingXAPIError("No kline data received")
         
-        # Convert list format to dict format for consistency
+        # Handle both list and dict response formats
+        if isinstance(response, list):
+            data = response
+        elif isinstance(response, dict) and "data" in response:
+            data = response["data"]
+        else:
+            raise BingXAPIError("Unexpected response format")
+        
+        if not data:
+            raise BingXAPIError("No kline data in response")
+        
+        # Convert BingX format to standard format
         klines = []
         for item in data:
-            if isinstance(item, list) and len(item) >= 6:
+            if isinstance(item, dict) and "time" in item:
                 klines.append({
-                    "timestamp": item[0],
-                    "open_time": item[0],
-                    "open": item[1],
-                    "high": item[2],
-                    "low": item[3],
-                    "close": item[4],
-                    "volume": item[5],
-                    "close_time": item[6] if len(item) > 6 else item[0] + 3599999,
-                    "quote_volume": item[7] if len(item) > 7 else None,
-                    "trades": item[8] if len(item) > 8 else None,
-                    "taker_buy_base": item[9] if len(item) > 9 else None,
-                    "taker_buy_quote": item[10] if len(item) > 10 else None
+                    "timestamp": item["time"],
+                    "open_time": item["time"],
+                    "open": float(item["open"]),
+                    "high": float(item["high"]),
+                    "low": float(item["low"]),
+                    "close": float(item["close"]),
+                    "volume": float(item["volume"]),
+                    "close_time": item["time"] + 59999,  # 1 minute = 60000ms, so close_time = time + 59999
+                    "quote_volume": None,
+                    "trades": None,
+                    "taker_buy_base": None,
+                    "taker_buy_quote": None
                 })
         
         return klines
@@ -274,36 +292,50 @@ class BingXExchange(BaseExchange):
         limit: int,
     ) -> list[dict[str, Any]]:
         """Get raw historical kline data from BingX."""
+        # Convert symbol format for BingX (ETHUSDT -> ETH-USDT)
+        bingx_symbol = self._convert_symbol_format(symbol)
+        
         params = {
-            "symbol": symbol.upper(),
+            "symbol": bingx_symbol,
             "interval": self._convert_interval(interval),
             "startTime": start_time_ms,
             "endTime": end_time_ms,
             "limit": min(limit, 1000)
         }
         
-        data = await self._make_request("GET", "/openApi/swap/v2/quote/klines", params)
+        response = await self._make_request("GET", "/openApi/swap/v2/quote/klines", params)
         
-        if not data:
+        if not response:
             raise BingXAPIError("No historical kline data received")
         
-        # Convert list format to dict format
+        # Handle both list and dict response formats
+        if isinstance(response, list):
+            data = response
+        elif isinstance(response, dict) and "data" in response:
+            data = response["data"]
+        else:
+            raise BingXAPIError("Unexpected response format")
+        
+        if not data:
+            raise BingXAPIError("No historical kline data in response")
+        
+        # Convert BingX format to standard format
         klines = []
         for item in data:
-            if isinstance(item, list) and len(item) >= 6:
+            if isinstance(item, dict) and "time" in item:
                 klines.append({
-                    "timestamp": item[0],
-                    "open_time": item[0],
-                    "open": item[1],
-                    "high": item[2],
-                    "low": item[3],
-                    "close": item[4],
-                    "volume": item[5],
-                    "close_time": item[6] if len(item) > 6 else item[0] + 3599999,
-                    "quote_volume": item[7] if len(item) > 7 else None,
-                    "trades": item[8] if len(item) > 8 else None,
-                    "taker_buy_base": item[9] if len(item) > 9 else None,
-                    "taker_buy_quote": item[10] if len(item) > 10 else None
+                    "timestamp": item["time"],
+                    "open_time": item["time"],
+                    "open": float(item["open"]),
+                    "high": float(item["high"]),
+                    "low": float(item["low"]),
+                    "close": float(item["close"]),
+                    "volume": float(item["volume"]),
+                    "close_time": item["time"] + 59999,  # 1 minute = 60000ms, so close_time = time + 59999
+                    "quote_volume": None,
+                    "trades": None,
+                    "taker_buy_base": None,
+                    "taker_buy_quote": None
                 })
         
         return klines
@@ -464,6 +496,19 @@ class BingXExchange(BaseExchange):
             "1M": "1M"
         }
         return interval_map.get(interval, "1m")
+    
+    def _convert_symbol_format(self, symbol: str) -> str:
+        """Convert symbol format for BingX (ETHUSDT -> ETH-USDT)."""
+        symbol = symbol.upper()
+        if len(symbol) >= 4 and not '-' in symbol:
+            # Assume format is ASSETUSDT or ASSETUSD, convert to ASSET-USDT or ASSET-USD
+            if symbol.endswith('USDT'):
+                return symbol[:-4] + '-USDT'
+            elif symbol.endswith('USD'):
+                return symbol[:-3] + '-USD'
+            elif symbol.endswith('USDC'):
+                return symbol[:-4] + '-USDC'
+        return symbol
 
     # Public interface methods (inherited from BaseExchange but explicitly defined for clarity)
     

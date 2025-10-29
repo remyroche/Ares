@@ -1,0 +1,8 @@
+{
+  "artifact_name": "final_quality_scores",
+  "artifact_type": "data",
+  "file_path": "artifacts/pre_training/long/Analyst/feature_generation_final_validation_step/feature_generation_final_validation_step_final_quality_scores_long_Analyst_20251029_225337.parquet",
+  "file_size": 15831,
+  "timestamp": "2025-10-29T22:53:38.004173",
+  "compression": "auto"
+}

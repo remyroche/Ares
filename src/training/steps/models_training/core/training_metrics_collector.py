@@ -167,8 +167,15 @@ class TrainingMetricsCollector:
                 model_type=model_type
             )
             
+            # Detect problem type (classification vs regression)
+            is_classification = self._detect_task_type(y)
+            
             # Perform cross-validation
             fold_metrics_list = []
+            
+            # Use KFold for regression (no stratification needed)
+            # For classification with few classes, skip stratification to avoid sklearn issues
+            # Always use KFold to avoid "Unknown label type: continuous" error
             kf = KFold(n_splits=n_folds, shuffle=True, random_state=42)
             
             all_train_scores = []
@@ -191,8 +198,8 @@ class TrainingMetricsCollector:
                     val_pred = model.predict(X_val)
                     
                     # Calculate metrics
-                    train_metrics = self._calculate_metrics(y_train, train_pred)
-                    val_metrics = self._calculate_metrics(y_val, val_pred)
+                    train_metrics = self._calculate_metrics(y_train, train_pred, is_classification)
+                    val_metrics = self._calculate_metrics(y_val, val_pred, is_classification)
                     
                     fold_time = time.time() - fold_start
                     
@@ -206,12 +213,12 @@ class TrainingMetricsCollector:
                     fold_metrics_list.append(fold_metrics)
                     
                     # Collect scores for stability calculation
-                    primary_metric = self._get_primary_metric_name()
+                    primary_metric = self._get_primary_metric_name(is_classification)
                     all_train_scores.append(train_metrics.get(primary_metric, 0.0))
                     all_val_scores.append(val_metrics.get(primary_metric, 0.0))
                     
                 except Exception as e:
-                    self.logger.warning(f"Fold {fold} failed: {e}")
+                    self.logger.warning(f"⚠️ Fold {fold} failed: {e}")
                     continue
             
             # Calculate aggregated metrics
@@ -271,8 +278,13 @@ class TrainingMetricsCollector:
             model_metrics.hpo_n_trials = hpo_n_trials
             model_metrics.hpo_time = hpo_time
             
+            # Detect problem type (classification vs regression)
+            is_classification = self._detect_task_type(y)
+            
             # Perform cross-validation with optimized model
             fold_metrics_list = []
+            
+            # Always use KFold to avoid "Unknown label type: continuous" error
             kf = KFold(n_splits=n_folds, shuffle=True, random_state=42)
             
             all_train_scores = []
@@ -294,8 +306,8 @@ class TrainingMetricsCollector:
                     val_pred = model.predict(X_val)
                     
                     # Calculate metrics
-                    train_metrics = self._calculate_metrics(y_train, train_pred)
-                    val_metrics = self._calculate_metrics(y_val, val_pred)
+                    train_metrics = self._calculate_metrics(y_train, train_pred, is_classification)
+                    val_metrics = self._calculate_metrics(y_val, val_pred, is_classification)
                     
                     fold_time = time.time() - fold_start
                     
@@ -309,12 +321,12 @@ class TrainingMetricsCollector:
                     fold_metrics_list.append(fold_metrics)
                     
                     # Collect scores for stability calculation
-                    primary_metric = self._get_primary_metric_name()
+                    primary_metric = self._get_primary_metric_name(is_classification)
                     all_train_scores.append(train_metrics.get(primary_metric, 0.0))
                     all_val_scores.append(val_metrics.get(primary_metric, 0.0))
                     
                 except Exception as e:
-                    self.logger.warning(f"Fold {fold} failed: {e}")
+                    self.logger.warning(f"⚠️ Fold {fold} failed: {e}")
                     continue
             
             # Calculate aggregated metrics
@@ -373,11 +385,12 @@ class TrainingMetricsCollector:
         self.current_session.n_samples = n_samples
         self.current_session.n_features = n_features
         
-        # Find best model
+        # Find best model - try r2 first (regression), then accuracy (classification)
         if self.current_session.model_metrics:
+            # Try to find metric that exists in all models
             best_model = max(
                 self.current_session.model_metrics,
-                key=lambda m: m.post_hpo_metrics.get(self._get_primary_metric_name(), 0.0)
+                key=lambda m: m.post_hpo_metrics.get('r2', m.post_hpo_metrics.get('accuracy', 0.0))
             )
             self.current_session.best_model_name = best_model.model_name
             self.current_session.best_model_metrics = best_model.post_hpo_metrics
@@ -498,24 +511,64 @@ class TrainingMetricsCollector:
         tprint_success(f"📄 Training report saved to: {filepath}")
         return filepath
     
-    def _calculate_metrics(self, y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
+    def _detect_task_type(self, y: np.ndarray) -> bool:
+        """
+        Detect if the task is classification or regression.
+        
+        Args:
+            y: Target values
+            
+        Returns:
+            True if classification, False if regression
+        """
+        try:
+            # Convert to numpy array if needed
+            y_arr = np.asarray(y)
+            
+            # Check if values are approximately integers (within tolerance)
+            unique_values = np.unique(y_arr)
+            if len(unique_values) < 2:
+                return False  # Not enough classes for classification
+            
+            # For regression tasks, we expect many unique values
+            # For classification, we expect few unique integer values
+            is_integer_like = np.allclose(unique_values, unique_values.astype(int), rtol=1e-5)
+            is_few_classes = len(unique_values) <= 10
+            
+            is_classification = is_integer_like and is_few_classes
+            
+            if is_classification:
+                self.logger.info(f"📊 Detected classification task with {len(unique_values)} classes")
+            else:
+                self.logger.info(f"📊 Detected regression task with {len(unique_values)} unique values")
+            
+            return is_classification
+            
+        except Exception as e:
+            self.logger.warning(f"Task type detection failed: {e}, defaulting to regression")
+            return False
+    
+    def _calculate_metrics(self, y_true: np.ndarray, y_pred: np.ndarray, is_classification: bool = False) -> Dict[str, float]:
         """Calculate comprehensive metrics based on problem type."""
         try:
             metrics = {}
             
-            # Detect problem type
-            unique_values = len(np.unique(y_true))
-            is_classification = unique_values < 10  # Heuristic
-            
             if is_classification:
                 # Classification metrics
                 try:
-                    metrics['accuracy'] = accuracy_score(y_true, (y_pred > 0.5).astype(int))
-                    metrics['precision'] = precision_score(y_true, (y_pred > 0.5).astype(int), zero_division=0)
-                    metrics['recall'] = recall_score(y_true, (y_pred > 0.5).astype(int), zero_division=0)
-                    metrics['f1_score'] = f1_score(y_true, (y_pred > 0.5).astype(int), zero_division=0)
-                except:
-                    pass
+                    # Convert predictions to integer classes
+                    y_pred_classes = np.round(y_pred).astype(int)
+                    y_true_classes = y_true.astype(int)
+                    
+                    # Handle out-of-bounds predictions
+                    y_pred_classes = np.clip(y_pred_classes, 0, len(np.unique(y_true_classes)) - 1)
+                    
+                    metrics['accuracy'] = accuracy_score(y_true_classes, y_pred_classes)
+                    metrics['precision'] = precision_score(y_true_classes, y_pred_classes, zero_division=0, average='macro')
+                    metrics['recall'] = recall_score(y_true_classes, y_pred_classes, zero_division=0, average='macro')
+                    metrics['f1_score'] = f1_score(y_true_classes, y_pred_classes, zero_division=0, average='macro')
+                except Exception as e:
+                    self.logger.warning(f"Classification metrics calculation failed: {e}")
             
             # Regression metrics (always calculate)
             try:
@@ -523,8 +576,8 @@ class TrainingMetricsCollector:
                 metrics['mae'] = mean_absolute_error(y_true, y_pred)
                 metrics['rmse'] = np.sqrt(metrics['mse'])
                 metrics['r2'] = r2_score(y_true, y_pred)
-            except:
-                pass
+            except Exception as e:
+                self.logger.warning(f"Regression metrics calculation failed: {e}")
             
             return metrics
             
@@ -532,9 +585,9 @@ class TrainingMetricsCollector:
             self.logger.warning(f"Metrics calculation failed: {e}")
             return {}
     
-    def _get_primary_metric_name(self) -> str:
+    def _get_primary_metric_name(self, is_classification: bool = False) -> str:
         """Get the primary metric name for model comparison."""
-        return 'r2'  # Default to R2 for regression
+        return 'accuracy' if is_classification else 'r2'
     
     def _aggregate_fold_metrics(self, fold_metrics_list: List[FoldMetrics]) -> Dict[str, float]:
         """Aggregate metrics across folds."""

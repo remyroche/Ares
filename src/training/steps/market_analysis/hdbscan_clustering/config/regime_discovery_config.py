@@ -33,7 +33,7 @@ class RegimeDiscoveryConfig:
     
     # Regime count optimization
     target_regime_count_min: int = 4  # Minimum desired regimes
-    target_regime_count_max: int = 8  # Maximum desired regimes
+    target_regime_count_max: int = 5  # Maximum desired regimes
     regime_count_penalty: float = 0.2  # Penalty weight for deviating from target range
     
     # ============================================================================

@@ -85,7 +85,8 @@ try:
         n_iterations=50,  # Reduced for testing
         max_states=10,
         enable_pca=True,
-        pca_components=3
+        pca_components=3,
+        min_samples_required=100
     )
     clusterer = HDPHMMClusterer(config)
     print("   ✅ HDP-HMM clusterer initialized successfully")

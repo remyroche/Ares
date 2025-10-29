@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple script to run the enhanced klines processing pipeline for ETHUSDT, 4 years, BingX
+Simple script to run the enhanced klines processing pipeline for ETHUSDT, 1 year, BingX
 """
 
 import asyncio
@@ -22,7 +22,7 @@ async def main():
             ResamplingConfig
         )
         
-        print("🚀 Starting Enhanced Klines Processing Pipeline for ETHUSDT, 4 years, BingX")
+        print("🚀 Starting Enhanced Klines Processing Pipeline for ETHUSDT, 1 year, BingX")
         
         # Configure pipeline
         pipeline_config = PipelineConfig(
@@ -54,13 +54,13 @@ async def main():
         results = await pipeline.process_klines_data_simple(
             exchange="bingx",  # Exchange name
             asset="ETH",       # Asset (will create ETHUSDT symbol)
-            lookback_period="4y",  # Lookback period: 4 years
+            lookback_period="1y",  # Lookback period: 1 year
             interval="1m",     # Data interval
-            api_key="",        # Your API key
-            api_secret="",     # Your API secret
-            use_testnet=True,  # Use testnet
+            api_key="",        # Your API key (not needed for public data)
+            api_secret="",     # Your API secret (not needed for public data)
+            use_testnet=False,  # Use mainnet for public data
             resampling_config=resampling_config,
-            batch_id="ethusdt_4y_bingx"
+            batch_id="ethusdt_1y_bingx"
         )
         
         print(f"\n🎉 Simple processing completed: {results['pipeline_success']}")

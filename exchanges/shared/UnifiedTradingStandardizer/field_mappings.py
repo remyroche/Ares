@@ -5,7 +5,7 @@ Defines field name mappings from exchange-specific formats to unified format.
 """
 
 from typing import Dict, List, Any
-from exchanges.exchange_dispatcher import ExchangeType
+from exchanges.exchange_types import ExchangeType
 
 
 # Order field mappings

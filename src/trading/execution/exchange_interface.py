@@ -279,8 +279,8 @@ class ExchangeInterface:
                     self.connection_status = ConnectionStatus.CONNECTING
                     self.last_connection_attempt = datetime.now()
                     
-                    # Authenticate using shared auth manager
-                    if self.auth_manager:
+                    # Authenticate using shared auth manager (only if API keys are provided)
+                    if self.auth_manager and self.api_key and self.api_secret:
                         credentials = {
                             'api_key': self.api_key,
                             'api_secret': self.api_secret,
@@ -292,12 +292,23 @@ class ExchangeInterface:
                         tprint_success(f"✅ Connected to {self.exchange_type}")
                         self.connection_status = ConnectionStatus.CONNECTED
                         return True
+                    elif not self.api_key or not self.api_secret:
+                        # Skip authentication for public data (no API keys provided)
+                        tprint_info(f"🔓 Connecting to {self.exchange_type} (public data only)")
+                        # Still need to initialize dispatcher for public data access
+                        # Don't return here, continue to dispatcher initialization
 
                     # Initialize shared utilities for real exchanges
                     await self._initialize_exchange_utilities()
 
                     # Create exchange dispatcher
-                    exchange_type = ExchangeType.OKX if self.exchange_type == 'okx' else ExchangeType.BINANCE
+                    # Map exchange type correctly
+                    if self.exchange_type == 'okx':
+                        exchange_type = ExchangeType.OKX
+                    elif self.exchange_type == 'bingx':
+                        exchange_type = ExchangeType.BINGX
+                    else:
+                        exchange_type = ExchangeType.BINANCE
                     config = ExchangeConfig(
                         exchange_type=exchange_type,
                         api_key=self.api_key,
@@ -831,11 +842,19 @@ class ExchangeInterface:
         limit: int = 500
     ) -> List[KlineData]:
         """Get kline data for symbol."""
+        print(f"DEBUG ExchangeInterface.get_klines: START")
+        print(f"DEBUG ExchangeInterface.get_klines: exchange_type={self.exchange_type}")
+        print(f"DEBUG ExchangeInterface.get_klines: dispatcher={self.dispatcher}")
+        
         if self.exchange_type == 'simulated':
+            print(f"DEBUG ExchangeInterface.get_klines: Using simulated klines")
             return await self._get_simulated_klines(symbol, interval, start_time, end_time, limit)
 
         if self.dispatcher:
-            ohlcv_data = await self.dispatcher.get_ohlcv(symbol, interval, limit)
+            print(f"DEBUG ExchangeInterface.get_klines: Calling dispatcher.get_klines")
+            print(f"DEBUG ExchangeInterface.get_klines: symbol={symbol}, interval={interval}, start_time={start_time}, end_time={end_time}, limit={limit}")
+            ohlcv_data = await self.dispatcher.get_klines(symbol, interval, start_time, end_time, limit)
+            print(f"DEBUG ExchangeInterface.get_klines: Received {len(ohlcv_data) if ohlcv_data else 0} candles from dispatcher")
             klines = []
             for candle in ohlcv_data:
                 klines.append(KlineData(

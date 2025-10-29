@@ -1129,12 +1129,21 @@ class EnhancedSRDetector:
     def _enhance_levels_with_ml_features(self, levels: List[SRLevel], data: pd.DataFrame) -> List[SRLevel]:
         """Enhance levels with ML-optimized features."""
         try:
+            # Pre-calculate ATR once for all levels to avoid repeated computation
             atr = self._calculate_atr(data)
             current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else atr.mean()
             current_price = data['close'].iloc[-1]
+            
+            # Log progress for long operations
+            total_levels = len(levels)
+            if total_levels > 50:
+                self.logger.info(f"Enhancing {total_levels} levels with ML features (this may take a while)...")
 
             enhanced_levels = []
-            for level in levels:
+            for idx, level in enumerate(levels):
+                # Log progress every 10 levels for long operations
+                if total_levels > 50 and (idx + 1) % 10 == 0:
+                    self.logger.info(f"Enhanced {idx + 1}/{total_levels} levels...")
                 # Calculate ATR-normalized distance
                 distance = abs(level.price - current_price)
                 level.dist_to_level_atr = self._normalize_distance_by_atr(distance, current_atr)
@@ -2327,14 +2336,16 @@ class EnhancedSRDetector:
 
     def _linear_regression(self, x: List[int], y: List[float]) -> tuple:
         """Perform linear regression on trend line points."""
-        tprint(f"🔍 Performing linear regression on {len(x)} points...", "INFO")
+        # Reduced verbosity - only log if many points or if it's an unusual case
         try:
             from scipy import stats
             slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
-            tprint(f"✅ Linear regression completed: slope={slope:.4f}, r²={r_value**2:.4f}", "SUCCESS")
+            # Only log if many points (potential performance issue) or low R² (quality issue)
+            if len(x) > 5 or r_value**2 < 0.5:
+                self.logger.debug(f"Linear regression: {len(x)} points, slope={slope:.4f}, r²={r_value**2:.4f}")
             return slope, intercept, r_value, p_value, std_err
         except Exception:
-            tprint("❌ Linear regression failed", "ERROR")
+            self.logger.error("❌ Linear regression failed")
             return 0, 0, 0, 1, 1
 
     def _detect_channel_levels(self, data: pd.DataFrame) -> List[SRLevel]:

@@ -25,6 +25,7 @@ from src.utils.tprint import (
 )
 from ..config.trading_config import TradingConfig
 from ..config.execution_config import ExecutionConfig
+from ..enums import OrderType, OrderSide, OrderStatus, TimeInForce
 from ..utils.error_handling import (
     ExecutionError, TradingErrorSeverity, trading_error_handler,
     critical_operation, require_no_fallback
@@ -32,39 +33,6 @@ from ..utils.error_handling import (
 from ..utils.validation import validate_trading_config, validate_order_params
 
 logger = system_logger.getChild('OrderManager')
-
-class OrderType(Enum):
-    """Order types."""
-    MARKET = "market"
-    LIMIT = "limit"
-    STOP = "stop"
-    STOP_LIMIT = "stop_limit"
-    TRAILING_STOP = "trailing_stop"
-    OCO = "oco"  # One-Cancels-Other
-
-class OrderSide(Enum):
-    """Order sides."""
-    BUY = "buy"
-    SELL = "sell"
-
-class OrderStatus(Enum):
-    """Order status."""
-    PENDING = "pending"
-    SUBMITTED = "submitted"
-    PARTIALLY_FILLED = "partially_filled"
-    FILLED = "filled"
-    CANCELLED = "cancelled"
-    REJECTED = "rejected"
-    EXPIRED = "expired"
-    ERROR = "error"
-
-class TimeInForce(Enum):
-    """Time in force options."""
-    GTC = "GTC"  # Good Till Cancelled
-    IOC = "IOC"  # Immediate or Cancel
-    FOK = "FOK"  # Fill or Kill
-    DAY = "DAY"  # Day order
-    GTD = "GTD"  # Good Till Date
 
 @dataclass
 class Order:

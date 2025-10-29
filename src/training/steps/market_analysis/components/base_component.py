@@ -30,6 +30,7 @@ class ComponentConfig:
     validation_enabled: bool = True
     monitoring_enabled: bool = True
     fast_mode: bool = False
+    execution_mode: str = "light"
     custom_params: Dict[str, Any] = None
 
     # Clustering-specific attributes
@@ -38,7 +39,7 @@ class ComponentConfig:
     min_temporal_stability: float = 0.5
     regime_search_min: int = 2
     regime_search_max: int = 20
-    n_regimes: Optional[int] = 8
+    n_regimes: Optional[int] = 5
     algorithm_type: Optional[str] = "regime_clustering"
     economic_weight: float = 0.3
     volatility_regime_weight: float = 0.25

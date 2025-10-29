@@ -50,8 +50,7 @@ except ImportError:
 
 # Import VectorBT for optimized computations
 try:
-    import vectorbt as vbt
-    VECTORBT_AVAILABLE = True
+    from src.vectorbt import vbt, VECTORBT_AVAILABLE
 except ImportError as e:
     VECTORBT_AVAILABLE = False
     logging.warning(f"VectorBT not available: {e}")
@@ -86,10 +85,10 @@ except ImportError as e:
     logging.warning(f"Math validation tools not available: {e}")
 
 # Import quality assessment module
-from ..quality_assessment import (
-    ComprehensiveQualityAssessor,
-    QualityMetrics,
-    create_quality_assessor
+from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
+    ClusterQualityAssessor,
+    ClusterQualityMetrics,
+    create_cluster_quality_assessor
 )
 
 from src.utils.tprint import tprint
@@ -100,23 +99,24 @@ logger = system_logger.getChild('AutomatedHDBSCANTuner')
 @dataclass
 class HDBSCANParameterSpace:
     """Parameter space for HDBSCAN optimization."""
-    min_cluster_size: Tuple[int, int] = (3, 20)  # (min, max) - FORCE MORE CLUSTERS
-    min_samples: Tuple[int, int] = (5, 50)
-    cluster_selection_epsilon: Tuple[float, float] = (0.0, 0.5)
-    cluster_selection_method: List[str] = field(default_factory=lambda: ['leaf', 'eom'])  # Prioritize 'leaf' method
+    # Optimized for more regimes: Lower min_cluster_size allows smaller clusters
+    min_cluster_size: Tuple[int, int] = (3, 12)  # Reduced max from 20 to 12 to force more clusters
+    min_samples: Tuple[int, int] = (3, 25)  # Reduced from (5, 50) to make clustering less conservative
+    cluster_selection_epsilon: Tuple[float, float] = (0.1, 0.5)  # Increased min from 0.0 to 0.1 to prevent merging
+    cluster_selection_method: List[str] = field(default_factory=lambda: ['leaf', 'eom'])  # Prioritize 'leaf' method (creates more clusters)
     metric: List[str] = field(default_factory=lambda: ['manhattan', 'cosine', 'euclidean'])  # Try manhattan and cosine first
     alpha: Tuple[float, float] = (0.5, 2.0)
-    cluster_selection_epsilon: Tuple[float, float] = (0.0, 0.5)
+    # Removed duplicate cluster_selection_epsilon
 
-# Deprecated: Use QualityMetrics from quality_assessment.py instead
-# This adapter provides backward compatibility for ClusteringQualityMetrics
+# Adapter for ClusterQualityMetrics from cluster_quality_assessor.py
+# This adapter provides compatibility for ClusteringQualityMetrics
 @dataclass
 class ClusteringQualityMetrics:
     """
-    DEPRECATED: Use QualityMetrics from quality_assessment.py instead.
+    Adapter for ClusterQualityMetrics from cluster_quality_assessor.py.
     
-    This adapter class provides backward compatibility for existing code.
-    Maps QualityMetrics to the old interface expected by the tuner.
+    This adapter class provides compatibility for existing code.
+    Maps ClusterQualityMetrics to the interface expected by the tuner.
     """
     silhouette_score: Optional[float] = None
     calinski_harabasz_score: Optional[float] = None
@@ -140,19 +140,19 @@ class ClusteringQualityMetrics:
     max_cluster_size_pct: Optional[float] = None  # Maximum cluster size as percentage
     distribution_balanced: Optional[bool] = None  # Whether distribution meets 2%-20% constraint
     
-    # New metrics from quality_assessment.py
+    # New metrics from cluster_quality_assessor.py
     predictive_power: Optional[float] = None
     composite_quality_score: Optional[float] = None
     
     @classmethod
-    def from_quality_metrics(cls, qm: QualityMetrics, 
+    def from_cluster_quality_metrics(cls, qm: ClusterQualityMetrics, 
                             cluster_distributions: Optional[List[float]] = None,
                             distribution_balanced: Optional[bool] = None) -> 'ClusteringQualityMetrics':
         """
-        Create ClusteringQualityMetrics from QualityMetrics (quality_assessment.py).
+        Create ClusteringQualityMetrics from ClusterQualityMetrics (cluster_quality_assessor.py).
         
         Args:
-            qm: QualityMetrics from quality_assessment module
+            qm: ClusterQualityMetrics from cluster_quality_assessor module
             cluster_distributions: Optional cluster size distributions
             distribution_balanced: Optional distribution balance flag
             
@@ -160,47 +160,47 @@ class ClusteringQualityMetrics:
             ClusteringQualityMetrics adapter instance
         """
         # Calculate cluster distributions if not provided
-        if cluster_distributions is None and qm.cluster_size_ratios is not None:
-            cluster_distributions = [r * 100 for r in qm.cluster_size_ratios]  # Convert to percentages
+        if cluster_distributions is None and hasattr(qm, 'cluster_size_distribution') and qm.cluster_size_distribution is not None:
+            cluster_distributions = [d * 100 for d in qm.cluster_size_distribution]  # Convert to percentages
         
         # Check distribution balance (2%-20% constraint)
         if distribution_balanced is None and cluster_distributions is not None:
             distribution_balanced = all(2.0 <= d <= 20.0 for d in cluster_distributions)
         
-        # Calculate CV metrics if not available (approximation)
-        within_cv = None
-        between_cv = None
+        # Use CV metrics from ClusterQualityMetrics
+        within_cv = qm.within_regime_cv
+        between_cv = qm.between_regime_cv
         
-        # Estimate economic separation from cluster_persistence if not available
+        # Estimate economic separation from predictive power if not available
         economic_sep = 0.0
-        if hasattr(qm, 'economic_separation') and qm.economic_separation is not None:
-            economic_sep = qm.economic_separation
+        if hasattr(qm, 'predictive_power') and qm.predictive_power is not None:
+            economic_sep = qm.predictive_power
         
         return cls(
             silhouette_score=qm.silhouette_score,
             calinski_harabasz_score=qm.calinski_harabasz_score,
             davies_bouldin_score=qm.davies_bouldin_score,
-            n_clusters=qm.n_clusters,
-            n_noise_points=qm.n_noise_points,
+            n_clusters=qm.n_regimes,
+            n_noise_points=int(qm.noise_ratio * qm.n_regimes) if qm.noise_ratio else 0,
             noise_ratio=qm.noise_ratio or 0.0,
-            dbcv_score=qm.dbcv_score,
+            dbcv_score=None,  # Not available in ClusterQualityMetrics
             economic_separation=economic_sep,
             within_cluster_cv=within_cv,
             between_cluster_cv=between_cv,
-            temporal_stability=qm.temporal_stability,
-            regime_persistence=qm.cluster_persistence,
-            cluster_persistence=qm.cluster_persistence,
+            temporal_stability=qm.temporal_smoothness,
+            regime_persistence=qm.regime_persistence,
+            cluster_persistence=qm.regime_persistence,
             cluster_distributions=cluster_distributions,
             min_cluster_size_pct=min(cluster_distributions) if cluster_distributions else None,
             max_cluster_size_pct=max(cluster_distributions) if cluster_distributions else None,
             distribution_balanced=distribution_balanced,
             predictive_power=qm.predictive_power,
-            composite_quality_score=qm.composite_quality_score
+            composite_quality_score=qm.quality_score
         )
     
     def is_poor_quality(self) -> bool:
         """Determine if clustering quality is poor based on regime discovery targets."""
-        # Use composite score if available from quality_assessment.py
+        # Use composite score if available from cluster_quality_assessor.py
         if self.composite_quality_score is not None:
             return self.composite_quality_score < 0.3  # Quality score below 30%
         
@@ -226,7 +226,7 @@ class ClusteringQualityMetrics:
     
     def calculate_composite_score(self) -> float:
         """Calculate composite quality score for optimization."""
-        # Use composite score from quality_assessment.py if available
+        # Use composite score from cluster_quality_assessor.py if available
         if self.composite_quality_score is not None:
             return self.composite_quality_score
         
@@ -406,14 +406,14 @@ class AutomatedHDBSCANTuner:
     def create_parameter_search_space(self, characteristics: DatasetCharacteristics) -> Dict[str, Any]:
         """Create parameter search space based on dataset characteristics."""
         if not ML_COMMON_AVAILABLE or self.auto_tuner is None:
-            # Fallback to basic search space
+            # Fallback to basic search space - optimized for more regimes
             return {
-                'min_cluster_size': (max(10, characteristics.n_samples // 50), 
-                                   min(100, characteristics.n_samples // 10)),
-                'min_samples': (max(5, characteristics.n_samples // 100), 
-                              min(50, characteristics.n_samples // 20)),
-                'cluster_selection_epsilon': (0.0, 0.3),
-                'cluster_selection_method': ['eom', 'leaf'],
+                'min_cluster_size': (max(3, characteristics.n_samples // 60), 
+                                   min(12, characteristics.n_samples // 20)),  # Reduced to favor more clusters
+                'min_samples': (max(3, characteristics.n_samples // 120), 
+                              min(25, characteristics.n_samples // 30)),  # Reduced to be less conservative
+                'cluster_selection_epsilon': (0.1, 0.5),  # Increased min to prevent merging
+                'cluster_selection_method': ['leaf', 'eom'],  # Prioritize 'leaf' for more clusters
                 'metric': ['euclidean', 'manhattan']
             }
         
@@ -424,14 +424,14 @@ class AutomatedHDBSCANTuner:
             return search_space
         except Exception as e:
             logger.warning(f"Error creating parameter search space: {e}")
-            # Return fallback search space
+            # Return fallback search space - optimized for more regimes
             return {
-                'min_cluster_size': (max(10, characteristics.n_samples // 50), 
-                                   min(100, characteristics.n_samples // 10)),
-                'min_samples': (max(5, characteristics.n_samples // 100), 
-                              min(50, characteristics.n_samples // 20)),
-                'cluster_selection_epsilon': (0.0, 0.3),
-                'cluster_selection_method': ['eom', 'leaf'],
+                'min_cluster_size': (max(3, characteristics.n_samples // 60), 
+                                   min(12, characteristics.n_samples // 20)),  # Reduced to favor more clusters
+                'min_samples': (max(3, characteristics.n_samples // 120), 
+                              min(25, characteristics.n_samples // 30)),  # Reduced to be less conservative
+                'cluster_selection_epsilon': (0.1, 0.5),  # Increased min to prevent merging
+                'cluster_selection_method': ['leaf', 'eom'],  # Prioritize 'leaf' for more clusters
                 'metric': ['euclidean', 'manhattan']
             }
     
@@ -662,14 +662,14 @@ class AutomatedHDBSCANTuner:
         return best_params
     
     def _basic_parameter_selection(self, data: pd.DataFrame, search_space: Dict[str, Any]) -> Dict[str, Any]:
-        """Basic parameter selection fallback."""
+        """Basic parameter selection fallback - optimized for more regimes."""
         n_samples = data.shape[0]
         
         return {
-            'min_cluster_size': max(20, n_samples // 30),
-            'min_samples': max(10, n_samples // 60),
-            'cluster_selection_epsilon': 0.05,
-            'cluster_selection_method': 'eom',
+            'min_cluster_size': max(8, n_samples // 50),  # Reduced to encourage more clusters
+            'min_samples': max(5, n_samples // 80),  # Reduced to make clustering less conservative
+            'cluster_selection_epsilon': 0.15,  # Increased to prevent merging and create more clusters
+            'cluster_selection_method': 'leaf',  # Changed to 'leaf' method which creates more clusters
             'metric': 'euclidean'
         }
     

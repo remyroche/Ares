@@ -40,6 +40,20 @@ except ImportError:
     WorkloadType = None
     UnifiedVectorizationManager = None
 
+# Unified clustering optimization goals
+try:
+    from .clustering_optimization_goals import (
+        DEFAULT_OPTIMIZATION_TARGETS,
+        ClusteringOptimizationGoals,
+        OptimizationTargets
+    )
+    UNIFIED_GOALS_AVAILABLE = True
+except ImportError:
+    UNIFIED_GOALS_AVAILABLE = False
+    DEFAULT_OPTIMIZATION_TARGETS = None
+    ClusteringOptimizationGoals = None
+    OptimizationTargets = None
+
 # RNG utilities for compatibility between RandomState and Generator
 def rng_from(seed_or_rng=None):
     if isinstance(seed_or_rng, np.random.Generator):
@@ -2479,53 +2493,59 @@ class AtomicOperationContext:
                 self.stats._restore_state(self.snapshot)
                 raise RuntimeError(f"Atomic operation {self.operation_name} failed validation: {e}")
 
-@dataclass
 class OptConfig:
     """Unified configuration for iterative optimization - single source of truth."""
-    # Core K and size constraints - STRICTLY ENFORCED
-    # K_MIN = 6: Minimum clusters for adequate regime diversity (HARD CONSTRAINT)
-    # K_MAX = 12: Maximum to prevent over-fragmentation (HARD CONSTRAINT)
-    K_MIN: int = 6
-    K_MAX: int = 10
-    MIN_FRAC: float = 0.03  # 3% minimum cluster size
-    MAX_FRAC: float = 0.20  # 20% maximum cluster size
+    def __init__(self):
+        # Use unified optimization targets if available
+        if UNIFIED_GOALS_AVAILABLE and DEFAULT_OPTIMIZATION_TARGETS is not None:
+            targets = DEFAULT_OPTIMIZATION_TARGETS
+            self.K_MIN = targets.min_clusters
+            self.K_MAX = targets.max_clusters
+            self.MIN_FRAC = targets.min_cluster_size_pct
+            self.MAX_FRAC = targets.max_cluster_size_pct
+        else:
+            # Fallback to hardcoded defaults
+            self.K_MIN = 4
+            self.K_MAX = 5
+            self.MIN_FRAC = 0.03  # 3% minimum cluster size
+            self.MAX_FRAC = 0.20  # 20% maximum cluster size
 
-    # Step execution parameters
-    local_churn_cap: int = 5000  # Step 1 guard
-    knn_size: int = 25  # kNN neighbor consensus
-    beta: float = 0.6  # Step 2 weight
-    split_tries_max: int = 5  # KMeans restarts
+        # Step execution parameters
+        self.local_churn_cap = 5000  # Step 1 guard
+        self.knn_size = 25  # kNN neighbor consensus
+        self.beta = 0.6  # Step 2 weight
+        self.split_tries_max = 5  # KMeans restarts
 
-    # ENHANCED objective weights - AGGRESSIVE CV optimization focus
-    # Prioritizing CV ratio for maximum regime separation quality
-    w_cv: float = 0.70   # Primary: Variance ratio (CV) - MAXIMIZED for regime separation
-    w_temp: float = 0.20 # Secondary: Temporal smoothness - reduced to focus on CV
-    w_sil: float = 0.10  # Tertiary: Cluster cohesion (Silhouette) - reduced
-    w_dbi: float = 0.00  # accessory
-    w_ch: float = 0.00   # accessory
-    w_bal: float = 0.05  # Minimal: Balance constraint - reduced to soft penalty
+        # ENHANCED objective weights - AGGRESSIVE CV optimization focus
+        # Prioritizing CV ratio for maximum regime separation quality
+        self.w_cv = 0.70   # Primary: Variance ratio (CV) - MAXIMIZED for regime separation
+        self.w_temp = 0.20 # Secondary: Temporal smoothness - reduced to focus on CV
+        self.w_sil = 0.10  # Tertiary: Cluster cohesion (Silhouette) - reduced
+        self.w_dbi = 0.00  # accessory
+        self.w_ch = 0.00   # accessory
+        self.w_bal = 0.05  # Minimal: Balance constraint - reduced to soft penalty
 
-    # ULTRA-AGGRESSIVE Optimization parameters - maximum focus on CV, temporal, and silhouette
-    max_rounds: int = 40  # Maximum iterations for optimal convergence
-    eps_std_step1: float = -0.20  # Very aggressive step 1 threshold for CV optimization
-    sil_guard: float = -0.08  # Require silhouette improvement for acceptance
-    temporal_bonus: float = 0.25  # Strong bonus for temporal stability improvements
+        # ULTRA-AGGRESSIVE Optimization parameters - maximum focus on CV, temporal, and silhouette
+        self.max_rounds = 40  # Maximum iterations for optimal convergence
+        self.eps_std_step1 = -0.20  # Very aggressive step 1 threshold for CV optimization
+        self.sil_guard = -0.08  # Require silhouette improvement for acceptance
+        self.temporal_bonus = 0.25  # Strong bonus for temporal stability improvements
 
-    # ULTRA-AGGRESSIVE Lexicographic acceptor parameters - maximum selectivity for quality
-    eps_cv: float = 1e-5   # Ultra-tight CV threshold - maximum CV optimization
-    eps_sil: float = 1e-4  # Ultra-tight Silhouette threshold - strong silhouette focus
-    eps_temp: float = 1e-4 # Ultra-tight Temporal threshold - maximum temporal stability
-    accessories_weight: float = 1e-3
+        # ULTRA-AGGRESSIVE Lexicographic acceptor parameters - maximum selectivity for quality
+        self.eps_cv = 1e-5   # Ultra-tight CV threshold - maximum CV optimization
+        self.eps_sil = 1e-4  # Ultra-tight Silhouette threshold - strong silhouette focus
+        self.eps_temp = 1e-4 # Ultra-tight Temporal threshold - maximum temporal stability
+        self.accessories_weight = 1e-3
 
-    # Size-aware CV gate parameters
-    size_gate_base: float = 1e-4
-    size_gate_alpha: float = 0.02
-    size_gate_beta: float = 0.05
-    near_cap_ratio: float = 0.9
+        # Size-aware CV gate parameters
+        self.size_gate_base = 1e-4
+        self.size_gate_alpha = 0.02
+        self.size_gate_beta = 0.05
+        self.near_cap_ratio = 0.9
 
-    # Candidate generation
-    neighbors_per_point: int = 2  # Reduced from 5 to 2 for faster processing
-    silhouette_sample_size: int = 20000
+        # Candidate generation
+        self.neighbors_per_point = 2  # Reduced from 5 to 2 for faster processing
+        self.silhouette_sample_size = 20000
 
     def get_unified_config(self, N: int) -> dict:
         """Get unified configuration that consolidates all overlapping config systems."""
@@ -7808,7 +7828,7 @@ class IterativeOptimization:
         """Pull from instance if present; otherwise use the constants shown in your logs."""
         SOFT_CAP = getattr(self, "SOFT_CAP", 332)
         MIN_SIZE = getattr(self, "MIN_SIZE", 50)
-        K_MAX    = getattr(self, "K_MAX", 10)
+        K_MAX    = getattr(self, "K_MAX", 5)
         return SOFT_CAP, MIN_SIZE, K_MAX
 
     def _safe_caps(self, cfg=None):

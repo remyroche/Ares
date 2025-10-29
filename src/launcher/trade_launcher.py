@@ -37,10 +37,13 @@ async def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Paper trading on Binance with defaults (ETHUSDT, long, 1000 USDT)
+  python src/launcher/trade_launcher.py --mode paper --exchange binance
+  
   # Paper trading on Binance with BTC, both directions
   python src/launcher/trade_launcher.py --mode paper --direction both --exchange binance --asset BTCUSDT
   
-  # Live trading on OKX, long only
+  # Live trading on OKX, long only (default)
   python src/launcher/trade_launcher.py --mode trade --direction long --exchange okx --asset ETHUSDT
   
   # Custom initial balance for paper trading
@@ -51,14 +54,14 @@ Examples:
     # Core arguments
     parser.add_argument('--mode', required=True, choices=['paper', 'trade'],
                        help='Trading mode: paper (simulated) or trade (live)')
-    parser.add_argument('--direction', required=False, default='both',
+    parser.add_argument('--direction', required=False, default='long',
                        choices=['long', 'short', 'both'],
-                       help='Trading direction: long, short, or both (default: both)')
+                       help='Trading direction: long, short, or both (default: long)')
     parser.add_argument('--exchange', required=True,
                        choices=['binance', 'okx', 'gateio', 'mexc', 'phemex'],
                        help='Exchange to use')
-    parser.add_argument('--asset', required=True,
-                       help='Trading symbol (e.g., BTCUSDT, ETHUSDT)')
+    parser.add_argument('--asset', required=False, default='ETHUSDT',
+                       help='Trading symbol (e.g., BTCUSDT, ETHUSDT) (default: ETHUSDT)')
     
     # API credentials (optional for paper mode, required for trade mode)
     parser.add_argument('--api-key', help='Exchange API key')
@@ -66,8 +69,8 @@ Examples:
     parser.add_argument('--api-password', help='Exchange API password (if required)')
     
     # Paper trading specific
-    parser.add_argument('--initial-balance', type=float, default=10000.0,
-                       help='Initial balance for paper trading (default: 10000 USDT)')
+    parser.add_argument('--initial-balance', type=float, default=1000.0,
+                       help='Initial balance for paper trading (default: 1000 USDT)')
     parser.add_argument('--state-file', default='simulator_state.db',
                        help='SQLite database file for simulator state (default: simulator_state.db)')
     parser.add_argument('--reset-state', action='store_true',

@@ -209,34 +209,33 @@ class SignalGenerationPipeline:
             self.analyst_meta_model = Analyst(self.config)
             await self.analyst_meta_model.initialize()
 
-            # Load trained analyst base models from training steps
-            # These are the models trained in src/training/steps/model_training/analyst_models_training_refactored.py
-            from src.utils.standardized_model_manager import standardized_model_manager
-
-            # Load analyst base models (ignore market health and liquidation risk as requested)
-            # Focus on the core ML models trained in the training steps
-            self.analyst_base_models = []
-
-            # Load trained analyst models from the model manager
-            # These would be the models saved by AnalystModelsTrainingStepRefactored
+            # Load trained analyst base models from training steps using unified model loader
+            from src.trading.integration.unified_model_loader import get_unified_model_loader
+            
+            unified_loader = get_unified_model_loader()
+            
+            # Load analyst base models and ensemble model
+            symbol = getattr(self.config, 'symbol', 'ETHUSDT')
+            analyst_timeframe = getattr(self.config, 'analyst_timeframe', '15m')
+            
             try:
-                # Load the trained analyst models
-                # The model manager loads models by ID, so we need to know the specific model IDs
-                # For now, we'll try to load common analyst model IDs
-                analyst_model_ids = ["analyst_model_1", "analyst_model_2", "analyst_model_3"]
-                analyst_models = []
-
-                for model_id in analyst_model_ids:
-                    try:
-                        model_result = standardized_model_manager.load_model(model_id, "analyst_models_training")
-                        if model_result:
-                            model, metadata = model_result
-                            analyst_models.append(model)
-                    except Exception as e:
-                        self.logger.debug(f"Could not load analyst model {model_id}: {e}")
-
-                self.analyst_base_models = analyst_models
-                self.logger.info(f"✅ Loaded {len(analyst_models)} trained analyst base models")
+                analyst_base_models_dict = await unified_loader.load_analyst_base_models(
+                    symbol=symbol,
+                    timeframe=analyst_timeframe
+                )
+                analyst_ensemble_model = await unified_loader.load_analyst_ensemble_model(
+                    symbol=symbol,
+                    timeframe=analyst_timeframe
+                )
+                
+                # Convert dict to list for base models
+                self.analyst_base_models = list(analyst_base_models_dict.values())
+                
+                # Store ensemble model separately if needed
+                if analyst_ensemble_model:
+                    self.analyst_base_models.append(analyst_ensemble_model)
+                
+                self.logger.info(f"✅ Loaded {len(self.analyst_base_models)} trained analyst models")
             except Exception as e:
                 self.logger.warning(f"⚠️ Could not load trained analyst models: {e}")
                 self.analyst_base_models = []  # Fallback to empty list
@@ -255,32 +254,33 @@ class SignalGenerationPipeline:
             self.tactician_meta_model = Tactician(self.config)
             await self.tactician_meta_model.initialize()
 
-            # Load trained tactician base models from training steps
-            # These are the models trained in src/training/steps/model_training/tactician_models_training_refactored.py
-
-            # Load tactician base models
-            self.tactician_base_models = []
-
-            # Load trained tactician models from the model manager
-            # These would be the models saved by TacticianModelsTrainingStepRefactored
+            # Load trained tactician base models from training steps using unified model loader
+            from src.trading.integration.unified_model_loader import get_unified_model_loader
+            
+            unified_loader = get_unified_model_loader()
+            
+            # Load tactician base models and ensemble model
+            symbol = getattr(self.config, 'symbol', 'ETHUSDT')
+            tactician_timeframe = getattr(self.config, 'tactician_timeframe', '5m')
+            
             try:
-                # Load the trained tactician models
-                # The model manager loads models by ID, so we need to know the specific model IDs
-                # For now, we'll try to load common tactician model IDs
-                tactician_model_ids = ["tactician_model_1", "tactician_model_2", "tactician_model_3"]
-                tactician_models = []
-
-                for model_id in tactician_model_ids:
-                    try:
-                        model_result = standardized_model_manager.load_model(model_id, "tactician_models_training")
-                        if model_result:
-                            model, metadata = model_result
-                            tactician_models.append(model)
-                    except Exception as e:
-                        self.logger.debug(f"Could not load tactician model {model_id}: {e}")
-
-                self.tactician_base_models = tactician_models
-                self.logger.info(f"✅ Loaded {len(tactician_models)} trained tactician base models")
+                tactician_base_models_dict = await unified_loader.load_tactician_base_models(
+                    symbol=symbol,
+                    timeframe=tactician_timeframe
+                )
+                tactician_ensemble_model = await unified_loader.load_tactician_ensemble_model(
+                    symbol=symbol,
+                    timeframe=tactician_timeframe
+                )
+                
+                # Convert dict to list for base models
+                self.tactician_base_models = list(tactician_base_models_dict.values())
+                
+                # Store ensemble model separately if needed
+                if tactician_ensemble_model:
+                    self.tactician_base_models.append(tactician_ensemble_model)
+                
+                self.logger.info(f"✅ Loaded {len(self.tactician_base_models)} trained tactician models")
             except Exception as e:
                 self.logger.warning(f"⚠️ Could not load trained tactician models: {e}")
                 self.tactician_base_models = []  # Fallback to empty list
@@ -304,44 +304,52 @@ class SignalGenerationPipeline:
             raise
 
     async def _load_optimization_parameters(self):
-        """Load optimization parameters from backtesting results."""
+        """Load optimization parameters from final_parameters_optimization step."""
         try:
-            # Load optimization parameters from backtesting results
-            # These should match the optimization done in backtesting modules
-
-            # Try to load from backtesting optimization results
-            # This would typically be saved by the backtesting engine after optimization
-            optimization_file = "data_cache/backtesting_optimization_results.json"
-
+            # Load optimization parameters from final_parameters_optimization using unified model loader
+            from src.trading.integration.unified_model_loader import get_unified_model_loader
+            
+            unified_loader = get_unified_model_loader()
+            
+            symbol = getattr(self.config, 'symbol', 'ETHUSDT')
+            timeframe = getattr(self.config, 'timeframe', '15m')
+            
             try:
-                import json
-                with open(optimization_file, 'r') as f:
-                    optimization_results = json.load(f)
-
-                # Extract confidence optimization parameters
-                if 'confidence_optimization' in optimization_results:
-                    conf_opt = optimization_results['confidence_optimization']
+                optimized_params = await unified_loader.load_optimized_parameters(
+                    symbol=symbol,
+                    timeframe=timeframe
+                )
+                
+                if optimized_params:
+                    # Update optimization parameters with optimized values
                     self.optimization_params.update({
-                        'analyst_confidence_weight': conf_opt.get('analyst_weight', 0.6),
-                        'tactician_confidence_weight': conf_opt.get('tactician_weight', 0.4),
-                        'regime_confidence_threshold': conf_opt.get('regime_threshold', 0.7),
-                        'signal_confidence_threshold': conf_opt.get('signal_threshold', 0.6),
-                        'meta_model_weight': conf_opt.get('meta_weight', 0.8),
-                        'base_model_weight': conf_opt.get('base_weight', 0.2),
+                        'analyst_confidence_weight': optimized_params.get('analyst_confidence_weight', 0.6),
+                        'tactician_confidence_weight': optimized_params.get('tactician_confidence_weight', 0.4),
+                        'regime_confidence_threshold': optimized_params.get('regime_confidence_threshold', 0.7),
+                        'signal_confidence_threshold': optimized_params.get('signal_confidence_threshold', 0.6),
+                        'meta_model_weight': optimized_params.get('meta_model_weight', 0.8),
+                        'base_model_weight': optimized_params.get('base_model_weight', 0.2),
                         # Exit-specific parameters
-                        'exit_confidence_threshold': conf_opt.get('exit_threshold', 0.5),
-                        'tactician_exit_confidence_weight': conf_opt.get('tactician_exit_weight', 0.6),
-                        'analyst_exit_confidence_weight': conf_opt.get('analyst_exit_weight', 0.4),
-                        'exit_confidence_combination_method': conf_opt.get('exit_combination_method', 'multiplicative')
+                        'exit_confidence_threshold': optimized_params.get('exit_confidence_threshold', 0.5),
+                        'tactician_exit_confidence_weight': optimized_params.get('tactician_exit_confidence_weight', 0.6),
+                        'analyst_exit_confidence_weight': optimized_params.get('analyst_exit_confidence_weight', 0.4),
+                        'exit_confidence_combination_method': optimized_params.get('exit_confidence_combination_method', 'multiplicative'),
+                        # Additional parameters from optimization
+                        'confidence_threshold': optimized_params.get('confidence_threshold', 0.75),
+                        'position_sizing_factor': optimized_params.get('position_sizing_factor', 0.02),
+                        'leverage_multiplier': optimized_params.get('leverage_multiplier', 1.5),
+                        'stop_loss_pct': optimized_params.get('stop_loss_pct', 0.03),
+                        'take_profit_pct': optimized_params.get('take_profit_pct', 0.06),
+                        'ensemble_weight_analyst': optimized_params.get('ensemble_weight_analyst', 0.6),
+                        'ensemble_weight_tactician': optimized_params.get('ensemble_weight_tactician', 0.4)
                     })
-                    self.logger.info("✅ Loaded confidence optimization parameters from backtesting results")
+                    
+                    self.logger.info("✅ Loaded optimized parameters from final_parameters_optimization")
                 else:
-                    self.logger.warning("⚠️ No confidence optimization found in backtesting results")
+                    self.logger.warning("⚠️ No optimized parameters found, using defaults")
 
-            except FileNotFoundError:
-                self.logger.warning("⚠️ Backtesting optimization results not found, using defaults")
             except Exception as e:
-                self.logger.warning(f"⚠️ Failed to load backtesting optimization results: {e}")
+                self.logger.warning(f"⚠️ Failed to load optimized parameters: {e}")
 
             self.logger.info("✅ Optimization parameters loaded")
 

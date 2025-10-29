@@ -15,6 +15,7 @@ import pickle
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.standardized_model_manager import standardized_model_manager, ModelMetadata
+from .unified_model_loader import get_unified_model_loader, UnifiedModelLoader
 from ..utils.error_handling import TradingError, TradingErrorSeverity, trading_error_handler
 from ..utils.validation import validate_trading_config
 
@@ -30,6 +31,8 @@ class TrainingModelLoader:
         self.logger = logger.getChild('TrainingModelLoader')
         self.loaded_models: Dict[str, Any] = {}
         self.model_metadata: Dict[str, ModelMetadata] = {}
+        # Use unified model loader for accessing models from artifact_manager
+        self.unified_loader = get_unified_model_loader()
 
     @trading_error_handler(
         error_types=(Exception,),
@@ -39,7 +42,9 @@ class TrainingModelLoader:
     async def load_analyst_models(
         self,
         model_ids: Optional[List[str]] = None,
-        step_name: str = "analyst_models_training"
+        step_name: str = "analyst_base_training",
+        symbol: str = "ETHUSDT",
+        timeframe: str = "15m"
     ) -> Dict[str, Any]:
         """
         Load trained analyst models from the training pipeline.
@@ -47,6 +52,8 @@ class TrainingModelLoader:
         Args:
             model_ids: Specific model IDs to load (if None, loads all available)
             step_name: Training step name where models were saved
+            symbol: Trading symbol
+            timeframe: Timeframe
 
         Returns:
             Dictionary of loaded models
@@ -56,31 +63,33 @@ class TrainingModelLoader:
         loaded_models = {}
 
         try:
-            # Get available models from standardized model manager
-            if model_ids is None:
-                # Load all analyst models from the step
-                model_ids = await self._discover_models(step_name, "analyst")
+            # First try unified model loader (accesses artifact_manager and standardized_model_manager)
+            base_models = await self.unified_loader.load_analyst_base_models(symbol, timeframe)
+            ensemble_model = await self.unified_loader.load_analyst_ensemble_model(symbol, timeframe)
+            
+            loaded_models.update(base_models)
+            if ensemble_model:
+                loaded_models['analyst_ensemble'] = ensemble_model
 
-            for model_id in model_ids:
-                try:
-                    model_result = standardized_model_manager.load_model(model_id, step_name)
+            # Also try standardized model manager for specific model IDs
+            if model_ids:
+                for model_id in model_ids:
+                    if model_id not in loaded_models:
+                        try:
+                            model_result = standardized_model_manager.load_model(model_id, step_name)
 
-                    if model_result:
-                        model, metadata = model_result
-                        loaded_models[model_id] = model
-                        self.model_metadata[model_id] = metadata
+                            if model_result:
+                                model, metadata = model_result
+                                loaded_models[model_id] = model
+                                self.model_metadata[model_id] = metadata
 
-                        tprint_success(f"✅ Loaded analyst model: {model_id}")
+                                tprint_success(f"✅ Loaded analyst model: {model_id}")
 
-                        # Validate model compatibility
-                        await self._validate_model_compatibility(model, metadata, "analyst")
+                                # Validate model compatibility
+                                await self._validate_model_compatibility(model, metadata, "analyst")
 
-                    else:
-                        tprint_warning(f"⚠️ Could not load analyst model: {model_id}")
-
-                except Exception as e:
-                    tprint_error(f"❌ Failed to load analyst model {model_id}: {e}")
-                    continue
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Could not load analyst model {model_id}: {e}")
 
             self.loaded_models.update(loaded_models)
 
@@ -107,7 +116,9 @@ class TrainingModelLoader:
     async def load_tactician_models(
         self,
         model_ids: Optional[List[str]] = None,
-        step_name: str = "tactician_models_training"
+        step_name: str = "tactician_base_training",
+        symbol: str = "ETHUSDT",
+        timeframe: str = "5m"
     ) -> Dict[str, Any]:
         """
         Load trained tactician models from the training pipeline.
@@ -115,6 +126,8 @@ class TrainingModelLoader:
         Args:
             model_ids: Specific model IDs to load (if None, loads all available)
             step_name: Training step name where models were saved
+            symbol: Trading symbol
+            timeframe: Timeframe
 
         Returns:
             Dictionary of loaded models
@@ -124,31 +137,33 @@ class TrainingModelLoader:
         loaded_models = {}
 
         try:
-            # Get available models from standardized model manager
-            if model_ids is None:
-                # Load all tactician models from the step
-                model_ids = await self._discover_models(step_name, "tactician")
+            # First try unified model loader (accesses artifact_manager and standardized_model_manager)
+            base_models = await self.unified_loader.load_tactician_base_models(symbol, timeframe)
+            ensemble_model = await self.unified_loader.load_tactician_ensemble_model(symbol, timeframe)
+            
+            loaded_models.update(base_models)
+            if ensemble_model:
+                loaded_models['tactician_ensemble'] = ensemble_model
 
-            for model_id in model_ids:
-                try:
-                    model_result = standardized_model_manager.load_model(model_id, step_name)
+            # Also try standardized model manager for specific model IDs
+            if model_ids:
+                for model_id in model_ids:
+                    if model_id not in loaded_models:
+                        try:
+                            model_result = standardized_model_manager.load_model(model_id, step_name)
 
-                    if model_result:
-                        model, metadata = model_result
-                        loaded_models[model_id] = model
-                        self.model_metadata[model_id] = metadata
+                            if model_result:
+                                model, metadata = model_result
+                                loaded_models[model_id] = model
+                                self.model_metadata[model_id] = metadata
 
-                        tprint_success(f"✅ Loaded tactician model: {model_id}")
+                                tprint_success(f"✅ Loaded tactician model: {model_id}")
 
-                        # Validate model compatibility
-                        await self._validate_model_compatibility(model, metadata, "tactician")
+                                # Validate model compatibility
+                                await self._validate_model_compatibility(model, metadata, "tactician")
 
-                    else:
-                        tprint_warning(f"⚠️ Could not load tactician model: {model_id}")
-
-                except Exception as e:
-                    tprint_error(f"❌ Failed to load tactician model {model_id}: {e}")
-                    continue
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Could not load tactician model {model_id}: {e}")
 
             self.loaded_models.update(loaded_models)
 

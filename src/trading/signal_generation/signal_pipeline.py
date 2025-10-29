@@ -14,17 +14,7 @@ from threading import Lock
 import numpy as np
 import pandas as pd
 
-from src.utils.logger import system_logger
-from src.core.decorators import handles_errors, traced, log_execution_time
-from ..config.regime_config import RegimeType
-from ..config.trading_config import TradingConfig
-from ..model_selection import get_model_selector_service, ModelSelectionResult
-from .utils import (
-    validate_market_data, validate_regime_probabilities, validate_signal_parameters,
-    calculate_weighted_regime_multiplier, CircuitBreaker, RateLimiter, SignalDeduplicator
-)
-
-logger = system_logger.getChild('SignalGenerationPipeline')
+from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 
 # Constants
 DEFAULT_CONFIDENCE_THRESHOLD = 0.6
@@ -101,6 +91,9 @@ class PositionState:
     position_size: Optional[float] = None
     direction: Optional[str] = None  # 'long' or 'short'
     entry_confidence: Optional[float] = None
+    entry_analyst_confidence: Optional[float] = None  # Track analyst confidence at entry
+    entry_tactician_confidence: Optional[float] = None  # Track tactician confidence at entry
+    peak_profit_pct: Optional[float] = None  # Tracks highest profit achieved for trailing
 
 @dataclass
 class SignalGenerationResult:
@@ -346,6 +339,8 @@ class SignalGenerationPipeline:
     async def _load_optimization_parameters(self):
         """Load optimization parameters from final_parameters_optimization step."""
         try:
+            tprint_info("🔄 Loading optimization parameters from final_parameters_optimization...")
+            
             # Load optimization parameters from final_parameters_optimization using unified model loader
             from src.trading.integration.unified_model_loader import get_unified_model_loader
             
@@ -365,6 +360,8 @@ class SignalGenerationPipeline:
                 )
                 
                 if optimized_params:
+                    tprint_success(f"✅ Successfully loaded optimization parameters for {symbol} on {exchange} ({timeframe}, {direction})")
+                    
                     # Update optimization parameters with optimized values (overriding defaults)
                     self.optimization_params.update({
                         'analyst_confidence_weight': optimized_params.get('analyst_confidence_weight', self.optimization_params.get('analyst_confidence_weight', 0.6)),
@@ -395,12 +392,14 @@ class SignalGenerationPipeline:
                         if exit_strategy_params:
                             # Store exit strategy parameters for use in exit condition checking
                             self.optimization_params['exit_strategy'] = exit_strategy_params
+                            tprint_success(f"✅ Loaded exit_strategy parameters: {len(exit_strategy_params)} parameters")
                             self.logger.info(f"✅ Loaded exit_strategy parameters: {len(exit_strategy_params)} parameters")
                         else:
                             # Try to get from position_monitor_exit_strategy format
                             position_monitor_exit = optimized_params.get('position_monitor_exit_strategy', {})
                             if position_monitor_exit:
                                 self.optimization_params['exit_strategy'] = position_monitor_exit
+                                tprint_success("✅ Loaded exit_strategy from position_monitor_exit_strategy format")
                                 self.logger.info("✅ Loaded exit_strategy from position_monitor_exit_strategy format")
                     
                     # Also check for raw exit_strategy parameters directly in optimized_params
@@ -410,25 +409,38 @@ class SignalGenerationPipeline:
                             # Extract exit-related parameters
                             exit_params = {k: v for k, v in optimized_params.items() 
                                          if k.startswith('exit_') or k.startswith('confidence_') or k in 
-                                         ['base_profit_target', 'base_stop_loss', 'max_hold_time', 'min_hold_time',
+                                         ['base_profit_target', 'base_stop_loss', 'max_hold_time',
+                                          'component_confidence_drop', 'profit_trailing_percent',
                                           'trailing_atr_multiplier', 'profit_buffer_ratio']}
                             if exit_params:
                                 self.optimization_params['exit_strategy'] = exit_params
+                                tprint_success(f"✅ Loaded exit_strategy parameters from top-level keys: {len(exit_params)} parameters")
                                 self.logger.info(f"✅ Loaded exit_strategy parameters from top-level keys: {len(exit_params)} parameters")
                     
+                    tprint_success("✅ Optimization parameters loaded successfully - using optimized values")
                     self.logger.info("✅ Loaded optimized parameters from final_parameters_optimization")
                     self.logger.debug(f"   Regime threshold: {self.optimization_params['regime_confidence_threshold']}")
                     self.logger.debug(f"   Signal threshold: {self.optimization_params['signal_confidence_threshold']}")
                     self.logger.debug(f"   Exit threshold: {self.optimization_params['exit_confidence_threshold']}")
                 else:
+                    tprint_warning("⚠️⚠️⚠️ OPTIMIZATION PARAMETERS NOT FOUND ⚠️⚠️⚠️")
+                    tprint_warning("⚠️ No optimized parameters found in final_parameters_optimization!")
+                    tprint_warning("⚠️ Using DEFAULT values - this may not be optimal for trading!")
+                    tprint_warning("⚠️ Please ensure final_parameters_optimization has been run and parameters are available.")
                     self.logger.warning("⚠️ No optimized parameters found, using defaults")
 
             except Exception as e:
+                tprint_warning("⚠️⚠️⚠️ FAILED TO LOAD OPTIMIZATION PARAMETERS ⚠️⚠️⚠️")
+                tprint_warning(f"⚠️ Error loading optimization parameters: {e}")
+                tprint_warning("⚠️ Using DEFAULT values - this may not be optimal for trading!")
                 self.logger.warning(f"⚠️ Failed to load optimized parameters: {e}")
 
             self.logger.info("✅ Optimization parameters loaded")
 
         except Exception as e:
+            tprint_warning("⚠️⚠️⚠️ CRITICAL: FAILED TO LOAD OPTIMIZATION PARAMETERS ⚠️⚠️⚠️")
+            tprint_warning(f"⚠️ Critical error during parameter loading: {e}")
+            tprint_warning("⚠️ Using DEFAULT values - this may not be optimal for trading!")
             self.logger.warning(f"⚠️ Failed to load optimization parameters, using defaults: {e}")
 
     async def _generate_signal_internal(
@@ -512,7 +524,11 @@ class SignalGenerationPipeline:
                 final_signal = validation_result['adjusted_signal']
 
         # Update position state based on signal (thread-safe)
-        self._update_position_state(final_signal, timestamp, should_exit)
+        self._update_position_state(
+            final_signal, timestamp, should_exit,
+            analyst_meta_output.analyst_confidence,
+            tactician_meta_output.tactician_confidence
+        )
 
         # Create result
         result = SignalGenerationResult(
@@ -1258,12 +1274,11 @@ class SignalGenerationPipeline:
         Check if position should be exited based on comprehensive exit parameters from final_parameters_optimization.
         
         This matches the exit logic tested by final_parameters_optimization, checking:
-        - Exit confidence thresholds (multiple levels)
-        - Profit-taking conditions
+        - Exit confidence thresholds
         - Stop-loss conditions
-        - Time-based exit conditions
-        - Confidence drop conditions
-        - Regime transition conditions
+        - Time-based exit conditions (max hold time)
+        - Confidence drop conditions (combined and individual component drops)
+        - Profit trailing conditions (triggered after base_profit_target reached)
         
         Args:
             exit_confidence: Combined exit confidence from analyst and tactician
@@ -1286,52 +1301,35 @@ class SignalGenerationPipeline:
             exit_strategy = self.optimization_params.get('exit_strategy', {})
             exit_reasons = []
             
+            # Calculate current profit/loss percentage
+            current_price = None
+            profit_pct = None
+            if current_pos.entry_price is not None and len(market_data) > 0:
+                current_price = market_data['close'].iloc[-1]
+                if current_pos.direction == 'long':
+                    profit_pct = (current_price - current_pos.entry_price) / current_pos.entry_price
+                else:  # short
+                    profit_pct = (current_pos.entry_price - current_price) / current_pos.entry_price
+                
+                # Update peak profit tracking
+                with self._position_lock:
+                    if current_pos.peak_profit_pct is None or profit_pct > current_pos.peak_profit_pct:
+                        current_pos.peak_profit_pct = profit_pct
+            
             # 1. Exit confidence threshold check (primary check)
             exit_threshold = self.optimization_params.get('exit_confidence_threshold', DEFAULT_EXIT_CONFIDENCE_THRESHOLD)
             if exit_confidence < exit_threshold:
                 exit_reasons.append(f"Exit confidence {exit_confidence:.3f} below threshold {exit_threshold:.3f}")
             
-            # 2. Confidence drop check (if entry confidence was higher)
+            # 2. Combined confidence drop check
             if current_pos.entry_confidence is not None:
                 confidence_drop = current_pos.entry_confidence - exit_confidence
-                # Check if using exit_strategy parameters
-                if isinstance(exit_strategy, dict):
-                    # Handle both formatted (position_monitor_exit_strategy) and raw formats
-                    confidence_thresholds = exit_strategy.get('confidence_thresholds', {})
-                    
-                    # If no nested confidence_thresholds, check for flat keys (raw format)
-                    if not confidence_thresholds:
-                        # Check for raw format confidence thresholds
-                        confidence_very_low = exit_strategy.get('confidence_very_low')
-                        confidence_low = exit_strategy.get('confidence_low')
-                        confidence_medium = exit_strategy.get('confidence_medium')
-                        confidence_high = exit_strategy.get('confidence_high')
-                        
-                        if confidence_very_low is not None and exit_confidence <= confidence_very_low:
-                            exit_reasons.append(f"Exit confidence very low: {exit_confidence:.3f} <= {confidence_very_low:.3f}")
-                        elif confidence_low is not None and exit_confidence <= confidence_low:
-                            exit_reasons.append(f"Exit confidence low: {exit_confidence:.3f} <= {confidence_low:.3f}")
-                        elif confidence_medium is not None and exit_confidence <= confidence_medium and confidence_drop > 0.2:
-                            exit_reasons.append(f"Significant confidence drop: {confidence_drop:.3f}")
-                    else:
-                        # Use tiered confidence thresholds from formatted format
-                        confidence_very_low = confidence_thresholds.get('very_low', 0.2)
-                        confidence_low = confidence_thresholds.get('low', 0.4)
-                        confidence_medium = confidence_thresholds.get('medium', 0.6)
-                        
-                        if exit_confidence <= confidence_very_low:
-                            exit_reasons.append(f"Exit confidence very low: {exit_confidence:.3f} <= {confidence_very_low:.3f}")
-                        elif exit_confidence <= confidence_low:
-                            exit_reasons.append(f"Exit confidence low: {exit_confidence:.3f} <= {confidence_low:.3f}")
-                        elif exit_confidence <= confidence_medium and confidence_drop > 0.2:
-                            exit_reasons.append(f"Significant confidence drop: {confidence_drop:.3f}")
-                    
-                    # Check for confidence drop threshold (handles both formats)
-                    exit_confidence_drop = exit_strategy.get('exit_confidence_drop')
-                    if exit_confidence_drop and confidence_drop >= exit_confidence_drop:
-                        exit_reasons.append(f"Confidence drop {confidence_drop:.3f} >= threshold {exit_confidence_drop:.3f}")
+                # Check for confidence drop threshold
+                exit_confidence_drop = exit_strategy.get('exit_confidence_drop') if isinstance(exit_strategy, dict) else None
+                if exit_confidence_drop and confidence_drop >= exit_confidence_drop:
+                    exit_reasons.append(f"Confidence drop {confidence_drop:.3f} >= threshold {exit_confidence_drop:.3f}")
             
-            # 3. Time-based exit check
+            # 3. Time-based exit check (max hold time only - min hold time removed)
             if current_pos.entry_timestamp:
                 elapsed_time = (timestamp - current_pos.entry_timestamp).total_seconds()
                 
@@ -1340,56 +1338,30 @@ class SignalGenerationPipeline:
                     time_based = exit_strategy.get('time_based', {})
                     if time_based:
                         max_hold_time = time_based.get('max_hold_time', 10800)  # Default 3 hours
-                        min_hold_time = time_based.get('min_hold_time', 300)  # Default 5 minutes
                     else:
                         # Check for raw format keys
                         max_hold_time = exit_strategy.get('max_hold_time', 10800)
-                        min_hold_time = exit_strategy.get('min_hold_time', 300)
                     
                     if elapsed_time >= max_hold_time:
                         exit_reasons.append(f"Maximum hold time exceeded: {elapsed_time:.0f}s >= {max_hold_time:.0f}s")
-                    elif elapsed_time < min_hold_time:
-                        # Don't exit if position is too new (unless critical conditions)
-                        # Remove non-critical exit reasons if position is too new
-                        critical_reasons = [r for r in exit_reasons if any(keyword in r.lower() for keyword in ['stop-loss', 'loss', 'critical'])]
-                        if not critical_reasons:
-                            exit_reasons = []
             
-            # 4. Profit-taking check (if position has profit and exit_strategy has profit_taking params)
-            if current_pos.entry_price is not None and len(market_data) > 0:
-                current_price = market_data['close'].iloc[-1]
+            # 4. Profit trailing check (triggered when base_profit_target reached)
+            if profit_pct is not None and isinstance(exit_strategy, dict):
+                base_profit_target = exit_strategy.get('base_profit_target')
+                profit_trailing_percent = exit_strategy.get('profit_trailing_percent')
                 
-                if current_pos.direction == 'long':
-                    profit_pct = (current_price - current_pos.entry_price) / current_pos.entry_price
-                else:  # short
-                    profit_pct = (current_pos.entry_price - current_price) / current_pos.entry_price
-                
-                if isinstance(exit_strategy, dict):
-                    # Handle both formatted and raw formats
-                    profit_taking = exit_strategy.get('profit_taking', {})
-                    if profit_taking:
-                        base_profit_target = profit_taking.get('base_profit_target', 0.04)
-                        min_confidence_for_profit = profit_taking.get('min_confidence_for_profit', 0.6)
-                        scaling_levels = profit_taking.get('scaling_levels', [0.25, 0.5, 0.75])
-                    else:
-                        # Check for raw format keys
-                        base_profit_target = exit_strategy.get('base_profit_target', 0.04)
-                        min_confidence_for_profit = exit_strategy.get('min_confidence_for_profit', 0.6)
-                        scaling_levels = [
-                            exit_strategy.get('profit_tier_1', 0.25),
-                            exit_strategy.get('profit_tier_2', 0.5),
-                            exit_strategy.get('profit_tier_3', 0.75)
-                        ]
-                    
-                    # Check if profit target reached with sufficient confidence
-                    if profit_pct >= base_profit_target and exit_confidence >= min_confidence_for_profit:
-                        exit_reasons.append(f"Profit target reached: {profit_pct:.3f} >= {base_profit_target:.3f} with confidence {exit_confidence:.3f}")
-                    
-                    # Check profit tiers
-                    if scaling_levels and len(scaling_levels) >= 3:
-                        profit_tier_3 = scaling_levels[2]
-                        if profit_pct >= profit_tier_3 * base_profit_target:
-                            exit_reasons.append(f"Profit tier 3 reached: {profit_pct:.3f} >= {profit_tier_3 * base_profit_target:.3f}")
+                if base_profit_target is not None and profit_trailing_percent is not None:
+                    # Check if we've reached base target (once reached, trailing activates)
+                    if current_pos.peak_profit_pct is not None and current_pos.peak_profit_pct >= base_profit_target:
+                        # Calculate trailing stop: peak_profit - trailing_percent
+                        trailing_stop_pct = current_pos.peak_profit_pct - profit_trailing_percent
+                        
+                        # Exit if current profit has dropped below trailing stop
+                        if profit_pct < trailing_stop_pct:
+                            exit_reasons.append(
+                                f"Profit trailing stop triggered: current {profit_pct:.4f} < trailing stop {trailing_stop_pct:.4f} "
+                                f"(peak: {current_pos.peak_profit_pct:.4f}, trailing: {profit_trailing_percent:.4f})"
+                            )
             
             # 5. Stop-loss check (if position has loss)
             if current_pos.entry_price is not None and len(market_data) > 0:
@@ -1412,18 +1384,34 @@ class SignalGenerationPipeline:
                     if loss_pct >= base_stop_loss:
                         exit_reasons.append(f"Stop-loss triggered: {loss_pct:.3f} >= {base_stop_loss:.3f}")
             
-            # 6. Individual confidence checks (analyst or tactician below threshold)
-            # Check if either analyst or tactician confidence drops significantly
+            # 6. Individual component confidence drop check (analyst OR tactician)
+            # Exit if either analyst or tactician confidence drops significantly from entry
             if current_pos.entry_confidence is not None:
-                analyst_drop = current_pos.entry_confidence - analyst_confidence if current_pos.entry_confidence > analyst_confidence else 0
-                tactician_drop = current_pos.entry_confidence - tactician_confidence if current_pos.entry_confidence > tactician_confidence else 0
+                # Use tracked entry confidences if available, otherwise fallback to entry_confidence
+                entry_analyst_conf = current_pos.entry_analyst_confidence if current_pos.entry_analyst_confidence is not None else current_pos.entry_confidence
+                entry_tactician_conf = current_pos.entry_tactician_confidence if current_pos.entry_tactician_confidence is not None else current_pos.entry_confidence
+                
+                analyst_drop = entry_analyst_conf - analyst_confidence if entry_analyst_conf > analyst_confidence else 0
+                tactician_drop = entry_tactician_conf - tactician_confidence if entry_tactician_conf > tactician_confidence else 0
+                
+                # Get component confidence drop threshold from optimization (backtested parameter)
+                component_confidence_drop = exit_strategy.get('component_confidence_drop', 0.3) if isinstance(exit_strategy, dict) else 0.3
                 
                 # Exit if either component drops significantly
-                if analyst_drop > 0.3 or tactician_drop > 0.3:
-                    if analyst_drop > tactician_drop:
-                        exit_reasons.append(f"Analyst confidence dropped significantly: {analyst_drop:.3f}")
+                if analyst_drop >= component_confidence_drop or tactician_drop >= component_confidence_drop:
+                    if analyst_drop >= component_confidence_drop and tactician_drop >= component_confidence_drop:
+                        exit_reasons.append(
+                            f"Both analyst and tactician confidence dropped: analyst {analyst_drop:.3f}, "
+                            f"tactician {tactician_drop:.3f} >= threshold {component_confidence_drop:.3f}"
+                        )
+                    elif analyst_drop >= component_confidence_drop:
+                        exit_reasons.append(
+                            f"Analyst confidence dropped significantly: {analyst_drop:.3f} >= threshold {component_confidence_drop:.3f}"
+                        )
                     else:
-                        exit_reasons.append(f"Tactician confidence dropped significantly: {tactician_drop:.3f}")
+                        exit_reasons.append(
+                            f"Tactician confidence dropped significantly: {tactician_drop:.3f} >= threshold {component_confidence_drop:.3f}"
+                        )
             
             # Determine if we should exit based on any exit reason
             if exit_reasons:
@@ -1505,7 +1493,14 @@ class SignalGenerationPipeline:
             self.logger.error(f"❌ Signal position validation failed: {e}")
             return {'is_valid': True, 'reason': f'Validation error: {e}'}  # Default to valid on error
 
-    def _update_position_state(self, final_signal: Dict[str, Any], timestamp: datetime, should_exit: bool):
+    def _update_position_state(
+        self,
+        final_signal: Dict[str, Any],
+        timestamp: datetime,
+        should_exit: bool,
+        analyst_confidence: float,
+        tactician_confidence: float
+    ):
         """
         Update position state based on signal and exit conditions (thread-safe).
 
@@ -1513,6 +1508,8 @@ class SignalGenerationPipeline:
             final_signal: Generated trading signal
             timestamp: Current timestamp
             should_exit: Whether position should be exited
+            analyst_confidence: Current analyst confidence
+            tactician_confidence: Current tactician confidence
         """
         try:
             signal = final_signal['signal']
@@ -1537,9 +1534,14 @@ class SignalGenerationPipeline:
                         entry_price=None,  # Would be set by execution engine
                         position_size=None,  # Would be set by execution engine
                         direction='long' if signal == 'buy' else 'short',
-                        entry_confidence=confidence
+                        entry_confidence=confidence,
+                        entry_analyst_confidence=analyst_confidence,
+                        entry_tactician_confidence=tactician_confidence
                     )
-                    self.logger.info(f"📈 New position opened: {signal} at {timestamp} (confidence: {confidence:.3f})")
+                    self.logger.info(
+                        f"📈 New position opened: {signal} at {timestamp} "
+                        f"(confidence: {confidence:.3f}, analyst: {analyst_confidence:.3f}, tactician: {tactician_confidence:.3f})"
+                    )
 
                 # Handle position closes from signal
                 elif signal == 'close' and self.current_position and self.current_position.is_open:

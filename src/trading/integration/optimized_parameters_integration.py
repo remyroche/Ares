@@ -64,7 +64,23 @@ class OptimizedParametersIntegration:
                 base_max = getattr(position_sizer, 'max_position_size', 0.5)
                 factor = params.get('position_sizing_factor', 0.02)
                 position_sizer.max_position_size = min(base_max, factor * 10)  # Scale appropriately
-            self.logger.info("✅ Applied optimized parameters to PositionSizer")
+            
+            # Set confidence multiplier from final_parameters_optimization
+            # Check for various parameter names that might contain the multiplier
+            confidence_multiplier = (
+                params.get('confidence_multiplier') or
+                params.get('position_size_confidence_multiplier') or
+                params.get('long_position_size_multiplier') or  # For long trades
+                params.get('short_position_size_multiplier') or  # For short trades
+                1.0  # Default if not found
+            )
+            
+            if hasattr(position_sizer, 'set_confidence_multiplier'):
+                position_sizer.set_confidence_multiplier(confidence_multiplier)
+            elif hasattr(position_sizer, 'confidence_multiplier'):
+                position_sizer.confidence_multiplier = confidence_multiplier
+                
+            self.logger.info(f"✅ Applied optimized parameters to PositionSizer (confidence_multiplier: {confidence_multiplier})")
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to apply parameters to PositionSizer: {e}")
     

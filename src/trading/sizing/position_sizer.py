@@ -20,18 +20,6 @@ from .risk_calculator import RiskCalculator
 
 logger = system_logger.getChild('PositionSizer')
 
-# Constants for position sizing calculations
-DEFAULT_INTENSITY_FACTOR_MIN = 0.8
-DEFAULT_INTENSITY_FACTOR_MAX = 1.2
-DEFAULT_RELIABILITY_FACTOR_MIN = 0.8
-DEFAULT_RELIABILITY_FACTOR_MAX = 1.2
-DEFAULT_RISK_FACTOR_MIN = 0.7
-DEFAULT_RISK_FACTOR_MAX = 1.0
-DEFAULT_CONFIDENCE_MULTIPLIER_MIN = 0.5
-DEFAULT_CONFIDENCE_MULTIPLIER_MAX = 1.0
-DEFAULT_CONFIDENCE_SCALE_MIN = 0.8
-DEFAULT_CONFIDENCE_SCALE_MAX = 1.2
-
 @dataclass
 class PositionSizeResult:
     """Position sizing result."""
@@ -70,6 +58,10 @@ class PositionSizer:
         self.min_position_size: float = getattr(config, 'min_position_size', 0.01)  # Minimum position size (1% of portfolio)
         self.confidence_threshold: float = 0.6  # Minimum confidence threshold
         self.ml_weight: float = 0.7  # Weight for ML-based sizing vs Kelly
+        
+        # Confidence multiplier from final_parameters_optimization (loaded from optimized params)
+        # This is set by optimized_parameters_integration or can be set directly
+        self.confidence_multiplier: float = 1.0  # Default to 1.0 if not set from optimized params
         
         # Position size rounding configuration
         self.min_order_size: float = 0.0  # Minimum order size (exchange-specific, set via config)
@@ -319,30 +311,36 @@ class PositionSizer:
         reliability: float,
         risk_score: float
     ) -> float:
-        """Calculate confidence multiplier for position size adjustment."""
+        """
+        Calculate confidence multiplier for position size adjustment.
+        
+        Uses the confidence_multiplier from final_parameters_optimization (backtested).
+        Applies risk adjustment based on risk_score.
+        
+        Args:
+            combined_confidence: Combined ML confidence score
+            intensity: Intensity score
+            reliability: Reliability score
+            risk_score: Risk score (higher = more risk)
+            
+        Returns:
+            Confidence multiplier for position size adjustment
+        """
         try:
-            # Base multiplier from combined confidence
-            base_multiplier = DEFAULT_CONFIDENCE_MULTIPLIER_MIN + (
-                combined_confidence * (DEFAULT_CONFIDENCE_MULTIPLIER_MAX - DEFAULT_CONFIDENCE_MULTIPLIER_MIN)
-            )
-
-            # Adjust for intensity and reliability
-            intensity_factor = DEFAULT_INTENSITY_FACTOR_MIN + (
-                intensity * (DEFAULT_INTENSITY_FACTOR_MAX - DEFAULT_INTENSITY_FACTOR_MIN)
-            )
-            reliability_factor = DEFAULT_RELIABILITY_FACTOR_MIN + (
-                reliability * (DEFAULT_RELIABILITY_FACTOR_MAX - DEFAULT_RELIABILITY_FACTOR_MIN)
-            )
-
-            # Adjust for risk score (higher risk = lower multiplier)
-            risk_factor = DEFAULT_RISK_FACTOR_MAX - (
-                risk_score * (DEFAULT_RISK_FACTOR_MAX - DEFAULT_RISK_FACTOR_MIN)
-            )
-
-            # Combine all factors
-            final_multiplier = base_multiplier * intensity_factor * reliability_factor * risk_factor
-
-            return max(0.1, min(2.0, final_multiplier))  # Clamp between 0.1 and 2.0
+            # Use the backtested confidence multiplier from final_parameters_optimization
+            # This is set via set_confidence_multiplier() or from optimized parameters
+            base_multiplier = self.confidence_multiplier
+            
+            # Apply risk adjustment (higher risk = lower multiplier)
+            # Risk factor: 0.7 to 1.0 range (reduces multiplier by up to 30% for high risk)
+            risk_factor = 1.0 - (risk_score * 0.3)
+            risk_factor = max(0.7, min(1.0, risk_factor))
+            
+            # Final multiplier: base multiplier adjusted for risk
+            final_multiplier = base_multiplier * risk_factor
+            
+            # Clamp to reasonable bounds
+            return max(0.1, min(2.0, final_multiplier))
 
         except Exception as e:
             self.logger.error(f"❌ Confidence multiplier calculation failed: {e}")
@@ -370,10 +368,9 @@ class PositionSizer:
             # Clamp the average confidence to a sensible range (0 to 1)
             average_confidence = max(0.0, min(1.0, average_confidence))
 
-            # Calculate confidence scale directly from the raw scores
-            confidence_scale = DEFAULT_CONFIDENCE_SCALE_MIN + (
-                average_confidence * (DEFAULT_CONFIDENCE_SCALE_MAX - DEFAULT_CONFIDENCE_SCALE_MIN)
-            )
+            # Calculate confidence scale directly from the raw scores (0.8 to 1.2 window)
+            # Simple linear scaling based on confidence
+            confidence_scale = 0.8 + (average_confidence * 0.4)
 
             # Apply logarithmic adjustment with safeguarded base size
             epsilon = 1e-8
@@ -633,6 +630,23 @@ class PositionSizer:
             self.logger.error(f"❌ Performance metrics calculation failed: {e}")
             return {}
 
+    def set_confidence_multiplier(self, multiplier: float):
+        """
+        Set the confidence multiplier from final_parameters_optimization.
+        
+        This multiplier is backtested and optimized, and should be used directly
+        instead of calculating it from intensity/reliability factors.
+        
+        Args:
+            multiplier: Confidence multiplier from optimized parameters
+        """
+        if not isinstance(multiplier, (int, float)) or multiplier <= 0:
+            self.logger.warning(f"Invalid confidence multiplier: {multiplier}, using default 1.0")
+            self.confidence_multiplier = 1.0
+        else:
+            self.confidence_multiplier = float(multiplier)
+            self.logger.info(f"✅ Confidence multiplier set to {self.confidence_multiplier}")
+
     def update_configuration(self, new_config: Dict[str, Any]):
         """Update position sizing configuration."""
         try:
@@ -646,6 +660,8 @@ class PositionSizer:
                 self.confidence_threshold = new_config['confidence_threshold']
             if 'ml_weight' in new_config:
                 self.ml_weight = new_config['ml_weight']
+            if 'confidence_multiplier' in new_config:
+                self.set_confidence_multiplier(new_config['confidence_multiplier'])
             if 'min_order_size' in new_config:
                 self.min_order_size = new_config['min_order_size']
             if 'tick_size' in new_config:

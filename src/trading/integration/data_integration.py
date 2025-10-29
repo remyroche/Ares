@@ -11,6 +11,7 @@ from typing import Dict, Any, List, Optional, Union, Tuple
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
+from pathlib import Path
 
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
@@ -272,7 +273,7 @@ class DataSyncManager:
         symbol: str,
         timeframe: str,
         data_type: str
-    ):
+    ) -> None:
         """Save data to training pipeline data store."""
         try:
             # Create training data directory structure
@@ -297,7 +298,7 @@ class DataSyncManager:
         metrics: Dict[str, Any],
         symbol: str,
         timeframe: str
-    ):
+    ) -> None:
         """Save performance metrics to training pipeline."""
         try:
             import json
@@ -439,7 +440,18 @@ class TrainingDataReader:
         timeframe: str,
         lookback_days: int
     ) -> Optional[pd.DataFrame]:
-        """Read data from training pipeline data store."""
+        """
+        Read data from training pipeline data store.
+        
+        Args:
+            data_type: Type of data to read (e.g., 'features', 'targets')
+            symbol: Trading symbol
+            timeframe: Data timeframe
+            lookback_days: Number of days to look back
+            
+        Returns:
+            DataFrame with data or None if not found
+        """
         try:
             import glob
 
@@ -460,7 +472,7 @@ class TrainingDataReader:
                     all_files.extend(files)
 
             if not all_files:
-                tprint_warning(f"⚠️ No {data_type} files found for {symbol}")
+                tprint_warning(f"⚠️ No {data_type} files found for {symbol} ({timeframe})")
                 return None
 
             # Sort by modification time (most recent first)
@@ -489,32 +501,40 @@ class TrainingDataReader:
                     result_df = result_df.drop_duplicates(subset=['timestamp'])
                     result_df = result_df.sort_values('timestamp')
 
+                tprint_success(f"✅ Read {len(result_df)} {data_type} records from training store")
                 return result_df
             else:
+                tprint_warning(f"⚠️ No {data_type} data found within lookback window ({lookback_days} days)")
                 return None
 
         except Exception as e:
             tprint_error(f"❌ Failed to read from training store: {e}")
             return None
 
-    async def cleanup(self):
+    async def cleanup(self) -> None:
         """Cleanup resources."""
         try:
             self.sync_status.clear()
             self.last_sync = None
-            tprint_info("✅ Data sync manager cleaned up")
+            tprint_success("✅ Data sync manager cleaned up")
         except Exception as e:
+            tprint_warning(f"⚠️ Cleanup failed: {e}")
             self.logger.warning(f"Cleanup failed: {e}")
 
-    def __enter__(self):
+    def __enter__(self) -> "DataSyncManager":
         """Context manager entry."""
         return self
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "DataSyncManager":
         """Async context manager entry."""
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: Optional[type],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[Any]
+    ) -> None:
         """Async context manager exit."""
         await self.cleanup()
 

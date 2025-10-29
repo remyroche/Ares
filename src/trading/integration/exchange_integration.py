@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 
 # Import shared exchange utilities
 from exchanges.shared.interfaces_typed import (
-    tprint, handle_errors, handle_async_errors, DataSource, ValidationResult,
+    handle_errors, handle_async_errors, DataSource, ValidationResult,
     IHighLevelAuthManager, IHighLevelMarketManager, IHighLevelOrderManager,
     IHighLevelRiskManager, IHighLevelBalanceManager, IHighLevelRateLimitManager
 )
@@ -28,6 +28,11 @@ from exchanges.bingx import BingXExchange, create_bingx_exchange
 
 # Import trading interfaces
 from ..execution.exchange_interface import ExchangeInterface, TickerData, KlineData
+
+# Import tprint utilities for comprehensive logging
+from src.utils.tprint import (
+    tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,20 +52,27 @@ class ExchangeIntegrationConfig:
     connection_retry_attempts: int = 3
     connection_retry_delay: float = 1.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate configuration."""
         if not self.exchange_type:
+            tprint_error("❌ exchange_type is required")
             raise ValueError("exchange_type is required")
         if not self.api_key:
+            tprint_error("❌ api_key is required")
             raise ValueError("api_key is required")
         if not self.api_secret:
+            tprint_error("❌ api_secret is required")
             raise ValueError("api_secret is required")
         if self.exchange_type.lower() not in ['binance', 'bingx']:
+            tprint_error(f"❌ Unsupported exchange type: {self.exchange_type}")
             raise ValueError(f"Unsupported exchange type: {self.exchange_type}")
         if self.connection_retry_attempts < 1:
+            tprint_error("❌ connection_retry_attempts must be >= 1")
             raise ValueError("connection_retry_attempts must be >= 1")
         if self.connection_retry_delay < 0:
+            tprint_error("❌ connection_retry_delay must be >= 0")
             raise ValueError("connection_retry_delay must be >= 0")
+        tprint_info(f"✅ Exchange integration config validated for {self.exchange_type}")
 
 class ExchangeIntegrationManager:
     """
@@ -135,11 +147,11 @@ class ExchangeIntegrationManager:
             self.exchange_interface = ExchangeInterface(interface_config)
 
             self.is_initialized = True
-            tprint(f"✅ Exchange integration initialized for {self.config.exchange_type}", "INFO")
+            tprint_success(f"✅ Exchange integration initialized for {self.config.exchange_type}")
 
         except Exception as e:
             self.last_error = str(e)
-            tprint(f"❌ Failed to initialize exchange integration: {e}", "ERROR")
+            tprint_error(f"❌ Failed to initialize exchange integration: {e}")
             raise
 
     @handle_errors(default_return=None)
@@ -173,10 +185,10 @@ class ExchangeIntegrationManager:
                 if manager:
                     manager.initialize()
 
-            tprint("✅ Shared utilities initialized successfully", "INFO")
+            tprint_success("✅ Shared utilities initialized successfully")
 
         except Exception as e:
-            tprint(f"❌ Failed to initialize shared utilities: {e}", "ERROR")
+            tprint_error(f"❌ Failed to initialize shared utilities: {e}")
             raise
 
     @handle_async_errors(default_return=False)
@@ -184,11 +196,13 @@ class ExchangeIntegrationManager:
         """Connect to the exchange with retry logic."""
         try:
             if not self.is_initialized:
-                tprint("❌ Integration not initialized", "ERROR")
+                tprint_error("❌ Integration not initialized")
                 return False
 
+            tprint_info(f"🔄 Connecting to {self.config.exchange_type}...")
+
             # Retry connection logic
-            last_error = None
+            last_error: Optional[str] = None
             for attempt in range(1, self.config.connection_retry_attempts + 1):
                 try:
                     # Connect using exchange interface
@@ -197,16 +211,16 @@ class ExchangeIntegrationManager:
                     if success:
                         self.is_connected = True
                         self.connection_attempts = attempt
-                        tprint(f"✅ Connected to {self.config.exchange_type} (attempt {attempt})", "INFO")
+                        tprint_success(f"✅ Connected to {self.config.exchange_type} (attempt {attempt})")
                         return True
                     else:
                         if attempt < self.config.connection_retry_attempts:
-                            tprint(f"⚠️ Connection attempt {attempt} failed, retrying...", "WARNING")
+                            tprint_warning(f"⚠️ Connection attempt {attempt} failed, retrying...")
                             await asyncio.sleep(self.config.connection_retry_delay * attempt)
                 except Exception as e:
                     last_error = str(e)
                     if attempt < self.config.connection_retry_attempts:
-                        tprint(f"⚠️ Connection attempt {attempt} failed: {e}, retrying...", "WARNING")
+                        tprint_warning(f"⚠️ Connection attempt {attempt} failed: {e}, retrying...")
                         await asyncio.sleep(self.config.connection_retry_delay * attempt)
                     else:
                         break
@@ -214,13 +228,13 @@ class ExchangeIntegrationManager:
             # All attempts failed
             self.is_connected = False
             self.last_error = last_error or "Connection failed after all retry attempts"
-            tprint(f"❌ Failed to connect to {self.config.exchange_type} after {self.config.connection_retry_attempts} attempts", "ERROR")
+            tprint_error(f"❌ Failed to connect to {self.config.exchange_type} after {self.config.connection_retry_attempts} attempts")
             return False
 
         except Exception as e:
             self.is_connected = False
             self.last_error = str(e)
-            tprint(f"❌ Connection error: {e}", "ERROR")
+            tprint_error(f"❌ Connection error: {e}")
             return False
 
     @handle_async_errors(default_return=None)
@@ -237,23 +251,27 @@ class ExchangeIntegrationManager:
                     manager.close()
 
             self.is_connected = False
-            tprint(f"📴 Disconnected from {self.config.exchange_type}", "INFO")
+            tprint_info(f"📴 Disconnected from {self.config.exchange_type}")
 
         except Exception as e:
-            tprint(f"❌ Error during disconnect: {e}", "ERROR")
+            tprint_error(f"❌ Error during disconnect: {e}")
 
     @handle_async_errors(default_return=None)
     async def get_ticker(self, symbol: str) -> Optional[TickerData]:
         """Get ticker data for symbol."""
         try:
             if not self.is_connected:
-                tprint("❌ Not connected to exchange", "ERROR")
+                tprint_error("❌ Not connected to exchange")
                 return None
 
-            return await self.exchange_interface.get_ticker(symbol)
+            tprint_debug(f"🔍 Getting ticker for {symbol}")
+            result = await self.exchange_interface.get_ticker(symbol)
+            if result:
+                tprint_debug(f"✅ Ticker data retrieved for {symbol}")
+            return result
 
         except Exception as e:
-            tprint(f"❌ Error getting ticker for {symbol}: {e}", "ERROR")
+            tprint_error(f"❌ Error getting ticker for {symbol}: {e}")
             return None
 
     @handle_async_errors(default_return=[])
@@ -268,15 +286,19 @@ class ExchangeIntegrationManager:
         """Get kline data for symbol."""
         try:
             if not self.is_connected:
-                tprint("❌ Not connected to exchange", "ERROR")
+                tprint_error("❌ Not connected to exchange")
                 return []
 
-            return await self.exchange_interface.get_klines(
+            tprint_debug(f"🔍 Getting klines for {symbol} (interval: {interval}, limit: {limit})")
+            result = await self.exchange_interface.get_klines(
                 symbol, interval, start_time, end_time, limit
             )
+            if result:
+                tprint_debug(f"✅ Retrieved {len(result)} klines for {symbol}")
+            return result
 
         except Exception as e:
-            tprint(f"❌ Error getting klines for {symbol}: {e}", "ERROR")
+            tprint_error(f"❌ Error getting klines for {symbol}: {e}")
             return []
 
     @handle_async_errors(default_return={})
@@ -292,8 +314,10 @@ class ExchangeIntegrationManager:
         """Create order with risk management."""
         try:
             if not self.is_connected:
-                tprint("❌ Not connected to exchange", "ERROR")
+                tprint_error("❌ Not connected to exchange")
                 return {'error': 'not_connected'}
+
+            tprint_info(f"🔄 Creating {order_type} order for {symbol} ({side}, qty: {quantity})")
 
             # Risk management check
             if self.risk_manager and price:
@@ -303,7 +327,7 @@ class ExchangeIntegrationManager:
 
                 # Check if risk is acceptable
                 if not self.risk_manager.validate_risk_limits(risk_data).is_valid:
-                    tprint(f"❌ Order rejected due to risk limits for {symbol}", "WARNING")
+                    tprint_warning(f"❌ Order rejected due to risk limits for {symbol}")
                     return {'error': 'risk_limit_exceeded', 'risk_data': risk_data}
 
             # Create order
@@ -312,12 +336,14 @@ class ExchangeIntegrationManager:
             )
 
             if 'error' not in result:
-                tprint(f"✅ Order created for {symbol}: {result.get('orderId', 'N/A')}", "INFO")
+                tprint_success(f"✅ Order created for {symbol}: {result.get('orderId', 'N/A')}")
+            else:
+                tprint_error(f"❌ Order creation failed: {result.get('error', 'unknown error')}")
 
             return result
 
         except Exception as e:
-            tprint(f"❌ Error creating order for {symbol}: {e}", "ERROR")
+            tprint_error(f"❌ Error creating order for {symbol}: {e}")
             return {'error': str(e)}
 
     @handle_async_errors(default_return={})
@@ -325,13 +351,17 @@ class ExchangeIntegrationManager:
         """Get account balance."""
         try:
             if not self.is_connected:
-                tprint("❌ Not connected to exchange", "ERROR")
+                tprint_error("❌ Not connected to exchange")
                 return {}
 
-            return await self.exchange_interface.get_account_balance(asset)
+            tprint_debug(f"🔍 Getting account balance for {asset or 'all assets'}")
+            result = await self.exchange_interface.get_account_balance(asset)
+            if result:
+                tprint_debug(f"✅ Retrieved balance data for {len(result)} asset(s)")
+            return result
 
         except Exception as e:
-            tprint(f"❌ Error getting account balance: {e}", "ERROR")
+            tprint_error(f"❌ Error getting account balance: {e}")
             return {}
 
     @handle_async_errors(default_return={})
@@ -339,27 +369,35 @@ class ExchangeIntegrationManager:
         """Get risk information for a position."""
         try:
             if not self.is_connected:
-                tprint("❌ Not connected to exchange", "ERROR")
+                tprint_error("❌ Not connected to exchange")
                 return {}
 
-            return await self.exchange_interface.get_risk_info(symbol, position_size, current_price, leverage)
+            tprint_debug(f"🔍 Getting risk info for {symbol} (size: {position_size}, price: {current_price}, leverage: {leverage})")
+            result = await self.exchange_interface.get_risk_info(symbol, position_size, current_price, leverage)
+            if result:
+                tprint_debug(f"✅ Retrieved risk info for {symbol}")
+            return result
 
         except Exception as e:
-            tprint(f"❌ Error getting risk info for {symbol}: {e}", "ERROR")
+            tprint_error(f"❌ Error getting risk info for {symbol}: {e}")
             return {}
 
-    @handle_async_errors(default_return=[])
+    @handle_async_errors(default_return={})
     async def get_portfolio_risk(self, positions: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Get portfolio risk information."""
         try:
             if not self.is_connected:
-                tprint("❌ Not connected to exchange", "ERROR")
+                tprint_error("❌ Not connected to exchange")
                 return {}
 
-            return await self.exchange_interface.get_portfolio_risk(positions)
+            tprint_debug(f"🔍 Getting portfolio risk for {len(positions)} position(s)")
+            result = await self.exchange_interface.get_portfolio_risk(positions)
+            if result:
+                tprint_debug(f"✅ Retrieved portfolio risk information")
+            return result
 
         except Exception as e:
-            tprint(f"❌ Error getting portfolio risk: {e}", "ERROR")
+            tprint_error(f"❌ Error getting portfolio risk: {e}")
             return {}
 
     @handle_errors(default_return={})
@@ -392,12 +430,12 @@ class ExchangeIntegrationManager:
             # Reinitialize
             self._initialize_integration()
 
-            tprint("✅ Exchange integration reset", "INFO")
+            tprint_success("✅ Exchange integration reset")
 
         except Exception as e:
-            tprint(f"❌ Error resetting integration: {e}", "ERROR")
+            tprint_error(f"❌ Error resetting integration: {e}")
 
-    async def close(self):
+    async def close(self) -> None:
         """Close and cleanup resources."""
         try:
             await self.disconnect()
@@ -409,19 +447,24 @@ class ExchangeIntegrationManager:
                         manager.close()
                     except Exception as e:
                         self.logger.warning(f"Error closing manager: {e}")
-            tprint("✅ Exchange integration closed", "INFO")
+            tprint_success("✅ Exchange integration closed")
         except Exception as e:
-            tprint(f"❌ Error closing integration: {e}", "ERROR")
+            tprint_error(f"❌ Error closing integration: {e}")
 
-    def __enter__(self):
+    def __enter__(self) -> "ExchangeIntegrationManager":
         """Context manager entry."""
         return self
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "ExchangeIntegrationManager":
         """Async context manager entry."""
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: Optional[type],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[Any]
+    ) -> None:
         """Async context manager exit."""
         await self.close()
 
@@ -437,9 +480,12 @@ def create_exchange_integration(config: ExchangeIntegrationConfig) -> ExchangeIn
         ExchangeIntegrationManager instance
     """
     try:
-        return ExchangeIntegrationManager(config)
+        tprint_info(f"🔄 Creating exchange integration for {config.exchange_type}")
+        manager = ExchangeIntegrationManager(config)
+        tprint_success(f"✅ Exchange integration created for {config.exchange_type}")
+        return manager
     except Exception as e:
-        tprint(f"❌ Failed to create exchange integration: {e}", "ERROR")
+        tprint_error(f"❌ Failed to create exchange integration: {e}")
         raise
 
 # Convenience function for common configurations
@@ -449,7 +495,19 @@ def create_binance_integration(
     testnet: bool = True,
     trade_symbol: str = "BTCUSDT"
 ) -> ExchangeIntegrationManager:
-    """Create Binance exchange integration."""
+    """
+    Create Binance exchange integration.
+    
+    Args:
+        api_key: Binance API key
+        api_secret: Binance API secret
+        testnet: Whether to use testnet (default: True)
+        trade_symbol: Trading symbol (default: "BTCUSDT")
+        
+    Returns:
+        ExchangeIntegrationManager instance configured for Binance
+    """
+    tprint_info("🔄 Creating Binance exchange integration")
     config = ExchangeIntegrationConfig(
         exchange_type="binance",
         api_key=api_key,
@@ -465,7 +523,19 @@ def create_bingx_integration(
     testnet: bool = True,
     trade_symbol: str = "BTCUSDT"
 ) -> ExchangeIntegrationManager:
-    """Create BingX exchange integration."""
+    """
+    Create BingX exchange integration.
+    
+    Args:
+        api_key: BingX API key
+        api_secret: BingX API secret
+        testnet: Whether to use testnet (default: True)
+        trade_symbol: Trading symbol (default: "BTCUSDT")
+        
+    Returns:
+        ExchangeIntegrationManager instance configured for BingX
+    """
+    tprint_info("🔄 Creating BingX exchange integration")
     config = ExchangeIntegrationConfig(
         exchange_type="bingx",
         api_key=api_key,

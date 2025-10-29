@@ -285,6 +285,7 @@ class TrainingModelLoader:
                 return []
 
         except Exception as e:
+            tprint_warning(f"⚠️ Model discovery failed for {step_name}/{model_type}: {e}")
             self.logger.warning(f"Model discovery failed for {step_name}/{model_type}: {e}")
             return []
 
@@ -293,7 +294,7 @@ class TrainingModelLoader:
         model: Any,
         metadata: ModelMetadata,
         model_type: str
-    ):
+    ) -> None:
         """Validate that a loaded model is compatible with trading operations."""
         try:
             # Check if model has required methods
@@ -316,9 +317,12 @@ class TrainingModelLoader:
             # Check model metrics
             if metadata.metrics:
                 tprint_info(f"📈 Model {metadata.model_id} performance: {metadata.metrics}")
+            
+            tprint_success(f"✅ Model {metadata.model_id} compatibility validated for {model_type}")
 
         except Exception as e:
             tprint_warning(f"⚠️ Model compatibility validation failed: {e}")
+            raise
 
     def get_model(self, model_id: str) -> Optional[Any]:
         """Get a loaded model by ID."""

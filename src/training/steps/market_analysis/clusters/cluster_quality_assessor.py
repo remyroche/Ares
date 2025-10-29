@@ -19,8 +19,8 @@ quality metrics including:
 import logging
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Optional, List, Tuple
-from dataclasses import dataclass, field
+from typing import Dict, Any, Optional, List, Tuple, Union
+from dataclasses import dataclass, field, fields
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -251,6 +251,28 @@ class ClusterQualityMetrics:
     # Metadata
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     
+    @staticmethod
+    def _safe_array_to_list(arr: Optional[Union[np.ndarray, List[Any]]]) -> Optional[List[Any]]:
+        """
+        Safely convert numpy array or list to list for serialization.
+        
+        Args:
+            arr: numpy array, list, or None
+            
+        Returns:
+            List representation or None
+        """
+        if arr is None:
+            return None
+        if isinstance(arr, np.ndarray):
+            return arr.tolist()
+        if isinstance(arr, (list, tuple)):
+            try:
+                return list(arr)
+            except (TypeError, ValueError):
+                return None
+        return None
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert metrics to dictionary."""
         return {
@@ -297,7 +319,7 @@ class ClusterQualityMetrics:
             
             # ENHANCEMENT: I. Predictive/Generalization
             'rolling_predictive_ll': self.rolling_predictive_ll,
-            'one_step_ahead_scores': self.one_step_ahead_scores.tolist() if self.one_step_ahead_scores is not None else None,
+            'one_step_ahead_scores': self._safe_array_to_list(self.one_step_ahead_scores),
             'baseline_comparison': self.baseline_comparison,
             'delta_ll_across_folds': self.delta_ll_across_folds,
             'predictive_ll_effect_size': self.predictive_ll_effect_size,
@@ -346,7 +368,7 @@ class ClusterQualityMetrics:
             'pit_histogram_uniformity': self.pit_histogram_uniformity,
             'predictive_density_calibration': self.predictive_density_calibration,
             'crps_score': self.crps_score,
-            'pit_values': self.pit_values.tolist() if self.pit_values is not None else None,
+            'pit_values': self._safe_array_to_list(self.pit_values),
             'pit_uniformity_pvalue': self.pit_uniformity_pvalue,
             'tail_quantile_comparison': self.tail_quantile_comparison,
             'tail_coverage_score': self.tail_coverage_score,
@@ -970,24 +992,42 @@ class ClusterQualityAssessor:
     
     def _calculate_temporal_smoothness(self,
                                        regime_labels: np.ndarray,
-                                       timestamps: pd.DatetimeIndex) -> float:
+                                       timestamps: Optional[pd.DatetimeIndex] = None) -> float:
         """
         Calculate temporal smoothness score.
         
         Higher score means fewer regime transitions (more stable regimes).
         Score is normalized to [0, 1] where 1 is perfectly smooth.
+        
+        Args:
+            regime_labels: Regime/cluster labels
+            timestamps: Optional timestamps for time-aware analysis (currently not used but
+                       validated for future enhancements)
+        
+        Returns:
+            Temporal smoothness score between 0 and 1
         """
         if len(regime_labels) < 2:
             return 1.0
+        
+        # Validate alignment if timestamps provided
+        if timestamps is not None and len(timestamps) != len(regime_labels):
+            self.logger.warning(
+                f"Timestamps length ({len(timestamps)}) doesn't match "
+                f"regime_labels length ({len(regime_labels)}). Using simple smoothness calculation."
+            )
         
         # Count regime transitions
         regime_changes = np.sum(regime_labels[1:] != regime_labels[:-1])
         max_possible_changes = len(regime_labels) - 1
         
+        if max_possible_changes == 0:
+            return 1.0
+        
         # Smoothness score: fewer changes = higher smoothness
         smoothness = 1.0 - (regime_changes / max_possible_changes)
         
-        return smoothness
+        return float(smoothness)
     
     def _calculate_regime_persistence(self, regime_labels: np.ndarray) -> float:
         """
@@ -1273,7 +1313,14 @@ class ClusterQualityAssessor:
             }
             
             # Detect regime type and calculate regime-specific characteristics
-            regime_returns = forward_returns[regime_mask] if forward_returns is not None else None
+            # Handle index alignment for forward_returns
+            if forward_returns is not None:
+                if hasattr(forward_returns, 'iloc'):
+                    regime_returns = forward_returns.iloc[regime_mask]
+                else:
+                    regime_returns = forward_returns[regime_mask] if len(forward_returns) == len(regime_mask) else None
+            else:
+                regime_returns = None
             
             if regime_returns is not None and len(regime_returns) > 0:
                 # Detect regime type
@@ -1502,8 +1549,37 @@ class ClusterQualityAssessor:
         Test if discovered regimes are actually predictive.
         
         This is based on the user's provided validate_regime_quality function.
+        
+        Args:
+            regime_labels: Regime/cluster labels (must be aligned with indices)
+            forward_returns: Forward returns series (must share index with feature_data)
+            feature_data: Feature DataFrame (must share index with forward_returns)
+            
+        Returns:
+            Dictionary of validation results per regime
         """
         results = {}
+        
+        # Validate alignment
+        if len(regime_labels) != len(forward_returns):
+            self.logger.warning(
+                f"Length mismatch: regime_labels ({len(regime_labels)}) vs "
+                f"forward_returns ({len(forward_returns)}). Results may be incorrect."
+            )
+        
+        if len(regime_labels) != len(feature_data):
+            self.logger.warning(
+                f"Length mismatch: regime_labels ({len(regime_labels)}) vs "
+                f"feature_data ({len(feature_data)}). Results may be incorrect."
+            )
+        
+        # Ensure indices are aligned if both have indices
+        if hasattr(forward_returns, 'index') and hasattr(feature_data, 'index'):
+            if not forward_returns.index.equals(feature_data.index):
+                self.logger.warning(
+                    "Index mismatch between forward_returns and feature_data. "
+                    "Using positional indexing which may cause misalignment."
+                )
         
         # Per-regime statistics
         for regime_id in np.unique(regime_labels):
@@ -1511,7 +1587,12 @@ class ClusterQualityAssessor:
                 continue
             
             regime_mask = (regime_labels == regime_id)
-            regime_returns = forward_returns[regime_mask]
+            
+            # Handle index alignment
+            if hasattr(forward_returns, 'iloc'):
+                regime_returns = forward_returns.iloc[regime_mask]
+            else:
+                regime_returns = forward_returns[regime_mask]
             
             if len(regime_returns) == 0:
                 continue
@@ -1528,9 +1609,12 @@ class ClusterQualityAssessor:
             numeric_features = feature_data.select_dtypes(include=[np.number])
             for col in ['spread', 'volume', 'volatility']:
                 if col in numeric_features.columns:
-                    results[f'regime_{regime_id}'][f'avg_{col}'] = float(
-                        numeric_features.loc[regime_mask, col].mean()
-                    )
+                    # Handle index alignment for feature extraction
+                    if hasattr(numeric_features, 'iloc'):
+                        col_data = numeric_features.iloc[regime_mask, numeric_features.columns.get_loc(col)]
+                    else:
+                        col_data = numeric_features.loc[regime_mask, col] if hasattr(numeric_features, 'loc') else numeric_features[regime_mask][col]
+                    results[f'regime_{regime_id}'][f'avg_{col}'] = float(col_data.mean())
         
         # Regime stability
         results['regime_persistence'] = float(self._calculate_regime_persistence(regime_labels))
@@ -1544,9 +1628,16 @@ class ClusterQualityAssessor:
         Calculate predictive power: can current regime predict future returns?
         
         Uses Random Forest classifier to predict return sign from regime labels.
+        
+        Args:
+            regime_labels: Regime/cluster labels
+            forward_returns: Forward returns series (must be aligned with regime_labels)
+            
+        Returns:
+            Cross-validation score (0-1) indicating predictive power
         """
         try:
-            # Use current regime to predict next period's return sign
+            # Validate input lengths
             if len(regime_labels) < 10 or len(forward_returns) < 10:
                 return 0.0
             
@@ -1555,20 +1646,46 @@ class ClusterQualityAssessor:
             if min_len < 10:
                 return 0.0
             
-            X = pd.get_dummies(regime_labels[:min_len-1])
-            y = (forward_returns[1:min_len] > 0).astype(int).values
+            # Ensure alignment: regime_labels[t] predicts forward_returns[t+1]
+            # Make sure we have matching lengths for prediction
+            max_predictable = min_len - 1
+            if max_predictable < 10:
+                return 0.0
             
+            # Extract aligned data: use regime at time t to predict return at t+1
+            X = pd.get_dummies(regime_labels[:max_predictable])
+            y = (forward_returns[1:max_predictable + 1] > 0).astype(int).values
+            
+            # Validate alignment
             if len(X) != len(y):
+                self.logger.warning(
+                    f"Alignment issue in predictive power: X length={len(X)}, y length={len(y)}"
+                )
                 return 0.0
             
             # Check if we have enough samples and variation
-            if len(y) < 10 or len(set(y)) < 2:
+            if len(y) < 10:
+                return 0.0
+            
+            unique_values = len(set(y))
+            if unique_values < 2:
+                return 0.0
+            
+            # Calculate safe number of CV folds
+            # Ensure at least 3 samples per fold
+            min_samples_per_fold = 3
+            max_folds = min(5, max(2, len(y) // min_samples_per_fold))
+            
+            if max_folds < 2:
                 return 0.0
             
             rf = RandomForestClassifier(n_estimators=100, random_state=42)
-            cv_score = cross_val_score(rf, X, y, cv=min(5, len(y) // 2)).mean()
+            cv_scores = cross_val_score(rf, X, y, cv=max_folds)
             
-            return float(cv_score)
+            if len(cv_scores) == 0:
+                return 0.0
+            
+            return float(cv_scores.mean())
             
         except Exception as e:
             self.logger.warning(f"Failed to calculate predictive power: {e}")
@@ -1703,8 +1820,15 @@ class ClusterQualityAssessor:
             
             tprint_data_preview(metrics_dict, "Loaded Cluster Quality Metrics")
             
+            # Filter to only valid dataclass fields to prevent errors
+            valid_fields = {f.name for f in fields(ClusterQualityMetrics)}
+            filtered_dict = {
+                k: v for k, v in metrics_dict.items() 
+                if k in valid_fields
+            }
+            
             # Reconstruct ClusterQualityMetrics from dict
-            return ClusterQualityMetrics(**metrics_dict)
+            return ClusterQualityMetrics(**filtered_dict)
             
         except Exception as e:
             tprint_error(f"❌ Failed to load cluster quality metrics: {e}")

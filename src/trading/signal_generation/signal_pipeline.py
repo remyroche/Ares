@@ -158,15 +158,18 @@ class SignalGenerationPipeline:
         # Optimization parameters (from backtesting)
         # These will be overridden by final_parameters_optimization if available
         self.optimization_params = {
-            'analyst_confidence_weight': 0.6,
-            'tactician_confidence_weight': 0.4,
+            # Note: No confidence combination weights - we use only Tactician's Ensemble confidence
+            # Keeping for backward compatibility but not used
+            'analyst_confidence_weight': 0.6,  # Deprecated - not used
+            'tactician_confidence_weight': 0.4,  # Deprecated - not used
             'regime_confidence_threshold': DEFAULT_REGIME_CONFIDENCE_THRESHOLD,
             'signal_confidence_threshold': DEFAULT_SIGNAL_CONFIDENCE_THRESHOLD,
             # Exit-specific parameters (will be overridden by final_parameters_optimization)
             'exit_confidence_threshold': DEFAULT_EXIT_CONFIDENCE_THRESHOLD,
-            'tactician_exit_confidence_weight': 0.6,
-            'analyst_exit_confidence_weight': 0.4,
-            'exit_confidence_combination_method': 'multiplicative',  # 'multiplicative', 'logarithmic', 'weighted_average'
+            # Note: Exit confidence weights removed - we use only Tactician Ensemble confidence
+            'tactician_exit_confidence_weight': 0.6,  # Deprecated - not used
+            'analyst_exit_confidence_weight': 0.4,  # Deprecated - not used
+            # Note: exit_confidence_combination_method removed - we use only Tactician Ensemble confidence
             # Exit strategy parameters (loaded from final_parameters_optimization)
             'exit_strategy': {}
         }
@@ -379,15 +382,15 @@ class SignalGenerationPipeline:
                     
                     # Update optimization parameters with optimized values (overriding defaults)
                     self.optimization_params.update({
-                        'analyst_confidence_weight': optimized_params.get('analyst_confidence_weight', self.optimization_params.get('analyst_confidence_weight', 0.6)),
-                        'tactician_confidence_weight': optimized_params.get('tactician_confidence_weight', self.optimization_params.get('tactician_confidence_weight', 0.4)),
+                        # Note: confidence weights removed - we use only Tactician Ensemble confidence
                         'regime_confidence_threshold': optimized_params.get('regime_confidence_threshold', DEFAULT_REGIME_CONFIDENCE_THRESHOLD),
                         'signal_confidence_threshold': optimized_params.get('signal_confidence_threshold', DEFAULT_SIGNAL_CONFIDENCE_THRESHOLD),
                         # Exit-specific parameters (override defaults)
                         'exit_confidence_threshold': optimized_params.get('exit_confidence_threshold', DEFAULT_EXIT_CONFIDENCE_THRESHOLD),
-                        'tactician_exit_confidence_weight': optimized_params.get('tactician_exit_confidence_weight', self.optimization_params.get('tactician_exit_confidence_weight', 0.6)),
-                        'analyst_exit_confidence_weight': optimized_params.get('analyst_exit_confidence_weight', self.optimization_params.get('analyst_exit_confidence_weight', 0.4)),
-                        'exit_confidence_combination_method': optimized_params.get('exit_confidence_combination_method', self.optimization_params.get('exit_confidence_combination_method', 'multiplicative')),
+                        # Note: Exit confidence weights removed - we use only Tactician Ensemble confidence
+                        'tactician_exit_confidence_weight': optimized_params.get('tactician_exit_confidence_weight', self.optimization_params.get('tactician_exit_confidence_weight', 0.6)),  # Deprecated
+                        'analyst_exit_confidence_weight': optimized_params.get('analyst_exit_confidence_weight', self.optimization_params.get('analyst_exit_confidence_weight', 0.4)),  # Deprecated
+                        # Note: exit_confidence_combination_method removed - we use only Tactician Ensemble confidence
                         # Additional parameters from optimization
                         'confidence_threshold': optimized_params.get('confidence_threshold', DEFAULT_CONFIDENCE_THRESHOLD),
                         'position_sizing_factor': optimized_params.get('position_sizing_factor', 0.02),
@@ -509,9 +512,10 @@ class SignalGenerationPipeline:
         )
 
         # Step 6: Calculate Exit Confidence (for position management)
+        # Use only Tactician's Ensemble confidence for exit decisions
         exit_confidence = self._calculate_exit_confidence(
-            analyst_output.analyst_confidence,
-            tactician_output.tactician_confidence
+            analyst_output.analyst_confidence,  # Not used, kept for API compatibility
+            tactician_output.tactician_confidence  # Tactician's Ensemble confidence
         )
 
         # Step 7: Check Exit Conditions (if position is open) - using comprehensive exit parameters
@@ -1461,23 +1465,19 @@ class SignalGenerationPipeline:
                 except Exception as e:
                     self.logger.warning(f"⚠️ Tactician ensemble model prediction failed: {e}")
             
-            # Use ensemble confidence, or fallback to average of base confidences
+            # Use ensemble confidence - REQUIRED, no fallbacks allowed
             if ensemble_confidence is not None:
                 tactician_confidence = ensemble_confidence
                 self.logger.debug(f"Using tactician ensemble confidence: {tactician_confidence:.3f}")
-            elif base_confidences:
-                # Fallback: average of base model confidences
-                tactician_confidence = float(np.mean(base_confidences))
-                self.logger.debug(f"Using average base model confidence: {tactician_confidence:.3f}")
             else:
-                # Ultimate fallback
-                tactician_confidence = 0.5
-                self.logger.warning("⚠️ No tactician predictions available, using default confidence 0.5")
+                # Tactician ensemble confidence is required - raise error if not available
+                error_msg = "Tactician ensemble model confidence not available. This is required for trading decisions."
+                self.logger.error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
 
-            # Calculate combined confidence with analyst
-            combined_confidence = self._calculate_combined_confidence(
-                analyst_output.analyst_confidence, tactician_confidence
-            )
+            # Use Tactician confidence directly (no combination with Analyst)
+            # combined_confidence is kept for backward compatibility but equals tactician_confidence
+            combined_confidence = tactician_confidence
 
             # Generate final signal based on confidence and thresholds
             # Extract signal direction from base outputs if available
@@ -1502,10 +1502,10 @@ class SignalGenerationPipeline:
                             break
             
             # If still hold and confidence is high, use confidence to determine signal
-            if final_signal == 'hold' and combined_confidence > 0.7:
+            if final_signal == 'hold' and tactician_confidence > 0.7:
                 # Default to buy if high confidence (can be refined based on price action)
                 final_signal = 'buy'
-                signal_strength = combined_confidence
+                signal_strength = tactician_confidence
             
             # Prepare meta features
             meta_features = {
@@ -1564,80 +1564,37 @@ class SignalGenerationPipeline:
             self.logger.warning(f"⚠️ Regime adjustment failed: {e}")
             return base_confidence
 
-    def _calculate_combined_confidence(self, analyst_confidence: float, tactician_confidence: float) -> float:
-        """Calculate combined confidence using optimization parameters."""
-        try:
-            analyst_weight = self.optimization_params['analyst_confidence_weight']
-            tactician_weight = self.optimization_params['tactician_confidence_weight']
-
-            combined = (analyst_confidence * analyst_weight +
-                       tactician_confidence * tactician_weight)
-
-            return max(0.0, min(1.0, combined))
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Combined confidence calculation failed: {e}")
-            return (analyst_confidence + tactician_confidence) / 2
+    # Note: _calculate_combined_confidence removed - we use only Tactician's Ensemble confidence
+    # Tactician uses Analyst output as input, so combining confidences would cause overfitting.
 
     def _calculate_exit_confidence(self, analyst_confidence: float, tactician_confidence: float) -> float:
         """
-        Calculate exit confidence using multiplicative and logarithmic combinations.
-
-        This method implements the requirement for optimal exit confidence calculation based on
-        tactician's and analyst's confidence outputs, using different combination methods.
+        Return Tactician confidence for exit decisions (no combination with Analyst).
+        
+        Note: Tactician uses Analyst output as input, so combining confidences
+        would cause overfitting. We use only Tactician's Ensemble confidence.
 
         Args:
-            analyst_confidence: Current analyst confidence (regularly recalculated)
-            tactician_confidence: Current tactician confidence (regularly recalculated)
+            analyst_confidence: Current analyst confidence (not used, kept for API compatibility)
+            tactician_confidence: Current tactician confidence (Tactician's Ensemble confidence)
 
         Returns:
-            Combined exit confidence value
+            Tactician confidence value (no combination)
         """
         try:
-            # Get exit-specific weights and combination method
-            tactician_weight = self.optimization_params['tactician_exit_confidence_weight']
-            analyst_weight = self.optimization_params['analyst_exit_confidence_weight']
-            combination_method = self.optimization_params['exit_confidence_combination_method']
+            # Use only Tactician confidence (no combination)
+            exit_confidence = max(0.0, min(1.0, tactician_confidence))
 
-            # Ensure weights are normalized
-            total_weight = tactician_weight + analyst_weight
-            if total_weight > 0:
-                tactician_weight = tactician_weight / total_weight
-                analyst_weight = analyst_weight / total_weight
-            else:
-                tactician_weight = 0.6
-                analyst_weight = 0.4
-
-            # Calculate exit confidence based on selected method
-            if combination_method == 'multiplicative':
-                # Multiplicative combination: (tactician_conf^tactician_weight) * (analyst_conf^analyst_weight)
-                exit_confidence = self._calculate_multiplicative_exit_confidence(
-                    analyst_confidence, tactician_confidence, tactician_weight, analyst_weight
-                )
-            elif combination_method == 'logarithmic':
-                # Logarithmic combination: exp(tactician_weight * log(tactician_conf) + analyst_weight * log(analyst_conf))
-                exit_confidence = self._calculate_logarithmic_exit_confidence(
-                    analyst_confidence, tactician_confidence, tactician_weight, analyst_weight
-                )
-            else:  # weighted_average or default
-                # Weighted average combination
-                exit_confidence = (analyst_confidence * analyst_weight +
-                                 tactician_confidence * tactician_weight)
-
-            # Ensure confidence is within valid range [0, 1]
-            exit_confidence = max(0.0, min(1.0, exit_confidence))
-
-            self.logger.debug(f"📊 Exit confidence calculation using {combination_method}:")
-            self.logger.debug(f"   Analyst: {analyst_confidence:.4f} (weight: {analyst_weight:.3f})")
-            self.logger.debug(f"   Tactician: {tactician_confidence:.4f} (weight: {tactician_weight:.3f})")
+            self.logger.debug(f"📊 Exit confidence calculation (Tactician only):")
+            self.logger.debug(f"   Tactician Ensemble: {tactician_confidence:.4f}")
             self.logger.debug(f"   Exit confidence: {exit_confidence:.4f}")
 
             return exit_confidence
 
         except Exception as e:
             self.logger.error(f"❌ Error calculating exit confidence: {e}")
-            # Fallback to simple weighted average
-            return (analyst_confidence * 0.4 + tactician_confidence * 0.6)
+            # If Tactician confidence is not available, return 0 and raise error
+            raise ValueError(f"Tactician ensemble confidence required for exit decisions: {e}")
 
     def _calculate_multiplicative_exit_confidence(self, analyst_confidence: float, tactician_confidence: float,
                                                 tactician_weight: float, analyst_weight: float) -> float:
@@ -1818,34 +1775,20 @@ class SignalGenerationPipeline:
                     if loss_pct >= base_stop_loss:
                         exit_reasons.append(f"Stop-loss triggered: {loss_pct:.3f} >= {base_stop_loss:.3f}")
             
-            # 6. Individual component confidence drop check (analyst OR tactician)
-            # Exit if either analyst or tactician confidence drops significantly from entry
-            if current_pos.entry_confidence is not None:
-                # Use tracked entry confidences if available, otherwise fallback to entry_confidence
-                entry_analyst_conf = current_pos.entry_analyst_confidence if current_pos.entry_analyst_confidence is not None else current_pos.entry_confidence
-                entry_tactician_conf = current_pos.entry_tactician_confidence if current_pos.entry_tactician_confidence is not None else current_pos.entry_confidence
-                
-                analyst_drop = entry_analyst_conf - analyst_confidence if entry_analyst_conf > analyst_confidence else 0
+            # 6. Tactician confidence drop check (using only Tactician Ensemble confidence)
+            # Exit if Tactician confidence drops significantly from entry
+            if current_pos.entry_tactician_confidence is not None:
+                entry_tactician_conf = current_pos.entry_tactician_confidence
                 tactician_drop = entry_tactician_conf - tactician_confidence if entry_tactician_conf > tactician_confidence else 0
                 
                 # Get component confidence drop threshold from optimization (backtested parameter)
                 component_confidence_drop = exit_strategy.get('component_confidence_drop', 0.3) if isinstance(exit_strategy, dict) else 0.3
                 
-                # Exit if either component drops significantly
-                if analyst_drop >= component_confidence_drop or tactician_drop >= component_confidence_drop:
-                    if analyst_drop >= component_confidence_drop and tactician_drop >= component_confidence_drop:
-                        exit_reasons.append(
-                            f"Both analyst and tactician confidence dropped: analyst {analyst_drop:.3f}, "
-                            f"tactician {tactician_drop:.3f} >= threshold {component_confidence_drop:.3f}"
-                        )
-                    elif analyst_drop >= component_confidence_drop:
-                        exit_reasons.append(
-                            f"Analyst confidence dropped significantly: {analyst_drop:.3f} >= threshold {component_confidence_drop:.3f}"
-                        )
-                    else:
-                        exit_reasons.append(
-                            f"Tactician confidence dropped significantly: {tactician_drop:.3f} >= threshold {component_confidence_drop:.3f}"
-                        )
+                # Exit if Tactician confidence drops significantly
+                if tactician_drop >= component_confidence_drop:
+                    exit_reasons.append(
+                        f"Tactician ensemble confidence dropped significantly: {tactician_drop:.3f} >= threshold {component_confidence_drop:.3f}"
+                    )
             
             # Determine if we should exit based on any exit reason
             if exit_reasons:
@@ -2019,13 +1962,14 @@ class SignalGenerationPipeline:
                     'reason': f'Low regime confidence: {regime_output.confidence:.3f} < {regime_threshold:.3f}'
                 }
 
-            # Check signal confidence
-            if tactician_output.combined_confidence < signal_threshold:
+            # Check signal confidence (using only Tactician Ensemble confidence)
+            tactician_confidence = tactician_output.tactician_confidence
+            if tactician_confidence < signal_threshold:
                 return {
                     'signal': 'hold',
-                    'confidence': tactician_output.combined_confidence,
+                    'confidence': tactician_confidence,
                     'strength': 0.0,
-                    'reason': f'Low signal confidence: {tactician_output.combined_confidence:.3f} < {signal_threshold:.3f}'
+                    'reason': f'Low Tactician ensemble confidence: {tactician_confidence:.3f} < {signal_threshold:.3f}'
                 }
 
             # Validate signal based on analyst and tactician outputs
@@ -2034,14 +1978,14 @@ class SignalGenerationPipeline:
             if not validation_result['is_valid']:
                 return {
                     'signal': 'hold',
-                    'confidence': tactician_output.combined_confidence,
+                    'confidence': tactician_confidence,
                     'strength': 0.0,
                     'reason': f'Signal validation failed: {validation_result["reason"]}'
                 }
 
-            # Generate signal based on tactician output
+            # Generate signal based on tactician output (using only Tactician Ensemble confidence)
             final_signal = tactician_output.final_signal
-            final_confidence = tactician_output.combined_confidence
+            final_confidence = tactician_confidence  # Use Tactician Ensemble confidence directly
             signal_strength = tactician_output.signal_strength
 
             return {

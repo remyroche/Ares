@@ -141,8 +141,19 @@ class LeverageManager:
             # Validate inputs
             self._validate_leverage_inputs(symbol, current_price, account_balance, analyst_confidence, tactician_confidence)
 
-            # Extract ML predictions
-            combined_confidence = ml_predictions.get('combined_confidence', 0.5)
+            # Extract ML predictions - use Tactician ensemble confidence (required)
+            # Note: We use only Tactician's Ensemble confidence, not a mix with Analyst
+            tactician_ensemble_confidence = ml_predictions.get('tactician_ensemble_confidence') or ml_predictions.get('tactician_confidence')
+            if tactician_ensemble_confidence is None:
+                # Fallback to combined_confidence for backward compatibility, but raise error
+                combined_confidence = ml_predictions.get('combined_confidence')
+                if combined_confidence is None:
+                    raise ValueError("Tactician ensemble confidence is required but not available in ml_predictions. "
+                                   "Please ensure Tactician ensemble model is properly initialized and confidence is available.")
+                # Treat as Tactician confidence
+                tactician_ensemble_confidence = combined_confidence
+            else:
+                combined_confidence = tactician_ensemble_confidence
             intensity = ml_predictions.get('intensity', 1.0)
             reliability = ml_predictions.get('reliability', 1.0)
             risk_score = ml_predictions.get('risk_score', 0.0)

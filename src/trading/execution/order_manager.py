@@ -273,7 +273,7 @@ class OrderManager:
         if order.order_id in self._polling_tasks:
             return  # Already polling
         
-        async def poll_order_status():
+        async def poll_order_status() -> None:
             """Poll order status until filled, cancelled, or timeout."""
             start_time = datetime.now()
             

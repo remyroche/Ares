@@ -187,7 +187,7 @@ class TradeAnalyzer:
                 'prediction_variance': np.var(all_predictions) if len(all_predictions) > 1 else 0.0,
                 'confidence_variance': np.var(all_confidences) if len(all_confidences) > 1 else 0.0,
                 'model_agreement': 1.0 - (np.var(all_predictions) if len(all_predictions) > 1 else 0.0),
-                'weighted_prediction': sum(p * trade.model_weights.get(mid, 1.0) for mid, p in trade.model_predictions.items()) / sum(trade.model_weights.values()) if trade.model_weights else np.mean(all_predictions) if all_predictions else 0.0
+                'weighted_prediction': sum(p * trade.model_weights.get(model_id, 1.0) for model_id, p in trade.model_predictions.items()) / sum(trade.model_weights.values()) if trade.model_weights else np.mean(all_predictions) if all_predictions else 0.0
             }
 
             return {
@@ -491,7 +491,10 @@ class TradeAnalyzer:
             if trade.pnl_percentage:
                 performance_score = 0.5 + min(trade.pnl_percentage * 5, 0.5)  # Scale PnL to score
 
-            model_score = analysis.get('model_analysis', {}).get('consensus_analysis', {}).get('effectiveness_score', 0.5)
+            # Get ensemble effectiveness score from model analysis
+            model_analysis_dict = analysis.get('model_analysis', {})
+            ensemble_effectiveness = model_analysis_dict.get('ensemble_effectiveness', {})
+            model_score = ensemble_effectiveness.get('effectiveness_score', 0.5) if ensemble_effectiveness else 0.5
             risk_score = 1.0 - analysis.get('risk_analysis', {}).get('risk_assessment', {}).get('total_risk_score', 0.5)
             timing_score = analysis.get('timing_analysis', {}).get('timing_assessment', {}).get('overall_timing_score', 0.5)
             execution_score = analysis.get('execution_analysis', {}).get('execution_assessment', {}).get('adjusted_execution_score', 0.5)

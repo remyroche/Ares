@@ -83,12 +83,12 @@ class AnalystSignalGenerator:
         self.logger = logger.getChild('AnalystSignalGenerator')
 
         # Analyst component (will be injected)
-        self.analyst = None
+        self.analyst: Optional[Any] = None
 
         # NAS engine for enhanced signal generation
-        self.nas_engine = None
-        self.nas_models = {}  # Per-regime NAS models
-        self.nas_architectures = {}  # Per-regime NAS architectures
+        self.nas_engine: Optional[Any] = None
+        self.nas_models: Dict[str, Any] = {}  # Per-regime NAS models
+        self.nas_architectures: Dict[str, Any] = {}  # Per-regime NAS architectures
 
         # Signal generation parameters
         self.confidence_threshold = config.get('confidence_threshold', 0.6)
@@ -106,16 +106,16 @@ class AnalystSignalGenerator:
         self.regime_timeframe = config.get('regime_timeframe', '15m')
 
         # Signal history (using deque for efficient O(1) operations)
-        self.max_history = config.get('max_history', 1000)
-        self.signal_history: deque = deque(maxlen=self.max_history)
+        self.max_history: int = config.get('max_history', 1000)
+        self.signal_history: deque[AnalystSignal] = deque(maxlen=self.max_history)
 
         # Performance tracking
-        self.signal_count = 0
-        self.successful_signals = 0
-        self.failed_signals = 0
-        self.nas_enhanced_signals = 0
+        self.signal_count: int = 0
+        self.successful_signals: int = 0
+        self.failed_signals: int = 0
+        self.nas_enhanced_signals: int = 0
 
-    async def initialize(self, analyst_component, nas_models: Optional[Dict[str, Any]] = None) -> bool:
+    async def initialize(self, analyst_component: Any, nas_models: Optional[Dict[str, Any]] = None) -> bool:
         """
         Initialize the signal generator with analyst component and NAS models.
 

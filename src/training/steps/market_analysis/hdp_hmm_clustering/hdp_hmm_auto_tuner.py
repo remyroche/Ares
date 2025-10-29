@@ -1011,10 +1011,10 @@ def run_hdp_hmm_auto_tuning(
             timeout=3600  # 1 hour
         )
         
-        print(f"Best composite score: {best_score:.4f}")
-        print(f"Best parameters: {best_params}")
-        print(f"Optimization method: {results.convergence_info.get('method')}")
-        print(f"Parameters optimized: {results.convergence_info.get('n_parameters', 7)}")
+        tprint_info(f"Best composite score: {best_score:.4f}")
+        tprint_info(f"Best parameters: {best_params}")
+        tprint_info(f"Optimization method: {results.convergence_info.get('method')}")
+        tprint_info(f"Parameters optimized: {results.convergence_info.get('n_parameters', 7)}")
         
         # Use best parameters for final clustering
         from src.training.steps.market_analysis.hdp_hmm_clustering import run_hdp_hmm_clustering

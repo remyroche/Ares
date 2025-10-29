@@ -603,8 +603,8 @@ async def run_hdp_hmm_step(config: Dict[str, Any]) -> Dict[str, Any]:
         }
         
         results = await run_hdp_hmm_step(config)
-        print(f"Success: {results['success']}")
-        print(f"Regimes: {results.get('n_regimes', 0)}")
+        tprint_info(f"Success: {results['success']}")
+        tprint_info(f"Regimes: {results.get('n_regimes', 0)}")
         ```
     """
     step = HDPHMMRegimeDiscoveryStep()

@@ -99,13 +99,13 @@ class QualityThresholds:
     QUALITY_GOOD = 0.5
     QUALITY_MODERATE = 0.3
     
-    # Regime type detection thresholds
-    HIGH_VOLATILITY_THRESHOLD = 0.02  # 2% daily volatility threshold
-    VOLATILITY_CLUSTERING_THRESHOLD = 0.3
-    TREND_STRENGTH_THRESHOLD = 0.5
-    TREND_PERSISTENCE_THRESHOLD = 0.2
-    MEAN_REVERSION_THRESHOLD = -0.1  # Negative autocorrelation threshold
-    LOW_VOLATILITY_THRESHOLD = 0.01
+    # Regime type detection thresholds (Crypto-optimized)
+    HIGH_VOLATILITY_THRESHOLD = 0.05  # 5% daily volatility threshold (crypto: Bitcoin/ALTs commonly swing 3–10% daily)
+    VOLATILITY_CLUSTERING_THRESHOLD = 0.45  # Crypto volatility clusters tightly & sharply
+    TREND_STRENGTH_THRESHOLD = 0.65  # Crypto trends are noisy → require stronger conviction
+    TREND_PERSISTENCE_THRESHOLD = 0.35  # Trend needs to hold at least a few candles
+    MEAN_REVERSION_THRESHOLD = -0.05  # Mean reversion exists but is much weaker in crypto
+    LOW_VOLATILITY_THRESHOLD = 0.025  # 2.5% - Crypto rarely sits at equity-like low vol levels
     LOW_TREND_THRESHOLD = 0.3
     VOLATILITY_SCALE_FACTOR = 10.0  # For volatility comparison scaling
     

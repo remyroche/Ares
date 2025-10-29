@@ -391,14 +391,36 @@ class OptimizationTargets:
     
     # ===== STRUCTURAL CONSTRAINTS =====
     
-    # Cluster count constraints
-    min_clusters: int = 3  # Absolute minimum
-    max_clusters: int = 10  # Absolute maximum
-    target_clusters: Tuple[int, int] = (4, 8)  # Preferred range
+    # Cluster count constraints - reduced for better temporal smoothness
+    min_clusters: int = 4  # Absolute minimum
+    max_clusters: int = 6  # Absolute maximum (reduced for better temporal smoothness)
+    target_clusters: Tuple[int, int] = (4, 6)  # Preferred range
     
     # Cluster size constraints (as percentage of total samples)
     min_cluster_size_pct: float = 0.02  # 2% minimum
     max_cluster_size_pct: float = 0.20  # 20% maximum
+    
+    # ===== CLUSTERING QUALITY TARGETS =====
+    
+    # CV Score (Calinski-Harabasz) - higher is better
+    min_cv_score: float = 1.2  # Minimum acceptable CV score
+    target_cv_score: float = 2.0  # Target CV score
+    
+    # Silhouette Score - higher is better (-1 to 1)
+    min_silhouette_score: float = 0.1  # Minimum acceptable silhouette
+    target_silhouette_score: float = 0.3  # Target silhouette score
+    
+    # Davies-Bouldin Index - lower is better
+    max_dbi_score: float = 2.0  # Maximum acceptable DBI
+    target_dbi_score: float = 1.0  # Target DBI
+    
+    # Balance Score - higher is better (0 to 1)
+    min_balance_score: float = 0.3  # Minimum acceptable balance
+    target_balance_score: float = 0.7  # Target balance score
+    
+    # Temporal Smoothness - higher is better (0 to 1) - increased targets
+    min_temporal_smoothness: float = 0.6  # Minimum acceptable temporal smoothness (increased)
+    target_temporal_smoothness: float = 0.9  # Target temporal smoothness (increased)
     
     def to_dict(self) -> Dict[str, float]:
         """Convert to dictionary format."""
@@ -413,6 +435,16 @@ class OptimizationTargets:
             'min_win_rate': self.min_win_rate,
             'min_clusters': self.min_clusters,
             'max_clusters': self.max_clusters,
+            'min_cv_score': self.min_cv_score,
+            'target_cv_score': self.target_cv_score,
+            'min_silhouette_score': self.min_silhouette_score,
+            'target_silhouette_score': self.target_silhouette_score,
+            'max_dbi_score': self.max_dbi_score,
+            'target_dbi_score': self.target_dbi_score,
+            'min_balance_score': self.min_balance_score,
+            'target_balance_score': self.target_balance_score,
+            'min_temporal_smoothness': self.min_temporal_smoothness,
+            'target_temporal_smoothness': self.target_temporal_smoothness,
         }
 
 

@@ -598,22 +598,24 @@ class RegimeClusteringStep(BaseStep):
         try:
             stabilized_labels = labels.copy()
             
-            # Enhanced temporal smoothing parameters
-            base_min_dwell = config.get('min_dwell_bars', 3)
-            max_dwell = config.get('max_dwell_bars', 8)
-            stability_threshold = config.get('stability_threshold', 0.7)
-            volatility_factor = config.get('volatility_factor', 1.0)
+            # Enhanced temporal smoothing parameters - very aggressive for better smoothness
+            base_min_dwell = config.get('min_dwell_bars', 12)  # Increased from 8 to 12
+            max_dwell = config.get('max_dwell_bars', 20)       # Increased from 15 to 20
+            stability_threshold = config.get('stability_threshold', 0.3)  # Lowered from 0.5 to 0.3
+            volatility_factor = config.get('volatility_factor', 2.0)      # Increased from 1.5 to 2.0
             
             # Calculate adaptive dwell time based on local volatility
             adaptive_dwell = self._calculate_adaptive_dwell_time(labels, base_min_dwell, max_dwell, volatility_factor)
             
             # Multi-pass temporal smoothing with increasing strictness
-            for pass_num in range(3):
+            for pass_num in range(5):  # Added one more pass for very aggressive smoothing
                 changes_this_pass = 0
                 
                 # Pass 1: Remove isolated changes
                 # Pass 2: Apply stability constraints
                 # Pass 3: Final consistency check
+                # Pass 4: Aggressive smoothing for high change rates
+                # Pass 5: Very aggressive smoothing for extremely high change rates
                 
                 for i in range(adaptive_dwell, len(stabilized_labels) - adaptive_dwell):
                     current_label = stabilized_labels[i]
@@ -644,7 +646,7 @@ class RegimeClusteringStep(BaseStep):
                                 stabilized_labels[i] = stabilized_labels[most_stable_neighbor]
                                 changes_this_pass += 1
                     
-                    else:
+                    elif pass_num == 2:
                         # Final consistency check - ensure smooth transitions
                         if (stabilized_labels[i] != stabilized_labels[i-1] and 
                             stabilized_labels[i] != stabilized_labels[i+1] and
@@ -652,6 +654,35 @@ class RegimeClusteringStep(BaseStep):
                             # Use weighted average of neighbors
                             stabilized_labels[i] = stabilized_labels[i-1]
                             changes_this_pass += 1
+                    
+                    elif pass_num == 3:
+                        # Pass 4: Aggressive smoothing for high change rates
+                        # If we have too many changes, be more aggressive
+                        current_change_rate = np.sum(stabilized_labels[1:] != stabilized_labels[:-1]) / len(stabilized_labels)
+                        if current_change_rate > 0.3:  # If change rate > 30%
+                            # Look at a larger window for stability
+                            window_size = min(adaptive_dwell * 2, 10)
+                            if i >= window_size and i < len(stabilized_labels) - window_size:
+                                # Check if current point is inconsistent with larger window
+                                window_labels = stabilized_labels[i-window_size:i+window_size+1]
+                                most_common_label = np.bincount(window_labels[window_labels >= 0]).argmax()
+                                if current_label != most_common_label and most_common_label >= 0:
+                                    stabilized_labels[i] = most_common_label
+                                    changes_this_pass += 1
+                    
+                    else:
+                        # Pass 5: Very aggressive smoothing for extremely high change rates
+                        current_change_rate = np.sum(stabilized_labels[1:] != stabilized_labels[:-1]) / len(stabilized_labels)
+                        if current_change_rate > 0.5:  # If change rate > 50%
+                            # Use very large window for maximum stability
+                            window_size = min(adaptive_dwell * 3, 15)
+                            if i >= window_size and i < len(stabilized_labels) - window_size:
+                                # Check if current point is inconsistent with very large window
+                                window_labels = stabilized_labels[i-window_size:i+window_size+1]
+                                most_common_label = np.bincount(window_labels[window_labels >= 0]).argmax()
+                                if current_label != most_common_label and most_common_label >= 0:
+                                    stabilized_labels[i] = most_common_label
+                                    changes_this_pass += 1
                 
                 if changes_this_pass == 0:
                     break  # No more changes needed
@@ -661,8 +692,22 @@ class RegimeClusteringStep(BaseStep):
             # Apply final stability validation
             stabilized_labels = self._apply_stability_validation(stabilized_labels, config)
             
+            # Apply median filter for additional smoothing if change rate is still high
+            current_change_rate = np.sum(stabilized_labels[1:] != stabilized_labels[:-1]) / len(stabilized_labels)
+            if current_change_rate > 0.1:  # If change rate > 10% (more aggressive)
+                tprint(f"🔧 Applying median filter for additional smoothing (change rate: {current_change_rate:.3f})", "INFO")
+                from scipy import ndimage
+                # Apply median filter with window size 3
+                median_filtered = ndimage.median_filter(stabilized_labels.astype(float), size=3)
+                # Only apply changes that don't create new clusters
+                for i in range(len(stabilized_labels)):
+                    if (median_filtered[i] != stabilized_labels[i] and 
+                        median_filtered[i] in np.unique(stabilized_labels)):
+                        stabilized_labels[i] = int(median_filtered[i])
+            
             total_changes = np.sum(labels != stabilized_labels)
-            tprint(f"🔧 Enhanced temporal stabilization: {total_changes} total changes applied", "INFO")
+            final_change_rate = np.sum(stabilized_labels[1:] != stabilized_labels[:-1]) / len(stabilized_labels)
+            tprint(f"🔧 Enhanced temporal stabilization: {total_changes} total changes applied, final change rate: {final_change_rate:.3f}", "INFO")
             
             return stabilized_labels
             
@@ -903,10 +948,16 @@ class RegimeClusteringStep(BaseStep):
             char1 = profile1.get('characteristics', {})
             char2 = profile2.get('characteristics', {})
             
-            # Compare key characteristics
-            vol_sim = 1.0 - abs(char1.get('volatility', 0) - char2.get('volatility', 0)) / 0.1
-            return_sim = 1.0 - abs(char1.get('avg_return', 0) - char2.get('avg_return', 0)) / 0.02
-            trend_sim = 1.0 - abs(char1.get('trend_strength', 0) - char2.get('trend_strength', 0)) / 0.002
+            # Compare key characteristics with more reasonable scaling
+            # Use larger denominators to make similarity more discriminating
+            vol_diff = abs(char1.get('volatility', 0) - char2.get('volatility', 0))
+            vol_sim = 1.0 - min(vol_diff / 0.5, 1.0)  # Scale by 0.5 instead of 0.1
+            
+            return_diff = abs(char1.get('avg_return', 0) - char2.get('avg_return', 0))
+            return_sim = 1.0 - min(return_diff / 0.1, 1.0)  # Scale by 0.1 instead of 0.02
+            
+            trend_diff = abs(char1.get('trend_strength', 0) - char2.get('trend_strength', 0))
+            trend_sim = 1.0 - min(trend_diff / 0.01, 1.0)  # Scale by 0.01 instead of 0.002
             
             # Weighted average
             similarity = (0.4 * vol_sim + 0.3 * return_sim + 0.3 * trend_sim)
@@ -933,8 +984,8 @@ class RegimeClusteringStep(BaseStep):
             if len(non_noise_labels) < 2:
                 return labels
             
-            # Get similarity threshold from config
-            similarity_threshold = config.get('cluster_similarity_threshold', 0.8)
+            # Get similarity threshold from config - use more conservative threshold
+            similarity_threshold = config.get('cluster_similarity_threshold', 0.95)
             
             # Calculate cluster characteristics for comparison
             cluster_characteristics = self._calculate_cluster_characteristics(labels, config)
@@ -954,16 +1005,25 @@ class RegimeClusteringStep(BaseStep):
             # Sort by similarity (highest first)
             similar_pairs.sort(key=lambda x: x[2], reverse=True)
             
-            # Merge similar clusters
+            # Merge similar clusters with minimum cluster count constraint
             merged_labels = labels.copy()
+            min_clusters = config.get('min_clusters', 4)  # Ensure we don't merge below minimum
+            
             for label1, label2, similarity in similar_pairs:
-                # Only merge if both clusters still exist
+                # Only merge if both clusters still exist and we won't go below minimum
                 if (np.any(merged_labels == label1) and np.any(merged_labels == label2)):
-                    # Merge label2 into label1 (keep the smaller label number)
-                    target_label = min(label1, label2)
-                    source_label = max(label1, label2)
-                    merged_labels[merged_labels == source_label] = target_label
-                    tprint(f"🔧 Merged clusters {source_label} -> {target_label} (similarity: {similarity:.3f})", "INFO")
+                    # Count current unique clusters (excluding noise)
+                    current_clusters = len(np.unique(merged_labels[merged_labels != -1]))
+                    
+                    if current_clusters > min_clusters:
+                        # Merge label2 into label1 (keep the smaller label number)
+                        target_label = min(label1, label2)
+                        source_label = max(label1, label2)
+                        merged_labels[merged_labels == source_label] = target_label
+                        tprint(f"🔧 Merged clusters {source_label} -> {target_label} (similarity: {similarity:.3f})", "INFO")
+                    else:
+                        tprint(f"⚠️ Skipping merge {label1} -> {label2} to maintain minimum {min_clusters} clusters", "WARNING")
+                        break  # Stop merging to preserve minimum cluster count
             
             return merged_labels
             
@@ -1110,6 +1170,18 @@ class RegimeClusteringStep(BaseStep):
             tprint(f"⚠️ Failed to calculate refinement metrics: {e}", "WARNING")
             return {}
 
+    def _format_metric(self, value) -> str:
+        """Format a metric value for display in reports."""
+        if value is None or value == 'N/A':
+            return 'N/A'
+        try:
+            if isinstance(value, (int, float)):
+                return f"{value:.4f}"
+            else:
+                return str(value)
+        except (ValueError, TypeError):
+            return str(value)
+
     def _create_comprehensive_report(self, refined_clusters: Dict[str, Any], hdbscan_artifacts: Dict[str, Any], metrics: Dict[str, Any], config: Dict[str, Any]) -> str:
         """
         Create comprehensive markdown report.
@@ -1160,6 +1232,15 @@ class RegimeClusteringStep(BaseStep):
 ## Quality Assessment
 - **Meets Targets**: {refined_clusters.get('quality_targets', {}).get('meets_targets', 'Unknown')}
 - **Cluster Count**: {refined_clusters.get('quality_targets', {}).get('n_clusters', 'Unknown')}
+
+### Detailed Quality Metrics
+- **CV Score (Calinski-Harabasz)**: {self._format_metric(refined_clusters.get('quality_targets', {}).get('metrics', {}).get('calinski_harabasz_score', 'N/A'))}
+- **Silhouette Score**: {self._format_metric(refined_clusters.get('quality_targets', {}).get('metrics', {}).get('silhouette_score', 'N/A'))}
+- **Davies-Bouldin Index**: {self._format_metric(refined_clusters.get('quality_targets', {}).get('metrics', {}).get('davies_bouldin_score', 'N/A'))}
+- **Temporal Smoothness**: {self._format_metric(refined_clusters.get('quality_targets', {}).get('metrics', {}).get('temporal_smoothness', 'N/A'))}
+- **Within-Regime CV**: {self._format_metric(refined_clusters.get('quality_targets', {}).get('metrics', {}).get('within_regime_cv', 'N/A'))}
+- **Between-Regime CV**: {self._format_metric(refined_clusters.get('quality_targets', {}).get('metrics', {}).get('between_regime_cv', 'N/A'))}
+- **Overall Quality Score**: {self._format_metric(refined_clusters.get('quality_targets', {}).get('metrics', {}).get('quality_score', 'N/A'))}
 - **Issues**: {', '.join(refined_clusters.get('quality_targets', {}).get('issues', ['None']))}
 
 ### Quality Metrics
@@ -1417,7 +1498,7 @@ class RegimeClusteringStep(BaseStep):
             else:
                 # Fallback to config or hardcoded defaults
                 min_clusters = config.get('min_clusters', 4)
-                max_clusters = config.get('max_clusters', 8)
+                max_clusters = config.get('max_clusters', 5)
                 min_cv_score = config.get('min_cv_score', 50.0)  # CH score
                 min_silhouette_score = config.get('min_silhouette_score', 0.2)
                 max_dbi_score = config.get('max_dbi_score', 2.0)  # Lower is better for DBI
@@ -1661,7 +1742,7 @@ class RegimeClusteringStep(BaseStep):
             best_params = cached_results['best_params']
             converted_params = {
                 'min_clusters': best_params.get('K_MIN', 4),
-                'max_clusters': best_params.get('K_MAX', 8),
+                'max_clusters': best_params.get('K_MAX', 5),
                 'iterative_max_iterations': best_params.get('max_rounds', 25),
                 'iterative_min_frac': best_params.get('MIN_FRAC', 0.03),
                 'iterative_max_frac': best_params.get('MAX_FRAC', 0.20),
@@ -2083,6 +2164,37 @@ class RegimeClusteringStep(BaseStep):
             
             tprint(f"📊 Using {features.shape[0]} samples with {features.shape[1]} features for iterative optimization", "INFO")
             
+            # Ensure features and labels have the same length
+            if len(features) != len(initial_labels):
+                tprint(f"⚠️ Dimension mismatch: features={len(features)}, labels={len(initial_labels)}", "WARNING")
+                tprint("🔧 Aligning labels to match feature timeframe...", "INFO")
+                
+                # Resample labels to match feature length
+                # Use the most common label for each time period
+                if len(initial_labels) > len(features):
+                    # Downsample labels to match features
+                    step = len(initial_labels) // len(features)
+                    resampled_labels = []
+                    for i in range(len(features)):
+                        start_idx = i * step
+                        end_idx = min((i + 1) * step, len(initial_labels))
+                        # Use the most common label in this time window
+                        window_labels = initial_labels[start_idx:end_idx]
+                        # Exclude noise labels (-1) when finding the most common
+                        valid_labels = window_labels[window_labels >= 0]
+                        if len(valid_labels) > 0:
+                            from collections import Counter
+                            most_common_label = Counter(valid_labels).most_common(1)[0][0]
+                            resampled_labels.append(most_common_label)
+                        else:
+                            # If all labels in window are noise, use -1
+                            resampled_labels.append(-1)
+                    initial_labels = np.array(resampled_labels)
+                    tprint(f"✅ Resampled labels from {len(initial_labels)} to {len(features)} samples", "SUCCESS")
+                else:
+                    tprint("❌ Cannot upsample labels - features have more samples than labels", "ERROR")
+                    return None
+            
             # Filter out noise labels (-1) before iterative optimization
             # Iterative optimization expects non-negative cluster IDs only
             noise_mask = initial_labels >= 0
@@ -2109,7 +2221,7 @@ class RegimeClusteringStep(BaseStep):
                 'convergence_threshold': config.get('iterative_convergence_threshold', 0.001),
                 'enable_risk_mitigation': config.get('iterative_enable_risk_mitigation', True),
                 'min_clusters': config.get('min_clusters', 4),
-                'max_clusters': config.get('max_clusters', 8)
+                'max_clusters': config.get('max_clusters', 5)
             }
             
             # Run iterative optimization

@@ -4,7 +4,7 @@ Time series utilities for trading data manipulation and validation.
 
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Optional, Union, Tuple
+from typing import List, Dict, Optional, Union, Tuple, Any
 from datetime import datetime, timedelta
 
 from .error_handling import ValidationError, TradingErrorSeverity

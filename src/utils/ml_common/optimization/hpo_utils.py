@@ -892,7 +892,15 @@ class HyperparameterOptimization:
                     else:
                         cv_obj = self._create_time_series_split(len(X))
                 else:
-                    cv_obj = cv
+                    # Handle different CV types
+                    if isinstance(cv, int):
+                        # For integer CV, use StratifiedKFold for classification
+                        if len(np.unique(y)) > 2:  # Multi-class
+                            cv_obj = StratifiedKFold(n_splits=cv, shuffle=True, random_state=42)
+                        else:  # Binary classification
+                            cv_obj = StratifiedKFold(n_splits=cv, shuffle=True, random_state=42)
+                    else:
+                        cv_obj = cv
 
                 # Compute sample weights if classification and estimator supports it
                 fp = dict(fit_params or {})

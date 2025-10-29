@@ -62,9 +62,7 @@ from .auto_monitoring_launcher import (
 
 # GUI components
 from .gui.monitoring_dashboard import (
-    MonitoringDashboard, EnhancedMonitoringDashboard,
-    MonitoringVisualization, VisualizationControlPanel,
-    launch_dashboard
+    MonitoringDashboard, create_monitoring_dashboard
 )
 
 __all__ = [
@@ -139,8 +137,5 @@ __all__ = [
 
     # GUI components
     "MonitoringDashboard",
-    "EnhancedMonitoringDashboard",
-    "MonitoringVisualization",
-    "VisualizationControlPanel",
-    "launch_dashboard",
+    "create_monitoring_dashboard",
 ]

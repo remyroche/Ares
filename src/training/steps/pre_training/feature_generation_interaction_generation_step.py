@@ -669,11 +669,18 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             raise FileNotFoundError(f"Failed to load lookback_optimization artifact: {e}")
         
         try:
-            labeled_data = self._get_artifact('labeled_data', 'data')
+            # Try the specific artifact name from labeling integration step first
+            artifact_name = f'labeled_data_{config["symbol"]}_{config["timeframe"]}'
+            labeled_data = self._get_artifact(artifact_name, 'data')
             tprint_success(f"✅ Loaded labeled_data: {labeled_data.shape}")
             tprint_structured({"Labeled Data": labeled_data.head().to_dict()}, level=LogLevel.INFO)
         except Exception as e:
-            raise FileNotFoundError(f"Failed to load labeled_data artifact: {e}")
+            # Fallback to generic name
+            try:
+                labeled_data = self._get_artifact('labeled_data', 'data')
+                tprint_success(f"✅ Loaded labeled_data (fallback): {labeled_data.shape}")
+            except Exception as e2:
+                raise FileNotFoundError(f"Failed to load labeled_data artifact: {e} / {e2}")
         
         try:
             generated_features = self._get_artifact('generated_features', 'data')

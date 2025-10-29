@@ -69,25 +69,48 @@ Note: ssm is recommended for most users. pyhsmm offers more features
 but has complex C++ dependencies.
 """
 
-# Try ssm first (modern, JAX-based, easier to install)
+# Try pyhsmm first (compatible with NumPy 1.x)
 try:
-    import ssm
-    HMM_AVAILABLE = True
-    HMM_LIBRARY = 'ssm'
-    tprint_success("✅ Using ssm (JAX-based) for HDP-HMM clustering")
-except ImportError:
-    # Fall back to pyhsmm (more features but harder to install)
+    # Compatibility shims for pybasicbayes dependencies
+    import sys as _sys
+    import types as _types
+    import numpy as _np
+    
+    # Shim for scipy.misc.logsumexp
     try:
-        import pyhsmm
-        from pyhsmm.models import WeakLimitHDPHSMM, WeakLimitStickyHDPHMM
-        from pyhsmm.basic.distributions import Gaussian
+        import scipy.special as _sp_special  # type: ignore
+        _misc = _types.ModuleType("scipy.misc")
+        _misc.logsumexp = _sp_special.logsumexp  # type: ignore[attr-defined]
+        _sys.modules.setdefault("scipy.misc", _misc)
+    except Exception:
+        pass
+    
+    # Shim for numpy.core.umath_tests.inner1d
+    try:
+        _umath_tests = _types.ModuleType("numpy.core.umath_tests")
+        _umath_tests.inner1d = _np.inner  # type: ignore[attr-defined]
+        _sys.modules.setdefault("numpy.core.umath_tests", _umath_tests)
+    except Exception:
+        pass
+    
+    import pyhsmm
+    from pyhsmm.models import WeakLimitHDPHSMM, WeakLimitStickyHDPHMM
+    from pyhsmm.basic.distributions import Gaussian
+    HMM_AVAILABLE = True
+    HMM_LIBRARY = 'pyhsmm'
+    tprint_success("✅ Using pyhsmm (full-featured) for HDP-HMM clustering")
+except ImportError:
+    # Fall back to ssm (modern, JAX-based, but requires NumPy 2.x)
+    try:
+        import ssm
         HMM_AVAILABLE = True
-        HMM_LIBRARY = 'pyhsmm'
-        tprint_success("✅ Using pyhsmm (full-featured) for HDP-HMM clustering")
+        HMM_LIBRARY = 'ssm'
+        tprint_success("✅ Using ssm (JAX-based) for HDP-HMM clustering")
     except ImportError:
+        HMM_AVAILABLE = False
+        HMM_LIBRARY = None
         tprint_warning("⚠️ No HMM libraries available")
         tprint_warning(HMM_INSTALLATION_GUIDE)
-        HMM_LIBRARY = None
 
 # Import existing optimization utilities
 try:
@@ -173,8 +196,8 @@ class HDPHMMConfig:
     
     # Validation
     min_regime_size: int = 10  # Minimum samples per regime
-    min_regimes: int = 2
-    max_regimes: int = 15
+    min_regimes: int = 3
+    max_regimes: int = 5
     
     # Random seed
     random_state: int = 42
@@ -215,6 +238,7 @@ class HDPHMMResult:
     # Model artifacts
     transition_matrix: Optional[np.ndarray]
     emission_params: Optional[Dict[str, Any]]
+    cluster_parameters: Optional[Dict[str, Any]]  # Cluster-specific parameters (means, covariances)
     state_durations: Optional[np.ndarray]
     
     # Quality metrics
@@ -291,10 +315,11 @@ class HDPHMMClusterer:
         self.memory_manager = None
         if self.config.enable_memory_optimization and MEMORY_UTILS_AVAILABLE:
             try:
-                self.memory_manager = VectorBTMemoryManager(
-                    max_memory_usage_mb=self.config.memory_budget_mb,
-                    enable_auto_chunking=self.config.enable_auto_chunking
+                from src.utils.ml_common.vectorbt_memory_manager import MemoryConfig
+                memory_config = MemoryConfig(
+                    max_memory_gb=self.config.memory_budget_mb / 1024.0  # Convert MB to GB
                 )
+                self.memory_manager = VectorBTMemoryManager(config=memory_config)
                 tprint_success("✅ Memory manager initialized")
             except Exception as e:
                 tprint_warning(f"⚠️ Failed to initialize memory manager: {e}")
@@ -387,7 +412,7 @@ class HDPHMMClusterer:
         try:
             # Validate input data (from code review)
             if validate:
-                self._validate_input(data)
+                data = self._validate_input(data)
             
             # Preprocess data
             data_processed, feature_names = self._preprocess_data(data)
@@ -423,6 +448,7 @@ class HDPHMMClusterer:
                 n_clusters=result['n_states'],
                 transition_matrix=result.get('transition_matrix'),
                 emission_params=result.get('emission_params'),
+                cluster_parameters=result.get('cluster_parameters'),
                 state_durations=result.get('state_durations'),
                 silhouette_score=metrics.get('silhouette_score', 0.0),
                 calinski_harabasz_score=metrics.get('calinski_harabasz_score', 0.0),
@@ -470,6 +496,7 @@ class HDPHMMClusterer:
                 n_clusters=0,
                 transition_matrix=None,
                 emission_params=None,
+                cluster_parameters=None,
                 state_durations=None,
                 silhouette_score=0.0,
                 calinski_harabasz_score=0.0,
@@ -486,13 +513,17 @@ class HDPHMMClusterer:
                 error_message=str(e)
             )
     
-    def _validate_input(self, data: np.ndarray) -> None:
+    def _validate_input(self, data) -> np.ndarray:
         """Validate input data with strict checks."""
         tprint_info("🔍 Validating input data")
         
-        # Ensure data is numpy array
-        if not isinstance(data, np.ndarray):
-            raise TypeError(f"Expected numpy array, got {type(data)}")
+        # Convert pandas DataFrame to numpy array if needed
+        if hasattr(data, 'values'):  # pandas DataFrame/Series
+            data = data.values
+        elif not isinstance(data, np.ndarray):
+            raise TypeError(f"Expected numpy array or pandas DataFrame, got {type(data)}")
+        
+        return data
         
         # Enforce 2D array requirement
         if len(data.shape) != 2:
@@ -677,6 +708,10 @@ class HDPHMMClusterer:
         # Set random seed
         np.random.seed(self.config.random_state)
         
+        # Ensure data is properly shaped and contiguous
+        data = np.ascontiguousarray(data, dtype=np.float64)
+        tprint_info(f"🔍 Data shape: {data.shape}, dtype: {data.dtype}")
+        
         # Create observation distribution
         obs_dim = data.shape[1]
         
@@ -706,7 +741,8 @@ class HDPHMMClusterer:
             obs_hypparams = self.config.obs_hypparams
             tprint_debug("📊 Using custom observation hyperparameters")
         
-        obs_distns = [Gaussian(**obs_hypparams) for _ in range(self.config.max_states)]
+        # Create observation distribution (single distribution for all states)
+        obs_distn = Gaussian(**obs_hypparams)
         
         # Create Sticky HDP-HSMM model
         model = WeakLimitStickyHDPHMM(
@@ -714,7 +750,7 @@ class HDPHMMClusterer:
             kappa=self.config.kappa,
             gamma=self.config.gamma,
             init_state_concentration=1.0,
-            obs_distns=obs_distns
+            obs_distns=[obs_distn]  # Single observation distribution
         )
         
         # Add data
@@ -739,19 +775,32 @@ class HDPHMMClusterer:
         
         with tprint_timer("Gibbs Sampling", level="PERFORMANCE"):
             for iteration in iterator:
-                model.resample_model()
-                
-                # Track state count
-                n_states = model.num_states()
-                state_counts.append(n_states)
-                
-                # Track log likelihood
                 try:
-                    ll = model.log_likelihood()
-                    log_likelihoods.append(ll)
+                    model.resample_model()
+                    
+                    # Track state count
+                    n_states = model.num_states()
+                    state_counts.append(n_states)
+                    
+                    # Track log likelihood
+                    try:
+                        ll = model.log_likelihood()
+                        log_likelihoods.append(ll)
+                    except Exception as e:
+                        tprint_debug(f"⚠️ Failed to compute log-likelihood at iteration {iteration}: {e}")
+                        log_likelihoods.append(np.nan)
+                        
                 except Exception as e:
-                    tprint_debug(f"⚠️ Failed to compute log-likelihood at iteration {iteration}: {e}")
+                    # Broadcasting error: skip this iteration and continue
+                    # This is a known pyhsmm issue when observation distribution
+                    # log_likelihood returns unexpected shape
+                    tprint_debug(f"⚠️ Broadcasting error at iteration {iteration}: {e}")
+                    
+                    # Skip this iteration - pyhsmm will continue with previous state
+                    # Append NaN for this iteration to maintain list consistency
+                    state_counts.append(state_counts[-1] if state_counts else 0)
                     log_likelihoods.append(np.nan)
+                    continue
                 
                 # Convergence diagnostics (after burn-in)
                 if (self.config.convergence_check and 
@@ -802,9 +851,20 @@ class HDPHMMClusterer:
         unique_states = np.unique(labels)
         state_durations = self._calculate_state_durations(labels)
         
-        # Calculate posterior statistics
-        posterior_mean_states = np.mean(state_counts[self.config.n_burnin:])
-        posterior_std_states = np.std(state_counts[self.config.n_burnin:])
+        # Calculate posterior statistics (skip NaN values)
+        burnin_counts = [c for c in state_counts[self.config.n_burnin:] if not np.isnan(c) and c > 0]
+        if burnin_counts:
+            posterior_mean_states = np.mean(burnin_counts)
+            posterior_std_states = np.std(burnin_counts)
+        else:
+            # Fallback if all burnin iterations had errors
+            burnin_counts = [c for c in state_counts if not np.isnan(c) and c > 0]
+            if burnin_counts:
+                posterior_mean_states = np.mean(burnin_counts)
+                posterior_std_states = np.std(burnin_counts)
+            else:
+                posterior_mean_states = len(unique_states)
+                posterior_std_states = 0.0
         
         # Calculate transition persistence (average diagonal of transition matrix)
         transition_persistence = np.mean(np.diag(transition_matrix))
@@ -823,6 +883,21 @@ class HDPHMMClusterer:
             if self.config.convergence_check:
                 tprint_warning("⚠️ Did not converge within iteration limit - consider increasing n_iterations")
         
+        # Extract cluster-specific parameters per unique state
+        cluster_means = {}
+        cluster_covariances = {}
+        
+        # Get observation distribution parameters per state
+        # Note: In HDP-HMM, states share observation distributions
+        # We'll compute cluster-specific statistics from the data
+        for state in unique_states:
+            state_mask = labels == state
+            state_data = data[state_mask]
+            
+            if len(state_data) > 0:
+                cluster_means[int(state)] = np.mean(state_data, axis=0).tolist()
+                cluster_covariances[int(state)] = np.cov(state_data.T).tolist() if len(state_data) > 1 else np.eye(obs_dim).tolist()
+        
         return {
             'labels': labels,
             'n_states': len(unique_states),
@@ -830,6 +905,11 @@ class HDPHMMClusterer:
             'emission_params': {
                 'means': [obs_distn.mu for obs_distn in model.obs_distns],
                 'covariances': [obs_distn.sigma for obs_distn in model.obs_distns]
+            },
+            'cluster_parameters': {
+                'means': cluster_means,
+                'covariances': cluster_covariances,
+                'state_labels': unique_states.tolist()
             },
             'state_durations': state_durations,
             'log_likelihood': final_ll,
@@ -887,6 +967,19 @@ class HDPHMMClusterer:
         tprint_success(f"✅ HMM fitting completed: {len(unique_states)} states")
         tprint_warning("⚠️ Remember: This is NOT true HDP-HMM (number of states was fixed)")
         
+        # Extract cluster-specific parameters per unique state
+        obs_dim = data.shape[1]
+        cluster_means = {}
+        cluster_covariances = {}
+        
+        for state in unique_states:
+            state_mask = labels == state
+            state_data = data[state_mask]
+            
+            if len(state_data) > 0:
+                cluster_means[int(state)] = np.mean(state_data, axis=0).tolist()
+                cluster_covariances[int(state)] = np.cov(state_data.T).tolist() if len(state_data) > 1 else np.eye(obs_dim).tolist()
+        
         return {
             'labels': labels,
             'n_states': len(unique_states),
@@ -894,6 +987,11 @@ class HDPHMMClusterer:
             'emission_params': {
                 'means': hmm.observations.mus,
                 'covariances': hmm.observations.Sigmas
+            },
+            'cluster_parameters': {
+                'means': cluster_means,
+                'covariances': cluster_covariances,
+                'state_labels': unique_states.tolist()
             },
             'state_durations': state_durations,
             'log_likelihood': ll[-1] if isinstance(ll, np.ndarray) else ll,

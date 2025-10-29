@@ -1,0 +1,17 @@
+{
+  "symbol": "ETHUSDT",
+  "exchange": "binance",
+  "timeframes": [
+    "15m"
+  ],
+  "execution_mode": "light",
+  "selection_method": "treeshap",
+  "total_features": 20,
+  "selected_count": 18,
+  "timestamp": "2025-10-29T23:38:18.713726",
+  "artifact_name": "selected_features_ETHUSDT_binance",
+  "artifact_type": "data",
+  "file_path": "artifacts/pre_training/long/Analyst/regime_feature_selection/regime_feature_selection_selected_features_ETHUSDT_binance_long_Analyst_20251029_233818.pkl",
+  "file_size": 663,
+  "compression": "auto"
+}

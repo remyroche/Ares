@@ -19,6 +19,8 @@ import warnings
 import pandas as pd
 import numpy as np
 
+from src.utils.tprint import tprint
+
 # Fix NumPy compatibility for older libraries
 if not hasattr(np, 'bool'):
     np.bool = bool
@@ -83,7 +85,7 @@ try:
         create_analyst_side_info_handler
     )
     CMI_COMPLEMENTARITY_AVAILABLE = True
-    tprint_info("✅ CMI complementarity components loaded successfully")
+    tprint("✅ CMI complementarity components loaded successfully")
 except ImportError as e:
     CMI_COMPLEMENTARITY_AVAILABLE = False
     CMIComplementarityScorer = None

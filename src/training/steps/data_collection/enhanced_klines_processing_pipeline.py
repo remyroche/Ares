@@ -118,14 +118,56 @@ tprint, tprint_info, tprint_warning, tprint_error, tprint_success = get_tprint_f
 
 # Global variables for lazy-loaded quality utilities with type annotations
 QUALITY_UTILITIES_AVAILABLE: bool = False
-_COMPREHENSIVE_DUPLICATE_ANALYZER: Optional[ComprehensiveDuplicateAnalyzer] = None
-_DATA_QUALITY_FRAMEWORK: Optional[DataQualityFramework] = None
-_COMPREHENSIVE_QUALITY_SCORER: Optional[ComprehensiveQualityScorer] = None
-_ADVANCED_QUALITY_METRICS: Optional[AdvancedQualityMetrics] = None
-_DATA_CLEANER: Optional[DataCleaner] = None
-_STATISTICAL_VALIDATOR: Optional[StatisticalValidator] = None
-_QUALITY_ALERT_SYSTEM: Optional[QualityAlertManager] = None
+_COMPREHENSIVE_DUPLICATE_ANALYZER: Optional[Any] = None
+_DATA_QUALITY_FRAMEWORK: Optional[Any] = None
+_COMPREHENSIVE_QUALITY_SCORER: Optional[Any] = None
+_ADVANCED_QUALITY_METRICS: Optional[Any] = None
+_DATA_CLEANER: Optional[Any] = None
+_STATISTICAL_VALIDATOR: Optional[Any] = None
+_QUALITY_ALERT_SYSTEM: Optional[Any] = None
 _ANALYZE_DUPLICATES_COMPREHENSIVE = None
+
+# Minimal fallback for QualityResult (needed before lazy import)
+@dataclass
+class FallbackQualityResult:
+    """Fallback quality result."""
+    passed: bool
+    issues: List[str]
+    warnings: List[str]
+    quality_score: float
+
+# Define QualityScoreLevel, QualityScore, and QualityAssessment before lazy import
+# (needed for fallback classes)
+class QualityScoreLevel(Enum):
+    """Quality score levels."""
+    EXCELLENT = "excellent"
+    GOOD = "good"
+    FAIR = "fair"
+    POOR = "poor"
+    CRITICAL = "critical"
+
+@dataclass
+class QualityScore:
+    """Quality score result."""
+    overall_score: float
+    level: QualityScoreLevel
+    component_scores: Dict[str, float]
+    issues: List[str]
+    warnings: List[str]
+    recommendations: List[str]
+    assessment_timestamp: datetime
+    data_shape: Tuple[int, int]
+
+@dataclass
+class QualityAssessment:
+    """Quality assessment result."""
+    overall_score: float
+    metrics: List[str]
+    issues_found: int
+    warnings_found: int
+    critical_issues: int
+    assessment_timestamp: datetime
+    data_shape: Tuple[int, int]
 
 def _lazy_import_quality_utilities():
     """Lazy import of quality utilities to avoid circular imports."""
@@ -133,91 +175,131 @@ def _lazy_import_quality_utilities():
     global _COMPREHENSIVE_QUALITY_SCORER, _ADVANCED_QUALITY_METRICS, _DATA_CLEANER
     global _STATISTICAL_VALIDATOR, _QUALITY_ALERT_SYSTEM, _ANALYZE_DUPLICATES_COMPREHENSIVE
     
-    if QUALITY_UTILITIES_AVAILABLE is not False:
+    if QUALITY_UTILITIES_AVAILABLE is True:
         return
+    
+    # Get the current module to update module-level names
+    current_module = sys.modules[__name__]
     
     try:
         from src.utils.data.quality.comprehensive_duplicate_analyzer import (
-            ComprehensiveDuplicateAnalyzer,
-            analyze_duplicates_comprehensive
+            ComprehensiveDuplicateAnalyzer as ImportedComprehensiveDuplicateAnalyzer,
+            analyze_duplicates_comprehensive as imported_analyze_duplicates_comprehensive
         )
-        from src.utils.data.quality.data_quality import DataQualityFramework, QualityThresholds, QualityResult
-        from src.utils.data.quality.comprehensive_quality_scorer import ComprehensiveQualityScorer, QualityScore, QualityScoreLevel
-        from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics, QualityAssessment
-        from src.utils.data.quality.data_cleaning import DataCleaner
-        from src.utils.data.quality.statistical_distribution_validation import StatisticalValidator
-        from src.utils.data.quality.quality_alert_system import QualityAlertManager
+        from src.utils.data.quality.data_quality import DataQualityFramework as ImportedDataQualityFramework, QualityThresholds, QualityResult
+        from src.utils.data.quality.comprehensive_quality_scorer import ComprehensiveQualityScorer as ImportedComprehensiveQualityScorer, QualityScore, QualityScoreLevel
+        from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics as ImportedAdvancedQualityMetrics, QualityAssessment
+        from src.utils.data.quality.data_cleaning import DataCleaner as ImportedDataCleaner
+        from src.utils.data.quality.statistical_distribution_validation import StatisticalValidator as ImportedStatisticalValidator
+        from src.utils.data.quality.quality_alert_system import QualityAlertManager as ImportedQualityAlertManager
         
-        _COMPREHENSIVE_DUPLICATE_ANALYZER = ComprehensiveDuplicateAnalyzer
-        _DATA_QUALITY_FRAMEWORK = DataQualityFramework
-        _COMPREHENSIVE_QUALITY_SCORER = ComprehensiveQualityScorer
-        _ADVANCED_QUALITY_METRICS = AdvancedQualityMetrics
-        _DATA_CLEANER = DataCleaner
-        _STATISTICAL_VALIDATOR = StatisticalValidator
-        _QUALITY_ALERT_SYSTEM = QualityAlertManager
-        _ANALYZE_DUPLICATES_COMPREHENSIVE = analyze_duplicates_comprehensive
+        _COMPREHENSIVE_DUPLICATE_ANALYZER = ImportedComprehensiveDuplicateAnalyzer
+        _DATA_QUALITY_FRAMEWORK = ImportedDataQualityFramework
+        _COMPREHENSIVE_QUALITY_SCORER = ImportedComprehensiveQualityScorer
+        _ADVANCED_QUALITY_METRICS = ImportedAdvancedQualityMetrics
+        _DATA_CLEANER = ImportedDataCleaner
+        _STATISTICAL_VALIDATOR = ImportedStatisticalValidator
+        _QUALITY_ALERT_SYSTEM = ImportedQualityAlertManager
+        _ANALYZE_DUPLICATES_COMPREHENSIVE = imported_analyze_duplicates_comprehensive
+        
+        # Make classes available at module level
+        setattr(current_module, 'ComprehensiveDuplicateAnalyzer', ImportedComprehensiveDuplicateAnalyzer)
+        setattr(current_module, 'DataQualityFramework', ImportedDataQualityFramework)
+        setattr(current_module, 'ComprehensiveQualityScorer', ImportedComprehensiveQualityScorer)
+        setattr(current_module, 'AdvancedQualityMetrics', ImportedAdvancedQualityMetrics)
+        setattr(current_module, 'DataCleaner', ImportedDataCleaner)
+        setattr(current_module, 'StatisticalValidator', ImportedStatisticalValidator)
+        setattr(current_module, 'QualityAlertManager', ImportedQualityAlertManager)
+        setattr(current_module, 'analyze_duplicates_comprehensive', imported_analyze_duplicates_comprehensive)
         
         QUALITY_UTILITIES_AVAILABLE = True
     except ImportError as e:
         tprint_warning(f"⚠️ Some data quality utilities not available: {e}")
         QUALITY_UTILITIES_AVAILABLE = False
 
-    class ComprehensiveDuplicateAnalyzer:
-        def analyze_duplicates(self, df):
-            class Result:
-                total_duplicates = 0
-                true_duplicate_groups = 0
-                false_duplicate_groups = 0
-                mixed_duplicate_groups = 0
-            return Result()
+        # Define fallback classes only if imports fail
+        class ComprehensiveDuplicateAnalyzer:
+            def analyze_duplicates(self, df):
+                class Result:
+                    total_duplicates = 0
+                    true_duplicate_groups = 0
+                    false_duplicate_groups = 0
+                    mixed_duplicate_groups = 0
+                return Result()
 
-    def analyze_duplicates_comprehensive(df):
-        return ComprehensiveDuplicateAnalyzer().analyze_duplicates(df)
+        def analyze_duplicates_comprehensive(df):
+            return ComprehensiveDuplicateAnalyzer().analyze_duplicates(df)
 
-    _ANALYZE_DUPLICATES_COMPREHENSIVE = analyze_duplicates_comprehensive
+        _ANALYZE_DUPLICATES_COMPREHENSIVE = analyze_duplicates_comprehensive
+        _COMPREHENSIVE_DUPLICATE_ANALYZER = ComprehensiveDuplicateAnalyzer
 
-    # Fallback classes for missing quality utilities
-    class DataQualityFramework:
-        def validate_data(self, df, thresholds=None):
-            return QualityResult(passed=True, issues=[], warnings=[], quality_score=100.0)
+        # Fallback classes for missing quality utilities
+        class DataQualityFramework:
+            def validate_data(self, df, thresholds=None):
+                return FallbackQualityResult(passed=True, issues=[], warnings=[], quality_score=100.0)
+            
+            def validate_dataframe_quality(self, df, context=''):
+                return FallbackQualityResult(passed=True, issues=[], warnings=[], quality_score=100.0)
+
+        class ComprehensiveQualityScorer:
+            def score_data_quality(self, df, symbol=None, interval=None):
+                return QualityScore(overall_score=0.0, level=QualityScoreLevel.CRITICAL,
+                                  component_scores={}, issues=[], warnings=[],
+                                  recommendations=[], assessment_timestamp=datetime.now(),
+                                  data_shape=(0, 0))
+            
+            def assess_data_quality(self, df, symbol=None, interval=None, context=None, step_name=None, data_type=None):
+                return QualityScore(overall_score=0.0, level=QualityScoreLevel.CRITICAL,
+                                  component_scores={}, issues=[], warnings=[],
+                                  recommendations=[], assessment_timestamp=datetime.now(),
+                                  data_shape=(0, 0))
+
+        class AdvancedQualityMetrics:
+            def assess_quality(self, df):
+                return QualityAssessment(overall_score=0.0, metrics=[], issues_found=0,
+                                       warnings_found=0, critical_issues=0,
+                                       assessment_timestamp=datetime.now(), data_shape=(0, 0))
+            
+            def comprehensive_quality_assessment(self, df, context=None, step_name=None):
+                return QualityAssessment(overall_score=0.0, metrics=[], issues_found=0,
+                                       warnings_found=0, critical_issues=0,
+                                       assessment_timestamp=datetime.now(), data_shape=(0, 0))
+
+        class DataCleaner:
+            def clean_data(self, df):
+                return df
+
+        class StatisticalValidator:
+            def validate_distributions(self, df):
+                return {}
+            
+            def run_comprehensive_validation(self, data):
+                return []
+
+        class QualityAlertManager:
+            def check_alerts(self, quality_score):
+                return []
+
+        # Make fallback classes available at module level
+        _DATA_QUALITY_FRAMEWORK = DataQualityFramework
+        _COMPREHENSIVE_QUALITY_SCORER = ComprehensiveQualityScorer
+        _ADVANCED_QUALITY_METRICS = AdvancedQualityMetrics
+        _DATA_CLEANER = DataCleaner
+        _STATISTICAL_VALIDATOR = StatisticalValidator
+        _QUALITY_ALERT_SYSTEM = QualityAlertManager
         
-        def validate_dataframe_quality(self, df, context=''):
-            return QualityResult(passed=True, issues=[], warnings=[], quality_score=100.0)
+        # Set fallback classes at module level
+        setattr(current_module, 'ComprehensiveDuplicateAnalyzer', ComprehensiveDuplicateAnalyzer)
+        setattr(current_module, 'DataQualityFramework', DataQualityFramework)
+        setattr(current_module, 'ComprehensiveQualityScorer', ComprehensiveQualityScorer)
+        setattr(current_module, 'AdvancedQualityMetrics', AdvancedQualityMetrics)
+        setattr(current_module, 'DataCleaner', DataCleaner)
+        setattr(current_module, 'StatisticalValidator', StatisticalValidator)
+        setattr(current_module, 'QualityAlertManager', QualityAlertManager)
+        setattr(current_module, 'analyze_duplicates_comprehensive', analyze_duplicates_comprehensive)
 
-    class ComprehensiveQualityScorer:
-        def score_data_quality(self, df, symbol=None, interval=None):
-            return QualityScore(overall_score=0.0, level=QualityScoreLevel.CRITICAL,
-                              component_scores={}, issues=[], warnings=[],
-                              recommendations=[], assessment_timestamp=datetime.now(),
-                              data_shape=(0, 0))
-        
-        def assess_data_quality(self, df, symbol=None, interval=None):
-            return QualityScore(overall_score=0.0, level=QualityScoreLevel.CRITICAL,
-                              component_scores={}, issues=[], warnings=[],
-                              recommendations=[], assessment_timestamp=datetime.now(),
-                              data_shape=(0, 0))
-
-    class AdvancedQualityMetrics:
-        def assess_quality(self, df):
-            return QualityAssessment(overall_score=0.0, metrics=[], issues_found=0,
-                                   warnings_found=0, critical_issues=0,
-                                   assessment_timestamp=datetime.now(), data_shape=(0, 0))
-        
-        def comprehensive_quality_assessment(self, df):
-            return QualityAssessment(overall_score=0.0, metrics=[], issues_found=0,
-                                   warnings_found=0, critical_issues=0,
-                                   assessment_timestamp=datetime.now(), data_shape=(0, 0))
-
-    class DataCleaner:
-        def clean_data(self, df):
-            return df
-
-    class StatisticalValidator:
-        def validate_distributions(self, df):
-            return {}
-        
-        def run_comprehensive_validation(self, data):
-            return []
+# Initialize quality utilities at module load time
+_lazy_import_quality_utilities()
 # Import ExchangeInterface from the proper location
 from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
 
@@ -255,36 +337,7 @@ class DataQualityLevel(Enum):
     POOR = "poor"
     FAILED = "failed"
 
-class QualityScoreLevel(Enum):
-    """Quality score levels."""
-    EXCELLENT = "excellent"
-    GOOD = "good"
-    FAIR = "fair"
-    POOR = "poor"
-    CRITICAL = "critical"
-
-@dataclass
-class QualityScore:
-    """Quality score result."""
-    overall_score: float
-    level: QualityScoreLevel
-    component_scores: Dict[str, float]
-    issues: List[str]
-    warnings: List[str]
-    recommendations: List[str]
-    assessment_timestamp: datetime
-    data_shape: Tuple[int, int]
-
-@dataclass
-class QualityAssessment:
-    """Quality assessment result."""
-    overall_score: float
-    metrics: List[str]
-    issues_found: int
-    warnings_found: int
-    critical_issues: int
-    assessment_timestamp: datetime
-    data_shape: Tuple[int, int]
+# QualityScoreLevel, QualityScore, and QualityAssessment are defined earlier (before lazy import)
 
 @dataclass
 class ProcessingResult:
@@ -983,27 +1036,44 @@ class EnhancedKlinesProcessingPipeline:
         }
         
         from src.trading.execution.exchange_interface import ExchangeInterface
+        print(f"DEBUG: Creating ExchangeInterface with config: {exchange_config}")
+        print(f"DEBUG: enable_logging = {self.enable_logging}")
         exchange_interface = ExchangeInterface(exchange_config)
+        print(f"DEBUG: ExchangeInterface created: {exchange_interface}")
         
         try:
             # Connect to exchange (authentication skipped if no credentials provided)
             # Public market data doesn't require authentication
-            if api_key and api_secret:
-                await exchange_interface.connect()
-            else:
-                # For public data, we can still initialize without auth
-                # The dispatcher should handle public endpoints without auth
-                if self.enable_logging:
-                    tprint_info("🔓 Using public market data (no credentials required)")
-                # Try to connect but don't fail if auth fails
-                try:
+            # For BingX, skip connection entirely and use klines adapter directly
+            if exchange.lower() != 'bingx':
+                if api_key and api_secret:
                     await exchange_interface.connect()
-                except Exception as e:
+                else:
+                    # For public data, we can still initialize without auth
+                    # The dispatcher should handle public endpoints without auth
                     if self.enable_logging:
-                        tprint_warning(f"⚠️ Authentication skipped for public data: {e}")
-                    # Continue anyway as public data doesn't need auth
+                        tprint_info("🔓 Using public market data (no credentials required)")
+                    # Try to connect but don't fail if auth fails
+                    try:
+                        await exchange_interface.connect()
+                    except Exception as e:
+                        if self.enable_logging:
+                            tprint_warning(f"⚠️ Authentication skipped for public data: {e}")
+            else:
+                # For BingX, connect but don't require authentication for public data
+                print(f"DEBUG: Connecting to BingX (public data)")
+                try:
+                    result = await exchange_interface.connect()
+                    print(f"DEBUG: BingX connection result: {result}")
+                except Exception as e:
+                    print(f"DEBUG: BingX connection failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # Continue anyway as BingX might work without connection
             
             # Process klines data
+            print(f"DEBUG: About to call process_klines_data")
+            print(f"DEBUG: symbol={symbol}, interval={interval}, years={years}")
             results = await self.process_klines_data(
                 symbol=symbol,
                 interval=interval,
@@ -1012,6 +1082,7 @@ class EnhancedKlinesProcessingPipeline:
                 resampling_config=resampling_config,
                 batch_id=batch_id
             )
+            print(f"DEBUG: process_klines_data completed")
             
             return results
             
@@ -1097,6 +1168,7 @@ class EnhancedKlinesProcessingPipeline:
                 start_date = end_date - timedelta(days=years * 365)
                 
                 # Download historical data using get_klines
+                print(f"DEBUG: Calling exchange_interface.get_klines for {symbol} from {start_date} to {end_date}")
                 klines_data = await exchange_interface.get_klines(
                     symbol=symbol,
                     interval=interval,
@@ -1104,7 +1176,10 @@ class EnhancedKlinesProcessingPipeline:
                     end_time=end_date,
                     limit=1000
                 )
+                print(f"DEBUG: Received {len(klines_data) if klines_data else 0} klines from exchange")
+                print(f"DEBUG: klines_data type: {type(klines_data)}")
                 
+                # Convert KlineData objects to DataFrame format if not already a DataFrame
                 # Convert KlineData objects to list format
                 raw_data = []
                 for kline in klines_data:
@@ -1125,13 +1200,22 @@ class EnhancedKlinesProcessingPipeline:
                 if not raw_data:
                     raise ValueError("No data received from exchange")
 
-            # Convert to DataFrame
+                # Convert to DataFrame
                 klines_data = pd.DataFrame(raw_data, columns=[
                     'timestamp', 'open', 'high', 'low', 'close', 'volume'
                 ])
                 
-                # Convert timestamp to datetime
-                klines_data['timestamp'] = pd.to_datetime(klines_data['timestamp'], unit='ms')
+                # Convert timestamp to datetime - handle both milliseconds and microseconds
+                # Check if timestamps are in microseconds (very large numbers) or milliseconds
+                sample_timestamp = klines_data['timestamp'].iloc[0] if len(klines_data) > 0 else 0
+                
+                if sample_timestamp > 1e12:  # Microseconds (13+ digits)
+                    klines_data['timestamp'] = pd.to_datetime(klines_data['timestamp'], unit='us')
+                elif sample_timestamp > 1e9:  # Milliseconds (10+ digits)
+                    klines_data['timestamp'] = pd.to_datetime(klines_data['timestamp'], unit='ms')
+                else:  # Seconds (9-10 digits)
+                    klines_data['timestamp'] = pd.to_datetime(klines_data['timestamp'], unit='s')
+                
                 klines_data.set_index('timestamp', inplace=True)
                 
                 if self.enable_logging:
@@ -1215,9 +1299,17 @@ class EnhancedKlinesProcessingPipeline:
                         'taker_buy_quote': getattr(kline, 'taker_buy_quote_asset_volume', 0)
                     })
                 else:
-                    # Raw list format
+                    # Raw list format - handle both milliseconds and microseconds
+                    timestamp = kline[0]
+                    if timestamp > 1e12:  # Microseconds
+                        converted_timestamp = pd.to_datetime(timestamp, unit='us', utc=True)
+                    elif timestamp > 1e9:  # Milliseconds
+                        converted_timestamp = pd.to_datetime(timestamp, unit='ms', utc=True)
+                    else:  # Seconds
+                        converted_timestamp = pd.to_datetime(timestamp, unit='s', utc=True)
+                    
                     data.append({
-                        'timestamp': pd.to_datetime(kline[0], unit='ms', utc=True),
+                        'timestamp': converted_timestamp,
                         'open': float(kline[1]),
                         'high': float(kline[2]),
                         'low': float(kline[3]),
@@ -1338,6 +1430,9 @@ class EnhancedKlinesProcessingPipeline:
                 )
                 distribution_validation = {}
             else:
+                # Import quality utilities locally to ensure they're available
+                from src.utils.data.quality.data_quality import QualityThresholds
+                
                 # Initialize comprehensive quality framework
                 quality_framework = DataQualityFramework()
                 scorer = ComprehensiveQualityScorer()
@@ -1370,6 +1465,9 @@ class EnhancedKlinesProcessingPipeline:
                         distribution_validation[col] = {
                             'results': [{'status': r.status.value, 'message': r.message} for r in validation_results]
                         }
+            # Import quality utilities locally to ensure they're available
+            from src.utils.data.quality.data_quality import QualityThresholds
+            
             # Initialize comprehensive quality framework
             quality_framework = DataQualityFramework()
             scorer = ComprehensiveQualityScorer()
@@ -1847,7 +1945,14 @@ class EnhancedKlinesProcessingPipeline:
                         }
 
                 # Check quality alerts
-                quality_alerts = quality_alert_system.check_alerts(final_score)
+                from src.utils.data.quality.quality_alert_system import MLValidationResult
+                validation_result = MLValidationResult(
+                    quality_score=final_score,
+                    grade=final_score.level.value if hasattr(final_score, 'level') else 'F',
+                    drift_issues=[],
+                    correlation_issues=[]
+                )
+                quality_alerts = quality_alert_system.check_alerts(validation_result)
 
             # Check for data continuity and temporal consistency
             temporal_issues = []
@@ -1985,9 +2090,12 @@ class EnhancedKlinesProcessingPipeline:
 
             # Log optimization benefits for consolidated file
             if self.enable_logging:
-                compression_stats = self.klines_manager.get_compression_stats()
-                if compression_stats.get("total_files", 0) > 0:
-                    tprint_info(f"📊 Consolidated file compression: {compression_stats.get('overall_compression_ratio', 0):.1f}%")
+                try:
+                    compression_stats = self.klines_manager.get_compression_stats()
+                    if compression_stats.get("total_files", 0) > 0:
+                        tprint_info(f"📊 Consolidated file compression: {compression_stats.get('overall_compression_ratio', 0):.1f}%")
+                except AttributeError:
+                    tprint_info("📊 Consolidated file compression: unknown (method not available)")
 
             # Get the actual file path from the manager
             output_file = self.data_dir / self.exchange / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}_consolidated"
@@ -2047,8 +2155,11 @@ class EnhancedKlinesProcessingPipeline:
             if success:
                 result.success = True
 
-                # Get compression statistics
-                compression_stats = self.klines_manager.get_compression_stats()
+                # Get compression statistics (fallback if method not available)
+                try:
+                    compression_stats = self.klines_manager.get_compression_stats()
+                except AttributeError:
+                    compression_stats = {"compression_ratio": "unknown", "compression_method": "parquet"}
 
                 result.metadata = {
                     "stored_files": [f"{symbol}_{interval}_original"],
@@ -2097,7 +2208,17 @@ class EnhancedKlinesProcessingPipeline:
 
             # Check if data is older than threshold
             current_time = datetime.now()
-            data_age_days = (current_time - df.index.max()).days
+            max_time = df.index.max()
+            
+            # Handle timezone-aware vs timezone-naive comparison
+            if max_time.tzinfo is not None and current_time.tzinfo is None:
+                # If max_time is timezone-aware but current_time is not, make current_time timezone-aware
+                current_time = current_time.replace(tzinfo=max_time.tzinfo)
+            elif max_time.tzinfo is None and current_time.tzinfo is not None:
+                # If current_time is timezone-aware but max_time is not, make max_time timezone-aware
+                max_time = max_time.replace(tzinfo=current_time.tzinfo)
+            
+            data_age_days = (current_time - max_time).days
 
             if data_age_days < resampling_config.resample_older_than_days:
                 result.success = True
@@ -2294,14 +2415,14 @@ if __name__ == "__main__":
             # Process data using simplified interface
             results = await pipeline.process_klines_data_simple(
                 exchange="bingx",  # Exchange name
-                asset="BTC",       # Asset (will create BTCUSDT symbol)
-                lookback_period="1y",  # Lookback period: "1y", "6m", "30d", "7d"
+                asset="ETH",       # Asset (will create ETHUSDT symbol)
+                lookback_period="4y",  # Lookback period: 4 years
                 interval="1m",     # Data interval
                 api_key="",        # Your API key
                 api_secret="",     # Your API secret
                 use_testnet=True,  # Use testnet
                 resampling_config=resampling_config,
-                batch_id="simple_test"
+                batch_id="ethusdt_4y_bingx"
             )
             
             print(f"🎉 Simple processing completed: {results['pipeline_success']}")

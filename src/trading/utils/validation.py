@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 
 from src.utils.tprint import tprint_error, tprint_warning, tprint_info, tprint_success
 from .error_handling import ValidationError, TradingErrorSeverity
-from ..execution.order_manager import OrderSide, OrderType
+from ..enums import OrderSide, OrderType
 
 def validate_trading_config(config: Dict[str, Any], strict: bool = True) -> bool:
     """

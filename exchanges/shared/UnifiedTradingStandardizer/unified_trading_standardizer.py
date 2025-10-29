@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from src.utils.logger import system_logger
 
-from exchanges.exchange_dispatcher import ExchangeType
+from exchanges.exchange_types import ExchangeType
 from exchanges.base_exchange.exchange_interface import OrderSide, OrderType, OrderStatus
 
 from .standardized_order import StandardizedOrder

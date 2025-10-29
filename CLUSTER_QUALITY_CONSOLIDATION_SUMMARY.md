@@ -79,7 +79,7 @@ class QualityMetrics:
 
 1. **Added Import** (Line ~82-87):
 ```python
-from ..quality_assessment import (
+from ..cluster_quality_assessor import (
     ComprehensiveQualityAssessor,
     QualityMetrics,
     create_quality_assessor
@@ -134,7 +134,7 @@ def _calculate_quality_metrics(self, clustering_data: np.ndarray, ...):
 
 **Target Implementation**:
 ```python
-from ..quality_assessment import create_quality_assessor
+from ..cluster_quality_assessor import create_quality_assessor
 
 def _calculate_quality_metrics(self, clustering_data: np.ndarray, 
                                labels: np.ndarray, 
@@ -172,7 +172,7 @@ def _calculate_quality_improvement(self, ...):
 
 **Target Implementation**:
 ```python
-from ..quality_assessment import create_quality_assessor
+from ..cluster_quality_assessor import create_quality_assessor
 
 def _assess_clustering_quality(self, result: OptimizedRegimeResult) -> Dict[str, Any]:
     """Assess clustering quality using unified assessor."""
@@ -266,7 +266,7 @@ class HDPHMMResult:
 
 **Migration Strategy for Both**:
 ```python
-from src.training.steps.market_analysis.hdbscan_clustering.quality_assessment import (
+from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
     create_quality_assessor
 )
 
@@ -337,7 +337,7 @@ result = MSDRResult(  # or HDPHMMResult
 **Proposed Integration**:
 ```python
 # In iterative_optimization.py or engine.py
-from ..hdbscan_clustering.quality_assessment import create_quality_assessor
+from ..clusters.cluster_quality_assessor import create_quality_assessor
 from .metrics import ClusteringMetrics
 
 # Use ClusteringMetrics for fast incremental calculations
@@ -457,7 +457,7 @@ if final_quality.composite_quality_score < 0.3:
 
 ```python
 # Import the quality assessor
-from src.training.steps.market_analysis.hdbscan_clustering.quality_assessment import (
+from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
     create_quality_assessor,
     QualityMetrics
 )
@@ -493,7 +493,7 @@ from .automated_hdbscan_parameter_tuner import ClusteringQualityMetrics
 metrics = ClusteringQualityMetrics(...)
 
 # New code (backward compatible):
-from ..quality_assessment import QualityMetrics
+from ..cluster_quality_assessor import ClusterQualityMetrics
 from .automated_hdbscan_parameter_tuner import ClusteringQualityMetrics
 
 # Get metrics from quality_assessment

@@ -1,9 +1,0 @@
-{
-  "created_at": "2025-10-27T23:36:23.501935",
-  "artifact_name": "analyst_pruning_stats",
-  "artifact_type": "metadata",
-  "file_path": "artifacts/pre_training/long/Analyst/feature_generation_interaction_generation_step/feature_generation_interaction_generation_step_analyst_pruning_stats_long_Analyst_20251027_233529.parquet",
-  "file_size": 12473,
-  "timestamp": "2025-10-27T23:36:23.504703",
-  "compression": "auto"
-}

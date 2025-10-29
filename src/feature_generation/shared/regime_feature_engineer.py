@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Union, Any
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import pickle
 import json
 from pathlib import Path
@@ -27,8 +27,8 @@ class RegimeFeatureEngineeringResult:
     feature_names: List[str]
     selected_features: Optional[np.ndarray] = None
     selected_feature_names: Optional[List[str]] = None
-    warnings: List[str] = []
-    errors: List[str] = []
+    warnings: List[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
 
 
 class RegimeFeatureEngineer:

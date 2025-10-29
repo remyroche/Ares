@@ -255,7 +255,7 @@ class AnalystSignalGenerator:
 
             # Check confidence threshold
             if confidence_score < self.confidence_threshold:
-                tprint_warning(f\"⚠️ Signal confidence {confidence_score:.3f} below threshold {self.confidence_threshold:.3f}\")
+                tprint_warning(f"⚠️ Signal confidence {confidence_score:.3f} below threshold {self.confidence_threshold:.3f}")
                 return None
 
             # Determine signal type
@@ -287,7 +287,7 @@ class AnalystSignalGenerator:
                 regime_id=analysis_result.get('regime_id'),
                 metadata=analysis_result.get('analysis_metadata', {})
             )
-            tprint_success(f\"✅ Signal generated from analysis: {signal_type.value} (confidence: {confidence_score:.3f})\")
+            tprint_success(f"✅ Signal generated from analysis: {signal_type.value} (confidence: {confidence_score:.3f})")
             return signal
 
         except Exception as e:

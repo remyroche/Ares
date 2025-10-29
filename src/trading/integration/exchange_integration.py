@@ -24,7 +24,7 @@ from exchanges.shared import (
 
 # Import exchange implementations
 from exchanges.binance import BinanceExchange, create_binance_exchange
-from exchanges.bingx import BingXExchange, create_bingx_exchange
+# from exchanges.bingx import BingXExchange, create_bingx_exchange  # Not available
 
 # Import trading interfaces
 from ..execution.exchange_interface import ExchangeInterface, TickerData, KlineData
@@ -89,7 +89,7 @@ class ExchangeIntegrationManager:
     def __init__(self, config: ExchangeIntegrationConfig):
         """Initialize exchange integration manager."""
         self.config = config
-        self.exchange: Optional[Union[BinanceExchange, BingXExchange]] = None
+        self.exchange: Optional[BinanceExchange] = None  # BingXExchange not available
         self.exchange_interface: Optional[ExchangeInterface] = None
 
         # Shared utilities
@@ -122,12 +122,8 @@ class ExchangeIntegrationManager:
                     password=self.config.password
                 )
             elif self.config.exchange_type.lower() == 'bingx':
-                self.exchange = create_bingx_exchange(
-                    api_key=self.config.api_key,
-                    api_secret=self.config.api_secret,
-                    trade_symbol=self.config.trade_symbol,
-                    password=self.config.password
-                )
+                # BingX exchange not available
+                raise ValueError("BingX exchange not available - only Binance is supported")
             else:
                 raise ValueError(f"Unsupported exchange type: {self.config.exchange_type}")
 

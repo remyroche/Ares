@@ -115,7 +115,7 @@ def create_msdr_parameter_groups() -> List[ParameterGroup]:
 
 def create_msdr_optimization_stages(
     n_trials_per_group: int = 30
-) -> List[StageConfig]:
+) -> List[OptimizationStage]:
     """
     Create optimization stages for MS-DR hierarchical HPO.
     
@@ -123,31 +123,12 @@ def create_msdr_optimization_stages(
         n_trials_per_group: Number of trials per parameter group
         
     Returns:
-        List of StageConfig objects
+        List of OptimizationStage enums
     """
     stages = [
-        # Stage 1: Coarse Grid Search (fast exploration)
-        StageConfig(
-            stage=OptimizationStage.COARSE_GRID,
-            n_trials=n_trials_per_group // 3,
-            grid_points=3,  # 3 points per parameter
-            backend=OptimizationBackend.SKLEARN
-        ),
-        
-        # Stage 2: Fine Grid Search (local refinement)
-        StageConfig(
-            stage=OptimizationStage.FINE_GRID,
-            n_trials=n_trials_per_group // 3,
-            grid_points=5,  # 5 points per parameter
-            backend=OptimizationBackend.SKLEARN
-        ),
-        
-        # Stage 3: TPE Optimization (final polishing)
-        StageConfig(
-            stage=OptimizationStage.TPE,
-            n_trials=n_trials_per_group // 3,
-            backend=OptimizationBackend.OPTUNA
-        )
+        OptimizationStage.COARSE_GRID,
+        OptimizationStage.FINE_GRID,
+        OptimizationStage.TPE
     ]
     
     return stages
@@ -228,19 +209,27 @@ class MSDRHierarchicalOptimizer:
         # Run optimization with timing
         with tprint_timer("Hierarchical Optimization", level="PERFORMANCE"):
             results = hierarchical_optimizer.optimize(
-                timeout_seconds=timeout_minutes * 60 if timeout_minutes else None,
-                show_progress=show_progress
+                X_train=data,
+                y_train=np.zeros(data.shape[0])  # Dummy target for clustering
             )
         
         # Extract and report results
-        best_params = results.get('best_params', {})
-        best_score = results.get('best_score', float('-inf'))
+        if hasattr(results, 'best_params'):
+            best_params = results.best_params
+            best_score = getattr(results, 'best_score', float('-inf'))
+            total_trials = getattr(results, 'total_trials', 0)
+            optimization_time_seconds = getattr(results, 'optimization_time_seconds', 0)
+        else:
+            best_params = results.get('best_params', {})
+            best_score = results.get('best_score', float('-inf'))
+            total_trials = results.get('total_trials', 0)
+            optimization_time_seconds = results.get('optimization_time_seconds', 0)
         
         tprint_success(f"🎉 Hierarchical optimization complete!")
         tprint_structured({
             'best_score': best_score,
-            'total_trials': results.get('total_trials', 0),
-            'optimization_time_seconds': results.get('optimization_time_seconds', 0),
+            'total_trials': total_trials,
+            'optimization_time_seconds': optimization_time_seconds,
             'groups_optimized': len(self.param_groups),
             'best_params': best_params
         }, level="INFO")

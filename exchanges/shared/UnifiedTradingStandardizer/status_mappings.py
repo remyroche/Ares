@@ -5,7 +5,7 @@ Maps exchange-specific status and type values to unified enums.
 """
 
 from typing import Dict
-from exchanges.exchange_dispatcher import ExchangeType
+from exchanges.exchange_types import ExchangeType
 from exchanges.base_exchange.exchange_interface import OrderSide, OrderType, OrderStatus
 
 

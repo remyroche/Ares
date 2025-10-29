@@ -21,8 +21,8 @@ import warnings
 from src.training.steps.market_analysis.hdbscan_clustering.unified_config import (
     UnifiedHDBSCANConfig, create_unified_config, ExecutionMode
 )
-from src.training.steps.market_analysis.hdbscan_clustering.quality_assessment import (
-    ComprehensiveQualityAssessor, QualityMetrics
+from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
+    ClusterQualityAssessor, ClusterQualityMetrics
 )
 from src.training.steps.market_analysis.hdbscan_clustering.feature_engineering import (
     EnhancedFeatureEngineeringPipeline, FeatureEngineeringConfig
@@ -116,7 +116,7 @@ def test_quality_assessment():
     """Test comprehensive quality assessment."""
     logger.info("Testing quality assessment...")
     
-    assessor = ComprehensiveQualityAssessor()
+    assessor = ClusterQualityAssessor()
     
     # Create test data
     n_samples = 500
@@ -133,7 +133,7 @@ def test_quality_assessment():
         timestamps=pd.Series(pd.date_range('2023-01-01', periods=n_samples, freq='1H'))
     )
     
-    assert isinstance(quality_metrics, QualityMetrics)
+    assert isinstance(quality_metrics, ClusterQualityMetrics)
     assert quality_metrics.n_clusters >= 0
     assert quality_metrics.n_noise_points >= 0
     assert 0 <= quality_metrics.noise_ratio <= 1
@@ -234,7 +234,7 @@ def test_enhanced_regime_discovery():
         assert len(result.labels) == len(data_df)
         assert result.n_clusters >= 0
         assert 0 <= result.noise_ratio <= 1
-        assert isinstance(result.quality_metrics, QualityMetrics)
+        assert isinstance(result.quality_metrics, ClusterQualityMetrics)
         assert isinstance(result.validation_results, dict)
         
         # Test recommendations

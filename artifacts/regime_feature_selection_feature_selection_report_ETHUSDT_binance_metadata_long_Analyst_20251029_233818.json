@@ -1,0 +1,14 @@
+{
+  "symbol": "ETHUSDT",
+  "exchange": "binance",
+  "timeframes": [
+    "15m"
+  ],
+  "execution_mode": "light",
+  "timestamp": "2025-10-29T23:38:18.723812",
+  "artifact_name": "feature_selection_report_ETHUSDT_binance",
+  "artifact_type": "report",
+  "file_path": "artifacts/pre_training/long/Analyst/regime_feature_selection/regime_feature_selection_feature_selection_report_ETHUSDT_binance_long_Analyst_20251029_233818.parquet",
+  "file_size": 19240,
+  "compression": "auto"
+}

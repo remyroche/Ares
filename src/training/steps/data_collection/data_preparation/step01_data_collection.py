@@ -9,6 +9,7 @@ It downloads and consolidates all required data for training.
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Tuple
+import time
 
 from src.core.decorators import handles_errors
 from src.training.base_step import BaseStep
@@ -26,7 +27,7 @@ class DataCollectionStep(BaseStep):
         Args:
             config: Configuration dictionary
         """
-        super().__init__(config, '01', 'data_collection')
+        super().__init__(config)
         self.lookback_years = config.get('lookback_years', 2)
         self.data_sources = config.get('data_sources', ['binance'])  # Default to binance for backward compatibility
         self.intervals = config.get('intervals', ['1m'])
@@ -173,6 +174,31 @@ class DataCollectionStep(BaseStep):
     def get_dependencies(self) -> list:
         """Get list of step dependencies."""
         return []
+
+    async def execute(self, data: Any) -> Any:
+        """Execute the logic of the training step."""
+        training_input = data.get('training_input', {})
+        pipeline_state = data.get('pipeline_state', {})
+        return await self.execute_logic(training_input, pipeline_state)
+
+    def validate_config(self) -> None:
+        """Validate the configuration for the step."""
+        required_keys = ['SYMBOL', 'EXCHANGE', 'TIMEFRAME']
+        for key in required_keys:
+            if key not in self.config:
+                raise ValueError(f"Missing required config key: {key}")
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get the current status and metrics of the step."""
+        return {
+            'step_name': 'data_collection',
+            'step_id': '01',
+            'status': 'initialized',
+            'lookback_years': self.lookback_years,
+            'data_sources': self.data_sources,
+            'intervals': self.intervals,
+            'data_downloader_available': self.data_downloader is not None
+        }
 
 @handles_errors(fallback=False)
 async def run_step(symbol: str, exchange: str, timeframe: str = '1m', data_dir: str = None, force_rerun: bool = False) -> bool:

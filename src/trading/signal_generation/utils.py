@@ -113,7 +113,7 @@ class CircuitBreaker:
             self.failure_count = 0
             self.success_count = 0
             self.last_failure_time = None
-            tprint_info(\"🔄 Circuit breaker manually reset\")
+            tprint_info("🔄 Circuit breaker manually reset")
 
 
 class RateLimiter:
@@ -147,7 +147,7 @@ class RateLimiter:
                 self.call_times.popleft()
             
             if len(self.call_times) >= self.max_calls:
-                tprint_warning(f\"⚠️ Rate limit exceeded: {len(self.call_times)}/{self.max_calls} calls in {self.time_window}s window\")
+                tprint_warning(f"⚠️ Rate limit exceeded: {len(self.call_times)}/{self.max_calls} calls in {self.time_window}s window")
                 return False
             
             self.call_times.append(now)

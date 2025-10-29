@@ -53,13 +53,29 @@ except ImportError:
 
 # VectorBT imports
 try:
-    import vectorbt as vbt
-    from vectorbt.records import Drawdowns
-    from vectorbt.portfolio import Portfolio
-    from vectorbt.indicators import RSI, MACD, BollingerBands
-    VECTORBT_AVAILABLE = True
+    from src.vectorbt import vbt, VECTORBT_AVAILABLE
+    # Additional VectorBT components
+    try:
+        import vectorbt as real_vbt
+        Drawdowns = real_vbt.records.Drawdowns
+        Portfolio = real_vbt.portfolio.Portfolio
+        RSI = real_vbt.indicators.RSI
+        MACD = real_vbt.indicators.MACD
+        BollingerBands = real_vbt.indicators.BollingerBands
+    except AttributeError:
+        # Fallback if specific components not available
+        Drawdowns = None
+        Portfolio = None
+        RSI = None
+        MACD = None
+        BollingerBands = None
 except ImportError:
     VECTORBT_AVAILABLE = False
+    Drawdowns = None
+    Portfolio = None
+    RSI = None
+    MACD = None
+    BollingerBands = None
     warnings.warn("VectorBT not available. Some optimizations will be disabled.")
 
 # Hardware acceleration imports

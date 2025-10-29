@@ -340,7 +340,7 @@ print(f"Between CV: {metrics.between_regime_cv:.3f} ± {metrics.between_regime_c
 
 ### Example 2: HDBSCAN with Comprehensive Quality
 ```python
-from src.training.steps.market_analysis.hdbscan_clustering.quality_assessment import (
+from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
     create_quality_assessor
 )
 

@@ -382,7 +382,7 @@ class MSDRAutoTuner:
         if use_adaptive_bounds:
             tprint_info("📊 Using adaptive parameter bounds based on data")
             hierarchical_opt = MSDRHierarchicalOptimizer(
-                objective_func=lambda params: self._evaluate_params(params, data_array)
+                objective_func=lambda params, X_train=None, y_train=None, X_val=None, y_val=None, model=None, cv_folds=None, scoring_metric=None: self._evaluate_params(params, data_array)
             )
             param_groups = hierarchical_opt.get_adaptive_search_space(data_array)
         else:
@@ -395,7 +395,7 @@ class MSDRAutoTuner:
         
         # Create hierarchical optimizer
         hierarchical_optimizer = MSDRHierarchicalOptimizer(
-            objective_func=lambda params: self._evaluate_params(params, data_array),
+            objective_func=lambda params, X_train=None, y_train=None, X_val=None, y_val=None, model=None, cv_folds=None, scoring_metric=None: self._evaluate_params(params, data_array),
             param_groups=param_groups,
             stages=stages
         )
@@ -410,8 +410,12 @@ class MSDRAutoTuner:
             )
         
         # Update best results from hierarchical optimization
-        self.best_params = hierarchical_results.get('best_params', {})
-        self.best_score = hierarchical_results.get('best_score', float('-inf'))
+        if hasattr(hierarchical_results, 'best_params'):
+            self.best_params = hierarchical_results.best_params
+            self.best_score = getattr(hierarchical_results, 'best_score', float('-inf'))
+        else:
+            self.best_params = hierarchical_results.get('best_params', {})
+            self.best_score = hierarchical_results.get('best_score', float('-inf'))
         
         # Generate summary
         summary = self._generate_summary()

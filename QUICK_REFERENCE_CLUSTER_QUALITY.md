@@ -92,7 +92,7 @@ print(f"Per-Regime CV: {metrics.per_regime_cv}")
 
 ### Using quality_assessment.py (HDBSCAN-specific)
 ```python
-from src.training.steps.market_analysis.hdbscan_clustering.quality_assessment import (
+from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
     create_quality_assessor
 )
 

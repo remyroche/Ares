@@ -149,6 +149,9 @@ class ValidationConfig:
     # Validation settings
     enable_cross_validation: bool = True
     enable_holdout_validation: bool = True
+    enable_purged_cv: bool = False
+    enable_data_leakage_detection: bool = True
+    enable_time_series_validation: bool = True
     cv_folds: int = 5
     cv_strategy: str = "stratified"  # "stratified", "kfold", "time_series"
 

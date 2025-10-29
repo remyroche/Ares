@@ -115,12 +115,10 @@ class QualityThresholds:
     NEGATIVE_SHARPE_THRESHOLD = -0.5
     
     # Quality score weights
+    WEIGHT_TEMPORAL_SMOOTHNESS = 0.30
+    WEIGHT_CV_RATIO = 0.30
     WEIGHT_SILHOUETTE = 0.20
-    WEIGHT_DBI = 0.15
-    WEIGHT_CH = 0.15
-    WEIGHT_CV_RATIO = 0.15
-    WEIGHT_BALANCE = 0.15
-    WEIGHT_TEMPORAL_SMOOTHNESS = 0.10
+    WEIGHT_BALANCE = 0.10
     WEIGHT_NOISE_RATIO = 0.10
     
     # Normalization constants
@@ -1809,27 +1807,10 @@ class ClusterQualityAssessor:
         score_components = []
         weights = []
         
-        # 1. Silhouette score (normalize to 0-1, already in [-1, 1])
-        if metrics.silhouette_score is not None:
-            silhouette_normalized = (metrics.silhouette_score + 1) / 2  # Map [-1, 1] to [0, 1]
-            score_components.append(silhouette_normalized)
-            weights.append(QualityThresholds.WEIGHT_SILHOUETTE)
+        # Log the weights being used for debugging
+        tprint_info(f"📊 Using quality score weights: Temporal={QualityThresholds.WEIGHT_TEMPORAL_SMOOTHNESS:.2f}, CV={QualityThresholds.WEIGHT_CV_RATIO:.2f}, Silhouette={QualityThresholds.WEIGHT_SILHOUETTE:.2f}, Balance={QualityThresholds.WEIGHT_BALANCE:.2f}, Noise={QualityThresholds.WEIGHT_NOISE_RATIO:.2f}")
         
-        # 2. Davies-Bouldin Index (lower is better, normalize inversely)
-        if metrics.davies_bouldin_score is not None and not np.isinf(metrics.davies_bouldin_score):
-            # DBI typically ranges from 0 to 5+, map to [0, 1] inversely
-            dbi_normalized = 1.0 / (1.0 + metrics.davies_bouldin_score)
-            score_components.append(dbi_normalized)
-            weights.append(QualityThresholds.WEIGHT_DBI)
-        
-        # 3. Calinski-Harabasz Index (higher is better, normalize)
-        if metrics.calinski_harabasz_score is not None:
-            # CH typically ranges from 0 to 1000+, use sigmoid-like normalization
-            ch_normalized = np.tanh(metrics.calinski_harabasz_score / QualityThresholds.CH_NORMALIZATION_DIVISOR)
-            score_components.append(ch_normalized)
-            weights.append(QualityThresholds.WEIGHT_CH)
-        
-        # 4. CV ratio (higher between/lower within is better)
+        # 1. CV ratio (higher between/lower within is better) - PRIMARY METRIC
         if metrics.within_regime_cv is not None and metrics.between_regime_cv is not None:
             # Ideal: low within, high between
             # Ratio of between/within, normalized
@@ -1837,26 +1818,38 @@ class ClusterQualityAssessor:
             cv_normalized = np.tanh(cv_ratio)  # Sigmoid-like normalization
             score_components.append(cv_normalized)
             weights.append(QualityThresholds.WEIGHT_CV_RATIO)
+            tprint_info(f"   • CV Ratio: {cv_normalized:.4f} (weight: {QualityThresholds.WEIGHT_CV_RATIO:.2f})")
         
-        # 5. Balance score (already in [0, 1])
-        if metrics.balance_score is not None:
-            score_components.append(metrics.balance_score)
-            weights.append(QualityThresholds.WEIGHT_BALANCE)
+        # 2. Silhouette score (normalize to 0-1, already in [-1, 1]) - SECONDARY METRIC
+        if metrics.silhouette_score is not None:
+            silhouette_normalized = (metrics.silhouette_score + 1) / 2  # Map [-1, 1] to [0, 1]
+            score_components.append(silhouette_normalized)
+            weights.append(QualityThresholds.WEIGHT_SILHOUETTE)
+            tprint_info(f"   • Silhouette: {silhouette_normalized:.4f} (weight: {QualityThresholds.WEIGHT_SILHOUETTE:.2f})")
         
-        # 6. Temporal smoothness (already in [0, 1])
+        # 3. Temporal smoothness (already in [0, 1])
         if metrics.temporal_smoothness is not None:
             score_components.append(metrics.temporal_smoothness)
             weights.append(QualityThresholds.WEIGHT_TEMPORAL_SMOOTHNESS)
+            tprint_info(f"   • Temporal Smoothness: {metrics.temporal_smoothness:.4f} (weight: {QualityThresholds.WEIGHT_TEMPORAL_SMOOTHNESS:.2f})")
         
-        # 7. Noise ratio (lower is better, invert)
+        # 4. Balance score (already in [0, 1])
+        if metrics.balance_score is not None:
+            score_components.append(metrics.balance_score)
+            weights.append(QualityThresholds.WEIGHT_BALANCE)
+            tprint_info(f"   • Balance: {metrics.balance_score:.4f} (weight: {QualityThresholds.WEIGHT_BALANCE:.2f})")
+        
+        # 5. Noise ratio (lower is better, invert)
         noise_score = 1.0 - metrics.noise_ratio
         score_components.append(noise_score)
         weights.append(QualityThresholds.WEIGHT_NOISE_RATIO)
+        tprint_info(f"   • Noise Ratio (inverted): {noise_score:.4f} (weight: {QualityThresholds.WEIGHT_NOISE_RATIO:.2f})")
         
         # Calculate weighted average
         if len(score_components) > 0:
             total_weight = sum(weights)
             weighted_score = sum(s * w for s, w in zip(score_components, weights)) / total_weight
+            tprint_info(f"📈 Weighted score calculation: {weighted_score:.4f} (total weight: {total_weight:.2f})")
             return float(weighted_score)
         
         return 0.0

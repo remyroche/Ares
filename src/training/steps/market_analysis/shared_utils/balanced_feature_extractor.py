@@ -138,7 +138,7 @@ class BalancedFeatureConfig:
     use_numpy_optimization: bool = True
     enable_temporal_features: bool = True
     enable_micro_regime_features: bool = True
-    target_regime_count: int = 6  # Increased from 4 to 6-8
+    target_regime_count: int = 5  # Target 4-5 regimes
     micro_regime_threshold: float = 0.3  # Sensitivity for micro-regime detection
     regime_stability_window: int = 10  # Window for regime stability analysis
 

@@ -75,6 +75,8 @@ class RiskManager:
         # Risk tracking
         self.risk_metrics: Dict[str, RiskMetrics] = {}
         self.daily_pnl: Dict[str, float] = {}
+        self.rolling_pnl: Dict[str, float] = {}  # Rolling PnL that accumulates wins and losses
+        self.position_entry_prices: Dict[str, float] = {}  # Track entry prices for rolling PnL calculation
         self.order_history: List[datetime] = []
         self.positions: Dict[str, float] = {}
         
@@ -158,23 +160,50 @@ class RiskManager:
         current_position = self.positions.get(symbol, 0.0)
         new_position = current_position + quantity
         
-        # Update position
-        self.positions[symbol] = new_position
-        
-        # Update daily PnL
+        # Initialize tracking if needed
         if symbol not in self.daily_pnl:
             self.daily_pnl[symbol] = 0.0
+        if symbol not in self.rolling_pnl:
+            self.rolling_pnl[symbol] = 0.0
+        if symbol not in self.position_entry_prices:
+            self.position_entry_prices[symbol] = price
         
-        # Calculate realized PnL (simplified)
+        # Calculate realized PnL when closing/reducing position
         if current_position != 0 and quantity != 0:
             if (current_position > 0 and quantity < 0) or (current_position < 0 and quantity > 0):
                 # Closing or reducing position
                 closed_quantity = min(abs(current_position), abs(quantity))
-                pnl = closed_quantity * (price - self._get_average_price(symbol))
+                entry_price = self.position_entry_prices.get(symbol, price)
+                
+                # Calculate PnL based on direction
+                if current_position > 0:  # Long position
+                    pnl = closed_quantity * (price - entry_price)
+                else:  # Short position
+                    pnl = closed_quantity * (entry_price - price)
+                
+                # Update daily and rolling PnL (rolling PnL accumulates all wins/losses)
                 self.daily_pnl[symbol] += pnl
+                self.rolling_pnl[symbol] += pnl
+                
+                # Update entry price for remaining position
+                if abs(new_position) > 0:
+                    # Weighted average entry price for remaining position
+                    remaining_quantity = abs(new_position)
+                    closed_ratio = closed_quantity / abs(current_position)
+                    self.position_entry_prices[symbol] = entry_price  # Keep same entry for remaining
+                else:
+                    # Position fully closed, reset entry price
+                    self.position_entry_prices[symbol] = price
+        
+        # Update position
+        self.positions[symbol] = new_position
+        
+        # If opening new position, set entry price
+        if current_position == 0 and new_position != 0:
+            self.position_entry_prices[symbol] = price
         
         # Log position update
-        self.logger.info(f"Position updated: {symbol} = {new_position} @ {price}")
+        self.logger.info(f"Position updated: {symbol} = {new_position} @ {price} | Rolling PnL: {self.rolling_pnl.get(symbol, 0.0):.2f}")
     
     async def calculate_risk_metrics(self, symbol: str) -> RiskMetrics:
         """Calculate comprehensive risk metrics for a symbol"""
@@ -197,8 +226,64 @@ class RiskManager:
             # Calculate leverage (simplified)
             leverage = position_value / total_balance if total_balance > 0 else 0.0
             
-            # Calculate daily PnL
+            # Calculate daily PnL and rolling PnL
             daily_pnl = self.daily_pnl.get(symbol, 0.0)
+            rolling_pnl = self.rolling_pnl.get(symbol, 0.0)
+            
+            # Calculate unrealized PnL for open position
+            unrealized_pnl = 0.0
+            if current_position != 0:
+                entry_price = self.position_entry_prices.get(symbol, current_price)
+                if current_position > 0:  # Long position
+                    unrealized_pnl = current_position * (current_price - entry_price)
+                else:  # Short position
+                    unrealized_pnl = abs(current_position) * (entry_price - current_price)
+            
+            # Calculate stop loss price based on rolling PnL and stop loss percentage
+            # The stop loss considers accumulated wins/losses from rolling PnL
+            stop_loss_price = None
+            if current_position != 0:
+                stop_loss_pct = self.config.stop_loss_percentage / 100.0  # Convert percentage to decimal
+                position_value_abs = abs(current_position) * current_price
+                
+                if current_position > 0:  # Long position
+                    # Base stop loss: X% below entry price
+                    base_stop_loss = entry_price * (1 - stop_loss_pct)
+                    
+                    # Adjust based on rolling PnL: 
+                    # - If rolling PnL is positive (wins), we can allow stop loss to give back some gains
+                    # - If rolling PnL is negative (losses), maintain tight stop loss
+                    if position_value_abs > 0:
+                        rolling_pnl_pct_of_position = rolling_pnl / position_value_abs
+                        # Adjust stop loss based on rolling PnL (max 20% adjustment)
+                        adjustment_factor = min(max(rolling_pnl_pct_of_position * 0.5, -0.2), 0.2)
+                        stop_loss_price = base_stop_loss * (1 - adjustment_factor)
+                    else:
+                        stop_loss_price = base_stop_loss
+                        
+                else:  # Short position
+                    # Base stop loss: X% above entry price
+                    base_stop_loss = entry_price * (1 + stop_loss_pct)
+                    
+                    # Adjust based on rolling PnL for short positions
+                    if position_value_abs > 0:
+                        rolling_pnl_pct_of_position = rolling_pnl / position_value_abs
+                        adjustment_factor = min(max(rolling_pnl_pct_of_position * 0.5, -0.2), 0.2)
+                        stop_loss_price = base_stop_loss * (1 + adjustment_factor)
+                    else:
+                        stop_loss_price = base_stop_loss
+                        
+                # Ensure stop loss is reasonable (not beyond 2x the stop loss percentage)
+                if current_position > 0:
+                    max_stop_loss = entry_price * (1 - stop_loss_pct * 2)
+                    min_stop_loss = entry_price * (1 - stop_loss_pct * 0.5)
+                    stop_loss_price = max(min(stop_loss_price, entry_price * 0.99), max_stop_loss)
+                else:
+                    max_stop_loss = entry_price * (1 + stop_loss_pct * 2)
+                    min_stop_loss = entry_price * (1 + stop_loss_pct * 0.5)
+                    stop_loss_price = min(max(stop_loss_price, entry_price * 1.01), max_stop_loss)
+            else:
+                stop_loss_price = None
             
             # Calculate risk score (simplified)
             risk_score = self._calculate_risk_score(symbol, current_position, current_price, leverage)
@@ -215,8 +300,8 @@ class RiskManager:
                 symbol=symbol,
                 current_position=current_position,
                 position_value=position_value,
-                unrealized_pnl=0.0,  # Would need more sophisticated calculation
-                realized_pnl=daily_pnl,
+                unrealized_pnl=unrealized_pnl,
+                realized_pnl=rolling_pnl,  # Use rolling PnL as realized PnL
                 daily_pnl=daily_pnl,
                 max_drawdown=0.0,  # Would need historical data
                 leverage=leverage,
@@ -225,7 +310,8 @@ class RiskManager:
                 risk_score=risk_score,
                 volatility=volatility,
                 sharpe_ratio=sharpe_ratio,
-                max_position_size=self.risk_limits.max_position_size
+                max_position_size=self.risk_limits.max_position_size,
+                stop_loss_price=stop_loss_price
             )
             
             # Store metrics
@@ -243,7 +329,7 @@ class RiskManager:
                 current_position=0.0,
                 position_value=0.0,
                 unrealized_pnl=0.0,
-                realized_pnl=0.0,
+                realized_pnl=self.rolling_pnl.get(symbol, 0.0),  # Include rolling PnL even when no position
                 daily_pnl=0.0,
                 max_drawdown=0.0,
                 leverage=0.0,
@@ -252,7 +338,8 @@ class RiskManager:
                 risk_score=0.5,
                 volatility=0.0,
                 sharpe_ratio=0.0,
-                max_position_size=self.risk_limits.max_position_size
+                max_position_size=self.risk_limits.max_position_size,
+                stop_loss_price=None
             )
     
     async def check_risk_limits(self, symbol: str) -> List[str]:
@@ -325,6 +412,7 @@ class RiskManager:
             current_price = float(ticker.get("last", 0)) if ticker else 0.0
             position_value = abs(position) * current_price
             daily_pnl = self.daily_pnl.get(symbol, 0.0)
+            rolling_pnl = self.rolling_pnl.get(symbol, 0.0)
             
             summary["total_exposure"] += position_value
             summary["total_daily_pnl"] += daily_pnl
@@ -332,7 +420,8 @@ class RiskManager:
             summary["positions"][symbol] = {
                 "position": position,
                 "value": position_value,
-                "daily_pnl": daily_pnl
+                "daily_pnl": daily_pnl,
+                "rolling_pnl": rolling_pnl  # Include rolling PnL that accounts for wins
             }
             
             # Get risk metrics

@@ -159,6 +159,9 @@ class SignalGenerationPipeline:
             'signal_confidence_threshold': DEFAULT_SIGNAL_CONFIDENCE_THRESHOLD,
             'meta_model_weight': 0.8,
             'base_model_weight': 0.2,
+            # Ensemble vs Meta model weights (ML ensemble vs rule-based orchestrator)
+            'analyst_ensemble_weight': 0.6,  # 60% ensemble ML model, 40% Analyst rule-based
+            'tactician_ensemble_weight': 0.6,  # 60% ensemble ML model, 40% Tactician rule-based
             # Exit-specific parameters (will be overridden by final_parameters_optimization)
             'exit_confidence_threshold': DEFAULT_EXIT_CONFIDENCE_THRESHOLD,
             'tactician_exit_confidence_weight': 0.6,
@@ -1061,7 +1064,21 @@ class SignalGenerationPipeline:
         base_outputs: List[AnalystBaseOutput],
         timestamp: datetime
     ) -> AnalystMetaOutput:
-        """Step 3: Run analyst meta model and ensemble model with base predictions."""
+        """
+        Step 3: Run analyst meta model and ensemble model with base predictions.
+        
+        Architecture:
+        - Base Models: Individual ML models (CatBoost, XGBoost, LightGBM, etc.) trained separately
+        - Ensemble Model: Trained ML stacker model that learns optimal combination of base model predictions
+        - Meta Model: Analyst class orchestrator with rule-based/heuristic methods (analyze_regime, 
+          fractal location analysis, etc.)
+        
+        Flow:
+        1. Base models produce predictions (already done in _run_analyst_base_models)
+        2. Ensemble ML model takes base predictions as features, produces ensemble confidence
+        3. Meta model (Analyst.analyze_regime) produces rule-based confidence
+        4. Combine: weighted average of ensemble (ML) and meta (rule-based) confidences
+        """
         try:
             # Collect base model predictions for ensemble
             base_confidences = [output.base_confidence for output in base_outputs]
@@ -1101,14 +1118,34 @@ class SignalGenerationPipeline:
             meta_result['regime_confidence'] = regime_output.confidence
 
             # Extract confidence from the result
-            analyst_confidence = meta_result.get('confidence', 0.5)
+            # NOTE: "Meta model" here refers to the Analyst class orchestrator, which uses
+            # rule-based/heuristic methods (analyze_regime, fractal location analysis, etc.)
+            # This is DIFFERENT from the ensemble ML model which is a trained stacker model.
+            meta_model_confidence = meta_result.get('confidence', 0.5)
             
-            # Use ensemble confidence if available, otherwise use meta model confidence
+            # Combine ensemble ML model prediction with meta model (rule-based) prediction
+            # The ensemble model is a trained ML stacker that learns to combine base models optimally
+            # The meta model is the Analyst orchestrator with rule-based logic
+            # Default: 60% ensemble (ML) + 40% meta (rule-based)
+            # This can be configured via optimization_params
             if ensemble_confidence is not None:
-                # Combine ensemble and meta model confidence (weighted)
-                ensemble_weight = 0.6  # Weight for ensemble
-                analyst_confidence = (ensemble_weight * ensemble_confidence + 
-                                     (1 - ensemble_weight) * analyst_confidence)
+                # Get ensemble weight from optimization params or use default
+                ensemble_weight = self.optimization_params.get(
+                    'analyst_ensemble_weight', 
+                    0.6  # Default: trust ML ensemble model more
+                )
+                analyst_confidence = (
+                    ensemble_weight * ensemble_confidence + 
+                    (1 - ensemble_weight) * meta_model_confidence
+                )
+                self.logger.debug(
+                    f"Combined analyst confidence: {ensemble_confidence:.3f} (ensemble, {ensemble_weight:.0%}) + "
+                    f"{meta_model_confidence:.3f} (meta, {1-ensemble_weight:.0%}) = {analyst_confidence:.3f}"
+                )
+            else:
+                # Fallback to meta model only if ensemble unavailable
+                analyst_confidence = meta_model_confidence
+                self.logger.debug(f"Using meta model confidence only: {analyst_confidence:.3f}")
 
             # Apply regime adjustment
             regime_adjusted_confidence = self._apply_regime_adjustment(
@@ -1225,7 +1262,21 @@ class SignalGenerationPipeline:
         base_outputs: List[TacticianBaseOutput],
         timestamp: datetime
     ) -> TacticianMetaOutput:
-        """Step 5: Run tactician meta model and ensemble model with base predictions."""
+        """
+        Step 5: Run tactician meta model and ensemble model with base predictions.
+        
+        Architecture:
+        - Base Models: Individual ML models (CatBoost, XGBoost, LightGBM, etc.) trained separately
+        - Ensemble Model: Trained ML stacker model that learns optimal combination of base model predictions
+        - Meta Model: Tactician class orchestrator with rule-based/heuristic methods 
+          (generate_enhanced_predictions, scenario analysis, etc.)
+        
+        Flow:
+        1. Base models produce predictions with analyst outputs (already done in _run_tactician_base_models)
+        2. Ensemble ML model takes base predictions as features, produces ensemble confidence
+        3. Meta model (Tactician.generate_enhanced_predictions) produces rule-based confidence
+        4. Combine: weighted average of ensemble (ML) and meta (rule-based) confidences
+        """
         try:
             # Collect base model predictions for ensemble
             base_confidences = [output.base_confidence for output in base_outputs]
@@ -1275,14 +1326,34 @@ class SignalGenerationPipeline:
             )
 
             # Extract confidence from the result
-            tactician_confidence = meta_result.get('confidence', 0.5)
+            # NOTE: "Meta model" here refers to the Tactician class orchestrator, which uses
+            # rule-based/heuristic methods (generate_enhanced_predictions, scenario analysis, etc.)
+            # This is DIFFERENT from the ensemble ML model which is a trained stacker model.
+            meta_model_confidence = meta_result.get('confidence', 0.5)
             
-            # Use ensemble confidence if available, otherwise use meta model confidence
+            # Combine ensemble ML model prediction with meta model (rule-based) prediction
+            # The ensemble model is a trained ML stacker that learns to combine base models optimally
+            # The meta model is the Tactician orchestrator with rule-based logic
+            # Default: 60% ensemble (ML) + 40% meta (rule-based)
+            # This can be configured via optimization_params
             if ensemble_confidence is not None:
-                # Combine ensemble and meta model confidence (weighted)
-                ensemble_weight = 0.6  # Weight for ensemble
-                tactician_confidence = (ensemble_weight * ensemble_confidence + 
-                                       (1 - ensemble_weight) * tactician_confidence)
+                # Get ensemble weight from optimization params or use default
+                ensemble_weight = self.optimization_params.get(
+                    'tactician_ensemble_weight',
+                    0.6  # Default: trust ML ensemble model more
+                )
+                tactician_confidence = (
+                    ensemble_weight * ensemble_confidence + 
+                    (1 - ensemble_weight) * meta_model_confidence
+                )
+                self.logger.debug(
+                    f"Combined tactician confidence: {ensemble_confidence:.3f} (ensemble, {ensemble_weight:.0%}) + "
+                    f"{meta_model_confidence:.3f} (meta, {1-ensemble_weight:.0%}) = {tactician_confidence:.3f}"
+                )
+            else:
+                # Fallback to meta model only if ensemble unavailable
+                tactician_confidence = meta_model_confidence
+                self.logger.debug(f"Using meta model confidence only: {tactician_confidence:.3f}")
 
             # Calculate combined confidence
             combined_confidence = self._calculate_combined_confidence(

@@ -1,251 +1,269 @@
-# Code Review: clustering_optimization_goals.py
+# Clustering Optimization Goals Code Review
 
-## Overall Assessment
-**Quality: Good** - Well-structured, comprehensive module with good documentation. Several minor issues and improvements identified.
+**File:** `src/training/steps/market_analysis/clusters/clustering_optimization_goals.py`  
+**Date:** Review Date  
+**Reviewer:** AI Code Review
 
----
+## Executive Summary
 
-## Strengths
+This is a comprehensive module for clustering optimization goals with predictive and economic focus. The code is well-structured and documented, but there are several issues that need attention:
 
-1. **Excellent Documentation**
-   - Comprehensive docstrings for all classes and methods
-   - Clear module-level documentation explaining purpose and usage
-   - Good inline comments for complex logic
+1. **Critical Issues:** 2 bugs that could cause runtime errors
+2. **Performance Issues:** 2 instances of inefficient matrix operations
+3. **Code Quality:** 3 minor improvements recommended
+4. **Best Practices:** 2 improvements for maintainability
 
-2. **Good Code Organization**
-   - Well-structured dataclasses for configuration
-   - Clear separation of concerns (CV, metrics, normalization, penalties)
-   - Logical grouping of related functionality
+## Critical Issues
 
-3. **Type Hints**
-   - Good use of type hints throughout
-   - Helpful for IDE support and maintainability
+### 1. Logger Initialization Order (Line 519-521)
+**Severity:** High  
+**Location:** `MetricCalculator.__init__()`
 
-4. **Error Handling**
-   - Uses try/except blocks where appropriate
-   - Graceful degradation when optional dependencies unavailable
+**Issue:** `self.logger` is used before being initialized.
 
-5. **Robustness Features**
-   - Includes normalization, penalties, and validation utilities
-   - Statistical significance testing
-   - Bootstrap validation
+```python
+518|        self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
+519|        if self.use_vectorbt:
+520|            self.logger.debug("VectorBT available but not currently used in calculations")
+521|        self.logger = logging.getLogger(self.__class__.__name__)
+```
 
----
-
-## Issues and Recommendations
-
-### 🔴 Critical Issues
-
-#### 1. **Unused VectorBT Import** (Lines 34-41, 492-494)
-**Issue**: VectorBT is imported but never actually used in calculations, despite having a `use_vectorbt` flag.
-
-**Location**: 
+**Fix:** Initialize logger before using it:
 ```python
 def __init__(self, use_vectorbt: bool = True):
+    self.logger = logging.getLogger(self.__class__.__name__)
     self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
+    if self.use_vectorbt:
+        self.logger.debug("VectorBT available but not currently used in calculations")
 ```
 
-**Impact**: Dead code - the flag is set but never checked in any calculation methods.
+### 2. String Multiplication Typo (Line 1093)
+**Severity:** Medium  
+**Location:** `format_metrics_report()`
 
-**Recommendation**: Either:
-- Remove VectorBT imports if not needed, OR
-- Actually use VectorBT in calculations (e.g., in rolling calculations, Sharpe calculations)
+**Issue:** Incorrect string multiplication operator.
 
----
-
-#### 2. **Bare Exception Handling** (Line 536, 590)
-**Issue**: Bare `except:` clauses mask specific errors and make debugging difficult.
-
-**Location**:
 ```python
+1093|    report.append("=" * 70)
+```
+
+**Note:** Actually, this is correct Python syntax. The review initially flagged this, but `"=" * 70` correctly creates a string of 70 equal signs. However, there's a similar pattern on line 1094 that uses `"=" * 70` which should be checked for consistency.
+
+**Actual Issue Found:** Line 1094 uses `"=" * 70` which is correct, but the pattern should be consistent. Actually, both are correct. No issue here.
+
+## Performance Issues
+
+### 3. Numerically Unstable Matrix Inversion (Lines 561, 623)
+**Severity:** Medium  
+**Location:** `calculate_rolling_log_likelihood()` and `calculate_one_step_log_likelihood()`
+
+**Issue:** Using `np.linalg.inv()` directly is numerically unstable and inefficient. Should use `np.linalg.solve()` instead.
+
+**Current Code:**
+```python
+diff.T @ np.linalg.inv(cov + np.eye(n_features) * 1e-6) @ diff
+```
+
+**Fix:** Use `solve()` for better numerical stability:
+```python
+# Instead of: diff.T @ np.linalg.inv(cov + np.eye(n_features) * 1e-6) @ diff
+# Use:
+stabilized_cov = cov + np.eye(n_features) * 1e-6
+quadratic_form = diff.T @ np.linalg.solve(stabilized_cov, diff)
+ll = -0.5 * (
+    n_features * np.log(2 * np.pi) +
+    np.log(np.linalg.det(stabilized_cov) + 1e-8) +
+    quadratic_form
+)
+```
+
+**Occurrences:**
+- Line 561: `calculate_rolling_log_likelihood()`
+- Line 623: `calculate_one_step_log_likelihood()`
+
+## Code Quality Issues
+
+### 4. Import Inside Function (Line 1297)
+**Severity:** Low  
+**Location:** `validate_robustness()`
+
+**Issue:** Import statement inside function reduces performance and violates PEP 8.
+
+**Current Code:**
+```python
+def validate_robustness(...):
+    from sklearn.metrics import adjusted_rand_score
+```
+
+**Fix:** Move to top of file:
+```python
+# At top of file with other imports
 try:
-    # ... calculation ...
-except:
-    ll_per_regime.append(-1e6)  # Numerical issues
+    from sklearn.metrics import adjusted_rand_score
+    SKLEARN_METRICS_AVAILABLE = True
+except ImportError:
+    SKLEARN_METRICS_AVAILABLE = False
+    adjusted_rand_score = None
 ```
 
-**Recommendation**: Catch specific exceptions:
+### 5. Potential Division by Zero (Line 1417)
+**Severity:** Low  
+**Location:** `statistical_significance_test()`
+
+**Issue:** `n_blocks` could be 0 or very small, causing issues.
+
+**Current Code:**
 ```python
-except (ValueError, np.linalg.LinAlgError, OverflowError) as e:
-    logger.debug(f"Numerical issue in log-likelihood calculation: {e}")
-    ll_per_regime.append(-1e6)
+1417|        block_size = max(1, len(strategy_returns) // 10)
+1418|        n_blocks = len(strategy_returns) // block_size
 ```
 
----
-
-#### 3. **Non-Reproducible Random State** (Line 1334)
-**Issue**: `statistical_significance_test()` uses `np.random.choice()` without setting random seed, making results non-reproducible.
-
-**Location**:
+**Fix:** Add validation:
 ```python
-block_indices = np.random.choice(n_blocks, size=n_blocks, replace=True)
+block_size = max(1, len(strategy_returns) // 10)
+n_blocks = max(1, len(strategy_returns) // block_size)
+if n_blocks < 2:
+    logger.warning("Insufficient data for block bootstrap")
+    return False, 1.0, {'error': 'insufficient_data'}
 ```
 
-**Recommendation**: Add `random_state` parameter:
-```python
-def statistical_significance_test(
-    strategy_returns: np.ndarray,
-    baseline_returns: np.ndarray,
-    n_bootstrap: int = 100,
-    alpha: float = 0.10,
-    random_state: Optional[int] = None  # Add this
-) -> Tuple[bool, float, Dict[str, float]]:
-    if random_state is not None:
-        np.random.seed(random_state)
-    # ... rest of function
-```
+### 6. Missing Type Hints
+**Severity:** Low  
+**Location:** Multiple functions
 
----
+**Issue:** Some functions lack complete type hints, especially return types of dictionaries.
 
-### 🟡 Medium Priority Issues
+**Recommendations:**
+- `calculate_economic_utility()` return type should be `Dict[str, float]` (already correct)
+- `calculate_penalties()` return type should specify exact keys: `Dict[str, float]` (already correct)
+- Consider using `TypedDict` for structured dictionaries
 
-#### 4. **Potential KeyError in regime_params Access** (Lines 524, 578)
-**Issue**: Code uses `.get()` but then accesses nested dict items that might not exist.
+## Best Practices
 
-**Current**:
-```python
-mean = regime_params[regime_id].get('mean', np.zeros(n_features))
-cov = regime_params[regime_id].get('cov', np.eye(n_features))
-```
+### 7. Unused Imports
+**Severity:** Low  
+**Location:** Lines 34-50, 63-67, 70-81, 84-89
 
-**Potential Issue**: If `regime_params[regime_id]` doesn't exist, this will raise KeyError.
+**Issue:** Several imports are marked as "unused" or "for future use". While this is acceptable, consider:
+- Removing truly unused imports
+- Adding `# noqa: F401` comments for intentionally unused imports
+- Documenting why they're kept for future use
 
-**Recommendation**: 
-```python
-regime_param = regime_params.get(regime_id, {})
-mean = regime_param.get('mean', np.zeros(n_features))
-cov = regime_param.get('cov', np.eye(n_features))
-```
+**Current State:**
+- VectorBT imports (lines 34-50): Marked as unused but kept for future use
+- MatrixCrossValidator (lines 63-67): Imported but never used
+- Scaling imports (lines 70-81): Some may be unused
+- Hardware imports (lines 84-89): Some may be unused
 
----
+**Recommendation:** Audit imports and remove truly unused ones, or add clear comments explaining why they're kept.
 
-#### 5. **Division by Zero Edge Cases** (Lines 653-654, 774, etc.)
-**Issue**: Some division checks could be more robust.
+### 8. Error Handling Improvements
+**Severity:** Low  
+**Location:** Multiple locations
 
-**Current**:
-```python
-if len(returns) == 0 or np.std(returns) == 0:
-    return 0.0
-```
+**Recommendations:**
+1. **Line 564-568:** Consider logging at INFO level for repeated errors (not just DEBUG)
+2. **Line 1318:** Error handling in robustness validation could be more specific
+3. **Line 1412-1415:** Fallback logic is good but could be more robust
 
-**Recommendation**: Add check for `np.isnan()` or `np.isinf()`:
-```python
-if len(returns) == 0 or np.std(returns) == 0 or np.isnan(np.std(returns)):
-    return 0.0
-```
+## Positive Aspects
 
----
-
-#### 6. **Incomplete Block Bootstrap** (Lines 1328-1343)
-**Issue**: Block bootstrap may not handle edge cases when `len(strategy_returns) % block_size != 0`.
-
-**Recommendation**: Handle remainder properly:
-```python
-block_size = max(1, int(np.sqrt(len(strategy_returns))))
-n_blocks = len(strategy_returns) // block_size
-
-# Handle remainder
-if len(strategy_returns) % block_size != 0:
-    # Include partial last block or adjust block_size
-    # ...
-```
-
----
-
-### 🟢 Minor Issues / Improvements
-
-#### 7. **Missing Type Hints** (Line 1146)
-**Issue**: Inner function `normalize()` lacks type hints.
-
-**Recommendation**:
-```python
-def normalize(values: np.ndarray) -> np.ndarray:
-```
-
----
-
-#### 8. **Inconsistent Logging** (Throughout)
-**Issue**: Some functions use `self.logger`, others use module-level `logger`.
-
-**Recommendation**: Consider standardizing on one approach for consistency.
-
----
-
-#### 9. **Magic Numbers** (Lines 549, 1321)
-**Issue**: Hard-coded values like `-50, 50` and `252` (trading days) should be constants.
-
-**Recommendation**:
-```python
-class Constants:
-    LOG_LIKELIHOOD_MIN = -50.0
-    LOG_LIKELIHOOD_MAX = 50.0
-    TRADING_DAYS_PER_YEAR = 252
-```
-
----
-
-#### 10. **Documentation Enhancement**
-**Issue**: Some complex mathematical operations could use more detailed docstring explanations.
-
-**Recommendation**: Add mathematical formulas in docstrings where helpful, especially for:
-- Log-likelihood calculations
-- Normalization methods
-- Bootstrap procedures
-
----
-
-## Code Quality Metrics
-
-- **Lines of Code**: ~1426
-- **Cyclomatic Complexity**: Generally low - most functions are well-focused
-- **Test Coverage**: Not assessed (no test file visible)
-- **Linter Errors**: 0 ✅
-
----
-
-## Suggested Refactoring Opportunities
-
-1. **Extract Constants**: Move magic numbers to a constants class/enum
-2. **Add Input Validation**: Add validation decorators or checks for array shapes, types
-3. **Consider Caching**: For repeated calculations (e.g., in CV loops), consider memoization
-4. **Vectorization**: Some loops in `calculate_rolling_log_likelihood` could potentially be vectorized for performance
-
----
+1. **Excellent Documentation:** Comprehensive docstrings throughout
+2. **Good Structure:** Well-organized with clear separation of concerns
+3. **Type Hints:** Generally good use of type hints
+4. **Error Handling:** Good use of try/except blocks
+5. **Constants:** Well-defined constants class
+6. **Configuration:** Excellent use of dataclasses for configuration
+7. **Validation:** Good validation functions
 
 ## Testing Recommendations
 
-1. **Unit Tests Needed For**:
-   - MetricCalculator methods with various edge cases
-   - Normalization methods with edge cases (empty arrays, all same values, etc.)
-   - Penalty calculations
-   - Bootstrap procedures
+1. **Unit Tests Needed:**
+   - Test logger initialization order fix
+   - Test matrix inversion numerical stability
+   - Test edge cases in statistical significance test
+   - Test robustness validation with varying seeds
 
-2. **Integration Tests Needed For**:
-   - Full optimization pipeline
-   - Pareto front creation and knee point selection
-   - Cross-validation splits
+2. **Integration Tests:**
+   - Test composite score calculation
+   - Test Pareto front creation
+   - Test cross-validation splits
 
----
+3. **Edge Cases:**
+   - Empty data arrays
+   - Single sample scenarios
+   - Very small/large covariance matrices
+   - Edge cases in normalization methods
 
-## Summary
+## Specific Code Improvements
 
-**Priority Actions**:
-1. ✅ Fix bare exception handling (Critical)
-2. ✅ Add random_state to bootstrap (Critical)
-3. ✅ Fix regime_params access pattern (Medium)
-4. ✅ Either use or remove VectorBT imports (Medium)
-5. ✅ Extract magic numbers to constants (Minor)
+### Improvement 1: Fix Logger Initialization
+```python
+def __init__(self, use_vectorbt: bool = True):
+    """Initialize metric calculator."""
+    self.logger = logging.getLogger(self.__class__.__name__)  # Move this first
+    self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
+    if self.use_vectorbt:
+        self.logger.debug("VectorBT available but not currently used in calculations")
+```
 
-**Overall Grade**: **B+**
-- Solid, well-documented code
-- Minor issues that should be addressed
-- No blocking issues found
+### Improvement 2: Use solve() Instead of inv()
+```python
+# In calculate_rolling_log_likelihood() and calculate_one_step_log_likelihood()
+stabilized_cov = cov + np.eye(n_features) * 1e-6
+try:
+    diff = data[t] - mean
+    # Use solve() instead of inv() for numerical stability
+    solved = np.linalg.solve(stabilized_cov, diff)
+    quadratic_form = diff.T @ solved
+    ll = -0.5 * (
+        n_features * np.log(2 * np.pi) +
+        np.log(np.linalg.det(stabilized_cov) + 1e-8) +
+        quadratic_form
+    )
+```
 
----
+### Improvement 3: Move Import to Top Level
+```python
+# Add to top of file
+try:
+    from sklearn.metrics import adjusted_rand_score
+    SKLEARN_METRICS_AVAILABLE = True
+except ImportError:
+    SKLEARN_METRICS_AVAILABLE = False
+    adjusted_rand_score = None
 
-## Next Steps
+# In validate_robustness():
+if not SKLEARN_METRICS_AVAILABLE:
+    logger.error("sklearn.metrics not available")
+    return False, {'error': 'sklearn_not_available'}
+```
 
-1. Review and address critical issues
-2. Add unit tests
-3. Consider performance optimizations
-4. Update documentation with mathematical formulations
+## Summary of Recommendations
+
+1. **Must Fix (Critical):**
+   - [ ] Fix logger initialization order (Line 519-521)
+
+2. **Should Fix (Performance):**
+   - [ ] Replace `np.linalg.inv()` with `np.linalg.solve()` (Lines 561, 623)
+
+3. **Consider Fixing (Code Quality):**
+   - [ ] Move import to top level (Line 1297)
+   - [ ] Add validation for edge cases in bootstrap (Line 1417)
+   - [ ] Audit and clean up unused imports
+
+4. **Nice to Have (Best Practices):**
+   - [ ] Add more comprehensive unit tests
+   - [ ] Improve error logging levels
+   - [ ] Consider using TypedDict for structured return types
+
+## Overall Assessment
+
+**Grade: B+**
+
+The code is well-structured and documented, with good separation of concerns. The main issues are:
+- One critical bug (logger initialization)
+- Two performance issues (matrix inversion)
+- Several minor code quality improvements
+
+After addressing the critical and performance issues, this would be excellent production code.

@@ -30,6 +30,14 @@ from scipy import stats
 from scipy.special import logsumexp
 import logging
 
+# sklearn metrics import (used in robustness validation)
+try:
+    from sklearn.metrics import adjusted_rand_score
+    SKLEARN_METRICS_AVAILABLE = True
+except ImportError:
+    SKLEARN_METRICS_AVAILABLE = False
+    adjusted_rand_score = None
+
 # VectorBT imports for efficient computations
 # NOTE: Currently unused in calculations but kept for potential future use
 try:
@@ -515,10 +523,10 @@ class MetricCalculator:
         Args:
             use_vectorbt: Whether to use VectorBT for calculations (currently unused)
         """
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
         if self.use_vectorbt:
             self.logger.debug("VectorBT available but not currently used in calculations")
-        self.logger = logging.getLogger(self.__class__.__name__)
     
     def calculate_rolling_log_likelihood(
         self,
@@ -555,10 +563,13 @@ class MetricCalculator:
                 # Multivariate normal log-likelihood
                 try:
                     diff = data[t] - mean
+                    # Use solve() instead of inv() for better numerical stability
+                    stabilized_cov = cov + np.eye(n_features) * 1e-6
+                    quadratic_form = diff.T @ np.linalg.solve(stabilized_cov, diff)
                     ll = -0.5 * (
                         n_features * np.log(2 * np.pi) +
-                        np.log(np.linalg.det(cov) + 1e-8) +
-                        diff.T @ np.linalg.inv(cov + np.eye(n_features) * 1e-6) @ diff
+                        np.log(np.linalg.det(stabilized_cov) + 1e-8) +
+                        quadratic_form
                     )
                     ll_per_regime.append(ll)
                 except (ValueError, np.linalg.LinAlgError, OverflowError, RuntimeError) as e:
@@ -617,10 +628,13 @@ class MetricCalculator:
             # Log-likelihood of current observation given previous regime
             try:
                 diff = data[t] - mean
+                # Use solve() instead of inv() for better numerical stability
+                stabilized_cov = cov + np.eye(n_features) * 1e-6
+                quadratic_form = diff.T @ np.linalg.solve(stabilized_cov, diff)
                 ll = -0.5 * (
                     n_features * np.log(2 * np.pi) +
-                    np.log(np.linalg.det(cov) + 1e-8) +
-                    diff.T @ np.linalg.inv(cov + np.eye(n_features) * 1e-6) @ diff
+                    np.log(np.linalg.det(stabilized_cov) + 1e-8) +
+                    quadratic_form
                 )
                 log_likelihoods.append(ll)
             except (ValueError, np.linalg.LinAlgError, OverflowError, RuntimeError) as e:
@@ -1294,7 +1308,9 @@ def validate_robustness(
     Returns:
         (is_robust, robustness_metrics)
     """
-    from sklearn.metrics import adjusted_rand_score
+    if not SKLEARN_METRICS_AVAILABLE or adjusted_rand_score is None:
+        logger.error("❌ sklearn.metrics not available. Cannot perform robustness validation.")
+        return False, {'error': 'sklearn_not_available', 'median_ari': 0.0}
     
     logger.info(f"🔍 Validating robustness with {n_seeds} seeds...")
     
@@ -1415,7 +1431,18 @@ def statistical_significance_test(
         )
         # Fall back to simple bootstrap if blocks don't make sense
         block_size = max(1, len(strategy_returns) // 10)
-        n_blocks = len(strategy_returns) // block_size
+        n_blocks = max(1, len(strategy_returns) // block_size)
+        if n_blocks < 2:
+            logger.warning(
+                f"⚠️ Insufficient data for block bootstrap: n_blocks={n_blocks}, "
+                f"block_size={block_size}, len={len(strategy_returns)}"
+            )
+            return False, 1.0, {
+                'error': 'insufficient_data',
+                'strategy_sharpe': observed_strategy_sharpe,
+                'baseline_sharpe': observed_baseline_sharpe,
+                'sharpe_diff': observed_diff
+            }
     
     # Handle remainder samples
     remainder = len(strategy_returns) % block_size

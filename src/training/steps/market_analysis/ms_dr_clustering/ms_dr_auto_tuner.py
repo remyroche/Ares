@@ -13,7 +13,6 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any, Optional, List, Tuple, Union
 from dataclasses import dataclass
-import logging
 
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
@@ -59,8 +58,6 @@ try:
 except ImportError:
     HIERARCHICAL_HPO_AVAILABLE = False
     tprint_debug("Hierarchical HPO extension not available")
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -136,7 +133,6 @@ class MSDRAutoTuner:
             tuning_config: Configuration for tuning process
         """
         self.tuning_config = tuning_config or MSDRTuningConfig()
-        self.logger = logger
         self.quality_assessor = create_cluster_quality_assessor()
         
         # Optimization history

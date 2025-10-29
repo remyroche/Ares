@@ -14,7 +14,6 @@ Key Features:
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Optional, List, Callable
-import logging
 
 from src.utils.tprint import (
     tprint_info, tprint_success, tprint_structured, tprint_timer
@@ -28,8 +27,6 @@ from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
     StageConfig,
     OptimizationBackend
 )
-
-logger = logging.getLogger(__name__)
 
 
 def create_msdr_parameter_groups() -> List[ParameterGroup]:

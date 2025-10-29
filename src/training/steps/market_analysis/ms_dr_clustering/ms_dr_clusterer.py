@@ -72,12 +72,11 @@ from dataclasses import dataclass
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
-import logging
 
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
     tprint_debug, tprint_performance, tprint_structured, tprint_timer,
-    tprint_data_preview, tprint_data_format
+    tprint_data_preview, tprint_data_format, tprint_exception
 )
 
 # Import safe mathematical operations
@@ -271,7 +270,6 @@ class MSDRClusterer:
             config: Configuration for MS-DR clustering
         """
         self.config = config or MSDRConfig()
-        self.logger = logging.getLogger(self.__class__.__name__)
         self.model = None
         self.scaler = None
         self.pca = None
@@ -457,7 +455,7 @@ class MSDRClusterer:
             
         except Exception as e:
             tprint_error(f"❌ MS-DR clustering failed: {e}")
-            self.logger.error(f"MS-DR clustering error: {e}", exc_info=True)
+            tprint_exception(e, "MS-DR clustering error")
             
             # Return failure result
             processing_time = time.time() - start_time
@@ -529,8 +527,10 @@ class MSDRClusterer:
         # Check minimum samples
         n_samples = len(data) if len(data.shape) == 1 else data.shape[0]
         if n_samples == 0:
+            tprint_error("❌ Input data is empty")
             raise ValueError("Input data is empty")
         if n_samples < 2:
+            tprint_error(f"❌ At least 2 samples required for regimes, got {n_samples}")
             raise ValueError(f"At least 2 samples required for regimes, got {n_samples}")
         if n_samples < self.config.min_samples_required:
             tprint_warning(
@@ -542,6 +542,9 @@ class MSDRClusterer:
         if len(data.shape) > 1:
             n_features = data.shape[1]
             if n_features < self.config.min_features_required:
+                tprint_error(
+                    f"❌ Input has {n_features} features, but minimum {self.config.min_features_required} required"
+                )
                 raise ValueError(
                     f"Input has {n_features} features, but minimum {self.config.min_features_required} required"
                 )
@@ -550,6 +553,9 @@ class MSDRClusterer:
         if isinstance(data, np.ndarray):
             nan_ratio = np.isnan(data).sum() / data.size
             if nan_ratio > self.config.max_nan_ratio:
+                tprint_error(
+                    f"❌ Input has {nan_ratio:.1%} NaN values, exceeding maximum {self.config.max_nan_ratio:.1%}"
+                )
                 raise ValueError(
                     f"Input has {nan_ratio:.1%} NaN values, exceeding maximum {self.config.max_nan_ratio:.1%}"
                 )
@@ -558,6 +564,7 @@ class MSDRClusterer:
         if isinstance(data, np.ndarray):
             data_flat = data.flatten()
             if len(np.unique(data_flat[~np.isnan(data_flat)])) == 1:
+                tprint_error("❌ All data values are identical - cannot fit MS-DR model")
                 raise ValueError("All data values are identical - cannot fit MS-DR model")
         
         tprint_success("✅ Input validation passed")
@@ -627,6 +634,7 @@ class MSDRClusterer:
             
             # Check for zero variance after preprocessing
             if np.var(data_processed) < 1e-10:
+                tprint_error("❌ Data has zero variance after preprocessing - cannot fit MS-DR model")
                 raise ValueError("Data has zero variance after preprocessing - cannot fit MS-DR model")
             
             # For MS models, we need univariate time series
@@ -652,6 +660,7 @@ class MSDRClusterer:
                     tprint_warning("⚠️ Keeping all components - MS models typically require univariate input")
                     pass
                 else:
+                    tprint_error(f"❌ Unknown pca_aggregation method: {self.config.pca_aggregation}")
                     raise ValueError(f"Unknown pca_aggregation method: {self.config.pca_aggregation}")
             
             tprint_success(f"✅ Preprocessed data shape: {data_processed.shape}")
@@ -782,6 +791,10 @@ class MSDRClusterer:
         
         # Validate model type
         if self.config.model_type not in ['autoregression', 'regression']:
+            tprint_error(
+                f"❌ Unknown model_type '{self.config.model_type}'. "
+                f"Valid options: 'autoregression', 'regression'"
+            )
             raise ValueError(
                 f"Unknown model_type '{self.config.model_type}'. "
                 f"Valid options: 'autoregression', 'regression'"
@@ -1002,6 +1015,7 @@ class MSDRClusterer:
             Predicted labels
         """
         if self.model is None:
+            tprint_error("❌ Model not fitted. Call fit_predict first.")
             raise ValueError("Model not fitted. Call fit_predict first.")
         
         # Preprocess data

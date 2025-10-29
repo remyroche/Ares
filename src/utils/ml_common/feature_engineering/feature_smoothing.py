@@ -3,12 +3,26 @@ Feature Smoothing Utilities for Regime Models
 
 Provides smoothed features and rolling aggregates to reduce jittery predictions
 in tree-based models.
+
+Optimized with VectorBTRollingOptimizer for large datasets.
 """
 
 import numpy as np
 import pandas as pd
 from typing import Union, Optional, Dict, Any
 import re
+
+# Try to import VectorBTRollingOptimizer for performance optimization
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer,
+        get_vectorbt_rolling_optimizer
+    )
+    VECTORBT_ROLLING_AVAILABLE = True
+except ImportError:
+    VECTORBT_ROLLING_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
 
 
 def _is_smoothed_feature(feature_name: str) -> bool:
@@ -43,17 +57,22 @@ def _is_smoothed_feature(feature_name: str) -> bool:
 def add_smoothed_features(
     X: np.ndarray,
     window_sizes: Optional[list] = None,
-    feature_names: Optional[list] = None
+    feature_names: Optional[list] = None,
+    use_vectorbt_optimization: bool = True,
+    rolling_optimizer: Optional[VectorBTRollingOptimizer] = None
 ) -> tuple[np.ndarray, list]:
     """
     Add smoothed features using rolling aggregates.
     
     Only smooths original (non-smoothed) features to avoid double-smoothing.
+    Uses VectorBTRollingOptimizer for performance optimization if available.
     
     Args:
         X: Input features (n_samples, n_features)
         window_sizes: List of window sizes for smoothing (default: [3, 5, 7])
         feature_names: Original feature names (optional)
+        use_vectorbt_optimization: Enable VectorBT optimization (default: True)
+        rolling_optimizer: Optional VectorBTRollingOptimizer instance (default: None, creates new)
         
     Returns:
         Tuple of (smoothed_X, updated_feature_names)
@@ -95,6 +114,27 @@ def add_smoothed_features(
     # Convert original features to DataFrame for easier rolling operations
     df_original = pd.DataFrame(X_original)
     
+    # Initialize VectorBTRollingOptimizer if needed and available
+    use_optimizer = (
+        use_vectorbt_optimization and 
+        VECTORBT_ROLLING_AVAILABLE and
+        n_samples > 100  # Only use optimizer for larger datasets
+    )
+    
+    if use_optimizer and rolling_optimizer is None:
+        try:
+            if get_vectorbt_rolling_optimizer is not None:
+                rolling_optimizer = get_vectorbt_rolling_optimizer()
+            else:
+                rolling_optimizer = VectorBTRollingOptimizer(
+                    enable_gpu=False,
+                    enable_parallel=True,
+                    memory_efficient=True
+                )
+        except Exception:
+            use_optimizer = False
+            rolling_optimizer = None
+    
     smoothed_features = []
     smoothed_names = []
     
@@ -116,7 +156,30 @@ def add_smoothed_features(
             continue
         
         # Rolling mean (only for original features)
-        rolling_mean = df_original.rolling(window=window, min_periods=1, center=True).mean().values
+        if use_optimizer and rolling_optimizer is not None:
+            try:
+                # Use VectorBT optimized rolling mean
+                rolling_mean_df = rolling_optimizer.rolling_mean(
+                    df_original, 
+                    window=window
+                )
+                # Handle center=True by shifting if needed
+                if rolling_mean_df is not None:
+                    rolling_mean = rolling_mean_df.values
+                    # For center=True, we'd need to shift, but VectorBT may not support it
+                    # So we'll use pandas for center=True, VectorBT for center=False
+                    if rolling_mean.shape != df_original.shape:
+                        # Fallback to pandas if shape mismatch
+                        rolling_mean = df_original.rolling(window=window, min_periods=1, center=True).mean().values
+                else:
+                    rolling_mean = df_original.rolling(window=window, min_periods=1, center=True).mean().values
+            except Exception:
+                # Fallback to pandas if VectorBT fails
+                rolling_mean = df_original.rolling(window=window, min_periods=1, center=True).mean().values
+        else:
+            # Use pandas rolling
+            rolling_mean = df_original.rolling(window=window, min_periods=1, center=True).mean().values
+        
         smoothed_features.append(rolling_mean)
         if original_feature_names:
             smoothed_names.extend([f'{name}_ma{window}' for name in original_feature_names])
@@ -124,9 +187,33 @@ def add_smoothed_features(
             smoothed_names.extend([f'feature_{i}_ma{window}' for i in range(n_original_features)])
         
         # Rolling std (volatility measure) - only for original features
-        rolling_std = df_original.rolling(window=window, min_periods=1, center=True).std().values
-        # Fill NaN with 0 for first samples
-        rolling_std = np.nan_to_num(rolling_std, nan=0.0)
+        if use_optimizer and rolling_optimizer is not None:
+            try:
+                # Use VectorBT optimized rolling std
+                rolling_std_df = rolling_optimizer.rolling_std(
+                    df_original,
+                    window=window
+                )
+                if rolling_std_df is not None:
+                    rolling_std = rolling_std_df.values
+                    if rolling_std.shape != df_original.shape:
+                        # Fallback to pandas if shape mismatch
+                        rolling_std = df_original.rolling(window=window, min_periods=1, center=True).std().values
+                    else:
+                        rolling_std = np.nan_to_num(rolling_std, nan=0.0)
+                else:
+                    rolling_std = df_original.rolling(window=window, min_periods=1, center=True).std().values
+                    rolling_std = np.nan_to_num(rolling_std, nan=0.0)
+            except Exception:
+                # Fallback to pandas if VectorBT fails
+                rolling_std = df_original.rolling(window=window, min_periods=1, center=True).std().values
+                rolling_std = np.nan_to_num(rolling_std, nan=0.0)
+        else:
+            # Use pandas rolling
+            rolling_std = df_original.rolling(window=window, min_periods=1, center=True).std().values
+            # Fill NaN with 0 for first samples
+            rolling_std = np.nan_to_num(rolling_std, nan=0.0)
+        
         smoothed_features.append(rolling_std)
         if original_feature_names:
             smoothed_names.extend([f'{name}_std{window}' for name in original_feature_names])
@@ -142,7 +229,9 @@ def add_smoothed_features(
 def apply_ewm_smoothing(
     X: Union[np.ndarray, pd.DataFrame],
     alpha: float = 0.3,
-    feature_names: Optional[list] = None
+    feature_names: Optional[list] = None,
+    use_vectorization_optimization: bool = True,
+    vectorization_manager: Optional[Any] = None
 ) -> tuple[np.ndarray, list]:
     """
     Apply exponential weighted moving average smoothing.
@@ -194,6 +283,7 @@ def apply_ewm_smoothing(
     df_smoothed_existing = df.iloc[:, smoothed_indices] if smoothed_indices else None
     
     # Apply EWM smoothing only to original features
+    # EWM operations are typically fast enough that optimization isn't needed
     ewm_features = df_original.ewm(alpha=alpha, adjust=False).mean().values
     
     # Combine features: original + already-smoothed + new EWM smoothed

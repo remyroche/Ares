@@ -9,6 +9,8 @@ import logging
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
+from collections import deque
+from threading import Lock
 import numpy as np
 import pandas as pd
 
@@ -17,8 +19,25 @@ from src.core.decorators import handles_errors, traced, log_execution_time
 from ..config.regime_config import RegimeType
 from ..config.trading_config import TradingConfig
 from ..model_selection import get_model_selector_service, ModelSelectionResult
+from .utils import (
+    validate_market_data, validate_regime_probabilities, validate_signal_parameters,
+    calculate_weighted_regime_multiplier, CircuitBreaker, RateLimiter, SignalDeduplicator
+)
 
 logger = system_logger.getChild('SignalGenerationPipeline')
+
+# Constants
+DEFAULT_CONFIDENCE_THRESHOLD = 0.6
+DEFAULT_REGIME_CONFIDENCE_THRESHOLD = 0.7
+DEFAULT_SIGNAL_CONFIDENCE_THRESHOLD = 0.6
+DEFAULT_EXIT_CONFIDENCE_THRESHOLD = 0.5
+MIN_MARKET_DATA_POINTS = 20
+DEFAULT_MAX_HISTORY = 1000
+DEFAULT_RATE_LIMIT_CALLS = 10
+DEFAULT_RATE_LIMIT_WINDOW = 60.0
+DEFAULT_CIRCUIT_BREAKER_FAILURES = 5
+DEFAULT_CIRCUIT_BREAKER_TIMEOUT = 60.0
+DEFAULT_SIGNAL_DEDUP_WINDOW = 300.0
 
 @dataclass
 class RegimeOutput:
@@ -141,11 +160,29 @@ class SignalGenerationPipeline:
 
         # State management
         self.is_initialized = False
-        self.signal_history: List[SignalGenerationResult] = []
+        self.signal_history: deque = deque(maxlen=getattr(config, 'max_history', DEFAULT_MAX_HISTORY))
 
-        # Position state management
+        # Position state management (thread-safe)
         self.current_position: Optional[PositionState] = None
-        self.position_history: List[PositionState] = []
+        self.position_history: deque = deque(maxlen=getattr(config, 'max_history', DEFAULT_MAX_HISTORY))
+        self._position_lock = Lock()
+
+        # Circuit breaker for failure handling
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=getattr(config, 'circuit_breaker_failures', DEFAULT_CIRCUIT_BREAKER_FAILURES),
+            recovery_timeout=getattr(config, 'circuit_breaker_timeout', DEFAULT_CIRCUIT_BREAKER_TIMEOUT)
+        )
+
+        # Rate limiter
+        self.rate_limiter = RateLimiter(
+            max_calls=getattr(config, 'rate_limit_calls', DEFAULT_RATE_LIMIT_CALLS),
+            time_window=getattr(config, 'rate_limit_window', DEFAULT_RATE_LIMIT_WINDOW)
+        )
+
+        # Signal deduplicator
+        self.signal_deduplicator = SignalDeduplicator(
+            deduplication_window=getattr(config, 'signal_dedup_window', DEFAULT_SIGNAL_DEDUP_WINDOW)
+        )
 
     @handles_errors
     async def initialize(self) -> bool:
@@ -360,6 +397,113 @@ class SignalGenerationPipeline:
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to load optimization parameters, using defaults: {e}")
 
+    async def _generate_signal_internal(
+        self,
+        symbol: str,
+        market_data: pd.DataFrame,
+        additional_features: Optional[Dict[str, Any]],
+        timestamp: datetime
+    ) -> SignalGenerationResult:
+        """
+        Internal signal generation method (called by generate_signal wrapper).
+
+        Args:
+            symbol: Trading symbol
+            market_data: Market data DataFrame
+            additional_features: Additional features for analysis
+            timestamp: Timestamp for signal generation
+
+        Returns:
+            SignalGenerationResult: Complete signal generation result
+        """
+        # Step 1: HMM Regime Detection
+        regime_output = await self._detect_regime(market_data, timestamp)
+        
+        # Validate regime probabilities
+        is_valid, error_msg = validate_regime_probabilities(regime_output.regime_probabilities)
+        if not is_valid:
+            self.logger.warning(f"⚠️ Invalid regime probabilities: {error_msg}")
+
+        # Step 1.5: Model Selection
+        model_selection_result = await self._select_models_for_trading(
+            market_data, symbol, timestamp
+        )
+
+        # Step 2: Analyst Base Models
+        analyst_base_outputs = await self._run_analyst_base_models(
+            market_data, regime_output, additional_features, timestamp, model_selection_result
+        )
+
+        # Step 3: Analyst Meta Model
+        analyst_meta_output = await self._run_analyst_meta_model(
+            market_data, regime_output, analyst_base_outputs, timestamp
+        )
+
+        # Step 4: Tactician Base Models
+        tactician_base_outputs = await self._run_tactician_base_models(
+            market_data, regime_output, analyst_meta_output, timestamp
+        )
+
+        # Step 5: Tactician Meta Model
+        tactician_meta_output = await self._run_tactician_meta_model(
+            market_data, regime_output, analyst_meta_output, tactician_base_outputs, timestamp
+        )
+
+        # Step 6: Calculate Exit Confidence (for position management)
+        exit_confidence = self._calculate_exit_confidence(
+            analyst_meta_output.analyst_confidence,
+            tactician_meta_output.tactician_confidence
+        )
+
+        # Step 7: Check Exit Conditions (if position is open)
+        should_exit, exit_reason = self._check_exit_conditions(exit_confidence)
+
+        # Step 8: Final Signal Generation (with position validation)
+        final_signal = self._generate_final_signal(
+            regime_output, analyst_meta_output, tactician_meta_output, should_exit, exit_reason
+        )
+
+        # Validate signal against current position
+        validation_result = self._validate_signal_against_position(final_signal)
+        if not validation_result['is_valid']:
+            self.logger.warning(f"⚠️ Signal validation failed: {validation_result['reason']}")
+            # Adjust signal if needed
+            if validation_result.get('adjusted_signal'):
+                final_signal = validation_result['adjusted_signal']
+
+        # Update position state based on signal (thread-safe)
+        self._update_position_state(final_signal, timestamp, should_exit)
+
+        # Create result
+        result = SignalGenerationResult(
+            timestamp=timestamp,
+            symbol=symbol,
+            regime_output=regime_output,
+            analyst_output=analyst_meta_output,
+            tactician_output=tactician_meta_output,
+            final_signal=final_signal['signal'],
+            final_confidence=final_signal['confidence'],
+            signal_strength=final_signal['strength'],
+            optimization_parameters=self.optimization_params,
+            metadata={
+                'symbol': symbol,
+                'data_points': len(market_data),
+                'processing_time_ms': 0  # Will be set by decorator
+            },
+            # Exit-specific fields
+            exit_confidence=exit_confidence,
+            should_exit=should_exit,
+            exit_reason=exit_reason,
+            position_state=self.current_position
+        )
+
+        # Store in history (deque automatically handles maxlen)
+        self.signal_history.append(result)
+
+        self.logger.debug(f"Signal generated for {symbol}: {final_signal['signal']} (confidence: {final_signal['confidence']:.3f})")
+
+        return result
+
     @handles_errors
     @log_execution_time()
     @traced(span_name="generate_signal")
@@ -384,82 +528,43 @@ class SignalGenerationPipeline:
             if not self.is_initialized:
                 raise RuntimeError("Signal Generation Pipeline not initialized")
 
+            # Input validation
+            is_valid, error_msg = validate_signal_parameters(symbol=symbol)
+            if not is_valid:
+                raise ValueError(f"Invalid symbol parameter: {error_msg}")
+
+            is_valid, error_msg = validate_market_data(market_data)
+            if not is_valid:
+                raise ValueError(f"Invalid market data: {error_msg}")
+
+            # Rate limiting check
+            if not self.rate_limiter.acquire():
+                wait_time = self.rate_limiter.wait_time()
+                raise RuntimeError(f"Rate limit exceeded. Wait {wait_time:.1f}s before retrying.")
+
             timestamp = datetime.now()
 
-            # Step 1: HMM Regime Detection
-            regime_output = await self._detect_regime(market_data, timestamp)
+            # Check for signal deduplication (before generation to avoid wasted work)
+            # Generate signal
+            try:
+                result = await self._generate_signal_internal(
+                    symbol, market_data, additional_features, timestamp
+                )
+            except Exception as e:
+                # Circuit breaker will handle the failure
+                self.circuit_breaker._on_failure()
+                raise
 
-            # Step 1.5: Model Selection
-            model_selection_result = await self._select_models_for_trading(
-                market_data, symbol, timestamp
-            )
+            # Check for duplicate signal
+            if self.signal_deduplicator.is_duplicate(symbol, result.final_signal, timestamp):
+                self.logger.warning(f"⚠️ Duplicate signal detected: {symbol} {result.final_signal}")
+                # Still return the signal but log it
 
-            # Step 2: Analyst Base Models
-            analyst_base_outputs = await self._run_analyst_base_models(
-                market_data, regime_output, additional_features, timestamp, model_selection_result
-            )
+            # Record signal for deduplication
+            self.signal_deduplicator.record_signal(symbol, result.final_signal, timestamp)
 
-            # Step 3: Analyst Meta Model
-            analyst_meta_output = await self._run_analyst_meta_model(
-                market_data, regime_output, analyst_base_outputs, timestamp
-            )
-
-            # Step 4: Tactician Base Models
-            tactician_base_outputs = await self._run_tactician_base_models(
-                market_data, regime_output, analyst_meta_output, timestamp
-            )
-
-            # Step 5: Tactician Meta Model
-            tactician_meta_output = await self._run_tactician_meta_model(
-                market_data, regime_output, analyst_meta_output, tactician_base_outputs, timestamp
-            )
-
-            # Step 6: Calculate Exit Confidence (for position management)
-            exit_confidence = self._calculate_exit_confidence(
-                analyst_meta_output.analyst_confidence,
-                tactician_meta_output.tactician_confidence
-            )
-
-            # Step 7: Check Exit Conditions (if position is open)
-            should_exit, exit_reason = self._check_exit_conditions(exit_confidence)
-
-            # Step 8: Final Signal Generation
-            final_signal = self._generate_final_signal(
-                regime_output, analyst_meta_output, tactician_meta_output, should_exit, exit_reason
-            )
-
-            # Update position state based on signal
-            self._update_position_state(final_signal, timestamp, should_exit)
-
-            # Create result
-            result = SignalGenerationResult(
-                timestamp=timestamp,
-                symbol=symbol,
-                regime_output=regime_output,
-                analyst_output=analyst_meta_output,
-                tactician_output=tactician_meta_output,
-                final_signal=final_signal['signal'],
-                final_confidence=final_signal['confidence'],
-                signal_strength=final_signal['strength'],
-                optimization_parameters=self.optimization_params,
-                metadata={
-                    'symbol': symbol,
-                    'data_points': len(market_data),
-                    'processing_time_ms': 0  # Will be set by decorator
-                },
-                # Exit-specific fields
-                exit_confidence=exit_confidence,
-                should_exit=should_exit,
-                exit_reason=exit_reason,
-                position_state=self.current_position
-            )
-
-            # Store in history
-            self.signal_history.append(result)
-            if len(self.signal_history) > 1000:
-                self.signal_history = self.signal_history[-1000:]
-
-            self.logger.debug(f"Signal generated for {symbol}: {final_signal['signal']} (confidence: {final_signal['confidence']:.3f})")
+            # Success - update circuit breaker
+            self.circuit_breaker._on_success()
 
             return result
 
@@ -760,6 +865,7 @@ class SignalGenerationPipeline:
                         features = getattr(prediction, 'features', {}) if hasattr(prediction, 'features') else {}
                     else:
                         # Fallback for models without standard predict interface
+                        self.logger.warning(f"⚠️ Analyst base model missing 'predict' method, using fallback confidence")
                         confidence = 0.5
                         features = {}
 
@@ -777,8 +883,9 @@ class SignalGenerationPipeline:
                     base_outputs.append(base_output)
 
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Analyst base model failed: {e}")
-                    # Create fallback output
+                    self.logger.warning(f"⚠️ Analyst base model failed: {e}", exc_info=True)
+                    # Create fallback output with explicit logging
+                    self.logger.debug(f"Creating fallback output due to model failure")
                     base_outputs.append(AnalystBaseOutput(
                         timestamp=timestamp,
                         market_health={},
@@ -854,6 +961,7 @@ class SignalGenerationPipeline:
                         adversarial_risks = getattr(prediction, 'adversarial_risks', {}) if hasattr(prediction, 'adversarial_risks') else {}
                     else:
                         # Fallback for models without standard predict interface
+                        self.logger.warning(f"⚠️ Tactician base model missing 'predict' method, using fallback confidence")
                         confidence = 0.5
                         scenario_predictions = {}
                         price_targets = {}
@@ -872,8 +980,9 @@ class SignalGenerationPipeline:
                     base_outputs.append(base_output)
 
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Tactician base model failed: {e}")
-                    # Create fallback output
+                    self.logger.warning(f"⚠️ Tactician base model failed: {e}", exc_info=True)
+                    # Create fallback output with explicit logging
+                    self.logger.debug(f"Creating fallback output due to model failure")
                     base_outputs.append(TacticianBaseOutput(
                         timestamp=timestamp,
                         scenario_predictions={},
@@ -937,7 +1046,7 @@ class SignalGenerationPipeline:
             raise
 
     def _apply_regime_adjustment(self, base_confidence: float, regime_probabilities: Dict[RegimeType, float]) -> float:
-        """Apply regime-based confidence adjustment."""
+        """Apply regime-based confidence adjustment using weighted average."""
         try:
             # Regime confidence multipliers
             regime_multipliers = {
@@ -952,11 +1061,10 @@ class SignalGenerationPipeline:
                 RegimeType.MEAN_REVERSION: 0.9,
             }
 
-            # Calculate weighted regime multiplier
-            regime_multiplier = 1.0
-            for regime, probability in regime_probabilities.items():
-                multiplier = regime_multipliers.get(regime, 1.0)
-                regime_multiplier += (multiplier - 1.0) * probability
+            # Calculate weighted regime multiplier (fixed: use weighted average instead of additive)
+            regime_multiplier = calculate_weighted_regime_multiplier(
+                regime_probabilities, regime_multipliers
+            )
 
             # Apply adjustment
             adjusted_confidence = base_confidence * regime_multiplier
@@ -1127,9 +1235,73 @@ class SignalGenerationPipeline:
             self.logger.error(f"❌ Error checking exit conditions: {e}")
             return False, f"Error checking exit conditions: {e}"
 
+    def _validate_signal_against_position(self, final_signal: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate signal against current position to avoid conflicts.
+        
+        Args:
+            final_signal: Generated trading signal
+        
+        Returns:
+            Dict with 'is_valid', 'reason', and optionally 'adjusted_signal'
+        """
+        try:
+            with self._position_lock:
+                current_pos = self.current_position
+                
+            signal = final_signal['signal']
+            
+            # If no position, any entry signal is valid
+            if not current_pos or not current_pos.is_open:
+                if signal in ['buy', 'sell']:
+                    return {'is_valid': True, 'reason': 'No open position, entry signal valid'}
+                return {'is_valid': True, 'reason': 'No open position'}
+            
+            # Check for conflicts
+            if signal == 'buy' and current_pos.direction == 'long':
+                return {
+                    'is_valid': False,
+                    'reason': 'Buy signal conflicts with existing long position',
+                    'adjusted_signal': {'signal': 'hold', 'confidence': final_signal['confidence'] * 0.5, 'strength': 0.0}
+                }
+            
+            if signal == 'sell' and current_pos.direction == 'short':
+                return {
+                    'is_valid': False,
+                    'reason': 'Sell signal conflicts with existing short position',
+                    'adjusted_signal': {'signal': 'hold', 'confidence': final_signal['confidence'] * 0.5, 'strength': 0.0}
+                }
+            
+            # Close signals are always valid when position is open
+            if signal == 'close':
+                return {'is_valid': True, 'reason': 'Close signal valid for open position'}
+            
+            # Entry signals opposite to current position need higher confidence
+            if signal == 'buy' and current_pos.direction == 'short':
+                if final_signal['confidence'] < 0.8:
+                    return {
+                        'is_valid': False,
+                        'reason': 'Buy signal to reverse short position requires higher confidence',
+                        'adjusted_signal': {'signal': 'close', 'confidence': final_signal['confidence'], 'strength': final_signal['strength']}
+                    }
+            
+            if signal == 'sell' and current_pos.direction == 'long':
+                if final_signal['confidence'] < 0.8:
+                    return {
+                        'is_valid': False,
+                        'reason': 'Sell signal to reverse long position requires higher confidence',
+                        'adjusted_signal': {'signal': 'close', 'confidence': final_signal['confidence'], 'strength': final_signal['strength']}
+                    }
+            
+            return {'is_valid': True, 'reason': 'Signal validated against position'}
+            
+        except Exception as e:
+            self.logger.error(f"❌ Signal position validation failed: {e}")
+            return {'is_valid': True, 'reason': f'Validation error: {e}'}  # Default to valid on error
+
     def _update_position_state(self, final_signal: Dict[str, Any], timestamp: datetime, should_exit: bool):
         """
-        Update position state based on signal and exit conditions.
+        Update position state based on signal and exit conditions (thread-safe).
 
         Args:
             final_signal: Generated trading signal
@@ -1140,34 +1312,35 @@ class SignalGenerationPipeline:
             signal = final_signal['signal']
             confidence = final_signal['confidence']
 
-            # Handle exit conditions first
-            if should_exit and self.current_position and self.current_position.is_open:
-                # Close current position
-                self.current_position.is_open = False
-                self.position_history.append(self.current_position)
-                self.logger.info(f"📉 Position closed: {self.current_position.direction} from {self.current_position.entry_timestamp}")
-                self.current_position = None
-                return
+            with self._position_lock:
+                # Handle exit conditions first
+                if should_exit and self.current_position and self.current_position.is_open:
+                    # Close current position
+                    self.current_position.is_open = False
+                    self.position_history.append(self.current_position)
+                    self.logger.info(f"📉 Position closed: {self.current_position.direction} from {self.current_position.entry_timestamp}")
+                    self.current_position = None
+                    return
 
-            # Handle new position entries
-            if signal in ['buy', 'sell'] and (not self.current_position or not self.current_position.is_open):
-                # Open new position
-                self.current_position = PositionState(
-                    is_open=True,
-                    entry_timestamp=timestamp,
-                    entry_price=None,  # Would be set by execution engine
-                    position_size=None,  # Would be set by execution engine
-                    direction='long' if signal == 'buy' else 'short',
-                    entry_confidence=confidence
-                )
-                self.logger.info(f"📈 New position opened: {signal} at {timestamp} (confidence: {confidence:.3f})")
+                # Handle new position entries
+                if signal in ['buy', 'sell'] and (not self.current_position or not self.current_position.is_open):
+                    # Open new position
+                    self.current_position = PositionState(
+                        is_open=True,
+                        entry_timestamp=timestamp,
+                        entry_price=None,  # Would be set by execution engine
+                        position_size=None,  # Would be set by execution engine
+                        direction='long' if signal == 'buy' else 'short',
+                        entry_confidence=confidence
+                    )
+                    self.logger.info(f"📈 New position opened: {signal} at {timestamp} (confidence: {confidence:.3f})")
 
-            # Handle position closes from signal
-            elif signal == 'close' and self.current_position and self.current_position.is_open:
-                self.current_position.is_open = False
-                self.position_history.append(self.current_position)
-                self.logger.info(f"📉 Position closed by signal: {self.current_position.direction}")
-                self.current_position = None
+                # Handle position closes from signal
+                elif signal == 'close' and self.current_position and self.current_position.is_open:
+                    self.current_position.is_open = False
+                    self.position_history.append(self.current_position)
+                    self.logger.info(f"📉 Position closed by signal: {self.current_position.direction}")
+                    self.current_position = None
 
         except Exception as e:
             self.logger.error(f"❌ Error updating position state: {e}")
@@ -1295,7 +1468,8 @@ class SignalGenerationPipeline:
 
     def get_signal_history(self, limit: int = 100) -> List[SignalGenerationResult]:
         """Get recent signal generation history."""
-        return self.signal_history[-limit:] if self.signal_history else []
+        # Convert deque to list for return (deque is already bounded by maxlen)
+        return list(self.signal_history)[-limit:] if len(self.signal_history) > limit else list(self.signal_history)
 
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics for signal generation."""
@@ -1307,9 +1481,11 @@ class SignalGenerationPipeline:
                     'signal_distribution': {'buy': 0, 'sell': 0, 'hold': 0}
                 }
 
-            recent_signals = self.signal_history[-100:]  # Last 100 signals
+            # Convert deque to list for slicing
+            signal_list = list(self.signal_history)
+            recent_signals = signal_list[-100:] if len(signal_list) > 100 else signal_list
 
-            avg_confidence = sum(s.final_confidence for s in recent_signals) / len(recent_signals)
+            avg_confidence = sum(s.final_confidence for s in recent_signals) / len(recent_signals) if recent_signals else 0.0
 
             signal_distribution = {'buy': 0, 'sell': 0, 'hold': 0}
             for signal in recent_signals:

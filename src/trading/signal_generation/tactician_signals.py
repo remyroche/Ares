@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+from collections import deque
 
 import pandas as pd
 import numpy as np
@@ -115,9 +116,9 @@ class TacticianSignalGenerator:
         self.enable_tas_enhancement = config.get('enable_tas_enhancement', True)
         self.tas_timeframe = config.get('tas_timeframe', '1m')
 
-        # Signal history
-        self.signal_history: List[TacticianSignal] = []
+        # Signal history (using deque for efficient O(1) operations)
         self.max_history = config.get('max_history', 1000)
+        self.signal_history: deque = deque(maxlen=self.max_history)
 
         # Performance tracking
         self.signal_count = 0
@@ -635,16 +636,14 @@ class TacticianSignalGenerator:
             return TimingConfidence.LOW
 
     def _store_signal(self, signal: TacticianSignal):
-        """Store signal in history."""
+        """Store signal in history (deque automatically handles maxlen)."""
         self.signal_history.append(signal)
-
-        # Maintain history size
-        if len(self.signal_history) > self.max_history:
-            self.signal_history.pop(0)
 
     def get_signal_history(self, n: int = 100) -> List[TacticianSignal]:
         """Get recent signal history."""
-        return self.signal_history[-n:] if len(self.signal_history) >= n else self.signal_history.copy()
+        # Convert deque to list for return
+        signal_list = list(self.signal_history)
+        return signal_list[-n:] if len(signal_list) >= n else signal_list
 
     def get_signal_stats(self) -> Dict[str, Any]:
         """Get signal generation statistics."""

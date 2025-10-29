@@ -128,15 +128,15 @@ All critical issues have been fixed and missing functionality has been implement
 
 ## 📊 STATISTICS
 
-### Files Created: 8
+### Files Created: 6
 1. `constants.py` - Configuration constants
 2. `retry.py` - Retry mechanism
 3. `circuit_breaker.py` - Circuit breaker pattern
-4. `rate_limiting.py` - Rate limiting utilities
-5. `ohlcv_validation.py` - Enhanced OHLCV validation
-6. `timeseries.py` - Time series utilities
-7. `data_quality.py` - Data quality scoring
-8. `exchange_validation.py` - Exchange-specific validation
+4. `ohlcv_validation.py` - Enhanced OHLCV validation
+5. `timeseries.py` - Time series utilities
+6. `data_quality.py` - Data quality scoring
+
+**Note**: Exchange-specific validation and rate limiting removed (handled at ExchangeInterface/ExchangeDispatcher level)
 
 ### Functions Added: 50+
 - Error handling: 5 new error types
@@ -181,29 +181,15 @@ def risky_operation():
     pass
 ```
 
-### Rate Limiting
-```python
-from src.trading.utils import rate_limit
-
-@rate_limit(max_requests=100, window_seconds=60)
-def api_call():
-    # Automatically rate limited
-    pass
-```
-
 ### Enhanced Validation
 ```python
 from src.trading.utils import (
     validate_order_precision,
-    validate_exchange_order_type,
     validate_ohlcv_enhanced
 )
 
 # Validate order precision
 validate_order_precision(price=100.12345678, quantity=0.001)
-
-# Validate exchange-specific order type
-validate_exchange_order_type('limit', 'binance')
 
 # Comprehensive OHLCV validation
 validate_ohlcv_enhanced(data, check_gaps=True, check_jumps=True)
@@ -226,7 +212,6 @@ print(f"Recommendations: {report['recommendations']}")
 - ❌ 4 critical bugs
 - ❌ Missing retry mechanism
 - ❌ Missing circuit breaker
-- ❌ Missing rate limiting
 - ❌ Incomplete validation
 - ❌ Duplicate code
 - ❌ No input validation
@@ -236,11 +221,12 @@ print(f"Recommendations: {report['recommendations']}")
 - ✅ All critical bugs fixed
 - ✅ Comprehensive retry mechanism
 - ✅ Circuit breaker pattern
-- ✅ Rate limiting utilities
 - ✅ Complete validation suite
 - ✅ Refactored duplicate code
 - ✅ Input validation everywhere
 - ✅ Constants file for configuration
+
+**Note**: Rate limiting and exchange-specific validation handled at ExchangeInterface/ExchangeDispatcher level
 
 ---
 

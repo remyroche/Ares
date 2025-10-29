@@ -572,3 +572,399 @@ def validate_order_params(
                 'stop_price': stop_price
             }
         )
+
+def validate_order_precision(
+    price: float,
+    quantity: float,
+    price_precision: int = 8,
+    quantity_precision: int = 8
+) -> bool:
+    """
+    Validate order price and quantity precision.
+
+    Args:
+        price: Order price
+        quantity: Order quantity
+        price_precision: Required decimal places for price
+        quantity_precision: Required decimal places for quantity
+
+    Returns:
+        bool: True if validation passes
+
+    Raises:
+        ValidationError: If validation fails
+    """
+    errors = []
+
+    # Check price precision
+    price_str = f"{price:.{price_precision}f}"
+    if float(price_str) != price:
+        errors.append(f"Price {price} exceeds precision {price_precision}")
+
+    # Check quantity precision
+    quantity_str = f"{quantity:.{quantity_precision}f}"
+    if float(quantity_str) != quantity:
+        errors.append(f"Quantity {quantity} exceeds precision {quantity_precision}")
+
+    if errors:
+        raise ValidationError(
+            f"Order precision validation failed: {'; '.join(errors)}",
+            severity=TradingErrorSeverity.HIGH,
+            context={
+                'price': price,
+                'quantity': quantity,
+                'price_precision': price_precision,
+                'quantity_precision': quantity_precision
+            }
+        )
+
+    return True
+
+def validate_leverage(
+    leverage: float,
+    max_leverage: float = 100.0,
+    min_leverage: float = 1.0
+) -> bool:
+    """
+    Validate leverage value.
+
+    Args:
+        leverage: Leverage value
+        max_leverage: Maximum allowed leverage
+        min_leverage: Minimum allowed leverage
+
+    Returns:
+        bool: True if validation passes
+
+    Raises:
+        ValidationError: If validation fails
+    """
+    errors = []
+
+    if not isinstance(leverage, (int, float)):
+        errors.append(f"Leverage must be a number, got {type(leverage)}")
+    elif leverage < min_leverage:
+        errors.append(f"Leverage {leverage} is below minimum {min_leverage}")
+    elif leverage > max_leverage:
+        errors.append(f"Leverage {leverage} exceeds maximum {max_leverage}")
+
+    if errors:
+        raise ValidationError(
+            f"Leverage validation failed: {'; '.join(errors)}",
+            severity=TradingErrorSeverity.HIGH,
+            context={
+                'leverage': leverage,
+                'max_leverage': max_leverage,
+                'min_leverage': min_leverage
+            }
+        )
+
+    return True
+
+def validate_order_type_compatibility(
+    order_type: Any,
+    price: Optional[float] = None,
+    stop_price: Optional[float] = None
+) -> bool:
+    """
+    Validate order type compatibility with price parameters.
+
+    Args:
+        order_type: Order type
+        price: Order price
+        stop_price: Stop price
+
+    Returns:
+        bool: True if validation passes
+
+    Raises:
+        ValidationError: If validation fails
+    """
+    errors = []
+
+    # Market orders don't need price
+    if order_type in ['market', 'MARKET']:
+        if price is not None:
+            warnings = []
+            warnings.append("Market orders don't require price parameter")
+
+    # Limit orders require price
+    if order_type in ['limit', 'LIMIT']:
+        if price is None:
+            errors.append("Limit orders require price parameter")
+
+    # Stop orders require stop_price
+    if order_type in ['stop', 'STOP']:
+        if stop_price is None:
+            errors.append("Stop orders require stop_price parameter")
+
+    if errors:
+        raise ValidationError(
+            f"Order type compatibility validation failed: {'; '.join(errors)}",
+            severity=TradingErrorSeverity.HIGH,
+            context={
+                'order_type': order_type,
+                'price': price,
+                'stop_price': stop_price
+            }
+        )
+
+    return True
+
+def validate_position(
+    position: Dict[str, Any],
+    account_balance: float,
+    max_total_positions: Optional[int] = None
+) -> bool:
+    """
+    Validate position data structure and values.
+
+    Args:
+        position: Position dictionary
+        account_balance: Account balance
+        max_total_positions: Maximum total positions allowed
+
+    Returns:
+        bool: True if validation passes
+
+    Raises:
+        ValidationError: If validation fails
+    """
+    errors = []
+    warnings = []
+
+    # Required fields
+    required_fields = ['symbol', 'quantity', 'entry_price', 'side']
+    missing_fields = [field for field in required_fields if field not in position]
+    if missing_fields:
+        errors.append(f"Missing required position fields: {missing_fields}")
+
+    # Validate quantity
+    if 'quantity' in position:
+        quantity = position['quantity']
+        if not isinstance(quantity, (int, float)) or quantity <= 0:
+            errors.append(f"Position quantity must be positive, got {quantity}")
+
+    # Validate entry price
+    if 'entry_price' in position:
+        entry_price = position['entry_price']
+        if not isinstance(entry_price, (int, float)) or entry_price <= 0:
+            errors.append(f"Entry price must be positive, got {entry_price}")
+
+    # Validate side
+    if 'side' in position:
+        side = position['side']
+        if side not in ['long', 'short', 'buy', 'sell']:
+            errors.append(f"Invalid position side: {side}")
+
+    # Validate position value against account
+    if 'quantity' in position and 'entry_price' in position:
+        position_value = position['quantity'] * position['entry_price']
+        if position_value > account_balance * 1.1:  # 10% tolerance for leverage
+            warnings.append(f"Position value {position_value} exceeds account balance {account_balance}")
+
+    if errors:
+        raise ValidationError(
+            f"Position validation failed: {'; '.join(errors)}",
+            severity=TradingErrorSeverity.HIGH,
+            context={
+                'position': position,
+                'account_balance': account_balance,
+                'errors': errors,
+                'warnings': warnings
+            }
+        )
+
+    if warnings:
+        for warning in warnings:
+            tprint_warning(f"⚠️ Position Warning: {warning}")
+
+    return True
+
+def validate_account_balance(
+    balance: float,
+    available_balance: Optional[float] = None,
+    min_balance: float = 0.0
+) -> bool:
+    """
+    Validate account balance values.
+
+    Args:
+        balance: Total account balance
+        available_balance: Available balance (if provided)
+        min_balance: Minimum required balance
+
+    Returns:
+        bool: True if validation passes
+
+    Raises:
+        ValidationError: If validation fails
+    """
+    errors = []
+
+    if not isinstance(balance, (int, float)):
+        errors.append(f"Balance must be a number, got {type(balance)}")
+    elif balance < min_balance:
+        errors.append(f"Balance {balance} is below minimum {min_balance}")
+
+    if available_balance is not None:
+        if not isinstance(available_balance, (int, float)):
+            errors.append(f"Available balance must be a number, got {type(available_balance)}")
+        elif available_balance < 0:
+            errors.append(f"Available balance cannot be negative, got {available_balance}")
+        elif available_balance > balance:
+            errors.append(f"Available balance {available_balance} exceeds total balance {balance}")
+
+    if errors:
+        raise ValidationError(
+            f"Account balance validation failed: {'; '.join(errors)}",
+            severity=TradingErrorSeverity.HIGH,
+            context={
+                'balance': balance,
+                'available_balance': available_balance,
+                'min_balance': min_balance
+            }
+        )
+
+    return True
+
+def validate_market_hours(
+    timestamp: datetime,
+    exchange: str = 'binance',
+    market_open_hour: int = 0,
+    market_close_hour: int = 23
+) -> bool:
+    """
+    Validate if market is open at given timestamp.
+
+    Args:
+        timestamp: Timestamp to check
+        exchange: Exchange name
+        market_open_hour: Market open hour (0-23)
+        market_close_hour: Market close hour (0-23)
+
+    Returns:
+        bool: True if market is open
+
+    Raises:
+        MarketClosedError: If market is closed
+    """
+    from .error_handling import MarketClosedError
+
+    hour = timestamp.hour
+
+    # Crypto markets are typically 24/7, but we check configured hours
+    if market_open_hour < market_close_hour:
+        # Normal hours (e.g., 9 AM - 5 PM)
+        is_open = market_open_hour <= hour < market_close_hour
+    else:
+        # Overnight hours (e.g., 9 PM - 5 AM)
+        is_open = hour >= market_open_hour or hour < market_close_hour
+
+    if not is_open:
+        raise MarketClosedError(
+            f"Market is closed at {timestamp}. Open hours: {market_open_hour}:00 - {market_close_hour}:00",
+            context={
+                'timestamp': timestamp.isoformat(),
+                'exchange': exchange,
+                'market_open_hour': market_open_hour,
+                'market_close_hour': market_close_hour
+            }
+        )
+
+    return True
+
+def validate_batch_orders(
+    orders: List[Dict[str, Any]],
+    max_batch_size: int = 100
+) -> bool:
+    """
+    Validate a batch of orders.
+
+    Args:
+        orders: List of order dictionaries
+        max_batch_size: Maximum orders per batch
+
+    Returns:
+        bool: True if validation passes
+
+    Raises:
+        ValidationError: If validation fails
+    """
+    errors = []
+
+    if not isinstance(orders, list):
+        errors.append(f"Orders must be a list, got {type(orders)}")
+    elif len(orders) > max_batch_size:
+        errors.append(f"Batch size {len(orders)} exceeds maximum {max_batch_size}")
+
+    if isinstance(orders, list):
+        for i, order in enumerate(orders):
+            try:
+                validate_order_params(
+                    symbol=order.get('symbol', ''),
+                    side=order.get('side', ''),
+                    order_type=order.get('order_type', ''),
+                    quantity=order.get('quantity', 0),
+                    price=order.get('price'),
+                    stop_price=order.get('stop_price')
+                )
+            except ValidationError as e:
+                errors.append(f"Order {i}: {str(e)}")
+
+    if errors:
+        raise ValidationError(
+            f"Batch order validation failed: {'; '.join(errors)}",
+            severity=TradingErrorSeverity.HIGH,
+            context={
+                'batch_size': len(orders) if isinstance(orders, list) else 0,
+                'max_batch_size': max_batch_size,
+                'errors': errors
+            }
+        )
+
+    return True
+
+def validate_batch_signals(
+    signals: List[Dict[str, Any]],
+    max_batch_size: int = 100
+) -> bool:
+    """
+    Validate a batch of trading signals.
+
+    Args:
+        signals: List of signal dictionaries
+        max_batch_size: Maximum signals per batch
+
+    Returns:
+        bool: True if validation passes
+
+    Raises:
+        ValidationError: If validation fails
+    """
+    errors = []
+
+    if not isinstance(signals, list):
+        errors.append(f"Signals must be a list, got {type(signals)}")
+    elif len(signals) > max_batch_size:
+        errors.append(f"Batch size {len(signals)} exceeds maximum {max_batch_size}")
+
+    if isinstance(signals, list):
+        for i, signal in enumerate(signals):
+            try:
+                validate_signal_data(signal)
+            except ValidationError as e:
+                errors.append(f"Signal {i}: {str(e)}")
+
+    if errors:
+        raise ValidationError(
+            f"Batch signal validation failed: {'; '.join(errors)}",
+            severity=TradingErrorSeverity.HIGH,
+            context={
+                'batch_size': len(signals) if isinstance(signals, list) else 0,
+                'max_batch_size': max_batch_size,
+                'errors': errors
+            }
+        )
+
+    return True

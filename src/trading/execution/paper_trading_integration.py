@@ -2,6 +2,10 @@
 
 from ..utils.logger import system_logger
 from ..core.decorators import handles_errors
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
+    tprint_debug, tprint_structured, LogLevel
+)
 import numpy as np
 
 """
@@ -85,12 +89,12 @@ class PaperTradingIntegration:
             bool: True if initialization successful, False otherwise
         """
         try:
-            self.logger.info("Initializing Paper Trading Integration...")
+            tprint_info("🚀 Initializing Paper Trading Integration...")
 
             # Initialize paper trader
             self.paper_trader = await setup_paper_trader(self.config)
             if not self.paper_trader:
-                self.logger.error(failed("Failed to initialize paper trader"))
+                tprint_error("❌ Failed to initialize paper trader")
                 return False
 
             # Initialize detailed reporter
@@ -103,28 +107,27 @@ class PaperTradingIntegration:
 
                     self.reporter = await _setup_reporter(self.config)
                     if not self.reporter:
-                        self.logger.warning(
-                            "Failed to initialize detailed reporter, continuing without detailed reporting",
+                        tprint_warning(
+                            "⚠️ Failed to initialize detailed reporter, continuing without detailed reporting",
                         )
                         self.enable_detailed_reporting = False
                 except Exception as e:
-                    self.logger.warning(
-                        warning(
-                            f"Detailed reporter unavailable, continuing without it: {e}",
-                        ),
+                    tprint_warning(
+                        f"⚠️ Detailed reporter unavailable, continuing without it: {e}",
                     )
                     self.enable_detailed_reporting = False
 
             # Validate integration
             if not self._validate_integration():
-                self.logger.error(failed("Integration validation failed"))
+                tprint_error("❌ Integration validation failed")
                 return False
 
             self.is_initialized = True
-            self.logger.info("✅ Paper Trading Integration initialized successfully")
+            tprint_success("✅ Paper Trading Integration initialized successfully")
             return True
 
         except Exception as e:
+            tprint_error(f"❌ Paper Trading Integration initialization failed: {e}")
             self.logger.exception(
                 f"❌ Paper Trading Integration initialization failed: {e}",
             )
@@ -139,21 +142,20 @@ class PaperTradingIntegration:
         """Validate integration components."""
         try:
             if not self.paper_trader:
-                self.logger.error(initialization_error("Paper trader not initialized"))
+                tprint_error("❌ Paper trader not initialized")
                 return False
 
             # If reporter failed to initialize, degrade gracefully (don't block integration)
             if self.enable_detailed_reporting and not self.reporter:
-                self.logger.warning(
-                    warning(
-                        "Detailed reporter not initialized; proceeding without detailed reporting",
-                    ),
+                tprint_warning(
+                    "⚠️ Detailed reporter not initialized; proceeding without detailed reporting",
                 )
                 self.enable_detailed_reporting = False
 
             return True
 
         except Exception as e:
+            tprint_error(f"❌ Error validating integration: {e}")
             self.logger.error(error(f"Error validating integration: {e}"))
             return False
 
@@ -190,7 +192,7 @@ class PaperTradingIntegration:
         """
         try:
             if not self.is_initialized or not self.paper_trader:
-                self.logger.error(initialization_error("Integration not initialized"))
+                tprint_error("❌ Integration not initialized")
                 return False
 
             # Prepare trade metadata
@@ -235,13 +237,11 @@ class PaperTradingIntegration:
                     timestamp=timestamp,
                 )
             else:
-                self.logger.error(invalid(f"Invalid trade side: {side}"))
+                tprint_error(f"❌ Invalid trade side: {side}")
                 return False
 
             if success:
-                self.logger.info(
-                    f"✅ Integrated trade executed: {side} {quantity} {symbol} @ ${price:.4f}",
-            )
+                tprint_success(f"✅ Integrated trade executed: {side} {quantity} {symbol} @ ${price:.4f}")
 
                 # Also write to dedicated trades log (optional)
                 try:
@@ -261,6 +261,7 @@ class PaperTradingIntegration:
             return success
 
         except Exception as e:
+            tprint_error(f"❌ Error executing integrated trade: {e}")
             self.logger.error(error(f"Error executing integrated trade: {e}"))
             return False
 
@@ -277,6 +278,7 @@ class PaperTradingIntegration:
                 await self.reporter.generate_detailed_report("real_time", ["json"])
 
         except Exception as e:
+            tprint_error(f"❌ Error generating real-time report: {e}")
             self.logger.error(error(f"Error generating real-time report: {e}"))
 
     def get_performance_metrics(self) -> dict[str, Any]:
@@ -312,6 +314,7 @@ class PaperTradingIntegration:
             return combined_metrics
 
         except Exception as e:
+            tprint_error(f"❌ Error getting performance metrics: {e}")
             self.logger.error(error(f"Error getting performance metrics: {e}"))
             return {}
 
@@ -323,6 +326,7 @@ class PaperTradingIntegration:
             return []
 
         except Exception as e:
+            tprint_error(f"❌ Error getting trade history: {e}")
             self.logger.error(error(f"Error getting trade history: {e}"))
             return []
 
@@ -345,6 +349,7 @@ class PaperTradingIntegration:
             return {}
 
         except Exception as e:
+            tprint_error(f"❌ Error getting portfolio summary: {e}")
             self.logger.error(error(f"Error getting portfolio summary: {e}"))
             return {}
 
@@ -368,6 +373,7 @@ class PaperTradingIntegration:
             return await self._generate_basic_report(report_type, export_formats)
 
         except Exception as e:
+            tprint_error(f"❌ Error generating comprehensive report: {e}")
             self.logger.error(error(f"Error generating comprehensive report: {e}"))
             return {}
 
@@ -412,11 +418,12 @@ class PaperTradingIntegration:
                     filepath = os.path.join(report_dir, filename)
                     with open(filepath, "w", encoding="utf-8") as f:
                         json.dump(report_data, f, indent=2, default=str)
-                    self.logger.info(f"✅ Exported basic JSON report: {filepath}")
+                    tprint_success(f"✅ Exported basic JSON report: {filepath}")
 
             return report_data
 
         except Exception as e:
+            tprint_error(f"❌ Error generating basic report: {e}")
             self.logger.error(error(f"Error generating basic report: {e}"))
             return {}
 
@@ -449,9 +456,10 @@ class PaperTradingIntegration:
             # Generate final report
             await self.generate_comprehensive_report("final")
 
-            self.logger.info("✅ Paper Trading Integration stopped successfully")
+            tprint_success("✅ Paper Trading Integration stopped successfully")
 
         except Exception as e:
+            tprint_error(f"❌ Error stopping integration: {e}")
             self.logger.error(error(f"Error stopping integration: {e}"))
 
 @handles_errors(
@@ -482,8 +490,9 @@ async def setup_paper_trading_integration(
             return integration
         return None
 
-    except Exception as e:
-        system_logger.exception(
-            error(f"Error setting up paper trading integration: {e}"),
-        )
-        return None
+        except Exception as e:
+            tprint_error(f"❌ Error setting up paper trading integration: {e}")
+            system_logger.exception(
+                error(f"Error setting up paper trading integration: {e}"),
+            )
+            return None

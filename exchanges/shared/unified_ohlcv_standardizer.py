@@ -286,49 +286,42 @@ class UnifiedOHLCVStandardizer:
             }
         }
         
-        # Comprehensive column name mappings for normalization
-        # Supports all common variations across exchanges
-        self.column_name_mappings = {
-            # OHLCV core fields - case-insensitive and underscore variations
-            'open': ['open', 'Open', 'OPEN', 'o', 'O', 'open_price', 'openPrice'],
-            'high': ['high', 'High', 'HIGH', 'h', 'H', 'high_price', 'highPrice'],
-            'low': ['low', 'Low', 'LOW', 'l', 'L', 'low_price', 'lowPrice'],
-            'close': ['close', 'Close', 'CLOSE', 'c', 'C', 'close_price', 'closePrice', 'last'],
-            'volume': ['volume', 'Volume', 'VOLUME', 'v', 'V', 'vol', 'Vol', 'VOL', 'quantity', 'qty'],
+        # Simple pattern-based column name mappings
+        # Uses substring matching: if "low" in column name → map to "low"
+        # Priority order matters (e.g., check "quote_volume" before "volume")
+        self.column_patterns = [
+            # OHLCV core fields - simple substring matching
+            ('open', ['open']),
+            ('high', ['high']),
+            ('low', ['low']),
+            ('close', ['close']),
+            ('volume', ['volume', 'vol']),
             
-            # Timestamp fields - various names and formats
-            'timestamp': [
-                'timestamp', 'Timestamp', 'TIMESTAMP', 'ts', 'TS', 'time', 'Time', 'TIME',
-                'open_time', 'openTime', 'OpenTime', 'opentime', 'datetime', 'DateTime', 'date',
-                'start_time', 'startTime', 't', 'T'
-            ],
+            # Timestamp - check multiple patterns
+            ('timestamp', ['timestamp', 'ts', 'time', 'datetime', 'date']),
             
-            # Additional fields
-            'quote_volume': ['quote_volume', 'quoteVolume', 'QuoteVolume', 'quote_vol', 'vol_ccy', 'volCcy', 'qty_quote'],
-            'trades_count': ['trades', 'Trades', 'trades_count', 'tradesCount', 'count', 'number_of_trades', 'confirm'],
-            'taker_buy_base_volume': ['taker_buy_base', 'takerBuyBase', 'taker_buy_base_volume', 'buy_base_vol'],
-            'taker_buy_quote_volume': ['taker_buy_quote', 'takerBuyQuote', 'taker_buy_quote_volume', 'buy_quote_vol'],
+            # Additional fields (more specific first)
+            ('quote_volume', ['quote_volume', 'quotevol', 'vol_ccy', 'volccy']),
+            ('trades_count', ['trades', 'count', 'number_of_trades']),
+            ('taker_buy_base_volume', ['taker_buy_base', 'takerbuybase']),
+            ('taker_buy_quote_volume', ['taker_buy_quote', 'takerbuyquote']),
             
             # Metadata fields
-            'symbol': ['symbol', 'Symbol', 'SYMBOL', 'pair', 'Pair', 'instrument', 'market'],
-            'interval': ['interval', 'Interval', 'INTERVAL', 'timeframe', 'Timeframe', 'period'],
-            'exchange': ['exchange', 'Exchange', 'EXCHANGE', 'exchange_name', 'source']
-        }
-        
-        # Create reverse lookup for fast column name detection
-        self.column_name_lookup = {}
-        for standard_name, variations in self.column_name_mappings.items():
-            for variation in variations:
-                self.column_name_lookup[variation.lower()] = standard_name
+            ('symbol', ['symbol', 'pair', 'instrument', 'market']),
+            ('interval', ['interval', 'timeframe', 'period']),
+            ('exchange', ['exchange', 'source']),
+        ]
         
         self.logger.info(f"✅ UnifiedOHLCVStandardizer initialized with {quality_level.value} quality level")
     
     def _normalize_column_names(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Normalize column names to standard format using automatic detection.
+        Normalize column names to standard format using simple pattern matching.
         
         This is the most important normalization step - it ensures all exchanges
         use the same column names regardless of their original format.
+        
+        Uses simple substring matching: if "low" in column name → map to "low"
         
         Args:
             df: DataFrame with potentially non-standard column names
@@ -342,30 +335,26 @@ class UnifiedOHLCVStandardizer:
         rename_map = {}
         for col in df.columns:
             col_lower = str(col).lower().strip()
-            # Remove common prefixes/suffixes
             col_clean = col_lower.replace('_', '').replace('-', '').replace(' ', '')
             
-            # Try exact match first
-            if col_lower in self.column_name_lookup:
-                rename_map[col] = self.column_name_lookup[col_lower]
-            # Try partial match
-            elif col_clean in self.column_name_lookup:
-                rename_map[col] = self.column_name_lookup[col_clean]
-            else:
-                # Try fuzzy matching for common patterns
-                found_match = False
-                for standard_name, variations in self.column_name_mappings.items():
-                    for variation in variations:
-                        if col_lower == variation.lower() or col_clean == variation.lower().replace('_', '').replace('-', ''):
-                            rename_map[col] = standard_name
-                            found_match = True
-                            break
-                    if found_match:
+            # Try pattern matching - check each pattern in priority order
+            matched = False
+            for standard_name, patterns in self.column_patterns:
+                for pattern in patterns:
+                    pattern_lower = pattern.lower()
+                    pattern_clean = pattern_lower.replace('_', '').replace('-', '').replace(' ', '')
+                    
+                    # Check if pattern is in column name (case-insensitive)
+                    if pattern_lower in col_lower or pattern_clean in col_clean:
+                        rename_map[col] = standard_name
+                        matched = True
                         break
-                
-                # If no match found, keep original name but log warning
-                if not found_match:
-                    self.logger.debug(f"No standard mapping found for column: {col}")
+                if matched:
+                    break
+            
+            # If no match found, keep original name
+            if not matched:
+                self.logger.debug(f"No pattern match found for column: {col}")
         
         if rename_map:
             df_renamed = df.rename(columns=rename_map)

@@ -88,7 +88,7 @@ class SignalGenerationResult:
     """Complete signal generation result."""
     timestamp: datetime
     symbol: str
-    hmm_output: HMMRegimeOutput
+    hmm_output: RegimeOutput
     analyst_output: AnalystMetaOutput
     tactician_output: TacticianMetaOutput
     final_signal: str
@@ -483,10 +483,36 @@ class SignalGenerationPipeline:
                 raise RuntimeError("Regime detector returned None prediction")
             
             # Convert to RegimeOutput format
+            primary_regime_raw = regime_prediction.get('primary_regime')
+            if primary_regime_raw is None:
+                # Default to first regime type if not provided
+                primary_regime = list(RegimeType)[0]
+            elif isinstance(primary_regime_raw, RegimeType):
+                primary_regime = primary_regime_raw
+            elif isinstance(primary_regime_raw, (int, str)):
+                # Try to convert to RegimeType
+                try:
+                    if isinstance(primary_regime_raw, int):
+                        # If it's an integer index, get the regime by index
+                        regime_list = list(RegimeType)
+                        if 0 <= primary_regime_raw < len(regime_list):
+                            primary_regime = regime_list[primary_regime_raw]
+                        else:
+                            primary_regime = RegimeType.SIDEWAYS  # Default fallback
+                    else:
+                        # If it's a string, try to match by value
+                        primary_regime = RegimeType(primary_regime_raw)
+                except (ValueError, IndexError):
+                    self.logger.warning(f"⚠️ Invalid primary_regime value: {primary_regime_raw}, defaulting to SIDEWAYS")
+                    primary_regime = RegimeType.SIDEWAYS
+            else:
+                self.logger.warning(f"⚠️ Unexpected primary_regime type: {type(primary_regime_raw)}, defaulting to SIDEWAYS")
+                primary_regime = RegimeType.SIDEWAYS
+            
             return RegimeOutput(
                 timestamp=timestamp,
                 regime_probabilities=regime_prediction.get('regime_probabilities', {}),
-                primary_regime=regime_prediction.get('primary_regime', 0),
+                primary_regime=primary_regime,
                 confidence=regime_prediction.get('confidence', 0.5),
                 regime_strength=regime_prediction.get('regime_strength', 0.5),
                 transition_probability=regime_prediction.get('transition_probability', 0.5),

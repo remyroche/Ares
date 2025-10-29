@@ -497,10 +497,12 @@ class AnalystSignalGenerator:
                     if nas_direction != signal_direction:
                         # NAS overrides if it's more confident
                         signal_direction = nas_direction
-                        confidence_score = combined_confidence
                         self.nas_enhanced_signals += 1
-
-                confidence_score = combined_confidence
+                    # Use combined confidence when NAS is confident
+                    confidence_score = combined_confidence
+                else:
+                    # NAS confidence is low, but still use combined for slight enhancement
+                    confidence_score = combined_confidence
 
             # Check confidence threshold
             if confidence_score < self.confidence_threshold:

@@ -303,7 +303,12 @@ class TacticianSignalGenerator:
             # Calculate timing metrics
             recent_volatility = np.std(returns[-10:])
             price_momentum = returns[-5:].mean()
-            volume_trend = market_data['volume'].iloc[-5:].mean() / market_data['volume'].iloc[-20:-5].mean()
+            # Avoid division by zero
+            historical_volume_mean = market_data['volume'].iloc[-20:-5].mean()
+            if historical_volume_mean > 0:
+                volume_trend = market_data['volume'].iloc[-5:].mean() / historical_volume_mean
+            else:
+                volume_trend = 1.0  # Default to neutral if no historical volume
 
             # Determine timing signal based on analyst signal and market conditions
             analyst_direction = analyst_signal.get('signal_type', 'hold')
@@ -558,10 +563,12 @@ class TacticianSignalGenerator:
                     if tas_timing != timing_signal_str:
                         # TAS overrides if it's more confident
                         timing_signal_str = tas_timing
-                        confidence_score = combined_confidence
                         self.tas_enhanced_signals += 1
-
-                confidence_score = combined_confidence
+                    # Use combined confidence when TAS is confident
+                    confidence_score = combined_confidence
+                else:
+                    # TAS confidence is low, but still use combined for slight enhancement
+                    confidence_score = combined_confidence
 
             # Check confidence threshold
             if confidence_score < self.confidence_threshold:

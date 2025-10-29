@@ -648,30 +648,30 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 basic_time_cols = ['hour', 'day_of_week', 'base_threshold']
                 target_cols = ['target', 'label', 'return', 'price_target_vol_normalized']  # Common target column name
 
-            feature_cols = [col for col in feature_df.columns
-                                  if col not in ohlcv_cols and col not in basic_time_cols and col not in target_cols]
+                feature_cols = [col for col in feature_df.columns
+                                      if col not in ohlcv_cols and col not in basic_time_cols and col not in target_cols]
 
-            if feature_cols:
-                # Use optimized concatenation if available
-                if self.vectorization_manager and self.optimization_enabled:
-                    try:
-                        # Use batch processing for large feature sets
-                        if len(feature_cols) > 1000:
-                            tprint_info(f"🔄 Processing {len(feature_cols)} features in batches...")
-                            # Process in chunks to avoid memory issues
-                            chunk_size = self.vectorization_manager.config.chunk_size
-                            for i in range(0, len(feature_cols), chunk_size):
-                                chunk_cols = feature_cols[i:i + chunk_size]
-                                chunk_df = feature_df[chunk_cols]
-                                base_features = pd.concat([base_features, chunk_df], axis=1)
-                        else:
+                if feature_cols:
+                    # Use optimized concatenation if available
+                    if self.vectorization_manager and self.optimization_enabled:
+                        try:
+                            # Use batch processing for large feature sets
+                            if len(feature_cols) > 1000:
+                                tprint_info(f"🔄 Processing {len(feature_cols)} features in batches...")
+                                # Process in chunks to avoid memory issues
+                                chunk_size = self.vectorization_manager.config.chunk_size
+                                for i in range(0, len(feature_cols), chunk_size):
+                                    chunk_cols = feature_cols[i:i + chunk_size]
+                                    chunk_df = feature_df[chunk_cols]
+                                    base_features = pd.concat([base_features, chunk_df], axis=1)
+                            else:
+                                base_features = pd.concat([base_features, feature_df[feature_cols]], axis=1)
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Optimized concatenation failed, using standard method: {e}")
                             base_features = pd.concat([base_features, feature_df[feature_cols]], axis=1)
-                    except Exception as e:
-                        tprint_warning(f"⚠️ Optimized concatenation failed, using standard method: {e}")
+                    else:
                         base_features = pd.concat([base_features, feature_df[feature_cols]], axis=1)
-                else:
-                    base_features = pd.concat([base_features, feature_df[feature_cols]], axis=1)
-                
+                    
                     tprint_info(f"📊 Added {len(feature_cols)} feature dataframe columns")
                     tprint_info(f"📊 Added {len(feature_cols)} features from feature dataframe (PRIORITY 4)")
 
@@ -1578,7 +1578,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
     def _generate_markdown_report(self, outcome_report: Dict[str, Any], 
                                  feature_sets: Dict[str, List[str]], 
                                  shap_values: Dict[str, Any], 
-                                 config: FinalFeatureSelectionConfig) -> str:
+                                 config: Dict[str, Any]) -> str:
         """
         Generate a comprehensive markdown report for the final feature selection step.
         

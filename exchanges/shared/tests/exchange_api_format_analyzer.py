@@ -144,8 +144,14 @@ class ExchangeAPIFormatAnalyzer:
     async def initialize_exchanges(self) -> None:
         """Initialize exchange dispatchers."""
         tprint_info("🔧 Initializing exchange connections...")
+        tprint_info(f"   Processing {len(self.exchanges)} exchanges...")
+        
+        initialized_count = 0
+        skipped_count = 0
+        failed_count = 0
         
         for exchange_name in self.exchanges:
+            tprint_debug(f"   Initializing {exchange_name.upper()}...")
             try:
                 # Get API credentials from environment
                 api_key = os.getenv(f'{exchange_name.upper()}_API_KEY', '')
@@ -153,9 +159,11 @@ class ExchangeAPIFormatAnalyzer:
                 
                 if not api_key or not api_secret:
                     if self.mode == 'real':
-                        tprint_warning(f"⚠️  Missing credentials for {exchange_name}, skipping")
+                        tprint_warning(f"⚠️  Missing credentials for {exchange_name.upper()}, skipping")
+                        skipped_count += 1
                         continue
                     # For mock mode, use dummy credentials
+                    tprint_debug(f"   Using mock credentials for {exchange_name.upper()}")
                     api_key = 'mock_key'
                     api_secret = 'mock_secret'
                 
@@ -171,24 +179,34 @@ class ExchangeAPIFormatAnalyzer:
                 )
                 
                 # Create dispatcher
+                tprint_debug(f"   Creating dispatcher for {exchange_name.upper()}...")
                 dispatcher = ExchangeDispatcher(config)
                 success = await dispatcher.initialize()
                 
                 if success:
                     self.dispatchers[exchange_name] = dispatcher
-                    tprint_success(f"✅ {exchange_name.upper()} initialized")
+                    initialized_count += 1
+                    tprint_success(f"✅ {exchange_name.upper()} initialized successfully")
                 else:
-                    tprint_error(f"❌ Failed to initialize {exchange_name}")
+                    failed_count += 1
+                    tprint_error(f"❌ Failed to initialize {exchange_name.upper()}")
                     
             except Exception as e:
-                tprint_error(f"❌ Error initializing {exchange_name}: {e}")
+                failed_count += 1
+                tprint_error(f"❌ Error initializing {exchange_name.upper()}: {e}")
                 self.logger.error(f"Error initializing {exchange_name}: {e}")
         
-        tprint_info(f"✅ Initialized {len(self.dispatchers)} exchanges")
+        tprint_info(f"✅ Exchange initialization complete:")
+        tprint_info(f"   Initialized: {initialized_count}")
+        if skipped_count > 0:
+            tprint_warning(f"   Skipped: {skipped_count}")
+        if failed_count > 0:
+            tprint_error(f"   Failed: {failed_count}")
     
     async def collect_api_responses(self) -> None:
         """Collect API responses from all exchanges."""
         tprint_info("📊 Collecting API responses from exchanges...")
+        tprint_info(f"   Testing {len(self.dispatchers)} exchanges with {len(self.test_symbols)} symbols")
         
         # Test different response types
         response_types = [
@@ -201,27 +219,44 @@ class ExchangeAPIFormatAnalyzer:
         
         # For mock mode, also test order-related endpoints
         if self.mode == 'mock':
+            tprint_debug("   Mock mode: Including order-related endpoints")
             response_types.extend([
                 (ResponseType.ORDER_STATUS, self._test_order_status),
                 (ResponseType.OPEN_ORDERS, self._test_open_orders),
                 (ResponseType.POSITIONS, self._test_positions),
             ])
         
-        for response_type, test_func in response_types:
-            tprint_info(f"📋 Testing {response_type.value}...")
+        total_tests = len(response_types) * len(self.dispatchers) * len(self.test_symbols)
+        tprint_info(f"   Total API calls to execute: {total_tests}")
+        tprint_info("")
+        
+        successful_samples = 0
+        error_samples = 0
+        
+        for idx, (response_type, test_func) in enumerate(response_types, 1):
+            tprint_info(f"📋 [{idx}/{len(response_types)}] Testing {response_type.value}...")
             
             for exchange_name in self.dispatchers.keys():
+                tprint_debug(f"   Testing {exchange_name.upper()}...")
                 for symbol in self.test_symbols:
                     try:
                         await test_func(exchange_name, symbol, response_type)
+                        successful_samples += 1
                     except Exception as e:
-                        tprint_error(f"❌ Error testing {response_type.value} on {exchange_name}: {e}")
+                        error_samples += 1
+                        tprint_error(f"❌ Error testing {response_type.value} on {exchange_name} ({symbol}): {e}")
                         self.logger.error(f"Error testing {response_type.value} on {exchange_name}: {e}")
         
-        tprint_success(f"✅ Collected {len(self.response_samples)} response samples")
+        tprint_info("")
+        tprint_success(f"✅ Response collection complete:")
+        tprint_info(f"   Total samples collected: {len(self.response_samples)}")
+        tprint_info(f"   Successful: {successful_samples}")
+        if error_samples > 0:
+            tprint_warning(f"   Errors: {error_samples}")
         
         # Save samples if requested
         if self.save_samples:
+            tprint_info("")
             await self._save_response_samples()
     
     async def _test_ticker(self, exchange_name: str, symbol: str, response_type: ResponseType) -> None:
@@ -243,6 +278,9 @@ class ExchangeAPIFormatAnalyzer:
                     response_time_ms=response_time
                 )
                 self.response_samples.append(sample)
+                tprint_debug(f"      ✓ {exchange_name}/{symbol}: ticker collected ({response_time:.1f}ms)")
+            else:
+                tprint_warning(f"      ⚠ {exchange_name}/{symbol}: ticker returned empty")
         except Exception as e:
             sample = APIResponseSample(
                 exchange=exchange_name,
@@ -253,6 +291,7 @@ class ExchangeAPIFormatAnalyzer:
                 error=str(e)
             )
             self.response_samples.append(sample)
+            tprint_debug(f"      ✗ {exchange_name}/{symbol}: ticker failed - {str(e)[:50]}")
     
     async def _test_klines(self, exchange_name: str, symbol: str, response_type: ResponseType) -> None:
         """Test klines API call."""
@@ -282,6 +321,10 @@ class ExchangeAPIFormatAnalyzer:
                     response_time_ms=response_time
                 )
                 self.response_samples.append(sample)
+                count = len(klines) if isinstance(klines, list) else klines_dict.get('count', 0)
+                tprint_debug(f"      ✓ {exchange_name}/{symbol}: klines collected ({count} candles, {response_time:.1f}ms)")
+            else:
+                tprint_warning(f"      ⚠ {exchange_name}/{symbol}: klines returned empty")
         except Exception as e:
             sample = APIResponseSample(
                 exchange=exchange_name,
@@ -292,6 +335,7 @@ class ExchangeAPIFormatAnalyzer:
                 error=str(e)
             )
             self.response_samples.append(sample)
+            tprint_debug(f"      ✗ {exchange_name}/{symbol}: klines failed - {str(e)[:50]}")
     
     async def _test_orderbook(self, exchange_name: str, symbol: str, response_type: ResponseType) -> None:
         """Test orderbook API call."""
@@ -312,6 +356,9 @@ class ExchangeAPIFormatAnalyzer:
                     response_time_ms=response_time
                 )
                 self.response_samples.append(sample)
+                tprint_debug(f"      ✓ {exchange_name}/{symbol}: orderbook collected ({response_time:.1f}ms)")
+            else:
+                tprint_warning(f"      ⚠ {exchange_name}/{symbol}: orderbook returned empty")
         except Exception as e:
             sample = APIResponseSample(
                 exchange=exchange_name,
@@ -322,6 +369,7 @@ class ExchangeAPIFormatAnalyzer:
                 error=str(e)
             )
             self.response_samples.append(sample)
+            tprint_debug(f"      ✗ {exchange_name}/{symbol}: orderbook failed - {str(e)[:50]}")
     
     async def _test_balance(self, exchange_name: str, symbol: str, response_type: ResponseType) -> None:
         """Test balance API call."""
@@ -341,6 +389,7 @@ class ExchangeAPIFormatAnalyzer:
                 response_time_ms=response_time
             )
             self.response_samples.append(sample)
+            tprint_debug(f"      ✓ {exchange_name}/{symbol}: balance collected ({balance} USDT, {response_time:.1f}ms)")
         except Exception as e:
             sample = APIResponseSample(
                 exchange=exchange_name,
@@ -351,6 +400,7 @@ class ExchangeAPIFormatAnalyzer:
                 error=str(e)
             )
             self.response_samples.append(sample)
+            tprint_debug(f"      ✗ {exchange_name}/{symbol}: balance failed - {str(e)[:50]}")
     
     async def _test_account_info(self, exchange_name: str, symbol: str, response_type: ResponseType) -> None:
         """Test account info API call."""
@@ -371,6 +421,9 @@ class ExchangeAPIFormatAnalyzer:
                     response_time_ms=response_time
                 )
                 self.response_samples.append(sample)
+                tprint_debug(f"      ✓ {exchange_name}/{symbol}: account_info collected ({response_time:.1f}ms)")
+            else:
+                tprint_warning(f"      ⚠ {exchange_name}/{symbol}: account_info returned empty")
         except Exception as e:
             sample = APIResponseSample(
                 exchange=exchange_name,
@@ -381,6 +434,7 @@ class ExchangeAPIFormatAnalyzer:
                 error=str(e)
             )
             self.response_samples.append(sample)
+            tprint_debug(f"      ✗ {exchange_name}/{symbol}: account_info failed - {str(e)[:50]}")
     
     async def _test_order_status(self, exchange_name: str, symbol: str, response_type: ResponseType) -> None:
         """Test order status API call (mock only)."""
@@ -406,6 +460,7 @@ class ExchangeAPIFormatAnalyzer:
                 response_time_ms=response_time
             )
             self.response_samples.append(sample)
+            tprint_debug(f"      ✓ {exchange_name}/{symbol}: open_orders collected ({len(open_orders)} orders, {response_time:.1f}ms)")
         except Exception as e:
             sample = APIResponseSample(
                 exchange=exchange_name,
@@ -416,6 +471,7 @@ class ExchangeAPIFormatAnalyzer:
                 error=str(e)
             )
             self.response_samples.append(sample)
+            tprint_debug(f"      ✗ {exchange_name}/{symbol}: open_orders failed - {str(e)[:50]}")
     
     async def _test_positions(self, exchange_name: str, symbol: str, response_type: ResponseType) -> None:
         """Test positions API call."""
@@ -435,6 +491,7 @@ class ExchangeAPIFormatAnalyzer:
                 response_time_ms=response_time
             )
             self.response_samples.append(sample)
+            tprint_debug(f"      ✓ {exchange_name}/{symbol}: positions collected ({len(positions)} positions, {response_time:.1f}ms)")
         except Exception as e:
             sample = APIResponseSample(
                 exchange=exchange_name,
@@ -445,11 +502,14 @@ class ExchangeAPIFormatAnalyzer:
                 error=str(e)
             )
             self.response_samples.append(sample)
+            tprint_debug(f"      ✗ {exchange_name}/{symbol}: positions failed - {str(e)[:50]}")
     
     async def _save_response_samples(self) -> None:
         """Save response samples to files."""
+        tprint_info("💾 Saving response samples to files...")
         samples_dir = self.output_dir / "samples"
         samples_dir.mkdir(parents=True, exist_ok=True)
+        tprint_debug(f"   Output directory: {samples_dir}")
         
         # Group samples by response type and exchange
         grouped_samples: Dict[Tuple[str, str], List[Dict]] = defaultdict(list)
@@ -465,12 +525,15 @@ class ExchangeAPIFormatAnalyzer:
             })
         
         # Save grouped samples
+        files_saved = 0
         for (response_type, exchange), samples in grouped_samples.items():
             filename = samples_dir / f"{exchange}_{response_type}_samples.json"
             with open(filename, 'w') as f:
                 json.dump(samples, f, indent=2, default=str)
+            files_saved += 1
+            tprint_debug(f"   Saved {filename.name} ({len(samples)} samples)")
         
-        tprint_info(f"💾 Saved {len(self.response_samples)} response samples")
+        tprint_success(f"✅ Saved {len(self.response_samples)} response samples to {files_saved} files")
     
     def analyze_formats(self) -> None:
         """Analyze response formats and identify differences."""
@@ -478,17 +541,39 @@ class ExchangeAPIFormatAnalyzer:
         
         # Group samples by response type
         samples_by_type: Dict[ResponseType, List[APIResponseSample]] = defaultdict(list)
+        valid_samples = 0
+        error_samples = 0
+        
         for sample in self.response_samples:
             if not sample.error:
                 samples_by_type[sample.response_type].append(sample)
+                valid_samples += 1
+            else:
+                error_samples += 1
+        
+        tprint_info(f"   Valid samples: {valid_samples}")
+        if error_samples > 0:
+            tprint_warning(f"   Error samples (skipped): {error_samples}")
+        tprint_info(f"   Response types to analyze: {len(samples_by_type)}")
+        tprint_info("")
         
         # Analyze each response type
-        for response_type, samples in samples_by_type.items():
-            tprint_info(f"📊 Analyzing {response_type.value} format...")
+        for idx, (response_type, samples) in enumerate(samples_by_type.items(), 1):
+            tprint_info(f"📊 [{idx}/{len(samples_by_type)}] Analyzing {response_type.value} format...")
+            tprint_debug(f"   Processing {len(samples)} samples...")
+            
             analysis = self._analyze_response_format(response_type, samples)
             self.format_analyses[response_type] = analysis
+            
+            # Show summary
+            common_count = len(analysis.common_fields)
+            exchanges_count = len(analysis.exchange_formats)
+            tprint_debug(f"   Found {common_count} common fields across {exchanges_count} exchanges")
+            if analysis.standardization_recommendations:
+                tprint_debug(f"   Generated {len(analysis.standardization_recommendations)} recommendations")
         
-        tprint_success(f"✅ Analyzed {len(self.format_analyses)} response types")
+        tprint_info("")
+        tprint_success(f"✅ Format analysis complete: {len(self.format_analyses)} response types analyzed")
     
     def _analyze_response_format(
         self,
@@ -497,6 +582,8 @@ class ExchangeAPIFormatAnalyzer:
     ) -> FormatAnalysis:
         """Analyze format for a specific response type."""
         analysis = FormatAnalysis(response_type=response_type)
+        
+        tprint_debug(f"      Extracting fields from {len(samples)} samples...")
         
         # Collect all fields from all exchanges
         all_fields: Set[str] = set()
@@ -519,14 +606,19 @@ class ExchangeAPIFormatAnalyzer:
                 field_values[field][exchange] = value
                 field_types[field].add(type(value).__name__)
         
+        tprint_debug(f"      Found {len(all_fields)} unique fields across {len(exchange_fields)} exchanges")
+        
         # Identify common and exchange-specific fields
         common_fields = set.intersection(*exchange_fields.values()) if exchange_fields else set()
         analysis.common_fields = common_fields
+        
+        tprint_debug(f"      Identified {len(common_fields)} common fields")
         
         for exchange, fields in exchange_fields.items():
             exchange_specific = fields - common_fields
             if exchange_specific:
                 analysis.exchange_specific_fields[exchange] = exchange_specific
+                tprint_debug(f"         {exchange}: {len(exchange_specific)} exchange-specific fields")
         
         # Store exchange formats
         for exchange, fields in exchange_fields.items():
@@ -538,6 +630,7 @@ class ExchangeAPIFormatAnalyzer:
             }
         
         # Analyze each field
+        tprint_debug(f"      Analyzing {len(all_fields)} fields...")
         for field in all_fields:
             field_analysis = FieldAnalysis(
                 field_name=field,
@@ -549,6 +642,7 @@ class ExchangeAPIFormatAnalyzer:
             analysis.field_analyses[field] = field_analysis
         
         # Generate recommendations
+        tprint_debug(f"      Generating recommendations...")
         analysis.standardization_recommendations = self._generate_recommendations(analysis)
         analysis.adapter_code_suggestions = self._generate_adapter_suggestions(analysis)
         
@@ -713,13 +807,17 @@ def adapt_{analysis.response_type.value}_response(raw_response: Dict[str, Any], 
     
     async def save_report(self) -> None:
         """Save analysis report to file."""
+        tprint_info("💾 Saving analysis reports...")
+        
         report = self.generate_report()
         report_file = self.output_dir / "format_analysis_report.txt"
         
+        tprint_debug(f"   Generating text report: {report_file}")
         with open(report_file, 'w') as f:
             f.write(report)
         
         # Also save as JSON for programmatic access
+        tprint_debug(f"   Generating JSON report...")
         json_report = {
             'generated_at': datetime.now(timezone.utc).isoformat(),
             'exchanges_tested': self.exchanges,
@@ -746,20 +844,31 @@ def adapt_{analysis.response_type.value}_response(raw_response: Dict[str, Any], 
         with open(json_file, 'w') as f:
             json.dump(json_report, f, indent=2, default=str)
         
-        tprint_success(f"💾 Saved analysis report to {report_file}")
-        tprint_info(f"📄 Report contains {len(self.format_analyses)} response type analyses")
+        tprint_success(f"✅ Reports saved:")
+        tprint_info(f"   Text report: {report_file}")
+        tprint_info(f"   JSON report: {json_file}")
+        tprint_info(f"   Analyzed {len(self.format_analyses)} response types")
     
     async def cleanup(self) -> None:
         """Cleanup exchange connections."""
         tprint_info("🧹 Cleaning up connections...")
         
+        closed_count = 0
+        error_count = 0
+        
         for exchange_name, dispatcher in self.dispatchers.items():
             try:
                 await dispatcher.close()
+                closed_count += 1
+                tprint_debug(f"   Closed {exchange_name.upper()}")
             except Exception as e:
+                error_count += 1
+                tprint_warning(f"   Error closing {exchange_name.upper()}: {e}")
                 self.logger.warning(f"Error closing {exchange_name}: {e}")
         
-        tprint_success("✅ Cleanup completed")
+        tprint_success(f"✅ Cleanup completed: {closed_count} exchanges closed")
+        if error_count > 0:
+            tprint_warning(f"   {error_count} errors during cleanup")
 
 
 async def main():
@@ -816,6 +925,12 @@ Examples:
     
     tprint_info("🚀 Exchange API Format Analyzer")
     tprint_info("=" * 70)
+    tprint_info(f"Mode: {args.mode.upper()}")
+    tprint_info(f"Exchanges: {', '.join(args.exchanges) if args.exchanges else 'all supported'}")
+    tprint_info(f"Symbols: {', '.join(args.symbols)}")
+    tprint_info(f"Output directory: {args.output_dir}")
+    tprint_info("=" * 70)
+    tprint_info("")
     
     # Create analyzer
     analyzer = ExchangeAPIFormatAnalyzer(
@@ -827,25 +942,36 @@ Examples:
     
     try:
         # Initialize exchanges
+        tprint_info("")
         await analyzer.initialize_exchanges()
         
         if not analyzer.dispatchers:
             tprint_error("❌ No exchanges initialized. Exiting.")
             return 1
         
+        tprint_info("")
+        
         # Collect API responses
         await analyzer.collect_api_responses()
+        
+        tprint_info("")
         
         # Analyze formats
         analyzer.analyze_formats()
         
+        tprint_info("")
+        
         # Generate and save report
         await analyzer.save_report()
         
+        tprint_info("")
+        
         # Print summary
-        print("\n" + "=" * 70)
-        print("ANALYSIS COMPLETE")
-        print("=" * 70)
+        tprint_info("=" * 70)
+        tprint_success("🎉 ANALYSIS COMPLETE")
+        tprint_info("=" * 70)
+        tprint_info("")
+        tprint_info("Summary Report:")
         print(analyzer.generate_report())
         
         return 0
@@ -857,6 +983,7 @@ Examples:
         return 1
         
     finally:
+        tprint_info("")
         await analyzer.cleanup()
 
 

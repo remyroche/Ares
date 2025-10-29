@@ -405,7 +405,8 @@ class HDPHMMClusterer:
             # Calculate metrics (with optional timestamps and returns if available)
             timestamps = getattr(data, 'index', None) if isinstance(data, pd.DataFrame) else None
             forward_returns = None  # Could be passed in future
-            metrics = self._calculate_metrics(data_processed, result['labels'], timestamps, forward_returns)
+            transition_matrix = result.get('transition_matrix')
+            metrics = self._calculate_metrics(data_processed, result['labels'], timestamps, forward_returns, transition_matrix)
             
             # Calculate memory usage
             current, peak = tracemalloc.get_traced_memory()
@@ -905,7 +906,8 @@ class HDPHMMClusterer:
                           data: np.ndarray, 
                           labels: np.ndarray,
                           timestamps: Optional[pd.DatetimeIndex] = None,
-                          forward_returns: Optional[pd.Series] = None) -> Dict[str, float]:
+                          forward_returns: Optional[pd.Series] = None,
+                          transition_matrix: Optional[np.ndarray] = None) -> Dict[str, float]:
         """Calculate clustering quality metrics with vectorization optimization."""
         tprint_debug("📊 Calculating clustering metrics with enhancements")
         
@@ -922,7 +924,7 @@ class HDPHMMClusterer:
         if self.vectorization_manager and VECTORIZATION_AVAILABLE:
             try:
                 metrics = self._calculate_metrics_vectorized(
-                    data, labels, timestamps, forward_returns
+                    data, labels, timestamps, forward_returns, transition_matrix
                 )
                 return metrics
             except Exception as e:
@@ -1007,7 +1009,8 @@ class HDPHMMClusterer:
                                       data: np.ndarray,
                                       labels: np.ndarray,
                                       timestamps: Optional[pd.DatetimeIndex] = None,
-                                      forward_returns: Optional[pd.Series] = None) -> Dict[str, float]:
+                                      forward_returns: Optional[pd.Series] = None,
+                                      transition_matrix: Optional[np.ndarray] = None) -> Dict[str, float]:
         """
         Calculate metrics using vectorization manager for optimal performance.
         

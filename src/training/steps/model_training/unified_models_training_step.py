@@ -51,7 +51,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                 - symbol: Trading symbol (e.g., 'ETHUSDT')
                 - exchange: Exchange name (e.g., 'binance')
                 - timeframe: Timeframe (e.g., '15m')
-                - direction: Trading direction ('longs', 'shorts', 'both')
+                - direction: Trading direction ('long', 'short', 'both')
                 - training_type: Type of training ('analyst_base', 'analyst_ensemble', 'tactician_base', 'tactician_ensemble')
                 - execution_mode: Execution mode ('full', 'light', 'blank')
 
@@ -65,7 +65,7 @@ class UnifiedModelsTrainingStep(BaseStep):
         training_type = config.get('training_type', 'analyst_base')
         symbol = config.get('symbol', 'UNKNOWN')
         timeframe = config.get('timeframe', '15m')
-        direction = config.get('direction', 'longs')
+        direction = config.get('direction', 'long')
         
         tprint_info(f"🚀 Starting unified {training_type} training for {symbol} {timeframe} {direction}")
 
@@ -174,7 +174,7 @@ class UnifiedModelsTrainingStep(BaseStep):
         """Get default configuration when YAML file is not available."""
         symbol = config.get('symbol', 'ETHUSDT')
         timeframe = config.get('timeframe', '15m')
-        direction = config.get('direction', 'longs')
+        direction = config.get('direction', 'long')
         
         base_config = {
             'symbol': symbol,
@@ -216,17 +216,17 @@ class UnifiedModelsTrainingStep(BaseStep):
         if 'analyst_config' in yaml_config:
             yaml_config['analyst_config']['timeframe'] = config.get('timeframe', '15m')
             yaml_config['analyst_config']['symbol'] = config.get('symbol', 'ETHUSDT')
-            yaml_config['analyst_config']['direction'] = config.get('direction', 'longs')
+            yaml_config['analyst_config']['direction'] = config.get('direction', 'long')
         if 'tactician_config' in yaml_config:
             yaml_config['tactician_config']['timeframe'] = config.get('timeframe', '15m')
             yaml_config['tactician_config']['symbol'] = config.get('symbol', 'ETHUSDT')
-            yaml_config['tactician_config']['direction'] = config.get('direction', 'longs')
+            yaml_config['tactician_config']['direction'] = config.get('direction', 'long')
         
         # Add runtime parameters to the root level
         yaml_config.update({
             'symbol': config.get('symbol', 'ETHUSDT'),
             'timeframe': config.get('timeframe', '15m'),
-            'direction': config.get('direction', 'longs'),
+            'direction': config.get('direction', 'long'),
             'execution_mode': config.get('execution_mode', 'light'),
             'exchange': config.get('exchange', 'binance')
         })
@@ -309,7 +309,7 @@ class UnifiedModelsTrainingStep(BaseStep):
         try:
             # Determine artifact name based on training type and config
             training_type = config.get('training_type', 'analyst_base')
-            direction = config.get('direction', 'longs')
+            direction = config.get('direction', 'long')
             exchange = config.get('exchange', 'binance')
             symbol = config.get('symbol', 'ETHUSDT')
             

@@ -29,7 +29,7 @@ async def test_sr_feedback_loop():
         'symbol': 'ETHUSDT',
         'exchange': 'binance',
         'timeframe': '15m',
-        'direction': 'longs',
+        'direction': 'long',
         'execution_mode': 'light',
         'data_dir': 'historical_data'
     }

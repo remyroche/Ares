@@ -27,7 +27,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep:
         symbol = config.get('symbol', 'ETHUSDT')
         exchange = config.get('exchange', 'binance')
         timeframe = config.get('timeframe', '15m')
-        direction = config.get('direction', 'longs')
+        direction = config.get('direction', 'long')
         execution_mode = config.get('execution_mode', 'light')
         
         try:
@@ -258,7 +258,7 @@ async def main():
         'symbol': 'ETHUSDT',
         'exchange': 'binance',
         'timeframe': '15m',
-        'direction': 'longs',
+        'direction': 'long',
         'execution_mode': 'light'
     }
     

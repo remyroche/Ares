@@ -124,7 +124,7 @@ class BasicBacktestingPostStep(BaseStep):
                 - symbol: Trading symbol (e.g., 'ETHUSDT')
                 - exchange: Exchange name (e.g., 'binance')
                 - timeframe: Timeframe (e.g., '15m')
-                - direction: Trading direction ('longs', 'shorts', 'both')
+                - direction: Trading direction ('long', 'short', 'both')
 
         Returns:
             Dict containing:
@@ -175,7 +175,7 @@ class BasicBacktestingPostStep(BaseStep):
                         'symbol': config['symbol'],
                         'exchange': config['exchange'],
                         'timeframe': config['timeframe'],
-                        'direction': config.get('direction', 'longs'),
+                        'direction': config.get('direction', 'long'),
                         'execution_mode': config.get('execution_mode', 'light'),
                         'created_at': datetime.now().isoformat()
                     }
@@ -210,7 +210,7 @@ class BasicBacktestingPostStep(BaseStep):
                 'sharpe_improvement': 0.60,
                 'sortino_improvement': 0.75,  # NEW
                 'calmar_improvement': 0.85,  # NEW
-                'direction': config.get('direction', 'longs'),
+                'direction': config.get('direction', 'long'),
                 'execution_mode': config.get('execution_mode', 'light'),
                 'success': True
             }

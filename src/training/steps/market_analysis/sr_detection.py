@@ -344,7 +344,7 @@ class SRDetectionStep(BaseStep):
             symbol = config.get('symbol', 'ETHUSDT')
             exchange = config.get('exchange', 'binance')
             timeframe = config.get('timeframe', '15m')
-            direction = config.get('direction', 'longs')
+            direction = config.get('direction', 'long')
             execution_mode = config.get('execution_mode', 'light')
             
             # Set up artifact manager context
@@ -446,7 +446,7 @@ class SRDetectionStep(BaseStep):
             }
 
     def load_sr_levels_from_artifacts(self, symbol: str = 'ETHUSDT', exchange: str = 'binance', 
-                                     direction: str = 'longs') -> Optional[Dict[str, Any]]:
+                                     direction: str = 'long') -> Optional[Dict[str, Any]]:
         """Load existing SR levels from artifacts if available."""
         try:
             # Set context for artifact retrieval

@@ -208,7 +208,7 @@ class RealParametersOptimizer(BaseStep):
             symbol = config.get('symbol', 'ETHUSDT')
             exchange = config.get('exchange', 'binance')
             timeframe = config.get('timeframe', '15m')
-            direction = config.get('direction', 'longs')
+            direction = config.get('direction', 'long')
             execution_mode = config.get('execution_mode', 'light')
             
             if not symbol:

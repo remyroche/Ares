@@ -18,7 +18,7 @@ Usage Examples:
     python scripts/run_sr_workflow.py --symbol ETHUSDT --exchange binance --timeframe 15m --end-date 2024-01-31 --lookback-days 30
     
     # Full mode with all options
-    python scripts/run_sr_workflow.py --symbol BTCUSDT --exchange binance --timeframe 1h --direction longs --mode full --lookback-days 60
+    python scripts/run_sr_workflow.py --symbol BTCUSDT --exchange binance --timeframe 1h --direction long --mode full --lookback-days 60
 """
 
 import asyncio
@@ -54,7 +54,7 @@ class SRWorkflowRunner:
         symbol: str = "ETHUSDT",
         exchange: str = "binance",
         timeframe: str = "15m",
-        direction: str = "longs",
+        direction: str = "long",
         mode: str = "light",
         end_date: Optional[str] = None,
         lookback_days: Optional[int] = None
@@ -66,7 +66,7 @@ class SRWorkflowRunner:
             symbol: Trading symbol (e.g., 'ETHUSDT')
             exchange: Exchange name (e.g., 'binance')
             timeframe: Timeframe (e.g., '15m', '1h', '1d')
-            direction: Trading direction ('longs' or 'shorts')
+            direction: Trading direction ('long' or 'short')
             mode: Execution mode ('light', 'full', or 'blank')
             end_date: End date for data range (YYYY-MM-DD format). If None, uses latest available data
             lookback_days: Number of days to look back from end_date. If provided, calculates start_date automatically
@@ -379,7 +379,7 @@ Examples:
     parser.add_argument('--symbol', type=str, default='ETHUSDT', help='Trading symbol (e.g., ETHUSDT, BTCUSDT)')
     parser.add_argument('--exchange', type=str, default='binance', help='Exchange name (e.g., binance, bybit)')
     parser.add_argument('--timeframe', type=str, default='15m', help='Timeframe (e.g., 15m, 1h, 4h, 1d)')
-    parser.add_argument('--direction', type=str, default='longs', choices=['longs', 'shorts'], help='Trading direction')
+    parser.add_argument('--direction', type=str, default='long', choices=['long', 'short'], help='Trading direction')
     parser.add_argument('--mode', type=str, default='light', choices=['light', 'full', 'blank'], help='Execution mode')
     
     # Date range options

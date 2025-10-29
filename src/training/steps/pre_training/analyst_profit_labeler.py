@@ -522,7 +522,7 @@ class AnalystProfitLabeler:
         """Reduce multiple signals to a single label per fixed time window, choosing local extrema.
 
         - If long_only=True: pick the local minimum close within each window (best entry).
-        - If shorts are allowed: pick min for long signals and max for short signals when a mixed window occurs.
+        - If short allowed: pick min for long signals and max for short signals when a mixed window occurs.
         """
         try:
             if len(labels_bool) == 0:
@@ -551,7 +551,7 @@ class AnalystProfitLabeler:
                 if long_only:
                     local_pos = int(np.argmin(close_vals[sl]))
                 else:
-                    # If shorts allowed, default to long extremum; extending to direction-aware is trivial
+                    # If short allowed, default to long extremum; extending to direction-aware is trivial
                     local_pos = int(np.argmin(close_vals[sl]))
 
                 chosen = s + local_pos

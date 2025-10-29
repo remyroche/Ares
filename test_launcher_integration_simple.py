@@ -58,7 +58,7 @@ def test_config_mapping():
             'symbol': 'ETHUSDT',
             'exchange': 'binance',
             'timeframe': '15m',
-            'direction': 'longs',
+            'direction': 'long',
             'training_type': training_type,
             'execution_mode': 'light'
         }
@@ -115,10 +115,10 @@ def main():
     if successful == total:
         print("\n🎉 All tests passed! The unified training integration is ready.")
         print("\nYou can now use ares_launcher with the unified training step:")
-        print("  python3 src/launcher/ares_launcher.py --train-analyst-base --symbol ETHUSDT --timeframe 15m --direction longs")
-        print("  python3 src/launcher/ares_launcher.py --train-analyst-ensemble --symbol ETHUSDT --timeframe 15m --direction longs")
-        print("  python3 src/launcher/ares_launcher.py --train-tactician-base --symbol ETHUSDT --timeframe 15m --direction longs")
-        print("  python3 src/launcher/ares_launcher.py --train-tactician-ensemble --symbol ETHUSDT --timeframe 15m --direction longs")
+        print("  python3 src/launcher/ares_launcher.py --train-analyst-base --symbol ETHUSDT --timeframe 15m --direction long")
+        print("  python3 src/launcher/ares_launcher.py --train-analyst-ensemble --symbol ETHUSDT --timeframe 15m --direction long")
+        print("  python3 src/launcher/ares_launcher.py --train-tactician-base --symbol ETHUSDT --timeframe 15m --direction long")
+        print("  python3 src/launcher/ares_launcher.py --train-tactician-ensemble --symbol ETHUSDT --timeframe 15m --direction long")
     else:
         print("\n⚠️  Some tests failed. Check the output above for details.")
 

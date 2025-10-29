@@ -37,7 +37,7 @@ class AnalystBaseTrainingStep(BaseStep):
                 - symbol: Trading symbol (e.g., 'ETHUSDT')
                 - exchange: Exchange name (e.g., 'binance')
                 - timeframe: Timeframe (e.g., '15m')
-                - direction: Trading direction ('longs', 'shorts', 'both')
+                - direction: Trading direction ('long', 'short', 'both')
 
         Returns:
             Dict containing:

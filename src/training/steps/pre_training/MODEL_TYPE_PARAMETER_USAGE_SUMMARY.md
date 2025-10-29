@@ -94,7 +94,7 @@ artifacts/pre_training/artifact_store/20250119_143022_abc123def/
     ETHUSDT/
       binance/
         15m/
-          longs/
+          long/
             analyst/
               ETHUSDT_binance_15m_longs_analyst_feature_generation_labeling_integration_step_targets_20250119_143022.parquet
 ```
@@ -113,23 +113,23 @@ The enhanced artifact manager supports multiple fallback strategies:
 ### **Running Steps with Model Type:**
 
 ```bash
-# Data Validation (analyst, longs)
-python3 ares_launcher.py --mode sequential --sub_pipeline feature_generation_data_validation_step --symbol ETHUSDT --direction longs --model_type analyst --execution-mode light
+# Data Validation (analyst, long)
+python3 ares_launcher.py --mode sequential --sub_pipeline feature_generation_data_validation_step --symbol ETHUSDT --direction long --model_type analyst --execution-mode light
 
-# Labeling Integration (analyst, longs)
-python3 ares_launcher.py --mode sequential --sub_pipeline feature_generation_labeling_integration_step --symbol ETHUSDT --direction longs --labeling_mode analyst --execution-mode light
+# Labeling Integration (analyst, long)
+python3 ares_launcher.py --mode sequential --sub_pipeline feature_generation_labeling_integration_step --symbol ETHUSDT --direction long --labeling_mode analyst --execution-mode light
 
-# Labeling Integration (tactician, shorts)
-python3 ares_launcher.py --mode sequential --sub_pipeline feature_generation_labeling_integration_step --symbol ETHUSDT --direction shorts --labeling_mode tactician --execution-mode light
+# Labeling Integration (tactician, short)
+python3 ares_launcher.py --mode sequential --sub_pipeline feature_generation_labeling_integration_step --symbol ETHUSDT --direction short --labeling_mode tactician --execution-mode light
 
-# Interaction Generation (analyst, longs)
-python3 ares_launcher.py --mode sequential --sub_pipeline feature_generation_interaction_generation_step_analyst --symbol ETHUSDT --direction longs --model_type analyst --execution-mode light
+# Interaction Generation (analyst, long)
+python3 ares_launcher.py --mode sequential --sub_pipeline feature_generation_interaction_generation_step_analyst --symbol ETHUSDT --direction long --model_type analyst --execution-mode light
 
-# Interaction Generation (tactician, shorts)
-python3 ares_launcher.py --mode sequential --sub_pipeline feature_generation_interaction_generation_step_tactician --symbol ETHUSDT --direction shorts --model_type tactician --execution-mode light
+# Interaction Generation (tactician, short)
+python3 ares_launcher.py --mode sequential --sub_pipeline feature_generation_interaction_generation_step_tactician --symbol ETHUSDT --direction short --model_type tactician --execution-mode light
 
-# Final Selection (analyst, longs)
-python3 ares_launcher.py --mode sequential --sub_pipeline feature_generation_final_feature_selection_step --symbol ETHUSDT --direction longs --model_type analyst --execution-mode light
+# Final Selection (analyst, long)
+python3 ares_launcher.py --mode sequential --sub_pipeline feature_generation_final_feature_selection_step --symbol ETHUSDT --direction long --model_type analyst --execution-mode light
 ```
 
 ## Benefits Achieved

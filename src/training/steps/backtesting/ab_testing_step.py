@@ -37,7 +37,7 @@ class ABTestingStep(BaseStep):
                 - symbol: Trading symbol (e.g., 'ETHUSDT')
                 - exchange: Exchange name (e.g., 'binance')
                 - timeframe: Timeframe (e.g., '15m')
-                - direction: Trading direction ('longs', 'shorts', 'both')
+                - direction: Trading direction ('long', 'short', 'both')
 
         Returns:
             Dict containing:
@@ -68,7 +68,7 @@ class ABTestingStep(BaseStep):
                         'symbol': config['symbol'],
                         'exchange': config['exchange'],
                         'timeframe': config['timeframe'],
-                        'direction': config.get('direction', 'longs'),
+                        'direction': config.get('direction', 'long'),
                         'execution_mode': config.get('execution_mode', 'light'),
                         'created_at': datetime.now().isoformat()
                     }
@@ -82,7 +82,7 @@ class ABTestingStep(BaseStep):
                 'best_return': 0.24,
                 'best_sharpe': 1.92,
                 'statistical_power': 0.85,
-                'direction': config.get('direction', 'longs'),
+                'direction': config.get('direction', 'long'),
                 'execution_mode': config.get('execution_mode', 'light'),
                 'success': True
             }

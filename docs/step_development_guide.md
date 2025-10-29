@@ -45,7 +45,7 @@ class MyCustomStep(BaseStep):
                 - symbol: Trading symbol (e.g., 'ETHUSDT')
                 - exchange: Exchange name (e.g., 'binance')
                 - timeframe: Timeframe (e.g., '15m')
-                - direction: Trading direction ('longs' or 'shorts')
+                - direction: Trading direction ('long' or 'short')
                 - execution_mode: Execution mode ('light' or 'full')
                 - Additional step-specific parameters
         
@@ -63,7 +63,7 @@ class MyCustomStep(BaseStep):
             symbol = config.get('symbol', 'ETHUSDT')
             exchange = config.get('exchange', 'binance')
             timeframe = config.get('timeframe', '15m')
-            direction = config.get('direction', 'longs')
+            direction = config.get('direction', 'long')
             execution_mode = config.get('execution_mode', 'light')
             
             if not symbol:
@@ -162,7 +162,7 @@ step_registry.register("your_step_name", YourStepClass)
 
 ```bash
 # Run a single step
-python ares_launcher.py step your_step_name --symbol ETHUSDT --timeframe 15m --direction longs
+python ares_launcher.py step your_step_name --symbol ETHUSDT --timeframe 15m --direction long
 
 # Run multiple steps
 python ares_launcher.py steps step1,step2,step3 --symbol ETHUSDT --timeframe 15m

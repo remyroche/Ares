@@ -66,7 +66,7 @@ async def test_sr_detection_artifact_integration():
         'symbol': 'ETHUSDT',
         'exchange': 'binance',
         'timeframe': '15m',
-        'direction': 'longs',
+        'direction': 'long',
         'execution_mode': 'light',
         'dataframe': data
     }
@@ -96,7 +96,7 @@ async def test_sr_detection_artifact_integration():
             loaded_sr_levels = sr_step.load_sr_levels_from_artifacts(
                 symbol='ETHUSDT',
                 exchange='binance',
-                direction='longs'
+                direction='long'
             )
             
             if loaded_sr_levels:

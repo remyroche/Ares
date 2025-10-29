@@ -72,7 +72,7 @@ class EnhancedFeatureGenerationLabelingIntegrationStep(ModularComponent):
             'symbol': kwargs.get('symbol', 'UNKNOWN'),
             'exchange': kwargs.get('exchange', 'UNKNOWN'),
             'timeframe': kwargs.get('timeframe', 'UNKNOWN'),
-            'direction': kwargs.get('direction', 'longs'),
+            'direction': kwargs.get('direction', 'long'),
             'intensity': kwargs.get('intensity', 'blank'),
             'labeling_mode': kwargs.get('labeling_mode', 'analyst'),
             'lookback_days': kwargs.get('lookback_days', 365),
@@ -231,7 +231,7 @@ class EnhancedFeatureGenerationLabelingIntegrationStep(ModularComponent):
 async def handle_enhanced_labeling_integration_step(
     symbol: str = "ETHUSDT",
     timeframe: str = "15m",
-    direction: str = "longs",
+    direction: str = "long",
     intensity: str = "blank",
     lookback_days: int = 365,
     start_date: Optional[str] = None,

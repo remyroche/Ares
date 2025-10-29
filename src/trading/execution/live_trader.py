@@ -138,11 +138,7 @@ class LiveTrader:
     async def initialize(self) -> None:
         """Initialize live trader components."""
         try:
-            # Initialize order manager
-            self.order_manager = await OrderManager.create_order_manager(self.config)
-            await self.order_manager.initialize()
-
-            # Initialize exchange interface
+            # Initialize exchange interface first
             exchange_type = ExchangeType(self.config.get('exchange_type', 'simulated'))
             self.exchange_interface = await create_exchange_interface(
                 exchange_type, self.config
@@ -150,6 +146,12 @@ class LiveTrader:
 
             if not await self.exchange_interface.connect():
                 raise ExecutionError("Failed to connect to exchange")
+            
+            # Initialize order manager with exchange interface
+            order_manager_config = self.config.copy()
+            order_manager_config['exchange_interface'] = self.exchange_interface
+            self.order_manager = OrderManager(order_manager_config)
+            await self.order_manager.initialize()
 
             # Initialize enhanced signal generators
             await self._initialize_signal_generators()

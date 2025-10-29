@@ -146,6 +146,7 @@ class OrderManager:
 
         # Exchange interfaces
         self.exchange_interfaces: Dict[str, Any] = {}
+        self.exchange_interface: Optional[Any] = config.get('exchange_interface')  # Optional ExchangeInterface
 
         # Performance tracking
         self.order_count = 0
@@ -314,11 +315,137 @@ class OrderManager:
             tprint_warning(f"⚠️ Limit orders not yet implemented in paper trading mode")
 
     async def _execute_live_order(self, order: Order) -> None:
-        """Execute order on live exchange."""
-        # Placeholder for live order execution
-        # This would integrate with actual exchange APIs
-        tprint_warning(f"⚠️ Live order execution not yet implemented")
-        order.status = OrderStatus.PENDING
+        """Execute order on live exchange using ExchangeInterface/ExchangeDispatcher."""
+        try:
+            if not self.exchange_interface:
+                # Try to get from exchange_interfaces dict
+                default_interface = self.exchange_interfaces.get('default')
+                if default_interface:
+                    self.exchange_interface = default_interface
+                else:
+                    raise ExecutionError(
+                        "No exchange interface available for live order execution",
+                        severity=TradingErrorSeverity.CRITICAL
+                    )
+            
+            # Convert OrderType to exchange-specific order type string
+            order_type_map = {
+                OrderType.MARKET: 'MARKET',
+                OrderType.LIMIT: 'LIMIT',
+                OrderType.STOP: 'STOP',
+                OrderType.STOP_LIMIT: 'STOP_LIMIT',
+                OrderType.TRAILING_STOP: 'TRAILING_STOP',
+                OrderType.OCO: 'OCO'
+            }
+            exchange_order_type = order_type_map.get(order.order_type, 'MARKET')
+            
+            # Convert OrderSide to exchange side string
+            side_str = 'buy' if order.side == OrderSide.BUY else 'sell'
+            
+            # Prepare order parameters
+            order_params = {
+                'symbol': order.symbol,
+                'side': side_str,
+                'order_type': exchange_order_type,
+                'quantity': order.quantity,
+            }
+            
+            # Add optional parameters
+            if order.price is not None:
+                order_params['price'] = order.price
+            if order.stop_price is not None:
+                order_params['stop_price'] = order.stop_price
+            if order.trailing_stop is not None:
+                order_params['trailing_stop'] = order.trailing_stop
+            
+            # Add metadata for trading signal tracking
+            if order.metadata:
+                order_params['trading_signal_metadata'] = order.metadata
+            
+            # Execute via ExchangeInterface (which uses ExchangeDispatcher internally)
+            tprint_info(f"🔄 Executing live order {order.order_id}: {side_str} {order.quantity} {order.symbol} @ {exchange_order_type}")
+            
+            # Use ExchangeInterface.create_order which routes through ExchangeDispatcher
+            result = await self.exchange_interface.create_order(**order_params)
+            
+            if not result or result.get('error'):
+                error_msg = result.get('error', 'Unknown error') if result else 'No response from exchange'
+                order.status = OrderStatus.REJECTED
+                order.error_message = error_msg
+                tprint_error(f"❌ Order {order.order_id} rejected: {error_msg}")
+                return
+            
+            # Update order with exchange response
+            order.exchange_order_id = result.get('orderId') or result.get('order_id')
+            
+            # Check order status from exchange
+            order_status_map = {
+                'NEW': OrderStatus.SUBMITTED,
+                'FILLED': OrderStatus.FILLED,
+                'PARTIALLY_FILLED': OrderStatus.PARTIALLY_FILLED,
+                'CANCELLED': OrderStatus.CANCELLED,
+                'REJECTED': OrderStatus.REJECTED,
+                'EXPIRED': OrderStatus.EXPIRED
+            }
+            
+            exchange_status = result.get('status', 'NEW')
+            order.status = order_status_map.get(exchange_status, OrderStatus.SUBMITTED)
+            
+            # Update filled quantities if available
+            if 'executedQty' in result:
+                order.filled_quantity = float(result['executedQty'])
+                order.remaining_quantity = order.quantity - order.filled_quantity
+            elif 'executed_quantity' in result:
+                order.filled_quantity = float(result['executed_quantity'])
+                order.remaining_quantity = order.quantity - order.filled_quantity
+            
+            # Update average fill price if available
+            if 'price' in result or 'avgPrice' in result:
+                order.average_fill_price = float(result.get('avgPrice') or result.get('price', order.price or 0))
+            
+            # Calculate fees if available
+            if 'commission' in result:
+                order.fees = float(result['commission'])
+            elif 'cummulativeQuoteQty' in result and order.average_fill_price:
+                # Estimate fees (typically 0.1% of trade value)
+                estimated_fee_rate = 0.001
+                trade_value = order.filled_quantity * (order.average_fill_price or order.price or 0)
+                order.fees = trade_value * estimated_fee_rate
+            
+            # Create execution record if order was filled
+            if order.status in [OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED]:
+                execution = OrderExecution(
+                    execution_id=str(uuid.uuid4()),
+                    order_id=order.order_id,
+                    timestamp=datetime.now(),
+                    quantity=order.filled_quantity,
+                    price=order.average_fill_price or order.price or 0,
+                    fees=order.fees,
+                    exchange_execution_id=result.get('executionId'),
+                    metadata={'exchange_response': result}
+                )
+                
+                if order.order_id not in self.executions:
+                    self.executions[order.order_id] = []
+                self.executions[order.order_id].append(execution)
+                self.execution_count += 1
+                self.total_fees += execution.fees
+                
+                tprint_success(f"✅ Order {order.order_id} executed: {order.filled_quantity}/{order.quantity} @ {order.average_fill_price}")
+            else:
+                tprint_info(f"📝 Order {order.order_id} submitted: {order.status.value}")
+            
+            # Store exchange response in order metadata
+            if not order.metadata:
+                order.metadata = {}
+            order.metadata['exchange_response'] = result
+            
+        except Exception as e:
+            order.status = OrderStatus.ERROR
+            order.error_message = str(e)
+            tprint_error(f"❌ Failed to execute live order {order.order_id}: {str(e)}")
+            self.logger.error(f"Live order execution error: {e}", exc_info=True)
+            raise
 
     async def _get_current_price(self, symbol: str) -> float:
         """Get current market price for symbol."""

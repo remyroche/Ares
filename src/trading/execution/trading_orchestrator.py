@@ -717,26 +717,47 @@ class TradingOrchestrator:
         action = decision.action.lower()
 
         if action in {"close", "exit"}:
-            self._close_position_by_symbol(decision.symbol, reason=action)
+            # Close all positions for this symbol
+            self._close_all_positions_for_symbol(decision.symbol, reason=action)
             return
 
         if action not in {"buy", "sell"}:
             return
 
         side = "long" if action == "buy" else "short"
-        existing = self._find_position_for_symbol(decision.symbol)
-        if existing:
-            position_id, position = existing
-            if position["side"] != side:
-                self._close_position(position_id, reason="opposite_signal")
-            else:
-                # Treat as scaling into existing position
-                position["quantity"] += decision.quantity
-                state = self.trailing_manager.positions.get(position_id)
-                if state:
-                    state.quantity = position["quantity"]
-                return
+        
+        # Find all positions for this symbol
+        existing_positions = self._find_all_positions_for_symbol(decision.symbol)
+        
+        # Check for opposite side positions - close them first
+        opposite_positions = [(pos_id, pos) for pos_id, pos in existing_positions if pos["side"] != side]
+        for position_id, position in opposite_positions:
+            self._close_position(position_id, reason="opposite_signal")
+        
+        # Find positions of the same side (keep tuple structure)
+        same_side_positions = [(pos_id, pos) for pos_id, pos in existing_positions if pos["side"] == side]
+        
+        if same_side_positions:
+            # Strategy: Scale into the most recent position (or largest, configurable)
+            # For now, scale into the most recent position based on entry_time
+            # same_side_positions is list of (position_id, position) tuples
+            position_id, position = max(
+                same_side_positions,
+                key=lambda x: x[1].get('entry_time', datetime.min) if isinstance(x[1].get('entry_time'), datetime) else datetime.min
+            )
+            
+            # Treat as scaling into existing position
+            position["quantity"] += decision.quantity
+            state = self.trailing_manager.positions.get(position_id)
+            if state:
+                state.quantity = position["quantity"]
+            
+            self.logger.info(
+                f"📈 Scaled into position {position_id}: +{decision.quantity} (total: {position['quantity']})"
+            )
+            return
 
+        # No existing position - open new one
         self._open_position(decision, trade_id, feature_bundle, side)
 
     def _open_position(
@@ -804,17 +825,50 @@ class TradingOrchestrator:
         )
 
     def _close_position_by_symbol(self, symbol: str, reason: str) -> None:
+        """Close a single position for symbol (first found). Use _close_all_positions_for_symbol for all."""
         existing = self._find_position_for_symbol(symbol)
         if existing:
             self._close_position(existing[0], reason)
+    
+    def _close_all_positions_for_symbol(self, symbol: str, reason: str) -> None:
+        """Close all positions for a given symbol."""
+        positions_to_close = [
+            (position_id, position) 
+            for position_id, position in self.active_positions.items()
+            if position.get('symbol') == symbol
+        ]
+        
+        if not positions_to_close:
+            self.logger.warning(f"⚠️ No positions found for symbol {symbol}")
+            return
+        
+        for position_id, position in positions_to_close:
+            self._close_position(position_id, reason)
+        
+        self.logger.info(f"🚪 Closed {len(positions_to_close)} position(s) for {symbol}: {reason}")
 
     def _find_position_for_symbol(
         self, symbol: str
     ) -> Optional[Tuple[str, Dict[str, Any]]]:
+        """Find first position for symbol. Returns (position_id, position) or None."""
         for position_id, position in self.active_positions.items():
             if position.get('symbol') == symbol:
                 return position_id, position
         return None
+    
+    def _find_all_positions_for_symbol(
+        self, symbol: str
+    ) -> List[Tuple[str, Dict[str, Any]]]:
+        """Find all positions for a given symbol. Returns list of (position_id, position) tuples."""
+        return [
+            (position_id, position)
+            for position_id, position in self.active_positions.items()
+            if position.get('symbol') == symbol
+        ]
+    
+    def _find_position_by_id(self, position_id: str) -> Optional[Dict[str, Any]]:
+        """Find position by position ID."""
+        return self.active_positions.get(position_id)
 
     def _build_ml_context(self, position: Dict[str, Any]) -> Dict[str, Any]:
         context: Dict[str, Any] = {
@@ -1083,15 +1137,53 @@ class TradingOrchestrator:
         self._on_trade_decision_callbacks.append(callback)
 
     async def _trigger_trade_callbacks(self, decision: TradingDecision, event: str, **kwargs):
+        """Trigger trade decision callbacks with proper error handling."""
         for cb in self._on_trade_decision_callbacks:
             try:
                 if asyncio.iscoroutinefunction(cb):
                     await cb(decision, event=event, **kwargs)
                 else:
                     cb(decision, event=event, **kwargs)
-            except Exception:
-                # Swallow to not interrupt trading flow
-                pass
+            except Exception as e:
+                # Log error with context but don't crash trading loop
+                error_context = {
+                    'callback': cb.__name__ if hasattr(cb, '__name__') else str(cb),
+                    'event': event,
+                    'decision_symbol': decision.symbol,
+                    'decision_action': decision.action,
+                    'error': str(e),
+                    'error_type': type(e).__name__
+                }
+                
+                # Check if this is a critical event that requires fast failing
+                critical_events = {'pre_execute', 'post_execute'}
+                is_critical = event in critical_events
+                
+                if is_critical:
+                    # Critical events: log error and potentially fail fast
+                    tprint_error(
+                        f"❌ CRITICAL: Callback error in {error_context['callback']} during {event}: {e}"
+                    )
+                    self.logger.error(
+                        f"Critical callback error: {error_context}",
+                        exc_info=True
+                    )
+                    # For critical execution events, we may want to stop trading
+                    # For now, log but continue - can be made configurable
+                    if event == 'pre_execute':
+                        # Pre-execution errors could mean we shouldn't execute
+                        tprint_warning(
+                            f"⚠️ Pre-execution callback failed - proceeding with caution"
+                        )
+                else:
+                    # Non-critical events: just log
+                    tprint_warning(
+                        f"⚠️ Callback error in {error_context['callback']} during {event}: {e}"
+                    )
+                    self.logger.warning(
+                        f"Callback error (non-critical): {error_context}",
+                        exc_info=False
+                    )
 
 # Convenience functions
 

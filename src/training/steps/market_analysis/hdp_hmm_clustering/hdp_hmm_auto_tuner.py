@@ -55,25 +55,15 @@ try:
         HierarchicalParameterOptimizer,
         ParameterGroup,
         OptimizationStage,
+        OptimizationBackend,
         create_param_group
     )
     OPTIMIZATION_AVAILABLE = True
+    HIERARCHICAL_HPO_AVAILABLE = True
 except ImportError as e:
     tprint_warning(f"⚠️ Optimization utilities not fully available: {e}")
     OPTIMIZATION_AVAILABLE = False
     OPTUNA_AVAILABLE = False
-
-# Import hierarchical parameter optimizer
-try:
-    from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
-        HierarchicalParameterOptimizer,
-        ParameterGroup,
-        OptimizationStage,
-        OptimizationBackend
-    )
-    HIERARCHICAL_HPO_AVAILABLE = True
-except ImportError as e:
-    tprint_warning(f"⚠️ Hierarchical HPO not available: {e}")
     HIERARCHICAL_HPO_AVAILABLE = False
 
 # Import HDP-HMM components

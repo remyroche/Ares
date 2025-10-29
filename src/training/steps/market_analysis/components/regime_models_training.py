@@ -41,6 +41,15 @@ from src.utils.hardware.unified_hardware_manager import (
 from src.utils.ml_common.evaluation.evaluation_utils import (
     EvaluationUtils
 )
+from src.utils.ml_common.evaluation.regime_temporal_metrics import (
+    RegimeTemporalMetricsCalculator,
+    calculate_temporal_smoothness_penalty,
+    create_soft_labels
+)
+from src.utils.ml_common.feature_engineering.feature_smoothing import (
+    add_smoothed_features,
+    apply_ewm_smoothing
+)
 from src.utils.ml_common.explainability.model_explainability import ModelExplainabilityManager
 from src.utils.ml_common.explainability.shap_lime_integration import SHAPLIMEExplainer as SHAPLIMEIntegration
 from src.utils.ml_common.post_training.model_validation import (
@@ -231,6 +240,18 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         # Initialize model evaluator
         self.model_evaluator = EvaluationUtils()
         tprint("🔧 [REGIME_MODELS] Model evaluator initialized", color="green")
+        
+        # Initialize regime temporal metrics calculator
+        self.temporal_metrics_calc = RegimeTemporalMetricsCalculator(min_episode_length=3)
+        tprint("✅ [REGIME_MODELS] Temporal metrics calculator initialized", color="green")
+        
+        # Enhanced training configuration
+        self.enable_temporal_smoothing = True
+        self.temporal_smoothing_alpha = 0.1  # Default smoothness penalty weight
+        self.enable_soft_labels = True
+        self.soft_label_smoothing = 0.1  # Label smoothing factor
+        self.enable_smoothed_features = True
+        self.smoothing_window_sizes = [3, 5, 7]
 
         # Initialize model validator
         self.model_validator = ModelValidator(
@@ -291,8 +312,8 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 'ExtraTrees': {
                     'n_estimators': 100,
                     'max_depth': None,
-                    'min_samples_split': 2,
-                    'min_samples_leaf': 1,
+                    'min_samples_split': 5,  # Increased for stability
+                    'min_samples_leaf': 5,    # Increased for stability (was 1)
                     'max_features': 'sqrt',
                     'random_state': 42,
                     'n_jobs': -1
@@ -304,7 +325,8 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'max_depth': 8,    # Increased depth
                     'learning_rate': 0.05,  # Reduced for better convergence
                     'n_estimators': 200,    # More estimators
-                    'min_child_samples': 20,  # Prevent overfitting
+                    'min_child_samples': 50,  # Increased for stability (was 20)
+                    'min_data_in_leaf': 50,    # Increased for stability
                     'subsample': 0.8,        # Stochastic sampling
                     'colsample_bytree': 0.8,  # Feature sampling
                     'reg_alpha': 0.1,        # L1 regularization
@@ -1467,6 +1489,16 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 'data_shape': X.shape,
                 'report_type': 'regime_probability_analysis'
             }
+            
+            # Add comprehensive metrics if available
+            if hasattr(self, 'model_metrics') and model_name in self.model_metrics:
+                model_metrics = self.model_metrics[model_name]
+                if 'classification' in model_metrics:
+                    report['classification_metrics'] = model_metrics['classification']
+                if 'temporal' in model_metrics:
+                    report['temporal_metrics'] = model_metrics['temporal']
+                if 'persistence' in model_metrics:
+                    report['persistence_metrics'] = model_metrics['persistence']
 
             # Generate text report
             text_report = self._generate_text_report(report)
@@ -1502,6 +1534,48 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             lines.append(f"Prediction Confidence: {overall.get('prediction_confidence', 0):.3f}")
             lines.append(f"Uncertainty Entropy: {overall.get('uncertainty_entropy', 0):.3f}")
             lines.append("")
+
+            # Classification Metrics
+            if 'classification_metrics' in report:
+                cls_metrics = report['classification_metrics']
+                lines.append("🎯 CLASSIFICATION METRICS")
+                lines.append("-" * 40)
+                lines.append(f"Accuracy: {cls_metrics.get('accuracy', 'N/A'):.4f}")
+                lines.append(f"Balanced Accuracy: {cls_metrics.get('balanced_accuracy', 'N/A'):.4f}")
+                lines.append(f"Precision (Weighted): {cls_metrics.get('precision', 'N/A'):.4f}")
+                lines.append(f"Recall (Weighted): {cls_metrics.get('recall', 'N/A'):.4f}")
+                lines.append(f"F1-Score (Weighted): {cls_metrics.get('f1_score', 'N/A'):.4f}")
+                if 'log_loss' in cls_metrics and cls_metrics['log_loss'] is not None:
+                    lines.append(f"Log Loss: {cls_metrics['log_loss']:.4f}")
+                lines.append("")
+
+            # Temporal/Stability Metrics
+            if 'temporal_metrics' in report:
+                temp_metrics = report['temporal_metrics']
+                lines.append("⏱️ TEMPORAL/STABILITY METRICS")
+                lines.append("-" * 40)
+                lines.append(f"Mean Episode Length: {temp_metrics.get('mean_episode_length', 'N/A'):.2f}")
+                lines.append(f"Transition Rate: {temp_metrics.get('transition_rate', 'N/A'):.4f}")
+                lines.append(f"Short Episode Count: {temp_metrics.get('short_episode_count', 'N/A')}")
+                lines.append(f"Switch False Positive Rate: {temp_metrics.get('switch_false_positive_rate', 'N/A'):.4f}")
+                if temp_metrics.get('entropy') is not None:
+                    lines.append(f"Entropy: {temp_metrics.get('entropy', 'N/A'):.4f}")
+                if temp_metrics.get('confidence') is not None:
+                    lines.append(f"Confidence: {temp_metrics.get('confidence', 'N/A'):.4f}")
+                lines.append(f"Number of Episodes: {temp_metrics.get('n_episodes', 'N/A')}")
+                lines.append(f"Number of Transitions: {temp_metrics.get('n_transitions', 'N/A')}")
+                lines.append("")
+
+            # Regime-Persistence Metrics
+            if 'persistence_metrics' in report:
+                pers_metrics = report['persistence_metrics']
+                lines.append("🔄 REGIME-PERSISTENCE METRICS")
+                lines.append("-" * 40)
+                lines.append(f"Stability Index: {pers_metrics.get('stability_index', 'N/A'):.4f}")
+                lines.append(f"Persistence Ratio: {pers_metrics.get('persistence_ratio', 'N/A'):.4f}")
+                lines.append(f"Lag to Detection: {pers_metrics.get('lag_to_detection', 'N/A'):.2f}")
+                lines.append(f"Episode Purity: {pers_metrics.get('episode_purity', 'N/A'):.4f}")
+                lines.append("")
 
             # Regime Statistics
             regime_stats = report.get('regime_statistics', {})
@@ -2027,6 +2101,17 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             if not all_features.empty:
                 X = all_features.values
                 feature_names = list(all_features.columns)
+                
+                # Add smoothed features if enabled
+                if self.enable_smoothed_features:
+                    tprint("🔧 [REGIME_MODELS] Adding smoothed features", color="cyan")
+                    X, feature_names = add_smoothed_features(
+                        X, 
+                        window_sizes=self.smoothing_window_sizes,
+                        feature_names=feature_names
+                    )
+                    tprint(f"✅ [REGIME_MODELS] Smoothed features added: {X.shape[1]} total features", color="green")
+                
                 tprint(f"✅ [REGIME_MODELS] Feature bank generated {X.shape[1]} features from {len(categories)} categories", color="green")
                 tprint(f"📊 [REGIME_MODELS] Feature matrix shape: {X.shape}", color="blue")
                 return X, feature_names
@@ -2273,15 +2358,29 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     y_pred = model.predict(X_test_scaled)
                     y_pred_proba = model.predict_proba(X_test_scaled) if hasattr(model, 'predict_proba') else None
 
-                # Calculate metrics
+                # Calculate comprehensive metrics
                 accuracy = accuracy_score(y_test, y_pred)
-
+                
+                # Calculate comprehensive temporal and regime-persistence metrics
+                comprehensive_metrics = self.temporal_metrics_calc.calculate_comprehensive_metrics(
+                    y_test, y_pred, y_pred_proba
+                )
+                
+                # Calculate temporal smoothness penalty
+                smoothness_penalty = calculate_temporal_smoothness_penalty(
+                    y_pred, alpha=self.temporal_smoothing_alpha
+                )
+                
                 # Store detailed metrics
                 model_metrics = {
                     'accuracy': accuracy,
                     'test_samples': len(y_test),
                     'train_samples': len(y_train),
-                    'n_features': X.shape[1]
+                    'n_features': X.shape[1],
+                    'classification': comprehensive_metrics.get('classification', {}),
+                    'temporal': comprehensive_metrics.get('temporal', {}),
+                    'persistence': comprehensive_metrics.get('persistence', {}),
+                    'smoothness_penalty': smoothness_penalty
                 }
 
                 # Add comprehensive prediction probabilities if available

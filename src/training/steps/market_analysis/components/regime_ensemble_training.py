@@ -35,6 +35,15 @@ from src.utils.hardware.unified_hardware_manager import (
 from src.utils.ml_common.evaluation.evaluation_utils import (
     EvaluationUtils
 )
+from src.utils.ml_common.evaluation.regime_temporal_metrics import (
+    RegimeTemporalMetricsCalculator,
+    calculate_temporal_smoothness_penalty,
+    create_soft_labels
+)
+from src.utils.ml_common.feature_engineering.feature_smoothing import (
+    add_smoothed_features,
+    apply_ewm_smoothing
+)
 from src.utils.ml_common.post_training.model_validation import (
     ModelValidator, ValidationConfig
 )
@@ -127,6 +136,18 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         # Initialize model evaluator
         self.model_evaluator = EvaluationUtils()
         tprint("🔧 [REGIME_ENSEMBLE] Model evaluator initialized", color="green")
+        
+        # Initialize regime temporal metrics calculator
+        self.temporal_metrics_calc = RegimeTemporalMetricsCalculator(min_episode_length=3)
+        tprint("✅ [REGIME_ENSEMBLE] Temporal metrics calculator initialized", color="green")
+        
+        # Enhanced training configuration
+        self.enable_temporal_smoothing = True
+        self.temporal_smoothing_alpha = 0.1  # Default smoothness penalty weight
+        self.enable_soft_labels = True
+        self.soft_label_smoothing = 0.1  # Label smoothing factor
+        self.enable_smoothed_features = True
+        self.smoothing_window_sizes = [3, 5, 7]
 
         # Initialize model validator
         self.model_validator = ModelValidator(
@@ -664,7 +685,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     max_depth=trial.suggest_int('max_depth', 2, 8),
                     learning_rate=trial.suggest_float('learning_rate', 0.01, 0.2),
                     n_estimators=trial.suggest_int('n_estimators', 50, 200),
-                    min_child_samples=trial.suggest_int('min_child_samples', 20, 100),
+                    min_child_samples=trial.suggest_int('min_child_samples', 50, 150),  # Increased for stability
                     subsample=trial.suggest_float('subsample', 0.5, 1.0),
                     colsample_bytree=trial.suggest_float('colsample_bytree', 0.5, 1.0),
                     reg_alpha=trial.suggest_float('reg_alpha', 0.1, 2.0),
@@ -698,7 +719,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     max_depth=2,
                     learning_rate=0.02,
                     n_estimators=100,
-                    min_child_samples=50,
+                    min_child_samples=75,  # Increased for stability
                     subsample=0.5,
                     colsample_bytree=0.5,
                     reg_alpha=1.0,
@@ -850,6 +871,16 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
 
             # Calculate basic metrics
             accuracy = accuracy_score(y, y_pred)
+            
+            # Calculate comprehensive temporal and regime-persistence metrics
+            comprehensive_metrics = self.temporal_metrics_calc.calculate_comprehensive_metrics(
+                y, y_pred, y_pred_proba
+            )
+            
+            # Calculate temporal smoothness penalty
+            smoothness_penalty = calculate_temporal_smoothness_penalty(
+                y_pred, alpha=self.temporal_smoothing_alpha
+            )
 
             # Calculate top-3 regime analysis with entropy metrics
             top_3_analysis = self._calculate_top_regime_analysis(y_pred_proba)
@@ -858,6 +889,10 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             metrics['stacker_lgbm_calibrated'] = {
                 'accuracy': accuracy,
                 'classification_report': classification_report(y, y_pred, output_dict=True),
+                'classification': comprehensive_metrics.get('classification', {}),
+                'temporal': comprehensive_metrics.get('temporal', {}),
+                'persistence': comprehensive_metrics.get('persistence', {}),
+                'smoothness_penalty': smoothness_penalty,
                 'prediction_confidence': {
                     'mean': y_pred_proba.max(axis=1).mean(),
                     'std': y_pred_proba.max(axis=1).std()
@@ -1229,6 +1264,18 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             # Convert to numpy array
             if not all_features.empty:
                 X = all_features.values
+                
+                # Add smoothed features if enabled
+                if self.enable_smoothed_features:
+                    tprint("🔧 [REGIME_ENSEMBLE] Adding smoothed features", color="cyan")
+                    feature_names = list(all_features.columns)
+                    X, feature_names = add_smoothed_features(
+                        X, 
+                        window_sizes=self.smoothing_window_sizes,
+                        feature_names=feature_names
+                    )
+                    tprint(f"✅ [REGIME_ENSEMBLE] Smoothed features added: {X.shape[1]} total features", color="green")
+                
                 tprint(f"✅ [REGIME_ENSEMBLE] Feature bank generated {X.shape[1]} features from {len(categories)} categories", color="green")
                 tprint(f"📊 [REGIME_ENSEMBLE] Feature matrix shape: {X.shape}", color="blue")
                 return X

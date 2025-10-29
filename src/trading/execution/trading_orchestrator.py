@@ -8,6 +8,7 @@ comprehensive trading operations.
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, date
 from typing import Any, Dict, List, Optional, Union, Tuple
 from dataclasses import dataclass, field
@@ -449,9 +450,12 @@ class TradingOrchestrator:
             self.logger.error(f"❌ Failed to setup callbacks: {e}")
 
     async def _trading_loop(self):
-        """Main trading loop."""
+        """Main trading loop with proper timing."""
         polling_interval = self.config.get('trading_interval', 30)
+        
         while self.status == OrchestratorStatus.RUNNING:
+            loop_start = time.time()
+            
             try:
                 market_snapshot = await self._get_market_snapshot()
                 if market_snapshot:
@@ -472,7 +476,11 @@ class TradingOrchestrator:
                         if validation.warnings:
                             for warning in validation.warnings:
                                 tprint_warning(f"⚠️ {warning}")
-                        await asyncio.sleep(polling_interval)
+                        
+                        # Calculate remaining sleep time
+                        elapsed = time.time() - loop_start
+                        remaining_sleep = max(0, polling_interval - elapsed)
+                        await asyncio.sleep(remaining_sleep)
                         continue
 
                 decision = await self._generate_trading_decision(market_snapshot)
@@ -494,7 +502,11 @@ class TradingOrchestrator:
                         )
                         tprint_warning(f"⚠️ Decision rejected by Supervisor: {approval.reason}")
                         await self._trigger_trade_callbacks(decision, event="supervisor_rejected")
-                        await asyncio.sleep(polling_interval)
+                        
+                        # Calculate remaining sleep time
+                        elapsed = time.time() - loop_start
+                        remaining_sleep = max(0, polling_interval - elapsed)
+                        await asyncio.sleep(remaining_sleep)
                         continue
                     
                     # Apply confidence modifier if provided
@@ -514,10 +526,16 @@ class TradingOrchestrator:
                         account_balance=self.account_balance
                     )
 
-                await asyncio.sleep(polling_interval)
+                # Calculate remaining sleep time to maintain consistent interval
+                elapsed = time.time() - loop_start
+                remaining_sleep = max(0, polling_interval - elapsed)
+                await asyncio.sleep(remaining_sleep)
+                
             except Exception as e:
-                self.logger.error(f"❌ Trading loop error: {e}")
-                await asyncio.sleep(5)
+                self.logger.error(f"❌ Trading loop error: {e}", exc_info=True)
+                # Use exponential backoff on errors
+                error_sleep = min(polling_interval * 2, 60)  # Max 60s
+                await asyncio.sleep(error_sleep)
 
     async def _generate_trading_decision(
         self, market_snapshot: Optional[Dict[str, Any]] = None
@@ -874,21 +892,31 @@ class TradingOrchestrator:
             # Strategy: Scale into the most recent position (or largest, configurable)
             # For now, scale into the most recent position based on entry_time
             # same_side_positions is list of (position_id, position) tuples
-            position_id, position = max(
-                same_side_positions,
-                key=lambda x: x[1].get('entry_time', datetime.min) if isinstance(x[1].get('entry_time'), datetime) else datetime.min
-            )
             
-            # Treat as scaling into existing position
-            position["quantity"] += decision.quantity
-            state = self.trailing_manager.positions.get(position_id)
-            if state:
-                state.quantity = position["quantity"]
+            # Find most recent position of the same side
+            most_recent = None
+            most_recent_time = datetime.min
             
-            self.logger.info(
-                f"📈 Scaled into position {position_id}: +{decision.quantity} (total: {position['quantity']})"
-            )
-            return
+            for pos_id, pos in same_side_positions:
+                entry_time = pos.get('entry_time')
+                if isinstance(entry_time, datetime):
+                    if entry_time > most_recent_time:
+                        most_recent_time = entry_time
+                        most_recent = (pos_id, pos)
+            
+            if most_recent:
+                position_id, position = most_recent
+                
+                # Treat as scaling into existing position
+                position["quantity"] += decision.quantity
+                state = self.trailing_manager.positions.get(position_id)
+                if state:
+                    state.quantity = position["quantity"]
+                
+                self.logger.info(
+                    f"📈 Scaled into position {position_id}: +{decision.quantity} (total: {position['quantity']})"
+                )
+                return
 
         # No existing position - open new one
         self._open_position(decision, trade_id, feature_bundle, side)

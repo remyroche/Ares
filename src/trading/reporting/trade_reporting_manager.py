@@ -9,12 +9,12 @@ import asyncio
 import csv
 import json
 import logging
+import calendar
 from datetime import datetime, date, timedelta
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass, field, asdict
 from enum import Enum
-import calendar
 
 from src.utils.tprint import (
     tprint_info, tprint_success, tprint_error, tprint_warning,
@@ -168,7 +168,7 @@ class DailyRecap:
     # Execution metrics
     total_fees: float = 0.0
     avg_slippage_pct: float = 0.0
-    avg_execution_quality: float = 0.0
+    avg_execution_quality: Optional[float] = None
     
     # Decision metrics
     avg_confidence: float = 0.0
@@ -209,7 +209,7 @@ class DailyRecap:
             'avg_trade_risk': f"{self.avg_trade_risk:.4f}",
             'total_fees': f"{self.total_fees:.2f}",
             'avg_slippage_pct': f"{self.avg_slippage_pct:.4f}",
-            'avg_execution_quality': f"{self.avg_execution_quality:.4f}",
+            'avg_execution_quality': f"{self.avg_execution_quality:.4f}" if self.avg_execution_quality is not None else '',
             'avg_confidence': f"{self.avg_confidence:.4f}",
             'avg_analyst_confidence': f"{self.avg_analyst_confidence:.4f}",
             'avg_tactician_confidence': f"{self.avg_tactician_confidence:.4f}",
@@ -230,22 +230,27 @@ class TradeReportingManager:
     File structure: trade_monitoring/MODE/EXCHANGE/ASSET/
     """
     
-    def __init__(self, base_directory: str = "trade_monitoring"):
+    # Default configuration constants
+    DEFAULT_ACCOUNT_SIZE = 10000.0  # Can be overridden via config
+    
+    def __init__(self, base_directory: str = "trade_monitoring", account_size: float = None):
         """
         Initialize trade reporting manager.
         
         Args:
             base_directory: Base directory for all trade reports
+            account_size: Account size for percentage calculations (defaults to DEFAULT_ACCOUNT_SIZE)
         """
         self.base_directory = Path(base_directory)
+        self.account_size = account_size or self.DEFAULT_ACCOUNT_SIZE
         
         # In-memory storage for current day's trades
-        self.current_trades: Dict[str, List[TradeRecord]] = {}  # Key: "mode_exchange_asset"
+        self.current_trades: Dict[str, List[TradeRecord]] = {}  # Key: "mode::exchange::asset"
         
         # Ensure base directory exists
         self.base_directory.mkdir(parents=True, exist_ok=True)
         
-        tprint_info(f"📊 Trade reporting manager initialized: {self.base_directory}")
+        tprint_info(f"📊 Trade reporting manager initialized: {self.base_directory} (account_size: {self.account_size})")
     
     def _get_report_directory(self, mode: str, exchange: str, asset: str) -> Path:
         """
@@ -265,7 +270,8 @@ class TradeReportingManager:
     
     def _get_storage_key(self, mode: str, exchange: str, asset: str) -> str:
         """Get storage key for in-memory trade storage"""
-        return f"{mode}_{exchange}_{asset}"
+        # Use delimiter that's unlikely to appear in exchange/asset names
+        return f"{mode}::{exchange}::{asset}"
     
     async def record_trade(self, trade_record: TradeRecord) -> bool:
         """
@@ -329,7 +335,6 @@ class TradeReportingManager:
         else:
             # Second period: 16th-end of month
             # Calculate last day of month
-            import calendar
             last_day = calendar.monthrange(year, month)[1]
             start_date = f"{year:04d}-{month:02d}-16"
             end_date = f"{year:04d}-{month:02d}-{last_day:02d}"
@@ -519,8 +524,8 @@ class TradeReportingManager:
                     drawdown = (peak - cumulative_pnl) / (peak + 1e-8)
                     recap.max_drawdown = np.max(drawdown) if len(drawdown) > 0 else 0.0
                     
-                    # Total PnL percentage (relative to initial capital - simplified)
-                    recap.total_pnl_pct = recap.total_pnl / 10000.0  # Assuming 10k capital
+                    # Total PnL percentage (relative to account size)
+                    recap.total_pnl_pct = recap.total_pnl / self.account_size if self.account_size > 0 else 0.0
             
             # Execution metrics
             recap.total_fees = sum(t.fees for t in trades)
@@ -528,10 +533,11 @@ class TradeReportingManager:
             recap.avg_slippage_pct = sum(slippages) / len(slippages) if slippages else 0.0
             
             execution_qualities = [t.execution_quality for t in trades if t.execution_quality > 0]
-            recap.avg_execution_quality = (
-                sum(execution_qualities) / len(execution_qualities)
-                if execution_qualities else 0.0
-            )
+            # Return None if no execution quality data, to distinguish from poor quality (0.0)
+            if execution_qualities:
+                recap.avg_execution_quality = sum(execution_qualities) / len(execution_qualities)
+            else:
+                recap.avg_execution_quality = None  # No data available
             
             # Decision metrics
             recap.avg_confidence = sum(t.ensemble_confidence for t in trades) / len(trades)
@@ -606,8 +612,8 @@ class TradeReportingManager:
                     for record in existing_records:
                         writer.writerow(record)
                     
-                # Write new recap
-                writer.writerow(recap.to_csv_dict())
+                    # Write new recap
+                    writer.writerow(recap.to_csv_dict())
             else:
                 # Create new file
                 with open(recap_file, 'w', newline='') as f:
@@ -643,8 +649,8 @@ class TradeReportingManager:
             success = True
             
             for storage_key in self.current_trades.keys():
-                # Parse storage key
-                parts = storage_key.split('_', 2)
+                # Parse storage key (format: "mode::exchange::asset")
+                parts = storage_key.split('::', 2)
                 if len(parts) == 3:
                     mode, exchange, asset = parts
                     
@@ -672,7 +678,7 @@ class TradeReportingManager:
         """Get count of trades matching criteria"""
         count = 0
         for storage_key, trades in self.current_trades.items():
-            parts = storage_key.split('_', 2)
+            parts = storage_key.split('::', 2)
             if len(parts) == 3:
                 key_mode, key_exchange, key_asset = parts
                 

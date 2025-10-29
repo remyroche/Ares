@@ -86,6 +86,53 @@ class RegimeType(Enum):
     UNKNOWN = "unknown"
 
 
+class QualityThresholds:
+    """Configuration constants for quality assessment thresholds."""
+    # Core clustering quality thresholds
+    MIN_SILHOUETTE = 0.3
+    MAX_DBI = 2.0
+    MIN_CH = 50.0
+    MAX_NOISE_RATIO = 0.3
+    
+    # Quality score thresholds
+    QUALITY_EXCELLENT = 0.7
+    QUALITY_GOOD = 0.5
+    QUALITY_MODERATE = 0.3
+    
+    # Regime type detection thresholds (Crypto-optimized)
+    HIGH_VOLATILITY_THRESHOLD = 0.05  # 5% daily volatility threshold (crypto: Bitcoin/ALTs commonly swing 3–10% daily)
+    VOLATILITY_CLUSTERING_THRESHOLD = 0.45  # Crypto volatility clusters tightly & sharply
+    TREND_STRENGTH_THRESHOLD = 0.65  # Crypto trends are noisy → require stronger conviction
+    TREND_PERSISTENCE_THRESHOLD = 0.35  # Trend needs to hold at least a few candles
+    MEAN_REVERSION_THRESHOLD = -0.05  # Mean reversion exists but is much weaker in crypto
+    LOW_VOLATILITY_THRESHOLD = 0.025  # 2.5% - Crypto rarely sits at equity-like low vol levels
+    LOW_TREND_THRESHOLD = 0.3
+    VOLATILITY_SCALE_FACTOR = 10.0  # For volatility comparison scaling
+    
+    # Economic validation thresholds
+    MIN_SHARPE_FOR_STRATEGY = 0.5
+    HIGH_DRAWDOWN_THRESHOLD = -0.15
+    NEGATIVE_SHARPE_THRESHOLD = -0.5
+    
+    # Quality score weights
+    WEIGHT_SILHOUETTE = 0.20
+    WEIGHT_DBI = 0.15
+    WEIGHT_CH = 0.15
+    WEIGHT_CV_RATIO = 0.15
+    WEIGHT_BALANCE = 0.15
+    WEIGHT_TEMPORAL_SMOOTHNESS = 0.10
+    WEIGHT_NOISE_RATIO = 0.10
+    
+    # Normalization constants
+    CH_NORMALIZATION_DIVISOR = 100.0
+    DBI_EPSILON = 1e-8  # Small epsilon for safe division
+    
+    # Minimum requirements
+    MIN_SAMPLES_FOR_PREDICTIVE_POWER = 10
+    MIN_SAMPLES_PER_CV_FOLD = 3
+    MAX_CV_FOLDS = 5
+
+
 @dataclass
 class ClusterQualityMetrics:
     """
@@ -397,22 +444,28 @@ class ClusterQualityMetrics:
         }
     
     def is_high_quality(self, 
-                        min_silhouette: float = 0.3,
-                        max_dbi: float = 2.0,
-                        min_ch: float = 50.0,
-                        max_noise: float = 0.3) -> bool:
+                        min_silhouette: Optional[float] = None,
+                        max_dbi: Optional[float] = None,
+                        min_ch: Optional[float] = None,
+                        max_noise: Optional[float] = None) -> bool:
         """
         Check if clustering quality meets minimum thresholds.
         
         Args:
-            min_silhouette: Minimum silhouette score
-            max_dbi: Maximum Davies-Bouldin Index
-            min_ch: Minimum Calinski-Harabasz score
-            max_noise: Maximum noise ratio
+            min_silhouette: Minimum silhouette score (defaults to QualityThresholds.MIN_SILHOUETTE)
+            max_dbi: Maximum Davies-Bouldin Index (defaults to QualityThresholds.MAX_DBI)
+            min_ch: Minimum Calinski-Harabasz score (defaults to QualityThresholds.MIN_CH)
+            max_noise: Maximum noise ratio (defaults to QualityThresholds.MAX_NOISE_RATIO)
             
         Returns:
             True if quality meets all thresholds
         """
+        # Use defaults from QualityThresholds if not provided
+        min_silhouette = min_silhouette if min_silhouette is not None else QualityThresholds.MIN_SILHOUETTE
+        max_dbi = max_dbi if max_dbi is not None else QualityThresholds.MAX_DBI
+        min_ch = min_ch if min_ch is not None else QualityThresholds.MIN_CH
+        max_noise = max_noise if max_noise is not None else QualityThresholds.MAX_NOISE_RATIO
+        
         checks = []
         
         if self.silhouette_score is not None:
@@ -475,6 +528,57 @@ class ClusterQualityAssessor:
             except Exception as e:
                 tprint_warning(f"⚠️ Vectorization initialization failed: {e}")
                 self.vectorization_manager = None
+    
+    def _ensure_aligned_data(self,
+                             regime_labels: np.ndarray,
+                             feature_data: pd.DataFrame,
+                             forward_returns: Optional[pd.Series] = None) -> Tuple[np.ndarray, pd.DataFrame, Optional[pd.Series]]:
+        """
+        Ensure regime_labels, feature_data, and forward_returns are properly aligned.
+        
+        This method validates lengths and handles index misalignment by converting
+        to positional indexing if indices don't match.
+        
+        Args:
+            regime_labels: Regime/cluster labels array
+            feature_data: Feature DataFrame
+            forward_returns: Optional forward returns Series
+            
+        Returns:
+            Tuple of (aligned_regime_labels, aligned_feature_data, aligned_forward_returns)
+        """
+        # Validate lengths
+        if len(regime_labels) != len(feature_data):
+            self.logger.warning(
+                f"Length mismatch: regime_labels ({len(regime_labels)}) vs "
+                f"feature_data ({len(feature_data)}). Using positional indexing."
+            )
+            # Reset indices to ensure positional alignment
+            feature_data = feature_data.reset_index(drop=True)
+        
+        # Handle forward_returns alignment
+        aligned_forward_returns = None
+        if forward_returns is not None:
+            if len(regime_labels) != len(forward_returns):
+                self.logger.warning(
+                    f"Length mismatch: regime_labels ({len(regime_labels)}) vs "
+                    f"forward_returns ({len(forward_returns)}). Using positional indexing."
+                )
+                forward_returns = forward_returns.reset_index(drop=True)
+            
+            # Check if indices match (if both have indices)
+            if hasattr(forward_returns, 'index') and hasattr(feature_data, 'index'):
+                if not forward_returns.index.equals(feature_data.index):
+                    self.logger.warning(
+                        "Index mismatch between forward_returns and feature_data. "
+                        "Resetting indices for alignment."
+                    )
+                    forward_returns = forward_returns.reset_index(drop=True)
+                    feature_data = feature_data.reset_index(drop=True)
+            
+            aligned_forward_returns = forward_returns
+        
+        return regime_labels, feature_data, aligned_forward_returns
     
     @tprint_logged(include_args=False, include_result=False)
     def assess_quality(self,
@@ -933,7 +1037,7 @@ class ClusterQualityAssessor:
                 cluster_mean = cluster_data.mean()
                 
                 # Safe division with proper handling of zeros
-                denominator = np.abs(cluster_mean) + 1e-8
+                denominator = np.abs(cluster_mean) + QualityThresholds.DBI_EPSILON
                 cv_values = np.divide(
                     cluster_std,
                     denominator,
@@ -979,7 +1083,7 @@ class ClusterQualityAssessor:
                 feature_mean = np.mean(feature_means)
                 
                 # Safe division
-                denominator = np.abs(feature_mean) + 1e-8
+                denominator = np.abs(feature_mean) + QualityThresholds.DBI_EPSILON
                 cv = feature_std / denominator
                 
                 if np.isfinite(cv):
@@ -1042,7 +1146,7 @@ class ClusterQualityAssessor:
         regime_changes = (regime_labels[1:] != regime_labels[:-1]).astype(int)
         
         # Calculate average duration between changes
-        avg_regime_duration = 1.0 / (np.mean(regime_changes) + 1e-8)
+        avg_regime_duration = 1.0 / (np.mean(regime_changes) + QualityThresholds.DBI_EPSILON)
         
         return avg_regime_duration
     
@@ -1113,7 +1217,7 @@ class ClusterQualityAssessor:
                 returns_std = returns.std()
                 
                 # Trend strength: normalized mean return / std
-                trend_strength = abs(mean_return) / (returns_std + 1e-8)
+                trend_strength = abs(mean_return) / (returns_std + QualityThresholds.DBI_EPSILON)
                 metrics['trend_strength'] = float(trend_strength)
                 
                 # Trend persistence: autocorrelation
@@ -1140,34 +1244,35 @@ class ClusterQualityAssessor:
                     metrics['volatility_clustering'] = 0.0
                 
                 # Stability: coefficient of variation (inverse)
-                cv = volatility_level / (abs(mean_return) + 1e-8)
+                cv = volatility_level / (abs(mean_return) + QualityThresholds.DBI_EPSILON)
                 metrics['stability_score'] = float(1.0 / (1.0 + cv))
                 
                 # Classify regime based on dominant characteristic
-                # Use data-driven thresholds
+                # Use data-driven thresholds from QualityThresholds
                 
-                # High volatility regime (volatility > 1.5 * median volatility)
-                if volatility_level > 0.02:  # 2% daily volatility threshold
-                    if metrics['volatility_clustering'] > 0.3:
+                # High volatility regime (volatility > threshold)
+                if volatility_level > QualityThresholds.HIGH_VOLATILITY_THRESHOLD:
+                    if metrics['volatility_clustering'] > QualityThresholds.VOLATILITY_CLUSTERING_THRESHOLD:
                         return RegimeType.VOLATILE, metrics
                 
                 # Trending regime (strong trend + high persistence)
-                if trend_strength > 0.5 and metrics['trend_persistence'] > 0.2:
+                if trend_strength > QualityThresholds.TREND_STRENGTH_THRESHOLD and metrics['trend_persistence'] > QualityThresholds.TREND_PERSISTENCE_THRESHOLD:
                     return RegimeType.TRENDING, metrics
                 
                 # Mean reverting regime (negative autocorrelation)
-                if metrics['trend_persistence'] < -0.1:
+                if metrics['trend_persistence'] < QualityThresholds.MEAN_REVERSION_THRESHOLD:
                     return RegimeType.MEAN_REVERTING, metrics
                 
                 # Stable regime (low volatility + low trend)
-                if volatility_level < 0.01 and trend_strength < 0.3:
+                if volatility_level < QualityThresholds.LOW_VOLATILITY_THRESHOLD and trend_strength < QualityThresholds.LOW_TREND_THRESHOLD:
                     return RegimeType.STABLE, metrics
                 
                 # Default: determine by strongest signal
+                scaled_volatility = volatility_level * QualityThresholds.VOLATILITY_SCALE_FACTOR
                 max_score = max(
                     trend_strength,
                     abs(mean_reversion_score),
-                    volatility_level * 10,  # Scale volatility for comparison
+                    scaled_volatility,
                     metrics['stability_score']
                 )
                 
@@ -1175,7 +1280,7 @@ class ClusterQualityAssessor:
                     return RegimeType.TRENDING, metrics
                 elif max_score == abs(mean_reversion_score):
                     return RegimeType.MEAN_REVERTING, metrics
-                elif max_score == volatility_level * 10:
+                elif max_score == scaled_volatility:
                     return RegimeType.VOLATILE, metrics
                 else:
                     return RegimeType.STABLE, metrics
@@ -1219,7 +1324,7 @@ class ClusterQualityAssessor:
                     first_half_mean = returns.iloc[:len(returns)//2].mean()
                     second_half_mean = returns.iloc[len(returns)//2:].mean()
                     specific_metrics['trend_acceleration'] = float(
-                        (second_half_mean - first_half_mean) / (abs(first_half_mean) + 1e-8)
+                        (second_half_mean - first_half_mean) / (abs(first_half_mean) + QualityThresholds.DBI_EPSILON)
                     )
                 
             elif regime_type == RegimeType.MEAN_REVERTING:
@@ -1229,7 +1334,7 @@ class ClusterQualityAssessor:
                 
                 # Reversion speed: how quickly prices return to mean
                 deviations = abs(returns - mean_return)
-                specific_metrics['reversion_speed'] = float(1.0 / (deviations.mean() + 1e-8))
+                specific_metrics['reversion_speed'] = float(1.0 / (deviations.mean() + QualityThresholds.DBI_EPSILON))
                 
                 # Reversion range: typical deviation from mean
                 specific_metrics['reversion_range'] = float(deviations.std())
@@ -1258,7 +1363,7 @@ class ClusterQualityAssessor:
                 specific_metrics['volatility'] = float(returns.std())
                 
                 # Stability score
-                cv = returns.std() / (abs(returns.mean()) + 1e-8)
+                cv = returns.std() / (abs(returns.mean()) + QualityThresholds.DBI_EPSILON)
                 specific_metrics['stability_coefficient'] = float(1.0 / (1.0 + cv))
             
             return specific_metrics
@@ -1275,10 +1380,28 @@ class ClusterQualityAssessor:
         per_regime_metrics = {}
         total_samples = len(regime_labels)
         
-        for regime_id in set(regime_labels):
-            if regime_id == -1:  # Skip noise
-                continue
-            
+        # OPTIMIZATION: Pre-calculate all cluster sizes once (O(n)) instead of recalculating for each regime (O(n²))
+        unique_labels = np.unique(regime_labels)
+        non_noise_labels = unique_labels[unique_labels != -1]
+        
+        # Pre-calculate cluster sizes
+        cluster_sizes = {}
+        for label in non_noise_labels:
+            cluster_sizes[int(label)] = int(np.sum(regime_labels == label))
+        
+        # Calculate mean cluster size for balance contribution
+        if cluster_sizes:
+            mean_cluster_size = float(np.mean(list(cluster_sizes.values())))
+        else:
+            mean_cluster_size = 1.0
+        
+        # Ensure alignment before processing
+        regime_labels, features, forward_returns = self._ensure_aligned_data(
+            regime_labels, features, forward_returns
+        )
+        
+        for regime_id in non_noise_labels:
+            regime_id = int(regime_id)
             regime_mask = regime_labels == regime_id
             regime_features = features.iloc[regime_mask].select_dtypes(include=[np.number])
             
@@ -1289,11 +1412,11 @@ class ClusterQualityAssessor:
             feature_cv = {}
             for col in regime_features.columns:
                 if regime_features[col].std() > 0:
-                    cv = regime_features[col].std() / (abs(regime_features[col].mean()) + 1e-8)
+                    cv = regime_features[col].std() / (abs(regime_features[col].mean()) + QualityThresholds.DBI_EPSILON)
                     feature_cv[col] = float(cv)
             
-            # Calculate regime-specific metrics
-            regime_size = int(len(regime_features))
+            # Use pre-calculated cluster size
+            regime_size = cluster_sizes[regime_id]
             regime_percentage = float((regime_size / total_samples) * 100)
             
             regime_metrics = {
@@ -1306,19 +1429,14 @@ class ClusterQualityAssessor:
                 'mean_cv': float(np.mean(list(feature_cv.values()))) if feature_cv else 0.0,
                 'std_cv': float(np.std(list(feature_cv.values()))) if feature_cv else 0.0,
                 
-                # Individual regime balance contribution
-                'balance_contribution': float(regime_size / (np.mean([np.sum(regime_labels == r) 
-                                                                       for r in set(regime_labels) 
-                                                                       if r != -1]) + 1e-8))
+                # Individual regime balance contribution (using pre-calculated mean)
+                'balance_contribution': float(regime_size / (mean_cluster_size + QualityThresholds.DBI_EPSILON))
             }
             
             # Detect regime type and calculate regime-specific characteristics
-            # Handle index alignment for forward_returns
+            # Handle index alignment for forward_returns (already aligned, but ensure positional indexing)
             if forward_returns is not None:
-                if hasattr(forward_returns, 'iloc'):
-                    regime_returns = forward_returns.iloc[regime_mask]
-                else:
-                    regime_returns = forward_returns[regime_mask] if len(forward_returns) == len(regime_mask) else None
+                regime_returns = forward_returns.iloc[regime_mask] if hasattr(forward_returns, 'iloc') else forward_returns[regime_mask]
             else:
                 regime_returns = None
             
@@ -1340,7 +1458,7 @@ class ClusterQualityAssessor:
                 regime_metrics.update({
                     'mean_return': float(regime_returns.mean()),
                     'volatility': float(regime_returns.std()),
-                    'sharpe': float(regime_returns.mean() / (regime_returns.std() + 1e-8)),
+                    'sharpe': float(regime_returns.mean() / (regime_returns.std() + QualityThresholds.DBI_EPSILON)),
                     'skewness': float(regime_returns.skew()) if hasattr(regime_returns, 'skew') else 0.0,
                     'max_drawdown': float(self._compute_max_drawdown(regime_returns))
                 })
@@ -1349,7 +1467,7 @@ class ClusterQualityAssessor:
                 regime_metrics['classification_scores'] = {}
                 regime_metrics['regime_specific_metrics'] = {}
             
-            per_regime_metrics[int(regime_id)] = regime_metrics
+            per_regime_metrics[regime_id] = regime_metrics
         
         return per_regime_metrics
     
@@ -1489,7 +1607,7 @@ class ClusterQualityAssessor:
             # Identify trend-following opportunities
             trending_regimes = [
                 (rid, m) for rid, m in per_regime_metrics.items() 
-                if m.get('regime_type') == 'trending' and m.get('sharpe', 0) > 0.5
+                if m.get('regime_type') == 'trending' and m.get('sharpe', 0) > QualityThresholds.MIN_SHARPE_FOR_STRATEGY
             ]
             if trending_regimes:
                 best_trending = max(trending_regimes, key=lambda x: x[1].get('sharpe', 0))
@@ -1503,7 +1621,7 @@ class ClusterQualityAssessor:
             # Identify mean reversion opportunities
             mr_regimes = [
                 (rid, m) for rid, m in per_regime_metrics.items() 
-                if m.get('regime_type') == 'mean_reverting' and m.get('sharpe', 0) > 0.5
+                if m.get('regime_type') == 'mean_reverting' and m.get('sharpe', 0) > QualityThresholds.MIN_SHARPE_FOR_STRATEGY
             ]
             if mr_regimes:
                 best_mr = max(mr_regimes, key=lambda x: x[1].get('sharpe', 0))
@@ -1517,7 +1635,7 @@ class ClusterQualityAssessor:
             # Identify regimes to avoid
             high_risk_regimes = [
                 rid for rid, m in per_regime_metrics.items()
-                if m.get('max_drawdown', 0) < -0.15 or m.get('sharpe', 0) < -0.5
+                if m.get('max_drawdown', 0) < QualityThresholds.HIGH_DRAWDOWN_THRESHOLD or m.get('sharpe', 0) < QualityThresholds.NEGATIVE_SHARPE_THRESHOLD
             ]
             if high_risk_regimes:
                 recommendations.append({
@@ -1560,26 +1678,10 @@ class ClusterQualityAssessor:
         """
         results = {}
         
-        # Validate alignment
-        if len(regime_labels) != len(forward_returns):
-            self.logger.warning(
-                f"Length mismatch: regime_labels ({len(regime_labels)}) vs "
-                f"forward_returns ({len(forward_returns)}). Results may be incorrect."
-            )
-        
-        if len(regime_labels) != len(feature_data):
-            self.logger.warning(
-                f"Length mismatch: regime_labels ({len(regime_labels)}) vs "
-                f"feature_data ({len(feature_data)}). Results may be incorrect."
-            )
-        
-        # Ensure indices are aligned if both have indices
-        if hasattr(forward_returns, 'index') and hasattr(feature_data, 'index'):
-            if not forward_returns.index.equals(feature_data.index):
-                self.logger.warning(
-                    "Index mismatch between forward_returns and feature_data. "
-                    "Using positional indexing which may cause misalignment."
-                )
+        # Ensure proper alignment before processing
+        regime_labels, feature_data, forward_returns = self._ensure_aligned_data(
+            regime_labels, feature_data, forward_returns
+        )
         
         # Per-regime statistics
         for regime_id in np.unique(regime_labels):
@@ -1588,11 +1690,8 @@ class ClusterQualityAssessor:
             
             regime_mask = (regime_labels == regime_id)
             
-            # Handle index alignment
-            if hasattr(forward_returns, 'iloc'):
-                regime_returns = forward_returns.iloc[regime_mask]
-            else:
-                regime_returns = forward_returns[regime_mask]
+            # Extract aligned data using positional indexing (iloc)
+            regime_returns = forward_returns.iloc[regime_mask] if hasattr(forward_returns, 'iloc') else forward_returns[regime_mask]
             
             if len(regime_returns) == 0:
                 continue
@@ -1600,7 +1699,7 @@ class ClusterQualityAssessor:
             results[f'regime_{regime_id}'] = {
                 'mean_return': float(regime_returns.mean()),
                 'volatility': float(regime_returns.std()),
-                'sharpe': float(regime_returns.mean() / (regime_returns.std() + 1e-8)),
+                'sharpe': float(regime_returns.mean() / (regime_returns.std() + QualityThresholds.DBI_EPSILON)),
                 'skewness': float(regime_returns.skew()) if hasattr(regime_returns, 'skew') else 0.0,
                 'max_drawdown': float(self._compute_max_drawdown(regime_returns))
             }
@@ -1609,11 +1708,8 @@ class ClusterQualityAssessor:
             numeric_features = feature_data.select_dtypes(include=[np.number])
             for col in ['spread', 'volume', 'volatility']:
                 if col in numeric_features.columns:
-                    # Handle index alignment for feature extraction
-                    if hasattr(numeric_features, 'iloc'):
-                        col_data = numeric_features.iloc[regime_mask, numeric_features.columns.get_loc(col)]
-                    else:
-                        col_data = numeric_features.loc[regime_mask, col] if hasattr(numeric_features, 'loc') else numeric_features[regime_mask][col]
+                    # Use positional indexing for consistent alignment
+                    col_data = numeric_features.iloc[regime_mask, numeric_features.columns.get_loc(col)]
                     results[f'regime_{regime_id}'][f'avg_{col}'] = float(col_data.mean())
         
         # Regime stability
@@ -1637,23 +1733,27 @@ class ClusterQualityAssessor:
             Cross-validation score (0-1) indicating predictive power
         """
         try:
-            # Validate input lengths
-            if len(regime_labels) < 10 or len(forward_returns) < 10:
+            # Validate input lengths using thresholds from QualityThresholds
+            min_samples = QualityThresholds.MIN_SAMPLES_FOR_PREDICTIVE_POWER
+            if len(regime_labels) < min_samples or len(forward_returns) < min_samples:
                 return 0.0
             
             # Ensure arrays are aligned and valid
             min_len = min(len(regime_labels), len(forward_returns))
-            if min_len < 10:
+            if min_len < min_samples:
                 return 0.0
             
             # Ensure alignment: regime_labels[t] predicts forward_returns[t+1]
             # Make sure we have matching lengths for prediction
             max_predictable = min_len - 1
-            if max_predictable < 10:
+            if max_predictable < min_samples:
                 return 0.0
             
             # Extract aligned data: use regime at time t to predict return at t+1
-            X = pd.get_dummies(regime_labels[:max_predictable])
+            # Use LabelEncoder for more robust encoding (as suggested in review)
+            from sklearn.preprocessing import LabelEncoder
+            encoder = LabelEncoder()
+            X = encoder.fit_transform(regime_labels[:max_predictable]).reshape(-1, 1)
             y = (forward_returns[1:max_predictable + 1] > 0).astype(int).values
             
             # Validate alignment
@@ -1664,17 +1764,16 @@ class ClusterQualityAssessor:
                 return 0.0
             
             # Check if we have enough samples and variation
-            if len(y) < 10:
+            if len(y) < min_samples:
                 return 0.0
             
             unique_values = len(set(y))
             if unique_values < 2:
                 return 0.0
             
-            # Calculate safe number of CV folds
-            # Ensure at least 3 samples per fold
-            min_samples_per_fold = 3
-            max_folds = min(5, max(2, len(y) // min_samples_per_fold))
+            # Calculate safe number of CV folds using thresholds from QualityThresholds
+            min_samples_per_fold = QualityThresholds.MIN_SAMPLES_PER_CV_FOLD
+            max_folds = min(QualityThresholds.MAX_CV_FOLDS, max(2, len(y) // min_samples_per_fold))
             
             if max_folds < 2:
                 return 0.0
@@ -1705,14 +1804,7 @@ class ClusterQualityAssessor:
         """
         Calculate overall composite quality score (0 to 1, higher is better).
         
-        Combines multiple metrics into a single score:
-        - Silhouette score (weight: 0.20)
-        - Davies-Bouldin Index (weight: 0.15)
-        - Calinski-Harabasz Index (weight: 0.15)
-        - Within/Between CV ratio (weight: 0.15)
-        - Balance score (weight: 0.15)
-        - Temporal smoothness (weight: 0.10)
-        - Noise ratio (weight: 0.10)
+        Combines multiple metrics into a single score using weights from QualityThresholds.
         """
         score_components = []
         weights = []
@@ -1721,45 +1813,45 @@ class ClusterQualityAssessor:
         if metrics.silhouette_score is not None:
             silhouette_normalized = (metrics.silhouette_score + 1) / 2  # Map [-1, 1] to [0, 1]
             score_components.append(silhouette_normalized)
-            weights.append(0.20)
+            weights.append(QualityThresholds.WEIGHT_SILHOUETTE)
         
         # 2. Davies-Bouldin Index (lower is better, normalize inversely)
         if metrics.davies_bouldin_score is not None and not np.isinf(metrics.davies_bouldin_score):
             # DBI typically ranges from 0 to 5+, map to [0, 1] inversely
             dbi_normalized = 1.0 / (1.0 + metrics.davies_bouldin_score)
             score_components.append(dbi_normalized)
-            weights.append(0.15)
+            weights.append(QualityThresholds.WEIGHT_DBI)
         
         # 3. Calinski-Harabasz Index (higher is better, normalize)
         if metrics.calinski_harabasz_score is not None:
             # CH typically ranges from 0 to 1000+, use sigmoid-like normalization
-            ch_normalized = np.tanh(metrics.calinski_harabasz_score / 100)
+            ch_normalized = np.tanh(metrics.calinski_harabasz_score / QualityThresholds.CH_NORMALIZATION_DIVISOR)
             score_components.append(ch_normalized)
-            weights.append(0.15)
+            weights.append(QualityThresholds.WEIGHT_CH)
         
         # 4. CV ratio (higher between/lower within is better)
         if metrics.within_regime_cv is not None and metrics.between_regime_cv is not None:
             # Ideal: low within, high between
             # Ratio of between/within, normalized
-            cv_ratio = metrics.between_regime_cv / (metrics.within_regime_cv + 1e-8)
+            cv_ratio = metrics.between_regime_cv / (metrics.within_regime_cv + QualityThresholds.DBI_EPSILON)
             cv_normalized = np.tanh(cv_ratio)  # Sigmoid-like normalization
             score_components.append(cv_normalized)
-            weights.append(0.15)
+            weights.append(QualityThresholds.WEIGHT_CV_RATIO)
         
         # 5. Balance score (already in [0, 1])
         if metrics.balance_score is not None:
             score_components.append(metrics.balance_score)
-            weights.append(0.15)
+            weights.append(QualityThresholds.WEIGHT_BALANCE)
         
         # 6. Temporal smoothness (already in [0, 1])
         if metrics.temporal_smoothness is not None:
             score_components.append(metrics.temporal_smoothness)
-            weights.append(0.10)
+            weights.append(QualityThresholds.WEIGHT_TEMPORAL_SMOOTHNESS)
         
         # 7. Noise ratio (lower is better, invert)
         noise_score = 1.0 - metrics.noise_ratio
         score_components.append(noise_score)
-        weights.append(0.10)
+        weights.append(QualityThresholds.WEIGHT_NOISE_RATIO)
         
         # Calculate weighted average
         if len(score_components) > 0:
@@ -1895,11 +1987,11 @@ This report provides a comprehensive assessment of cluster quality for {symbol}.
 | Metric | Value | Status |
 |--------|-------|--------|
 | **Number of Regimes** | {metrics.n_regimes} | {'✅' if metrics.n_regimes >= 2 else '⚠️'} |
-| **Noise Ratio** | {metrics.noise_ratio:.2%} | {'✅' if metrics.noise_ratio < 0.3 else '⚠️'} |
-| **Silhouette Score** | {metrics.silhouette_score:.4f if metrics.silhouette_score else 'N/A'} | {'✅' if metrics.silhouette_score and metrics.silhouette_score > 0.3 else '⚠️'} |
-| **Davies-Bouldin Index** | {metrics.davies_bouldin_score:.4f if metrics.davies_bouldin_score else 'N/A'} | {'✅' if metrics.davies_bouldin_score and metrics.davies_bouldin_score < 2.0 else '⚠️'} |
-| **Calinski-Harabasz Index** | {metrics.calinski_harabasz_score:.2f if metrics.calinski_harabasz_score else 'N/A'} | {'✅' if metrics.calinski_harabasz_score and metrics.calinski_harabasz_score > 50 else '⚠️'} |
-| **Balance Score** | {metrics.balance_score:.4f if metrics.balance_score else 'N/A'} | {'✅' if metrics.balance_score and metrics.balance_score > 0.5 else '⚠️'} |
+| **Noise Ratio** | {metrics.noise_ratio:.2%} | {'✅' if metrics.noise_ratio < QualityThresholds.MAX_NOISE_RATIO else '⚠️'} |
+| **Silhouette Score** | {metrics.silhouette_score:.4f if metrics.silhouette_score else 'N/A'} | {'✅' if metrics.silhouette_score and metrics.silhouette_score > QualityThresholds.MIN_SILHOUETTE else '⚠️'} |
+| **Davies-Bouldin Index** | {metrics.davies_bouldin_score:.4f if metrics.davies_bouldin_score else 'N/A'} | {'✅' if metrics.davies_bouldin_score and metrics.davies_bouldin_score < QualityThresholds.MAX_DBI else '⚠️'} |
+| **Calinski-Harabasz Index** | {metrics.calinski_harabasz_score:.2f if metrics.calinski_harabasz_score else 'N/A'} | {'✅' if metrics.calinski_harabasz_score and metrics.calinski_harabasz_score > QualityThresholds.MIN_CH else '⚠️'} |
+| **Balance Score** | {metrics.balance_score:.4f if metrics.balance_score else 'N/A'} | {'✅' if metrics.balance_score and metrics.balance_score > QualityThresholds.QUALITY_GOOD else '⚠️'} |
 
 ---
 
@@ -2077,13 +2169,13 @@ This score indicates how well the current regime can predict future return direc
         
         # Determine quality level
         if metrics.quality_score:
-            if metrics.quality_score >= 0.7:
+            if metrics.quality_score >= QualityThresholds.QUALITY_EXCELLENT:
                 quality_level = "Excellent ✅"
                 recommendation = "The clustering shows excellent quality. Proceed with confidence."
-            elif metrics.quality_score >= 0.5:
+            elif metrics.quality_score >= QualityThresholds.QUALITY_GOOD:
                 quality_level = "Good ✅"
                 recommendation = "The clustering shows good quality. Suitable for most applications."
-            elif metrics.quality_score >= 0.3:
+            elif metrics.quality_score >= QualityThresholds.QUALITY_MODERATE:
                 quality_level = "Moderate ⚠️"
                 recommendation = "The clustering shows moderate quality. Consider parameter tuning."
             else:

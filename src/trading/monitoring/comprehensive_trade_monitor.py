@@ -1087,49 +1087,47 @@ class ComprehensiveTradeMonitor:
             self.logger.error(f"Error converting trade metrics: {e}")
             return {}
 
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+    def _convert_to_enhanced_format(self, trade_metrics: DetailedTradeMetrics) -> Dict[str, Any]:
+        """Convert trade metrics to enhanced monitoring format."""
+        return {
+            'trade_id': trade_metrics.trade_id,
+            'timestamp': trade_metrics.timestamp.isoformat(),
+            'symbol': trade_metrics.symbol,
+            'action': trade_metrics.action,
+            'models_used': trade_metrics.models_used,
+            'model_predictions': trade_metrics.model_predictions,
+            'model_confidences': trade_metrics.model_confidences,
+            'signal_confidence': trade_metrics.signal_confidence,
+            'regime_type': trade_metrics.regime_type,
+            'risk_metrics': {
+                'var_95': trade_metrics.var_95,
+                'expected_shortfall': trade_metrics.expected_shortfall,
+                'portfolio_risk': trade_metrics.portfolio_risk,
+            },
+            'position_sizing': {
+                'position_size': trade_metrics.position_size,
+                'leverage': trade_metrics.leverage,
+                'risk_per_trade': trade_metrics.risk_per_trade,
+            },
+            'shap_explanations': trade_metrics.shap_explanations,
+            'lime_explanations': trade_metrics.lime_explanations,
+            'feature_importance': trade_metrics.feature_importance,
+        }
 
-except ImportError:
-
-    cp = None
-
-# Import trading components
-try:
-    from src.trading.monitoring.trade_context import (
-        TradeContext, TradingIndicator, MLModelDecision, EnsembleDecision, TradingMode
-    )
-    TRADING_COMPONENTS_AVAILABLE = True
-except ImportError:
-    TRADING_COMPONENTS_AVAILABLE = False
-    TradeContext = None
-    TradingIndicator = None
-    MLModelDecision = None
-    EnsembleDecision = None
-    TradingMode = None
+    def _convert_to_basic_format(self, trade_metrics: DetailedTradeMetrics) -> Dict[str, Any]:
+        """Convert trade metrics to basic monitoring format."""
+        return {
+            'trade_id': trade_metrics.trade_id,
+            'timestamp': trade_metrics.timestamp.isoformat(),
+            'symbol': trade_metrics.symbol,
+            'action': trade_metrics.action,
+            'price': trade_metrics.price,
+            'quantity': trade_metrics.quantity,
+            'signal_confidence': trade_metrics.signal_confidence,
+            'regime_type': trade_metrics.regime_type,
+            'pnl_absolute': trade_metrics.pnl_absolute,
+            'pnl_percentage': trade_metrics.pnl_percentage,
+        }
 
     async def _export_trade_metrics(self, trade_metrics: DetailedTradeMetrics):
         """Export trade metrics to file."""
@@ -1520,6 +1518,38 @@ except ImportError:
         except Exception as e:
             tprint_error(f"❌ Error stopping Comprehensive Trade Monitor: {e}")
 
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return False  # VectorBT not available, always use pandas
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        return self._pandas_rolling_operation(data, operation, window, **kwargs)
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
+                                 window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling apply operation with fallback to pandas."""
+        return data.rolling(window=window).apply(func, **kwargs)
+
 # Global instance
 comprehensive_trade_monitor = ComprehensiveTradeMonitor()
 
@@ -1548,64 +1578,3 @@ async def generate_comprehensive_report(
 ) -> Optional[Dict[str, Any]]:
     """Generate comprehensive performance report."""
     return await comprehensive_trade_monitor.generate_performance_report(report_type, export_format)
-
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
-                VECTORBT_AVAILABLE)
-
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")
-
-    def _vectorbt_apply_operation(self, data: pd.Series, func,
-                                 window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling apply operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return data.rolling(window=window).apply(func, **kwargs)
-
-        try:
-            return rolling_apply(data, func, window=window, **kwargs)
-        except Exception as e:
-            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
-            return data.rolling(window=window).apply(func, **kwargs)

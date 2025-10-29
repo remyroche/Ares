@@ -44,6 +44,23 @@ class ExchangeIntegrationConfig:
     enable_shared_utilities: bool = True
     enable_risk_management: bool = True
     enable_rate_limiting: bool = True
+    connection_retry_attempts: int = 3
+    connection_retry_delay: float = 1.0
+
+    def __post_init__(self):
+        """Validate configuration."""
+        if not self.exchange_type:
+            raise ValueError("exchange_type is required")
+        if not self.api_key:
+            raise ValueError("api_key is required")
+        if not self.api_secret:
+            raise ValueError("api_secret is required")
+        if self.exchange_type.lower() not in ['binance', 'bingx']:
+            raise ValueError(f"Unsupported exchange type: {self.exchange_type}")
+        if self.connection_retry_attempts < 1:
+            raise ValueError("connection_retry_attempts must be >= 1")
+        if self.connection_retry_delay < 0:
+            raise ValueError("connection_retry_delay must be >= 0")
 
 class ExchangeIntegrationManager:
     """
@@ -75,6 +92,7 @@ class ExchangeIntegrationManager:
         self.is_initialized = False
         self.is_connected = False
         self.last_error: Optional[str] = None
+        self.connection_attempts = 0
 
         # Initialize the integration
         self._initialize_integration()
@@ -163,23 +181,41 @@ class ExchangeIntegrationManager:
 
     @handle_async_errors(default_return=False)
     async def connect(self) -> bool:
-        """Connect to the exchange."""
+        """Connect to the exchange with retry logic."""
         try:
             if not self.is_initialized:
                 tprint("❌ Integration not initialized", "ERROR")
                 return False
 
-            # Connect using exchange interface
-            success = await self.exchange_interface.connect()
+            # Retry connection logic
+            last_error = None
+            for attempt in range(1, self.config.connection_retry_attempts + 1):
+                try:
+                    # Connect using exchange interface
+                    success = await self.exchange_interface.connect()
 
-            if success:
-                self.is_connected = True
-                tprint(f"✅ Connected to {self.config.exchange_type}", "INFO")
-            else:
-                self.is_connected = False
-                tprint(f"❌ Failed to connect to {self.config.exchange_type}", "ERROR")
+                    if success:
+                        self.is_connected = True
+                        self.connection_attempts = attempt
+                        tprint(f"✅ Connected to {self.config.exchange_type} (attempt {attempt})", "INFO")
+                        return True
+                    else:
+                        if attempt < self.config.connection_retry_attempts:
+                            tprint(f"⚠️ Connection attempt {attempt} failed, retrying...", "WARNING")
+                            await asyncio.sleep(self.config.connection_retry_delay * attempt)
+                except Exception as e:
+                    last_error = str(e)
+                    if attempt < self.config.connection_retry_attempts:
+                        tprint(f"⚠️ Connection attempt {attempt} failed: {e}, retrying...", "WARNING")
+                        await asyncio.sleep(self.config.connection_retry_delay * attempt)
+                    else:
+                        break
 
-            return success
+            # All attempts failed
+            self.is_connected = False
+            self.last_error = last_error or "Connection failed after all retry attempts"
+            tprint(f"❌ Failed to connect to {self.config.exchange_type} after {self.config.connection_retry_attempts} attempts", "ERROR")
+            return False
 
         except Exception as e:
             self.is_connected = False
@@ -340,17 +376,18 @@ class ExchangeIntegrationManager:
         }
 
     @handle_errors(default_return=None)
-    def reset(self) -> None:
+    async def reset(self) -> None:
         """Reset the integration."""
         try:
-            # Disconnect if connected
+            # Disconnect if connected (await properly)
             if self.is_connected:
-                asyncio.create_task(self.disconnect())
+                await self.disconnect()
 
             # Reset state
             self.is_initialized = False
             self.is_connected = False
             self.last_error = None
+            self.connection_attempts = 0
 
             # Reinitialize
             self._initialize_integration()
@@ -359,6 +396,34 @@ class ExchangeIntegrationManager:
 
         except Exception as e:
             tprint(f"❌ Error resetting integration: {e}", "ERROR")
+
+    async def close(self):
+        """Close and cleanup resources."""
+        try:
+            await self.disconnect()
+            # Close all managers
+            for manager in [self.auth_manager, self.market_manager, self.order_manager,
+                          self.risk_manager, self.balance_manager, self.rate_limit_manager]:
+                if manager:
+                    try:
+                        manager.close()
+                    except Exception as e:
+                        self.logger.warning(f"Error closing manager: {e}")
+            tprint("✅ Exchange integration closed", "INFO")
+        except Exception as e:
+            tprint(f"❌ Error closing integration: {e}", "ERROR")
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.close()
 
 # Factory function for creating exchange integration
 def create_exchange_integration(config: ExchangeIntegrationConfig) -> ExchangeIntegrationManager:

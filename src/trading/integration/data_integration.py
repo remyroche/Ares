@@ -6,6 +6,7 @@ Integration utilities for sharing data between trading and training pipelines.
 
 import asyncio
 import logging
+import os
 from typing import Dict, Any, List, Optional, Union, Tuple
 from datetime import datetime, timedelta
 import pandas as pd
@@ -18,23 +19,26 @@ from ..utils.validation import validate_market_data
 
 logger = system_logger.getChild('DataIntegration')
 
-class TradingDataExporter:
-    """
-    Exports trading data for use in training pipeline.
-    """
-
-    def __init__(self):
-        self.logger = logger.getChild('TradingDataExporter')
+# Constants
+DEFAULT_RECENT_FILES_LIMIT = 10  # Limit for reading recent files
+DEFAULT_LOOKBACK_DAYS = 30  # Default lookback days for reading data
 
 class DataSyncManager:
     """
     Manages data synchronization between trading and training pipelines.
     """
 
-    def __init__(self):
+    def __init__(self, base_dir: str = "data_cache/training_sync"):
+        """
+        Initialize data sync manager.
+
+        Args:
+            base_dir: Base directory for storing synced data
+        """
         self.logger = logger.getChild('DataSyncManager')
         self.sync_status: Dict[str, Any] = {}
         self.last_sync: Optional[datetime] = None
+        self.base_dir = base_dir
 
     @trading_error_handler(
         error_types=(Exception,),
@@ -101,7 +105,8 @@ class DataSyncManager:
     async def sync_trading_decisions(
         self,
         decisions: List[Dict[str, Any]],
-        symbol: str = "ETHUSDT"
+        symbol: str = "ETHUSDT",
+        timeframe: Optional[str] = None
     ) -> bool:
         """
         Sync trading decisions to training pipeline for model improvement.
@@ -109,6 +114,7 @@ class DataSyncManager:
         Args:
             decisions: List of trading decisions
             symbol: Trading symbol
+            timeframe: Data timeframe (extracted from decisions if not provided)
 
         Returns:
             True if sync successful
@@ -123,14 +129,26 @@ class DataSyncManager:
             # Convert to DataFrame for easier handling
             decisions_df = pd.DataFrame(decisions)
 
+            # Extract timeframe from decisions if not provided
+            if timeframe is None:
+                # Try to extract from decisions
+                if 'timeframe' in decisions_df.columns:
+                    timeframe = decisions_df['timeframe'].iloc[0] if len(decisions_df) > 0 else "live"
+                elif 'timeframe' in decisions[0] if decisions else {}:
+                    timeframe = decisions[0].get('timeframe', 'live')
+                else:
+                    timeframe = "live"  # Default fallback
+
             # Add metadata
             decisions_df['sync_timestamp'] = datetime.now()
             decisions_df['data_source'] = 'trading_live'
             decisions_df['symbol'] = symbol
+            if 'timeframe' not in decisions_df.columns:
+                decisions_df['timeframe'] = timeframe
 
             # Save to training pipeline data location
             await self._save_to_training_data_store(
-                decisions_df, symbol, "live", "trading_decisions"
+                decisions_df, symbol, timeframe, "trading_decisions"
             )
 
             # Update sync status
@@ -221,9 +239,12 @@ class DataSyncManager:
 
             # Ensure required columns exist
             required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-            for col in required_columns:
-                if col not in formatted_data.columns:
-                    tprint_warning(f"⚠️ Missing required column: {col}")
+            missing_columns = [col for col in required_columns if col not in formatted_data.columns]
+            
+            if missing_columns:
+                error_msg = f"Missing required columns: {missing_columns}. Available columns: {list(formatted_data.columns)}"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
 
             # Add metadata columns
             formatted_data['symbol'] = symbol
@@ -254,11 +275,8 @@ class DataSyncManager:
     ):
         """Save data to training pipeline data store."""
         try:
-            import os
-
             # Create training data directory structure
-            base_dir = "data_cache/training_sync"
-            data_dir = os.path.join(base_dir, data_type, symbol, timeframe)
+            data_dir = os.path.join(self.base_dir, data_type, symbol, timeframe)
             os.makedirs(data_dir, exist_ok=True)
 
             # Generate filename with timestamp
@@ -285,8 +303,7 @@ class DataSyncManager:
             import json
 
             # Create metrics directory
-            base_dir = "data_cache/training_sync"
-            metrics_dir = os.path.join(base_dir, "performance_metrics", symbol)
+            metrics_dir = os.path.join(self.base_dir, "performance_metrics", symbol)
             os.makedirs(metrics_dir, exist_ok=True)
 
             # Generate filename with timestamp
@@ -453,7 +470,7 @@ class TrainingDataReader:
             cutoff_date = datetime.now() - timedelta(days=lookback_days)
             combined_data = []
 
-            for file_path in all_files[:10]:  # Limit to 10 most recent files
+            for file_path in all_files[:DEFAULT_RECENT_FILES_LIMIT]:
                 try:
                     file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
                     if file_time >= cutoff_date:
@@ -480,6 +497,27 @@ class TrainingDataReader:
             tprint_error(f"❌ Failed to read from training store: {e}")
             return None
 
+    async def cleanup(self):
+        """Cleanup resources."""
+        try:
+            self.sync_status.clear()
+            self.last_sync = None
+            tprint_info("✅ Data sync manager cleaned up")
+        except Exception as e:
+            self.logger.warning(f"Cleanup failed: {e}")
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.cleanup()
+
 # Global instances
 data_sync_manager = DataSyncManager()
 training_data_reader = TrainingDataReader()
@@ -502,9 +540,13 @@ async def sync_all_trading_data(
         market_data, symbol, timeframe
     )
 
-    # Sync trading decisions
+    # Sync trading decisions (extract timeframe from decisions if available)
+    decisions_timeframe = None
+    if trading_decisions and isinstance(trading_decisions[0], dict):
+        decisions_timeframe = trading_decisions[0].get('timeframe', timeframe)
+    
     results['trading_decisions'] = await data_sync_manager.sync_trading_decisions(
-        trading_decisions, symbol
+        trading_decisions, symbol, decisions_timeframe or timeframe
     )
 
     # Sync performance metrics

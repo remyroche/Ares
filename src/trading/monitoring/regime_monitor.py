@@ -6,6 +6,7 @@ Tracks regime stability and provides insights into market condition changes.
 """
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union, Tuple, Callable
@@ -265,10 +266,14 @@ class RegimeMonitor:
         significance += confidence * 0.4
 
         # Regime transition frequency (less frequent = more significant)
-        transition_count = sum(1 for t in self.transitions[-100:]
-                             if t.from_regime == from_regime and t.to_regime == to_regime)
-        transition_frequency = transition_count / max(len(self.transitions), 1)
-        significance += (1 - transition_frequency) * 0.3
+        if len(self.transitions) == 0:
+            # No previous transitions, high significance
+            significance += 0.3
+        else:
+            transition_count = sum(1 for t in self.transitions[-100:]
+                                 if t.from_regime == from_regime and t.to_regime == to_regime)
+            transition_frequency = transition_count / len(self.transitions)
+            significance += (1 - transition_frequency) * 0.3
 
         # Market volatility impact
         volatility = market_conditions.get('volatility', 0.5)
@@ -475,13 +480,18 @@ class RegimeMonitor:
 
         tprint_info("🧹 Regime Monitor cleaned up successfully")
 
+# Global singleton instance
+_global_regime_monitor: Optional[RegimeMonitor] = None
+
 # Factory functions
 async def create_regime_monitor(config: Dict[str, Any]) -> RegimeMonitor:
     """Create and initialize a regime monitor."""
+    global _global_regime_monitor
     monitor = RegimeMonitor(config)
     await monitor.initialize()
+    _global_regime_monitor = monitor
     return monitor
 
 def get_regime_monitor() -> Optional[RegimeMonitor]:
     """Get the global regime monitor instance."""
-    return None
+    return _global_regime_monitor

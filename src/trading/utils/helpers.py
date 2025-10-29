@@ -30,18 +30,42 @@ def calculate_returns(
 
     Returns:
         Array of returns
+
+    Raises:
+        ValueError: If input is invalid
     """
+    # Input validation
+    if prices is None:
+        raise ValueError("prices cannot be None")
+    
     if isinstance(prices, list):
+        if len(prices) == 0:
+            return np.array([])
         prices = np.array(prices)
     elif isinstance(prices, pd.Series):
+        if len(prices) == 0:
+            return np.array([])
         prices = prices.values
+    elif not isinstance(prices, np.ndarray):
+        raise ValueError(f"prices must be list, Series, or ndarray, got {type(prices)}")
+
+    if method not in ['simple', 'log']:
+        raise ValueError(f"method must be 'simple' or 'log', got {method}")
 
     if len(prices) < 2:
         return np.array([])
 
+    # Check for invalid values
+    if np.any(np.isnan(prices)) or np.any(np.isinf(prices)):
+        raise ValueError("prices contains NaN or Inf values")
+
     if method == 'log':
+        if np.any(prices <= 0):
+            raise ValueError("prices must be positive for log returns")
         returns = np.diff(np.log(prices))
     else:  # simple returns
+        if np.any(prices[:-1] == 0):
+            raise ValueError("prices contains zero values, cannot calculate simple returns")
         returns = np.diff(prices) / prices[:-1]
 
     return returns
@@ -118,6 +142,205 @@ def calculate_sharpe_ratio(
         sharpe *= np.sqrt(periods_per_year)
 
     return float(sharpe)
+
+def calculate_sortino_ratio(
+    returns: Union[pd.Series, np.ndarray, List[float]],
+    risk_free_rate: float = 0.0,
+    annualize: bool = True,
+    periods_per_year: int = 365
+) -> float:
+    """
+    Calculate Sortino ratio (downside-adjusted Sharpe ratio).
+
+    Args:
+        returns: Return series
+        risk_free_rate: Risk-free rate (annual)
+        annualize: Whether to annualize the ratio
+        periods_per_year: Number of periods per year
+
+    Returns:
+        Sortino ratio
+    """
+    if isinstance(returns, list):
+        returns = np.array(returns)
+    elif isinstance(returns, pd.Series):
+        returns = returns.values
+
+    if len(returns) < 2:
+        return 0.0
+
+    mean_return = np.mean(returns)
+    
+    # Calculate downside deviation (only negative returns)
+    downside_returns = returns[returns < 0]
+    if len(downside_returns) == 0:
+        return float('inf') if mean_return > risk_free_rate else 0.0
+    
+    downside_std = np.std(downside_returns)
+
+    if downside_std == 0:
+        return 0.0
+
+    # Adjust risk-free rate to period frequency
+    period_risk_free_rate = risk_free_rate / periods_per_year if annualize else risk_free_rate
+
+    sortino = (mean_return - period_risk_free_rate) / downside_std
+
+    if annualize:
+        sortino *= np.sqrt(periods_per_year)
+
+    return float(sortino)
+
+def calculate_calmar_ratio(
+    returns: Union[pd.Series, np.ndarray, List[float]],
+    annualize: bool = True,
+    periods_per_year: int = 365
+) -> float:
+    """
+    Calculate Calmar ratio (return / max drawdown).
+
+    Args:
+        returns: Return series
+        annualize: Whether to annualize returns
+        periods_per_year: Number of periods per year
+
+    Returns:
+        Calmar ratio
+    """
+    if isinstance(returns, list):
+        returns = np.array(returns)
+    elif isinstance(returns, pd.Series):
+        returns = returns.values
+
+    if len(returns) < 2:
+        return 0.0
+
+    # Calculate cumulative returns
+    cumulative = np.cumprod(1 + returns)
+    
+    # Calculate max drawdown
+    peak = np.maximum.accumulate(cumulative)
+    drawdown = (cumulative - peak) / peak
+    max_drawdown = abs(np.min(drawdown))
+
+    if max_drawdown == 0:
+        return float('inf') if np.mean(returns) > 0 else 0.0
+
+    # Annualized return
+    if len(returns) > 0:
+        total_return = cumulative[-1] / cumulative[0] - 1
+        if annualize:
+            annual_return = (1 + total_return) ** (periods_per_year / len(returns)) - 1
+        else:
+            annual_return = total_return
+    else:
+        annual_return = 0.0
+
+    calmar = annual_return / max_drawdown if max_drawdown > 0 else 0.0
+
+    return float(calmar)
+
+def calculate_maximum_adverse_excursion(
+    entry_price: float,
+    prices: Union[pd.Series, np.ndarray, List[float]],
+    side: str = 'long'
+) -> float:
+    """
+    Calculate Maximum Adverse Excursion (MAE) - worst unrealized loss.
+
+    Args:
+        entry_price: Entry price
+        prices: Price series after entry
+        side: 'long' or 'short'
+
+    Returns:
+        MAE as percentage
+    """
+    if isinstance(prices, list):
+        prices = np.array(prices)
+    elif isinstance(prices, pd.Series):
+        prices = prices.values
+
+    if len(prices) == 0:
+        return 0.0
+
+    if side.lower() == 'long':
+        adverse_excursions = (entry_price - prices) / entry_price
+    else:  # short
+        adverse_excursions = (prices - entry_price) / entry_price
+
+    mae = np.max(adverse_excursions) if len(adverse_excursions) > 0 else 0.0
+
+    return float(mae)
+
+def calculate_maximum_favorable_excursion(
+    entry_price: float,
+    prices: Union[pd.Series, np.ndarray, List[float]],
+    side: str = 'long'
+) -> float:
+    """
+    Calculate Maximum Favorable Excursion (MFE) - best unrealized gain.
+
+    Args:
+        entry_price: Entry price
+        prices: Price series after entry
+        side: 'long' or 'short'
+
+    Returns:
+        MFE as percentage
+    """
+    if isinstance(prices, list):
+        prices = np.array(prices)
+    elif isinstance(prices, pd.Series):
+        prices = prices.values
+
+    if len(prices) == 0:
+        return 0.0
+
+    if side.lower() == 'long':
+        favorable_excursions = (prices - entry_price) / entry_price
+    else:  # short
+        favorable_excursions = (entry_price - prices) / entry_price
+
+    mfe = np.max(favorable_excursions) if len(favorable_excursions) > 0 else 0.0
+
+    return float(mfe)
+
+def calculate_omega_ratio(
+    returns: Union[pd.Series, np.ndarray, List[float]],
+    threshold: float = 0.0
+) -> float:
+    """
+    Calculate Omega ratio - probability weighted ratio of gains to losses.
+
+    Args:
+        returns: Return series
+        threshold: Return threshold (default: 0.0 for risk-free rate)
+
+    Returns:
+        Omega ratio
+    """
+    if isinstance(returns, list):
+        returns = np.array(returns)
+    elif isinstance(returns, pd.Series):
+        returns = returns.values
+
+    if len(returns) < 2:
+        return 0.0
+
+    # Calculate excess returns
+    excess_returns = returns - threshold
+
+    # Sum of gains and losses
+    gains = excess_returns[excess_returns > 0].sum()
+    losses = abs(excess_returns[excess_returns < 0].sum())
+
+    if losses == 0:
+        return float('inf') if gains > 0 else 0.0
+
+    omega = gains / losses
+
+    return float(omega)
 
 def calculate_max_drawdown(
     prices: Union[pd.Series, np.ndarray, List[float]]
@@ -362,31 +585,58 @@ def normalize_price_data(
 
     Returns:
         Normalized DataFrame
+
+    Raises:
+        ValueError: If input is invalid
     """
+    # Input validation
+    if not isinstance(data, pd.DataFrame):
+        raise ValueError(f"data must be a DataFrame, got {type(data)}")
+    
+    if data.empty:
+        raise ValueError("data cannot be empty")
+    
+    if method not in ['minmax', 'zscore', 'robust']:
+        raise ValueError(f"method must be 'minmax', 'zscore', or 'robust', got {method}")
+
     result = data.copy()
 
     if columns is None:
         columns = result.select_dtypes(include=[np.number]).columns.tolist()
 
+    if not isinstance(columns, list):
+        raise ValueError(f"columns must be a list, got {type(columns)}")
+
     for col in columns:
-        if col in result.columns:
-            if method == 'minmax':
-                min_val = result[col].min()
-                max_val = result[col].max()
-                if max_val != min_val:
-                    result[col] = (result[col] - min_val) / (max_val - min_val)
+        if col not in result.columns:
+            raise ValueError(f"Column {col} not found in data")
+        
+        if not pd.api.types.is_numeric_dtype(result[col]):
+            raise ValueError(f"Column {col} is not numeric")
 
-            elif method == 'zscore':
-                mean_val = result[col].mean()
-                std_val = result[col].std()
-                if std_val != 0:
-                    result[col] = (result[col] - mean_val) / std_val
+        if method == 'minmax':
+            min_val = result[col].min()
+            max_val = result[col].max()
+            if max_val != min_val:
+                result[col] = (result[col] - min_val) / (max_val - min_val)
+            else:
+                result[col] = 0.0
 
-            elif method == 'robust':
-                median_val = result[col].median()
-                mad = np.median(np.abs(result[col] - median_val))
-                if mad != 0:
-                    result[col] = (result[col] - median_val) / mad
+        elif method == 'zscore':
+            mean_val = result[col].mean()
+            std_val = result[col].std()
+            if std_val != 0:
+                result[col] = (result[col] - mean_val) / std_val
+            else:
+                result[col] = 0.0
+
+        elif method == 'robust':
+            median_val = result[col].median()
+            mad = np.median(np.abs(result[col] - median_val))
+            if mad != 0:
+                result[col] = (result[col] - median_val) / mad
+            else:
+                result[col] = 0.0
 
     return result
 
@@ -403,11 +653,27 @@ def calculate_technical_indicators(
 
     Returns:
         DataFrame with indicators added
+
+    Raises:
+        ValueError: If input is invalid
     """
+    # Input validation
+    if not isinstance(data, pd.DataFrame):
+        raise ValueError(f"data must be a DataFrame, got {type(data)}")
+    
+    if data.empty:
+        raise ValueError("data cannot be empty")
+    
+    if 'close' not in data.columns:
+        raise ValueError("data must contain 'close' column")
+
     result = data.copy()
 
     if indicators is None:
         indicators = ['sma_20', 'ema_12', 'rsi', 'macd', 'bollinger']
+
+    if not isinstance(indicators, list):
+        raise ValueError(f"indicators must be a list, got {type(indicators)}")
 
     # Simple Moving Average
     if 'sma_20' in indicators and 'close' in result.columns:
@@ -422,7 +688,7 @@ def calculate_technical_indicators(
         delta = result['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
+        rs = gain / loss.replace(to_replace=0, value=np.nan)
         result['rsi'] = 100 - (100 / (1 + rs))
 
     # MACD
@@ -654,9 +920,24 @@ def save_trading_data(
     """
     try:
         import os
-        return os.path.exists(file_path)
+        from pathlib import Path
+        
+        # Create directory if it doesn't exist
+        dir_path = Path(directory)
+        dir_path.mkdir(parents=True, exist_ok=True)
+        
+        # Construct full file path
+        file_path = dir_path / f"{filename}.json"
+        
+        # Save data as JSON
+        with open(file_path, 'w') as f:
+            json.dump(data, f, indent=2, default=str)
+        
+        return True
     except Exception as e:
-        logger.error(f"Error checking file existence: {e}")
+        from src.utils.logger import system_logger
+        logger = system_logger.getChild('TradingHelpers')
+        logger.error(f"Error saving trading data: {e}")
         return False
 
 # VectorBT imports for native optimization
@@ -684,10 +965,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
 
 def calculate_atr14(data: pd.DataFrame, period: int = 14) -> pd.Series:
     """Calculate the Average True Range (ATR) for OHLCV input data."""
@@ -776,64 +1053,3 @@ def calculate_volatility_slope(
 
     slope_series = volatility.rolling(window=slope_window, min_periods=2).apply(_slope, raw=True)
     return slope_series
-
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
-                VECTORBT_AVAILABLE)
-
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")
-
-    def _vectorbt_apply_operation(self, data: pd.Series, func,
-                                 window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling apply operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return data.rolling(window=window).apply(func, **kwargs)
-
-        try:
-            return rolling_apply(data, func, window=window, **kwargs)
-        except Exception as e:
-            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
-            return data.rolling(window=window).apply(func, **kwargs)

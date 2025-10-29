@@ -143,6 +143,13 @@ class OrderManager:
         self.order_history: Dict[str, Order] = {}
         self.executions: Dict[str, List[OrderExecution]] = {}
         self.order_books: Dict[str, OrderBook] = {}
+        
+        # Order status polling
+        self.polling_enabled = config.get('enable_order_polling', True)
+        self.polling_interval = config.get('polling_interval', 5.0)  # seconds
+        self.polling_timeout = config.get('polling_timeout', 300.0)  # 5 minutes
+        self._polling_tasks: Dict[str, asyncio.Task] = {}
+        self._polling_stop = asyncio.Event()
 
         # Exchange interfaces
         self.exchange_interfaces: Dict[str, Any] = {}
@@ -246,17 +253,102 @@ class OrderManager:
             metadata=metadata or {}
         )
 
-        # Store order
-        self.active_orders[order.order_id] = order
-        self.order_count += 1
+            # Store order
+            self.active_orders[order.order_id] = order
+            self.order_count += 1
 
-        tprint_info(f"📝 Created {side.value} order for {symbol}: {quantity} @ {price}")
+            tprint_info(f"📝 Created {side.value} order for {symbol}: {quantity} @ {price}")
 
-        # Submit order to exchange
-        await self._submit_order(order)
+            # Submit order to exchange
+            await self._submit_order(order)
+            
+            # Start polling for order status if enabled and order is not immediately filled
+            if self.polling_enabled and order.status == OrderStatus.SUBMITTED:
+                await self._start_order_polling(order)
 
-        return order
+            return order
 
+    async def _start_order_polling(self, order: Order) -> None:
+        """Start polling for order status updates."""
+        if order.order_id in self._polling_tasks:
+            return  # Already polling
+        
+        async def poll_order_status():
+            """Poll order status until filled, cancelled, or timeout."""
+            start_time = datetime.now()
+            
+            try:
+                while True:
+                    # Check timeout
+                    elapsed = (datetime.now() - start_time).total_seconds()
+                    if elapsed > self.polling_timeout:
+                        tprint_warning(f"⚠️ Order {order.order_id} polling timeout after {self.polling_timeout}s")
+                        order.status = OrderStatus.EXPIRED
+                        order.error_message = f"Order status polling timeout after {self.polling_timeout}s"
+                        break
+                    
+                    # Check if order is no longer active
+                    if order.status in [OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED, OrderStatus.EXPIRED]:
+                        break
+                    
+                    # Poll order status from exchange
+                    if self.trading_config.mode != TradingMode.PAPER and self.exchange_interface:
+                        try:
+                            status_result = await self.exchange_interface.get_order_status(
+                                order.symbol,
+                                order.exchange_order_id or order.order_id
+                            )
+                            
+                            if status_result:
+                                # Update order status
+                                exchange_status = status_result.get('status', '')
+                                if exchange_status == 'FILLED':
+                                    order.status = OrderStatus.FILLED
+                                    order.filled_quantity = float(status_result.get('executedQty', order.quantity))
+                                    order.remaining_quantity = order.quantity - order.filled_quantity
+                                    order.average_fill_price = float(status_result.get('price', order.price or 0))
+                                    tprint_success(f"✅ Order {order.order_id} filled via polling")
+                                    break
+                                elif exchange_status == 'CANCELLED':
+                                    order.status = OrderStatus.CANCELLED
+                                    break
+                                elif exchange_status == 'REJECTED':
+                                    order.status = OrderStatus.REJECTED
+                                    order.error_message = status_result.get('error', 'Order rejected')
+                                    break
+                                elif exchange_status == 'PARTIALLY_FILLED':
+                                    order.status = OrderStatus.PARTIALLY_FILLED
+                                    order.filled_quantity = float(status_result.get('executedQty', 0))
+                                    order.remaining_quantity = order.quantity - order.filled_quantity
+                            
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Error polling order {order.order_id}: {e}")
+                    
+                    # Wait before next poll
+                    await asyncio.sleep(self.polling_interval)
+                    
+            except asyncio.CancelledError:
+                tprint_info(f"📝 Order polling cancelled for {order.order_id}")
+            finally:
+                # Clean up polling task
+                if order.order_id in self._polling_tasks:
+                    del self._polling_tasks[order.order_id]
+        
+        # Start polling task
+        task = asyncio.create_task(poll_order_status())
+        self._polling_tasks[order.order_id] = task
+    
+    async def _stop_order_polling(self, order_id: str) -> None:
+        """Stop polling for a specific order."""
+        if order_id in self._polling_tasks:
+            task = self._polling_tasks[order_id]
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            del self._polling_tasks[order_id]
+    
     async def _submit_order(self, order: Order) -> None:
         """Submit order to exchange."""
         try:
@@ -480,7 +572,10 @@ class OrderManager:
                 order.status = OrderStatus.CANCELLED
             else:
                 await self._cancel_live_order(order)
-
+            
+            # Stop polling for this order
+            await self._stop_order_polling(order_id)
+            
             tprint_info(f"❌ Cancelled order {order_id}")
             return True
 
@@ -490,8 +585,44 @@ class OrderManager:
 
     async def _cancel_live_order(self, order: Order) -> None:
         """Cancel order on live exchange."""
-        # Placeholder for live order cancellation
-        tprint_warning(f"⚠️ Live order cancellation not yet implemented")
+        try:
+            if not self.exchange_interface:
+                # Try to get from exchange_interfaces dict
+                default_interface = self.exchange_interfaces.get('default')
+                if default_interface:
+                    self.exchange_interface = default_interface
+                else:
+                    raise ExecutionError(
+                        "No exchange interface available for order cancellation",
+                        severity=TradingErrorSeverity.CRITICAL
+                    )
+            
+            # Cancel order on exchange
+            symbol = order.symbol
+            order_id = order.exchange_order_id or order.order_id
+            
+            tprint_info(f"🔄 Cancelling live order {order.order_id} on exchange...")
+            
+            success = await self.exchange_interface.cancel_order(symbol, order_id)
+            
+            if success:
+                order.status = OrderStatus.CANCELLED
+                tprint_success(f"✅ Cancelled order {order.order_id} on exchange")
+            else:
+                order.status = OrderStatus.ERROR
+                order.error_message = "Failed to cancel order on exchange"
+                tprint_error(f"❌ Failed to cancel order {order.order_id} on exchange")
+                raise ExecutionError(
+                    f"Failed to cancel order {order.order_id} on exchange",
+                    severity=TradingErrorSeverity.HIGH
+                )
+                
+        except Exception as e:
+            order.status = OrderStatus.ERROR
+            order.error_message = str(e)
+            tprint_error(f"❌ Error cancelling order {order.order_id}: {str(e)}")
+            self.logger.error(f"Live order cancellation error: {e}", exc_info=True)
+            raise
 
     @handles_errors
     async def get_order_status(self, order_id: str) -> Optional[OrderStatus]:
@@ -601,6 +732,10 @@ class OrderManager:
     async def cleanup(self) -> None:
         """Clean up resources."""
         try:
+            # Stop all polling tasks
+            for order_id in list(self._polling_tasks.keys()):
+                await self._stop_order_polling(order_id)
+            
             # Cancel all active orders
             active_orders = list(self.active_orders.keys())
             for order_id in active_orders:

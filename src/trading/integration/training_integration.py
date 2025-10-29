@@ -1,5 +1,4 @@
 """
-import warnings
 Training Integration
 
 Integration utilities for connecting trading operations
@@ -8,8 +7,12 @@ with the training pipeline for data synchronization and model updates.
 
 import asyncio
 import logging
+import os
+import json
+import warnings
 from typing import Dict, Any, List, Optional, Union, Tuple
 from datetime import datetime, timedelta
+from pathlib import Path
 import pandas as pd
 import numpy as np
 
@@ -20,15 +23,57 @@ from ..utils.validation import validate_market_data
 
 logger = system_logger.getChild('TrainingIntegration')
 
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import (
+        rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
+        rolling_sum, rolling_apply, rolling_corr, rolling_cov,
+        scale, rank, zscore, winsorize, clip, quantile
+    )
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = rolling_std = rolling_var = rolling_min = rolling_max = None
+    rolling_sum = rolling_apply = rolling_corr = rolling_cov = None
+    scale = rank = zscore = winsorize = clip = quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Constants
+DEFAULT_FEATURE_CACHE_TTL = timedelta(hours=1)  # Cache TTL for feature updates
+DEFAULT_MODEL_CHECK_INTERVAL = timedelta(hours=24)  # How often to check for model updates
+DEFAULT_RECENT_FILES_LIMIT = 10  # Limit for reading recent files
+
 class TrainingDataProvider:
     """
     Provides training pipeline features and data to trading operations.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        feature_cache_ttl: timedelta = DEFAULT_FEATURE_CACHE_TTL,
+        model_check_interval: timedelta = DEFAULT_MODEL_CHECK_INTERVAL,
+        use_vectorbt: bool = True,
+        vectorbt_threshold: int = 1000
+    ):
+        """
+        Initialize training data provider.
+
+        Args:
+            feature_cache_ttl: Time-to-live for feature cache
+            model_check_interval: Interval for checking model updates
+            use_vectorbt: Whether to use VectorBT for operations
+            vectorbt_threshold: Minimum data size to use VectorBT
+        """
         self.logger = logger.getChild('TrainingDataProvider')
         self.feature_cache: Dict[str, Any] = {}
         self.last_update: Optional[datetime] = None
+        self.feature_cache_ttl = feature_cache_ttl
+        self.model_check_interval = model_check_interval
+        self.last_model_check: Optional[datetime] = None
+        self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
+        self.vectorbt_threshold = vectorbt_threshold
 
     @trading_error_handler(
         error_types=(Exception,),
@@ -200,72 +245,105 @@ class TrainingDataProvider:
                 'export_type': 'trading_performance'
             }
 
-            # Save to training pipeline data directory
-            import json
-            import os
+            # Create export directory
+            export_dir = "data_cache/training_sync/trading_performance"
+            os.makedirs(export_dir, exist_ok=True)
 
-            # Save the configuration
-            config_path = os.path.join(data_dir, 'training_config.json')
-            with open(config_path, 'w') as f:
-                json.dump(config, f, indent=2)
+            # Save the data
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filepath = os.path.join(export_dir, f"trading_performance_{timestamp}.json")
+
+            with open(filepath, 'w') as f:
+                json.dump(export_data, f, indent=2, default=str)
+
+            tprint_success(f"✅ Exported trading performance to {filepath}")
+            self.logger.info(f"Exported trading performance data to {filepath}")
 
         except Exception as e:
-            self.logger.error(f"Error saving training configuration: {e}")
+            self.logger.error(f"Error exporting trading performance: {e}")
             raise
-
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
 
     async def _update_feature_cache(self):
         """Update feature cache from training pipeline."""
         try:
-            # This would check for updated feature definitions
-            # from the training pipeline
             tprint_info("🔄 Checking for feature updates...")
 
-            # Placeholder for feature cache update logic
+            # Check if cache needs update based on TTL
+            if self.last_update and (datetime.now() - self.last_update) < self.feature_cache_ttl:
+                tprint_info("📦 Feature cache still valid, skipping update")
+                return
+
+            # Check for updated feature definitions from training pipeline
+            feature_definitions_path = Path("data_cache/training_sync/feature_definitions")
+            if feature_definitions_path.exists():
+                # Find most recent feature definition file
+                feature_files = list(feature_definitions_path.glob("*.json"))
+                if feature_files:
+                    latest_file = max(feature_files, key=lambda p: p.stat().st_mtime)
+                    file_time = datetime.fromtimestamp(latest_file.stat().st_mtime)
+
+                    # Update cache if file is newer than last update
+                    if not self.last_update or file_time > self.last_update:
+                        with open(latest_file, 'r') as f:
+                            feature_definitions = json.load(f)
+                        self.feature_cache['definitions'] = feature_definitions
+                        self.feature_cache['last_updated'] = file_time
+                        tprint_success(f"✅ Updated feature cache from {latest_file.name}")
+                    else:
+                        tprint_info("📦 Feature definitions up to date")
+                else:
+                    tprint_warning("⚠️ No feature definition files found")
+            else:
+                tprint_info("📦 Feature definitions directory not found, using defaults")
 
         except Exception as e:
             tprint_warning(f"⚠️ Feature cache update failed: {e}")
+            self.logger.warning(f"Feature cache update failed: {e}")
 
     async def _check_model_updates(self):
         """Check for updated models from training pipeline."""
         try:
-            # This would check for newly trained models
-            # that should be loaded into trading
             tprint_info("🔄 Checking for model updates...")
 
-            # Placeholder for model update check logic
+            # Check if we need to check based on interval
+            now = datetime.now()
+            if self.last_model_check and (now - self.last_model_check) < self.model_check_interval:
+                tprint_info("📦 Model check interval not reached, skipping")
+                return
+
+            # Check for newly trained models
+            model_paths = [
+                Path("artifacts/models_training"),
+                Path("data_cache/models"),
+            ]
+
+            updated_models = []
+            for model_path in model_paths:
+                if not model_path.exists():
+                    continue
+
+                # Find model files modified since last check
+                for model_file in model_path.rglob("*.pkl"):
+                    file_time = datetime.fromtimestamp(model_file.stat().st_mtime)
+                    if not self.last_model_check or file_time > self.last_model_check:
+                        updated_models.append({
+                            'path': str(model_file),
+                            'modified': file_time,
+                            'size': model_file.stat().st_size
+                        })
+
+            if updated_models:
+                tprint_info(f"📦 Found {len(updated_models)} updated model(s)")
+                for model_info in updated_models:
+                    self.logger.info(f"Updated model: {model_info['path']} (modified: {model_info['modified']})")
+            else:
+                tprint_info("📦 No model updates found")
+
+            self.last_model_check = now
 
         except Exception as e:
             tprint_warning(f"⚠️ Model update check failed: {e}")
+            self.logger.warning(f"Model update check failed: {e}")
 
 class TradingDataExporter:
     """
@@ -302,6 +380,10 @@ class TradingDataExporter:
         tprint_info("📤 Exporting trading data for training pipeline...")
 
         try:
+            # Validate export format
+            if export_format not in ['parquet', 'json', 'csv']:
+                raise ValueError(f"Unsupported export format: {export_format}")
+
             # Prepare export directory
             export_dir = "data_cache/training_export"
             os.makedirs(export_dir, exist_ok=True)
@@ -342,7 +424,27 @@ class TradingDataExporter:
 
         except Exception as e:
             tprint_error(f"❌ Trading data export failed: {e}")
+            self.logger.error(f"Trading data export failed: {e}", exc_info=True)
             return False
+
+    async def cleanup(self):
+        """Cleanup resources."""
+        try:
+            self.logger.info("Cleaning up TradingDataExporter")
+        except Exception as e:
+            self.logger.warning(f"Cleanup failed: {e}")
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.cleanup()
 
     @trading_error_handler(
         error_types=(Exception,),
@@ -418,6 +520,25 @@ class TradingDataExporter:
         except Exception as e:
             tprint_error(f"❌ Training data preparation failed: {e}")
             return pd.DataFrame(), pd.Series()
+
+    async def cleanup(self):
+        """Cleanup resources."""
+        try:
+            self.logger.info("Cleaning up TradingDataExporter")
+        except Exception as e:
+            self.logger.warning(f"Cleanup failed: {e}")
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.cleanup()
 
 # Global instances
 training_data_provider = TrainingDataProvider()

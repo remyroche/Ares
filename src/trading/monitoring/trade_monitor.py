@@ -105,7 +105,7 @@ class TradeMonitor:
 
         # Performance tracking
         self.performance_metrics = PerformanceMetrics()
-        self.daily_pnl: List[float] = []
+        self.daily_pnl: Dict[str, float] = {}  # date -> daily PnL change
         self.balance_history: List[Dict[str, Any]] = []
 
         # Alert system
@@ -118,12 +118,19 @@ class TradeMonitor:
             'max_drawdown': config.get('max_drawdown_alert', 0.05),  # 5%
             'min_win_rate': config.get('min_win_rate_alert', 0.4),   # 40%
             'max_loss_per_trade': config.get('max_loss_per_trade_alert', 0.02),  # 2%
-            'max_daily_loss': config.get('max_daily_loss_alert', 0.05)  # 5%
+            'max_daily_loss': config.get('max_daily_loss_alert', 0.05),  # 5%
+            'large_trade_size': config.get('large_trade_size_alert', 1000.0)  # Configurable threshold
         }
 
         # State
         self.is_monitoring = False
         self.monitoring_start_time: Optional[datetime] = None
+        
+        # Thread safety
+        self._lock = asyncio.Lock()
+        
+        # Health monitoring
+        self.last_health_check: Optional[datetime] = None
 
     async def initialize(self) -> bool:
         """
@@ -197,21 +204,22 @@ class TradeMonitor:
             bool: True if trade recorded successfully
         """
         try:
-            # Add to active trades if not completed
-            if trade.status in [TradeStatus.PENDING, TradeStatus.PARTIALLY_FILLED]:
-                self.active_trades[trade.trade_id] = trade
+            async with self._lock:
+                # Add to active trades if not completed
+                if trade.status in [TradeStatus.PENDING, TradeStatus.PARTIALLY_FILLED]:
+                    self.active_trades[trade.trade_id] = trade
 
-            # Add to history
-            self.trade_history.append(trade)
+                # Add to history
+                self.trade_history.append(trade)
 
-            # Maintain history size
-            if len(self.trade_history) > self.max_history:
-                self.trade_history.pop(0)
+                # Maintain history size
+                if len(self.trade_history) > self.max_history:
+                    self.trade_history.pop(0)
 
-            # Update performance metrics
+            # Update performance metrics (outside lock for async operations)
             await self._update_performance_metrics(trade)
 
-            # Check for alerts
+            # Check for alerts (outside lock)
             await self._check_trade_alerts(trade)
 
             tprint_info(f"📊 Trade recorded: {trade.symbol} {trade.side} {trade.quantity} @ {trade.price}")
@@ -317,6 +325,11 @@ class TradeMonitor:
                 self.performance_metrics.profit_factor = (
                     self.performance_metrics.avg_win / self.performance_metrics.avg_loss
                 )
+            else:
+                # Cap profit factor at 100 when no losses
+                self.performance_metrics.profit_factor = min(
+                    100.0, float('inf') if self.performance_metrics.winning_trades > 0 else 0.0
+                )
 
             # Update balance
             self.performance_metrics.current_balance += trade.pnl - trade.fees
@@ -350,7 +363,7 @@ class TradeMonitor:
                 )
 
             # Check for unusual trade size
-            if trade.quantity > 1000:  # Example threshold
+            if trade.quantity > self.alert_thresholds['large_trade_size']:
                 await self._create_alert(
                     level=AlertLevel.INFO,
                     message=f"Large trade size: {trade.quantity} {trade.symbol}",
@@ -380,8 +393,9 @@ class TradeMonitor:
                 )
 
             # Check daily loss
-            if self.daily_pnl:
-                daily_loss = sum(self.daily_pnl[-24:])  # Last 24 hours
+            today = datetime.now().date().isoformat()
+            if today in self.daily_pnl:
+                daily_loss = self.daily_pnl[today]
                 if daily_loss < -self.alert_thresholds['max_daily_loss']:
                     await self._create_alert(
                         level=AlertLevel.ERROR,
@@ -413,14 +427,26 @@ class TradeMonitor:
         """Update daily performance metrics."""
         try:
             current_time = datetime.now()
+            today = current_time.date().isoformat()
 
-            # Add current PnL to daily tracking
-            if self.performance_metrics.current_balance > 0:
-                self.daily_pnl.append(self.performance_metrics.current_balance)
+            # Track daily PnL changes (not cumulative balance)
+            today_pnl = self.performance_metrics.total_pnl - sum(
+                self.daily_pnl.values()
+            )
+            
+            # Only update if there's a change
+            if today_pnl != 0:
+                if today in self.daily_pnl:
+                    self.daily_pnl[today] += today_pnl
+                else:
+                    self.daily_pnl[today] = today_pnl
 
-                # Keep only last 7 days of data
-                if len(self.daily_pnl) > 168:  # 7 days * 24 hours
-                    self.daily_pnl.pop(0)
+                # Keep only last 30 days of data
+                cutoff_date = (datetime.now() - timedelta(days=30)).date().isoformat()
+                self.daily_pnl = {
+                    date: pnl for date, pnl in self.daily_pnl.items()
+                    if date >= cutoff_date
+                }
 
             # Update balance history
             self.balance_history.append({
@@ -505,6 +531,66 @@ class TradeMonitor:
     def get_performance_metrics(self) -> PerformanceMetrics:
         """Get current performance metrics."""
         return self.performance_metrics
+
+    async def get_health_status(self) -> Dict[str, Any]:
+        """Get health status of trade monitor."""
+        try:
+            now = datetime.now()
+            self.last_health_check = now
+            
+            # Check if monitoring is running
+            if not self.is_monitoring:
+                return {
+                    'status': 'stopped',
+                    'monitoring_active': False,
+                    'timestamp': now.isoformat()
+                }
+            
+            # Check data freshness
+            stale_trades = sum(
+                1 for trade in self.active_trades.values()
+                if (now - trade.timestamp).total_seconds() > 3600  # 1 hour
+            )
+            
+            # Check memory usage
+            active_trades_count = len(self.active_trades)
+            history_count = len(self.trade_history)
+            alerts_count = len(self.alerts)
+            
+            # Calculate health score
+            health_score = 1.0
+            if stale_trades > active_trades_count * 0.5:
+                health_score = 0.7  # Too many stale trades
+            elif history_count > self.max_history * 0.9:
+                health_score = 0.85  # Approaching history limit
+            elif alerts_count > self.max_alerts * 0.9:
+                health_score = 0.85  # Approaching alerts limit
+            
+            # Check uptime
+            uptime_seconds = (
+                (now - self.monitoring_start_time).total_seconds()
+                if self.monitoring_start_time else 0
+            )
+            
+            return {
+                'status': 'healthy' if health_score >= 0.8 else 'degraded',
+                'health_score': health_score,
+                'monitoring_active': self.is_monitoring,
+                'uptime_seconds': uptime_seconds,
+                'active_trades': active_trades_count,
+                'stale_trades': stale_trades,
+                'history_count': history_count,
+                'alerts_count': alerts_count,
+                'win_rate': self.performance_metrics.win_rate,
+                'current_drawdown': self.performance_metrics.current_drawdown,
+                'timestamp': now.isoformat()
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
 
     def get_monitoring_stats(self) -> Dict[str, Any]:
         """Get monitoring statistics."""

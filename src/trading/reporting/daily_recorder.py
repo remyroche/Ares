@@ -191,6 +191,9 @@ class DailyRecorder:
         self.config = config or {}
         self.logger = logger.getChild('DailyRecorder')
 
+        # Configuration constants
+        self.default_account_size = self.config.get('default_account_size', 10000.0)
+
         # File configuration
         self.records_directory = Path(self.config.get('records_directory', 'daily_trading_records'))
         self.records_filename = self.config.get('records_filename', 'daily_trading_log.csv')
@@ -349,15 +352,27 @@ class DailyRecorder:
                     record.total_pnl = sum(pnl_values)
                     record.gross_profit = sum(p for p in pnl_values if p > 0)
                     record.gross_loss = abs(sum(p for p in pnl_values if p < 0))
-                    record.profit_factor = record.gross_profit / record.gross_loss if record.gross_loss > 0 else 0.0
+                    # Profit factor: inf when no losses indicates perfect performance
+                    if record.gross_loss > 0:
+                        record.profit_factor = record.gross_profit / record.gross_loss
+                    elif record.gross_profit > 0:
+                        record.profit_factor = float('inf')  # Perfect performance - no losses
+                    else:
+                        record.profit_factor = 0.0  # No trades or no profits
 
                     record.best_trade = max(pnl_values)
                     record.worst_trade = min(pnl_values)
                     record.avg_trade_pnl = np.mean(pnl_values)
 
                     # Calculate Sharpe ratio
+                    # Convert absolute PnL to percentage returns first
                     if len(pnl_values) > 1:
-                        returns = np.array(pnl_values) / 10000  # Normalize by account size
+                        # Calculate returns as percentage changes
+                        # For daily returns, we need to normalize by some base value
+                        # Using first trade's value as reference, or calculate percentage returns
+                        # Since we don't have account value, calculate returns relative to a base
+                        base_value = abs(pnl_values[0]) if pnl_values[0] != 0 else self.default_account_size
+                        returns = np.array(pnl_values) / base_value  # Convert to relative returns
                         record.sharpe_ratio = np.mean(returns) / np.std(returns) if np.std(returns) > 0 else 0.0
 
                     # Calculate max drawdown
@@ -399,7 +414,16 @@ class DailyRecorder:
                 if model_accuracies:
                     record.best_model_accuracy = max(model_accuracies.values())
                     record.worst_model_accuracy = min(model_accuracies.values())
-                    record.model_agreement_score = np.std(list(model_accuracies.values())) if len(model_accuracies) > 1 else 1.0
+                    # Model agreement: inverse of variance (lower variance = higher agreement)
+                    if len(model_accuracies) > 1:
+                        accuracy_values = list(model_accuracies.values())
+                        variance = np.var(accuracy_values)
+                        # Normalize variance to [0, 1] and invert: high variance = low agreement
+                        max_variance = 0.25  # Maximum possible variance for accuracy [0, 1] is 0.25
+                        normalized_variance = min(variance / max_variance, 1.0)
+                        record.model_agreement_score = 1.0 - normalized_variance
+                    else:
+                        record.model_agreement_score = 1.0  # Single model = perfect agreement
 
                 # Signal accuracy
                 correct_signals = 0
@@ -423,14 +447,27 @@ class DailyRecorder:
                         regime_counts[regime] = regime_counts.get(regime, 0) + 1
                     record.primary_regime = max(regime_counts.items(), key=lambda x: x[1])[0]
 
-                    # Regime changes
-                    record.regime_changes = len(set(regimes)) - 1
+                    # Regime changes - count actual transitions between consecutive trades
+                    regime_changes_count = 0
+                    if len(trades) > 1:
+                        # Sort trades by timestamp to ensure correct order
+                        sorted_trades = sorted(trades, key=lambda t: t.timestamp)
+                        for i in range(1, len(sorted_trades)):
+                            if sorted_trades[i-1].regime_type != sorted_trades[i].regime_type:
+                                regime_changes_count += 1
+                    record.regime_changes = regime_changes_count
 
                     # Average regime confidence
                     record.avg_regime_confidence = np.mean(regime_confidences) if regime_confidences else 0.0
 
                     # Regime stability (less changes = more stable)
-                    record.regime_stability = 1.0 - (record.regime_changes / len(trades)) if trades else 0.0
+                    # Normalize to [0, 1] range: 0 = unstable (many changes), 1 = stable (no changes)
+                    if len(trades) > 1:
+                        max_possible_changes = len(trades) - 1
+                        stability = 1.0 - (regime_changes_count / max_possible_changes) if max_possible_changes > 0 else 1.0
+                        record.regime_stability = max(0.0, min(1.0, stability))  # Clamp to [0, 1]
+                    else:
+                        record.regime_stability = 1.0  # Single trade means stable
 
                 # Execution quality
                 execution_qualities = [t.execution_quality for t in trades if t.execution_quality > 0]

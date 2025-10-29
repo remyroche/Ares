@@ -2845,30 +2845,154 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 target_feature_count = min(80, max(60, int(features.shape[1] * 0.3)))
             tprint(f"📊 [REGIME_MODELS] Target feature count: {target_feature_count}", color="blue")
             
-            # Step 1: Get accuracy-based importance (LightGBM)
-            tprint("🔍 [REGIME_MODELS] Step 1: Evaluating accuracy-based importance", color="cyan")
-            accuracy_model = lgb.LGBMClassifier(
-                n_estimators=200,
-                learning_rate=0.05,
-                random_state=self.model_config.get('random_state', 42),
-                class_weight='balanced',
-                importance_type='gain',
-                verbose=-1,
-                min_child_samples=50,  # Increased for stability
-                min_data_in_leaf=50
-            )
-            accuracy_model.fit(features, labels)
+            # Step 1: Get accuracy-based importance (LightGBM) - RFE style
+            tprint("🔍 [REGIME_MODELS] Step 1: Evaluating accuracy-based importance (RFE style)", color="cyan")
             
-            if hasattr(accuracy_model, 'feature_importances_'):
-                accuracy_importances = np.asarray(accuracy_model.feature_importances_)
-            else:
-                accuracy_importances = np.zeros(features.shape[1])
+            # RFE-style feature elimination: iteratively remove 50% of worst features
+            # (keep top 50%) until we reach 60-80 features
+            current_features = features.copy()
+            current_feature_indices = np.arange(features.shape[1])
+            accuracy_scores = np.zeros(features.shape[1])
             
-            # Normalize accuracy importances
-            if accuracy_importances.sum() > 0:
-                accuracy_scores = accuracy_importances / accuracy_importances.sum()
+            iteration = 0
+            while len(current_feature_indices) > target_feature_count:
+                iteration += 1
+                n_current = len(current_feature_indices)
+                
+                # Determine if we should use CV and 100 estimators (< 120 features)
+                use_cv = n_current < 120
+                n_estimators = 100 if use_cv else 200
+                
+                if use_cv:
+                    tprint(f"📊 [REGIME_MODELS] RFE iteration {iteration}: {n_current} features -> using 100 estimators & 5-fold CV", color="blue")
+                else:
+                    tprint(f"📊 [REGIME_MODELS] RFE iteration {iteration}: {n_current} features -> using 200 estimators", color="blue")
+                
+                # Train LightGBM model
+                accuracy_model = lgb.LGBMClassifier(
+                    n_estimators=n_estimators,
+                    learning_rate=0.05,
+                    random_state=self.model_config.get('random_state', 42),
+                    class_weight='balanced',
+                    importance_type='gain',
+                    verbose=-1,
+                    min_child_samples=50,  # Increased for stability
+                    min_data_in_leaf=50
+                )
+                
+                if use_cv:
+                    # Use 5-fold CV when < 120 features
+                    from sklearn.model_selection import cross_val_score, StratifiedKFold
+                    cv = StratifiedKFold(n_splits=5, shuffle=False)
+                    cv_scores = cross_val_score(
+                        accuracy_model, 
+                        current_features, 
+                        labels, 
+                        cv=cv, 
+                        scoring='accuracy',
+                        n_jobs=-1
+                    )
+                    # Still fit on full data to get feature importances
+                    accuracy_model.fit(current_features, labels)
+                else:
+                    accuracy_model.fit(current_features, labels)
+                
+                # Get feature importances for current feature set
+                if hasattr(accuracy_model, 'feature_importances_'):
+                    current_importances = np.asarray(accuracy_model.feature_importances_)
+                else:
+                    current_importances = np.zeros(n_current)
+                
+                # Normalize importances
+                if current_importances.sum() > 0:
+                    current_normalized = current_importances / current_importances.sum()
+                else:
+                    current_normalized = np.ones(n_current) / n_current
+                
+                # Store scores for current features
+                for local_idx, global_idx in enumerate(current_feature_indices):
+                    accuracy_scores[global_idx] = current_normalized[local_idx]
+                
+                # Check if we've reached target range
+                if n_current <= target_feature_count:
+                    break
+                
+                # Remove 50% of worst features (keep top 50%)
+                # Sort features by importance
+                sorted_local_indices = np.argsort(current_normalized)[::-1]
+                
+                # Keep top 50% (or at least enough to reach target)
+                keep_count = max(
+                    target_feature_count,
+                    int(n_current * 0.5)  # Keep top 50%
+                )
+                
+                if keep_count >= n_current:
+                    # If we can't reduce further, break
+                    break
+                
+                # Select features to keep
+                keep_local_indices = sorted_local_indices[:keep_count]
+                keep_global_indices = current_feature_indices[keep_local_indices]
+                
+                # Update for next iteration
+                current_feature_indices = keep_global_indices
+                current_features = features[:, current_feature_indices]
+            
+            # Handle edge case: if we didn't train any model (e.g., started with <= target features)
+            # we still need to compute accuracy scores
+            if iteration == 0:
+                tprint(f"📊 [REGIME_MODELS] Starting with {len(current_feature_indices)} features (<= target {target_feature_count}), computing accuracy scores", color="blue")
+                n_current = len(current_feature_indices)
+                use_cv = n_current < 120
+                n_estimators = 100 if use_cv else 200
+                
+                accuracy_model = lgb.LGBMClassifier(
+                    n_estimators=n_estimators,
+                    learning_rate=0.05,
+                    random_state=self.model_config.get('random_state', 42),
+                    class_weight='balanced',
+                    importance_type='gain',
+                    verbose=-1,
+                    min_child_samples=50,
+                    min_data_in_leaf=50
+                )
+                
+                if use_cv:
+                    from sklearn.model_selection import cross_val_score, StratifiedKFold
+                    cv = StratifiedKFold(n_splits=5, shuffle=False)
+                    cv_scores = cross_val_score(
+                        accuracy_model, 
+                        current_features, 
+                        labels, 
+                        cv=cv, 
+                        scoring='accuracy',
+                        n_jobs=-1
+                    )
+                    accuracy_model.fit(current_features, labels)
+                else:
+                    accuracy_model.fit(current_features, labels)
+                
+                if hasattr(accuracy_model, 'feature_importances_'):
+                    current_importances = np.asarray(accuracy_model.feature_importances_)
+                else:
+                    current_importances = np.zeros(n_current)
+                
+                if current_importances.sum() > 0:
+                    current_normalized = current_importances / current_importances.sum()
+                else:
+                    current_normalized = np.ones(n_current) / n_current
+                
+                for local_idx, global_idx in enumerate(current_feature_indices):
+                    accuracy_scores[global_idx] = current_normalized[local_idx]
+            
+            # Final normalization of accuracy scores
+            if accuracy_scores.sum() > 0:
+                accuracy_scores = accuracy_scores / accuracy_scores.sum()
             else:
                 accuracy_scores = np.ones(features.shape[1]) / features.shape[1]
+            
+            tprint(f"✅ [REGIME_MODELS] RFE completed: {len(current_feature_indices)} features remaining after {iteration} iterations", color="green")
             
             # Step 2: Evaluate temporal smoothness for each feature
             tprint("🔍 [REGIME_MODELS] Step 2: Evaluating temporal smoothness", color="cyan")

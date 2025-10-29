@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass, field
 from enum import Enum
+from collections import deque
 
 import pandas as pd
 import numpy as np
@@ -104,9 +105,9 @@ class AnalystSignalGenerator:
         self.nas_timeframe = config.get('nas_timeframe', '5m')
         self.regime_timeframe = config.get('regime_timeframe', '15m')
 
-        # Signal history
-        self.signal_history: List[AnalystSignal] = []
+        # Signal history (using deque for efficient O(1) operations)
         self.max_history = config.get('max_history', 1000)
+        self.signal_history: deque = deque(maxlen=self.max_history)
 
         # Performance tracking
         self.signal_count = 0
@@ -364,10 +365,25 @@ class AnalystSignalGenerator:
 
             nas_confidence = 0.0
             if last_probabilities is not None and len(last_probabilities) > 0:
-                if predicted_regime < len(last_probabilities):
-                    nas_confidence = float(last_probabilities[predicted_regime])
+                # Validate predicted_regime is within valid bounds
+                if isinstance(predicted_regime, (int, np.integer)):
+                    if 0 <= predicted_regime < len(last_probabilities):
+                        nas_confidence = float(last_probabilities[predicted_regime])
+                    else:
+                        # Index out of bounds - use max probability as fallback
+                        self.logger.warning(
+                            f"⚠️ Predicted regime {predicted_regime} out of bounds [0, {len(last_probabilities)}), "
+                            f"using max probability as fallback"
+                        )
+                        nas_confidence = float(np.max(last_probabilities))
                 else:
+                    # Invalid predicted_regime type - use max probability
+                    self.logger.warning(
+                        f"⚠️ Invalid predicted_regime type: {type(predicted_regime)}, using max probability"
+                    )
                     nas_confidence = float(np.max(last_probabilities))
+            else:
+                self.logger.debug("⚠️ No valid regime probabilities available for NAS confidence")
 
             close_direction = 'hold'
             if 'close' in nas_input.columns and len(nas_input['close']) >= 2:
@@ -497,10 +513,12 @@ class AnalystSignalGenerator:
                     if nas_direction != signal_direction:
                         # NAS overrides if it's more confident
                         signal_direction = nas_direction
-                        confidence_score = combined_confidence
                         self.nas_enhanced_signals += 1
-
-                confidence_score = combined_confidence
+                    # Use combined confidence when NAS is confident
+                    confidence_score = combined_confidence
+                else:
+                    # NAS confidence is low, but still use combined for slight enhancement
+                    confidence_score = combined_confidence
 
             # Check confidence threshold
             if confidence_score < self.confidence_threshold:
@@ -597,16 +615,14 @@ class AnalystSignalGenerator:
             return None, None
 
     def _store_signal(self, signal: AnalystSignal):
-        """Store signal in history."""
+        """Store signal in history (deque automatically handles maxlen)."""
         self.signal_history.append(signal)
-
-        # Maintain history size
-        if len(self.signal_history) > self.max_history:
-            self.signal_history.pop(0)
 
     def get_signal_history(self, n: int = 100) -> List[AnalystSignal]:
         """Get recent signal history."""
-        return self.signal_history[-n:] if len(self.signal_history) >= n else self.signal_history.copy()
+        # Convert deque to list for return
+        signal_list = list(self.signal_history)
+        return signal_list[-n:] if len(signal_list) >= n else signal_list
 
     def get_signal_stats(self) -> Dict[str, Any]:
         """Get signal generation statistics."""

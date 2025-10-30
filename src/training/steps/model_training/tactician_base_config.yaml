@@ -14,25 +14,50 @@ tactician_config:
   
   # Base models configuration
   base_models:
-    lgbm_gru:
-      model_type: "LGBMRegressor"
-      gru_features: true
-      params:
-        n_estimators: 1000
-        learning_rate: 0.08
-        max_depth: 10
-        num_leaves: 255
-        subsample: 0.8
-        colsample_bytree: 0.8
-        random_state: 42
-        verbosity: -1
-        n_jobs: -1
-      gru_params:
-        hidden_size: 64
-        num_layers: 2
-        dropout: 0.1
-        sequence_length: 20
-    
+  - model_name: "StandaloneGRUGenerator"
+    # Points to the standalone GRU model
+    class_name: "src.models.standalone_gru_generator.StandaloneGRUGenerator"
+    # Custom flag to indicate this model's output is a feature for the next model
+    is_feature_generator: True
+    params:
+      sequence_length: 60       # GRU sequence length
+      num_features: 100         # Placeholder: This should match the number of input features for the GRU
+      hidden_units: 64
+      num_layers: 2
+      dropout: 0.2
+      learning_rate: 0.001
+      # Training parameters for the GRU
+      training_params:
+        epochs: 50
+        batch_size: 128
+        verbose: 1
+        # Add early stopping for the GRU
+        callbacks:
+          - class: "tensorflow.keras.callbacks.EarlyStopping"
+            params:
+              monitor: "val_loss"
+              patience: 5
+              restore_best_weights: True
+
+  - model_name: "TacticianLGBM"
+    # Uses a standard LGBMClassifier
+    class_name: "lightgbm.LGBMClassifier"
+    # This is the main prediction model
+    is_feature_generator: False
+    params:
+      n_estimators: 1000
+      learning_rate: 0.05
+      num_leaves: 31
+      objective: "binary"
+      metric: "logloss"
+      boosting_type: "gbdt"
+      n_jobs: -1
+      verbose: -1
+      # LGBM-specific training parameters
+      training_params:
+        callbacks:
+          - "lightgbm.early_stopping(100, verbose=False)"
+        eval_metric: "logloss"
     catboost:
       model_type: "CatBoostRegressor"
       params:
@@ -44,17 +69,6 @@ tactician_config:
         verbose: false
         thread_count: -1
     
-    causal_dilated_tcn:
-      model_type: "CausalDilatedTCN"
-      params:
-        input_size: 100
-        hidden_size: 64
-        num_layers: 4
-        kernel_size: 3
-        dilation_base: 2
-        dropout: 0.1
-        sequence_length: 50
-  
   # Training configuration
   training:
     training_samples: 8000

@@ -61,10 +61,10 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CausalTCNConfig:
     """Configuration for Causal Dilated TCN model."""
-    num_filters: int = 64
+    num_filters: int = 32
     kernel_size: int = 3
     dilation_base: int = 2
-    num_layers: int = 4
+    num_layers: int = 5
     dropout: float = 0.1
     activation: str = "relu"
     use_skip_connections: bool = True

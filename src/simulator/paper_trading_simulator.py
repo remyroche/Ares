@@ -19,7 +19,8 @@ from .order_validator import OrderValidator
 from .position_manager import PositionManager, Position
 from .persistence import SimulatorPersistence
 from src.trading.reporting.trade_reporting_manager import (
-    TradeRecord, trade_reporting_manager, generate_daily_recap
+    TradeRecord, trade_reporting_manager, generate_daily_recap, 
+    create_trade_record_from_execution
 )
 from src.utils.tprint import tprint_info, tprint_success, tprint_error, tprint_debug
 
@@ -418,48 +419,66 @@ class PaperTradingSimulator:
                 # Estimate percentage (simplified)
                 net_gain_loss_pct = (pnl / (quantity * price)) if (quantity * price) > 0 else 0.0
             
-            # Create trade record
-            trade_record = TradeRecord(
+            # Extract leverage (default to 1.0 for paper trading)
+            leverage = metadata.get('leverage', 1.0)
+            
+            # Build regime data dict for helper function
+            regime_data = {}
+            if regime_probs:
+                regime_data['regime_probabilities'] = regime_probs
+            if top_regimes:
+                regime_data['primary_regime'] = top_regimes[0][0]
+                regime_data['confidence'] = top_regimes[0][1]
+            
+            # Build trading decision dict
+            trading_decision = {
+                'confidence': ensemble_confidence,
+                'analyst_confidence': analyst_confidence,
+                'tactician_confidence': tactician_confidence,
+                'signal_strength': signal_strength,
+                'feature_importance': shap_values or {}
+            }
+            
+            # Build market context dict
+            market_context = {
+                'volume': volume,
+                'volatility': volatility,
+                'trend': trend
+            }
+            
+            # Calculate gross PnL (before fees)
+            gross_pnl = (pnl + fee) if is_closing else None
+            
+            # Create trade record using helper function
+            trade_record = create_trade_record_from_execution(
                 trade_id=str(uuid.uuid4()),
-                timestamp=entry_datetime,
                 exchange=self.exchange,
-                asset=symbol,
+                symbol=symbol,
                 mode="paper",
-                entry_datetime=entry_datetime,
-                exit_datetime=exit_datetime,
-                entry_price=entry_price,
-                exit_price=exit_price,
-                quantity=quantity,
                 side=side,
                 direction=direction,
-                net_gain_loss_pct=net_gain_loss_pct,
-                net_gain_loss_absolute=net_gain_loss_absolute,
-                realized_pnl=pnl if is_closing else None,
+                entry_price=entry_price,
+                quantity=quantity,
+                leverage=leverage,
+                exit_price=exit_price,
+                exit_datetime=exit_datetime,
                 fees=fee,
-                slippage_pct=slippage,
-                analyst_confidence=analyst_confidence,
-                tactician_confidence=tactician_confidence,
-                strategist_confidence=strategist_confidence,
-                ensemble_confidence=ensemble_confidence,
-                signal_strength=signal_strength,
-                top_feature_1=top_features[0][0] if len(top_features) > 0 else "",
-                top_feature_1_importance=top_features[0][1] if len(top_features) > 0 else 0.0,
-                top_feature_2=top_features[1][0] if len(top_features) > 1 else "",
-                top_feature_2_importance=top_features[1][1] if len(top_features) > 1 else 0.0,
-                top_feature_3=top_features[2][0] if len(top_features) > 2 else "",
-                top_feature_3_importance=top_features[2][1] if len(top_features) > 2 else 0.0,
-                regime_1=top_regimes[0][0] if len(top_regimes) > 0 else "",
-                regime_1_probability=top_regimes[0][1] if len(top_regimes) > 0 else 0.0,
-                regime_2=top_regimes[1][0] if len(top_regimes) > 1 else "",
-                regime_2_probability=top_regimes[1][1] if len(top_regimes) > 1 else 0.0,
-                regime_3=top_regimes[2][0] if len(top_regimes) > 2 else "",
-                regime_3_probability=top_regimes[2][1] if len(top_regimes) > 2 else 0.0,
-                volume=volume,
-                volatility=volatility,
-                trend=trend,
-                execution_time_ms=latency_ms,
-                execution_quality=1.0 - slippage  # Simplified quality metric
+                slippage_pct=slippage * 100,  # Convert to percentage
+                trading_decision=trading_decision,
+                regime_data=regime_data,
+                market_context=market_context
             )
+            
+            # Override calculated values with actual values if closing
+            if is_closing:
+                trade_record.realized_pnl = pnl
+                trade_record.gross_pnl = gross_pnl
+                trade_record.net_gain_loss_absolute = net_gain_loss_absolute
+                trade_record.net_gain_loss_pct = net_gain_loss_pct
+            
+            # Set execution metrics
+            trade_record.execution_time_ms = latency_ms
+            trade_record.execution_quality = 1.0 - slippage  # Simplified quality metric
             
             # Record trade
             await trade_reporting_manager.record_trade(trade_record)

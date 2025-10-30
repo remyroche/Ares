@@ -246,3 +246,236 @@ step17_enhanced_optimization:
     export_optimized_parameters: true
     export_performance_metrics: true
     export_optimization_summary: true
+
+# ========================================
+# Kelly Sizing Optimization
+# ========================================
+# Nested regime-aware optimization for dampened Kelly parameters
+# Integrated into step17 as a separate optimization category
+
+kelly_sizing_optimization:
+  # Enable/disable Kelly optimization
+  enabled: true
+  
+  # Optimization strategy
+  strategy: "nested"  # Global first, then per-regime refinement
+  regime_aware: true  # ALWAYS regime-aware
+  
+  # Nested optimization settings
+  nested_optimization:
+    enabled: true
+    global_trials: 150          # Step 1: Optimize global fallback
+    per_regime_trials: 50       # Step 2: Refine each regime
+    parallel_global: true
+    parallel_regime: false      # Sequential regime optimization
+    
+  # Hierarchical regularization (prevent overfitting to specific regimes)
+  hierarchical_regularization:
+    enabled: true
+    l2_penalty: 0.1             # Penalty weight for ||params_regime - params_global||^2
+    min_regime_samples: 50      # Require this many samples to tune per-regime
+    enable_meta_learning: true  # Share parameters across similar regimes/symbols
+    
+  # Multi-objective optimization (6 objectives)
+  objectives:
+    - name: geometric_mean
+      weight: 1.0
+      maximize: true
+      description: "Geometric mean return across folds"
+      
+    - name: sharpe_ratio
+      weight: 0.8
+      maximize: true
+      description: "Risk-adjusted returns"
+      
+    - name: max_drawdown
+      weight: 1.2
+      maximize: false  # Minimize
+      description: "Worst-case drawdown across folds"
+      
+    - name: high_leverage_frequency
+      weight: 0.5
+      maximize: false  # Minimize excessive leverage use
+      description: "Percentage of time in high-leverage state"
+      
+    - name: calibration_error
+      weight: 0.7
+      maximize: false  # Minimize
+      description: "Mean absolute difference between posterior and actual win rates"
+      
+    - name: bin_coverage
+      weight: 0.6
+      maximize: true
+      description: "Percentage of trades with sufficient bin samples"
+  
+  # Parameters to optimize
+  parameters:
+    # Global parameters (optimized first)
+    global:
+      lambda_base:
+        range: [0.1, 0.6]
+        type: "float"
+        log: false
+        
+      beta_position:
+        range: [0.4, 2.0]
+        type: "float"
+        log: false
+        
+      beta_leverage:
+        range: [0.4, 2.0]
+        type: "float"
+        log: false
+        
+      prior_alpha:
+        range: [5.0, 200.0]
+        type: "float"
+        log: true  # Log scale for better sampling
+        
+      ess_threshold:
+        range: [10.0, 200.0]
+        type: "float"
+        log: false
+        
+      entropy_threshold:
+        range: [0.5, 1.5]
+        type: "float"
+        log: false
+        
+      n_min_samples:
+        range: [5, 50]
+        type: "int"
+        log: false
+        
+      f_floor:
+        range: [0.001, 0.02]
+        type: "float"
+        log: false
+        
+      lev_floor:
+        range: [1.0, 2.0]
+        type: "float"
+        log: false
+        
+      decay_theta:
+        range: [0.85, 0.98]
+        type: "float"
+        log: false
+    
+    # Lambda_eff components (global)
+    lambda_eff_components:
+      ess_sigmoid_kappa:
+        range: [0.05, 0.3]
+        type: "float"
+        log: false
+        
+      entropy_scale:
+        range: [0.3, 0.8]
+        type: "float"
+        log: false
+        
+      variance_penalty:
+        range: [1.0, 5.0]
+        type: "float"
+        log: false
+    
+    # Safety limits (global)
+    safety:
+      max_kelly_fraction:
+        range: [0.3, 0.7]
+        type: "float"
+        log: false
+        description: "Never exceed this fraction of theoretical Kelly"
+    
+    # Per-regime parameters (optimized second, starting from global optimum)
+    # Same parameters as global, but tuned per-regime with L2 regularization
+    per_regime: true
+    per_regime_same_as_global: true
+  
+  # Cross-validation configuration
+  cv_config:
+    method: "purged_walk_forward"
+    n_folds: 5
+    train_window_months: 24
+    test_window_months: 6
+    embargo_pct: 0.05  # 5% of train window as embargo gap
+    enable_purging: true
+    overlap_detection: true
+    max_trade_duration_days: 7
+    
+  # Optimization runtime settings
+  optimization:
+    n_trials: 150  # For global
+    timeout_hours: 16
+    parallel_jobs: 4
+    sampler: "tpe"  # TPE for continuous parameters
+    pruner: "median"
+    enable_early_stopping: true
+    early_stopping_patience: 15
+    
+  # Parameter sensitivity testing
+  parameter_sensitivity:
+    enabled: true
+    perturbation_pct: 0.20  # Test ±20% parameter changes
+    test_parameters:
+      - lambda_base
+      - beta_position
+      - prior_alpha
+      - ess_threshold
+    max_acceptable_degradation_pct: 15  # Max 15% metric degradation with ±20% perturbation
+    
+  # Pareto frontier generation
+  pareto_frontier:
+    enabled: true
+    n_configs: 3  # Conservative, balanced, aggressive
+    
+    # Configuration profiles
+    conservative:
+      description: "Lower leverage, higher dampening, stricter thresholds"
+      target_max_drawdown: 0.10
+      target_min_sharpe: 1.5
+      target_max_high_lev_freq: 0.15
+      
+    balanced:
+      description: "Middle ground between risk and return"
+      target_max_drawdown: 0.15
+      target_min_sharpe: 1.0
+      target_max_high_lev_freq: 0.25
+      
+    aggressive:
+      description: "Higher leverage when conditions warrant"
+      target_max_drawdown: 0.20
+      target_min_sharpe: 0.8
+      target_max_high_lev_freq: 0.35
+  
+  # Output and artifacts
+  output:
+    save_study: true
+    save_best_params: true
+    save_pareto_configs: true
+    save_sensitivity_analysis: true
+    artifacts_dir: "checkpoints/kelly_sizing"
+    
+    # Filename patterns
+    global_params_filename: "kelly_global_params_{symbol}_{timeframe}_{timestamp}.json"
+    regime_params_filename: "kelly_regime_params_{symbol}_{timeframe}_{timestamp}.json"
+    pareto_configs_filename: "kelly_pareto_configs_{symbol}_{timeframe}_{timestamp}.json"
+    
+  # Logging and monitoring
+  logging:
+    log_every_n_trials: 10
+    log_pareto_updates: true
+    log_regime_progress: true
+    save_intermediate_results: true
+    intermediate_save_interval: 25  # Save every 25 trials
+
+# ========================================
+# Integration with existing step17
+# ========================================
+# Kelly optimization can be run:
+# 1. As part of step17 (add 'kelly_sizing' to categories)
+# 2. Standalone (call kelly_parameters_optimizer.py directly)
+# 3. After main step17 (sequential execution)
+#
+# Recommended: Run standalone after main step17 completes,
+# using optimized trading parameters as fixed context.

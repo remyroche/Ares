@@ -35,6 +35,12 @@ from .exchange_interface import ExchangeInterface, create_exchange_interface
 from ..signal_generation.analyst_signals import AnalystSignalGenerator, create_analyst_signal_generator
 from ..signal_generation.tactician_signals import TacticianSignalGenerator, create_tactician_signal_generator
 
+# Import trade reporting
+from ..reporting.trade_reporting_manager import (
+    trade_reporting_manager,
+    create_trade_record_from_execution,
+)
+
 logger = system_logger.getChild('LiveTrader')
 
 class LiveTraderStatus(Enum):
@@ -294,6 +300,46 @@ class LiveTrader:
             self.total_trades += 1
 
             tprint_success(f"✅ Trade executed: {side} {quantity} {symbol} @ {price}")
+            
+            # Record trade to CSV for persistent reporting
+            try:
+                # Determine direction from side
+                direction = 'long' if side.lower() == 'buy' else 'short'
+                
+                # Get leverage from order metadata (default to 1.0)
+                leverage = order.metadata.get('leverage', 1.0) if hasattr(order, 'metadata') and order.metadata else 1.0
+                
+                # Estimate fees (can be updated when order fills)
+                estimated_fees = quantity * (price or 0) * 0.001  # 0.1% default fee
+                
+                # Get trading signal metadata if available
+                trading_decision = order.metadata if hasattr(order, 'metadata') and order.metadata else {}
+                
+                # Create TradeRecord for CSV export
+                trade_record = create_trade_record_from_execution(
+                    trade_id=order.order_id,
+                    exchange=self.trading_config.exchange_name,
+                    symbol=symbol,
+                    mode="live",  # Live trading mode
+                    side=side,
+                    direction=direction,
+                    entry_price=price or 0,
+                    quantity=quantity,
+                    leverage=leverage,
+                    fees=estimated_fees,
+                    slippage_pct=0.0,  # Will be updated when order fills
+                    trading_decision=trading_decision,
+                    regime_data=trading_decision.get('regime_data'),
+                    market_context=trading_decision.get('market_context', {})
+                )
+                
+                # Record to CSV
+                await trade_reporting_manager.record_trade(trade_record)
+                tprint_info(f"📊 Trade recorded to CSV: {order.order_id}")
+                
+            except Exception as csv_error:
+                self.logger.warning(f"⚠️ Failed to record trade to CSV: {csv_error}")
+                # Don't fail the trade execution if CSV recording fails
 
             return order.order_id
 

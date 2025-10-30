@@ -584,6 +584,18 @@ class ModelTrainer(BaseTrainer):
                 data, targets, test_size=0.2, random_state=42
             )
             
+            # Check if HPO is enabled in config
+            hpo_enabled = False
+            hpo_config = None
+            if hasattr(model, 'get_params'):
+                try:
+                    model_params = model.get_params()
+                    if 'hpo' in model_params and isinstance(model_params['hpo'], dict):
+                        hpo_config = model_params['hpo']
+                        hpo_enabled = hpo_config.get('enabled', False)
+                except:
+                    pass
+            
             # Role-specific TCN configuration
             if self.config.role == TrainingRole.ANALYST:
                 tcn_config = CausalTCNConfig(
@@ -595,7 +607,13 @@ class ModelTrainer(BaseTrainer):
                     learning_rate=0.001,
                     batch_size=32,
                     epochs=100,
-                    early_stopping_patience=10
+                    early_stopping_patience=10,
+                    # Enable autoencoder compression for faster training
+                    use_autoencoder=True,
+                    autoencoder_path="models/analyst_autoencoder_encoder.pth",
+                    latent_dim=16,
+                    train_autoencoder_if_missing=True,
+                    autoencoder_epochs=50
                 )
             else:  # Tactician
                 tcn_config = CausalTCNConfig(
@@ -607,8 +625,87 @@ class ModelTrainer(BaseTrainer):
                     learning_rate=0.001,
                     batch_size=32,
                     epochs=100,
-                    early_stopping_patience=10
+                    early_stopping_patience=10,
+                    # Enable autoencoder compression for faster training
+                    use_autoencoder=True,
+                    autoencoder_path="models/tactician_autoencoder_encoder.pth",
+                    latent_dim=16,
+                    train_autoencoder_if_missing=True,
+                    autoencoder_epochs=50
                 )
+            
+            # Run HPO if enabled
+            if hpo_enabled and hpo_config:
+                self.logger.info("🎯 Hierarchical HPO enabled - optimizing hyperparameters...")
+                try:
+                    from src.training.steps.models_training.core.tcn_autoencoder_hpo import AutoencoderTCNHPO
+                    from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import OptimizationStage
+                    
+                    # Map stage strings to enums
+                    stage_map = {
+                        'coarse_grid': OptimizationStage.COARSE_GRID,
+                        'fine_grid': OptimizationStage.FINE_GRID,
+                        'tpe': OptimizationStage.TPE,
+                        'bohb': OptimizationStage.BOHB,
+                        'random': OptimizationStage.RANDOM
+                    }
+                    stages = [stage_map[s] for s in hpo_config.get('stages', ['coarse_grid', 'fine_grid', 'tpe'])]
+                    
+                    # Create HPO instance
+                    hpo = AutoencoderTCNHPO(
+                        role=self.config.role.value if hasattr(self.config.role, 'value') else str(self.config.role),
+                        metric=hpo_config.get('metric', 'accuracy'),
+                        n_rounds=hpo_config.get('n_rounds', 2),
+                        stages=stages,
+                        enable_final_refinement=hpo_config.get('enable_final_refinement', True),
+                        final_refinement_trials=hpo_config.get('final_refinement_trials', 50),
+                        save_results=hpo_config.get('save_results', True),
+                        results_dir=hpo_config.get('results_dir', 'artifacts/hpo/tcn'),
+                        verbose=True
+                    )
+                    
+                    # Run optimization
+                    result = hpo.optimize(
+                        X_train=X_train.values if isinstance(X_train, pd.DataFrame) else X_train,
+                        y_train=y_train.values if isinstance(y_train, pd.Series) else y_train,
+                        X_val=X_val.values if isinstance(X_val, pd.DataFrame) else X_val,
+                        y_val=y_val.values if isinstance(y_val, pd.Series) else y_val
+                    )
+                    
+                    # Update config with optimized parameters
+                    best_params = result.best_params
+                    tcn_config = CausalTCNConfig(
+                        # Use optimized structure params
+                        num_filters=best_params['num_filters'],
+                        num_layers=best_params['num_layers'],
+                        kernel_size=best_params['kernel_size'],
+                        dilation_base=best_params['dilation_base'],
+                        
+                        # Use optimized training params
+                        learning_rate=best_params['tcn_learning_rate'],
+                        dropout=best_params['tcn_dropout'],
+                        batch_size=best_params['batch_size'],
+                        epochs=best_params['tcn_epochs'],
+                        early_stopping_patience=best_params['early_stopping_patience'],
+                        
+                        # Use optimized autoencoder params
+                        use_autoencoder=True,
+                        latent_dim=best_params['latent_dim'],
+                        autoencoder_epochs=best_params['ae_epochs'],
+                        train_autoencoder_if_missing=True,
+                        autoencoder_path="models/analyst_autoencoder_encoder.pth" if self.config.role == TrainingRole.ANALYST else "models/tactician_autoencoder_encoder.pth"
+                    )
+                    
+                    self.logger.info(f"✅ HPO complete! Best {hpo_config.get('metric', 'accuracy')}: {result.best_score:.4f}")
+                    self.logger.info(f"   Optimized latent_dim: {best_params['latent_dim']}")
+                    self.logger.info(f"   Optimized TCN layers: {best_params['num_layers']}")
+                    self.logger.info(f"   Optimized TCN filters: {best_params['num_filters']}")
+                    
+                except Exception as hpo_error:
+                    self.logger.error(f"❌ HPO failed: {hpo_error}, using default config")
+                    import traceback
+                    traceback.print_exc()
+                    # Fall back to default config (already defined above)
             
             # Create and train TCN model
             model = CausalDilatedTCNModel(config=tcn_config)

@@ -31,15 +31,22 @@ analyst_config:
   # Input features from Analyst base models
   base_model_outputs:
     lgbm_output: "analyst_base_lgbm_predictions"
-    lgbm_patchtst_output: "analyst_base_lgbm_patchtst_predictions"
+    tcn_output: "analyst_base_tcn_predictions"
     catboost_output: "analyst_base_catboost_predictions"
     meta_learner_output: "analyst_base_meta_learner_predictions"
   
   # Training configuration
+  # NOTE: The absolute sample numbers below are now OVERRIDDEN by percentage-based allocations
+  # calculated in unified_models_training_step.py. Default percentages are:
+  # - Training: 70% of total samples
+  # - Validation: 15% of total samples
+  # - Test: 15% of total samples
+  # You can override these percentages by setting train_percentage, validation_percentage, 
+  # and test_percentage in the runtime config
   training:
-    training_samples: 15000
-    validation_samples: 5000
-    test_samples: 3000
+    training_samples: 15000  # Deprecated - calculated as % of total samples
+    validation_samples: 5000  # Deprecated - calculated as % of total samples
+    test_samples: 3000  # Deprecated - calculated as % of total samples
     enable_cross_validation: true
     cv_folds: 5
     enable_early_stopping: true

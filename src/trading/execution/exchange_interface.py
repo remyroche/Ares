@@ -35,7 +35,8 @@ from exchanges.shared import (
     HighLevelRiskManager, HighLevelBalanceManager, HighLevelRateLimitManager
 )
 
-from exchanges.exchange_dispatcher import ExchangeDispatcher, ExchangeConfig, ExchangeType
+from exchanges.exchange_dispatcher import ExchangeDispatcher, ExchangeConfig
+from exchanges.exchange_types import ExchangeType  # Use the shared ExchangeType enum
 from exchanges.shared import (
     # Auth
     AuthenticationManager, APIKeyManager, TimeSyncManager, SubaccountManager,
@@ -67,13 +68,7 @@ from ..utils.validation import validate_trading_config
 
 logger = system_logger.getChild('ExchangeInterface')
 
-class ExchangeType(Enum):
-    """Exchange types."""
-    BINANCE = "binance"
-    COINBASE = "coinbase"
-    KRAKEN = "kraken"
-    BYBIT = "bybit"
-    SIMULATED = "simulated"
+# ExchangeType is now imported from exchanges.exchange_types
 
 class MarketDataType(Enum):
     """Market data types."""
@@ -302,12 +297,13 @@ class ExchangeInterface:
                     await self._initialize_exchange_utilities()
 
                     # Create exchange dispatcher
-                    # Map exchange type correctly
-                    if self.exchange_type == 'okx':
-                        exchange_type = ExchangeType.OKX
-                    elif self.exchange_type == 'bingx':
-                        exchange_type = ExchangeType.BINGX
-                    else:
+                    # Map exchange type string to enum
+                    exchange_type_str = self.exchange_type.upper() if isinstance(self.exchange_type, str) else str(self.exchange_type)
+                    try:
+                        exchange_type = ExchangeType[exchange_type_str]
+                    except KeyError:
+                        # Default to binance if unknown
+                        tprint_warning(f"⚠️  Unknown exchange type '{self.exchange_type}', defaulting to BINANCE")
                         exchange_type = ExchangeType.BINANCE
                     config = ExchangeConfig(
                         exchange_type=exchange_type,

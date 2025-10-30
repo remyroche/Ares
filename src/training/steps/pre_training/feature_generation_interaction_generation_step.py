@@ -434,11 +434,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         else:
             tprint_info(f"📊 [ANALYST] Starting MI-based interaction generation for {config.get('symbol', 'UNKNOWN')}")
         
-        tprint_info(f"🔍 DEBUG: execute method called")
-        tprint_info(f"🔍 DEBUG: Config: {config}")
-        tprint_info(f"🔍 DEBUG: Symbol: {config.get('symbol', 'NOT_FOUND')}")
-        tprint_info(f"🔍 DEBUG: Execution mode: {config.get('execution_mode', 'NOT_FOUND')}")
-        tprint_info(f"🔍 DEBUG: Interaction generation mode: {self.execution_mode}")
 
         try:
             # Initialize optimization components
@@ -447,8 +442,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             # Phase 0: Load artifacts and select top features
             tprint_info("=" * 80)
             tprint_info("📋 PHASE 0: Load Artifacts and Select Top Features")
-            tprint_info(f"🔍 DEBUG: Phase 0 method called")
-            tprint_info(f"🔍 DEBUG: Config: {config}")
             tprint_info("=" * 80)
             phase0_start = time.time()
             
@@ -476,12 +469,8 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 )
             
             # Debug: Check variant features after generation
-            tprint_info(f"🔍 DEBUG: Variant features shape after generation: {variant_features.shape}")
             if len(variant_features.columns) > 0:
                 tprint_info(f"🔍 DEBUG: Variant features columns: {list(variant_features.columns)[:10]}...")  # Show first 10 columns
-                tprint_info(f"🔍 DEBUG: Total variant features generated: {len(variant_features.columns)}")
-                tprint_info(f"🔍 DEBUG: Variant features sample data:")
-                tprint_info(f"🔍 DEBUG:   First few values: {variant_features.iloc[0, :5].to_dict()}")
             else:
                 tprint_warning("⚠️ DEBUG: No variant features generated!")
                 tprint_warning("⚠️ DEBUG: This means variant generation failed completely!")
@@ -496,52 +485,37 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_info("=" * 80)
         
             # Debug: Check inputs to cheap pruning
-            tprint_info(f"🔍 DEBUG: Cheap pruning inputs:")
-            tprint_info(f"🔍 DEBUG:   variant_features shape: {variant_features.shape}")
-            tprint_info(f"🔍 DEBUG:   variant_features columns: {len(variant_features.columns)}")
-            tprint_info(f"🔍 DEBUG:   labeled_data shape: {labeled_data.shape}")
-            tprint_info(f"🔍 DEBUG:   labeled_data columns: {list(labeled_data.columns)}")
-            tprint_info(f"🔍 DEBUG:   lookback_optimization shape: {lookback_optimization.shape}")
-            tprint_info(f"🔍 DEBUG:   config keys: {list(config.keys())}")
             
             if len(variant_features.columns) == 0:
                 tprint_warning("⚠️ DEBUG: No variant features to prune! Returning empty DataFrame")
                 return pd.DataFrame(), {"error": "No variant features to prune"}
             
             # Debug: Check variant features before pruning
-            tprint_info(f"🔍 DEBUG: Variant features shape before pruning: {variant_features.shape}")
             tprint_info(f"🔍 DEBUG: Variant features columns: {list(variant_features.columns)[:10]}...")  # Show first 10 columns
-            tprint_info(f"🔍 DEBUG: Total variant features before pruning: {len(variant_features.columns)}")
             
             # Check for cross-timeframe features
             cross_timeframe_cols = [c for c in variant_features.columns if '_3x_ratio' in c or '_6x_ratio' in c or '_9x_ratio' in c or '_27x_ratio' in c]
-            tprint_info(f"🔍 DEBUG: Cross-timeframe features found before pruning: {len(cross_timeframe_cols)}")
             if len(cross_timeframe_cols) > 0:
-                tprint_info(f"🔍 DEBUG: Sample cross-timeframe features: {cross_timeframe_cols[:5]}")
+                tprint_info(f"🔍 Found {len(cross_timeframe_cols)} cross-timeframe features before pruning")
             
             if len(variant_features.columns) == 0:
                 tprint_warning("⚠️ DEBUG: No variant features to prune! This will cause cheap pruning to fail!")
             
             phase2_start = time.time()
             
-            tprint_info(f"🔍 DEBUG: About to call cheap pruning with {len(variant_features.columns)} variant features")
             
             pruned_features, pruning_stats, targets = await self._phase2_cheap_pruning(
                 variant_features, labeled_data, lookback_optimization, config
             )
             
             # Debug: Check pruned features after pruning
-            tprint_info(f"🔍 DEBUG: Pruned features shape after pruning: {pruned_features.shape}")
             if len(pruned_features.columns) > 0:
                 tprint_info(f"🔍 DEBUG: Pruned features columns: {list(pruned_features.columns)[:10]}...")  # Show first 10 columns
-                tprint_info(f"🔍 DEBUG: Total pruned features: {len(pruned_features.columns)}")
-                tprint_info(f"🔍 DEBUG: Features removed by pruning: {len(variant_features.columns) - len(pruned_features.columns)}")
                 
                 # Check for cross-timeframe features after pruning
                 cross_timeframe_cols_after = [c for c in pruned_features.columns if '_3x_ratio' in c or '_6x_ratio' in c or '_9x_ratio' in c or '_27x_ratio' in c]
-                tprint_info(f"🔍 DEBUG: Cross-timeframe features found after pruning: {len(cross_timeframe_cols_after)}")
                 if len(cross_timeframe_cols_after) > 0:
-                    tprint_info(f"🔍 DEBUG: Sample cross-timeframe features after pruning: {cross_timeframe_cols_after[:5]}")
+                    tprint_info(f"🔍 Found {len(cross_timeframe_cols_after)} cross-timeframe features after pruning")
                 else:
                     tprint_warning("⚠️ DEBUG: ALL cross-timeframe features were pruned!")
             else:
@@ -552,7 +526,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_performance(f"Phase 2 completed", self.performance_stats['phase2_time'])
             
             # Debug: Check pruned features after pruning
-            tprint_info(f"🔍 DEBUG: Pruned features shape after pruning: {pruned_features.shape}")
             if len(pruned_features.columns) > 0:
                 tprint_info(f"🔍 DEBUG: Pruned features columns: {list(pruned_features.columns)[:10]}...")  # Show first 10 columns
             else:
@@ -562,12 +535,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_info("=" * 80)
             tprint_info("🤖 PHASE 3: Three-Phase LGBM+SHAP Pipeline")
             tprint_info("=" * 80)
-            tprint_info(f"🔍 DEBUG: Phase 3 inputs:")
-            tprint_info(f"🔍 DEBUG:   pruned_features shape: {pruned_features.shape}")
-            tprint_info(f"🔍 DEBUG:   pruned_features columns: {len(pruned_features.columns)}")
-            tprint_info(f"🔍 DEBUG:   labeled_data shape: {labeled_data.shape}")
-            tprint_info(f"🔍 DEBUG:   labeled_data columns: {list(labeled_data.columns)}")
-            tprint_info(f"🔍 DEBUG:   config keys: {list(config.keys())}")
             
             if len(pruned_features.columns) == 0:
                 tprint_warning("⚠️ DEBUG: No pruned features available for Phase 3! This will cause the pipeline to fail!")
@@ -658,7 +625,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             Tuple of (lookback_optimization, labeled_data, generated_features, top_features_by_category)
         """
         tprint_info("📊 Loading artifacts via BaseStep artifact manager")
-        tprint_info(f"🔍 DEBUG: _phase0_load_and_select called")
         
         # Load artifacts
         try:
@@ -718,7 +684,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 lookback_optimization, top_features_per_category
             )
         
-        tprint_info(f"🔍 DEBUG: Feature selection returned: {len(top_features_by_category)} categories")
         
         # Count total selected features across all categories
         total_selected_features = sum(len(features) for features in top_features_by_category.values())
@@ -741,9 +706,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             Long DataFrame with columns: feature_name, category, composite_score, optimal_lookback, etc.
         """
         tprint_info("🔄 Transforming lookback optimization data from wide to long format")
-        tprint_info(f"🔍 DEBUG: Input DataFrame shape: {lookback_optimization.shape}")
-        tprint_info(f"🔍 DEBUG: Input DataFrame columns: {list(lookback_optimization.columns)[:5]}...")
-        tprint_info(f"🔍 DEBUG: Total columns: {len(lookback_optimization.columns)}")
         
         # Extract data from the wide format
         feature_data = []
@@ -768,7 +730,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                         category_patterns.add(parts[2])
                     else:  # optimization_results
                         category_patterns.add(parts[1])
-            tprint_info(f"🔍 DEBUG: All category patterns found: {sorted(category_patterns)}")
         
         for col in feature_columns:
             try:
@@ -787,7 +748,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     category = category_part.replace('_features', '')  # acceleration_features -> acceleration
                     
                     # Debug: Show category extraction
-                    tprint_info(f"🔍 DEBUG: Extracted category '{category}' from column '{col}'")
                     
                     # Use feature bank for category normalization if available
                     if FEATURE_BANK_AVAILABLE and self.feature_bank:
@@ -945,19 +905,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         tprint_info(f"📊 [ANALYST] MI-based feature selection (3-6 per category based on signal strength)")
         
         # Transform the data if it's in wide format
-        tprint_info(f"🔍 DEBUG: Checking if transformation needed...")
-        tprint_info(f"🔍 DEBUG: DataFrame shape: {lookback_optimization.shape}")
-        tprint_info(f"🔍 DEBUG: DataFrame columns: {list(lookback_optimization.columns)[:5]}...")
-        tprint_info(f"🔍 DEBUG: Has 'category' column: {'category' in lookback_optimization.columns}")
         
         if 'category' not in lookback_optimization.columns:
-            tprint_info(f"🔍 DEBUG: Transformation needed, calling _transform_lookback_optimization_data")
             lookback_optimization = self._transform_lookback_optimization_data(lookback_optimization)
-            tprint_info(f"🔍 DEBUG: After transformation, DataFrame shape: {lookback_optimization.shape}")
-            tprint_info(f"🔍 DEBUG: After transformation, categories found: {sorted(lookback_optimization['category'].unique()) if not lookback_optimization.empty else 'EMPTY'}")
-            tprint_info(f"🔍 DEBUG: Expected categories: {sorted(self.categories)}")
         else:
-            tprint_info(f"🔍 DEBUG: No transformation needed, DataFrame already has 'category' column")
+            pass
         
         if lookback_optimization.empty:
             tprint_warning("⚠️ No lookback optimization data available")
@@ -967,15 +919,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         for category in self.categories:
             # Filter features by category
-            tprint_info(f"🔍 DEBUG: Processing category: {category}")
-            tprint_info(f"🔍 DEBUG: DataFrame shape before filtering: {lookback_optimization.shape}")
-            tprint_info(f"🔍 DEBUG: DataFrame columns: {list(lookback_optimization.columns)}")
             
             category_features = lookback_optimization[
                 lookback_optimization['category'].str.lower() == category.lower()
             ].copy()
             
-            tprint_info(f"🔍 DEBUG: Found {len(category_features)} features for category {category}")
             
             if len(category_features) == 0:
                 tprint_warning(f"⚠️ No features found for category: {category}")
@@ -1237,11 +1185,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             DataFrame with all variant features
         """
         tprint_info("🔄 Generating normalized variants with RobustScaler bounding")
-        tprint_info(f"🔍 DEBUG: Input generated_features shape: {generated_features.shape}")
-        tprint_info(f"🔍 DEBUG: Input generated_features columns: {list(generated_features.columns)[:10]}...")
-        tprint_info(f"🔍 DEBUG: Input top_features_by_category: {top_features_by_category}")
-        tprint_info(f"🔍 DEBUG: Number of categories with features: {len(top_features_by_category)}")
-        tprint_info(f"🔍 DEBUG: Total features in generated_features: {len(generated_features.columns)}")
         
         if not UTILITIES_AVAILABLE:
             raise ImportError("Variant generation utilities not available")
@@ -1304,14 +1247,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         # Prepare selected features list for variant generation
         selected_features = []
-        tprint_info(f"🔍 DEBUG: Converting top_features_by_category to selected_features list")
         for category, features in top_features_by_category.items():
-            tprint_info(f"🔍 DEBUG: Category {category} has {len(features)} features")
             for feature_name, optimal_lookback, composite_score in features:
-                tprint_info(f"🔍 DEBUG: Checking feature: {feature_name}")
-                tprint_info(f"🔍 DEBUG: Feature in generated_features.columns: {feature_name in generated_features.columns}")
                 if feature_name in generated_features.columns:
-                    tprint_info(f"🔍 DEBUG: Adding feature: {feature_name} (lookback: {optimal_lookback}, score: {composite_score})")
                     selected_features.append({
                         'feature_name': feature_name,
                         'category': category,
@@ -1322,7 +1260,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     # Try to find a similar feature
                     similar_features = self._find_similar_feature(feature_name, generated_features.columns)
                     if similar_features:
-                        tprint_info(f"🔍 DEBUG: Using similar feature {similar_features[0]} instead of {feature_name}")
                         selected_features.append({
                             'feature_name': similar_features[0],
                             'category': category,
@@ -1332,7 +1269,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     else:
                         tprint_warning(f"⚠️ DEBUG: Feature {feature_name} not found in generated_features.columns and no similar feature found")
         
-        tprint_info(f"🔍 DEBUG: Total selected features: {len(selected_features)}")
         
         # Feature count summary before variant generation
         tprint_info(f"📊 PHASE 1: Feature preparation summary:")
@@ -1345,16 +1281,16 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_warning("⚠️ DEBUG: Check if features from top_features_by_category exist in generated_features.columns")
             return pd.DataFrame()
         
-        tprint_info(f"🔍 DEBUG: Selected features details:")
         for i, feature in enumerate(selected_features[:5]):  # Show first 5
-            tprint_info(f"🔍 DEBUG:   {i+1}. {feature['feature_name']} (category: {feature['category']}, lookback: {feature['optimal_lookback']})")
+            feature_name = feature.get('feature_name', 'unknown')
+            category = feature.get('category', 'unknown')
+            lookback = feature.get('optimal_lookback', 'unknown')
+            tprint_info(f"  🔍 {i+1}. {feature_name} (category: {category}, lookback: {lookback})")
         
         # Generate variants using sequential processing (parallel disabled due to pickle issues)
         try:
             # Always use sequential processing to avoid pickle issues with thread locks
             tprint_info("  🔄 Using sequential variant generation (parallel disabled)...")
-            tprint_info(f"  🔍 DEBUG: About to generate variants for {len(selected_features)} selected features")
-            tprint_info(f"  🔍 DEBUG: Expected variants: {len(selected_features)} × 4 = {len(selected_features) * 4}")
             
             # Add detailed category breakdown before variant generation
             category_counts = {}
@@ -1362,7 +1298,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 category = feature['category']
                 category_counts[category] = category_counts.get(category, 0) + 1
             
-            tprint_info(f"  🔍 DEBUG: Feature category breakdown:")
             for category, count in category_counts.items():
                 tprint_info(f"    📊 {category}: {count} features")
             
@@ -1445,7 +1380,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 
                 # DEBUG: Show some cross-timeframe feature names
                 cross_timeframe_cols = [c for c in cross_timeframe_features.columns][:5]
-                tprint_info(f"🔍 DEBUG: Sample cross-timeframe features: {cross_timeframe_cols}")
                 
                 return combined_features
             else:
@@ -1484,8 +1418,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         tprint_info("🔄 CROSS-TIMEFRAME FEATURES GENERATION")
         tprint_info("="*60)
         tprint_info("🔄 Generating cross-timeframe features with 3x, 6x, 9x, 27x lookback ratios")
-        tprint_info(f"🔍 DEBUG: Input variant_features shape: {variant_features.shape}")
-        tprint_info(f"🔍 DEBUG: variant_features columns: {list(variant_features.columns)[:10]}")
         
         if len(variant_features.columns) == 0:
             tprint_warning("⚠️ No variant features available for cross-timeframe generation")
@@ -1541,7 +1473,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             for feature_name, optimal_lookback, composite_score in features:
                 lookback_mapping[feature_name] = int(optimal_lookback)
         
-        tprint_info(f"🔍 DEBUG: Lookback mapping created for {len(lookback_mapping)} features")
         
         # Process each variant feature
         processed_count = 0
@@ -2075,23 +2006,13 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         Returns:
             Tuple of (pruned_features, pruning_stats)
         """
-        print("🔍 DEBUG: _phase2_cheap_pruning method called!")
-        print(f"🔍 DEBUG: variant_features shape: {variant_features.shape}")
-        print(f"🔍 DEBUG: labeled_data shape: {labeled_data.shape}")
-        print(f"🔍 DEBUG: labeled_data columns: {list(labeled_data.columns)}")
         
         tprint_info("✂️ Applying cheap pruning with category protection")
-        tprint_info(f"🔍 DEBUG: _phase2_cheap_pruning called with variant_features shape: {variant_features.shape}")
-        tprint_info(f"🔍 DEBUG: labeled_data shape: {labeled_data.shape}")
-        tprint_info(f"🔍 DEBUG: labeled_data columns: {list(labeled_data.columns)}")
         
         if not UTILITIES_AVAILABLE:
             raise ImportError("Cheap pruning utilities not available")
         
         # Get targets from labeled data - comprehensive detection
-        tprint_info(f"🔍 DEBUG: Analyzing labeled_data columns for targets...")
-        tprint_info(f"🔍 DEBUG: Labeled data shape: {labeled_data.shape}")
-        tprint_info(f"🔍 DEBUG: Labeled data columns: {list(labeled_data.columns)}")
         
         # Primary target columns (from labeling integration step)
         primary_target_columns = [col for col in labeled_data.columns if col in [
@@ -2128,7 +2049,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 if len(col_data) > 0:
                     variance = col_data.var()
                     non_zero_count = (col_data != 0).sum()
-                    tprint_info(f"🔍 DEBUG: Target '{col}': variance={variance:.6f}, non-zero={non_zero_count}/{len(col_data)}")
                     
                     if variance > 1e-10 and non_zero_count > len(col_data) * 0.01:  # At least 1% non-zero
                         valid_target_columns.append(col)
@@ -2159,14 +2079,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_error(error_msg)
             raise ValueError("No valid target columns found in labeled_data - check labeling integration step")
         
-        print(f"🔍 DEBUG: Final target columns: {target_columns}")
-        print(f"🔍 DEBUG: Labeled data columns: {list(labeled_data.columns)}")
         
-        tprint_info(f"🔍 DEBUG: Found target columns: {target_columns}")
-        tprint_info(f"🔍 DEBUG: Labeled data columns: {list(labeled_data.columns)}")
         
         if not target_columns:
-            print("🔍 DEBUG: No target columns found, raising error")
             raise ValueError("No target columns found in labeled_data")
         
         # Handle different target column scenarios
@@ -2375,17 +2290,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         """
         tprint_info("  📊 Training shallow LGBM with fast feature selection...")
         
-        print(f"🔍 DEBUG: _phase3_1_shallow_sweep called with features shape: {features.shape}, targets shape: {targets.shape}")
-        print(f"🔍 DEBUG: targets columns: {list(targets.columns) if len(targets.columns) > 0 else 'EMPTY'}")
         
         # Align features and targets by index with comprehensive validation
-        tprint_info(f"🔍 DEBUG: Before alignment - features shape: {features.shape}, targets shape: {targets.shape}")
-        tprint_info(f"🔍 DEBUG: Features index range: {features.index.min()} to {features.index.max()}")
-        tprint_info(f"🔍 DEBUG: Targets index range: {targets.index.min()} to {targets.index.max()}")
         
         # Find common indices with detailed analysis
         common_indices = features.index.intersection(targets.index)
-        tprint_info(f"🔍 DEBUG: Common indices count: {len(common_indices)}")
         
         # Validate alignment requirements
         if len(common_indices) == 0:
@@ -2409,7 +2318,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         # Check if we have sufficient overlap
         overlap_ratio = len(common_indices) / min(len(features), len(targets))
-        tprint_info(f"🔍 DEBUG: Index overlap ratio: {overlap_ratio:.3f}")
         
         if overlap_ratio < 0.5:  # Less than 50% overlap
             tprint_warning(f"⚠️ Low index overlap: {overlap_ratio:.3f} - this may affect model performance")
@@ -2418,7 +2326,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         features_aligned = features.loc[common_indices]
         targets_aligned = targets.loc[common_indices]
         
-        tprint_info(f"🔍 DEBUG: After alignment - features shape: {features_aligned.shape}, targets shape: {targets_aligned.shape}")
         
         # Validate alignment success
         if len(features_aligned) == 0 or len(targets_aligned) == 0:
@@ -2434,14 +2341,10 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             raise ValueError("Alignment resulted in empty datasets")
         
         # Handle NaN values in features
-        print(f"🔍 DEBUG: Features NaN count before cleaning: {features_aligned.isna().sum().sum()}")
         features_cleaned = features_aligned.fillna(0)  # Fill NaN with 0
-        print(f"🔍 DEBUG: Features NaN count after cleaning: {features_cleaned.isna().sum().sum()}")
         
         # Handle NaN values in targets with validation
-        print(f"🔍 DEBUG: Targets NaN count before cleaning: {targets_aligned.isna().sum().sum()}")
         targets_cleaned = targets_aligned.fillna(0)  # Fill NaN with 0
-        print(f"🔍 DEBUG: Targets NaN count after cleaning: {targets_cleaned.isna().sum().sum()}")
         
         # Validate target data quality before model training
         tprint_info("🔍 Validating target data quality...")
@@ -2854,13 +2757,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         tprint_info("  📊 Training deeper LGBM for refinement...")
         
         # Align features and targets by index with comprehensive validation
-        tprint_info(f"🔍 DEBUG: Before alignment - features shape: {features.shape}, targets shape: {targets.shape}")
-        tprint_info(f"🔍 DEBUG: Features index range: {features.index.min()} to {features.index.max()}")
-        tprint_info(f"🔍 DEBUG: Targets index range: {targets.index.min()} to {targets.index.max()}")
         
         # Find common indices with detailed analysis
         common_indices = features.index.intersection(targets.index)
-        tprint_info(f"🔍 DEBUG: Common indices count: {len(common_indices)}")
         
         # Validate alignment requirements
         if len(common_indices) == 0:
@@ -2884,7 +2783,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         # Check if we have sufficient overlap
         overlap_ratio = len(common_indices) / min(len(features), len(targets))
-        tprint_info(f"🔍 DEBUG: Index overlap ratio: {overlap_ratio:.3f}")
         
         if overlap_ratio < 0.5:  # Less than 50% overlap
             tprint_warning(f"⚠️ Low index overlap: {overlap_ratio:.3f} - this may affect model performance")
@@ -2893,7 +2791,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         features_aligned = features.loc[common_indices]
         targets_aligned = targets.loc[common_indices]
         
-        tprint_info(f"🔍 DEBUG: After alignment - features shape: {features_aligned.shape}, targets shape: {targets_aligned.shape}")
         
         # Validate alignment success
         if len(features_aligned) == 0 or len(targets_aligned) == 0:
@@ -2909,14 +2806,10 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             raise ValueError("Alignment resulted in empty datasets")
         
         # Handle NaN values in features
-        print(f"🔍 DEBUG: Features NaN count before cleaning: {features_aligned.isna().sum().sum()}")
         features_cleaned = features_aligned.fillna(0)  # Fill NaN with 0
-        print(f"🔍 DEBUG: Features NaN count after cleaning: {features_cleaned.isna().sum().sum()}")
         
         # Handle NaN values in targets with validation
-        print(f"🔍 DEBUG: Targets NaN count before cleaning: {targets_aligned.isna().sum().sum()}")
         targets_cleaned = targets_aligned.fillna(0)  # Fill NaN with 0
-        print(f"🔍 DEBUG: Targets NaN count after cleaning: {targets_cleaned.isna().sum().sum()}")
         
         # Validate target data quality before model training
         tprint_info("🔍 Validating target data quality...")
@@ -3125,16 +3018,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_info("  ℹ️ No cross-timeframe interactions detected")
         
         # Align features and targets by index before sampling
-        print(f"🔍 DEBUG: _phase3_3_interaction_discovery - Before alignment - features shape: {features.shape}, targets shape: {targets.shape}")
-        print(f"🔍 DEBUG: Features index range: {features.index.min()} to {features.index.max()}")
-        print(f"🔍 DEBUG: Targets index range: {targets.index.min()} to {targets.index.max()}")
         
         # Find common indices
         common_indices = features.index.intersection(targets.index)
-        print(f"🔍 DEBUG: Common indices count: {len(common_indices)}")
         
         if len(common_indices) == 0:
-            print("🔍 DEBUG: No common indices found! This will cause alignment issues.")
             # Use the smaller dataset size
             min_length = min(len(features), len(targets))
             features_aligned = features.iloc[:min_length]
@@ -3144,61 +3032,39 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             features_aligned = features.loc[common_indices]
             targets_aligned = targets.loc[common_indices]
         
-        print(f"🔍 DEBUG: After alignment - features shape: {features_aligned.shape}, targets shape: {targets_aligned.shape}")
         
         # Handle NaN values in features
-        print(f"🔍 DEBUG: Features NaN count before cleaning: {features_aligned.isna().sum().sum()}")
         features_cleaned = features_aligned.fillna(0)  # Fill NaN with 0
-        print(f"🔍 DEBUG: Features NaN count after cleaning: {features_cleaned.isna().sum().sum()}")
         
         # Handle NaN values in targets
-        print(f"🔍 DEBUG: Targets NaN count before cleaning: {targets_aligned.isna().sum().sum()}")
         targets_cleaned = targets_aligned.fillna(0)  # Fill NaN with 0
-        print(f"🔍 DEBUG: Targets NaN count after cleaning: {targets_cleaned.isna().sum().sum()}")
         
-        print(f"🔍 DEBUG: About to enter try block for _get_consistent_sample...")
         
         # Use consistent sampling strategy with chunked processing
         try:
-            print(f"🔍 DEBUG: About to call _get_consistent_sample...")
             features_sample, targets_sample = self._get_consistent_sample(features_cleaned, targets_cleaned, max_samples=8000)
-            print(f"🔍 DEBUG: _get_consistent_sample completed successfully!")
-            print(f"🔍 DEBUG: About to call tprint_info...")
             tprint_info(f"  🔍 DEBUG: _get_consistent_sample returned successfully!")
-            print(f"🔍 DEBUG: After tprint_info call...")
         except Exception as e:
-            print(f"🔍 DEBUG: Exception caught: {e}")
             tprint_error(f"  🔍 DEBUG: Exception in _get_consistent_sample: {e}")
             tprint_error(f"  🔍 DEBUG: Exception type: {type(e)}")
             import traceback
             tprint_error(f"  🔍 DEBUG: Traceback: {traceback.format_exc()}")
             raise
         
-        print(f"🔍 DEBUG: Exited try-except block successfully!")
-        print(f"🔍 DEBUG: About to call tprint_info with shapes...")
         tprint_info(f"  🔍 DEBUG: After _get_consistent_sample - features shape: {features_sample.shape}, targets shape: {targets_sample.shape}")
-        print(f"🔍 DEBUG: After tprint_info with shapes...")
         
         # Apply chunked processing for large datasets
-        print(f"🔍 DEBUG: About to call tprint_info for chunked processing...")
         tprint_info(f"  🔍 DEBUG: Checking chunked processing condition...")
-        print(f"🔍 DEBUG: After tprint_info for chunked processing...")
-        print(f"🔍 DEBUG: About to check chunked processing condition - len(features_sample) = {len(features_sample)}")
         if len(features_sample) > 5000:
             tprint_info(f"  🔍 DEBUG: Applying chunked processing for {len(features_sample)} samples")
             features_sample = self._chunked_processing(features_sample, targets_sample, chunk_size=2000)
             tprint_info(f"  🔍 DEBUG: After chunked processing - features shape: {features_sample.shape}")
         else:
-            print(f"🔍 DEBUG: Entering else branch for chunked processing...")
             tprint_info(f"  🔍 DEBUG: Skipping chunked processing (samples: {len(features_sample)} <= 5000)")
-            print(f"🔍 DEBUG: After tprint_info in else branch...")
         
-        print(f"🔍 DEBUG: About to call tprint_info for LGBM setup...")
         tprint_info(f"  🔍 DEBUG: About to setup LGBM parameters...")
-        print(f"🔍 DEBUG: After tprint_info for LGBM setup...")
         
         # Setup LGBM with corrected parameters
-        print(f"🔍 DEBUG: About to create LGBM parameters...")
         lgbm_params = {
             'max_depth': 3,                    # Further reduced from 5 to prevent overfitting
             'num_leaves': 10,                  # Further reduced from 20 to prevent overfitting
@@ -3215,56 +3081,33 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             'random_state': 42,
             'verbose': -1
         }
-        print(f"🔍 DEBUG: LGBM parameters created successfully!")
         
-        print(f"🔍 DEBUG: About to call tprint_info for LGBM training...")
         tprint_info(f"  🔍 DEBUG: LGBM parameters set, about to train LGBM model...")
-        print(f"🔍 DEBUG: After first tprint_info for LGBM training...")
         tprint_info(f"  🔍 DEBUG: About to train LGBM model with features shape: {features_sample.shape}, targets shape: {targets_sample.shape}")
-        print(f"🔍 DEBUG: After second tprint_info for LGBM training...")
         
         # Train LGBM model for tree analysis
-        print(f"🔍 DEBUG: About to call tprint_info for training message...")
         tprint_info("  🔧 Training LGBM model for tree analysis...")
-        print(f"🔍 DEBUG: After training message tprint_info...")
         tprint_info(f"  🔍 DEBUG: Features shape: {features_sample.shape}, Targets shape: {targets_sample.shape}")
-        print(f"🔍 DEBUG: After features shape tprint_info...")
         
-        print(f"🔍 DEBUG: About to enter try block for LGBM training...")
         try:
-            print(f"🔍 DEBUG: Inside try block, about to call tprint_info...")
             tprint_info("  🔍 DEBUG: About to create LGBMRegressor...")
-            print(f"🔍 DEBUG: After tprint_info for LGBMRegressor creation...")
-            print(f"🔍 DEBUG: About to create LGBMRegressor with params: {lgbm_params}")
             model = lgb.LGBMRegressor(**lgbm_params)
-            print(f"🔍 DEBUG: LGBMRegressor created successfully!")
             
-            print(f"🔍 DEBUG: About to call tprint_info for model fitting...")
             tprint_info("  🔍 DEBUG: About to fit LGBM model...")
-            print(f"🔍 DEBUG: After tprint_info for model fitting...")
-            print(f"🔍 DEBUG: About to fit model with features shape: {features_sample.shape}, targets shape: {targets_sample.iloc[:, 0].shape}")
             model.fit(features_sample, targets_sample.iloc[:, 0])  # Use first target column
-            print(f"🔍 DEBUG: Model fitted successfully!")
             
         except Exception as e:
-            print(f"🔍 DEBUG: Exception caught: {e}")
             tprint_error(f"  🔍 DEBUG: Exception during LGBM training: {e}")
             tprint_error(f"  🔍 DEBUG: Exception type: {type(e)}")
             import traceback
             tprint_error(f"  🔍 DEBUG: Traceback: {traceback.format_exc()}")
             raise
         
-        print(f"🔍 DEBUG: Exited try-except block for LGBM training...")
         tprint_info("  ✅ LGBM model trained successfully")
         
         # Extract feature pairs from trees
-        print(f"🔍 DEBUG: About to call tprint_info for tree analysis...")
         tprint_info("  🔍 Extracting feature pairs from tree splits...")
-        print(f"🔍 DEBUG: After tprint_info for tree analysis...")
-        print(f"🔍 DEBUG: About to call _extract_tree_splitting_pairs...")
         feature_pairs = self._extract_tree_splitting_pairs(model)
-        print(f"🔍 DEBUG: _extract_tree_splitting_pairs completed!")
-        print(f"🔍 DEBUG: About to check feature_pairs length: {len(feature_pairs)}")
         
         if len(feature_pairs) == 0:
             tprint_warning("  ⚠️ No feature pairs extracted from tree analysis - this will result in no interactions")
@@ -3277,35 +3120,24 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                         feature_pairs.append((available_features[i], available_features[j], 1))
                 tprint_info(f"  🔍 DEBUG: Created {len(feature_pairs)} fallback feature pairs")
         
-        print(f"🔍 DEBUG: Feature pairs found, skipping fallback logic...")
         
         # Generate interaction candidates (top 80 pairs × 5 operations = 400 candidates)
-        print(f"🔍 DEBUG: About to call tprint_info for interaction generation...")
         tprint_info("  🔧 Generating interaction candidates...")
-        print(f"🔍 DEBUG: After tprint_info for interaction generation...")
         interaction_candidates = []
-        print(f"🔍 DEBUG: Interaction candidates list initialized...")
         
-        print(f"🔍 DEBUG: About to start for loop for feature pairs...")
-        print(f"🔍 DEBUG: Features columns: {list(features.columns)}")
         for i, (f1, f2, co_occurrence) in enumerate(feature_pairs[:80]):  # Top 80 pairs
-            print(f"🔍 DEBUG: Processing pair {i+1}/80: {f1} x {f2}")
             # Convert integer indices to column names
             if isinstance(f1, int) and isinstance(f2, int):
                 if f1 < len(features.columns) and f2 < len(features.columns):
                     f1_name = features.columns[f1]
                     f2_name = features.columns[f2]
-                    print(f"🔍 DEBUG: Converted to column names: {f1_name} x {f2_name}")
                 else:
-                    print(f"🔍 DEBUG: Skipping pair - indices out of range: {f1}, {f2} (max index: {len(features.columns)-1})")
                     continue
             else:
                 f1_name = f1
                 f2_name = f2
-                print(f"🔍 DEBUG: Using original names: {f1_name} x {f2_name}")
             
             if f1_name in features.columns and f2_name in features.columns:
-                print(f"🔍 DEBUG: Both features found in columns, generating operations...")
                 # Generate 5 operations per pair (including logarithmic relationships)
                 operations = [
                     (f"{f1_name}_x_{f2_name}", features[f1_name] * features[f2_name]),
@@ -4498,17 +4330,12 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
     
     def _get_consistent_sample(self, features: pd.DataFrame, targets: pd.DataFrame, max_samples: int = 8000) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Get consistent sample across all phases."""
-        print(f"🔍 DEBUG: _get_consistent_sample called with features shape: {features.shape}, targets shape: {targets.shape}")
-        print(f"🔍 DEBUG: targets columns: {list(targets.columns) if len(targets.columns) > 0 else 'EMPTY'}")
-        print(f"🔍 DEBUG: targets head:\n{targets.head() if len(targets) > 0 else 'EMPTY'}")
         
         if len(features) == 0:
-            print("🔍 DEBUG: Features DataFrame is empty!")
             return features, targets
         
         # If we have fewer samples than max_samples, just return all
         if len(features) <= max_samples:
-            print(f"🔍 DEBUG: Returning original features shape: {features.shape}, targets shape: {targets.shape}")
             return features, targets
         
         # Use same random seed for consistency
@@ -4516,7 +4343,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         sample_idx = np.random.choice(len(features), max_samples, replace=False)
         sampled_features = features.iloc[sample_idx]
         sampled_targets = targets.iloc[sample_idx]
-        print(f"🔍 DEBUG: Sampled features shape: {sampled_features.shape}, sampled targets shape: {sampled_targets.shape}")
         return sampled_features, sampled_targets
     
     def _adaptive_category_selection(self, features_by_category: Dict[str, List[str]], feature_importance: pd.Series, min_per_category: int = 2, max_per_category: int = 8) -> List[str]:

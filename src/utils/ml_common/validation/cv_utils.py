@@ -7,7 +7,7 @@ the unified implementations now used across the codebase.
 Exposed symbols:
 - TemporalCrossValidator: Thin wrapper delegating to the unified temporal CV
 - PurgedKFold: Alias to the time-aware purged/embargoed splitter
-- CrossValidationUtilities: Minimal utilities with walk_forward_validation
+- CrossValidationUtilities: Minimal utilities (walk_forward_validation removed - use WalkForwardValidator)
 """
 
 from __future__ import annotations
@@ -245,45 +245,21 @@ class TemporalCrossValidator:
             yield train_idx, test_idx
             start = stop
 
-@dataclass
-class _WalkForwardConfig:
-    initial_train_size: float = 0.6
-    step_size: float = 0.1
-    min_test_size: float = 0.1
-
 class CrossValidationUtilities:
     """Minimal CV utilities used by memory integration shims.
 
-    The canonical, richer API remains in validation.unified_cv and
-    validation.universal_temporal_validation. This class exists to
-    preserve backwards compatibility for integrations that monkey-patch
-    walk_forward_validation.
+    The canonical walk-forward validation implementation is now in:
+        src.validation.walkforward_validation.WalkForwardValidator
+    
+    This class is kept for backwards compatibility but no longer contains
+    walk_forward_validation method. Use WalkForwardValidator instead.
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
-        cfg = dict(config or {})
-        self.config = _WalkForwardConfig(
-            initial_train_size=float(cfg.get('initial_train_size', 0.6)),
-            step_size=float(cfg.get('step_size', 0.1)),
-            min_test_size=float(cfg.get('min_test_size', 0.1)),
-        )
-
-    def walk_forward_validation(self, X: np.ndarray, y: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray]]:
-        n = len(X)
-        if n == 0:
-            return []
-        initial = max(1, int(n * self.config.initial_train_size))
-        step = max(1, int(n * self.config.step_size))
-        min_test = max(1, int(n * self.config.min_test_size))
-        indices: List[Tuple[np.ndarray, np.ndarray]] = []
-        train_end = initial
-        while train_end < n - min_test:
-            test_end = min(n, train_end + min_test)
-            train_idx = np.arange(0, train_end)
-            test_idx = np.arange(train_end, test_end)
-            indices.append((train_idx, test_idx))
-            train_end = min(n, train_end + step)
-        return indices
+        """Initialize CV utilities with optional config (kept for compatibility)."""
+        self.config = config or {}
+        # Note: walk_forward_validation has been removed.
+        # Use src.validation.walkforward_validation.WalkForwardValidator instead.
 
 # Compatibility alias for CrossValidator
 try:

@@ -902,18 +902,23 @@ class EnhancedModelsTrainingIntegration:
     
     def get_feature_importance_for_training(self, data: pd.DataFrame, 
                                           model_name: str = 'lgbm',
-                                          target_column: Optional[str] = None) -> Dict[str, float]:
+                                          target_column: Optional[str] = None,
+                                          use_permutation: bool = True) -> Dict[str, float]:
         """
         Get feature importance for training using comprehensive features.
+        Uses permutation importance by default to capture feature interactions.
         
         Args:
             data: Market data DataFrame
             model_name: Name of model to use for importance calculation
             target_column: Name of target column
+            use_permutation: Whether to use permutation importance (captures interactions) vs Gini
             
         Returns:
             Dictionary mapping feature names to importance scores
         """
+        from sklearn.inspection import permutation_importance
+        
         # Prepare data
         X, y, feature_names, metadata = self.prepare_data_for_training(data, target_column)
         
@@ -925,13 +930,33 @@ class EnhancedModelsTrainingIntegration:
             model = lgb.LGBMRegressor(n_estimators=100, random_state=42, verbose=-1)
             model.fit(X, y)
             
-            # Get feature importance
-            importance_scores = model.feature_importances_
+            if use_permutation:
+                # Use permutation importance to capture feature interactions
+                perm_importance = permutation_importance(
+                    model, X, y, n_repeats=10, random_state=42, n_jobs=-1
+                )
+                importance_scores = perm_importance.importances_mean
+                logger.info("✅ Using permutation importance for LGBM (captures feature interactions)")
+            else:
+                # Use standard Gini importance
+                importance_scores = model.feature_importances_
+                logger.info("⚠️ Using standard Gini importance for LGBM")
             
         elif model_name == 'rf':
             model = RandomForestRegressor(n_estimators=100, random_state=42)
             model.fit(X, y)
-            importance_scores = model.feature_importances_
+            
+            if use_permutation:
+                # Use permutation importance to capture feature interactions
+                perm_importance = permutation_importance(
+                    model, X, y, n_repeats=10, random_state=42, n_jobs=-1
+                )
+                importance_scores = perm_importance.importances_mean
+                logger.info("✅ Using permutation importance for RF (captures feature interactions)")
+            else:
+                # Use standard Gini importance
+                importance_scores = model.feature_importances_
+                logger.info("⚠️ Using standard Gini importance for RF")
             
         else:
             # Fallback to variance-based importance

@@ -79,8 +79,14 @@ from src.utils.ml_common.validation.temporal_data_splitter import (
 from src.utils.ml_common.data.regime_label_extractor import (
     RegimeLabelExtractor, extract_regime_labels_fast_fail
 )
+from src.utils.ml_common.data.standardized_regime_extractor import (
+    StandardizedRegimeExtractor, extract_regime_labels_standardized, RegimeLabelExtractionError
+)
 from src.utils.ml_common.validation.config_validator import (
     validate_regime_training_config, create_default_regime_training_config
+)
+from src.utils.ml_common.training.memory_manager import (
+    TrainingMemoryManager, managed_training, periodic_cleanup
 )
 
 # Suppress warnings
@@ -376,6 +382,20 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         tprint(f"🔍 [REGIME_MODELS] Available ML libraries: {ML_LIBRARIES_AVAILABLE}", color="blue")
         if ML_LIBRARIES_AVAILABLE:
             tprint(f"📚 [REGIME_MODELS] Library versions: {ML_LIBRARY_VERSIONS}", color="blue")
+        
+        # Validate model configurations
+        tprint("🔍 [REGIME_MODELS] Validating model configurations", color="cyan")
+        config_valid = True
+        for category, models in self.regime_models_config.items():
+            for model_type, model_config in models.items():
+                if not self._validate_model_config(model_type, model_config):
+                    tprint(f"❌ [REGIME_MODELS] Invalid configuration for {model_type} in {category}", color="red")
+                    config_valid = False
+        
+        if config_valid:
+            tprint("✅ [REGIME_MODELS] All model configurations validated successfully", color="green")
+        else:
+            tprint("⚠️ [REGIME_MODELS] Some model configurations have issues", color="yellow")
 
         # Log initialization completion
         tprint("✅ [REGIME_MODELS] Regime Models Training Component initialized successfully", color="green", bold=True)
@@ -387,6 +407,59 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         required_artifacts = ['regime_models_training_result']
         tprint(f"✅ [REGIME_MODELS] Required artifacts: {required_artifacts}", color="green")
         return required_artifacts
+    
+    def _validate_model_config(self, model_type: str, config: Dict[str, Any]) -> bool:
+        """
+        Validate model configuration parameters.
+        
+        Args:
+            model_type: Type of model (e.g., 'CatBoost', 'LightGBM')
+            config: Configuration dictionary
+            
+        Returns:
+            True if valid, False otherwise
+        """
+        try:
+            required_params = {
+                'CatBoost': ['iterations', 'depth', 'learning_rate', 'random_seed'],
+                'XGBoost': ['n_estimators', 'max_depth', 'learning_rate', 'random_state'],
+                'Random Forest': ['n_estimators', 'max_depth', 'random_state'],
+                'Greedy Rule Lists': ['max_depth', 'criterion'],
+                'ExtraTrees': ['n_estimators', 'max_depth', 'random_state'],
+                'stacker_lgbm_calibrated': ['num_leaves', 'max_depth', 'learning_rate', 'n_estimators']
+            }
+            
+            if model_type not in required_params:
+                tprint(f"⚠️ [REGIME_MODELS] Unknown model type: {model_type}", color="yellow")
+                return True  # Allow unknown model types
+            
+            missing_params = []
+            for param in required_params[model_type]:
+                if param not in config:
+                    missing_params.append(param)
+            
+            if missing_params:
+                tprint(f"❌ [REGIME_MODELS] Missing required parameters for {model_type}: {missing_params}", color="red")
+                return False
+            
+            # Validate parameter ranges
+            if 'learning_rate' in config:
+                lr = config['learning_rate']
+                if not (0 < lr <= 1.0):
+                    tprint(f"❌ [REGIME_MODELS] Invalid learning_rate for {model_type}: {lr} (must be 0 < lr <= 1.0)", color="red")
+                    return False
+            
+            if 'max_depth' in config:
+                depth = config['max_depth']
+                if depth is not None and (not isinstance(depth, int) or depth < 1):
+                    tprint(f"❌ [REGIME_MODELS] Invalid max_depth for {model_type}: {depth} (must be int > 0 or None)", color="red")
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] Model config validation error: {e}", color="red")
+            return False
 
     def _validate_and_setup_config(self):
         """Validate and setup configuration with fast fail behavior."""
@@ -950,17 +1023,19 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             initial_memory = psutil.virtual_memory()
             tprint(f"🧠 [REGIME_MODELS] Initial memory usage: {initial_memory.percent:.1f}% ({initial_memory.used / 1024**3:.1f}GB / {initial_memory.total / 1024**3:.1f}GB)", color="blue")
 
-            # Extract regime labels with fast fail behavior
-            tprint("📊 [REGIME_MODELS] Extracting regime labels with fast fail", color="cyan")
-            artifacts = pipeline_state.get('artifacts', {})
+            # Extract regime labels with standardized extractor (fast fail behavior)
+            # NOTE: This uses the simple pattern (direct extraction). If you need metadata about
+            # clustering method/params, use RegimeArtifactExtractor.extract_regime_labels() instead.
+            tprint("📊 [REGIME_MODELS] Extracting regime labels with standardized extractor", color="cyan")
             
             try:
-                regime_labels = self.regime_extractor.extract_regime_labels(artifacts)
+                regime_labels = extract_regime_labels_standardized(pipeline_state, min_samples=10, min_regimes=2)
                 tprint(f"✅ [REGIME_MODELS] Regime labels extracted: {len(regime_labels)} samples", color="green")
-            except ValueError as e:
-                tprint(f"⚠️ [REGIME_MODELS] No regime labels found, creating synthetic labels for testing", color="yellow")
+                tprint(f"📊 [REGIME_MODELS] Unique regimes: {np.unique(regime_labels)}", color="blue")
+            except RegimeLabelExtractionError as e:
+                tprint(f"⚠️ [REGIME_MODELS] Regime label extraction failed: {e}", color="yellow")
+                tprint("⚠️ [REGIME_MODELS] Creating synthetic labels for testing", color="yellow")
                 # Create synthetic regime labels for testing when no real labels are available
-                import numpy as np
                 n_samples = len(protected_data)
                 n_regimes = 3  # Typical number of regimes
                 regime_labels = np.random.randint(0, n_regimes, n_samples)
@@ -998,13 +1073,36 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             else:
                 tprint("✅ [REGIME_MODELS] Temporal validation passed", color="green")
 
-            # Train models with HPO optimization
-            tprint("🏋️ [REGIME_MODELS] Training models with HPO optimization", color="yellow")
-            trained_models = await self._train_models_with_hpo(X_train, y_train, X_test, y_test)
-
-            # Evaluate models with enhanced evaluation
-            tprint("📊 [REGIME_MODELS] Evaluating models with enhanced evaluation", color="yellow")
-            model_metrics = await self._evaluate_models_enhanced(trained_models, X_test, y_test)
+            # Train models with HPO optimization using memory manager
+            tprint("🏋️ [REGIME_MODELS] Training models with HPO optimization (with memory management)", color="yellow")
+            
+            # Use memory manager context for automatic cleanup
+            with managed_training(
+                stage_name="Model Training",
+                auto_cleanup=True,
+                cleanup_on_error=True,
+                alert_threshold=85.0,
+                hardware_manager=self.hardware_manager
+            ) as memory_mgr:
+                # Monitor memory before training
+                memory_mgr.monitor_memory("Before Training")
+                
+                # Train models
+                trained_models = await self._train_models_with_hpo(X_train, y_train, X_test, y_test)
+                
+                # Monitor memory after training
+                memory_mgr.monitor_memory("After Training")
+                
+                # Evaluate models with enhanced evaluation
+                tprint("📊 [REGIME_MODELS] Evaluating models with enhanced evaluation", color="yellow")
+                model_metrics = await self._evaluate_models_enhanced(trained_models, X_test, y_test)
+                
+                # Monitor memory after evaluation
+                memory_mgr.monitor_memory("After Evaluation")
+                
+                # Print memory report
+                memory_report = memory_mgr.get_memory_report()
+                tprint(f"\n{memory_report}", color="blue")
 
             # Create comprehensive results
             execution_time = time.time() - execution_start_time
@@ -1088,437 +1186,6 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 artifacts={},
                 error_message=str(e),
                 metadata={'component_type': 'regime_models_training'}
-            )
-        initial_memory = self._monitor_memory_usage("Initial")
-
-        # Log execution context
-        tprint(f"📊 [REGIME_MODELS] Input data shape: {data.shape}", color="blue")
-        tprint(f"📋 [REGIME_MODELS] Data columns: {list(data.columns)}", color="blue")
-        tprint(f"🔍 [REGIME_MODELS] Pipeline state keys: {list(pipeline_state.keys())}", color="blue")
-
-        try:
-            # Step 0: Validate input data
-            tprint("🔍 [REGIME_MODELS] Step 0: Validating input data", color="cyan")
-            if not self._validate_input_data(data):
-                error_msg = "Input data validation failed"
-                tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
-                self.logger.error("Input data validation failed")
-                return ComponentResult(
-                    success=False,
-                    artifacts={},
-                    error_message=error_msg
-                )
-
-            # Step 1: Check ML libraries availability
-            tprint("🔍 [REGIME_MODELS] Step 1: Checking ML libraries availability", color="cyan")
-            if not ML_LIBRARIES_AVAILABLE:
-                error_msg = "ML libraries not available for regime detection models training"
-                tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
-                tprint(f"🔍 [REGIME_MODELS] Import errors: {ML_IMPORT_ERRORS}", color="yellow")
-                self.logger.error(f"ML libraries not available: {ML_IMPORT_ERRORS}")
-                return ComponentResult(
-                    success=False,
-                    artifacts={},
-                    error_message=error_msg
-                )
-            tprint("✅ [REGIME_MODELS] ML libraries check passed", color="green")
-
-            # Step 2: Extract and validate regime labels
-            tprint("🔍 [REGIME_MODELS] Step 2: Extracting regime labels from pipeline state", color="cyan")
-            artifacts = pipeline_state.get('artifacts', {})
-            tprint(f"📋 [REGIME_MODELS] Available artifacts: {list(artifacts.keys())}", color="blue")
-
-            # If no artifacts available, try to load from previous outcome files or artifact manager
-            if not artifacts:
-                tprint("🔍 [REGIME_MODELS] No artifacts in pipeline state, trying to load from previous stages", color="yellow")
-
-                # First try to load from artifact manager (most recent session)
-                try:
-                    # Legacy NAS/TAS artifacts removed
-                    artifacts = self._load_artifacts_from_outcome_files()
-                except Exception as e:
-                    tprint(f"⚠️ [REGIME_MODELS] Failed to load from artifact manager: {e}, trying outcome files", color="yellow")
-                    artifacts = self._load_artifacts_from_outcome_files()
-
-            # Look for regime labels in regime_discovery_result artifact
-            regime_discovery_result = artifacts.get('regime_discovery_result', {})
-            tprint(f"🔍 [REGIME_MODELS] Regime discovery result keys: {list(regime_discovery_result.keys())}", color="blue")
-
-            # Try to get regime labels from regime assignments
-            regime_labels = regime_discovery_result.get('regime_assignments')
-            if regime_labels is None:
-                regime_labels = regime_discovery_result.get('cluster_assignments')
-                tprint("🔍 [REGIME_MODELS] Using cluster assignments as regime labels", color="blue")
-            else:
-                tprint("🔍 [REGIME_MODELS] Using regime assignments as regime labels", color="blue")
-
-            # If still no regime labels, try alternative artifact structures
-            if regime_labels is None:
-                tprint("🔍 [REGIME_MODELS] Trying alternative artifact structures...", color="yellow")
-
-                # Try direct access to artifacts
-                # Legacy TAS/NAS assignments removed
-
-                # Try other possible artifact keys
-                for key in ['regime_assignments', 'assignments', 'cluster_assignments']:
-                    if key in artifacts:
-                        regime_labels = artifacts[key]
-                        tprint(f"🔍 [REGIME_MODELS] Found regime labels in {key}", color="blue")
-                        break
-
-                # Try nested structures
-                if regime_labels is None:
-                    for artifact_key, artifact_value in artifacts.items():
-                        if isinstance(artifact_value, dict):
-                            # Legacy TAS assignments removed
-                            if 'assignments' in artifact_value:
-                                regime_labels = artifact_value['assignments']
-                                tprint(f"🔍 [REGIME_MODELS] Found assignments in {artifact_key}", color="blue")
-                                break
-                            elif 'cluster_assignments' in artifact_value:
-                                regime_labels = artifact_value['cluster_assignments']
-                                tprint(f"🔍 [REGIME_MODELS] Found cluster_assignments in {artifact_key}", color="blue")
-                                break
-
-                # Try extracting from optimal_regime_clustering_result clustering_result object
-                if regime_labels is None:
-                    optimal_clustering_result = artifacts.get('optimal_regime_clustering_result', {})
-                    if optimal_clustering_result:
-                        tprint("🔍 [REGIME_MODELS] Found optimal_regime_clustering_result, extracting from clustering_result object", color="blue")
-                        clustering_result = optimal_clustering_result.get('clustering_result')
-                        if clustering_result is not None:
-                            tprint(f"🔍 [REGIME_MODELS] clustering_result type: {type(clustering_result)}", color="blue")
-                            if isinstance(clustering_result, dict):
-                                tprint(f"🔍 [REGIME_MODELS] clustering_result keys: {list(clustering_result.keys())}", color="blue")
-                            else:
-                                tprint(f"🔍 [REGIME_MODELS] clustering_result attributes: {dir(clustering_result)}", color="blue")
-
-                            # First try direct access to clustering_result (new wrapper structure)
-                            if isinstance(clustering_result, dict):
-                                # Look for cluster_assignments in the clustering_result dict (from regime clustering)
-                                if 'cluster_assignments' in clustering_result:
-                                    regime_labels = clustering_result['cluster_assignments']
-                                    # Handle case where assignments are stored as string representation
-                                    if isinstance(regime_labels, str):
-                                        try:
-                                            # Parse numpy array string representation (e.g., "[2 2 2 ... 4 6 6]")
-                                            import ast
-                                            import re
-
-                                            # Handle string representation with ellipsis
-                                            if '...' in regime_labels:
-                                                # For strings with ellipsis, we need to extract the actual values
-                                                # This is a simplified approach - in practice, we should store the actual array
-                                                # For now, let's try to find patterns or use a fallback
-                                                tprint(f"⚠️ [REGIME_MODELS] Found ellipsis in cluster_assignments string, attempting to recover", color="yellow")
-
-                                                # Try to extract numbers from the string representation
-                                                numbers = re.findall(r'\d+', regime_labels)
-                                                if numbers:
-                                                    regime_labels = np.array([int(x) for x in numbers])
-                                                    tprint(f"🔍 [REGIME_MODELS] Recovered {len(regime_labels)} regime labels from string", color="blue")
-                                                else:
-                                                    tprint(f"⚠️ [REGIME_MODELS] Could not extract numbers from cluster_assignments string", color="yellow")
-                                                    regime_labels = None
-                                            elif isinstance(regime_labels, str) and regime_labels.startswith('[') and regime_labels.endswith(']'):
-                                                # Handle string representation of numpy array like "[2 2 2 ... 4 6 6]"
-                                                try:
-                                                    # Try to parse as a list of integers
-                                                    clean_str = regime_labels.strip('[]')
-                                                    if '...' in clean_str:
-                                                        # If still contains ellipsis, extract numbers
-                                                        numbers = re.findall(r'\d+', clean_str)
-                                                        if numbers:
-                                                            regime_labels = np.array([int(x) for x in numbers])
-                                                    else:
-                                                        # Split by spaces and convert to integers
-                                                        values = [int(x) for x in clean_str.split() if x.strip()]
-                                                        regime_labels = np.array(values)
-                                                    tprint(f"🔍 [REGIME_MODELS] Parsed numpy array string representation", color="blue")
-                                                except Exception as e:
-                                                    tprint(f"⚠️ [REGIME_MODELS] Failed to parse array string: {e}", color="yellow")
-                                                    regime_labels = None
-                                            else:
-                                                # Remove brackets and split by spaces, then convert to int
-                                                clean_str = regime_labels.strip('[]')
-                                                regime_labels = np.array([int(x) for x in clean_str.split() if x.strip()])
-                                                tprint(f"🔍 [REGIME_MODELS] Parsed regime labels from string representation", color="blue")
-                                        except Exception as e:
-                                            tprint(f"⚠️ [REGIME_MODELS] Failed to parse regime labels string: {e}", color="yellow")
-                                            regime_labels = None
-                                    else:
-                                        # If it's already a numpy array or list, use it directly
-                                        tprint(f"🔍 [REGIME_MODELS] Found regime labels in clustering_result.cluster_assignments", color="blue")
-
-                            # If not found in direct dict, try to get assignments from the clustering result object
-                            if regime_labels is None and hasattr(clustering_result, 'current_results') and clustering_result.current_results:
-                                current_results = clustering_result.current_results
-                                # Try different possible keys for assignments
-                                for assignment_key in ['cluster_assignments', 'assignments']:
-                                    if assignment_key in current_results:
-                                        regime_labels = current_results[assignment_key]
-                                        tprint(f"🔍 [REGIME_MODELS] Found regime labels in clustering_result.current_results.{assignment_key}", color="blue")
-                                        break
-
-                                # If still not found, try to get from context
-                                if regime_labels is None and hasattr(clustering_result, 'context'):
-                                    context = clustering_result.context
-                                    if hasattr(context, 'optimized_assignments') and context.optimized_assignments is not None:
-                                        regime_labels = context.optimized_assignments
-                                        tprint("🔍 [REGIME_MODELS] Found regime labels in clustering_result.context.optimized_assignments", color="blue")
-                                    elif hasattr(context, 'initial_assignments') and context.initial_assignments is not None:
-                                        regime_labels = context.initial_assignments
-                                        tprint("🔍 [REGIME_MODELS] Found regime labels in clustering_result.context.initial_assignments", color="blue")
-
-                # Try extracting from component factory wrapper structure (fallback)
-                if regime_labels is None:
-                    optimal_clustering_result = artifacts.get('optimal_regime_clustering_result', {})
-                    if optimal_clustering_result:
-                        tprint("🔍 [REGIME_MODELS] Trying component factory wrapper structure fallback", color="blue")
-                        # Check if the wrapper stored the data directly in the artifact
-                        for assignment_key in ['cluster_assignments', 'assignments']:
-                            if assignment_key in optimal_clustering_result:
-                                regime_labels = optimal_clustering_result[assignment_key]
-                                tprint(f"🔍 [REGIME_MODELS] Found regime labels in optimal_clustering_result.{assignment_key}", color="blue")
-                                break
-
-            if regime_labels is None:
-                error_msg = "No regime labels found in any artifact structure"
-                tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
-                tprint(f"🔍 [REGIME_MODELS] Available artifacts: {list(artifacts.keys())}", color="yellow")
-                tprint(f"🔍 [REGIME_MODELS] Regime discovery result keys: {list(regime_discovery_result.keys())}", color="yellow")
-                self.logger.error(f"Missing regime labels. Available artifacts: {list(artifacts.keys())}")
-                return ComponentResult(
-                    success=False,
-                    artifacts={},
-                    error_message=error_msg
-                )
-
-            # Validate regime labels
-            regime_labels = np.array(regime_labels)
-            if not self._validate_regime_labels(regime_labels):
-                error_msg = "Regime labels validation failed"
-                tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
-                self.logger.error("Regime labels validation failed")
-                return ComponentResult(
-                    success=False,
-                    artifacts={},
-                    error_message=error_msg
-                )
-
-            unique_regimes = np.unique(regime_labels)
-            tprint(f"📊 [REGIME_MODELS] Found regime labels: {len(regime_labels)} samples", color="blue")
-            tprint(f"📊 [REGIME_MODELS] Unique regimes: {unique_regimes} (count: {len(unique_regimes)})", color="blue")
-            regime_dist = {int(k): int(v) for k, v in zip(*np.unique(regime_labels, return_counts=True))}
-            tprint(f"📊 [REGIME_MODELS] Regime distribution: {regime_dist}", color="blue")
-
-            # Step 3: Prepare training data
-            tprint("🔍 [REGIME_MODELS] Step 3: Preparing training data", color="cyan")
-            data_prep_start = time.time()
-            X, y, feature_selection_info, feature_names = self._prepare_training_data(data, regime_labels, pipeline_state)
-            self._log_performance_metrics("Data preparation", data_prep_start)
-            self._monitor_memory_usage("After data preparation")
-            if X is None or y is None:
-                error_msg = "Failed to prepare training data"
-                tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
-                self.logger.error("Failed to prepare training data")
-                return ComponentResult(
-                    success=False,
-                    artifacts={},
-                    error_message=error_msg
-                )
-
-            # Validate prepared training data
-            if not self._validate_training_data(X, y, feature_names):
-                error_msg = "Training data validation failed"
-                tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
-                self.logger.error("Training data validation failed")
-                return ComponentResult(
-                    success=False,
-                    artifacts={},
-                    error_message=error_msg
-                )
-
-            tprint(f"📊 [REGIME_MODELS] Training data prepared: X={X.shape}, y={y.shape}", color="blue")
-            tprint(f"📊 [REGIME_MODELS] Feature matrix info: dtype={X.dtype}, min={X.min():.4f}, max={X.max():.4f}", color="blue")
-            if feature_selection_info:
-                retained = feature_selection_info.get('retained_feature_count', X.shape[1])
-                total = feature_selection_info.get('total_feature_count', retained)
-                tprint(
-                    f"🎯 [REGIME_MODELS] Feature selection retained {retained}/{total} features",
-                    color="green"
-                )
-                top_preview = feature_selection_info.get('top_features_preview')
-                if top_preview:
-                    tprint(
-                        f"🏆 [REGIME_MODELS] Top retained features: {top_preview}",
-                        color="blue"
-                    )
-            target_dist = {int(k): int(v) for k, v in zip(*np.unique(y, return_counts=True))}
-            tprint(f"📊 [REGIME_MODELS] Target distribution: {target_dist}", color="blue")
-
-            # Step 4: Train regime detection models
-            tprint("🔍 [REGIME_MODELS] Step 4: Training regime detection models", color="cyan")
-            model_training_start = time.time()
-            training_results = self._train_regime_models(X, y, feature_selection_info, feature_names, unique_regimes)
-            self._log_performance_metrics("Model training", model_training_start)
-            self._monitor_memory_usage("After model training")
-
-            # Clean up memory after training
-            self._cleanup_memory()
-
-            # Validate trained models
-            if not self._validate_models(training_results['models']):
-                error_msg = "Trained models validation failed"
-                tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
-                self.logger.error("Trained models validation failed")
-                return ComponentResult(
-                    success=False,
-                    artifacts={},
-                    error_message=error_msg
-                )
-
-            # Step 5: Create and validate artifacts
-            tprint("🔍 [REGIME_MODELS] Step 5: Creating artifacts", color="cyan")
-            artifacts = {
-                'regime_models_training_result': {
-                    'regime_models': training_results['models'],
-                    'regime_metrics': training_results['metrics'],  # Explicit regime metrics
-                    'metrics': training_results['metrics'],  # Keep for backward compatibility
-                    'training_time': training_results['training_time'],
-                    'regime_training_time': training_results['training_time'],  # Explicit regime training time
-                    'success': True,
-                    'model_count': len(training_results['models']),
-                    'regime_model_count': len(training_results['models']),  # Explicit regime model count
-                    'feature_count': X.shape[1],
-                    'sample_count': X.shape[0],
-                    'regime_models_config': self.regime_models_config,
-                    'feature_selection': training_results.get('feature_selection', feature_selection_info),
-                    'regime_feature_selection': training_results.get('feature_selection', feature_selection_info),  # Explicit regime feature selection
-                    'feature_selection_info': feature_selection_info,  # Full feature selection info
-                    'regime_feature_selection_info': feature_selection_info,  # Explicit regime feature selection info
-                    'selected_feature_names': feature_selection_info.get('selected_feature_names', []) if feature_selection_info else [],
-                    'regime_selected_feature_names': feature_selection_info.get('selected_feature_names', []) if feature_selection_info else []  # Explicit regime feature names
-                }
-            }
-
-            execution_time = time.time() - execution_start_time
-
-            # Log final performance metrics
-            final_perf = self._get_system_performance()
-            final_memory = self._monitor_memory_usage("Final")
-
-            tprint(f"⏱️ [REGIME_MODELS] Total execution time: {execution_time:.2f} seconds", color="blue")
-            if final_perf:
-                tprint(f"💻 [REGIME_MODELS] Final system state - CPU: {final_perf.get('cpu_percent', 'N/A')}%, Memory: {final_perf.get('memory_percent', 'N/A')}%", color="blue")
-            tprint(f"🧠 [REGIME_MODELS] Memory usage change: {final_memory - initial_memory:.1f} MB", color="blue")
-
-            tprint("✅ [REGIME_MODELS] Regime detection models training completed successfully", color="green", bold=True)
-            self.logger.info(f"Regime detection models training completed successfully in {execution_time:.2f} seconds")
-
-            # Generate regime probability report
-            try:
-                regime_report = await self._generate_regime_probability_report(
-                    training_results, X, feature_names, artifacts
-                )
-                if regime_report:
-                    artifacts['regime_probability_report'] = regime_report
-                    tprint("📊 [REGIME_MODELS] Regime probability report generated successfully", color="green")
-            except Exception as e:
-                tprint(f"⚠️ [REGIME_MODELS] Failed to generate regime probability report: {e}", color="yellow")
-
-            # Save artifacts persistently using the artifact manager
-            try:
-                save_report = await self.save_artifacts(artifacts, {
-                    'component_type': 'regime_models_training',
-                    'regime_component': True,  # Explicitly mark as regime component
-                    'regime_feature_selection': True,  # Mark that this includes regime feature selection
-                    'execution_time': execution_time,
-                    'training_time': training_results['training_time'],
-                    'model_count': len(training_results['models']),
-                    'regime_model_count': len(training_results['models']),  # Explicit regime model count
-                    'feature_count': X.shape[1],
-                    'sample_count': X.shape[0],
-                    'selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1],
-                    'regime_selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1],  # Explicit regime feature count
-                    'regime_feature_selection_info_available': bool(feature_selection_info),
-                })
-                tprint(
-                    f"💾 [REGIME_MODELS] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}",
-                    color="green"
-                )
-            except Exception as e:
-                tprint(f"⚠️ [REGIME_MODELS] Failed to save artifacts persistently: {e}", color="yellow")
-
-            # Create component_result structure that includes feature_selection_info
-            component_result = {
-                'regime_models': training_results['models'],  # Explicit regime models
-                'regime_metrics': training_results['metrics'],  # Explicit regime metrics
-                'models': training_results['models'],  # Keep for backward compatibility
-                'metrics': training_results['metrics'],  # Keep for backward compatibility
-                'feature_selection_info': feature_selection_info,  # Ensure this is in component_result
-                'regime_feature_selection_info': feature_selection_info,  # Explicit regime feature selection info
-                'selected_feature_names': feature_selection_info.get('selected_feature_names', []) if feature_selection_info else [],
-                'regime_selected_feature_names': feature_selection_info.get('selected_feature_names', []) if feature_selection_info else [],  # Explicit regime feature names
-                'feature_count': X.shape[1],
-                'selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1],
-                'regime_selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1],  # Explicit regime count
-            }
-            
-            # Add component_result to artifacts for easy access
-            artifacts['component_result'] = component_result
-            
-            return ComponentResult(
-                success=True,
-                artifacts=artifacts,
-                metadata={
-                    'component_type': 'regime_models_training',
-                    'regime_component': True,  # Explicitly mark as regime component
-                    'execution_time': execution_time,
-                    'regime_training_time': training_results['training_time'],  # Explicit regime training time
-                    'training_time': training_results['training_time'],  # Keep for backward compatibility
-                    'model_count': len(training_results['models']),
-                    'regime_model_count': len(training_results['models']),  # Explicit regime model count
-                    'feature_count': X.shape[1],
-                    'sample_count': X.shape[0],
-                    'selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1],
-                    'regime_selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1],  # Explicit regime feature count
-                    'regime_feature_selection_info_available': bool(feature_selection_info),
-                    'artifacts_saved_persistently': True,
-                    'regime_artifacts_saved': True  # Explicit regime artifact save confirmation
-                }
-            )
-
-        except Exception as e:
-            execution_time = time.time() - execution_start_time
-            error_type = type(e).__name__
-            error_msg = f"Regime detection models training failed: {str(e)}"
-
-            # Enhanced error logging with context
-            tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
-            tprint(f"🔍 [REGIME_MODELS] Error type: {error_type}", color="yellow")
-            tprint(f"🔍 [REGIME_MODELS] Execution time before failure: {execution_time:.2f} seconds", color="yellow")
-
-            # Log system state at failure
-            failure_perf = self._get_system_performance()
-            if failure_perf:
-                tprint(f"💻 [REGIME_MODELS] System state at failure - CPU: {failure_perf.get('cpu_percent', 'N/A')}%, Memory: {failure_perf.get('memory_percent', 'N/A')}%", color="yellow")
-
-            # Provide recovery suggestions based on error type
-            recovery_suggestions = self._get_recovery_suggestions(e)
-            if recovery_suggestions:
-                tprint(f"💡 [REGIME_MODELS] Recovery suggestions: {recovery_suggestions}", color="cyan")
-
-            # Log detailed error information
-            self.logger.error(f"Regime detection models training failed after {execution_time:.2f} seconds", exc_info=True)
-            self.logger.error(f"Error type: {error_type}, Error message: {str(e)}")
-            if recovery_suggestions:
-                self.logger.error(f"Recovery suggestions: {recovery_suggestions}")
-
-            return ComponentResult(
-                success=False,
-                artifacts={},
-                error_message=f"{error_msg} (Type: {error_type})"
             )
 
     async def _generate_regime_probability_report(
@@ -1927,139 +1594,6 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Model validation error: {e}", color="red")
             return False
-
-    def _prepare_training_data(
-        self,
-        data: pd.DataFrame,
-        regime_labels: np.ndarray,
-        pipeline_state: Dict[str, Any] = None
-    ) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any], Optional[List[str]]]:
-        """Prepare training data from market data and regime labels."""
-        tprint("🔧 [REGIME_MODELS] Preparing training data", color="cyan")
-        self.logger.info("Starting data preparation process")
-
-        try:
-            # Log input data characteristics
-            tprint(f"📊 [REGIME_MODELS] Input data shape: {data.shape}", color="blue")
-            tprint(f"📊 [REGIME_MODELS] Input data columns: {list(data.columns)}", color="blue")
-
-            # Force comprehensive feature generation using feature bank
-            tprint("🔧 [REGIME_MODELS] FORCING comprehensive feature generation using feature bank", color="cyan", bold=True)
-            tprint("🚫 [REGIME_MODELS] Bypassing clustering features to ensure comprehensive feature set", color="yellow")
-
-            # Check if we should use original market data for feature generation
-            original_data = None
-            if pipeline_state is not None:
-                original_data = pipeline_state.get('original_data')
-                force_feature_bank = pipeline_state.get('force_feature_bank', False)
-
-                if original_data is not None and force_feature_bank:
-                    tprint("✅ [REGIME_MODELS] Using original market data for feature bank generation", color="green")
-                    data_for_features = original_data
-                else:
-                    tprint("⚠️ [REGIME_MODELS] No original data available, using processed data", color="yellow")
-                    data_for_features = data
-            else:
-                data_for_features = data
-
-            if FEATURE_GENERATION_AVAILABLE:
-                X, feature_names = self._generate_features_with_bank(data_for_features)
-                if X is None or X.shape[1] < 50:
-                    error_msg = f"Feature bank generated insufficient features: {X.shape[1] if X is not None else 0} < 50 required"
-                    tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
-                    self.logger.error(error_msg)
-                    return None, None, {}, None, None, None
-                else:
-                    tprint(f"✅ [REGIME_MODELS] Feature bank generated {X.shape[1]} comprehensive features", color="green")
-                    if feature_names is None:
-                        feature_names = [f'feature_{i}' for i in range(X.shape[1])]
-            else:
-                error_msg = "Feature generation system not available - cannot generate comprehensive features"
-                tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
-                self.logger.error(error_msg)
-                return None, None, {}, None, None
-
-            # Check for NaN or infinite values in features with detailed analysis
-            nan_count = np.isnan(X).sum()
-            inf_count = np.isinf(X).sum()
-            if nan_count > 0:
-                # Import the detailed NaN analysis function
-                from src.utils.common_utilities import analyze_nan_values_detailed, format_nan_analysis_report
-
-                # Perform detailed NaN analysis
-                nan_analysis = analyze_nan_values_detailed(X, feature_names)
-                detailed_report = format_nan_analysis_report(nan_analysis, "[REGIME_MODELS] ")
-
-                tprint(f"⚠️ [REGIME_MODELS] Found {nan_count} NaN values in features", color="yellow")
-                tprint(detailed_report, color="yellow")
-                tprint("🔧 [REGIME_MODELS] Filling NaN values with 0.0", color="cyan")
-                X = np.nan_to_num(X, nan=0.0)
-            if inf_count > 0:
-                tprint(f"⚠️ [REGIME_MODELS] Found {inf_count} infinite values in features", color="yellow")
-                tprint("🔧 [REGIME_MODELS] Replacing infinite values with finite numbers", color="cyan")
-                X = np.nan_to_num(X, posinf=1e6, neginf=-1e6)
-
-            # Align with regime labels
-            tprint("🔧 [REGIME_MODELS] Aligning features with regime labels", color="cyan")
-            min_length = min(len(X), len(regime_labels))
-            X = X[:min_length]
-            y = np.array(regime_labels[:min_length])
-
-            # Early validation: Check class distribution before proceeding
-            unique_classes, class_counts = np.unique(y, return_counts=True)
-            min_class_count = np.min(class_counts)
-            class_distribution = dict(zip(unique_classes, class_counts))
-
-            tprint(f"📊 [REGIME_MODELS] Regime class distribution: {class_distribution}", color="blue")
-
-            if min_class_count < 2:
-                error_msg = f"🚨 CRITICAL: Insufficient regime class samples detected early!"
-                tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
-                tprint(f"❌ [REGIME_MODELS] 🚨 Class distribution: {class_distribution}", color="red")
-                tprint(f"❌ [REGIME_MODELS] 🚨 Minimum class count: {min_class_count} (required: 2+)", color="red")
-                tprint("❌ [REGIME_MODELS] 🚨 Fast fail: Cannot proceed with insufficient regime data", color="red")
-                tprint("❌ [REGIME_MODELS] 💡 Recommendation: Check regime clustering and labeling process", color="red")
-
-                raise ValueError(f"Early validation failed: Insufficient regime class samples. Distribution: {class_distribution}. Minimum required: 2 samples per class.")
-
-            tprint(f"✅ [REGIME_MODELS] Early validation passed: All regime classes have sufficient samples", color="green")
-
-            # Perform model-driven feature selection
-            feature_selection_info = self._run_feature_selection(X, y, feature_names)
-
-            if feature_selection_info and feature_selection_info.get('selected_indices'):
-                X = self._apply_feature_selection(X, feature_selection_info)
-                feature_names = feature_selection_info.get('selected_feature_names', feature_names)
-                tprint(
-                    f"🎯 [REGIME_MODELS] Feature selector retained {feature_selection_info['retained_feature_count']}/{feature_selection_info['total_feature_count']} features",
-                    color="green"
-                )
-                self.logger.info(
-                    "Feature selection applied",
-                    extra={
-                        'retained_features': feature_selection_info['retained_feature_count'],
-                        'total_features': feature_selection_info['total_feature_count'],
-                        'selection_method': feature_selection_info.get('selection_method'),
-                        'selection_time_seconds': feature_selection_info.get('selection_time_seconds')
-                    }
-                )
-            else:
-                tprint("⚠️ [REGIME_MODELS] Feature selection fallback - retaining all features", color="yellow")
-                feature_selection_info = feature_selection_info or {}
-                feature_selection_info.setdefault('selected_indices', list(range(X.shape[1])))
-                feature_selection_info.setdefault('selected_feature_names', feature_names)
-                feature_selection_info.setdefault('retained_feature_count', X.shape[1])
-                feature_selection_info.setdefault('total_feature_count', X.shape[1])
-
-            tprint(f"✅ [REGIME_MODELS] Training data prepared: {X.shape[0]} samples, {X.shape[1]} features", color="green", bold=True)
-
-            self.logger.info(f"Training data preparation completed: {X.shape[0]} samples, {X.shape[1]} features")
-            return X, y, feature_selection_info, feature_names
-
-        except Exception as e:
-            error_type = type(e).__name__
-            tprint(f"❌ [REGIME_MODELS] Error preparing training data: {e}", color="red")
-            tprint(f"🔍 [REGIME_MODELS] Error type: {error_type}", color="yellow")
 
     def _prepare_training_data_improved(
         self,

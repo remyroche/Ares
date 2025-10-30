@@ -174,19 +174,51 @@ class OrderManager:
         side = OrderSide.BUY if decision.action.lower() in ["buy", "long"] else OrderSide.SELL
         order_type = OrderType.MARKET if decision.price == 0 else OrderType.LIMIT
         
+        # Build comprehensive metadata for trade recording
+        metadata = {
+            "confidence": decision.confidence,
+            "risk_score": decision.risk_score,
+            "leverage": decision.leverage,
+            "stop_loss": decision.stop_loss,
+            "take_profit": decision.take_profit
+        }
+        
+        # Add analyst signal if available
+        if hasattr(decision, 'analyst_signal') and decision.analyst_signal:
+            metadata['analyst_signal'] = decision.analyst_signal.__dict__ if hasattr(decision.analyst_signal, '__dict__') else decision.analyst_signal
+            metadata['analyst_confidence'] = getattr(decision.analyst_signal, 'confidence', 0.0)
+        
+        # Add tactician signal if available
+        if hasattr(decision, 'tactician_signal') and decision.tactician_signal:
+            metadata['tactician_signal'] = decision.tactician_signal.__dict__ if hasattr(decision.tactician_signal, '__dict__') else decision.tactician_signal
+            metadata['tactician_confidence'] = getattr(decision.tactician_signal, 'confidence', 0.0)
+        
+        # Add combined signal if available
+        if hasattr(decision, 'combined_signal') and decision.combined_signal:
+            metadata['combined_signal'] = decision.combined_signal
+        
+        # Add risk metrics if available
+        if hasattr(decision, 'risk_metrics') and decision.risk_metrics:
+            metadata['risk_metrics'] = decision.risk_metrics
+        
+        # Add regime data from decision metadata if available
+        if hasattr(decision, 'metadata') and decision.metadata:
+            if 'regime_data' in decision.metadata:
+                metadata['regime_data'] = decision.metadata['regime_data']
+            if 'market_context' in decision.metadata:
+                metadata['market_context'] = decision.metadata['market_context']
+            # Merge any other metadata
+            for key, value in decision.metadata.items():
+                if key not in metadata:
+                    metadata[key] = value
+        
         return await self.create_order(
             symbol=decision.symbol,
             side=side,
             order_type=order_type,
             quantity=decision.quantity,
             price=decision.price if decision.price > 0 else None,
-            metadata={
-                "confidence": decision.confidence,
-                "risk_score": decision.risk_score,
-                "leverage": decision.leverage,
-                "stop_loss": decision.stop_loss,
-                "take_profit": decision.take_profit
-            }
+            metadata=metadata
         )
     
     async def cancel_order(self, order_id: str) -> bool:

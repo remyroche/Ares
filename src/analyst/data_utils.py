@@ -816,7 +816,7 @@ def _consolidate_hvn_results(all_levels: list[tuple[float, float]], volume_profi
 
 def create_ethusdt_1h_csv() -> Any:
     """Convert downloaded klines data to the expected ETHUSDT_1h.csv format."""
-    klines_file = 'data_cache/klines_BINANCE_ETHUSDT_1m_consolidated.csv'
+    klines_file = 'historical_data/klines_BINANCE_ETHUSDT_1m_consolidated.csv'
     if not os.path.exists(klines_file):
         tprint(missing('Klines file not found: {klines_file}'))
         return False

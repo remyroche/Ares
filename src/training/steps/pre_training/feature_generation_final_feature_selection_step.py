@@ -134,6 +134,9 @@ configure_tprint(TPrintConfig(
 
 logger = logging.getLogger(__name__)
 
+# Define target column names once to avoid hardcoding throughout the codebase
+TARGET_COLUMN_NAMES = ['target', 'label', 'return', 'price_target_vol_normalized']
+
 
 class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
     """
@@ -239,7 +242,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 
                 # Separate features from targets for analysis
                 feature_cols = [col for col in combined_features_df.columns 
-                               if col not in ['target', 'label', 'return', 'timestamp', 'price_target_vol_normalized']]
+                               if col not in TARGET_COLUMN_NAMES + ['timestamp']]
                 X = combined_features_df[feature_cols]
                 y = combined_features_df[targets.name] if hasattr(targets, 'name') else combined_features_df.iloc[:, -1]
                 
@@ -305,6 +308,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
             tprint_success(f"✅ {self.step_name} completed successfully")
             tprint_info(f"📊 Created feature sets: {metrics.get('total_features_selected', 0)} total features across {len(feature_sets)} sets")
+            tprint_info("✅ Using permutation importance - captures feature interactions for better predictions")
+            tprint_info("📊 Permutation importance is more reliable than Gini for complex trading strategies")
 
             return execution_result
 
@@ -512,6 +517,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         tprint_info(f"📊 Using labeled dataframe as base: {base_features.shape}")
         tprint_info(f"📊 Target column in base: {'price_target_vol_normalized' in base_features.columns}")
         
+        # Collect all feature dataframes to concatenate once (memory optimization)
+        feature_chunks = []
+        
         # PRIORITY 2: Add main generated features if available
         if 'generated_features' in features_data and features_data['generated_features'] is not None:
             generated_features = features_data['generated_features']
@@ -536,12 +544,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             if generated_features is not None:
                 # Add generated features (excluding any duplicate columns and target columns)
-                target_cols = ['target', 'label', 'return', 'price_target_vol_normalized']
                 generated_cols = [col for col in generated_features.columns
-                               if col not in base_features.columns and col not in target_cols]
+                               if col not in base_features.columns and col not in TARGET_COLUMN_NAMES]
                 if generated_cols:
-                    base_features = pd.concat([base_features, generated_features[generated_cols]], axis=1)
-                    tprint_info(f"📊 Added {len(generated_cols)} generated features")
+                    feature_chunks.append(generated_features[generated_cols])
+                    tprint_info(f"📊 Queued {len(generated_cols)} generated features for concatenation")
 
         # Use vectorization manager for optimized operations if available
         if self.vectorization_manager and self.optimization_enabled:
@@ -569,8 +576,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     lookback_cols = [col for col in lookback_data.columns
                                    if col not in base_features.columns]
                     if lookback_cols:
-                        base_features = pd.concat([base_features, lookback_data[lookback_cols]], axis=1)
-                        tprint_info(f"📊 Added {len(lookback_cols)} lookback optimization features (PRIORITY 2)")
+                        feature_chunks.append(lookback_data[lookback_cols])
+                        tprint_info(f"📊 Queued {len(lookback_cols)} lookback optimization features (PRIORITY 2)")
                 else:
                     tprint_warning(f"⚠️ Lookback optimization data has wrong shape {lookback_data.shape}, skipping")
             elif isinstance(lookback_data, dict):
@@ -613,10 +620,14 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     interaction_cols = [col for col in interaction_df.columns
                                      if col not in base_features.columns]
                     if interaction_cols:
-                        base_features = pd.concat([base_features, interaction_df[interaction_cols]], axis=1)
-                        tprint_info(f"📊 Added {len(interaction_cols)} {interaction_type} features (PRIORITY 3)")
+                        feature_chunks.append(interaction_df[interaction_cols])
+                        tprint_info(f"📊 Queued {len(interaction_cols)} {interaction_type} features (PRIORITY 3)")
 
         # PRIORITY 4: Add features from feature dataframe if available (with proper alignment)
+        # Define column filters outside the if block to avoid NameError
+        ohlcv_cols = ['open', 'high', 'low', 'close', 'volume', 'timestamp']
+        basic_time_cols = ['hour', 'day_of_week', 'base_threshold']
+        
         if 'feature_dataframe' in features_data and features_data['feature_dataframe'] is not None:
             feature_df = features_data['feature_dataframe']
             
@@ -645,44 +656,25 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     except Exception as e:
                         tprint_warning(f"⚠️ Feature dataframe optimization failed: {e}")
             
-                # Find common columns (excluding OHLCV, basic time features, and target columns)
-                ohlcv_cols = ['open', 'high', 'low', 'close', 'volume', 'timestamp']
-                basic_time_cols = ['hour', 'day_of_week', 'base_threshold']
-                target_cols = ['target', 'label', 'return', 'price_target_vol_normalized']  # Common target column name
-
+                # Find columns to include (excluding OHLCV, basic time features, and target columns)
                 feature_cols = [col for col in feature_df.columns
-                                      if col not in ohlcv_cols and col not in basic_time_cols and col not in target_cols]
+                                      if col not in ohlcv_cols and col not in basic_time_cols and col not in TARGET_COLUMN_NAMES]
 
                 if feature_cols:
-                    # Use optimized concatenation if available
-                    if self.vectorization_manager and self.optimization_enabled:
-                        try:
-                            # Use batch processing for large feature sets
-                            if len(feature_cols) > 1000:
-                                tprint_info(f"🔄 Processing {len(feature_cols)} features in batches...")
-                                # Process in chunks to avoid memory issues
-                                chunk_size = self.vectorization_manager.config.chunk_size
-                                for i in range(0, len(feature_cols), chunk_size):
-                                    chunk_cols = feature_cols[i:i + chunk_size]
-                                    chunk_df = feature_df[chunk_cols]
-                                    base_features = pd.concat([base_features, chunk_df], axis=1)
-                            else:
-                                base_features = pd.concat([base_features, feature_df[feature_cols]], axis=1)
-                        except Exception as e:
-                            tprint_warning(f"⚠️ Optimized concatenation failed, using standard method: {e}")
-                            base_features = pd.concat([base_features, feature_df[feature_cols]], axis=1)
-                    else:
-                        base_features = pd.concat([base_features, feature_df[feature_cols]], axis=1)
-                    
-                    tprint_info(f"📊 Added {len(feature_cols)} feature dataframe columns")
-                    tprint_info(f"📊 Added {len(feature_cols)} features from feature dataframe (PRIORITY 4)")
+                    feature_chunks.append(feature_df[feature_cols])
+                    tprint_info(f"📊 Queued {len(feature_cols)} features from feature dataframe (PRIORITY 4)")
+        
+        # Concatenate all feature chunks at once (MEMORY OPTIMIZATION)
+        if feature_chunks:
+            tprint_info(f"📊 Concatenating {len(feature_chunks)} feature chunks...")
+            base_features = pd.concat([base_features] + feature_chunks, axis=1)
+            tprint_success(f"✅ Successfully concatenated all feature chunks")
 
         # Remove any non-numeric columns except timestamp and target columns
         numeric_cols = []
-        target_cols = ['target', 'label', 'return', 'price_target_vol_normalized']
         
         for col in base_features.columns:
-            if col == 'timestamp' or col in target_cols or pd.api.types.is_numeric_dtype(base_features[col]):
+            if col == 'timestamp' or col in TARGET_COLUMN_NAMES or pd.api.types.is_numeric_dtype(base_features[col]):
                 numeric_cols.append(col)
 
         tprint_info(f"🔍 DEBUG: Base features columns after combination: {list(base_features.columns)}")
@@ -692,7 +684,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         result_df = base_features[numeric_cols].copy()
         
         # Debug: Check if target column is present
-        available_targets = [col for col in target_cols if col in result_df.columns]
+        available_targets = [col for col in TARGET_COLUMN_NAMES if col in result_df.columns]
         tprint_info(f"📊 Combined feature matrix: {len(numeric_cols)} features, {len(result_df)} samples")
         tprint_info(f"📊 Available target columns: {available_targets}")
         
@@ -767,9 +759,10 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         return FinalFeatureSelectionConfig(
             max_features=config.get('max_features', 100),
             min_features=config.get('min_features', 10),
-            selection_method=config.get('selection_method', 'mutual_info'),
+            selection_method=config.get('selection_method', 'permutation'),
             scoring_threshold=config.get('scoring_threshold', 0.01),
-            use_tree_based=config.get('use_tree_based', True)
+            use_tree_based=config.get('use_tree_based', True),
+            use_permutation_importance=config.get('use_permutation_importance', True)
         )
 
     def _perform_multi_size_selection(self, features_df: pd.DataFrame, targets: pd.Series, config: Dict[str, Any]) -> Dict[str, List[str]]:
@@ -789,7 +782,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         elif is_tactician_mode and not cmi_available:
             tprint_warning("⚠️ Tactician mode detected but CMI not available - using standard selection")
         else:
-            tprint_info("📊 Standard mode - using regular mutual information selection")
+            tprint_info("📊 Standard mode - using permutation-based feature selection (captures interactions)")
 
         # Separate features from targets and exclude raw data columns
         raw_data_columns = ['open', 'high', 'low', 'close', 'volume', 'hour', 'day_of_week', 'base_threshold']
@@ -802,16 +795,16 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         
         # Prioritize sophisticated engineered features over basic ones
         sophisticated_features = [col for col in features_df.columns
-                                if col not in ['target', 'label', 'return', 'timestamp', 'price_target_vol_normalized'] + raw_data_columns
+                                if col not in TARGET_COLUMN_NAMES + ['timestamp'] + raw_data_columns
                                 and any(keyword in col.lower() for keyword in ['vectorbt', 'interaction', 'enhanced', 'optimized', 'advanced', 'statistical', 'wavelet', 'entropy', 'ad_line', 'obv', 'volatility', 'order_flow'])]
         
         basic_engineered_features = [col for col in features_df.columns
-                                   if col not in ['target', 'label', 'return', 'timestamp', 'price_target_vol_normalized'] + raw_data_columns
+                                   if col not in TARGET_COLUMN_NAMES + ['timestamp'] + raw_data_columns
                                    and col not in sophisticated_features]
         
         # Prioritize sophisticated features first
         feature_cols = sophisticated_features + basic_engineered_features
-        target_cols = [col for col in ['target', 'label', 'return', 'price_target_vol_normalized']
+        target_cols = [col for col in TARGET_COLUMN_NAMES
                       if col in features_df.columns]
 
         tprint_info(f"🔍 Sophisticated features: {len(sophisticated_features)}")
@@ -831,7 +824,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         X = features_df[feature_cols]
         y = features_df[target_cols[0]]
 
-        tprint_info(f"🔍 Performing feature selection on {len(feature_cols)} features...")
+        tprint_info(f"🔍 Performing feature selection on {len(feature_cols)} features using permutation importance...")
+        tprint_info("📊 Using permutation importance to capture feature interactions (not just Gini splits)")
 
         # Use batch processing if vectorization manager is available
         if self.vectorization_manager and self.optimization_enabled and len(feature_cols) > 1000:
@@ -847,9 +841,10 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                         'params': {
                             'max_features': size,
                             'min_features': max(5, size // 2),
-                            'selection_method': config.get('selection_method', 'mutual_info'),
+                            'selection_method': config.get('selection_method', 'permutation'),
                             'scoring_threshold': config.get('scoring_threshold', 0.01),
                             'use_tree_based': config.get('use_tree_based', True),
+                            'use_permutation_importance': config.get('use_permutation_importance', True),
                             'X': X,
                             'y': y,
                             'feature_names': feature_cols
@@ -876,19 +871,20 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 tprint_warning(f"⚠️ Batch processing failed, falling back to sequential: {e}")
 
         # Sequential processing (fallback or for smaller datasets)
-        tprint_info("🔄 Using sequential feature selection...")
+        tprint_info("🔄 Using sequential feature selection with permutation importance...")
         
         # Create selection configs for different sizes
         for size in feature_set_sizes:
-            tprint_info(f"🎯 Selecting top {size} features...")
+            tprint_info(f"🎯 Selecting top {size} features using permutation importance (captures interactions)...")
 
             # Create config for this size
             size_config = FinalFeatureSelectionConfig(
                 max_features=size,
                 min_features=max(5, size // 2),  # Minimum is half the size or 5, whichever is larger
-                selection_method=config.get('selection_method', 'mutual_info'),
+                selection_method=config.get('selection_method', 'permutation'),
                 scoring_threshold=config.get('scoring_threshold', 0.01),
-                use_tree_based=config.get('use_tree_based', True)
+                use_tree_based=config.get('use_tree_based', True),
+                use_permutation_importance=config.get('use_permutation_importance', True)
             )
 
             # Create temporary component for this selection
@@ -900,7 +896,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             # Also create the corresponding dataframes
             feature_sets[f'selected_feature_dataframe_{size}'] = features_df[selected_features + target_cols].copy()
 
-        tprint_success(f"✅ Created {len(feature_sets)} feature sets")
+        tprint_success(f"✅ Created {len(feature_sets)} feature sets using permutation-based importance")
         return feature_sets
 
     def _detect_tactician_mode(self, features_df: pd.DataFrame, config: Dict[str, Any]) -> bool:
@@ -983,9 +979,10 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             temp_config = FinalFeatureSelectionConfig(
                 max_features=len(selected_features),
                 min_features=5,
-                selection_method='mutual_info',
+                selection_method='permutation',
                 scoring_threshold=0.01,
-                use_tree_based=True
+                use_tree_based=True,
+                use_permutation_importance=True
             )
             temp_component = FinalFeatureSelectionComponent(temp_config)
             
@@ -1051,7 +1048,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         Returns:
             Dictionary of feature sets
         """
-        tprint_info("🎯 Performing CMI-aware feature selection for Tactician mode...")
+        tprint_info("🎯 Performing CMI-aware feature selection for Tactician mode (with permutation importance)...")
         
         try:
             # Extract Analyst side information for CMI conditioning
@@ -1068,7 +1065,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                               if 'analyst' in col.lower()]
             other_features = [col for col in features_df.columns 
                             if col not in tactician_features + analyst_features 
-                            and col not in ['target', 'label', 'return', 'timestamp', 'price_target_vol_normalized']]
+                            and col not in TARGET_COLUMN_NAMES + ['timestamp']]
             
             tprint_info(f"🔍 Feature separation:")
             tprint_info(f"  - Tactician features: {len(tactician_features)}")
@@ -1200,7 +1197,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         Returns:
             Dictionary of feature sets
         """
-        tprint_info("📊 Performing standard feature selection...")
+        tprint_info("📊 Performing standard feature selection with permutation importance...")
         
         # Use the original selection logic
         feature_sets = {}
@@ -1210,16 +1207,16 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         
         # Prioritize sophisticated engineered features over basic ones
         sophisticated_features = [col for col in features_df.columns
-                                if col not in ['target', 'label', 'return', 'timestamp', 'price_target_vol_normalized'] + raw_data_columns
+                                if col not in TARGET_COLUMN_NAMES + ['timestamp'] + raw_data_columns
                                 and any(keyword in col.lower() for keyword in ['vectorbt', 'interaction', 'enhanced', 'optimized', 'advanced', 'statistical', 'wavelet', 'entropy', 'ad_line', 'obv', 'volatility', 'order_flow'])]
         
         basic_engineered_features = [col for col in features_df.columns
-                                   if col not in ['target', 'label', 'return', 'timestamp', 'price_target_vol_normalized'] + raw_data_columns
+                                   if col not in TARGET_COLUMN_NAMES + ['timestamp'] + raw_data_columns
                                    and col not in sophisticated_features]
         
         # Prioritize sophisticated features first
         feature_cols = sophisticated_features + basic_engineered_features
-        target_cols = [col for col in ['target', 'label', 'return', 'price_target_vol_normalized']
+        target_cols = [col for col in TARGET_COLUMN_NAMES
                       if col in features_df.columns]
 
         if not target_cols:
@@ -1233,15 +1230,16 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
         # Create selection configs for different sizes
         for size in feature_set_sizes:
-            tprint_info(f"🎯 Selecting top {size} features...")
+            tprint_info(f"🎯 Selecting top {size} features using permutation importance (captures interactions)...")
 
             # Create config for this size
             size_config = FinalFeatureSelectionConfig(
                 max_features=size,
                 min_features=max(5, size // 2),  # Minimum is half the size or 5, whichever is larger
-                selection_method=config.get('selection_method', 'mutual_info'),
+                selection_method=config.get('selection_method', 'permutation'),
                 scoring_threshold=config.get('scoring_threshold', 0.01),
-                use_tree_based=config.get('use_tree_based', True)
+                use_tree_based=config.get('use_tree_based', True),
+                use_permutation_importance=config.get('use_permutation_importance', True)
             )
 
             # Create temporary component for this selection
@@ -1253,7 +1251,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             # Also create the corresponding dataframes
             feature_sets[f'selected_feature_dataframe_{size}'] = features_df[selected_features + target_cols].copy()
 
-        tprint_success(f"✅ Created {len(feature_sets)} feature sets")
+        tprint_success(f"✅ Created {len(feature_sets)} feature sets using permutation-based importance")
         return feature_sets
 
     def _generate_shap_values(self, feature_sets: Dict[str, List[str]], features_df: pd.DataFrame, targets: pd.Series, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -1275,7 +1273,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 warnings.filterwarnings("ignore", message=".*np\.complex.*")
 
             # Get target column
-            target_cols = [col for col in ['target', 'label', 'return', 'price_target_vol_normalized']
+            target_cols = [col for col in TARGET_COLUMN_NAMES
                           if col in features_df.columns]
             if not target_cols:
                 tprint_warning("⚠️ No target column found for SHAP analysis")
@@ -1347,9 +1345,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         # Selection metadata
         selection_metadata = {
             'total_features_available': len([col for col in combined_features_df.columns
-                                           if col not in ['target', 'label', 'return', 'timestamp', 'price_target_vol_normalized']]),
+                                           if col not in TARGET_COLUMN_NAMES + ['timestamp']]),
             'feature_set_sizes': config.get('feature_set_sizes', [60, 50, 40]),
-            'selection_method': config.get('selection_method', 'mutual_info'),
+            'selection_method': config.get('selection_method', 'permutation'),
             'scoring_threshold': config.get('scoring_threshold', 0.01),
             'use_tree_based': config.get('use_tree_based', True),
             'timestamp': datetime.now().isoformat(),
@@ -1499,6 +1497,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
 **Feature Set Sizes:** {config.get('feature_set_sizes', [60, 50, 40])}
 
+**Selection Methodology:**
+- ✅ **Using Permutation Importance** (captures feature interactions)
+- 🔬 Unlike standard Gini importance, permutation importance measures how features work together
+- 📊 More reliable for complex trading strategies with feature dependencies
+
 **Results:**
 """
 
@@ -1515,7 +1518,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             if self.selection_component and self.selection_component.get_feature_scores():
                 scores = self.selection_component.get_feature_scores()
                 if scores:
-                    report += "\n## Feature Importance Scores\n"
+                    report += "\n## Feature Importance Scores (Permutation-Based)\n"
+                    report += "These scores measure true predictive impact including feature interactions.\n\n"
                     top_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:20]
                     for feature, score in top_scores:
                         report += f"- **{feature}:** {score:.6f}\n"
@@ -1537,9 +1541,12 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
             # Configuration
             report += "\n## Configuration\n"
-            report += f"- **Selection Method:** {config.get('selection_method', 'mutual_info')}\n"
+            report += f"- **Selection Method:** {config.get('selection_method', 'permutation')} ✅\n"
+            report += f"- **Use Permutation Importance:** {config.get('use_permutation_importance', True)} (captures feature interactions) ✅\n"
+            report += f"- **Importance Type:** Permutation (not Gini) - More reliable for interaction-heavy models 📊\n"
             report += f"- **Scoring Threshold:** {config.get('scoring_threshold', 0.01)}\n"
             report += f"- **Tree-based Selection:** {config.get('use_tree_based', True)}\n"
+            report += f"- **Why Permutation?** Measures true impact on predictions, not just split quality\n"
             
             # Optimization Information
             report += "\n## Optimization Status\n"
@@ -1608,8 +1615,17 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 - **Timeframe:** {getattr(self, 'timeframe', 'N/A')}
 - **Execution Mode:** {getattr(self, 'execution_mode', 'N/A')}
 - **Feature Count Targets:** {config.get('feature_count_targets', 'N/A')}
-- **Selection Method:** {config.get('selection_method', 'N/A')}
+- **Selection Method:** {config.get('selection_method', 'permutation')} ✅
+- **Importance Type:** Permutation (captures feature interactions, not just Gini splits) 📊
 - **Optimization Enabled:** {self.optimization_enabled}
+
+## Feature Selection Methodology
+
+✅ **Using Permutation Importance**
+- Captures how features work together (feature interactions)
+- More reliable than standard Gini importance for complex trading strategies
+- Measures true impact on model predictions
+- Better for identifying genuinely predictive features
 
 ## Feature Selection Results
 

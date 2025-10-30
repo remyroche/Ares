@@ -6,7 +6,7 @@ the execution of the three-tier model system with different frequencies:
 
 - HMM (1h timeframe): Runs every 15 minutes with partial-bar nowcasting
 - Analyst (5m timeframe): Runs every 2 minutes
-- Tactician (1m timeframe): Runs every 30 seconds
+- Tactician (15m timeframe): Runs every 3 minutes
 
 The scheduler ensures proper data flow between models and maintains
 the hierarchical decision-making process. Now includes partial-bar nowcasting
@@ -88,7 +88,7 @@ class LiveTradingScheduler:
     Features:
     - HMM (1h timeframe): Runs every 15 minutes
     - Analyst (5m timeframe): Runs every 2 minutes
-    - Tactician (1m timeframe): Runs every 30 seconds
+    - Tactician (15m timeframe): Runs every 3 minutes
     - Proper data flow between models
     - Hierarchical decision-making process
     - Error handling and recovery
@@ -139,19 +139,19 @@ class LiveTradingScheduler:
                 execution_interval_seconds=2 * 60,  # 2 minutes
                 custom_params={
                     'n_features': 300,
-                    'base_models': ['tcn', 'catboost', 'lightgbm'],
-                    'meta_learner': 'elastic_net',
+                    'base_models': ['lgbm', 'tcn', 'catboost'],
+                    'meta_learner': 'stacker_lgbm_calibrated',
                     'per_regime_training': True
                 }
             ),
             ModelType.TACTICIAN: ModelConfig(
                 model_type=ModelType.TACTICIAN,
-                timeframe="1m",
-                execution_interval_seconds=30,  # 30 seconds
+                timeframe="15m",
+                execution_interval_seconds=3 * 60,  # 3 minutes (matches tactician_base_config.yaml)
                 custom_params={
-                    'n_features': 50,
-                    'base_models': ['xgboost', 'randomforest', 'catboost', 'elastic_net'],
-                    'meta_learner': 'lightgbm',
+                    'n_features': 100,
+                    'base_models': ['lgbm', 'catboost', 'extratrees', 'gru'],
+                    'meta_learner': 'stacker_lgbm_calibrated_gating',
                     'target_price_change': 0.005  # 0.5%
                 }
             )

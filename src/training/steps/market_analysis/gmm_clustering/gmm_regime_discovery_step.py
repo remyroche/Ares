@@ -3,6 +3,10 @@ Gaussian Mixture Model (GMM) Regime Discovery Step
 
 This module provides GMM-based regime discovery as an alternative to HDBSCAN,
 with correlation-based feature reduction to remove redundant volatility features.
+
+Integrated with:
+- clustering_optimization_goals.py for optimization targets
+- cluster_quality_assessor.py for comprehensive quality assessment
 """
 
 import logging
@@ -25,7 +29,13 @@ from src.training.steps.market_analysis.clusters.cluster_quality_assessor import
     ClusterQualityMetrics,
     create_cluster_quality_assessor
 )
-from src.utils.tprint import tprint, tprint_info, tprint_timer
+from src.training.steps.market_analysis.clusters.clustering_optimization_goals import (
+    ClusteringOptimizationGoals,
+    OptimizationTargets,
+    DEFAULT_CLUSTERING_GOALS,
+    DEFAULT_OPTIMIZATION_TARGETS
+)
+from src.utils.tprint import tprint, tprint_info, tprint_timer, tprint_success, tprint_warning, tprint_error
 from src.utils.logger import system_logger
 
 logger = system_logger.getChild('GMMRegimeDiscoveryStep')
@@ -90,14 +100,27 @@ class GMMRegimeDiscoveryStep(BaseStep):
         
         Args:
             step_name: Name of the step (passed by launcher)
-            **kwargs: Additional keyword arguments (n_components_range, correlation_threshold, random_state)
+            **kwargs: Additional keyword arguments (n_components_range, correlation_threshold, random_state, 
+                     optimization_goals, optimization_targets)
         """
         super().__init__(step_name)
         
-        # Extract parameters from kwargs with defaults
-        self.n_components_range = kwargs.get('n_components_range', (5, 9))
+        # Load optimization goals and targets
+        self.optimization_goals = kwargs.get('optimization_goals', DEFAULT_CLUSTERING_GOALS)
+        self.optimization_targets = kwargs.get('optimization_targets', DEFAULT_OPTIMIZATION_TARGETS)
+        
+        # Extract parameters from kwargs with defaults from optimization goals
+        # Use optimization targets for n_components range
+        default_range = self.optimization_targets.target_clusters  # (4, 6) by default
+        self.n_components_range = kwargs.get('n_components_range', default_range)
         self.correlation_threshold = kwargs.get('correlation_threshold', 0.85)
         self.random_state = kwargs.get('random_state', 42)
+        
+        tprint(f"🎯 Using optimization targets: {self.n_components_range[0]}-{self.n_components_range[1]} clusters", "INFO")
+        tprint(f"📊 Target quality thresholds:", "INFO")
+        tprint(f"   - Min Silhouette: {self.optimization_targets.min_silhouette_score:.2f}", "INFO")
+        tprint(f"   - Target CV Score: {self.optimization_targets.target_cv_score:.2f}", "INFO")
+        tprint(f"   - Min Temporal Smoothness: {self.optimization_targets.min_temporal_smoothness:.2f}", "INFO")
         
         self.quality_assessor = create_cluster_quality_assessor()
         self.feature_selector = CorrelationBasedFeatureSelector(self.correlation_threshold)
@@ -134,8 +157,17 @@ class GMMRegimeDiscoveryStep(BaseStep):
             # For now, we'll create a placeholder that would be replaced with actual data loading
             data, features_df = self._load_data(symbol, exchange, timeframe)
             
-            # Discover regimes
-            results = self.discover_regimes(data, features_df)
+            # Extract timestamps from data index
+            timestamps = data.index if hasattr(data, 'index') and isinstance(data.index, pd.DatetimeIndex) else None
+            if timestamps is None and hasattr(features_df, 'index') and isinstance(features_df.index, pd.DatetimeIndex):
+                timestamps = features_df.index
+            
+            # Discover regimes with timestamps for temporal metrics
+            results = self.discover_regimes(data, features_df, timestamps=timestamps)
+            
+            # Store timestamps in results for artifact saving
+            if timestamps is not None:
+                results['timestamps'] = timestamps
             
             # Save artifacts
             self._save_artifacts(results, symbol, exchange, timeframe)
@@ -335,12 +367,21 @@ class GMMRegimeDiscoveryStep(BaseStep):
                 model="Analyst"
             )
             
-            # Save regime labels
+            # Save regime labels with more metadata
             if 'regime_labels' in results:
+                timestamps_data = results.get('timestamps')
+                if timestamps_data is None:
+                    timestamps_data = pd.date_range(start='2020-01-01', periods=len(results['regime_labels']), freq='H')
+                
                 regime_labels_df = pd.DataFrame({
                     'regime_label': results['regime_labels'],
-                    'timestamp': results.get('timestamps', range(len(results['regime_labels'])))
+                    'timestamp': timestamps_data
                 })
+                
+                # Add index for easier querying
+                if isinstance(timestamps_data, (pd.DatetimeIndex, pd.Index)):
+                    regime_labels_df.set_index('timestamp', inplace=True)
+                
                 self.artifact_manager.save_artifact(
                     artifact_name="regime_labels",
                     artifact_data=regime_labels_df,
@@ -481,6 +522,30 @@ class GMMRegimeDiscoveryStep(BaseStep):
             max_cluster_size_str = f"{quality_metrics.max_cluster_size_pct:.1%}" if quality_metrics.max_cluster_size_pct is not None else 'N/A'
             cluster_size_std_str = f"{quality_metrics.cluster_size_std:.2f}" if quality_metrics.cluster_size_std is not None else 'N/A'
             
+            # Calculate target achievement status
+            targets_met = []
+            targets_failed = []
+            
+            # Check against optimization targets
+            if quality_metrics.silhouette_score is not None:
+                if quality_metrics.silhouette_score >= self.optimization_targets.min_silhouette_score:
+                    targets_met.append(f"Silhouette Score ({quality_metrics.silhouette_score:.3f})")
+                else:
+                    targets_failed.append(f"Silhouette Score ({quality_metrics.silhouette_score:.3f} < {self.optimization_targets.min_silhouette_score:.2f})")
+            
+            if quality_metrics.temporal_smoothness is not None:
+                if quality_metrics.temporal_smoothness >= self.optimization_targets.min_temporal_smoothness:
+                    targets_met.append(f"Temporal Smoothness ({quality_metrics.temporal_smoothness:.3f})")
+                else:
+                    targets_failed.append(f"Temporal Smoothness ({quality_metrics.temporal_smoothness:.3f} < {self.optimization_targets.min_temporal_smoothness:.2f})")
+            
+            if self.optimization_targets.target_clusters[0] <= n_regimes <= self.optimization_targets.target_clusters[1]:
+                targets_met.append(f"Cluster Count ({n_regimes})")
+            else:
+                targets_failed.append(f"Cluster Count ({n_regimes} outside {self.optimization_targets.target_clusters})")
+            
+            overall_status = "✅ TARGETS MET" if len(targets_failed) == 0 else "⚠️ PARTIAL SUCCESS"
+            
             # Build comprehensive report
             report = f"""# GMM Regime Discovery Comprehensive Report
 
@@ -497,19 +562,35 @@ class GMMRegimeDiscoveryStep(BaseStep):
 | **Exchange** | {exchange} |
 | **Timeframe** | {timeframe} |
 | **Processing Time** | {processing_time:.2f} seconds |
-| **Success Status** | ✅ SUCCESS |
+| **Success Status** | {overall_status} |
 | **Regimes Discovered** | {n_regimes} |
 | **Quality Score** | {quality_metrics.quality_score:.3f} |
 | **Noise Ratio** | {quality_metrics.noise_ratio:.1%} |
 
----
+### Optimization Targets Achievement
 
+**Targets Met** ({len(targets_met)}/{len(targets_met) + len(targets_failed)}):
+"""
+            for target in targets_met:
+                report += f"- ✅ {target}\n"
+            
+            if targets_failed:
+                report += "\n**Targets Not Met**:\n"
+                for target in targets_failed:
+                    report += f"- ❌ {target}\n"
+            
+            report += "\n---\n"
+            
+            # Calculate average regime size
+            avg_regime_size = total_samples / max(n_regimes, 1)
+            
+            report += f"""
 ## 🔍 Regime Discovery Results
 
 ### Cluster Statistics
 - **Total Regimes**: {n_regimes}
 - **Noise Points**: {quality_metrics.noise_ratio:.1%} of total samples (GMM: 0.0% - no noise)
-- **Average Regime Size**: {total_samples / max(n_regimes, 1):.0f} samples per regime
+- **Average Regime Size**: {avg_regime_size:.0f} samples per regime
 - **Balance Score**: {balance_score_str} (higher is better)
 
 ### Regime Distribution
@@ -656,6 +737,30 @@ class GMMRegimeDiscoveryStep(BaseStep):
 
 ---
 
+## 🎯 Optimization Goals & Targets
+
+This GMM regime discovery run was guided by the following optimization goals from `clustering_optimization_goals.py`:
+
+### Cluster Configuration Targets
+- **Target Cluster Count**: {self.optimization_targets.target_clusters[0]}-{self.optimization_targets.target_clusters[1]} clusters
+- **Minimum Cluster Size**: {self.optimization_targets.min_cluster_size_pct:.1%} of total samples
+- **Maximum Cluster Size**: {self.optimization_targets.max_cluster_size_pct:.1%} of total samples
+
+### Quality Targets
+- **Minimum Silhouette Score**: {self.optimization_targets.min_silhouette_score:.2f}
+- **Target Silhouette Score**: {self.optimization_targets.target_silhouette_score:.2f}
+- **Minimum Temporal Smoothness**: {self.optimization_targets.min_temporal_smoothness:.2f}
+- **Target Temporal Smoothness**: {self.optimization_targets.target_temporal_smoothness:.2f}
+- **Minimum CV Score**: {self.optimization_targets.min_cv_score:.2f}
+- **Target CV Score**: {self.optimization_targets.target_cv_score:.2f}
+
+### Economic Targets (for future integration)
+- **Minimum Sharpe Ratio**: {self.optimization_targets.min_sharpe:.2f}
+- **Target Sharpe Ratio**: {self.optimization_targets.target_sharpe:.2f}
+- **Max Drawdown Threshold**: {self.optimization_targets.max_drawdown_threshold:.1%}
+
+---
+
 ## 📊 Quality Score Interpretation
 
 **Score: {quality_metrics.quality_score:.3f}**
@@ -712,22 +817,41 @@ class GMMRegimeDiscoveryStep(BaseStep):
             with tprint_timer("Correlation-Based Feature Reduction"):
                 reduced_features = self.feature_selector.fit_transform(features_df)
             
-            # Step 2: Standardize features
+            # Step 2: Standardize features (normalize to mean=0, std=1)
             with tprint_timer("Feature Standardization"):
                 scaled_features = self.scaler.fit_transform(reduced_features)
                 scaled_df = pd.DataFrame(scaled_features, 
                                        columns=reduced_features.columns,
                                        index=reduced_features.index)
             
-            # Step 3: Optional PCA for further dimensionality reduction
-            if scaled_df.shape[1] > 50:  # Only if we have many features
+                # Verify normalization
+                mean_check = np.abs(scaled_df.mean().mean())
+                std_check = scaled_df.std().mean()
+                tprint(f"✅ Feature normalization verified: mean={mean_check:.6f}, std={std_check:.3f}", "SUCCESS")
+            
+            # Step 3: PCA dimensionality reduction (limit to 20 PCs for better cohesion)
+            # Using only major PCs reduces noise and improves regime cohesion
+            max_pcs = 20  # Limit to first 20 principal components
+            if scaled_df.shape[1] > max_pcs:  # Only if we have many features
                 with tprint_timer("PCA Dimensionality Reduction"):
-                    self.pca = PCA(n_components=min(50, scaled_df.shape[1]), random_state=self.random_state)
+                    self.pca = PCA(n_components=min(max_pcs, scaled_df.shape[1]), random_state=self.random_state)
                     pca_features = self.pca.fit_transform(scaled_features)
-                    scaled_df = pd.DataFrame(pca_features, 
-                                           columns=[f'PC_{i+1}' for i in range(pca_features.shape[1])],
+                    
+                    # Normalize PCA features to ensure mean=0, std=1 (PCA may alter scale)
+                    pca_scaler = StandardScaler()
+                    pca_features_normalized = pca_scaler.fit_transform(pca_features)
+                    
+                    scaled_df = pd.DataFrame(pca_features_normalized, 
+                                           columns=[f'PC_{i+1}' for i in range(pca_features_normalized.shape[1])],
                                            index=reduced_features.index)
-                    tprint(f"📊 PCA reduced features: {scaled_features.shape[1]} → {pca_features.shape[1]}", "INFO")
+                    
+                    # Verify normalization after PCA
+                    pc_mean_check = np.abs(scaled_df.mean().mean())
+                    pc_std_check = scaled_df.std().mean()
+                    
+                    tprint(f"📊 PCA reduced features: {scaled_features.shape[1]} → {pca_features_normalized.shape[1]} (limited to {max_pcs} major PCs)", "INFO")
+                    tprint(f"✅ PCA features normalized: mean={pc_mean_check:.6f}, std={pc_std_check:.3f}", "SUCCESS")
+                    tprint(f"✅ Using only major principal components to reduce noise and improve cohesion", "SUCCESS")
             
             # Step 4: Find optimal number of components using grid search
             with tprint_timer("GMM Parameter Optimization"):
@@ -736,12 +860,38 @@ class GMMRegimeDiscoveryStep(BaseStep):
             
             # Step 5: Fit GMM and predict regimes
             with tprint_timer("GMM Fitting and Prediction"):
-                self.regime_labels = self.gmm_model.predict(scaled_features)
-                regime_probs = self.gmm_model.predict_proba(scaled_features)
+                # Use the final scaled_df (which may be PCA-transformed)
+                features_for_prediction = scaled_df.values
+                self.regime_labels = self.gmm_model.predict(features_for_prediction)
+                regime_probs = self.gmm_model.predict_proba(features_for_prediction)
             
             # Step 6: Assess quality
             with tprint_timer("Quality Assessment"):
+                # Convert timestamps to DatetimeIndex if needed
+                if timestamps is not None and not isinstance(timestamps, pd.DatetimeIndex):
+                    if isinstance(timestamps, pd.Series):
+                        timestamps = pd.DatetimeIndex(timestamps)
+                    else:
+                        timestamps = pd.DatetimeIndex(timestamps)
+                
                 self.quality_metrics = self._assess_quality(scaled_df, self.regime_labels, timestamps)
+                
+                # Log quality metrics against optimization targets
+                tprint("📊 Quality Assessment vs Optimization Targets:", "INFO")
+                if self.quality_metrics.silhouette_score is not None:
+                    target_silhouette = self.optimization_targets.min_silhouette_score
+                    status = "✅" if self.quality_metrics.silhouette_score >= target_silhouette else "❌"
+                    tprint(f"   Silhouette: {self.quality_metrics.silhouette_score:.3f} (target: ≥{target_silhouette:.2f}) {status}", "INFO")
+                
+                if self.quality_metrics.temporal_smoothness is not None:
+                    target_temporal = self.optimization_targets.min_temporal_smoothness
+                    status = "✅" if self.quality_metrics.temporal_smoothness >= target_temporal else "❌"
+                    tprint(f"   Temporal Smoothness: {self.quality_metrics.temporal_smoothness:.3f} (target: ≥{target_temporal:.2f}) {status}", "INFO")
+                
+                target_clusters = self.optimization_targets.target_clusters
+                n_clusters = len(np.unique(self.regime_labels))
+                status = "✅" if target_clusters[0] <= n_clusters <= target_clusters[1] else "❌"
+                tprint(f"   Cluster Count: {n_clusters} (target: {target_clusters[0]}-{target_clusters[1]}) {status}", "INFO")
             
             # Step 7: Generate results
             processing_time = time.time() - start_time
@@ -881,12 +1031,36 @@ class GMMRegimeDiscoveryStep(BaseStep):
                 noise_ratio=0.0
             )
 
-def create_gmm_regime_discovery_step(n_components_range: Tuple[int, int] = (5, 9),
+def create_gmm_regime_discovery_step(
+    n_components_range: Optional[Tuple[int, int]] = None,
                                    correlation_threshold: float = 0.85,
-                                   random_state: int = 42) -> GMMRegimeDiscoveryStep:
-    """Create a GMM regime discovery step with specified parameters."""
-    return GMMRegimeDiscoveryStep(
-        n_components_range=n_components_range,
-        correlation_threshold=correlation_threshold,
-        random_state=random_state
-    )
+    random_state: int = 42,
+    optimization_goals: Optional[ClusteringOptimizationGoals] = None,
+    optimization_targets: Optional[OptimizationTargets] = None
+) -> GMMRegimeDiscoveryStep:
+    """
+    Create a GMM regime discovery step with specified parameters.
+    
+    Args:
+        n_components_range: Range of components to try (if None, uses optimization_targets)
+        correlation_threshold: Threshold for feature correlation removal
+        random_state: Random seed for reproducibility
+        optimization_goals: Optimization goals configuration
+        optimization_targets: Optimization targets configuration
+        
+    Returns:
+        GMMRegimeDiscoveryStep instance
+    """
+    kwargs = {
+        'correlation_threshold': correlation_threshold,
+        'random_state': random_state
+    }
+    
+    if n_components_range is not None:
+        kwargs['n_components_range'] = n_components_range
+    if optimization_goals is not None:
+        kwargs['optimization_goals'] = optimization_goals
+    if optimization_targets is not None:
+        kwargs['optimization_targets'] = optimization_targets
+    
+    return GMMRegimeDiscoveryStep(**kwargs)

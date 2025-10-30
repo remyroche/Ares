@@ -36,6 +36,10 @@ from ..monitoring.unified_trailing_manager import (
     TrailingAction,
     TrailingDecision,
 )
+from ..reporting.trade_reporting_manager import (
+    trade_reporting_manager,
+    create_trade_record_from_execution,
+)
 from ..reporting.performance_reporter import performance_reporter, generate_trading_report
 from ..reporting.dashboard_generator import dashboard_generator, create_trading_dashboard
 from ..reporting.daily_recorder import daily_recorder, record_daily_trading_summary
@@ -766,6 +770,62 @@ class TradingOrchestrator:
                 }
 
                 await update_trade_outcome(trade_id, outcome_data)
+                
+                # Record trade to CSV for persistent reporting
+                try:
+                    # Determine direction from action
+                    direction = 'long' if decision.action.lower() in ['buy', 'long'] else 'short'
+                    side = 'buy' if decision.action.lower() in ['buy', 'long'] else 'sell'
+                    
+                    # Get leverage from decision metadata or position sizing
+                    leverage = trade_data.get('position_sizing', {}).get('leverage', 1.0)
+                    
+                    # Extract market context
+                    market_context = {}
+                    if market_data is not None and len(market_data) > 0:
+                        latest_data = market_data.iloc[-1]
+                        market_context = {
+                            'volume': float(latest_data.get('volume', 0.0)) if 'volume' in latest_data else 0.0,
+                            'volatility': float(latest_data.get('volatility', 0.0)) if 'volatility' in latest_data else 0.0,
+                            'trend': 'bullish' if decision.action.lower() in ['buy', 'long'] else 'bearish'
+                        }
+                    
+                    # Build trading decision dict for CSV recording
+                    csv_trading_decision = {
+                        'confidence': decision.confidence,
+                        'analyst_confidence': decision.analyst_signal.confidence if decision.analyst_signal else 0.0,
+                        'tactician_confidence': decision.tactician_signal.confidence if decision.tactician_signal else 0.0,
+                        'analyst_signal': trade_data.get('analyst_signal'),
+                        'tactician_signal': trade_data.get('tactician_signal'),
+                        'signal_strength': decision.confidence,
+                        'feature_importance': {}  # Can be populated from SHAP if available
+                    }
+                    
+                    # Create TradeRecord for CSV export
+                    trade_record = create_trade_record_from_execution(
+                        trade_id=trade_id,
+                        exchange=self.exchange,
+                        symbol=self.symbol,
+                        mode=self.trading_mode.value,
+                        side=side,
+                        direction=direction,
+                        entry_price=decision.price,
+                        quantity=decision.quantity,
+                        leverage=leverage,
+                        fees=outcome_data['commission'],
+                        slippage_pct=outcome_data['slippage'] * 100,  # Convert to percentage
+                        trading_decision=csv_trading_decision,
+                        regime_data=trade_data.get('regime_data'),
+                        market_context=market_context
+                    )
+                    
+                    # Record to CSV
+                    await trade_reporting_manager.record_trade(trade_record)
+                    tprint_info(f"📊 Trade recorded to CSV: {trade_id}")
+                    
+                except Exception as csv_error:
+                    self.logger.warning(f"⚠️ Failed to record trade to CSV: {csv_error}")
+                    # Don't fail the trade execution if CSV recording fails
                 
                 # Post-trade analysis with Supervisor (for filled orders)
                 if self.supervisor and self.supervisor.is_initialized:

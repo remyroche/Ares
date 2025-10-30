@@ -90,6 +90,8 @@ class SRStrengthParameters:
     consistent_bounce_bonus: float = 1.3
     increasing_strength_bonus: float = 1.2
     decreasing_strength_penalty: float = 0.8
+    # PHASE 3: Multi-Timeframe confirmation weight
+    multi_tf_weight: float = 0.2  # Weight for multi-TF confirmation in strength calculation
 
 @dataclass
 class SRLevel:
@@ -146,7 +148,29 @@ class SRStrengthOptimizer:
 
     def _get_parameter_ranges(self) -> Dict[str, Tuple[float, float]]:
         """Get parameter ranges for optimization."""
-        return {'min_touches': (2, 5), 'touch_proximity_threshold': (0.001, 0.005), 'touch_time_decay': (0.9, 0.99), 'min_bounce_ratio': (0.0005, 0.002), 'bounce_strength_multiplier': (1.5, 3.0), 'failed_bounce_penalty': (0.5, 0.9), 'optimal_age_bars': (50, 200), 'age_decay_rate': (0.95, 0.995), 'max_age_bars': (300, 1000), 'recent_bonus_bars': (10, 50), 'volume_spike_threshold': (1.2, 2.0), 'volume_confirmation_weight': (0.2, 0.5), 'low_volume_penalty': (0.6, 0.9), 'clean_bounce_threshold': (0.6, 0.9), 'rejection_wick_ratio': (0.5, 0.8), 'consolidation_bonus': (1.1, 1.5), 'consistent_bounce_bonus': (1.1, 1.5), 'increasing_strength_bonus': (1.1, 1.3), 'decreasing_strength_penalty': (0.7, 0.9)}
+        return {
+            'min_touches': (2, 5),
+            'touch_proximity_threshold': (0.001, 0.005),
+            'touch_time_decay': (0.9, 0.99),
+            'min_bounce_ratio': (0.0005, 0.002),
+            'bounce_strength_multiplier': (1.5, 3.0),
+            'failed_bounce_penalty': (0.5, 0.9),
+            'optimal_age_bars': (50, 200),
+            'age_decay_rate': (0.95, 0.995),
+            'max_age_bars': (300, 1000),
+            'recent_bonus_bars': (10, 50),
+            'volume_spike_threshold': (1.2, 2.0),
+            'volume_confirmation_weight': (0.2, 0.5),
+            'low_volume_penalty': (0.6, 0.9),
+            'clean_bounce_threshold': (0.6, 0.9),
+            'rejection_wick_ratio': (0.5, 0.8),
+            'consolidation_bonus': (1.1, 1.5),
+            'consistent_bounce_bonus': (1.1, 1.5),
+            'increasing_strength_bonus': (1.1, 1.3),
+            'decreasing_strength_penalty': (0.7, 0.9),
+            # PHASE 3: Multi-TF weight range for HPO
+            'multi_tf_weight': (0.0, 0.3)  # 0-30% weight for multi-TF confirmation
+        }
 
     @handles_errors(exceptions=(ValueError, AttributeError), default_return = None, context='optimize SR strength parameters')
     @traced(span_name='SRStrength.optimize')
@@ -463,11 +487,32 @@ class SRStrengthOptimizer:
             return 'unknown'
     @log_all_calls
 
-    def _calculate_level_strength(self, touches: List[int], bounces: List[Tuple[int, float]], failures: List[int], volumes: List[float], origin_idx: int, total_bars: int, params: SRStrengthParameters, features: Dict[str, pd.Series]) -> float:
-        """Calculate comprehensive strength score for S/R level."""
+    def _calculate_level_strength(self, touches: List[int], bounces: List[Tuple[int, float]], failures: List[int], volumes: List[float], origin_idx: int, total_bars: int, params: SRStrengthParameters, features: Dict[str, pd.Series], multi_tf_score: float = 0.0) -> float:
+        """Calculate comprehensive strength score for S/R level.
+        
+        PHASE 3: Now includes multi-timeframe confirmation as a factor.
+        
+        Args:
+            touches: List of touch indices
+            bounces: List of (index, bounce_ratio) tuples
+            failures: List of failure indices
+            volumes: List of volumes at touches
+            origin_idx: Origin bar index
+            total_bars: Total bars in dataset
+            params: Strength calculation parameters
+            features: Market features (e.g., volume_ma)
+            multi_tf_score: Multi-timeframe confirmation score (0-1)
+            
+        Returns:
+            Strength score (0-1)
+        """
         if not touches:
             return 0.0
+        
+        # Touch score
         touch_score = min(len(touches) / 10, 1.0)
+        
+        # Bounce score
         if bounces:
             avg_bounce = np.mean([b[1] for b in bounces])
             bounce_score = min(avg_bounce / params.min_bounce_ratio, 1.0)
@@ -475,8 +520,12 @@ class SRStrengthOptimizer:
                 bounce_score *= params.bounce_strength_multiplier
         else:
             bounce_score = 0.0
+        
+        # Failure penalty
         failure_rate = len(failures) / max(len(touches), 1)
         failure_penalty = params.failed_bounce_penalty ** failure_rate
+        
+        # Age score
         age = total_bars - origin_idx
         if age < params.recent_bonus_bars:
             age_score = 1.2
@@ -487,11 +536,15 @@ class SRStrengthOptimizer:
             age_score = params.age_decay_rate ** decay_factor
         else:
             age_score = 0.5
+        
+        # Time-weighted touches
         time_weighted_touches = 0
         for i, touch_idx in enumerate(touches):
             time_factor = params.touch_time_decay ** (total_bars - touch_idx)
             time_weighted_touches += time_factor
         touch_score *= time_weighted_touches / len(touches)
+        
+        # Volume score
         if volumes and 'volume_ma' in features:
             volume_ratios = [v / features['volume_ma'].iloc[touches[i]] for i, v in enumerate(volumes) if touches[i] < len(features['volume_ma'])]
             if volume_ratios:
@@ -500,7 +553,20 @@ class SRStrengthOptimizer:
                 volume_score = 0.5
         else:
             volume_score = 0.5
-        strength = (touch_score * 0.25 + bounce_score * 0.3 + age_score * 0.2 + volume_score * params.volume_confirmation_weight + (1 - params.volume_confirmation_weight) * 0.25) * failure_penalty
+        
+        # PHASE 3: Incorporate multi-TF score as additional factor
+        # Rebalance weights to accommodate multi-TF factor
+        base_weight = 1.0 - params.multi_tf_weight
+        
+        strength = (
+            touch_score * 0.25 * base_weight +
+            bounce_score * 0.3 * base_weight +
+            age_score * 0.2 * base_weight +
+            volume_score * params.volume_confirmation_weight * base_weight +
+            (1 - params.volume_confirmation_weight) * 0.25 * base_weight +
+            multi_tf_score * params.multi_tf_weight  # Multi-TF contribution
+        ) * failure_penalty
+        
         return min(strength, 1.0)
     @log_all_calls
 

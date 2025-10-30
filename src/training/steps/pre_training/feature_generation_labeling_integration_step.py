@@ -61,6 +61,188 @@ def get_optimal_threshold(symbol: str, timeframe: str) -> float:
     return thresholds.get(symbol, {}).get(timeframe, BASE_VOLATILITY_THRESHOLD)
 
 
+def calculate_volume_confidence_adjustment(
+    data: pd.DataFrame,
+    labels: pd.Series,
+    volume_column: str = 'volume',
+    lookback_window: int = 20,
+    volume_sensitivity: float = 0.5
+) -> tuple[pd.Series, Dict[str, Any]]:
+    """
+    Calculate volume-based confidence adjustment with LINEAR scaling.
+    
+    Linear approach:
+    - Volume ratio directly maps to confidence adjustment
+    - No hard thresholds or discrete jumps
+    - Smooth, continuous function
+    
+    Formula:
+        base_adjustment = 1.0 + sensitivity × (volume_ratio - 1.0)
+        volume_boost_capped = min(base_adjustment, 1.33)  # Cap boost at +33%
+        
+    Examples (sensitivity=0.5):
+        - Volume = 0.5× avg → adjustment = 0.75x (25% penalty)
+        - Volume = 1.0× avg → adjustment = 1.00x (neutral)
+        - Volume = 2.0× avg → adjustment = 1.33x (capped at +33%)
+        - Volume = 3.0× avg → adjustment = 1.33x (capped at +33%)
+    
+    Args:
+        data: Market data with volume column
+        labels: Generated labels (0=neutral, 1=long, -1=short)
+        volume_column: Name of volume column
+        lookback_window: Periods for volume baseline calculation
+        volume_sensitivity: How strongly volume affects confidence (0.0-1.0)
+    
+    Returns:
+        Tuple of (confidence_adjustments, volume_stats)
+    """
+    tprint("📊 Calculating linear volume-based confidence adjustments...", "INFO")
+    
+    if volume_column not in data.columns:
+        tprint(f"⚠️ Volume column '{volume_column}' not found", "WARNING")
+        return pd.Series(1.0, index=data.index), {'volume_available': False}
+    
+    volume = data[volume_column].copy()
+    
+    # Calculate volume baseline (rolling average)
+    volume_ma = volume.rolling(window=lookback_window, min_periods=1).mean()
+    
+    # Volume ratio (current vs average) - THE KEY METRIC
+    volume_ratio = volume / volume_ma
+    volume_ratio = volume_ratio.fillna(1.0)
+    
+    # Volume trend (3-bar rate of change)
+    volume_roc = volume.pct_change(3).rolling(window=3).mean()
+    volume_roc = volume_roc.fillna(0.0)
+    
+    # Initialize confidence adjustment (1.0 = neutral)
+    confidence_adjustment = pd.Series(1.0, index=data.index)
+    
+    # Track statistics
+    adjustments_applied = {
+        'boosted': 0,
+        'penalized': 0,
+        'neutral': 0,
+        'capped_at_max': 0,
+        'divergence_penalty': 0,
+        'total_opportunities': 0
+    }
+    
+    # Only adjust confidence for labeled opportunities (non-zero labels)
+    opportunity_mask = labels != 0
+    
+    for idx in data.index[opportunity_mask]:
+        try:
+            vol_ratio = volume_ratio.loc[idx]
+            vol_trend = volume_roc.loc[idx] if idx in volume_roc.index else 0
+            label_direction = labels.loc[idx]
+            
+            adjustments_applied['total_opportunities'] += 1
+            
+            # ═══════════════════════════════════════════════════════
+            # LINEAR VOLUME ADJUSTMENT with +33% BOOST CAP
+            # ═══════════════════════════════════════════════════════
+            # Formula: adjustment = 1.0 + sensitivity × (ratio - 1.0)
+            # But cap positive adjustments at 1.33x (+33% max boost)
+            
+            base_adjustment = 1.0 + volume_sensitivity * (vol_ratio - 1.0)
+            
+            # Cap the positive boost at +33%
+            if base_adjustment > 1.33:
+                base_adjustment = 1.33
+                adjustments_applied['capped_at_max'] += 1
+            
+            # ═══════════════════════════════════════════════════════
+            # LINEAR VOLUME TREND BONUS/PENALTY (Secondary)
+            # ═══════════════════════════════════════════════════════
+            # Add small bonus/penalty based on volume trend direction
+            
+            if abs(vol_trend) > 0.05:  # Only if meaningful trend (>5% change)
+                trend_adjustment = volume_sensitivity * 0.2 * vol_trend
+                # Clamp trend adjustment to ±10%
+                trend_adjustment = max(-0.1, min(0.1, trend_adjustment))
+            else:
+                trend_adjustment = 0.0
+            
+            # ═══════════════════════════════════════════════════════
+            # DIVERGENCE DETECTION (Tertiary)
+            # ═══════════════════════════════════════════════════════
+            # Linear penalty for volume-price divergence
+            
+            divergence_penalty = 0.0
+            
+            # Price up (long) but volume declining
+            if label_direction > 0 and vol_trend < -0.05:
+                divergence_penalty = abs(vol_trend) * volume_sensitivity * 0.3
+                divergence_penalty = min(0.2, divergence_penalty)  # Cap at 20%
+                adjustments_applied['divergence_penalty'] += 1
+                
+            # Price down (short) but volume increasing
+            elif label_direction < 0 and vol_trend > 0.05:
+                divergence_penalty = abs(vol_trend) * volume_sensitivity * 0.3
+                divergence_penalty = min(0.2, divergence_penalty)  # Cap at 20%
+                adjustments_applied['divergence_penalty'] += 1
+            
+            # ═══════════════════════════════════════════════════════
+            # COMBINE ALL COMPONENTS
+            # ═══════════════════════════════════════════════════════
+            
+            final_adjustment = base_adjustment + trend_adjustment - divergence_penalty
+            
+            # Clamp to reasonable range [0.5, 2.0]
+            # - Minimum 0.5x: Even low volume shouldn't kill confidence entirely
+            # - Maximum 2.0x: Overall cap after all adjustments
+            final_adjustment = max(0.5, min(2.0, final_adjustment))
+            
+            confidence_adjustment.loc[idx] = final_adjustment
+            
+            # Track statistics
+            if final_adjustment > 1.05:
+                adjustments_applied['boosted'] += 1
+            elif final_adjustment < 0.95:
+                adjustments_applied['penalized'] += 1
+            else:
+                adjustments_applied['neutral'] += 1
+            
+        except Exception as e:
+            tprint(f"⚠️ Volume adjustment failed at {idx}: {e}", "WARNING")
+            continue
+    
+    # Calculate statistics
+    volume_stats = {
+        'volume_available': True,
+        'avg_volume_ratio': float(volume_ratio.mean()),
+        'median_volume_ratio': float(volume_ratio.median()),
+        'volume_sensitivity': volume_sensitivity,
+        'max_volume_boost': 0.33,  # +33% cap
+        'opportunities_boosted': adjustments_applied['boosted'],
+        'opportunities_penalized': adjustments_applied['penalized'],
+        'opportunities_neutral': adjustments_applied['neutral'],
+        'opportunities_capped': adjustments_applied['capped_at_max'],
+        'divergences_detected': adjustments_applied['divergence_penalty'],
+        'total_opportunities_adjusted': adjustments_applied['total_opportunities'],
+        'avg_adjustment_factor': float(confidence_adjustment[opportunity_mask].mean()) if opportunity_mask.sum() > 0 else 1.0,
+        'max_adjustment_factor': float(confidence_adjustment[opportunity_mask].max()) if opportunity_mask.sum() > 0 else 1.0,
+        'min_adjustment_factor': float(confidence_adjustment[opportunity_mask].min()) if opportunity_mask.sum() > 0 else 1.0,
+        'std_adjustment_factor': float(confidence_adjustment[opportunity_mask].std()) if opportunity_mask.sum() > 0 else 0.0
+    }
+    
+    # Log summary
+    if adjustments_applied['total_opportunities'] > 0:
+        tprint(f"✅ Linear volume adjustments applied:", "SUCCESS")
+        tprint(f"   • Opportunities boosted (>1.05x): {adjustments_applied['boosted']}", "INFO")
+        tprint(f"   • Opportunities penalized (<0.95x): {adjustments_applied['penalized']}", "INFO")
+        tprint(f"   • Opportunities neutral (0.95-1.05x): {adjustments_applied['neutral']}", "INFO")
+        tprint(f"   • Opportunities capped at +33%: {adjustments_applied['capped_at_max']}", "INFO")
+        tprint(f"   • Volume divergences detected: {adjustments_applied['divergence_penalty']}", "INFO")
+        tprint(f"   • Avg adjustment: {volume_stats['avg_adjustment_factor']:.2f}x", "INFO")
+        tprint(f"   • Range: {volume_stats['min_adjustment_factor']:.2f}x - {volume_stats['max_adjustment_factor']:.2f}x", "INFO")
+    else:
+        tprint("ℹ️ No opportunities to adjust", "INFO")
+    
+    return confidence_adjustment, volume_stats
+
+
 def timeframe_to_minutes(tf: str) -> float:
     """
     Convert timeframe string to minutes.
@@ -79,6 +261,154 @@ def timeframe_to_minutes(tf: str) -> float:
     if tf in ('1d', '1day', 'd', 'day'):
         return 1440.0
     raise ValueError(f"Unsupported timeframe: {tf}")
+
+
+def detect_and_correct_price_spikes(
+    data: pd.DataFrame,
+    price_column: str = 'close',
+    lookback_window: int = 10,
+    threshold_multiplier: float = 3.0,
+    volatility_window: int = 20
+) -> tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    Detect and correct price spikes (noise) in market data.
+    
+    A spike is detected when:
+    1. |s_t - median(s_{t-1..t-N})| > threshold (price deviates significantly from baseline)
+    2. AND sign(s_t - s_{t-1}) != sign(s_{t+1} - s_t) (direction reverses - whipsaw pattern)
+    
+    If the movement continues in the same direction, it's part of a genuine trend and not clipped.
+    
+    Correction method: Use 3-bar average including the spike itself
+    - corrected_price = (prev_price + spike_price + next_price) / 3
+    - More conservative approach that partially preserves potential signal in the spike
+    
+    Args:
+        data: Market data DataFrame with OHLCV columns
+        price_column: Name of the price column to check for spikes (default: 'close')
+        lookback_window: Number of bars to use for median baseline calculation (N in formula)
+        threshold_multiplier: Multiplier for recent std to define spike threshold (k in formula)
+        volatility_window: Window for calculating recent volatility (std)
+    
+    Returns:
+        Tuple of (cleaned_data, spike_detection_stats)
+    """
+    tprint(f"🔍 Starting spike detection and correction on {price_column}...", "INFO")
+    
+    if price_column not in data.columns:
+        tprint(f"⚠️ Price column '{price_column}' not found in data", "WARNING")
+        return data.copy(), {'spikes_detected': 0, 'spikes_corrected': 0}
+    
+    # Create a copy to avoid modifying original data
+    cleaned_data = data.copy()
+    price_series = cleaned_data[price_column].copy()
+    
+    # Calculate rolling median baseline: median(s_{t-1..t-N})
+    # Use lookback_window bars excluding current bar
+    rolling_median = price_series.shift(1).rolling(window=lookback_window, min_periods=max(1, lookback_window // 2)).median()
+    
+    # Calculate recent volatility: rolling std for threshold
+    rolling_std = price_series.pct_change().rolling(window=volatility_window, min_periods=max(1, volatility_window // 2)).std()
+    
+    # Convert percentage std back to price units
+    price_std = rolling_std * price_series
+    
+    # Define dynamic threshold: k × recent std
+    threshold = threshold_multiplier * price_std
+    
+    # Condition 1: |s_t - median(s_{t-1..t-N})| > threshold
+    deviation_from_baseline = np.abs(price_series - rolling_median)
+    deviation_condition = deviation_from_baseline > threshold
+    
+    # Condition 2: sign(s_t - s_{t-1}) != sign(s_{t+1} - s_t)
+    # This checks if the direction reverses (whipsaw pattern)
+    price_change_prev = price_series - price_series.shift(1)  # s_t - s_{t-1}
+    price_change_next = price_series.shift(-1) - price_series  # s_{t+1} - s_t
+    
+    # Sign reversal: current move direction != next move direction
+    sign_reversal = np.sign(price_change_prev) != np.sign(price_change_next)
+    
+    # Combine both conditions to identify spikes
+    spike_mask = deviation_condition & sign_reversal
+    
+    # Remove NaN values from mask
+    spike_mask = spike_mask.fillna(False)
+    
+    # Count spikes detected
+    spikes_detected = spike_mask.sum()
+    
+    if spikes_detected == 0:
+        tprint(f"✅ No price spikes detected in {len(data)} samples", "SUCCESS")
+        return cleaned_data, {
+            'spikes_detected': 0,
+            'spikes_corrected': 0,
+            'spike_correction_rate': 0.0,
+            'avg_spike_magnitude': 0.0,
+            'max_spike_magnitude': 0.0
+        }
+    
+    tprint(f"🚨 Detected {spikes_detected} price spikes in {len(data)} samples ({spikes_detected/len(data)*100:.2f}%)", "WARNING")
+    
+    # Correct spikes: set to average between previous and next bar
+    spike_indices = spike_mask[spike_mask].index
+    spikes_corrected = 0
+    spike_magnitudes = []
+    
+    for idx in spike_indices:
+        try:
+            # Get position in series
+            pos = data.index.get_loc(idx)
+            
+            # Skip if at boundaries (can't correct without prev/next)
+            if pos == 0 or pos == len(data) - 1:
+                continue
+            
+            # Get previous and next prices
+            prev_idx = data.index[pos - 1]
+            next_idx = data.index[pos + 1]
+            
+            prev_price = price_series.loc[prev_idx]
+            next_price = price_series.loc[next_idx]
+            original_price = price_series.loc[idx]
+            
+            # Skip if prev or next prices are NaN
+            if pd.isna(prev_price) or pd.isna(next_price) or pd.isna(original_price):
+                continue
+            
+            # Calculate corrected price: average of previous, current (spike), and next
+            # This is more conservative - partially preserves the spike (may contain real signal)
+            corrected_price = (prev_price + original_price + next_price) / 3.0
+            
+            # Track spike magnitude (percentage deviation)
+            spike_magnitude = abs(original_price - corrected_price) / original_price
+            spike_magnitudes.append(spike_magnitude)
+            
+            # Apply correction
+            cleaned_data.loc[idx, price_column] = corrected_price
+            spikes_corrected += 1
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to correct spike at index {idx}: {e}", "WARNING")
+            continue
+    
+    # Calculate statistics
+    avg_spike_magnitude = np.mean(spike_magnitudes) if spike_magnitudes else 0.0
+    max_spike_magnitude = np.max(spike_magnitudes) if spike_magnitudes else 0.0
+    
+    spike_stats = {
+        'spikes_detected': int(spikes_detected),
+        'spikes_corrected': int(spikes_corrected),
+        'spike_correction_rate': spikes_corrected / spikes_detected if spikes_detected > 0 else 0.0,
+        'avg_spike_magnitude': float(avg_spike_magnitude),
+        'max_spike_magnitude': float(max_spike_magnitude),
+        'spike_percentage': spikes_detected / len(data) * 100
+    }
+    
+    tprint(f"✅ Corrected {spikes_corrected}/{spikes_detected} spikes", "SUCCESS")
+    tprint(f"   • Avg spike magnitude: {avg_spike_magnitude*100:.2f}%", "INFO")
+    tprint(f"   • Max spike magnitude: {max_spike_magnitude*100:.2f}%", "INFO")
+    
+    return cleaned_data, spike_stats
 
 
 class FeatureGenerationLabelingIntegrationStep(BaseStep):
@@ -150,6 +480,35 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             max_volatility_adaptation = 1.0
             min_volatility_adaptation = 1.0
             total_samples = 0
+            
+            # Initialize spike detection stats with defaults
+            spike_detection_stats = {
+                'spikes_detected': 0,
+                'spikes_corrected': 0,
+                'spike_correction_rate': 0.0,
+                'avg_spike_magnitude': 0.0,
+                'max_spike_magnitude': 0.0,
+                'spike_percentage': 0.0
+            }
+            
+            # Initialize volume confidence stats with defaults
+            volume_confidence_stats = {
+                'volume_available': False,
+                'avg_volume_ratio': 1.0,
+                'median_volume_ratio': 1.0,
+                'volume_sensitivity': 0.5,
+                'max_volume_boost': 0.33,
+                'opportunities_boosted': 0,
+                'opportunities_penalized': 0,
+                'opportunities_neutral': 0,
+                'opportunities_capped': 0,
+                'divergences_detected': 0,
+                'total_opportunities_adjusted': 0,
+                'avg_adjustment_factor': 1.0,
+                'max_adjustment_factor': 1.0,
+                'min_adjustment_factor': 1.0,
+                'std_adjustment_factor': 0.0
+            }
 
             # Initialize report generator
             report_generator = ComprehensiveReportGenerator()
@@ -185,6 +544,32 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             except Exception as e:
                 tprint(f"❌ Failed to load market data: {e}", "ERROR")
                 raise ValueError(f"Failed to load market data for {config['symbol']}: {e}")
+
+            # SPIKE DETECTION AND CORRECTION: Clean price data before labeling
+            # This removes noise/spikes that could lead to false opportunity detection
+            tprint("🔍 Running spike detection and correction...", "INFO")
+            spike_detection_config = config.get('spike_detection', {})
+            lookback_window = spike_detection_config.get('lookback_window', 10)
+            threshold_multiplier = spike_detection_config.get('threshold_multiplier', 3.0)
+            volatility_window = spike_detection_config.get('volatility_window', 20)
+            
+            try:
+                # Apply spike detection and correction
+                market_data, spike_stats = detect_and_correct_price_spikes(
+                    market_data,
+                    price_column='close',
+                    lookback_window=lookback_window,
+                    threshold_multiplier=threshold_multiplier,
+                    volatility_window=volatility_window
+                )
+                
+                # Store spike detection statistics for reporting
+                spike_detection_stats = spike_stats
+                
+            except Exception as e:
+                tprint(f"⚠️ Spike detection failed: {e}", "WARNING")
+                tprint("📊 Continuing with original data (no spike correction applied)", "INFO")
+                # Keep default spike_detection_stats initialized earlier
 
             # Initialize volatility aware labeler with optimal configuration
             from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import (
@@ -369,6 +754,50 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
 
                         # Ensure confidence is in reasonable range
                         avg_confidence_score = max(0.0, min(1.0, avg_confidence_score))
+
+                        # VOLUME-BASED CONFIDENCE ADJUSTMENT
+                        # Apply volume analysis to modulate confidence for each opportunity
+                        tprint("📊 Applying volume-based confidence adjustments...", "INFO")
+                        
+                        try:
+                            volume_adjustments, volume_stats = calculate_volume_confidence_adjustment(
+                                data=market_data,
+                                labels=labeling_result.labels,
+                                volume_column='volume',
+                                lookback_window=20,
+                                volume_sensitivity=0.5
+                            )
+                            
+                            # Apply volume adjustments to create opportunity-specific confidence
+                            if hasattr(labeling_result, 'labels') and not labeling_result.labels.empty:
+                                # Create per-opportunity confidence array
+                                opportunity_confidence = pd.Series(avg_confidence_score, index=market_data.index)
+                                
+                                # Apply volume-based adjustments
+                                opportunity_confidence = opportunity_confidence * volume_adjustments
+                                
+                                # Clamp to valid range [0.0, 1.0]
+                                opportunity_confidence = opportunity_confidence.clip(0.0, 1.0)
+                                
+                                # Recalculate average confidence after volume adjustment
+                                avg_confidence_score_adjusted = float(
+                                    opportunity_confidence[labeling_result.labels != 0].mean()
+                                ) if (labeling_result.labels != 0).sum() > 0 else avg_confidence_score
+                                
+                                tprint(f"📊 Confidence adjustment: {avg_confidence_score:.3f} → {avg_confidence_score_adjusted:.3f}", "INFO")
+                                
+                                # Update the confidence score
+                                avg_confidence_score = avg_confidence_score_adjusted
+                                
+                                # Store volume stats for reporting
+                                volume_confidence_stats = volume_stats
+                            else:
+                                volume_confidence_stats = {'volume_available': False}
+                                tprint("⚠️ No labels available for volume adjustment", "WARNING")
+                                
+                        except Exception as e:
+                            tprint(f"⚠️ Volume confidence adjustment failed: {e}", "WARNING")
+                            volume_confidence_stats = {'volume_available': False, 'error': str(e)}
 
                         # FIXED: Calculate volatility adaptation using the same logic as the labeler
                         def calculate_volatility_adaptation_metrics(market_data, vol_config):
@@ -578,7 +1007,10 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'quality_weighted_signals': f'{high_quality_opportunities} of {opportunities_detected} ({round(high_quality_opportunities/opportunities_detected*100, 1)}%)' if opportunities_detected > 0 else 'N/A',
                     'filtering_efficiency': round(high_quality_opportunities / (high_quality_opportunities + filtered_opportunities) * 100, 1) if (high_quality_opportunities + filtered_opportunities) > 0 else 0,
                     'trading_signal_strength': round(avg_confidence_score, 3),
-                    'market_regime_adaptation': f'{avg_volatility_adaptation:.2f}x threshold adaptation'
+                    'market_regime_adaptation': f'{avg_volatility_adaptation:.2f}x threshold adaptation',
+                    'volume_confidence_enhancement': volume_confidence_stats.get('avg_adjustment_factor', 1.0),
+                    'high_volume_confirmations': volume_confidence_stats.get('opportunities_boosted', 0),
+                    'low_volume_warnings': volume_confidence_stats.get('opportunities_penalized', 0)
                 }
             }
 
@@ -599,7 +1031,20 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'algorithm_type': 'adaptive_threshold_with_local_extrema',
                     'optimization_level': 'high',
                     'vectorbt_integration': True,
-                    'memory_efficient_processing': True
+                    'memory_efficient_processing': True,
+                    'spike_detection_enabled': True
+                },
+                'spike_detection': {
+                    'enabled': True,
+                    'spikes_detected': spike_detection_stats.get('spikes_detected', 0),
+                    'spikes_corrected': spike_detection_stats.get('spikes_corrected', 0),
+                    'correction_rate': round(spike_detection_stats.get('spike_correction_rate', 0.0) * 100, 2),
+                    'avg_spike_magnitude_pct': round(spike_detection_stats.get('avg_spike_magnitude', 0.0) * 100, 2),
+                    'max_spike_magnitude_pct': round(spike_detection_stats.get('max_spike_magnitude', 0.0) * 100, 2),
+                    'spike_percentage': round(spike_detection_stats.get('spike_percentage', 0.0), 2),
+                    'lookback_window': lookback_window,
+                    'threshold_multiplier': threshold_multiplier,
+                    'volatility_window': volatility_window
                 },
                 'signal_processing': {
                     'local_maxima_detection': True,
@@ -607,7 +1052,25 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'volatility_adaptation': True,
                     'quality_scoring_enabled': True,
                     'confidence_calculation': True,
-                    'threshold_dynamic_range': f'{min_volatility_adaptation:.1f}x - {max_volatility_adaptation:.1f}x base threshold'
+                    'threshold_dynamic_range': f'{min_volatility_adaptation:.1f}x - {max_volatility_adaptation:.1f}x base threshold',
+                    'spike_filtering_enabled': True,
+                    'volume_profile_analysis': volume_confidence_stats.get('volume_available', False),
+                    'volume_weighted_confidence': True
+                },
+                'volume_analysis': {
+                    'enabled': volume_confidence_stats.get('volume_available', False),
+                    'avg_volume_ratio': round(volume_confidence_stats.get('avg_volume_ratio', 1.0), 2),
+                    'median_volume_ratio': round(volume_confidence_stats.get('median_volume_ratio', 1.0), 2),
+                    'volume_sensitivity': volume_confidence_stats.get('volume_sensitivity', 0.5),
+                    'max_volume_boost': volume_confidence_stats.get('max_volume_boost', 0.33),
+                    'opportunities_boosted': volume_confidence_stats.get('opportunities_boosted', 0),
+                    'opportunities_penalized': volume_confidence_stats.get('opportunities_penalized', 0),
+                    'opportunities_neutral': volume_confidence_stats.get('opportunities_neutral', 0),
+                    'opportunities_capped': volume_confidence_stats.get('opportunities_capped', 0),
+                    'volume_divergences': volume_confidence_stats.get('divergences_detected', 0),
+                    'avg_adjustment_factor': round(volume_confidence_stats.get('avg_adjustment_factor', 1.0), 2),
+                    'adjustment_range': f"{volume_confidence_stats.get('min_adjustment_factor', 1.0):.2f}x - {volume_confidence_stats.get('max_adjustment_factor', 1.0):.2f}x",
+                    'adjustment_std': round(volume_confidence_stats.get('std_adjustment_factor', 0.0), 3)
                 },
                 'performance_optimization': {
                     'rolling_window_optimization': True,
@@ -666,6 +1129,20 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'timeframe': f'{timeframe_minutes}m',
                     'columns_available': market_data.shape[1] if market_data is not None else 0,
                     'data_completeness': f'{data_completeness:.1f}%' if data_completeness is not None else 'N/A'  # FIXED
+                },
+                'spike_detection_process': {
+                    'status': 'successful',
+                    'enabled': True,
+                    'spikes_detected': spike_detection_stats.get('spikes_detected', 0),
+                    'spikes_corrected': spike_detection_stats.get('spikes_corrected', 0),
+                    'correction_rate': f"{spike_detection_stats.get('spike_correction_rate', 0.0)*100:.1f}%",
+                    'spike_percentage': f"{spike_detection_stats.get('spike_percentage', 0.0):.2f}%",
+                    'avg_spike_magnitude': f"{spike_detection_stats.get('avg_spike_magnitude', 0.0)*100:.2f}%",
+                    'max_spike_magnitude': f"{spike_detection_stats.get('max_spike_magnitude', 0.0)*100:.2f}%",
+                    'lookback_window': lookback_window,
+                    'threshold_multiplier': threshold_multiplier,
+                    'volatility_window': volatility_window,
+                    'data_quality_improvement': 'spikes_removed' if spike_detection_stats.get('spikes_corrected', 0) > 0 else 'no_spikes_found'
                 },
                 'labeling_process': {
                     'status': 'successful' if labeling_result.success else 'failed',
@@ -871,6 +1348,26 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             else:
                 tprint("⚠️ Failed to generate outcome report", "WARNING")
 
+            # Display spike detection results first
+            tprint(f"🔍 Spike Detection Results:", "INFO")
+            tprint(f"   • Spikes detected: {spike_detection_stats.get('spikes_detected', 0):,}", "INFO")
+            tprint(f"   • Spikes corrected: {spike_detection_stats.get('spikes_corrected', 0):,}", "INFO")
+            if spike_detection_stats.get('spikes_detected', 0) > 0:
+                tprint(f"   • Correction rate: {spike_detection_stats.get('spike_correction_rate', 0.0)*100:.1f}%", "INFO")
+                tprint(f"   • Avg spike magnitude: {spike_detection_stats.get('avg_spike_magnitude', 0.0)*100:.2f}%", "INFO")
+                tprint(f"   • Max spike magnitude: {spike_detection_stats.get('max_spike_magnitude', 0.0)*100:.2f}%", "INFO")
+            
+            # Display volume confidence results
+            if volume_confidence_stats.get('volume_available', False):
+                tprint(f"📊 Volume Confidence Analysis:", "INFO")
+                tprint(f"   • Opportunities boosted: {volume_confidence_stats.get('opportunities_boosted', 0):,}", "INFO")
+                tprint(f"   • Opportunities penalized: {volume_confidence_stats.get('opportunities_penalized', 0):,}", "INFO")
+                tprint(f"   • Opportunities neutral: {volume_confidence_stats.get('opportunities_neutral', 0):,}", "INFO")
+                tprint(f"   • Opportunities capped at +33%: {volume_confidence_stats.get('opportunities_capped', 0):,}", "INFO")
+                tprint(f"   • Volume divergences: {volume_confidence_stats.get('divergences_detected', 0):,}", "INFO")
+                tprint(f"   • Avg adjustment: {volume_confidence_stats.get('avg_adjustment_factor', 1.0):.2f}x", "INFO")
+                tprint(f"   • Range: {volume_confidence_stats.get('min_adjustment_factor', 1.0):.2f}x - {volume_confidence_stats.get('max_adjustment_factor', 1.0):.2f}x", "INFO")
+            
             # Display actual labeling results with memory usage
             tprint(f"📈 Labeling Results Summary:", "INFO")
             tprint(f"   • Total samples: {total_samples:,}", "INFO")

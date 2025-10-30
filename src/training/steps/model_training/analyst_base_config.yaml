@@ -28,34 +28,61 @@ analyst_config:
     tcn:
       model_type: "CausalDilatedTCN"
       params:
-        input_size: 100
-        hidden_size: 64
+        # Note: input_size is now dynamic (100+ features OR latent_dim=16 if autoencoder is used)
+        num_filters: 64
         num_layers: 4
         kernel_size: 3
         dilation_base: 2
         dropout: 0.2
-        sequence_length: 50
         learning_rate: 0.001
-        batch_size: 32
-        epochs: 100
-        early_stopping_patience: 10
+        batch_size: 64  # Increased from 32 for faster training
+        epochs: 50  # Reduced from 100 (early stopping will catch optimal point)
+        early_stopping_patience: 7  # Reduced from 10 for faster convergence detection
+        # NEW: Autoencoder integration for faster training & inference
+        use_autoencoder: true  # Enable feature compression with frozen autoencoder
+        autoencoder_path: "models/analyst_autoencoder_encoder.pth"
+        latent_dim: 16  # Compress 100+ features to 16 dimensions
+        train_autoencoder_if_missing: true  # Auto-train encoder if not found
+        autoencoder_epochs: 25  # Reduced from 50 (sufficient for convergence)
+      
+      # NEW: Hierarchical Hyperparameter Optimization (HPO)
+      hpo:
+        enabled: false  # Set to true to run HPO before training
+        metric: "accuracy"  # Metric to optimize: "accuracy", "f1", "auc"
+        n_rounds: 2  # Number of optimization rounds (2 recommended)
+        stages:
+          - "coarse_grid"  # Fast exploration
+          - "fine_grid"    # Refinement around best
+          - "tpe"          # Tree-structured Parzen Estimator (advanced)
+        enable_final_refinement: true
+        final_refinement_trials: 50
+        save_results: true
+        results_dir: "artifacts/hpo/analyst_tcn"
     
     catboost:
       model_type: "CatBoostRegressor"
       params:
-        iterations: 1500
-        learning_rate: 0.08
-        depth: 8
+        iterations: 500  # Reduced from 1500 for faster training
+        learning_rate: 0.1  # Increased from 0.08 to compensate for fewer iterations
+        depth: 6  # Reduced from 8 for faster training
         l2_leaf_reg: 3.0
         random_seed: 42
         verbose: false
-        thread_count: -1
+        thread_count: 6  # Limited from -1 to reduce CPU strain
+        early_stopping_rounds: 50  # Stop if no improvement
   
   # Training configuration
+  # NOTE: The absolute sample numbers below are now OVERRIDDEN by percentage-based allocations
+  # calculated in unified_models_training_step.py. Default percentages are:
+  # - Training: 70% of total samples
+  # - Validation: 15% of total samples
+  # - Test: 15% of total samples
+  # You can override these percentages by setting train_percentage, validation_percentage, 
+  # and test_percentage in the runtime config
   training:
-    training_samples: 50000
-    validation_samples: 15000
-    test_samples: 10000
+    training_samples: 50000  # Deprecated - calculated as % of total samples
+    validation_samples: 15000  # Deprecated - calculated as % of total samples
+    test_samples: 10000  # Deprecated - calculated as % of total samples
     enable_cross_validation: true
     cv_folds: 5
     enable_early_stopping: true

@@ -86,8 +86,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 import sys
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# Add project root to path for imports
+# File is at: Ares/src/training/steps/data_collection/enhanced_klines_processing_pipeline.py
+# We need to go up 5 levels to get to Ares
+project_root = Path(__file__).parent.parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 # Use lazy imports to avoid circular import issues
 def get_system_logger():
@@ -1159,38 +1162,111 @@ class EnhancedKlinesProcessingPipeline:
                 else:
                     raise ValueError("No valid data found in parquet files")
             else:
-                # Download fresh data from exchange
+                # Download fresh data from exchange in batches
                 if self.enable_logging:
                     tprint_info(f"🌐 Downloading fresh data from {exchange_interface.exchange_type.upper()} exchange")
                 
                 # Calculate date range
-                end_date = datetime.now() - timedelta(days=3)  # 3 days ago
+                end_date = datetime.now()
                 start_date = end_date - timedelta(days=years * 365)
                 
-                # Download historical data using get_klines
-                print(f"DEBUG: Calling exchange_interface.get_klines for {symbol} from {start_date} to {end_date}")
-                klines_data = await exchange_interface.get_klines(
-                    symbol=symbol,
-                    interval=interval,
-                    start_time=start_date,
-                    end_time=end_date,
-                    limit=1000
-                )
-                print(f"DEBUG: Received {len(klines_data) if klines_data else 0} klines from exchange")
+                if self.enable_logging:
+                    tprint_info(f"📅 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+                    estimated_candles = years * 365 * 24 * 60  # Rough estimate for 1m data
+                    tprint_info(f"📊 Estimated candles: ~{estimated_candles:,}")
+                
+                # Download data in batches (API limit is 1000 candles per request)
+                all_batches = []
+                current_start = start_date
+                batch_size = 1000
+                batch_num = 1
+                
+                # For 1m interval, 1000 candles = ~16.67 hours
+                interval_minutes = 1  # TODO: Parse from interval string
+                batch_duration = timedelta(minutes=batch_size * interval_minutes)
+                
+                while current_start < end_date:
+                    batch_end = min(current_start + batch_duration, end_date)
+                    
+                    if self.enable_logging and batch_num % 10 == 1:  # Log every 10th batch
+                        tprint_info(f"📦 Fetching batch {batch_num}: {current_start.strftime('%Y-%m-%d %H:%M')}")
+                    
+                    try:
+                        batch_data = await exchange_interface.get_klines(
+                            symbol=symbol,
+                            interval=interval,
+                            start_time=current_start,
+                            end_time=batch_end,
+                            limit=batch_size
+                        )
+                        
+                        if batch_data and len(batch_data) > 0:
+                            all_batches.append(batch_data)
+                            if self.enable_logging and batch_num % 100 == 0:
+                                total_candles = sum(len(b) for b in all_batches)
+                                tprint_info(f"   📊 Progress: {len(all_batches)} batches, {total_candles:,} candles")
+                        
+                        # Move to next batch
+                        current_start = batch_end
+                        batch_num += 1
+                        
+                        # Small delay to respect rate limits
+                        await asyncio.sleep(0.05)
+                        
+                    except Exception as e:
+                        if self.enable_logging:
+                            tprint_warning(f"⚠️ Batch {batch_num} failed: {e}")
+                        current_start = batch_end
+                        batch_num += 1
+                
+                if not all_batches:
+                    raise ValueError("No data received from exchange")
+                
+                if self.enable_logging:
+                    total_candles = sum(len(b) for b in all_batches)
+                    tprint_success(f"✅ Downloaded {total_candles:,} candles in {len(all_batches)} batches")
+                
+                # Combine all batches
+                klines_data = []
+                for batch in all_batches:
+                    klines_data.extend(batch)
+                
+                print(f"DEBUG: Total klines collected: {len(klines_data)}")
                 print(f"DEBUG: klines_data type: {type(klines_data)}")
                 
                 # Convert KlineData objects to DataFrame format if not already a DataFrame
                 # Convert KlineData objects to list format
                 raw_data = []
-                for kline in klines_data:
+                for i, kline in enumerate(klines_data):
+                    # Debug first kline
+                    if i == 0:
+                        print(f"DEBUG: First kline type: {type(kline)}")
+                        print(f"DEBUG: First kline timestamp: {kline.timestamp}")
+                        print(f"DEBUG: First kline timestamp type: {type(kline.timestamp)}")
+                    
+                    # Handle both datetime and int timestamps
+                    if isinstance(kline.timestamp, datetime):
+                        ts = int(kline.timestamp.timestamp() * 1000)
+                    elif isinstance(kline.timestamp, (int, float)):
+                        ts = int(kline.timestamp)
+                    else:
+                        ts = int(float(kline.timestamp))
+                    
+                    if isinstance(kline.close_time, datetime):
+                        ct = int(kline.close_time.timestamp() * 1000)
+                    elif isinstance(kline.close_time, (int, float)):
+                        ct = int(kline.close_time)
+                    else:
+                        ct = int(float(kline.close_time))
+                    
                     raw_data.append([
-                        int(kline.timestamp.timestamp() * 1000),  # timestamp
+                        ts,  # timestamp
                         kline.open_price,  # open
                         kline.high_price,  # high
                         kline.low_price,   # low
                         kline.close_price, # close
                         kline.volume,      # volume
-                        int(kline.close_time.timestamp() * 1000),  # close_time
+                        ct,  # close_time
                         kline.quote_asset_volume,  # quote_volume
                         kline.number_of_trades,     # trades
                         kline.taker_buy_base_asset_volume,  # taker_buy_base
@@ -1200,21 +1276,38 @@ class EnhancedKlinesProcessingPipeline:
                 if not raw_data:
                     raise ValueError("No data received from exchange")
 
-                # Convert to DataFrame
+                # Convert to DataFrame with all 11 columns
                 klines_data = pd.DataFrame(raw_data, columns=[
-                    'timestamp', 'open', 'high', 'low', 'close', 'volume'
+                    'timestamp', 'open', 'high', 'low', 'close', 'volume',
+                    'close_time', 'quote_asset_volume', 'number_of_trades',
+                    'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume'
                 ])
                 
-                # Convert timestamp to datetime - handle both milliseconds and microseconds
-                # Check if timestamps are in microseconds (very large numbers) or milliseconds
+                # Debug the timestamp values
                 sample_timestamp = klines_data['timestamp'].iloc[0] if len(klines_data) > 0 else 0
+                print(f"DEBUG: Sample timestamp value: {sample_timestamp}")
+                print(f"DEBUG: Sample timestamp type: {type(sample_timestamp)}")
+                print(f"DEBUG: Sample timestamp > 1e12? {sample_timestamp > 1e12}")
+                print(f"DEBUG: Sample timestamp > 1e9? {sample_timestamp > 1e9}")
                 
-                if sample_timestamp > 1e12:  # Microseconds (13+ digits)
+                # Convert timestamp to datetime - handle both milliseconds and microseconds
+                # Microseconds: > 1e15 (16+ digits, e.g., 1730269140000000 for 2025)
+                # Milliseconds: 1e12 - 1e15 (13-15 digits, e.g., 1730269140000 for 2025)
+                # Seconds: < 1e12 (< 13 digits, e.g., 1730269140 for 2025)
+                if sample_timestamp > 1e15:  # Microseconds (16+ digits)
+                    print(f"DEBUG: Converting as microseconds (value: {sample_timestamp})")
                     klines_data['timestamp'] = pd.to_datetime(klines_data['timestamp'], unit='us')
-                elif sample_timestamp > 1e9:  # Milliseconds (10+ digits)
+                elif sample_timestamp > 1e12:  # Milliseconds (13-15 digits)
+                    print(f"DEBUG: Converting as milliseconds (value: {sample_timestamp})")
                     klines_data['timestamp'] = pd.to_datetime(klines_data['timestamp'], unit='ms')
-                else:  # Seconds (9-10 digits)
+                elif sample_timestamp > 1e9:  # Seconds with decimal precision (10-12 digits)
+                    print(f"DEBUG: Converting as seconds (value: {sample_timestamp})")
                     klines_data['timestamp'] = pd.to_datetime(klines_data['timestamp'], unit='s')
+                else:
+                    print(f"DEBUG: Timestamp too small, treating as seconds anyway (value: {sample_timestamp})")
+                    klines_data['timestamp'] = pd.to_datetime(klines_data['timestamp'], unit='s')
+                
+                print(f"DEBUG: After conversion, first timestamp: {klines_data['timestamp'].iloc[0]}")
                 
                 klines_data.set_index('timestamp', inplace=True)
                 
@@ -1281,6 +1374,14 @@ class EnhancedKlinesProcessingPipeline:
     ) -> pd.DataFrame:
         """Convert klines data to standardized DataFrame."""
         try:
+            # Debug: Check the type of klines_data
+            if self.enable_logging and len(klines_data) > 0:
+                first_kline = klines_data[0]
+                tprint_info(f"🔍 DEBUG: First kline type: {type(first_kline)}")
+                if isinstance(first_kline, (list, tuple)):
+                    tprint_info(f"🔍 DEBUG: First kline length: {len(first_kline)}")
+                    tprint_info(f"🔍 DEBUG: First kline sample: {first_kline[:5] if len(first_kline) > 5 else first_kline}")
+            
             # Extract data based on klines format
             data = []
             for kline in klines_data:
@@ -1301,12 +1402,17 @@ class EnhancedKlinesProcessingPipeline:
                 else:
                     # Raw list format - handle both milliseconds and microseconds
                     timestamp = kline[0]
-                    if timestamp > 1e12:  # Microseconds
-                        converted_timestamp = pd.to_datetime(timestamp, unit='us', utc=True)
-                    elif timestamp > 1e9:  # Milliseconds
-                        converted_timestamp = pd.to_datetime(timestamp, unit='ms', utc=True)
-                    else:  # Seconds
-                        converted_timestamp = pd.to_datetime(timestamp, unit='s', utc=True)
+                    # Handle timestamp being in various formats
+                    if isinstance(timestamp, (int, float)):
+                        if timestamp > 1e12:  # Microseconds
+                            converted_timestamp = pd.to_datetime(timestamp, unit='us', utc=True)
+                        elif timestamp > 1e9:  # Milliseconds
+                            converted_timestamp = pd.to_datetime(timestamp, unit='ms', utc=True)
+                        else:  # Seconds
+                            converted_timestamp = pd.to_datetime(timestamp, unit='s', utc=True)
+                    else:
+                        # Already a datetime or string
+                        converted_timestamp = pd.to_datetime(timestamp, utc=True)
                     
                     data.append({
                         'timestamp': converted_timestamp,
@@ -1322,6 +1428,13 @@ class EnhancedKlinesProcessingPipeline:
                     })
 
             df = pd.DataFrame(data)
+            
+            if self.enable_logging:
+                tprint_info(f"🔍 DEBUG: DataFrame shape before indexing: {df.shape}")
+                tprint_info(f"🔍 DEBUG: DataFrame columns: {df.columns.tolist()}")
+                if not df.empty:
+                    tprint_info(f"🔍 DEBUG: First row: {df.iloc[0].to_dict()}")
+            
             df.set_index('timestamp', inplace=True)
             df.sort_index(inplace=True)
 
@@ -1330,6 +1443,8 @@ class EnhancedKlinesProcessingPipeline:
         except Exception as e:
             if self.enable_logging:
                 tprint_error(f"❌ Failed to convert klines to DataFrame: {e}")
+                import traceback
+                tprint_error(f"Traceback: {traceback.format_exc()}")
             return pd.DataFrame()
 
     async def _standardize_data(
@@ -1350,12 +1465,33 @@ class EnhancedKlinesProcessingPipeline:
         try:
             if self.enable_logging:
                 tprint_info(f"🔄 Standardizing data format for {symbol} {interval}")
-
-            # Use UnifiedOHLCVStandardizer
-            # The data is already in standardized format, just validate and ensure consistency
-            standardized_df = self.data_standardizer.standardize(
-                df, exchange=self.exchange
-            )
+            
+            # Debug: Check DataFrame structure before standardization
+            print(f"DEBUG: DataFrame shape before standardization: {df.shape}")
+            print(f"DEBUG: DataFrame columns: {df.columns.tolist()}")
+            
+            # The data from ExchangeInterface is already standardized
+            # Just ensure we have the required columns and proper types
+            standardized_df = df.copy()
+            
+            # Ensure required columns exist
+            required_cols = ['open', 'high', 'low', 'close', 'volume']
+            for col in required_cols:
+                if col not in standardized_df.columns:
+                    result.errors.append(f"Missing required column: {col}")
+                    result.success = False
+                    return result
+                # Ensure numeric type
+                if not pd.api.types.is_numeric_dtype(standardized_df[col]):
+                    standardized_df[col] = pd.to_numeric(standardized_df[col], errors='coerce')
+            
+            # Add metadata columns if missing
+            if 'symbol' not in standardized_df.columns:
+                standardized_df['symbol'] = symbol
+            if 'interval' not in standardized_df.columns:
+                standardized_df['interval'] = interval
+            if 'exchange' not in standardized_df.columns:
+                standardized_df['exchange'] = self.exchange
 
             result.success = True
             result.data = standardized_df
@@ -2384,20 +2520,50 @@ async def process_klines_data_enhanced(
     )
 
 if __name__ == "__main__":
+    import argparse
+    
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description='Enhanced Klines Data Processing Pipeline')
+    parser.add_argument('--exchange', type=str, default='binance', help='Exchange name (binance, bingx, okx, etc.)')
+    parser.add_argument('--symbol', type=str, default='ETHUSDT', help='Trading symbol (e.g., ETHUSDT)')
+    parser.add_argument('--interval', type=str, default='1m', help='Data interval (1m, 5m, 1h, etc.)')
+    parser.add_argument('--years', type=int, default=4, help='Number of years of data to collect')
+    parser.add_argument('--data-dir', type=str, default='historical_data', help='Data directory')
+    parser.add_argument('--no-gap-filling', action='store_true', help='Disable gap filling')
+    parser.add_argument('--no-resampling', action='store_true', help='Disable resampling')
+    parser.add_argument('--no-quality-validation', action='store_true', help='Disable quality validation')
+    args = parser.parse_args()
+    
     # Example usage - simplified interface with exchange, asset, lookback period
     async def main_simple():
-        """Example using the simplified interface."""
+        """Run the enhanced klines processing pipeline."""
         try:
+            print("=" * 80)
+            print("🚀 ENHANCED KLINES PROCESSING PIPELINE")
+            print("=" * 80)
+            print()
+            print(f"📊 Configuration:")
+            print(f"   - Exchange: {args.exchange}")
+            print(f"   - Symbol: {args.symbol}")
+            print(f"   - Interval: {args.interval}")
+            print(f"   - Lookback: {args.years} years")
+            print(f"   - Data Directory: {args.data_dir}")
+            print(f"   - Gap Filling: {'❌ Disabled' if args.no_gap_filling else '✅ Enabled'}")
+            print(f"   - Resampling: {'❌ Disabled' if args.no_resampling else '✅ Enabled'}")
+            print(f"   - Quality Validation: {'❌ Disabled' if args.no_quality_validation else '✅ Enabled'}")
+            print()
+            
             # Configure pipeline
             pipeline_config = PipelineConfig(
-                data_dir="historical_data",
-                exchange="bingx",  # or "binance", "okx", etc.
+                data_dir=args.data_dir,
+                exchange=args.exchange,
                 enable_logging=True,
-                enable_gap_filling=True,
-                enable_resampling=True,
+                enable_gap_filling=not args.no_gap_filling,
+                enable_resampling=not args.no_resampling,
                 enable_duplicate_handling=True,
-                enable_quality_validation=True,
-                batch_compatible=True
+                enable_quality_validation=not args.no_quality_validation,
+                batch_compatible=True,
+                max_gap_minutes=1
             )
             
             # Configure resampling
@@ -2407,37 +2573,88 @@ if __name__ == "__main__":
                 preserve_volume=True,
                 resample_older_than_days=1,
                 enable_auto_resampling=True
-            )
+            ) if not args.no_resampling else None
             
             # Create pipeline
+            print(f"🔧 Initializing pipeline...")
             pipeline = EnhancedKlinesProcessingPipeline(pipeline_config)
+            print(f"✅ Pipeline initialized")
+            print()
             
-            # Process data using simplified interface
-            results = await pipeline.process_klines_data_simple(
-                exchange="bingx",  # Exchange name
-                asset="ETH",       # Asset (will create ETHUSDT symbol)
-                lookback_period="4y",  # Lookback period: 4 years
-                interval="1m",     # Data interval
-                api_key="",        # Your API key
-                api_secret="",     # Your API secret
-                use_testnet=True,  # Use testnet
+            # Create exchange interface
+            print(f"🔗 Connecting to {args.exchange.upper()}...")
+            exchange_config = {
+                'exchange_type': args.exchange,
+                'api_key': None,  # Public data doesn't require API keys
+                'api_secret': None,
+                'testnet': False,
+                'rate_limits': {}
+            }
+            exchange_interface = ExchangeInterface(exchange_config)
+            
+            try:
+                await exchange_interface.connect()
+                print(f"✅ Connected to {args.exchange.upper()}")
+            except Exception as e:
+                tprint_warning(f"⚠️ Connection warning: {e}")
+                tprint_info("📝 Continuing with public data access...")
+            print()
+            
+            # Process data
+            print(f"🚀 Starting data collection and processing...")
+            print(f"⏰ Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print()
+            
+            results = await pipeline.process_klines_data(
+                symbol=args.symbol,
+                interval=args.interval,
+                years=args.years,
+                exchange_interface=exchange_interface,
                 resampling_config=resampling_config,
-                batch_id="ethusdt_4y_bingx"
+                max_gap_minutes=1,
+                create_consolidated=True,
+                batch_id=f"{args.exchange}_{args.symbol.lower()}_{args.years}y_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             )
             
-            print(f"🎉 Simple processing completed: {results['pipeline_success']}")
-            print(f"📊 Data quality: {results['data_quality']}")
-            print(f"📈 Final shape: {results['final_data_shape']}")
-            print(f"💾 Stored files: {results['stored_files']}")
-            print(f"🔄 Resampled intervals: {results['resampled_intervals']}")
+            print()
+            print("=" * 80)
+            print("✅ PROCESSING COMPLETED")
+            print("=" * 80)
+            print()
+            print(f"📊 Results:")
+            print(f"   - Pipeline Success: {results['pipeline_success']}")
+            print(f"   - Data Quality: {results['data_quality']}")
+            print(f"   - Final Data Shape: {results['final_data_shape']}")
+            print()
+            
+            if 'stored_files' in results and results['stored_files']:
+                print(f"💾 Stored Files:")
+                for file_path in results['stored_files']:
+                    print(f"   - {file_path}")
+                print()
+            
+            if 'resampled_intervals' in results and results['resampled_intervals']:
+                print(f"🔄 Resampled Intervals:")
+                for interval in results['resampled_intervals']:
+                    print(f"   - {interval}")
+                print()
+            
+            print(f"⏰ End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            await exchange_interface.disconnect()
             
         except Exception as e:
-            print(f"❌ Error in simple processing: {e}")
+            print()
+            print("=" * 80)
+            print("❌ ERROR IN PROCESSING")
+            print("=" * 80)
+            print(f"Error: {e}")
+            print()
             import traceback
             traceback.print_exc()
 
-    # Example usage - simplified for working with existing data
-    async def main():
+    # Example usage - for reference only
+    async def main_example():
         try:
             # Configure pipeline for existing data processing
             pipeline_config = PipelineConfig(

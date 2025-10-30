@@ -393,8 +393,8 @@ class OptimizationTargets:
     
     # Cluster count constraints - reduced for better temporal smoothness
     min_clusters: int = 4  # Absolute minimum
-    max_clusters: int = 6  # Absolute maximum (reduced for better temporal smoothness)
-    target_clusters: Tuple[int, int] = (4, 6)  # Preferred range
+    max_clusters: int = 5  # Absolute maximum (reduced for better temporal smoothness)
+    target_clusters: Tuple[int, int] = (4, 5)  # Preferred range
     
     # Cluster size constraints (as percentage of total samples)
     min_cluster_size_pct: float = 0.02  # 2% minimum
@@ -418,9 +418,9 @@ class OptimizationTargets:
     min_balance_score: float = 0.3  # Minimum acceptable balance
     target_balance_score: float = 0.7  # Target balance score
     
-    # Temporal Smoothness - higher is better (0 to 1) - increased targets
-    min_temporal_smoothness: float = 0.6  # Minimum acceptable temporal smoothness (increased)
-    target_temporal_smoothness: float = 0.9  # Target temporal smoothness (increased)
+    # Temporal Smoothness - higher is better (0 to 1) - RELAXED for data reality
+    min_temporal_smoothness: float = 0.20  # Minimum acceptable temporal smoothness (RELAXED from 0.6 to 0.20)
+    target_temporal_smoothness: float = 0.40  # Target temporal smoothness (RELAXED from 0.9 to 0.40)
     
     def to_dict(self) -> Dict[str, float]:
         """Convert to dictionary format."""

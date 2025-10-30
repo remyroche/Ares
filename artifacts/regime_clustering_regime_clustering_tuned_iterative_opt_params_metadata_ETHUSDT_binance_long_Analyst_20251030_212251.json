@@ -1,0 +1,17 @@
+{
+  "symbol": "ETHUSDT",
+  "timestamp": "2025-10-30T21:24:55.170083",
+  "metrics": {
+    "cv_score": 0.9367943952711559,
+    "silhouette_score": -0.03182650606436908,
+    "dbi_score": 17.380951594490984,
+    "balance_score": 0.94192022340378,
+    "temporal_smoothness": 0.16075156576200422,
+    "n_clusters": 6
+  },
+  "artifact_name": "tuned_iterative_opt_params",
+  "artifact_type": "config",
+  "file_path": "artifacts/pre_training/ETHUSDT/binance/long/Analyst/regime_clustering/regime_clustering_regime_clustering_tuned_iterative_opt_params_ETHUSDT_binance_long_Analyst_20251030_212251.parquet",
+  "file_size": 12419,
+  "compression": "auto"
+}

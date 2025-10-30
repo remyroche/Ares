@@ -1,151 +1,401 @@
 # Enhanced Exit Strategy Configuration
-# This configuration demonstrates the improved exit strategy with confidence-based exits and profit-taking
-
-position_monitor:
-  monitoring_interval: 10  # seconds
-  
-  # Confidence-based exit thresholds
-  confidence_thresholds:
-    very_low: 0.2      # Exit immediately (emergency)
-    low: 0.4           # Scale down or exit (risk management)
-    medium: 0.6        # Hold position (normal operation)
-    high: 0.8          # Consider profit taking (opportunity)
-  
-  # PnL-based exit thresholds
-  pnl_thresholds:
-    stop_loss: -0.05   # -5% stop loss (critical exit)
-    profit_target: 0.04  # 4% base profit target
-    scaling_levels: [0.25, 0.5, 0.75]  # Tiered profit taking levels
-  
-  # Profit-taking configuration with confidence-based scaling
-  profit_taking:
-    confidence_scaling: true                    # Enable confidence-based profit scaling
-    min_confidence_for_profit: 0.6            # Minimum confidence to take profit
-    confidence_profit_multiplier: 0.5         # How much confidence affects profit taking
-    tiered_profit_taking: true                 # Enable tiered profit taking
-    trailing_stop_enabled: true               # Enable trailing stops
-    trailing_stop_atr_multiplier: 1.5         # ATR multiplier for trailing stops
+#
+# This configuration file contains parameters for the enhanced exit strategy system
+# including uncertainty-based position sizing, dynamic trailing stops, confidence-aware
+# exits, and volatility-adjusted risk management.
+#
+# These parameters are optimized through final_parameters_optimization
 
 exit_strategy:
-  # Profit buffer and trailing base settings
-  profit_buffer_atr_multiplier: 0.6
-  profit_buffer_min_fraction: 0.001
-  trail_base_atr_multiplier: 0.8
-
-  # Breakeven and trailing activation thresholds (in ATR units)
-  breakeven_activation_atr: 1.0
-  trail_activation_atr: 1.0
-
-  # Trailing profit activation
-  tp_trail_activation_atr: 2.0
-  tp_trail_trigger_atr: 2.5
-  partial_take_fraction: 0.5
-
-  # Drawdown management
-  drawdown_tighten_atr: 0.8
-  tighten_trail_atr: 0.5
-  drawdown_exit_atr: 1.2
-
-  # Volatility regime adjustments
-  volatility_tighten_threshold: 0.7
-  volatility_tighten_adjustment: 0.3
-  volatility_loosen_threshold: 1.3
-  volatility_loosen_adjustment: 0.2
-
-  # Time-based decay
-  time_decay_bars: 8
-  time_decay_threshold_atr: 0.3
-  bar_duration_seconds: 900
-
-  # ML-driven adjustments
-  ml_confidence_tighten_threshold: 0.3
-  ml_confidence_tighten_atr: 0.3
-  ml_regime_partial_fraction: 0.5
-
-  # Regime-specific ATR bands
-  regime_bands:
-    low:
-      sl_atr: 1.2
-      tp_atr: 2.0
-      trail_atr: 0.8
-      tp_trail: 2.2
+  # =============================================================================
+  # UNCERTAINTY-BASED PARAMETERS
+  # =============================================================================
+  uncertainty:
+    # Weight for uncertainty in position sizing calculations (0.0 - 1.0)
+    weight: 0.5
+    
+    # Stop loss multiplier based on uncertainty (0.5 - 2.0)
+    # Higher uncertainty = tighter stop loss
+    sl_multiplier: 1.2
+    
+    # Take profit multiplier based on uncertainty (0.5 - 2.0)
+    # Higher uncertainty = closer take profit
+    tp_multiplier: 0.8
+    
+    # Threshold for high model disagreement (0.0 - 0.5)
+    # Triggers risk reduction when exceeded
+    disagreement_threshold: 0.3
+    
+    # Sensitivity of uncertainty in calculations (0.5 - 2.0)
+    sensitivity: 1.0
+    
+    # Enable/disable uncertainty-based sizing
+    enabled: true
+  
+  # =============================================================================
+  # CONFIDENCE-BASED PARAMETERS
+  # =============================================================================
+  confidence:
+    # Exponent for confidence scaling in position sizing (1.0 - 3.0)
+    # Higher power = more aggressive scaling with confidence
+    # 2.0 means position size scales with confidence squared
+    position_scaling_power: 2.0
+    
+    # Exit when confidence drops below this threshold (0.1 - 0.5)
+    degradation_threshold: 0.3
+    
+    # Number of candles to track for degradation (4 - 12)
+    degradation_window: 8
+    
+    # Factor to tighten stop loss when confidence drops (0.5 - 1.5)
+    # 1.2 means SL moves 20% closer when confidence degrades
+    sl_tightening_factor: 1.2
+    
+    # Minimum confidence to enter trades (0.5 - 0.9)
+    minimum_entry_confidence: 0.6
+    
+    # Enable confidence-based exits
+    enable_degradation_exits: true
+  
+  # =============================================================================
+  # VOLATILITY-BASED PARAMETERS
+  # =============================================================================
+  volatility:
+    # ATR multiplier range for stop loss (1.0 - 3.0)
+    # Base stop loss distance in ATR units
+    atr_sl_multiplier: 1.5
+    
+    # ATR percentile threshold for low volatility regime (0.2 - 0.4)
+    regime_low_threshold: 0.3
+    
+    # ATR percentile threshold for high volatility regime (0.6 - 0.8)
+    regime_high_threshold: 0.7
+    
+    # Position size multiplier in high volatility (0.3 - 0.7)
+    # Reduce position size when volatility is high
+    high_vol_position_scaling: 0.5
+    
+    # Position size multiplier in low volatility (1.0 - 1.5)
+    # Increase position size when volatility is low
+    low_vol_position_scaling: 1.2
+    
+    # Rolling window for volatility calculation (10 - 50 candles)
+    rolling_window: 20
+    
+    # Volatility sensitivity in calculations (0.5 - 2.0)
+    sensitivity: 1.0
+  
+  # =============================================================================
+  # DYNAMIC TRAILING STOP PARAMETERS
+  # =============================================================================
+  dynamic_trailing:
+    # Multiplicative approach (base_pct * factors)
+    multiplicative:
+      # Base trailing stop percentage (0.005 - 0.03)
+      # 0.015 = 1.5% trailing stop
+      base_pct: 0.015
+      
+      # Confidence weight in multiplier (0.0 - 2.0)
+      # Higher weight = more influence from confidence
+      confidence_weight: 1.5
+      
+      # Uncertainty weight in multiplier (0.0 - 2.0)
+      # Higher uncertainty = wider trailing stop
+      uncertainty_weight: 1.0
+      
+      # Volatility weight in multiplier (0.0 - 2.0)
+      # Higher volatility = wider trailing stop
+      volatility_weight: 1.2
+      
+      # Regime weight in multiplier (0.0 - 2.0)
+      regime_weight: 0.8
+      
+      # Enable multiplicative method
+      enabled: true
+    
+    # Log-space approach (exponential of weighted log sums)
+    log_space:
+      # Enable log-space method (can run both and compare)
+      enabled: true
+      
+      # Log space base value (-5.0 - -2.0)
+      # exp(base) gives the minimum trailing distance
+      base: -3.5
+      
+      # Log confidence weight (0.0 - 2.0)
+      # Positive weight = higher confidence increases trailing stop
+      confidence_weight: 1.0
+      
+      # Log uncertainty weight (-2.0 - 0.0)
+      # Negative weight = higher uncertainty decreases trailing stop
+      uncertainty_weight: -0.5
+      
+      # Log volatility weight (-1.0 - 1.0)
+      # Can be positive or negative depending on strategy
+      volatility_weight: 0.3
+      
+      # Regime weight in log space (-1.0 - 1.0)
+      regime_weight: 0.2
+    
+    # Method selection ('multiplicative', 'log_space', or 'ensemble')
+    # 'ensemble' averages both methods
+    method: 'ensemble'
+    
+    # Ensemble weights if using ensemble method
+    ensemble_weights:
+      multiplicative: 0.6
+      log_space: 0.4
+  
+  # =============================================================================
+  # TAKE PROFIT & STOP LOSS PARAMETERS
+  # =============================================================================
+  tpsl:
+    # Take profit base ATR multiplier (1.5 - 4.0)
+    # Target profit in ATR units
+    tp_base_atr_multiplier: 2.5
+    
+    # Scale take profit by confidence (0.5 - 1.5)
+    # Higher confidence = more ambitious take profit
+    tp_confidence_scaling: 1.0
+    
+    # Scale take profit by uncertainty (0.5 - 1.5)
+    # Higher uncertainty = closer take profit
+    tp_uncertainty_scaling: 0.8
+    
+    # Stop loss base ATR multiplier (0.5 - 2.0)
+    # Stop loss distance in ATR units
+    sl_base_atr_multiplier: 1.5
+    
+    # Scale stop loss by volatility (0.8 - 1.5)
+    # Higher volatility = wider stop loss
+    sl_volatility_scaling: 1.2
+    
+    # Rolling window for stop loss volatility calc (10 - 50)
+    sl_rolling_window: 20
+    
+    # Enable adaptive TP/SL based on conditions
+    enable_adaptive: true
+    
+    # Use trailing take profit (move TP with price)
+    enable_trailing_tp: true
+    
+    # Trailing TP activation (profit reached before trailing starts)
+    # In ATR units
+    trailing_tp_activation_atr: 1.5
+  
+  # =============================================================================
+  # REGIME-SPECIFIC ADJUSTMENTS
+  # =============================================================================
+  regime_adjustments:
+    high_volatility:
+      position_size_multiplier: 0.5
+      sl_multiplier: 1.3
+      tp_multiplier: 0.9
+      leverage_multiplier: 0.7
+      confidence_threshold_adjustment: 0.05  # Require 5% more confidence
+    
+    low_volatility:
+      position_size_multiplier: 1.2
+      sl_multiplier: 0.9
+      tp_multiplier: 1.1
+      leverage_multiplier: 1.1
+      confidence_threshold_adjustment: -0.05  # Allow 5% less confidence
+    
+    trending:
+      position_size_multiplier: 1.1
+      sl_multiplier: 0.95
+      tp_multiplier: 1.2
+      leverage_multiplier: 1.2
+      confidence_threshold_adjustment: 0.0
+      enable_trailing: true
+    
+    ranging:
+      position_size_multiplier: 0.9
+      sl_multiplier: 1.1
+      tp_multiplier: 0.9
+      leverage_multiplier: 0.9
+      confidence_threshold_adjustment: 0.05
+      enable_trailing: false
+    
     normal:
-      sl_atr: 1.5
-      tp_atr: 2.5
-      trail_atr: 1.0
-      tp_trail: 2.5
-    high:
-      sl_atr: 1.8
-      tp_atr: 3.0
-      trail_atr: 1.2
-      tp_trail: 3.0
+      position_size_multiplier: 1.0
+      sl_multiplier: 1.0
+      tp_multiplier: 1.0
+      leverage_multiplier: 1.0
+      confidence_threshold_adjustment: 0.0
 
-# Example usage scenarios:
-# 
-# Scenario 1: High Confidence (0.9) + 3% Profit
-# - Confidence scaling: 3% * (1.0 - (0.9 - 0.5) * 0.5) = 3% * 0.8 = 2.4% target
-# - Result: Take profit at 2.4% instead of 4% (hold longer for bigger gains)
-#
-# Scenario 2: Medium Confidence (0.6) + 3% Profit  
-# - Confidence scaling: 3% * (1.0 - (0.6 - 0.5) * 0.5) = 3% * 0.95 = 2.85% target
-# - Result: Take profit at 2.85% (slightly lower than base 4%)
-#
-# Scenario 3: Low Confidence (0.3) + Any Profit
-# - Result: No profit taking (confidence too low)
-#
-# Scenario 4: Very Low Confidence (0.1) + Any PnL
-# - Result: Full exit (emergency exit)
+# =============================================================================
+# POSITION SIZING CONFIGURATION
+# =============================================================================
+position_sizing:
+  # Base position size as fraction of account (0.01 - 0.10)
+  base_size: 0.02  # 2% of account
+  
+  # Maximum position size (0.05 - 0.20)
+  max_size: 0.10  # 10% max
+  
+  # Minimum position size (0.001 - 0.01)
+  min_size: 0.005  # 0.5% min
+  
+  # Enable Kelly Criterion for sizing
+  use_kelly_criterion: false
+  
+  # Kelly fraction (0.1 - 0.5)
+  # Fraction of Kelly-optimal size to use
+  kelly_fraction: 0.25  # Quarter Kelly
+  
+  # Confidence scaling power (1.0 - 3.0)
+  confidence_power: 2.0
+  
+  # Uncertainty sensitivity (0.5 - 2.0)
+  uncertainty_sensitivity: 1.0
+  
+  # Volatility sensitivity (0.5 - 2.0)
+  volatility_sensitivity: 1.0
 
-# Tiered Profit Taking Example:
-# Base profit target: 4%
-# Tier 1 (25%): 1% profit -> Take 25% of position
-# Tier 2 (50%): 2% profit -> Take 50% of position  
-# Tier 3 (75%): 3% profit -> Take 75% of position
-# Full target: 4% profit -> Take 100% of position
+# =============================================================================
+# LEVERAGE CONFIGURATION
+# =============================================================================
+leverage:
+  # Base leverage (1.0 - 3.0)
+  base: 1.0  # No leverage by default
+  
+  # Maximum leverage allowed (1.0 - 10.0)
+  max: 5.0
+  
+  # Minimum leverage (always 1.0)
+  min: 1.0
+  
+  # Minimum confidence for leverage (0.6 - 0.9)
+  # Only apply leverage above this confidence
+  min_confidence_for_leverage: 0.6
+  
+  # Maximum uncertainty for leverage (0.0 - 0.5)
+  # Don't apply leverage above this uncertainty
+  max_uncertainty_for_leverage: 0.4
+  
+  # Enable leverage scaling with confidence
+  enable_confidence_scaling: true
 
-# Confidence-Based Scaling Logic:
-# Higher confidence = Lower profit targets (hold longer for bigger gains)
-# Lower confidence = Higher profit targets (take profit sooner)
-# This creates an adaptive system that balances risk and reward based on model confidence
+# =============================================================================
+# UNCERTAINTY CALCULATOR CONFIGURATION
+# =============================================================================
+uncertainty_calculator:
+  # Weight for variance in combined uncertainty (0.0 - 1.0)
+  variance_weight: 0.4
+  
+  # Weight for disagreement in combined uncertainty (0.0 - 1.0)
+  disagreement_weight: 0.4
+  
+  # Weight for confidence degradation (0.0 - 1.0)
+  confidence_weight: 0.2
+  
+  # Degradation calculation method ('relative_change' or 'absolute_change')
+  degradation_method: 'relative_change'
+  
+  # Default window for degradation tracking
+  degradation_window: 8
+  
+  # Epsilon for numerical stability
+  epsilon: 0.0000000001
 
-stop_loss:
-  trailing_stop_config:
-    profit_buffer: 0.001
-    trail_activation_thresholds:
-      activate_at_0_5_atr: 0.5
-      trail_tighten_at_0_8_atr: 0.8
-      hard_stop_at_1_2_atr: 1.2
-    regime_bands:
-      bull_trend: 0.9
-      bear_trend: 1.1
-      sideways_range: 1.0
-    time_decay_modifiers:
-      enabled: true
-      time_decay_schedule:
-        - minutes: 0
-          modifier: 1.0
-        - minutes: 45
-          modifier: 0.95
-        - minutes: 90
-          modifier: 0.9
+# =============================================================================
+# PREDICTION CACHE CONFIGURATION
+# =============================================================================
+prediction_cache:
+  # Maximum candles to store in cache
+  max_candles: 50
+  
+  # Default window for calculations
+  default_window: 8
+  
+  # Enable artifact loading on startup
+  enable_artifact_loading: true
+  
+  # Artifact directory
+  artifact_dir: 'artifacts/predictions'
 
-take_profit:
-  dynamic_take_profit_config:
-    profit_buffer: 0.0025
-    trail_activation_thresholds:
-      activate_at_0_5_atr: 0.55
-      trail_tighten_at_0_8_atr: 0.95
-      hard_stop_at_1_2_atr: 1.4
-    regime_bands:
-      bull_trend: 1.1
-      bear_trend: 0.9
-      sideways_range: 1.0
-    time_decay_modifiers:
-      enabled: true
-      time_decay_schedule:
-        - minutes: 0
-          modifier: 1.0
-        - minutes: 90
-          modifier: 0.9
-        - minutes: 180
-          modifier: 0.85
+# =============================================================================
+# OPTIMIZATION PARAMETERS
+# =============================================================================
+# These are the ranges used in final_parameters_optimization
+optimization_ranges:
+  uncertainty_weight: [0.0, 1.0]
+  uncertainty_sl_multiplier: [0.5, 2.0]
+  uncertainty_tp_multiplier: [0.5, 2.0]
+  model_disagreement_threshold: [0.0, 0.5]
+  
+  confidence_position_scaling_power: [1.0, 3.0]
+  confidence_degradation_threshold: [0.1, 0.5]
+  confidence_degradation_window: [4, 12]
+  confidence_sl_tightening_factor: [0.5, 1.5]
+  
+  atr_sl_multiplier_range: [1.0, 3.0]
+  volatility_regime_low_threshold: [0.2, 0.4]
+  volatility_regime_high_threshold: [0.6, 0.8]
+  high_vol_position_scaling: [0.3, 0.7]
+  low_vol_position_scaling: [1.0, 1.5]
+  
+  trailing_base_pct: [0.005, 0.03]
+  trailing_confidence_weight: [0.0, 2.0]
+  trailing_uncertainty_weight: [0.0, 2.0]
+  trailing_volatility_weight: [0.0, 2.0]
+  trailing_regime_weight: [0.0, 2.0]
+  
+  trailing_log_base: [-5.0, -2.0]
+  trailing_log_confidence_weight: [0.0, 2.0]
+  trailing_log_uncertainty_weight: [-2.0, 0.0]
+  trailing_log_volatility_weight: [-1.0, 1.0]
+  
+  tp_base_atr_multiplier: [1.5, 4.0]
+  tp_confidence_scaling: [0.5, 1.5]
+  tp_uncertainty_scaling: [0.5, 1.5]
+  sl_base_atr_multiplier: [0.5, 2.0]
+  sl_volatility_scaling: [0.8, 1.5]
+  sl_rolling_window: [10, 50]
+
+# =============================================================================
+# MONITORING & LOGGING
+# =============================================================================
+monitoring:
+  # Enable detailed logging of exit decisions
+  enable_exit_logging: true
+  
+  # Log uncertainty metrics on each decision
+  log_uncertainty_metrics: true
+  
+  # Log position sizing decisions
+  log_sizing_decisions: true
+  
+  # Enable performance tracking
+  enable_performance_tracking: true
+  
+  # Alert on high uncertainty
+  alert_on_high_uncertainty: true
+  uncertainty_alert_threshold: 0.7
+  
+  # Alert on confidence degradation
+  alert_on_confidence_drop: true
+  confidence_drop_alert_threshold: 0.3
+
+# =============================================================================
+# FEATURE FLAGS
+# =============================================================================
+features:
+  # Enable full enhanced exit strategy
+  enable_enhanced_exit_strategy: true
+  
+  # Enable uncertainty-based position sizing
+  enable_uncertainty_sizing: true
+  
+  # Enable dynamic trailing stops
+  enable_dynamic_trailing: true
+  
+  # Enable confidence degradation exits
+  enable_confidence_exits: true
+  
+  # Enable regime-aware adjustments
+  enable_regime_adjustments: true
+  
+  # Enable artifact storage and prediction caching
+  enable_prediction_caching: true

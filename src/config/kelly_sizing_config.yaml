@@ -1,0 +1,286 @@
+# Kelly Sizing Configuration
+# Dampened, posterior-aware Kelly criterion with regime conditioning
+# 
+# This configuration file defines all parameters for the production-hardened
+# Kelly sizing system including:
+# - Regime-aware parameters (per-regime tuning)
+# - Lambda_eff modular components (ESS, entropy, variance)
+# - Adaptive binning with hierarchical fallback
+# - Realized R tracking and instability detection
+# - Temporal integrity (purging, embargo)
+# - Hot-swappable safety limits
+# - Correlation handling
+# - Calibration tracking
+
+dampened_kelly:
+  # ========================================
+  # Regime-Aware Parameters
+  # ========================================
+  # Define parameters for each regime identified by HMM/HDBSCAN
+  # These will be optimized in step17 (final_parameters_optimization)
+  
+  regime_params:
+    # Regime 0: Example - Trending/Bull regime
+    regime_0:
+      lambda_base: 0.30          # Base dampening factor (higher = more aggressive)
+      beta_position: 1.2         # Tanh steepness for position sizing
+      beta_leverage: 0.8         # Tanh steepness for leverage (usually < beta_position)
+      prior_alpha: 15.0          # Beta prior strength (higher = more conservative)
+      ess_threshold: 40          # ESS threshold (tau) for dampening
+      entropy_threshold: 0.8     # Entropy veto threshold
+      n_min_samples: 15          # Minimum samples required per bin
+      f_floor: 0.01              # Minimum position size (1% for exploration)
+      lev_floor: 1.5             # Minimum leverage (1.5x)
+      decay_theta: 0.95          # Exponential decay rate (adjusted by stability)
+    
+    # Regime 1: Example - Ranging/Sideways regime
+    regime_1:
+      lambda_base: 0.20
+      beta_position: 1.5
+      beta_leverage: 1.0
+      prior_alpha: 20.0
+      ess_threshold: 50
+      entropy_threshold: 0.6
+      n_min_samples: 20
+      f_floor: 0.008
+      lev_floor: 1.3
+      decay_theta: 0.93
+    
+    # Regime 2: Example - Volatile/Bear regime
+    regime_2:
+      lambda_base: 0.15
+      beta_position: 2.0
+      beta_leverage: 1.5
+      prior_alpha: 25.0
+      ess_threshold: 60
+      entropy_threshold: 0.5
+      n_min_samples: 25
+      f_floor: 0.005
+      lev_floor: 1.2
+      decay_theta: 0.90
+    
+    # Add more regimes as identified by clustering...
+    # regime_3, regime_4, etc.
+  
+  # Global fallback for unknown regimes or regime-agnostic mode
+  global_fallback:
+    lambda_base: 0.15
+    beta_position: 2.0
+    beta_leverage: 1.5
+    prior_alpha: 30.0
+    ess_threshold: 60
+    entropy_threshold: 1.0
+    n_min_samples: 25
+    f_floor: 0.005
+    lev_floor: 1.2
+    decay_theta: 0.90
+  
+  # ========================================
+  # Lambda_eff Modular Components
+  # ========================================
+  # Control how ESS, entropy, and posterior variance affect dampening
+  
+  lambda_eff_components:
+    ess_sigmoid_kappa: 0.1     # ESS sigmoid steepness (smaller = sharper transition)
+    entropy_scale: 0.5         # Entropy penalty scale
+    variance_penalty: 2.0      # Posterior variance penalty multiplier
+  
+  # ========================================
+  # Binning Configuration
+  # ========================================
+  # 3D binning: (model_score, volatility, regime)
+  
+  binning:
+    # Bin edges for model confidence scores
+    score_bins: [0.5, 0.6, 0.7, 0.8, 0.9]
+    
+    # Bin edges for market volatility (ATR-based, normalized)
+    volatility_bins: [0.005, 0.01, 0.02, 0.04]
+    
+    # Adaptive bin merging
+    enable_adaptive_merging: true
+    merge_hierarchy:
+      - regime_agnostic     # Level 1: Merge across regimes
+      - coarse_bins         # Level 2: Merge adjacent buckets
+      - global_prior        # Level 3: Fall back to prior
+    
+    # Stale bin detection
+    stale_bin_days: 90       # Mark bin as stale if not updated in 90 days
+  
+  # ========================================
+  # Realized R Tracking
+  # ========================================
+  # Track actual reward/risk ratios per bin instead of using assumed R
+  
+  r_tracking:
+    use_realized_r: true
+    r_percentile: 25                  # Use 25th percentile (conservative)
+    r_instability_threshold: 2.0      # If std/mean > 2.0, consider unstable
+    r_instability_prior_boost: 2.0    # Increase prior weight if R is unstable
+    default_r: 2.0                    # Default R if no history (2:1 reward/risk)
+  
+  # ========================================
+  # Temporal Integrity
+  # ========================================
+  # Prevent temporal leakage in walk-forward validation
+  
+  temporal:
+    embargo_pct_of_train: 0.05    # 5% of train window as embargo gap
+    enable_purging: true           # Remove overlapping trades
+    overlap_detection: true        # Detect trades spanning train/test boundary
+    max_trade_duration_days: 7    # Expected maximum trade duration
+  
+  # ========================================
+  # Hot-Swappable Safety Limits
+  # ========================================
+  # These can be changed via trade_launcher hot-swap commands during live trading
+  # Format: python trade_launcher.py --hot-swap max_leverage=2.5
+  
+  safety_limits:
+    # Position sizing limits
+    max_leverage: 3.0                          # Maximum leverage allowed
+    max_per_trade_pct: 0.15                    # Maximum position size per trade (15%)
+    max_exposure_per_asset: 0.30               # Maximum total exposure per asset (30%)
+    max_kelly_fraction: 0.5                    # Never exceed 50% of theoretical Kelly
+    
+    # High-leverage controls
+    min_time_between_high_leverage_sec: 3600   # Cooldown between high-lev trades (1 hour)
+    max_portfolio_in_high_leverage: 0.40       # Max portfolio in high-leverage (40%)
+    high_leverage_threshold: 2.0               # What counts as "high" leverage
+    
+    # Drawdown dampening
+    max_acceptable_drawdown: 0.15              # 15% max DD before dampening kicks in
+    dd_dampening_min_factor: 0.30              # Minimum dampening factor (never below 30%)
+  
+  # ========================================
+  # Correlation Handling
+  # ========================================
+  # Prevent correlated blow-ups by tracking position correlations
+  
+  correlation:
+    enabled: true
+    window_days: 30                    # Rolling window for correlation calculation
+    
+    # Portfolio-level correlation penalties
+    high_corr_threshold: 0.7           # High correlation threshold
+    high_corr_penalty: 0.30            # Reduce limit by 30% if high correlation
+    moderate_corr_threshold: 0.4       # Moderate correlation threshold
+    moderate_corr_penalty: 0.15        # Reduce limit by 15% if moderate correlation
+    
+    # Per-trade correlation checks
+    per_trade_corr_limit: 0.8          # Max correlation with existing high-lev positions
+    correlation_check_enabled: true    # Enable per-trade correlation checks
+  
+  # ========================================
+  # Calibration Tracking
+  # ========================================
+  # Monitor posterior calibration vs actual outcomes
+  
+  calibration:
+    enabled: true
+    check_interval_trades: 50          # Check calibration every 50 trades
+    alert_if_miscalibration: true      # Alert if calibration error exceeds threshold
+    miscalibration_threshold: 0.10     # Alert if |actual - predicted| > 10%
+    min_samples_for_calibration: 20    # Minimum samples per bin to check calibration
+    
+    # Calibration report generation
+    generate_reports: true
+    report_frequency_days: 7           # Generate calibration report weekly
+    report_output_dir: "outcomes/kelly_calibration"
+  
+  # ========================================
+  # Monte Carlo Sampling (Optional)
+  # ========================================
+  # Use MC sampling for conservative posterior estimate
+  
+  monte_carlo:
+    enabled: false                     # Enable MC sampling (computationally expensive)
+    n_samples: 1000                    # Number of MC samples
+    use_quantile: true                 # Use quantile instead of mean
+    quantile: 0.10                     # Conservative quantile (10th percentile)
+    enable_for_high_leverage_only: true  # Only use MC for high-leverage decisions
+  
+  # ========================================
+  # Persistence & Artifacts
+  # ========================================
+  # Where to save bins and optimized parameters
+  
+  persistence:
+    enabled: true
+    artifacts_dir: "checkpoints/kelly_sizing"
+    
+    # Bin persistence
+    save_bins_on_update: false         # Save after every update (can be slow)
+    save_bins_interval_trades: 100     # Save every 100 trades
+    save_bins_interval_hours: 24       # Save every 24 hours
+    
+    # Optimized parameters (from step17)
+    params_filename_pattern: "kelly_params_optimized_{symbol}_{timeframe}.json"
+    bins_filename_pattern: "kelly_bins_{symbol}_{timeframe}.pkl"
+    
+    # Backup rotation
+    keep_backups: 5                    # Keep 5 most recent backups
+  
+  # ========================================
+  # Logging & Monitoring
+  # ========================================
+  
+  logging:
+    log_level: "INFO"                  # DEBUG, INFO, WARNING, ERROR
+    log_all_sizing_decisions: false    # Log every sizing decision (verbose)
+    log_reason_codes: true             # Log reason codes for adjustments
+    log_bin_merges: true               # Log when bin merging occurs
+    log_config_updates: true           # Log hot-swap config updates
+    
+    # Performance logging
+    log_performance_every_n_trades: 50
+    track_reason_code_distribution: true
+  
+  # ========================================
+  # Feature Flags (for A/B testing)
+  # ========================================
+  
+  features:
+    enable_drawdown_dampening: true
+    enable_kelly_fraction_clip: true
+    enable_correlation_adjustment: true
+    enable_regime_adaptive_decay: true
+    enable_ess_dampening: true
+    enable_entropy_veto: true
+    enable_variance_penalty: true
+    enable_stale_bin_detection: true
+    enable_r_instability_detection: true
+
+# ========================================
+# Notes for Optimization (Step17)
+# ========================================
+# 
+# The following parameters should be optimized per-regime in step17:
+# - lambda_base_r[regime_id]
+# - beta_position_r[regime_id]
+# - beta_leverage_r[regime_id]
+# - prior_alpha_r[regime_id]
+# - ess_threshold_r[regime_id]
+# - entropy_threshold_r[regime_id]
+# - n_min_r[regime_id]
+# - f_floor_r[regime_id]
+# - lev_floor_r[regime_id]
+# 
+# Global parameters to optimize:
+# - ess_sigmoid_kappa
+# - entropy_scale
+# - variance_penalty
+# - max_kelly_fraction
+# 
+# Use nested optimization:
+# 1. Optimize global fallback (150 trials)
+# 2. Refine per-regime (50 trials each), regularize toward global
+# 
+# Objectives:
+# - geometric_mean (maximize)
+# - sharpe_ratio (maximize)
+# - max_drawdown (minimize)
+# - high_leverage_frequency (minimize)
+# - calibration_error (minimize)
+# - bin_coverage (maximize)
+

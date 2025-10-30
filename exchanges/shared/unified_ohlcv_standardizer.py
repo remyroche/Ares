@@ -296,16 +296,19 @@ class UnifiedOHLCVStandardizer:
             ('high', ['high']),
             ('low', ['low']),
             ('close', ['close']),
-            ('volume', ['volume', 'vol', 'quantity', 'qty']),
             
             # Timestamp - check multiple patterns
-            ('timestamp', ['timestamp', 'ts', 'time', 'datetime', 'date']),
+            ('timestamp', ['timestamp', 'ts', 'open_time', 'start_time']),
             
-            # Additional fields (more specific first)
-            ('quote_volume', ['quote_volume', 'quotevol', 'vol_ccy', 'volccy']),
-            ('trades_count', ['trades', 'count', 'number_of_trades']),
-            ('taker_buy_base_volume', ['taker_buy_base', 'takerbuybase']),
-            ('taker_buy_quote_volume', ['taker_buy_quote', 'takerbuyquote']),
+            # Additional fields (more specific first to avoid substring conflicts)
+            ('quote_volume', ['quote_asset_volume', 'quote_volume', 'quotevol', 'vol_ccy', 'volccy']),
+            ('taker_buy_base_volume', ['taker_buy_base_asset_volume', 'taker_buy_base', 'takerbuybase']),
+            ('taker_buy_quote_volume', ['taker_buy_quote_asset_volume', 'taker_buy_quote', 'takerbuyquote']),
+            ('trades_count', ['number_of_trades', 'trades', 'count']),
+            ('close_time', ['close_time', 'end_time']),
+            
+            # Volume - MUST come after other volume fields to avoid conflicts
+            ('volume', ['volume', 'vol', 'quantity', 'qty']),
             
             # Metadata fields
             ('symbol', ['symbol', 'pair', 'instrument', 'market']),
@@ -347,8 +350,13 @@ class UnifiedOHLCVStandardizer:
                     pattern_lower = str(pattern).lower().strip()
                     pattern_clean = pattern_lower.replace('_', '').replace('-', '').replace(' ', '')
                     
-                    # Check if pattern is in column name (both lowercase)
-                    if pattern_lower in col_lower or pattern_clean in col_clean:
+                    # First try exact match (after normalization)
+                    if col_lower == pattern_lower or col_clean == pattern_clean:
+                        rename_map[col] = standard_name
+                        matched = True
+                        break
+                    # Then try substring match (but only if pattern is reasonably long)
+                    elif len(pattern_lower) >= 4 and (pattern_lower in col_lower or pattern_clean in col_clean):
                         rename_map[col] = standard_name
                         matched = True
                         break
@@ -639,7 +647,22 @@ class UnifiedOHLCVStandardizer:
             # Step 4: Ensure numeric types
             for col in required_cols:
                 if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                    try:
+                        # Check if column is already numeric
+                        if not pd.api.types.is_numeric_dtype(df[col]):
+                            # Convert to string first if needed, then to numeric
+                            if isinstance(df[col].iloc[0] if len(df[col]) > 0 else None, (list, dict)):
+                                self.logger.warning(f"Column '{col}' contains complex objects, extracting first element")
+                                df[col] = df[col].apply(lambda x: x[0] if isinstance(x, list) and len(x) > 0 else x)
+                            df[col] = pd.to_numeric(df[col].astype(str), errors='coerce')
+                    except Exception as e:
+                        self.logger.error(f"Failed to convert column '{col}' to numeric: {e}")
+                        # Try a more aggressive conversion
+                        try:
+                            df[col] = df[col].apply(lambda x: float(x) if x is not None else np.nan)
+                        except:
+                            self.logger.error(f"Could not convert column '{col}' to numeric, keeping as is")
+                            pass
             
             # Step 5: Validate OHLC relationships
             invalid_mask = (

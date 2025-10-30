@@ -39,6 +39,36 @@ from ...core.decorators import handles_errors, traced
 # from ...utils.clustering_alternatives  # Module not found, commented out import get_clustering_manager
 # Circular import moved to local import within function
 
+# PHASE 2: Import regime detection for context-aware SR evaluation
+try:
+    from .sr_regime_integration import create_sr_regime_detector, SRRegimeDetector
+    SR_REGIME_AVAILABLE = True
+except ImportError:
+    SR_REGIME_AVAILABLE = False
+    create_sr_regime_detector = None
+    SRRegimeDetector = None
+
+# PHASE 3: Import real multi-TF detection
+try:
+    from .multi_tf_data_loader import get_multi_tf_data_loader, MultiTimeframeDataLoader
+    from .multi_tf_sr_detector import MultiTimeframeSRDetector, create_multi_tf_detector
+    MULTI_TF_AVAILABLE = True
+except ImportError:
+    MULTI_TF_AVAILABLE = False
+    get_multi_tf_data_loader = None
+    MultiTimeframeDataLoader = None
+    MultiTimeframeSRDetector = None
+    create_multi_tf_detector = None
+
+# PHASE 3: Import ML quality model for pure ML scoring
+try:
+    from .ml_quality import SRQualityModel, load_sr_quality_model
+    ML_QUALITY_AVAILABLE = True
+except ImportError:
+    ML_QUALITY_AVAILABLE = False
+    SRQualityModel = None
+    load_sr_quality_model = None
+
 # Import new error handling and validation modules
 try:
     from src.training.steps.market_analysis.sr_error_handlers import (
@@ -864,36 +894,48 @@ class EnhancedSRDetector:
             return [level for level in levels if level.strength >= 0.5]
 
     def _calculate_level_prominence_simple(self, level: SRLevel, data: pd.DataFrame, level_type: str, price_range: float, avg_price: float) -> float:
-        """Calculate the prominence of a specific level without ATR dependency."""
+        """Calculate the prominence of a specific level without ATR dependency.
+        
+        PHASE 1 IMPROVEMENT: Now uses scipy.signal.peak_prominences for BOTH support and resistance,
+        ensuring symmetric treatment and fair comparison.
+        """
         try:
-            # Find the closest price point to this level
+            from scipy.signal import peak_prominences
+            
+            # PHASE 1 FIX: Unified prominence calculation for both support and resistance
             if level_type == 'support':
-                price_data = data['low'].values
+                # For support (valleys), INVERT the data to make valleys into peaks
+                # This allows scipy.peak_prominences to work correctly
+                price_data = -data['low'].values
+                search_price = -level.price
             else:
+                # For resistance (peaks), use as-is
                 price_data = data['high'].values
+                search_price = level.price
 
             # Find the closest index to this level
-            closest_idx = np.argmin(np.abs(price_data - level.price))
+            closest_idx = np.argmin(np.abs(price_data - search_price))
 
-            # Calculate prominence using scipy.signal.peak_prominences
-            from scipy.signal import peak_prominences
+            # Adaptive window length based on data size
+            # Use 20 as base, but adapt to available data
+            wlen = min(20, len(price_data) // 2)
+            wlen = max(3, wlen)  # Minimum 3 for scipy requirements
 
-            if level_type == 'support':
-                # For support, calculate prominence based on how much the valley stands out
-                # Use a combination of strength and price-based metrics
-                prominence = level.strength * (price_range * 0.1)  # 10% of price range as base
-            else:
-                # For resistance, calculate actual prominence
-                try:
-                    prominences, left_bases, right_bases = peak_prominences(
-                        price_data, [closest_idx], wlen=20
-                    )
-                    prominence = prominences[0] if len(prominences) > 0 else level.strength * (price_range * 0.1)
-                except:
-                    prominence = level.strength * (price_range * 0.1)
+            # Calculate prominence using scipy for BOTH types
+            try:
+                prominences, left_bases, right_bases = peak_prominences(
+                    price_data, [closest_idx], wlen=wlen
+                )
+                prominence = abs(prominences[0]) if len(prominences) > 0 else level.strength * (price_range * 0.1)
+            except Exception as e:
+                # Fallback: use strength-based estimate
+                self.logger.debug(f'Scipy prominence calculation failed for {level_type}: {e}, using fallback')
+                prominence = level.strength * (price_range * 0.1)
 
             # Normalize by price range instead of ATR
-            return prominence / price_range if price_range > 0 else level.strength
+            prominence_normalized = prominence / price_range if price_range > 0 else level.strength
+
+            return prominence_normalized
 
         except Exception as e:
             self.logger.warning(f'Simple prominence calculation failed: {e}')
@@ -1126,8 +1168,257 @@ class EnhancedSRDetector:
             self.logger.warning(f'Volume persistence calculation failed: {e}')
             return 0.0
 
+    # ===== PHASE 1.3: NEW ML FEATURE CALCULATION METHODS =====
+    
+    def _calculate_approach_velocity(self, level: SRLevel, data: pd.DataFrame, atr: float) -> float:
+        """Calculate average velocity when price approaches this level.
+        
+        Fast approaches often lead to breakouts, slow approaches to bounces.
+        """
+        try:
+            threshold = level.price * 0.005  # 0.5% threshold
+            touches_mask = abs(data['close'] - level.price) < threshold
+            touch_indices = np.where(touches_mask)[0]
+            
+            if len(touch_indices) == 0:
+                return 0.0
+            
+            velocities = []
+            for touch_idx in touch_indices:
+                if touch_idx >= 5:  # Need lookback
+                    # Calculate velocity as price change over 5 bars before touch
+                    price_before = data['close'].iloc[touch_idx - 5]
+                    price_at = data['close'].iloc[touch_idx]
+                    velocity = abs(price_at - price_before) / (5 * atr)
+                    velocities.append(velocity)
+            
+            return float(np.mean(velocities)) if velocities else 0.0
+            
+        except Exception as e:
+            self.logger.debug(f'Approach velocity calculation failed: {e}')
+            return 0.0
+    
+    def _calculate_rejection_velocity(self, level: SRLevel, data: pd.DataFrame, atr: float) -> float:
+        """Calculate average bounce speed from this level.
+        
+        Strong bounces indicate strong level.
+        """
+        try:
+            threshold = level.price * 0.005  # 0.5% threshold
+            touches_mask = abs(data['close'] - level.price) < threshold
+            touch_indices = np.where(touches_mask)[0]
+            
+            if len(touch_indices) == 0:
+                return 0.0
+            
+            rejection_velocities = []
+            for touch_idx in touch_indices:
+                if touch_idx < len(data) - 5:  # Need lookforward
+                    price_at = data['close'].iloc[touch_idx]
+                    price_after = data['close'].iloc[touch_idx + 5]
+                    
+                    if level.type == 'support':
+                        # Bounce up from support
+                        bounce = max(0, price_after - price_at)
+                    else:
+                        # Bounce down from resistance
+                        bounce = max(0, price_at - price_after)
+                    
+                    velocity = bounce / (5 * atr)
+                    rejection_velocities.append(velocity)
+            
+            return float(np.mean(rejection_velocities)) if rejection_velocities else 0.0
+            
+        except Exception as e:
+            self.logger.debug(f'Rejection velocity calculation failed: {e}')
+            return 0.0
+    
+    def _calculate_cluster_density(self, level: SRLevel, all_levels: List[SRLevel], atr: float) -> float:
+        """Count nearby levels within 0.5 ATR (confluence).
+        
+        More nearby levels = stronger zone.
+        """
+        try:
+            nearby_count = 0
+            threshold = 0.5 * atr
+            
+            for other_level in all_levels:
+                if other_level != level:
+                    distance = abs(other_level.price - level.price)
+                    if distance <= threshold:
+                        nearby_count += 1
+            
+            # Normalize: 0-5 nearby levels → 0-1
+            return min(nearby_count / 5.0, 1.0)
+            
+        except Exception as e:
+            self.logger.debug(f'Cluster density calculation failed: {e}')
+            return 0.0
+    
+    def _calculate_recency_weighted_strength(self, level: SRLevel, data: pd.DataFrame) -> float:
+        """Calculate strength with recent touches weighted exponentially higher.
+        
+        Recent touches are more relevant than old touches.
+        """
+        try:
+            if level.touch_count == 0:
+                return 0.0
+            
+            # Get all touches with timestamps
+            threshold = level.price * 0.005
+            touches_mask = abs(data['close'] - level.price) < threshold
+            touch_indices = np.where(touches_mask)[0]
+            
+            if len(touch_indices) == 0:
+                return level.strength  # Fallback to regular strength
+            
+            # Calculate recency-weighted score
+            total_bars = len(data)
+            weighted_touches = 0.0
+            decay_factor = 0.001  # Decay rate per bar
+            
+            for touch_idx in touch_indices:
+                bars_ago = total_bars - touch_idx
+                # Exponential decay: recent touches count more
+                weight = np.exp(-bars_ago * decay_factor)
+                weighted_touches += weight
+            
+            # Normalize by touch count
+            recency_strength = weighted_touches / len(touch_indices)
+            
+            # Combine with original strength (70% recency, 30% original)
+            return 0.7 * recency_strength + 0.3 * level.strength
+            
+        except Exception as e:
+            self.logger.debug(f'Recency-weighted strength calculation failed: {e}')
+            return level.strength  # Fallback
+    
+    def _calculate_dwell_time(self, level: SRLevel, data: pd.DataFrame) -> float:
+        """Calculate average time price spends consolidating near this level.
+        
+        Longer dwell = stronger level (accumulation/distribution zone).
+        """
+        try:
+            threshold = level.price * 0.005  # 0.5% threshold
+            touches_mask = abs(data['close'] - level.price) < threshold
+            touch_indices = np.where(touches_mask)[0]
+            
+            if len(touch_indices) == 0:
+                return 0.0
+            
+            # Find consecutive touch periods
+            dwell_times = []
+            i = 0
+            while i < len(touch_indices):
+                # Count consecutive touches as one dwell period
+                start_idx = touch_indices[i]
+                end_idx = start_idx
+                
+                while i < len(touch_indices) - 1 and touch_indices[i+1] == touch_indices[i] + 1:
+                    end_idx = touch_indices[i+1]
+                    i += 1
+                
+                dwell_duration = end_idx - start_idx + 1
+                dwell_times.append(dwell_duration)
+                i += 1
+            
+            # Return average dwell time (in bars)
+            avg_dwell = float(np.mean(dwell_times)) if dwell_times else 0.0
+            
+            # Normalize: 1-20 bars → 0-1
+            return min(avg_dwell / 20.0, 1.0)
+            
+        except Exception as e:
+            self.logger.debug(f'Dwell time calculation failed: {e}')
+            return 0.0
+    
+    # ===== END OF PHASE 1.3 NEW METHODS =====
+    
+    def _extract_all_ml_features(self, level: SRLevel, data: pd.DataFrame, 
+                                 regime_info: Optional[Dict] = None) -> Dict[str, float]:
+        """Extract ALL features for ML model prediction.
+        
+        PHASE 3: Returns dictionary with all 30+ features needed for ML quality model.
+        Feature names must match exactly what was used in training.
+        """
+        current_price = data['close'].iloc[-1]
+        
+        # Helper to safely get attributes
+        def get_attr(name, default=0.0):
+            return getattr(level, name, default) if hasattr(level, name) else default
+        
+        features = {
+            # Basic SR features
+            'feature_strength': get_attr('strength', 0.5),
+            'feature_prominence': get_attr('prominence_score', 0.5),
+            'feature_width': get_attr('width_score', 1.0),
+            'feature_volume_confirmation': get_attr('volume_confirmation_score', 0.5),
+            'feature_consistency': get_attr('consistency_score', 0.5),
+            'feature_touch_count': float(get_attr('touch_count', 1)),
+            'feature_age_bars': float(get_attr('age_bars', 0)),
+            'feature_failure_count': float(get_attr('failure_count', 0)),
+            'feature_avg_bounce_ratio': get_attr('avg_bounce_ratio', 0),
+            'feature_max_bounce_ratio': get_attr('max_bounce_ratio', 0),
+            
+            # Phase 1 features (dynamics & clustering)
+            'feature_approach_velocity': get_attr('approach_velocity', 0),
+            'feature_rejection_velocity': get_attr('rejection_velocity', 0),
+            'feature_cluster_density': get_attr('cluster_density', 0),
+            'feature_recency_weighted_strength': get_attr('recency_weighted_strength', 0),
+            'feature_dwell_time': get_attr('dwell_time', 0),
+            
+            # Phase 3 features (multi-TF)
+            'feature_multi_tf_score': get_attr('multi_tf_score', 0),
+            'feature_multi_tf_confirmations': float(get_attr('confirmation_count', 0)),
+            
+            # Interaction features
+            'feature_strength_x_volume': get_attr('strength', 0.5) * get_attr('volume_confirmation_score', 0.5),
+            'feature_prominence_x_width': get_attr('prominence_score', 0.5) * (get_attr('width_score', 1.0) / 50.0),
+            'feature_touch_x_consistency': get_attr('touch_count', 1) * get_attr('consistency_score', 0.5) / 10.0,
+            'feature_cluster_x_multi_tf': get_attr('cluster_density', 0) * get_attr('multi_tf_score', 0),
+            
+            # Position features
+            'feature_price_position': (get_attr('price', current_price) - data['close'].min()) / (data['close'].max() - data['close'].min() + 1e-8),
+            'feature_distance_to_current_pct': abs(get_attr('price', current_price) - current_price) / current_price,
+            'feature_is_support': 1.0 if get_attr('type', 'support') == 'support' else 0.0,
+            
+            # Market context features
+            'feature_market_volatility': float(data['close'].pct_change().std()),
+            'feature_market_volume_avg': float(data['volume'].mean() / 1e6),
+            'feature_market_trend': float((data['close'].iloc[-1] - data['close'].iloc[-20]) / data['close'].iloc[-20]) if len(data) >= 20 else 0.0,
+            'feature_market_momentum': float(data['close'].pct_change(5).iloc[-1]) if len(data) >= 5 else 0.0,
+            
+            # Statistical features
+            'feature_price_zscore': (get_attr('price', current_price) - data['close'].mean()) / (data['close'].std() + 1e-8),
+            'feature_price_percentile': float((get_attr('price', current_price) < data['close']).sum() / len(data)),
+            
+            # Time features
+            'feature_hour_of_day': float(data.index[-1].hour) if hasattr(data.index[-1], 'hour') else 0.0,
+            'feature_day_of_week': float(data.index[-1].dayofweek) if hasattr(data.index[-1], 'dayofweek') else 0.0,
+        }
+        
+        # Add regime features if available
+        if regime_info:
+            features['feature_volatility_regime_score'] = regime_info.get('volatility_score', 0.5)
+            features['feature_trend_strength'] = regime_info.get('trend_strength', 0.0)
+            features['feature_trend_direction'] = regime_info.get('trend_direction', 0.0)
+        else:
+            features['feature_volatility_regime_score'] = 0.5
+            features['feature_trend_strength'] = 0.0
+            features['feature_trend_direction'] = 0.0
+        
+        return features
+
     def _enhance_levels_with_ml_features(self, levels: List[SRLevel], data: pd.DataFrame) -> List[SRLevel]:
-        """Enhance levels with ML-optimized features."""
+        """Enhance levels with ML-optimized features.
+        
+        PHASE 1.3 IMPROVEMENT: Added 5 new critical features:
+        1. approach_velocity - How fast price approaches the level
+        2. rejection_velocity - How fast price bounces from the level
+        3. cluster_density - Confluence with nearby levels
+        4. recency_weighted_strength - Recent touches weighted higher
+        5. dwell_time - How long price consolidates at the level
+        """
         try:
             # Pre-calculate ATR once for all levels to avoid repeated computation
             atr = self._calculate_atr(data)
@@ -1137,13 +1428,15 @@ class EnhancedSRDetector:
             # Log progress for long operations
             total_levels = len(levels)
             if total_levels > 50:
-                self.logger.info(f"Enhancing {total_levels} levels with ML features (this may take a while)...")
+                self.logger.info(f"🔧 Enhancing {total_levels} levels with ML features (Phase 1: +5 new features)...")
 
             enhanced_levels = []
             for idx, level in enumerate(levels):
                 # Log progress every 10 levels for long operations
                 if total_levels > 50 and (idx + 1) % 10 == 0:
-                    self.logger.info(f"Enhanced {idx + 1}/{total_levels} levels...")
+                    self.logger.info(f"   Enhanced {idx + 1}/{total_levels} levels...")
+                    
+                # ===== EXISTING FEATURES =====
                 # Calculate ATR-normalized distance
                 distance = abs(level.price - current_price)
                 level.dist_to_level_atr = self._normalize_distance_by_atr(distance, current_atr)
@@ -1160,12 +1453,9 @@ class EnhancedSRDetector:
 
                 # Calculate time since last touch
                 if hasattr(level, 'last_touch_time') and level.last_touch_time:
-                    # Ensure data.index[-1] is a proper timestamp
                     current_time = pd.Timestamp(data.index[-1])
-                    # Ensure last_touch_time is also a timestamp
                     last_touch_time = pd.Timestamp(level.last_touch_time)
                     time_diff = current_time - last_touch_time
-                    # Handle NaN values in time calculation
                     total_seconds = time_diff.total_seconds()
                     if pd.isna(total_seconds):
                         level.time_since_last_touch = 0
@@ -1183,15 +1473,34 @@ class EnhancedSRDetector:
                 # Multi-timeframe support
                 level.multi_tf_support = self._calculate_multi_tf_support(level, data)
 
-                # Volume at level (placeholder - would need volume data)
+                # Volume at level
                 level.volume_at_level = level.volume_confirmation_score
 
                 # Enhanced persistence scoring
                 level.persistence_score = self._calculate_enhanced_persistence_score(level, data, atr)
 
+                # ===== PHASE 1.3: NEW FEATURES =====
+                
+                # 1. Approach Velocity: How fast price moves toward this level
+                level.approach_velocity = self._calculate_approach_velocity(level, data, current_atr)
+                
+                # 2. Rejection Velocity: How fast price bounces from this level
+                level.rejection_velocity = self._calculate_rejection_velocity(level, data, current_atr)
+                
+                # 3. Cluster Density: Confluence with other nearby levels
+                level.cluster_density = self._calculate_cluster_density(level, levels, current_atr)
+                
+                # 4. Recency-Weighted Strength: Recent touches count more
+                level.recency_weighted_strength = self._calculate_recency_weighted_strength(level, data)
+                
+                # 5. Dwell Time: Average consolidation duration at this level
+                level.dwell_time = self._calculate_dwell_time(level, data)
+
                 enhanced_levels.append(level)
 
+            self.logger.info(f"✅ Enhanced {len(enhanced_levels)} levels with {9 + 5} ML features (5 new in Phase 1)")
             return enhanced_levels
+            
         except Exception as e:
             self.logger.warning(f'ML feature enhancement failed: {e}')
             return levels
@@ -4280,12 +4589,30 @@ class EnhancedSRDetector:
             return level.strength
 
     def _apply_unified_strength_prominence_filtering(self, levels: List[SRLevel], data: pd.DataFrame) -> List[SRLevel]:
-        """Apply unified filtering combining strength×prominence with guaranteed minimum 100 levels."""
+        """Apply unified filtering combining strength×prominence with guaranteed minimum 100 levels.
+        
+        PHASE 2 INTEGRATION: Now uses regime-adjusted weights for context-aware evaluation.
+        """
         try:
             if len(levels) < 10:  # Minimum threshold for meaningful filtering
                 return levels
 
             self.logger.info(f'🎯 Applying unified strength×prominence filtering to {len(levels)} levels')
+
+            # PHASE 2: Detect market regimes for context-aware evaluation
+            regime_info = None
+            regime_weights = None
+            if SR_REGIME_AVAILABLE:
+                try:
+                    regime_detector = create_sr_regime_detector(lookback_period=20)
+                    regime_info = regime_detector.detect_regimes(data)
+                    regime_weights = regime_detector.adjust_sr_weights_for_regime(regime_info)
+                    self.logger.info(f'✨ Phase 2: Using regime-adjusted weights')
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Regime detection failed, using default weights: {e}')
+                    regime_weights = None
+            else:
+                self.logger.debug('ℹ️ Regime detection not available, using default weights')
 
             # Calculate prominence scores for all levels first (without ATR dependency)
             # Use price-based prominence instead of ATR-normalized
@@ -4297,14 +4624,150 @@ class EnhancedSRDetector:
                 level.prominence_score = self._calculate_level_prominence_simple(level, data, level.type, price_range, avg_price)
                 level.width_score = self._calculate_level_width(level, data, level.type)
 
-            # Create composite score using multiplication: strength × prominence
+            # PHASE 1.2 & 2 IMPROVEMENT: Multi-dimensional weighted composite score
+            # Phase 1: Added width, volume, consistency, and recency factors
+            # Phase 2: Added regime-adjusted weights for context-aware evaluation
+            
+            # Use regime-adjusted weights if available, otherwise use defaults
+            if regime_weights is not None:
+                weights = regime_weights
+                self.logger.info(f'📊 Using regime-adjusted weights: {weights}')
+            else:
+                weights = {
+                    'strength': 0.30,
+                    'prominence': 0.25,
+                    'width': 0.15,
+                    'volume': 0.15,
+                    'consistency': 0.10,
+                    'recency': 0.05
+                }
+            
             for level in levels:
+                # Normalize components to [0, 1] range
                 strength_component = level.strength if hasattr(level, 'strength') and level.strength > 0 else 0.1
+                
+                # Normalize prominence (already normalized by price_range in calculation)
                 prominence_component = level.prominence_score if hasattr(level, 'prominence_score') and level.prominence_score > 0 else 0.1
-                level.composite_score = strength_component * prominence_component
+                
+                # Normalize width score (typical range: 1-50, normalize to 0-1)
+                width_raw = level.width_score if hasattr(level, 'width_score') else 1.0
+                width_component = min(width_raw / 50.0, 1.0)  # Cap at 1.0
+                
+                # Volume confirmation (already 0-1)
+                volume_component = level.volume_confirmation_score if hasattr(level, 'volume_confirmation_score') else 0.5
+                
+                # Consistency score (already 0-1)
+                consistency_component = level.consistency_score if hasattr(level, 'consistency_score') else 0.5
+                
+                # Recency factor: exponential decay based on time since last touch
+                recency_component = 1.0  # Default if no time info
+                if hasattr(level, 'last_touch_time') and hasattr(level, 'first_touch_time'):
+                    try:
+                        current_time = pd.Timestamp(data.index[-1])
+                        last_touch = pd.Timestamp(level.last_touch_time) if level.last_touch_time else current_time
+                        days_since_touch = (current_time - last_touch).total_seconds() / 86400.0
+                        # Exponential decay: half-life of 30 days
+                        recency_component = np.exp(-days_since_touch / 30.0)
+                    except:
+                        recency_component = 0.7  # Moderate default if calculation fails
+                
+                # Weighted composite score using regime-adjusted or default weights
+                level.composite_score = (
+                    weights['strength'] * strength_component +
+                    weights['prominence'] * prominence_component +
+                    weights['width'] * width_component +
+                    weights['volume'] * volume_component +
+                    weights['consistency'] * consistency_component +
+                    weights['recency'] * recency_component
+                )
+                
+                # Store individual components and regime info for debugging/analysis
+                if not hasattr(level, 'metadata'):
+                    level.metadata = {}
+                level.metadata['score_components'] = {
+                    'strength': strength_component,
+                    'prominence': prominence_component,
+                    'width': width_component,
+                    'volume': volume_component,
+                    'consistency': consistency_component,
+                    'recency': recency_component
+                }
+                level.metadata['weights'] = weights
+                if regime_info:
+                    level.metadata['regime'] = {
+                        'volatility': regime_info['volatility_regime'].value if hasattr(regime_info['volatility_regime'], 'value') else str(regime_info['volatility_regime']),
+                        'trend': regime_info['trend_regime'].value if hasattr(regime_info['trend_regime'], 'value') else str(regime_info['trend_regime']),
+                        'vol_score': regime_info['volatility_score'],
+                        'trend_strength': regime_info['trend_strength']
+                    }
 
-            # Sort levels by composite score (descending)
-            sorted_levels = sorted(levels, key=lambda x: x.composite_score, reverse=True)
+            # PHASE 3: PURE ML SCORING (replaces weighted composite)
+            use_ml_scoring = self.config.get('enable_ml_quality', False) and ML_QUALITY_AVAILABLE
+            
+            if use_ml_scoring:
+                self.logger.info(f"🤖 Applying PURE ML quality scoring (replacing weighted composite)")
+                
+                # Load ML model if not already loaded
+                if not hasattr(self, 'ml_quality_model') or self.ml_quality_model is None:
+                    model_path = self.config.get('ml_quality_model_path', 'models/sr_quality_model.lgb')
+                    try:
+                        self.ml_quality_model = load_sr_quality_model(model_path)
+                        self.logger.info(f"   ✅ Loaded ML model from {model_path}")
+                    except Exception as e:
+                        self.logger.error(f"   ❌ Failed to load ML model: {e}")
+                        self.logger.warning(f"   ⚠️ Falling back to weighted composite scoring")
+                        use_ml_scoring = False
+                        self.ml_quality_model = None
+                
+                # Apply ML scoring if model is loaded
+                if use_ml_scoring and self.ml_quality_model is not None:
+                    ml_scores = []
+                    
+                    for level in levels:
+                        try:
+                            # Extract all features for this level
+                            features = self._extract_all_ml_features(level, data, regime_info)
+                            
+                            # Predict quality using ML
+                            level.ml_quality_score = self.ml_quality_model.predict_single(features)
+                            
+                            # Use ML score as the FINAL score (pure ML, no hybrid)
+                            level.final_score = level.ml_quality_score
+                            
+                            ml_scores.append(level.ml_quality_score)
+                            
+                        except Exception as e:
+                            self.logger.warning(f"ML prediction failed for level: {e}")
+                            # Fallback to composite score for this level
+                            level.final_score = level.composite_score
+                            level.ml_quality_score = level.composite_score
+                    
+                    if ml_scores:
+                        self.logger.info(f"   📊 ML quality scores: mean={np.mean(ml_scores):.3f}, "
+                                       f"range=[{min(ml_scores):.3f}, {max(ml_scores):.3f}]")
+                    
+                    # Sort by ML quality score
+                    sorted_levels = sorted(levels, key=lambda x: x.final_score, reverse=True)
+                    self.logger.info(f"   ✅ Using PURE ML scoring ({len(ml_scores)} predictions)")
+                else:
+                    # ML failed, use weighted composite
+                    for level in levels:
+                        level.final_score = level.composite_score
+                    sorted_levels = sorted(levels, key=lambda x: x.final_score, reverse=True)
+                    self.logger.info(f"   ⚠️ Using weighted composite scoring (ML not available)")
+            else:
+                # ML not enabled, use weighted composite
+                for level in levels:
+                    level.final_score = level.composite_score
+                sorted_levels = sorted(levels, key=lambda x: x.final_score, reverse=True)
+                self.logger.info(f"   📊 Using weighted composite scoring (ML disabled)")
+            
+            # Log scoring method used
+            scoring_method = "ML" if use_ml_scoring and hasattr(levels[0] if levels else None, 'ml_quality_score') else "Weighted"
+            if levels:
+                self.logger.info(f"   🎯 Scoring method: {scoring_method}")
+                self.logger.info(f"   🎯 Top 5 scores: {[round(l.final_score, 3) for l in sorted_levels[:5]]}")
+                self.logger.info(f"   🎯 Bottom 5 scores: {[round(l.final_score, 3) for l in sorted_levels[-5:]]}")
 
             # Apply progressive filtering: keep more levels for better coverage
             if len(sorted_levels) <= 150:

@@ -31,7 +31,7 @@ except ImportError:
     LIGHTGBM_AVAILABLE = False
 
 # Import project utilities
-from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
+from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug, tprint_info
 from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, HardwareConfig
 
@@ -145,20 +145,16 @@ class BaseAdvancedSelector(ABC):
         start_time = time.time()
 
         try:
-            # Store feature names
+            # Store feature names and training data for permutation importance
             self.feature_names_ = feature_names or [f"feature_{i}" for i in range(X.shape[1])]
+            self.X_train_ = X  # Store for permutation importance calculation
+            self.y_train_ = y  # Store for permutation importance calculation
 
             # Fit model
             self.model_ = self._fit_model(X, y)
 
-            # Get feature importance
+            # Get feature importance (will use permutation if enabled)
             self.feature_importance_ = self._get_feature_importance()
-
-            # Calculate permutation importance if enabled
-            if self.config.enable_permutation_importance:
-                perm_importance = self._calculate_permutation_importance(X, y)
-                # Combine with regular importance
-                self.feature_importance_ = 0.7 * self.feature_importance_ + 0.3 * perm_importance
 
             self.fitted = True
 
@@ -296,8 +292,23 @@ class RandomForestFeatureSelector(BaseAdvancedSelector):
         return model
 
     def _get_feature_importance(self) -> np.ndarray:
-        """Get RandomForest feature importance."""
-        return self.model_.feature_importances_
+        """Get RandomForest feature importance using permutation or Gini."""
+        if self.config.enable_permutation_importance:
+            from sklearn.inspection import permutation_importance
+            # Use permutation importance to capture feature interactions
+            perm_importance = permutation_importance(
+                self.model_, 
+                self.X_train_, 
+                self.y_train_,
+                n_repeats=self.config.permutation_n_repeats,
+                random_state=self.config.random_state,
+                n_jobs=self.config.n_jobs
+            )
+            self.logger.info("✅ Using permutation importance (captures feature interactions)")
+            return perm_importance.importances_mean
+        else:
+            self.logger.info("⚠️ Using standard Gini importance")
+            return self.model_.feature_importances_
 
 class LightGBMFeatureSelector(BaseAdvancedSelector):
     """LightGBM-based feature selection."""
@@ -344,8 +355,23 @@ class LightGBMFeatureSelector(BaseAdvancedSelector):
         return model
 
     def _get_feature_importance(self) -> np.ndarray:
-        """Get LightGBM feature importance."""
-        return self.model_.feature_importances_
+        """Get LightGBM feature importance using permutation or Gini."""
+        if self.config.enable_permutation_importance:
+            from sklearn.inspection import permutation_importance
+            # Use permutation importance to capture feature interactions
+            perm_importance = permutation_importance(
+                self.model_, 
+                self.X_train_, 
+                self.y_train_,
+                n_repeats=self.config.permutation_n_repeats,
+                random_state=self.config.random_state,
+                n_jobs=self.config.n_jobs
+            )
+            self.logger.info("✅ Using permutation importance (captures feature interactions)")
+            return perm_importance.importances_mean
+        else:
+            self.logger.info("⚠️ Using standard Gini importance")
+            return self.model_.feature_importances_
 
 class EnsembleAdvancedSelector:
     """Ensemble selector combining multiple advanced methods."""

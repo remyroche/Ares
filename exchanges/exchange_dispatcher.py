@@ -15,7 +15,7 @@ from src.utils.logger import system_logger
 from src.interfaces.base_interfaces import MarketData
 
 from .base_exchange import BaseExchange
-from .exchange_types import ExchangeType
+from .exchange_types import ExchangeType  # Use the shared ExchangeType enum
 # from .okx import create_okx_exchange, OkxExchange  # Commented out to avoid circular import
 from .shared.auth import AuthenticationManager
 from .shared.market import MarketMetadataManager
@@ -24,16 +24,7 @@ from .shared.orders import OrderManager
 from .shared.risk import RiskCalculator
 from .shared.wallet import BalanceManager
 from .shared.reliability import RateLimitManager
-
-
-class ExchangeType(Enum):
-    """Supported exchange types."""
-    OKX = "okx"
-    BINANCE = "binance"
-    BINGX = "bingx"
-    GATEIO = "gateio"
-    MEXC = "mexc"
-    PHEMEX = "phemex"
+from .shared.UnifiedTradingStandardizer import UnifiedTradingStandardizer
 
 
 class TradingMode(Enum):

@@ -16,6 +16,7 @@ import logging
 from live_trading.trading_engine import TradingEngine
 from live_trading.config import TradingConfig
 from src.trading.sizing.position_sizer import PositionSizer
+from src.trading.sizing.dampened_kelly_engine import DampenedKellyEngine, KellyConfigVersion
 from src.utils.logger import system_logger
 
 logger = system_logger.getChild("TradingLauncher")
@@ -40,6 +41,7 @@ class TradingParameterManager:
         """
         self.trading_engine: Optional[TradingEngine] = trading_engine
         self.position_sizer: Optional[PositionSizer] = None
+        self.dampened_kelly_engine: Optional[DampenedKellyEngine] = None
         self._lock = threading.RLock()  # Reentrant lock for thread safety
         
         # Track daily loss disable state
@@ -50,6 +52,16 @@ class TradingParameterManager:
         self._current_kelly_fraction: Optional[float] = None
         self._current_max_daily_loss: Optional[float] = None
         self._current_stop_loss_pct: Optional[float] = None
+        
+        # Kelly sizing parameters (hot-swappable)
+        self._current_max_leverage: Optional[float] = None
+        self._current_max_per_trade_pct: Optional[float] = None
+        self._current_max_exposure_per_asset: Optional[float] = None
+        self._current_max_kelly_fraction: Optional[float] = None
+        self._current_max_acceptable_drawdown: Optional[float] = None
+        
+        # Config version tracking for Kelly engine
+        self._kelly_config_version_history: list = []
         
         # Monitoring task
         self._monitoring_task: Optional[asyncio.Task] = None
@@ -71,6 +83,12 @@ class TradingParameterManager:
         with self._lock:
             self.position_sizer = position_sizer
             logger.info("Position sizer set for parameter manager")
+    
+    def set_dampened_kelly_engine(self, kelly_engine: DampenedKellyEngine) -> None:
+        """Set the dampened Kelly engine to manage."""
+        with self._lock:
+            self.dampened_kelly_engine = kelly_engine
+            logger.info("Dampened Kelly engine set for parameter manager")
     
     def hot_swap_kelly_fraction(self, kelly_fraction: float) -> Dict[str, Any]:
         """
@@ -417,6 +435,280 @@ class TradingParameterManager:
         if self._monitoring_task:
             self._monitoring_task.cancel()
         logger.info("Stopped daily loss monitoring")
+    
+    # ========================================
+    # Kelly Sizing Hot-Swap Methods
+    # ========================================
+    
+    def _update_kelly_engine_config(self, param_name: str, param_value: Any) -> int:
+        """
+        Update a single parameter in the Kelly engine config.
+        
+        Args:
+            param_name: Name of the parameter to update
+            param_value: New value for the parameter
+            
+        Returns:
+            New config version number
+        """
+        if not self.dampened_kelly_engine:
+            raise RuntimeError("Dampened Kelly engine not set")
+        
+        # Get current config
+        current_config = self.dampened_kelly_engine.config.copy()
+        
+        # Update safety limits
+        if 'safety_limits' not in current_config:
+            current_config['safety_limits'] = {}
+        
+        current_config['safety_limits'][param_name] = param_value
+        
+        # Update engine with new config
+        new_version = self.dampened_kelly_engine.update_config(current_config)
+        
+        # Track in history
+        self._kelly_config_version_history.append({
+            'version': new_version,
+            'timestamp': datetime.now().isoformat(),
+            'parameter': param_name,
+            'value': param_value
+        })
+        
+        return new_version
+    
+    def hot_swap_max_leverage(self, leverage: float) -> Dict[str, Any]:
+        """
+        Hot swap maximum leverage limit.
+        
+        Args:
+            leverage: New maximum leverage (e.g., 3.0 for 3x)
+            
+        Returns:
+            Dict with status information
+        """
+        with self._lock:
+            try:
+                # Validate input
+                if leverage <= 0:
+                    raise ValueError(f"Leverage must be positive, got {leverage}")
+                if leverage > 100:
+                    raise ValueError(f"Leverage must be <= 100x, got {leverage}")
+                
+                old_value = self._current_max_leverage
+                
+                # Update Kelly engine if available
+                if self.dampened_kelly_engine:
+                    new_version = self._update_kelly_engine_config('max_leverage', leverage)
+                    self._current_max_leverage = leverage
+                    
+                    logger.info(f"✅ Hot swapped max leverage: {old_value} -> {leverage}x (version {new_version})")
+                    
+                    return {
+                        "success": True,
+                        "parameter": "max_leverage",
+                        "old_value": old_value,
+                        "new_value": leverage,
+                        "config_version": new_version,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                else:
+                    self._current_max_leverage = leverage
+                    logger.warning(f"⚠️ Kelly engine not available, stored max leverage for later: {leverage}x")
+                    
+                    return {
+                        "success": True,
+                        "parameter": "max_leverage",
+                        "old_value": old_value,
+                        "new_value": leverage,
+                        "pending": True,
+                        "message": "Kelly engine not available, will apply when initialized",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+            except Exception as e:
+                logger.error(f"❌ Failed to hot swap max leverage: {e}")
+                return {
+                    "success": False,
+                    "parameter": "max_leverage",
+                    "error": str(e),
+                    "timestamp": datetime.now().isoformat()
+                }
+    
+    def hot_swap_max_per_trade_pct(self, pct: float) -> Dict[str, Any]:
+        """
+        Hot swap maximum position size per trade.
+        
+        Args:
+            pct: New maximum percentage (e.g., 0.15 for 15%)
+            
+        Returns:
+            Dict with status information
+        """
+        with self._lock:
+            try:
+                # Validate input
+                if not 0.0 < pct <= 1.0:
+                    raise ValueError(f"Percentage must be between 0 and 1, got {pct}")
+                
+                old_value = self._current_max_per_trade_pct
+                
+                if self.dampened_kelly_engine:
+                    new_version = self._update_kelly_engine_config('max_per_trade_pct', pct)
+                    self._current_max_per_trade_pct = pct
+                    
+                    logger.info(f"✅ Hot swapped max per trade: {old_value} -> {pct*100:.1f}% (version {new_version})")
+                    
+                    return {
+                        "success": True,
+                        "parameter": "max_per_trade_pct",
+                        "old_value": old_value,
+                        "new_value": pct,
+                        "config_version": new_version,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                else:
+                    self._current_max_per_trade_pct = pct
+                    logger.warning(f"⚠️ Kelly engine not available, stored max per trade for later: {pct*100:.1f}%")
+                    
+                    return {
+                        "success": True,
+                        "parameter": "max_per_trade_pct",
+                        "old_value": old_value,
+                        "new_value": pct,
+                        "pending": True,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+            except Exception as e:
+                logger.error(f"❌ Failed to hot swap max per trade: {e}")
+                return {"success": False, "parameter": "max_per_trade_pct", "error": str(e), "timestamp": datetime.now().isoformat()}
+    
+    def hot_swap_max_exposure_per_asset(self, pct: float) -> Dict[str, Any]:
+        """
+        Hot swap maximum exposure per asset.
+        
+        Args:
+            pct: New maximum exposure (e.g., 0.30 for 30%)
+            
+        Returns:
+            Dict with status information
+        """
+        with self._lock:
+            try:
+                if not 0.0 < pct <= 1.0:
+                    raise ValueError(f"Percentage must be between 0 and 1, got {pct}")
+                
+                old_value = self._current_max_exposure_per_asset
+                
+                if self.dampened_kelly_engine:
+                    new_version = self._update_kelly_engine_config('max_exposure_per_asset', pct)
+                    self._current_max_exposure_per_asset = pct
+                    
+                    logger.info(f"✅ Hot swapped max exposure per asset: {old_value} -> {pct*100:.1f}% (version {new_version})")
+                    
+                    return {
+                        "success": True,
+                        "parameter": "max_exposure_per_asset",
+                        "old_value": old_value,
+                        "new_value": pct,
+                        "config_version": new_version,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                else:
+                    self._current_max_exposure_per_asset = pct
+                    return {"success": True, "parameter": "max_exposure_per_asset", "old_value": old_value, "new_value": pct, "pending": True, "timestamp": datetime.now().isoformat()}
+                    
+            except Exception as e:
+                logger.error(f"❌ Failed to hot swap max exposure per asset: {e}")
+                return {"success": False, "parameter": "max_exposure_per_asset", "error": str(e), "timestamp": datetime.now().isoformat()}
+    
+    def hot_swap_max_kelly_fraction(self, fraction: float) -> Dict[str, Any]:
+        """
+        Hot swap maximum Kelly fraction (never exceed this fraction of theoretical Kelly).
+        
+        Args:
+            fraction: New maximum Kelly fraction (e.g., 0.5 for half Kelly)
+            
+        Returns:
+            Dict with status information
+        """
+        with self._lock:
+            try:
+                if not 0.0 < fraction <= 1.0:
+                    raise ValueError(f"Fraction must be between 0 and 1, got {fraction}")
+                
+                old_value = self._current_max_kelly_fraction
+                
+                if self.dampened_kelly_engine:
+                    new_version = self._update_kelly_engine_config('max_kelly_fraction', fraction)
+                    self._current_max_kelly_fraction = fraction
+                    
+                    logger.info(f"✅ Hot swapped max Kelly fraction: {old_value} -> {fraction} (version {new_version})")
+                    
+                    return {
+                        "success": True,
+                        "parameter": "max_kelly_fraction",
+                        "old_value": old_value,
+                        "new_value": fraction,
+                        "config_version": new_version,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                else:
+                    self._current_max_kelly_fraction = fraction
+                    return {"success": True, "parameter": "max_kelly_fraction", "old_value": old_value, "new_value": fraction, "pending": True, "timestamp": datetime.now().isoformat()}
+                    
+            except Exception as e:
+                logger.error(f"❌ Failed to hot swap max Kelly fraction: {e}")
+                return {"success": False, "parameter": "max_kelly_fraction", "error": str(e), "timestamp": datetime.now().isoformat()}
+    
+    def hot_swap_max_acceptable_drawdown(self, dd: float) -> Dict[str, Any]:
+        """
+        Hot swap maximum acceptable drawdown threshold.
+        
+        Args:
+            dd: New maximum acceptable drawdown (e.g., 0.15 for 15%)
+            
+        Returns:
+            Dict with status information
+        """
+        with self._lock:
+            try:
+                if not 0.0 < dd <= 1.0:
+                    raise ValueError(f"Drawdown must be between 0 and 1, got {dd}")
+                
+                old_value = self._current_max_acceptable_drawdown
+                
+                if self.dampened_kelly_engine:
+                    new_version = self._update_kelly_engine_config('max_acceptable_drawdown', dd)
+                    self._current_max_acceptable_drawdown = dd
+                    
+                    logger.info(f"✅ Hot swapped max acceptable drawdown: {old_value} -> {dd*100:.1f}% (version {new_version})")
+                    
+                    return {
+                        "success": True,
+                        "parameter": "max_acceptable_drawdown",
+                        "old_value": old_value,
+                        "new_value": dd,
+                        "config_version": new_version,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                else:
+                    self._current_max_acceptable_drawdown = dd
+                    return {"success": True, "parameter": "max_acceptable_drawdown", "old_value": old_value, "new_value": dd, "pending": True, "timestamp": datetime.now().isoformat()}
+                    
+            except Exception as e:
+                logger.error(f"❌ Failed to hot swap max acceptable drawdown: {e}")
+                return {"success": False, "parameter": "max_acceptable_drawdown", "error": str(e), "timestamp": datetime.now().isoformat()}
+    
+    def get_kelly_config_version_history(self) -> List[Dict[str, Any]]:
+        """
+        Get history of Kelly config version updates.
+        
+        Returns:
+            List of config version history entries
+        """
+        with self._lock:
+            return self._kelly_config_version_history.copy()
 
 
 # Global instance for easy access

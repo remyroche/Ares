@@ -70,6 +70,7 @@ from src.utils.common_utilities import ensure_list, ensure_array, flatten_dict
 
 # Output utilities
 from src.utils.tprint import tprint
+from collections import OrderedDict
 
 # Hardware optimization
 try:
@@ -147,6 +148,86 @@ class EvaluationMetrics:
             score = max(0, score - stability_penalty)
 
         return validate_range(score, 0, 1, default=0)
+
+class LRUCache:
+    """
+    Least Recently Used (LRU) cache with size limit to prevent memory bloat.
+    
+    This cache is used to store evaluation results during optimization to avoid
+    redundant parameter evaluations while maintaining bounded memory usage.
+    """
+    
+    def __init__(self, max_size: int = 1000):
+        """
+        Initialize LRU cache.
+        
+        Args:
+            max_size: Maximum number of entries to cache
+        """
+        self.cache = OrderedDict()
+        self.max_size = max_size
+        self.hits = 0
+        self.misses = 0
+    
+    def get(self, key: str) -> Optional[float]:
+        """
+        Get value from cache.
+        
+        Args:
+            key: Cache key
+            
+        Returns:
+            Cached value or None if not found
+        """
+        if key in self.cache:
+            # Move to end to mark as recently used
+            self.cache.move_to_end(key)
+            self.hits += 1
+            return self.cache[key]
+        self.misses += 1
+        return None
+    
+    def set(self, key: str, value: float):
+        """
+        Set value in cache.
+        
+        Args:
+            key: Cache key
+            value: Value to cache
+        """
+        if key in self.cache:
+            # Update existing entry and mark as recently used
+            self.cache.move_to_end(key)
+        self.cache[key] = value
+        
+        # Remove oldest entry if cache is full
+        if len(self.cache) > self.max_size:
+            self.cache.popitem(last=False)
+    
+    def clear(self):
+        """Clear all cache entries."""
+        self.cache.clear()
+        self.hits = 0
+        self.misses = 0
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        Get cache statistics.
+        
+        Returns:
+            Dictionary with cache stats
+        """
+        total_requests = self.hits + self.misses
+        hit_rate = self.hits / total_requests if total_requests > 0 else 0.0
+        
+        return {
+            'size': len(self.cache),
+            'max_size': self.max_size,
+            'hits': self.hits,
+            'misses': self.misses,
+            'hit_rate': hit_rate,
+            'total_requests': total_requests
+        }
 
 class FinalParametersOptimizer(BaseStep):
     """
@@ -258,10 +339,10 @@ class FinalParametersOptimizer(BaseStep):
             self.optimization_manager = None
             tprint("ℹ️  VectorBT optimization disabled", "info")
 
-        # Parameter evaluation cache
-        self.evaluation_cache = {}
-        self.cache_hits = 0
-        self.cache_misses = 0
+        # Parameter evaluation cache with LRU eviction to prevent memory bloat
+        cache_size = config.get('cache_size', 1000)
+        self.evaluation_cache = LRUCache(max_size=cache_size)
+        tprint(f"💾 Evaluation cache initialized: max_size={cache_size}", "info")
 
         # Load per-regime performance statistics for objective adjustments
         self.regime_performance_path: Optional[str] = None
@@ -536,7 +617,11 @@ class FinalParametersOptimizer(BaseStep):
                         returns: np.ndarray,
                         confidences: Optional[np.ndarray] = None) -> EvaluationMetrics:
         """
-        Simulate trading with given parameters using VectorBT-optimized metrics calculation
+        Simulate trading with given parameters using hardware-accelerated metrics calculation.
+        
+        This method uses VectorBT optimization and M1 GPU/MPS acceleration when available
+        for confidence filtering and metrics calculation, providing significant speedups
+        on compatible hardware.
 
         Args:
             params: Trading parameters
@@ -561,7 +646,19 @@ class FinalParametersOptimizer(BaseStep):
             if confidences is not None:
                 confidences = ensure_array(confidences)
                 valid_conf = validate_probability(confidences)
-                mask = valid_conf >= confidence_threshold
+                
+                # Use hardware-accelerated masking if available
+                if self.hardware_enabled and self.matrix_processor and len(valid_conf) > 1000:
+                    try:
+                        mask = self.matrix_processor.compare_threshold(
+                            valid_conf, confidence_threshold, operation='greater_equal'
+                        )
+                    except Exception as e:
+                        self.logger.debug(f"Hardware acceleration fallback for masking: {e}")
+                        mask = valid_conf >= confidence_threshold
+                else:
+                    mask = valid_conf >= confidence_threshold
+                
                 signals = signals[mask]
                 returns = returns[mask]
                 confidences = confidences[mask]
@@ -747,7 +844,11 @@ class FinalParametersOptimizer(BaseStep):
     def evaluate_with_cv(self, params: Dict[str, Any], data: Dict[str, Any],
                          evaluation_func: callable, category: str) -> Tuple[float, Dict[str, Any]]:
         """
-        Evaluate parameters using cross-validation
+        Evaluate parameters using cross-validation with directional stratification.
+        
+        This method now includes directional signal stratification to ensure balanced
+        representation of long/short signals across CV folds, preventing bias in
+        parameter optimization.
 
         Args:
             params: Parameters to evaluate
@@ -782,13 +883,49 @@ class FinalParametersOptimizer(BaseStep):
                 tprint(f"ℹ️  Insufficient data for CV in {category}, using single evaluation", "info")
                 return evaluation_func(params, data), {}
 
+            # Check for directional signals to enable stratification
+            use_stratification = False
+            stratify_labels = None
+            
+            if 'signals' in data or 'directions' in data or 'long' in data or 'short' in data:
+                # Attempt to extract directional information
+                if 'signals' in data:
+                    signals = ensure_array(data['signals'])
+                    if len(signals) == len(X):
+                        # Convert signals to long/short labels (1=long, -1=short, 0=neutral)
+                        stratify_labels = np.sign(signals)
+                        use_stratification = True
+                elif 'long' in data and 'short' in data:
+                    long_signals = ensure_array(data['long'])
+                    short_signals = ensure_array(data['short'])
+                    if len(long_signals) == len(X) and len(short_signals) == len(X):
+                        # Create stratification labels: 1=long, -1=short, 0=neutral
+                        stratify_labels = np.where(long_signals, 1, np.where(short_signals, -1, 0))
+                        use_stratification = True
+                
+                if use_stratification:
+                    # Check if we have enough samples of each class for stratification
+                    unique, counts = np.unique(stratify_labels, return_counts=True)
+                    min_class_samples = counts.min()
+                    if min_class_samples < self.cv_folds:
+                        tprint(f"⚠️  Insufficient samples for stratification in {category} (min class: {min_class_samples}), using time-series split", "warning")
+                        use_stratification = False
+                    else:
+                        tprint(f"✅ Using directional stratification for {category} CV (classes: {len(unique)}, min samples: {min_class_samples})", "info")
+
             cv_scores = []
             cv_metrics = []
             fold_results = []
 
-            for fold_idx, (train_idx, val_idx) in enumerate(
-                self.cv_validator.split(X, y), 1
-            ):
+            # Choose appropriate CV splitter
+            if use_stratification:
+                from sklearn.model_selection import StratifiedKFold
+                cv_splitter = StratifiedKFold(n_splits=self.cv_folds, shuffle=True, random_state=42)
+                splits = cv_splitter.split(X, stratify_labels)
+            else:
+                splits = self.cv_validator.split(X, y)
+
+            for fold_idx, (train_idx, val_idx) in enumerate(splits, 1):
                 try:
                     # Create fold data
                     fold_data = {
@@ -1784,8 +1921,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
 
                 # Log cache statistics
                 if self.evaluation_cache:
-                    cache_rate = self.cache_hits / (self.cache_hits + self.cache_misses) if (self.cache_hits + self.cache_misses) > 0 else 0
-                    tprint(f"   Cache hit rate: {cache_rate:.1%} ({self.cache_hits}/{self.cache_hits + self.cache_misses})", "info")
+                    cache_stats = self.evaluation_cache.get_stats()
+                    tprint(f"   Cache hit rate: {cache_stats['hit_rate']:.1%} ({cache_stats['hits']}/{cache_stats['total_requests']})", "info")
+                    tprint(f"   Cache size: {cache_stats['size']}/{cache_stats['max_size']}", "info")
 
             return result
 
@@ -1840,17 +1978,15 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 """Objective function for optimization"""
                 # Check cache first
                 cache_key = f"{category}_{str(sorted(params.items()))}"
-                if cache_key in self.evaluation_cache:
-                    self.cache_hits += 1
-                    return self.evaluation_cache[cache_key]
-
-                self.cache_misses += 1
+                cached_score = self.evaluation_cache.get(cache_key)
+                if cached_score is not None:
+                    return cached_score
 
                 # Evaluate configuration
                 score = self._evaluate_configuration(category, params, calibration_results)
 
                 # Cache result
-                self.evaluation_cache[cache_key] = score
+                self.evaluation_cache.set(cache_key, score)
 
                 return score
 
@@ -1937,6 +2073,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
 
         Returns:
             Optimization score (higher is better)
+            
+        Raises:
+            optuna.TrialPruned: If trial should be pruned due to evaluation failure
         """
         try:
             params = {}
@@ -1979,6 +2118,16 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
 
             # Evaluate configuration
             score = self._evaluate_configuration(category, params, calibration_results)
+            
+            # Validate score
+            if check_for_nans(score) or check_for_infs(score):
+                self.logger.warning(f"Invalid score (NaN/Inf) for {category}, pruning trial")
+                raise optuna.TrialPruned()
+            
+            # Check if score is suspiciously low (likely an error)
+            if score < -100:
+                self.logger.warning(f"Suspiciously low score ({score:.2f}) for {category}, pruning trial")
+                raise optuna.TrialPruned()
 
             # Apply non-linear scoring enhancements
             if self.use_nonlinear_optimization:
@@ -1987,9 +2136,21 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
 
             return score
 
+        except optuna.TrialPruned:
+            # Re-raise pruned trials
+            raise
+        except ValueError as e:
+            # Invalid parameter combination - prune this trial
+            self.logger.warning(f"Invalid parameters for {category}: {e}")
+            raise optuna.TrialPruned()
+        except KeyError as e:
+            # Missing required data - prune this trial
+            self.logger.warning(f"Missing required data for {category}: {e}")
+            raise optuna.TrialPruned()
         except Exception as e:
-            self.logger.error(f"Error in objective function for {category}: {e}")
-            return -999.0
+            # Unexpected error - log and prune
+            self.logger.error(f"Unexpected error in objective function for {category}: {e}", exc_info=True)
+            raise optuna.TrialPruned()
 
     def _evaluate_configuration(self, category: str, params: Dict[str, Any],
                               calibration_results: Dict[str, Any]) -> float:
@@ -2095,7 +2256,10 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                                             tactician_conf: np.ndarray,
                                             returns: np.ndarray) -> float:
         """
-        Evaluate confidence parameters using actual trading simulation
+        Evaluate confidence parameters using actual trading simulation with hardware acceleration.
+        
+        This method now uses GPU/MPS acceleration when available for confidence threshold
+        calculations and signal generation, significantly improving performance on M1 hardware.
 
         Args:
             params: Confidence parameters
@@ -2117,7 +2281,19 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
 
             # Generate signals based on Tactician confidence threshold
             threshold = validate_probability(params.get('tactician_confidence_threshold', 0.7))
-            signals = np.where(tactician_conf >= threshold, 1, 0)
+            
+            # Use hardware-accelerated comparison if available
+            if self.hardware_enabled and self.matrix_processor:
+                try:
+                    # Convert to hardware-optimized format and perform threshold comparison
+                    signals = self.matrix_processor.compare_threshold(
+                        tactician_conf, threshold, operation='greater_equal'
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Hardware acceleration failed, falling back to numpy: {e}")
+                    signals = np.where(tactician_conf >= threshold, 1, 0)
+            else:
+                signals = np.where(tactician_conf >= threshold, 1, 0)
 
             # Simulate trading with CV if enabled and sufficient data
             if self.use_cv and len(signals) >= self.cv_folds * 100:
@@ -3906,36 +4082,57 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         return {}
 
     def _calculate_regime_performance_modifier(self) -> float:
-        """Compute an aggregate modifier from per-regime performance stats."""
+        """
+        Compute an aggregate modifier from per-regime performance stats with detailed logging.
+        
+        This modifier adjusts optimization scores based on historical regime performance,
+        helping to weight parameter choices toward strategies that work well across
+        different market conditions.
+        
+        Returns:
+            Float modifier in range [-0.25, 0.25]
+        """
         stats = getattr(self, 'regime_performance_stats', {})
         if not stats:
+            tprint("ℹ️  No regime performance stats available, modifier=0.0", "info")
             return 0.0
 
         win_rates: List[float] = []
         profit_factors: List[float] = []
         rr_values: List[float] = []
 
-        for metrics in stats.values():
+        for regime_id, metrics in stats.items():
             if not isinstance(metrics, dict):
                 continue
-            win_rates.append(float(metrics.get('win_rate', 0.0)))
-            profit_factors.append(float(metrics.get('profit_factor', 0.0)))
-            rr_values.append(float(metrics.get('average_rr', metrics.get('risk_reward_ratio', 0.0))))
+            wr = float(metrics.get('win_rate', 0.0))
+            pf = float(metrics.get('profit_factor', 0.0))
+            rr = float(metrics.get('average_rr', metrics.get('risk_reward_ratio', 0.0)))
+            
+            win_rates.append(wr)
+            profit_factors.append(pf)
+            rr_values.append(rr)
+            
+            # Log individual regime metrics for transparency
+            self.logger.debug(f"Regime {regime_id}: WR={wr:.2%}, PF={pf:.2f}, RR={rr:.2f}")
 
         if not win_rates:
+            tprint("⚠️  No valid regime metrics extracted, modifier=0.0", "warning")
             return 0.0
 
+        # Calculate aggregate statistics
         avg_win = float(np.mean(win_rates))
         min_win = float(np.min(win_rates))
         avg_profit_factor = float(np.mean(profit_factors)) if profit_factors else 0.0
         avg_rr = float(np.mean(rr_values)) if rr_values else 0.0
         stability_penalty = float(np.std(win_rates)) if len(win_rates) > 1 else 0.0
 
+        # Normalize components
         normalized_win = avg_win - 0.5
         normalized_min_win = min_win - 0.5
         normalized_profit_factor = float(np.tanh(avg_profit_factor - 1.0))
         normalized_rr = float(np.tanh(avg_rr - 1.0))
 
+        # Calculate weighted modifier
         raw_modifier = (
             (normalized_win * 0.5)
             + (normalized_profit_factor * 0.2)
@@ -3943,25 +4140,78 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             + (normalized_min_win * 0.1)
             - (stability_penalty * 0.1)
         )
+        
+        modifier = float(np.clip(raw_modifier, -0.25, 0.25))
+        
+        # Log detailed breakdown for transparency
+        tprint("📊 Regime Performance Modifier Breakdown:", "info")
+        tprint(f"   • Average Win Rate: {avg_win:.2%} (norm: {normalized_win:+.3f}, weight: 0.5)", "info")
+        tprint(f"   • Min Win Rate: {min_win:.2%} (norm: {normalized_min_win:+.3f}, weight: 0.1)", "info")
+        tprint(f"   • Average Profit Factor: {avg_profit_factor:.2f} (norm: {normalized_profit_factor:+.3f}, weight: 0.2)", "info")
+        tprint(f"   • Average Risk/Reward: {avg_rr:.2f} (norm: {normalized_rr:+.3f}, weight: 0.2)", "info")
+        tprint(f"   • Win Rate Stability Penalty: {stability_penalty:.3f} (weight: -0.1)", "info")
+        tprint(f"   • Raw Modifier: {raw_modifier:+.4f}", "info")
+        tprint(f"   • Final Modifier (clipped): {modifier:+.4f}", "success")
 
-        return float(np.clip(raw_modifier, -0.25, 0.25))
+        return modifier
 
     def _apply_regime_performance_adjustment(self, category: str, score: float) -> float:
-        """Adjust objective score using per-regime performance insights."""
+        """
+        Adjust objective score using per-regime performance insights with transparent logging.
+        
+        Different parameter categories receive different weights based on their impact
+        on regime-specific performance:
+        - High weight (1.2): tpsl, exit_strategy, regime_transitions
+        - Medium weight (1.1): confidence, position_sizing  
+        - Lower weight (0.9): ensemble, model_specific_parameters
+        
+        Args:
+            category: Parameter category being optimized
+            score: Base optimization score
+            
+        Returns:
+            Adjusted score with regime performance modifier applied
+        """
         modifier = getattr(self, 'regime_performance_modifier', 0.0)
         if modifier == 0.0:
             return score
 
+        # Determine category-specific weight
         weight = 1.0
+        weight_description = "standard"
+        
         if category in {'tpsl', 'exit_strategy', 'regime_transitions'}:
             weight = 1.2
+            weight_description = "high (regime-critical)"
         elif category in {'confidence', 'position_sizing'}:
             weight = 1.1
+            weight_description = "medium-high (regime-aware)"
         elif category in {'ensemble', 'model_specific_parameters'}:
             weight = 0.9
+            weight_description = "medium-low (model-specific)"
 
-        adjustment = float(np.clip(modifier * weight, -0.2, 0.2))
-        return score + adjustment
+        # Calculate and clip adjustment
+        raw_adjustment = modifier * weight
+        adjustment = float(np.clip(raw_adjustment, -0.2, 0.2))
+        adjusted_score = score + adjustment
+        
+        # Log adjustment details for transparency
+        self.logger.debug(
+            f"Regime adjustment for {category}: "
+            f"base_score={score:.4f}, modifier={modifier:+.4f}, "
+            f"weight={weight:.1f} ({weight_description}), "
+            f"adjustment={adjustment:+.4f}, final_score={adjusted_score:.4f}"
+        )
+        
+        # Only print to console if adjustment is significant
+        if abs(adjustment) > 0.05:
+            tprint(
+                f"   📊 Regime adjustment for {category}: {score:.4f} → {adjusted_score:.4f} "
+                f"({adjustment:+.4f}, {weight_description} weight)",
+                "info"
+            )
+        
+        return adjusted_score
 
     def _estimate_turnover_rate(self, params: Dict[str, Any],
                                calibration_results: Dict[str, Any]) -> float:

@@ -164,103 +164,13 @@ class LookaheadBiasPrevention:
             temporal_separation_verified=True
         )
     
-    def walk_forward_regime_validation(self,
-                                     market_data: pd.DataFrame,
-                                     regime_discovery_func,
-                                     window_size: int = 252,
-                                     step_size: int = 21) -> Dict[str, Any]:
-        """
-        Walk-forward validation of regime discovery with strict time separation.
-        
-        Args:
-            market_data: Market data
-            regime_discovery_func: Function to discover regimes
-            window_size: Size of rolling window for regime discovery
-            step_size: Step size for rolling window
-            
-        Returns:
-            Walk-forward validation results
-        """
-        
-        self.logger.info(f"🔄 Starting walk-forward validation: window={window_size}, step={step_size}")
-        
-        validation_results = []
-        
-        for start_idx in range(window_size, len(market_data) - step_size, step_size):
-            end_idx = start_idx + window_size
-            
-            # === IN-SAMPLE PERIOD (for regime discovery) ===
-            in_sample_data = market_data.iloc[start_idx:end_idx]
-            
-            # Discover regimes using only in-sample data
-            try:
-                regime_result = regime_discovery_func(in_sample_data)
-                in_sample_regimes = regime_result['regime_labels']
-                
-                # === OUT-OF-SAMPLE PERIOD (for validation) ===
-                out_sample_start = end_idx
-                out_sample_end = min(end_idx + step_size, len(market_data))
-                out_sample_data = market_data.iloc[out_sample_start:out_sample_end]
-                
-                # Apply regime model to out-of-sample data (if possible)
-                # This would require regime prediction model
-                
-                # For now, calculate regime characteristics stability
-                if len(in_sample_regimes) > 0:
-                    # Calculate in-sample regime characteristics
-                    in_sample_characteristics = self._calculate_regime_characteristics(
-                        in_sample_data, in_sample_regimes
-                    )
-                    
-                    # Calculate out-sample characteristics (assuming regime continues)
-                    # This is a simplified approach - in practice you'd need regime prediction
-                    out_sample_characteristics = self._calculate_market_characteristics(out_sample_data)
-                    
-                    # Measure characteristic stability
-                    stability_score = self._calculate_characteristic_stability(
-                        in_sample_characteristics, out_sample_characteristics
-                    )
-                    
-                    validation_results.append({
-                        'period_start': start_idx,
-                        'period_end': end_idx,
-                        'out_sample_start': out_sample_start,
-                        'out_sample_end': out_sample_end,
-                        'n_regimes_discovered': len(np.unique(in_sample_regimes)),
-                        'regime_characteristics_stability': stability_score,
-                        'temporal_separation_verified': True
-                    })
-                
-            except Exception as e:
-                self.logger.warning(f"Walk-forward validation failed for period {start_idx}-{end_idx}: {e}")
-                continue
-        
-        # Calculate overall walk-forward performance
-        if validation_results:
-            avg_stability = np.mean([r['regime_characteristics_stability'] for r in validation_results])
-            stability_std = np.std([r['regime_characteristics_stability'] for r in validation_results])
-            
-            summary = {
-                'total_periods': len(validation_results),
-                'average_stability': float(avg_stability),
-                'stability_std': float(stability_std),
-                'stable_periods': sum(1 for r in validation_results if r['regime_characteristics_stability'] > 0.7),
-                'walk_forward_success_rate': sum(1 for r in validation_results if r['regime_characteristics_stability'] > 0.7) / len(validation_results)
-            }
-        else:
-            summary = {
-                'total_periods': 0,
-                'average_stability': 0.0,
-                'stability_std': 0.0,
-                'stable_periods': 0,
-                'walk_forward_success_rate': 0.0
-            }
-        
-        return {
-            'validation_results': validation_results,
-            'summary': summary,
-            'temporal_separation_verified': True
-        }
+    # NOTE: walk_forward_regime_validation has been removed.
+    # Use the canonical implementation instead:
+    #   src.validation.walkforward_validation.WalkForwardValidator
+    # 
+    # For regime-specific validation, adapt WalkForwardValidator
+    # or use the time_aware_breakout_analysis method below for
+    # regime breakout analysis with temporal separation.
     
     def _calculate_regime_characteristics(self, data: pd.DataFrame, regime_labels: np.ndarray) -> Dict[str, float]:
         """Calculate regime characteristics using only available data."""

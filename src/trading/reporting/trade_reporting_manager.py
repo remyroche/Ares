@@ -46,11 +46,13 @@ class TradeRecord:
     quantity: float
     side: str  # 'buy', 'sell', 'long', 'short'
     direction: str  # 'long' or 'short'
+    leverage: float = 1.0  # Leverage used for the trade
     
     # Performance metrics
     net_gain_loss_pct: Optional[float] = None
     net_gain_loss_absolute: Optional[float] = None
     realized_pnl: Optional[float] = None
+    gross_pnl: Optional[float] = None  # PnL before fees
     fees: float = 0.0
     slippage_pct: float = 0.0
     
@@ -99,9 +101,11 @@ class TradeRecord:
             'quantity': f"{self.quantity:.8f}",
             'side': self.side,
             'direction': self.direction,
+            'leverage': f"{self.leverage:.2f}",
             'net_gain_loss_pct': f"{self.net_gain_loss_pct:.4f}" if self.net_gain_loss_pct is not None else '',
             'net_gain_loss_absolute': f"{self.net_gain_loss_absolute:.4f}" if self.net_gain_loss_absolute is not None else '',
             'realized_pnl': f"{self.realized_pnl:.4f}" if self.realized_pnl is not None else '',
+            'gross_pnl': f"{self.gross_pnl:.4f}" if self.gross_pnl is not None else '',
             'fees': f"{self.fees:.4f}",
             'slippage_pct': f"{self.slippage_pct:.4f}",
             'analyst_confidence': f"{self.analyst_confidence:.4f}",
@@ -696,6 +700,202 @@ class TradeReportingManager:
 
 # Global instance
 trade_reporting_manager = TradeReportingManager()
+
+
+def create_trade_record_from_execution(
+    trade_id: str,
+    exchange: str,
+    symbol: str,
+    mode: str,
+    side: str,
+    direction: str,
+    entry_price: float,
+    quantity: float,
+    leverage: float = 1.0,
+    exit_price: Optional[float] = None,
+    exit_datetime: Optional[datetime] = None,
+    fees: float = 0.0,
+    slippage_pct: float = 0.0,
+    trading_decision: Optional[Dict[str, Any]] = None,
+    regime_data: Optional[Dict[str, Any]] = None,
+    market_context: Optional[Dict[str, Any]] = None
+) -> TradeRecord:
+    """
+    Create a comprehensive TradeRecord from trade execution data.
+    
+    Args:
+        trade_id: Unique trade identifier
+        exchange: Exchange name
+        symbol: Trading symbol
+        mode: 'paper' or 'trade'
+        side: 'buy' or 'sell'
+        direction: 'long' or 'short'
+        entry_price: Entry price
+        quantity: Position size
+        leverage: Leverage used (default 1.0)
+        exit_price: Exit price (optional for open positions)
+        exit_datetime: Exit datetime (optional)
+        fees: Total fees paid
+        slippage_pct: Slippage percentage
+        trading_decision: Trading decision dictionary with confidence, signals, etc.
+        regime_data: Regime classification data
+        market_context: Additional market context (volume, volatility, etc.)
+        
+    Returns:
+        TradeRecord instance
+    """
+    now = datetime.now()
+    
+    # Calculate PnL if exit price is available
+    gross_pnl = None
+    realized_pnl = None
+    net_gain_loss_pct = None
+    net_gain_loss_absolute = None
+    
+    if exit_price is not None:
+        # Calculate gross PnL (before fees)
+        if direction == 'long':
+            gross_pnl = (exit_price - entry_price) * quantity
+        else:  # short
+            gross_pnl = (entry_price - exit_price) * quantity
+        
+        # Calculate net PnL (after fees)
+        realized_pnl = gross_pnl - fees
+        
+        # Calculate percentage gain/loss
+        if entry_price > 0:
+            net_gain_loss_pct = (realized_pnl / (entry_price * quantity)) * 100
+            net_gain_loss_absolute = realized_pnl
+    
+    # Extract confidence scores from trading decision
+    analyst_confidence = 0.0
+    tactician_confidence = 0.0
+    ensemble_confidence = 0.0
+    signal_strength = 0.0
+    
+    if trading_decision:
+        analyst_confidence = trading_decision.get('analyst_confidence', 0.0)
+        tactician_confidence = trading_decision.get('tactician_confidence', 0.0)
+        ensemble_confidence = trading_decision.get('confidence', 0.0)
+        signal_strength = trading_decision.get('signal_strength', 0.0)
+        
+        # Alternative keys if not found
+        if analyst_confidence == 0.0:
+            analyst_signal = trading_decision.get('analyst_signal', {})
+            if isinstance(analyst_signal, dict):
+                analyst_confidence = analyst_signal.get('confidence', 0.0)
+        
+        if tactician_confidence == 0.0:
+            tactician_signal = trading_decision.get('tactician_signal', {})
+            if isinstance(tactician_signal, dict):
+                tactician_confidence = tactician_signal.get('confidence', 0.0)
+    
+    # Extract regime information
+    regime_1 = ""
+    regime_1_probability = 0.0
+    regime_2 = ""
+    regime_2_probability = 0.0
+    regime_3 = ""
+    regime_3_probability = 0.0
+    
+    if regime_data:
+        # Handle different regime data formats
+        if 'primary_regime' in regime_data:
+            regime_1 = regime_data.get('primary_regime', '')
+            regime_1_probability = regime_data.get('confidence', 0.0)
+        elif 'regime' in regime_data:
+            regime_1 = regime_data.get('regime', '')
+            regime_1_probability = regime_data.get('regime_probability', 0.0)
+        
+        # Extract top regimes from probability distribution if available
+        regime_probs = regime_data.get('regime_probabilities', {})
+        if regime_probs:
+            sorted_regimes = sorted(regime_probs.items(), key=lambda x: x[1], reverse=True)
+            if len(sorted_regimes) >= 1:
+                regime_1 = sorted_regimes[0][0]
+                regime_1_probability = sorted_regimes[0][1]
+            if len(sorted_regimes) >= 2:
+                regime_2 = sorted_regimes[1][0]
+                regime_2_probability = sorted_regimes[1][1]
+            if len(sorted_regimes) >= 3:
+                regime_3 = sorted_regimes[2][0]
+                regime_3_probability = sorted_regimes[2][1]
+    
+    # Extract market context
+    volume = 0.0
+    volatility = 0.0
+    trend = ""
+    
+    if market_context:
+        volume = market_context.get('volume', 0.0)
+        volatility = market_context.get('volatility', 0.0)
+        trend = market_context.get('trend', '')
+    
+    # Extract top features from SHAP/feature importance if available
+    top_feature_1 = ""
+    top_feature_1_importance = 0.0
+    top_feature_2 = ""
+    top_feature_2_importance = 0.0
+    top_feature_3 = ""
+    top_feature_3_importance = 0.0
+    
+    if trading_decision:
+        feature_importance = trading_decision.get('feature_importance', {})
+        if feature_importance:
+            sorted_features = sorted(feature_importance.items(), key=lambda x: abs(x[1]), reverse=True)
+            if len(sorted_features) >= 1:
+                top_feature_1 = sorted_features[0][0]
+                top_feature_1_importance = sorted_features[0][1]
+            if len(sorted_features) >= 2:
+                top_feature_2 = sorted_features[1][0]
+                top_feature_2_importance = sorted_features[1][1]
+            if len(sorted_features) >= 3:
+                top_feature_3 = sorted_features[2][0]
+                top_feature_3_importance = sorted_features[2][1]
+    
+    return TradeRecord(
+        trade_id=trade_id,
+        timestamp=now,
+        exchange=exchange,
+        asset=symbol,
+        mode=mode,
+        entry_datetime=now,
+        exit_datetime=exit_datetime,
+        entry_price=entry_price,
+        exit_price=exit_price,
+        quantity=quantity,
+        side=side,
+        direction=direction,
+        leverage=leverage,
+        net_gain_loss_pct=net_gain_loss_pct,
+        net_gain_loss_absolute=net_gain_loss_absolute,
+        realized_pnl=realized_pnl,
+        gross_pnl=gross_pnl,
+        fees=fees,
+        slippage_pct=slippage_pct,
+        analyst_confidence=analyst_confidence,
+        tactician_confidence=tactician_confidence,
+        strategist_confidence=0.0,  # Reserved for future use
+        ensemble_confidence=ensemble_confidence,
+        signal_strength=signal_strength,
+        top_feature_1=top_feature_1,
+        top_feature_1_importance=top_feature_1_importance,
+        top_feature_2=top_feature_2,
+        top_feature_2_importance=top_feature_2_importance,
+        top_feature_3=top_feature_3,
+        top_feature_3_importance=top_feature_3_importance,
+        regime_1=regime_1,
+        regime_1_probability=regime_1_probability,
+        regime_2=regime_2,
+        regime_2_probability=regime_2_probability,
+        regime_3=regime_3,
+        regime_3_probability=regime_3_probability,
+        volume=volume,
+        volatility=volatility,
+        trend=trend,
+        execution_time_ms=0.0,  # Can be set by caller
+        execution_quality=0.0    # Can be set by caller
+    )
 
 
 # Convenience functions

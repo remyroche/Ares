@@ -15,6 +15,7 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import mutual_info_score
 from sklearn.linear_model import LassoCV, ElasticNetCV
 from sklearn.preprocessing import StandardScaler
+from sklearn.inspection import permutation_importance
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import spearmanr
@@ -46,9 +47,10 @@ class FinalFeatureSelectionConfig:
         self,
         max_features: int = 100,
         min_features: int = 10,
-        selection_method: str = "mutual_info",
+        selection_method: str = "permutation",
         scoring_threshold: float = 0.01,
-        use_tree_based: bool = True
+        use_tree_based: bool = True,
+        use_permutation_importance: bool = True
     ):
         """
         Initialize final feature selection configuration.
@@ -56,15 +58,17 @@ class FinalFeatureSelectionConfig:
         Args:
             max_features: Maximum number of features to select
             min_features: Minimum number of features to select
-            selection_method: Method for feature selection
+            selection_method: Method for feature selection ('permutation', 'mutual_info', 'f_regression')
             scoring_threshold: Minimum score threshold for features
             use_tree_based: Whether to use tree-based feature importance
+            use_permutation_importance: Whether to use permutation importance (captures interactions) vs standard Gini importance
         """
         self.max_features = max_features
         self.min_features = min_features
         self.selection_method = selection_method
         self.scoring_threshold = scoring_threshold
         self.use_tree_based = use_tree_based
+        self.use_permutation_importance = use_permutation_importance
 
 
 class FinalFeatureSelectionComponent:
@@ -177,7 +181,9 @@ class FinalFeatureSelectionComponent:
                 ]
             
             self.selected_features = selected_features
-            self.logger.info(f"Selected {len(selected_features)} features")
+            importance_method = "permutation" if self.config.use_permutation_importance else "Gini"
+            self.logger.info(f"Selected {len(selected_features)} features using {importance_method} importance")
+            self.logger.info(f"Importance method: {importance_method} (captures interactions: {self.config.use_permutation_importance})")
             
             return selected_features
             
@@ -193,6 +199,8 @@ class FinalFeatureSelectionComponent:
     ) -> List[str]:
         """
         Apply tree-based feature selection using ExtraTreesRegressor.
+        Uses permutation importance by default (captures feature interactions),
+        or standard Gini importance if configured.
         
         Args:
             X: Feature matrix
@@ -207,9 +215,27 @@ class FinalFeatureSelectionComponent:
             model = ExtraTreesRegressor(n_estimators=100, random_state=42, n_jobs=-1)
             model.fit(X, y)
             
-            # Get feature importances
-            importances = model.feature_importances_
+            # Get feature importances using permutation or standard method
+            if self.config.use_permutation_importance:
+                # Use permutation importance - captures feature interactions and is more reliable
+                self.logger.info("Using permutation importance (captures feature interactions)")
+                perm_importance = permutation_importance(
+                    model, X, y,
+                    n_repeats=10,
+                    random_state=42,
+                    n_jobs=-1
+                )
+                importances = perm_importance.importances_mean
+                self.logger.info(f"Permutation importance calculated for {len(feature_names)} features")
+            else:
+                # Use standard Gini importance (faster but doesn't capture interactions as well)
+                self.logger.info("Using standard Gini importance")
+                importances = model.feature_importances_
+            
             feature_importance = dict(zip(feature_names, importances))
+            
+            # Store importances for later analysis
+            self.feature_scores.update(feature_importance)
             
             # Sort by importance and select top features
             sorted_features = sorted(
@@ -221,6 +247,8 @@ class FinalFeatureSelectionComponent:
             # Select top features up to max_features
             max_features = min(self.config.max_features, len(sorted_features))
             selected_features = [feat for feat, _ in sorted_features[:max_features]]
+            
+            self.logger.info(f"Selected {len(selected_features)} features using {'permutation' if self.config.use_permutation_importance else 'Gini'} importance")
             
             return selected_features
             

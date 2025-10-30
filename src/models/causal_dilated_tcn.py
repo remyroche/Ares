@@ -24,9 +24,8 @@ try:
     import torch.nn as nn
     import torch.optim as optim
     from torch.utils.data import DataLoader, TensorDataset
-    # --- New Imports (conditional on PyTorch) ---
-    from src.analyst.autoencoder_feature_generator import TimeSeriesAutoencoder, load_autoencoder_config
-    # --- End New Imports ---
+    import json
+    import pickle
     PYTORCH_AVAILABLE = True
 except ImportError:
     PYTORCH_AVAILABLE = False
@@ -44,12 +43,6 @@ except ImportError:
             pass
         class MSELoss:
             pass
-    # --- Add dummy classes for AE if torch fails ---
-    class TimeSeriesAutoencoder(nn.Module):
-        pass
-    def load_autoencoder_config(path):
-        return None
-    # --- End dummy classes ---
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
@@ -57,6 +50,81 @@ warnings.filterwarnings('ignore')
 # Setup logging
 setup_logging()
 logger = logging.getLogger(__name__)
+
+
+class PyTorchAutoencoder(nn.Module):
+    """
+    PyTorch-based Autoencoder for feature compression.
+    This is a lightweight encoder that compresses high-dimensional features into a latent space.
+    """
+    
+    def __init__(self, input_dim: int, latent_dim: int = 16, hidden_dim: int = 64):
+        super().__init__()
+        self.input_dim = input_dim
+        self.latent_dim = latent_dim
+        
+        # Encoder: input_dim -> hidden_dim -> latent_dim
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_dim),
+            nn.Dropout(0.2),
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_dim // 2),
+            nn.Dropout(0.2),
+            nn.Linear(hidden_dim // 2, latent_dim),
+            nn.Tanh()  # Tanh activation for bounded latent space
+        )
+        
+        # Decoder: latent_dim -> hidden_dim -> input_dim (for pre-training only)
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_dim // 2),
+            nn.Dropout(0.2),
+            nn.Linear(hidden_dim // 2, hidden_dim),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden_dim),
+            nn.Dropout(0.2),
+            nn.Linear(hidden_dim, input_dim)
+        )
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Full autoencoder forward pass (for pre-training)."""
+        latent = self.encoder(x)
+        reconstructed = self.decoder(latent)
+        return reconstructed
+    
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        """Encode input to latent space."""
+        return self.encoder(x)
+    
+    def save_encoder(self, path: str):
+        """Save only the encoder part."""
+        torch.save({
+            'encoder_state_dict': self.encoder.state_dict(),
+            'input_dim': self.input_dim,
+            'latent_dim': self.latent_dim
+        }, path)
+        logger.info(f"✅ Encoder saved to {path}")
+    
+    @staticmethod
+    def load_encoder(path: str) -> 'PyTorchAutoencoder':
+        """Load a pre-trained encoder."""
+        checkpoint = torch.load(path, map_location='cpu')
+        model = PyTorchAutoencoder(
+            input_dim=checkpoint['input_dim'],
+            latent_dim=checkpoint['latent_dim']
+        )
+        model.encoder.load_state_dict(checkpoint['encoder_state_dict'])
+        model.eval()
+        # Freeze encoder weights
+        for param in model.encoder.parameters():
+            param.requires_grad = False
+        logger.info(f"✅ Encoder loaded from {path} and frozen")
+        return model
+
 
 @dataclass
 class CausalTCNConfig:
@@ -77,9 +145,12 @@ class CausalTCNConfig:
     random_state: int = 42
 
     # --- Autoencoder Integration ---
-    autoencoder_model_path: str = "models/autoencoder.pth"
-    autoencoder_config_path: str = "models/autoencoder_config.json"
-    use_autoencoder: bool = True  # Flag to enable/disable autoencoder
+    use_autoencoder: bool = False  # Flag to enable/disable autoencoder compression
+    autoencoder_path: str = "models/analyst_autoencoder_encoder.pth"  # Path to frozen encoder
+    latent_dim: int = 16  # Latent dimension for compressed features
+    # If use_autoencoder=True and encoder doesn't exist, train one
+    train_autoencoder_if_missing: bool = True
+    autoencoder_epochs: int = 50  # Epochs for autoencoder pre-training
 
 class CausalDilatedConv1d(nn.Module):
     """Causal dilated 1D convolution layer."""
@@ -248,51 +319,132 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
         # Components
         self.tcn_model = None
         self.scaler = None
-        self.autoencoder = None  # <-- Autoencoder model
-        self.latent_dim = None  # <-- AE latent dimension
+        self.frozen_encoder = None  # Frozen autoencoder for feature compression
+        self.input_size = None  # Will be set during fit
 
         # State
         self.fitted = False
         self.feature_names = None
 
-        # --- NEW: Load Frozen Autoencoder ---
+        # --- Load Frozen Autoencoder if enabled ---
         if PYTORCH_AVAILABLE and self.config.use_autoencoder:
             try:
-                logger.info("Attempting to load frozen autoencoder...")
-                ae_config_path = self.config.autoencoder_config_path
-                ae_model_path = self.config.autoencoder_model_path
-
-                if not (os.path.exists(ae_config_path) and os.path.exists(ae_model_path)):
-                    logger.warning(f"Autoencoder model/config not found at {ae_config_path}/{ae_model_path}. Disabling AE.")
-                    self.config.use_autoencoder = False
+                logger.info("🔧 Autoencoder compression enabled for TCN")
+                if os.path.exists(self.config.autoencoder_path):
+                    logger.info(f"📂 Loading pre-trained frozen encoder from: {self.config.autoencoder_path}")
+                    self.frozen_encoder = PyTorchAutoencoder.load_encoder(self.config.autoencoder_path)
+                    logger.info(f"✅ Frozen encoder loaded successfully! Latent dim: {self.frozen_encoder.latent_dim}")
                 else:
-                    # 1. Load AE Config
-                    ae_config = load_autoencoder_config(ae_config_path)
-                    if 'latent_dim' not in ae_config or 'input_dim' not in ae_config:
-                        logger.warning("AE config missing 'latent_dim' or 'input_dim'. Disabling AE.")
-                        self.config.use_autoencoder = False
+                    if self.config.train_autoencoder_if_missing:
+                        logger.warning(f"⚠️ Encoder not found at {self.config.autoencoder_path}")
+                        logger.info("💡 Autoencoder will be trained during fit() if use_autoencoder=True")
+                        self.frozen_encoder = None
                     else:
-                        self.latent_dim = ae_config['latent_dim']
-                        
-                        # 2. Initialize AE Model
-                        # Assumes TimeSeriesAutoencoder init matches the config dict keys
-                        self.autoencoder = TimeSeriesAutoencoder(**ae_config)
-                        
-                        # 3. Load Saved Weights
-                        self.autoencoder.load_state_dict(torch.load(ae_model_path))
-                        
-                        # 4. Freeze Weights and set to eval mode
-                        self.autoencoder.eval()
-                        for param in self.autoencoder.parameters():
-                            param.requires_grad = False
-                        
-                        logger.info(f"✅ Successfully loaded and froze autoencoder. Latent dim: {self.latent_dim}")
+                        logger.warning(f"❌ Encoder not found and train_autoencoder_if_missing=False. Disabling autoencoder.")
+                        self.config.use_autoencoder = False
             except Exception as e:
-                logger.error(f"❌ Failed to load autoencoder: {e}. Disabling AE.")
+                logger.error(f"❌ Failed to load autoencoder: {e}. Disabling AE compression.")
+                import traceback
+                traceback.print_exc()
                 self.config.use_autoencoder = False
-                self.autoencoder = None
+                self.frozen_encoder = None
         # --- End Autoencoder Load ---
     
+    def _train_autoencoder(self, X_scaled: np.ndarray) -> None:
+        """
+        Train a new autoencoder on the provided data and freeze it.
+        
+        Args:
+            X_scaled: Scaled feature array (n_samples, n_features)
+        """
+        if not PYTORCH_AVAILABLE:
+            logger.error("❌ PyTorch not available, cannot train autoencoder")
+            return
+        
+        try:
+            logger.info("🏋️ Training new autoencoder for feature compression...")
+            logger.info(f"📊 Input features: {X_scaled.shape[1]}, Target latent dim: {self.config.latent_dim}")
+            
+            # Create autoencoder
+            autoencoder = PyTorchAutoencoder(
+                input_dim=X_scaled.shape[1],
+                latent_dim=self.config.latent_dim
+            )
+            
+            # Prepare training data
+            X_tensor = torch.FloatTensor(X_scaled)
+            
+            # Split into train/val
+            n_train = int(0.8 * len(X_tensor))
+            X_train = X_tensor[:n_train]
+            X_val = X_tensor[n_train:]
+            
+            # Create dataloaders
+            train_dataset = TensorDataset(X_train, X_train)  # Autoencoder reconstructs input
+            val_dataset = TensorDataset(X_val, X_val)
+            train_loader = DataLoader(train_dataset, batch_size=self.config.batch_size, shuffle=True)
+            val_loader = DataLoader(val_dataset, batch_size=self.config.batch_size)
+            
+            # Training setup
+            criterion = nn.MSELoss()
+            optimizer = optim.Adam(autoencoder.parameters(), lr=self.config.learning_rate)
+            
+            # Training loop
+            best_val_loss = float('inf')
+            patience_counter = 0
+            
+            for epoch in range(self.config.autoencoder_epochs):
+                # Training
+                autoencoder.train()
+                train_loss = 0.0
+                for batch_X, batch_y in train_loader:
+                    optimizer.zero_grad()
+                    reconstructed = autoencoder(batch_X)
+                    loss = criterion(reconstructed, batch_y)
+                    loss.backward()
+                    optimizer.step()
+                    train_loss += loss.item()
+                
+                train_loss /= len(train_loader)
+                
+                # Validation
+                autoencoder.eval()
+                val_loss = 0.0
+                with torch.no_grad():
+                    for batch_X, batch_y in val_loader:
+                        reconstructed = autoencoder(batch_X)
+                        loss = criterion(reconstructed, batch_y)
+                        val_loss += loss.item()
+                
+                val_loss /= len(val_loader)
+                
+                # Early stopping
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                    # Save best model
+                    os.makedirs(os.path.dirname(self.config.autoencoder_path), exist_ok=True)
+                    autoencoder.save_encoder(self.config.autoencoder_path)
+                else:
+                    patience_counter += 1
+                
+                if epoch % 10 == 0:
+                    logger.info(f"📈 Epoch {epoch}/{self.config.autoencoder_epochs} - Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}")
+                
+                if patience_counter >= self.config.early_stopping_patience:
+                    logger.info(f"⏹️ Early stopping at epoch {epoch}")
+                    break
+            
+            # Load the best frozen encoder
+            self.frozen_encoder = PyTorchAutoencoder.load_encoder(self.config.autoencoder_path)
+            logger.info(f"✅ Autoencoder training completed! Best val loss: {best_val_loss:.6f}")
+            
+        except Exception as e:
+            logger.error(f"❌ Autoencoder training failed: {e}")
+            import traceback
+            traceback.print_exc()
+            self.config.use_autoencoder = False
+            self.frozen_encoder = None
 
     def _prepare_sequences(self, X: np.ndarray, y: np.ndarray, sequence_length: int) -> Tuple[np.ndarray, np.ndarray]:
         """Prepare sequences for TCN input.
@@ -416,30 +568,108 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
             # Verify sequence shapes
             logger.info(f"✅ Sequence shapes - X_seq: {X_seq.shape}, y_seq: {y_seq.shape}")
             
+            # Train autoencoder if needed
+            if self.config.use_autoencoder and self.frozen_encoder is None:
+                if self.config.train_autoencoder_if_missing:
+                    logger.info("🏋️ Training autoencoder since none was found...")
+                    self._train_autoencoder(X_scaled)
+                else:
+                    logger.warning("⚠️ Autoencoder disabled - encoder not found and training disabled")
+                    self.config.use_autoencoder = False
+            
             # Convert to tensors
             X_tensor = torch.FloatTensor(X_seq)
             y_tensor = torch.FloatTensor(y_seq)
             
-                # --- NEW: Apply Autoencoder ---
-                if self.autoencoder is not None:
-                    logger.info(f"Compressing sequences with autoencoder...")
-                    with torch.no_grad():
-                        # AE expects [N, S, F], which X_tensor already is
-                        X_tensor = self.autoencoder.encoder(X_tensor)
-                    logger.info(f"✅ Compressed sequences shape: {X_tensor.shape}")
-                # --- End Apply Autoencoder ---
+            # --- Apply Frozen Autoencoder Compression ---
+            if self.config.use_autoencoder and self.frozen_encoder is not None:
+                logger.info(f"🗜️ Compressing sequences with frozen autoencoder...")
+                logger.info(f"   Original shape: {X_tensor.shape}")
                 
-                logger.info(f"✅ Tensor shapes - X_tensor: {X_tensor.shape}, y_tensor: {y_tensor.shape}")
+                # Reshape for encoder: (n_sequences, sequence_length, n_features) -> (n_sequences * sequence_length, n_features)
+                batch_size, seq_len, n_features = X_tensor.shape
+                X_flat = X_tensor.reshape(-1, n_features)
+                
+                # Compress with frozen encoder
+                self.frozen_encoder.eval()
+                with torch.no_grad():
+                    X_compressed = self.frozen_encoder.encode(X_flat)
+                
+                # Reshape back to sequences: (n_sequences * sequence_length, latent_dim) -> (n_sequences, sequence_length, latent_dim)
+                X_tensor = X_compressed.reshape(batch_size, seq_len, -1)
+                logger.info(f"   ✅ Compressed to: {X_tensor.shape} (latent_dim={X_tensor.shape[2]})")
+            # --- End Autoencoder Compression ---
+            
+            logger.info(f"✅ Final tensor shapes - X_tensor: {X_tensor.shape}, y_tensor: {y_tensor.shape}")
 
-                # Create TCN model with correct input size (number of features or latent_dim)
-                # X_seq shape is (n_sequences, sequence_length, n_features)
-                # X_tensor shape is (n_sequences, sequence_length, n_features_or_latent_dim)
-                actual_n_features = X_tensor.shape[2]
-                logger.info(f"📊 Creating TCN with input_size={actual_n_features} features")
+            # Determine input size for TCN (number of features or latent_dim after compression)
+            actual_n_features = X_tensor.shape[2]
+            self.input_size = actual_n_features
+            logger.info(f"📊 Creating TCN with input_size={actual_n_features} features")
+            
+            # Create TCN model
+            self.tcn_model = CausalDilatedTCN(
+                input_size=actual_n_features,
+                num_filters=self.config.num_filters,
+                kernel_size=self.config.kernel_size,
+                dilation_base=self.config.dilation_base,
+                num_layers=self.config.num_layers,
+                dropout=self.config.dropout,
+                use_skip_connections=self.config.use_skip_connections
+            )
+            
+            # Training setup
+            criterion = nn.MSELoss()
+            optimizer = optim.Adam(self.tcn_model.parameters(), lr=self.config.learning_rate)
+            
+            # Create dataloader
+            dataset = TensorDataset(X_tensor, y_tensor)
+            dataloader = DataLoader(dataset, batch_size=self.config.batch_size, shuffle=True)
+            
+            # Training loop (ONLY TCN weights are updated, encoder is frozen)
+            logger.info(f"🏋️ Training TCN model for {self.config.epochs} epochs...")
+            best_loss = float('inf')
+            patience_counter = 0
+            
+            for epoch in range(self.config.epochs):
+                self.tcn_model.train()
+                epoch_loss = 0.0
+                for batch_X, batch_y in dataloader:
+                    optimizer.zero_grad()
+                    predictions = self.tcn_model(batch_X)
+                    loss = criterion(predictions.squeeze(), batch_y)
+                    loss.backward()
+                    optimizer.step()
+                    epoch_loss += loss.item()
                 
-                self.tcn_model = CausalDilatedTCN(
-                    input_size=actual_n_features,
-                    num_filters=self.config.num_filters,
+                epoch_loss /= len(dataloader)
+                
+                # Early stopping check
+                if epoch_loss < best_loss:
+                    best_loss = epoch_loss
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                
+                if epoch % 10 == 0:
+                    logger.info(f"📈 Epoch {epoch}/{self.config.epochs} - Loss: {epoch_loss:.6f}")
+                
+                if patience_counter >= self.config.early_stopping_patience:
+                    logger.info(f"⏹️ Early stopping at epoch {epoch}")
+                    break
+            
+            logger.info(f"✅ TCN training completed! Best loss: {best_loss:.6f}")
+            self.fitted = True
+            return self
+            
+        except Exception as e:
+            logger.error(f"❌ TCN model fitting failed: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Fallback to simple model
+            logger.warning("⚠️ Falling back to Ridge regression")
+            return self._fit_fallback(X, y, sample_weight)
                     
     def _fit_fallback(self, X: np.ndarray, y: np.ndarray, sample_weight: Optional[np.ndarray] = None) -> 'CausalDilatedTCNModel':
         """Fallback to simple linear model."""
@@ -526,12 +756,23 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
                 # Convert to tensor
                 X_tensor = torch.FloatTensor(X_seq)
                 
-                if self.autoencoder is not None:
-                    logger.info(f"Compressing prediction sequences with autoencoder...")
+                # --- Apply Frozen Autoencoder Compression (same as in training) ---
+                if self.config.use_autoencoder and self.frozen_encoder is not None:
+                    logger.info(f"🗜️ Compressing prediction sequences with frozen autoencoder...")
+                    
+                    # Reshape for encoder
+                    batch_size, seq_len, n_features = X_tensor.shape
+                    X_flat = X_tensor.reshape(-1, n_features)
+                    
+                    # Compress with frozen encoder
+                    self.frozen_encoder.eval()
                     with torch.no_grad():
-                        # AE expects [N, S, F]
-                        X_tensor = self.autoencoder.encoder(X_tensor)
-                    logger.info(f"✅ Compressed prediction sequences shape: {X_tensor.shape}")
+                        X_compressed = self.frozen_encoder.encode(X_flat)
+                    
+                    # Reshape back to sequences
+                    X_tensor = X_compressed.reshape(batch_size, seq_len, -1)
+                    logger.info(f"   ✅ Compressed prediction sequences shape: {X_tensor.shape}")
+                # --- End Autoencoder Compression ---
                         
                 # Predict
                 self.tcn_model.eval()

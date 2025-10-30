@@ -1,8 +1,0 @@
-{
-  "artifact_name": "regime_cluster_quality_metrics",
-  "artifact_type": "data",
-  "file_path": "artifacts/pre_training/ETHUSDT/binance/long/Analyst/regime_clustering/regime_clustering_regime_clustering_regime_cluster_quality_metrics_ETHUSDT_binance_long_Analyst_20251029_234051.parquet",
-  "file_size": 40470,
-  "timestamp": "2025-10-29T23:40:51.429319",
-  "compression": "auto"
-}

@@ -1101,42 +1101,50 @@ class EnhancedRegimeFeatureSelector(BaseStep):
             except Exception as e:
                 self.logger.debug(f"Could not load data from artifacts: {e}")
             
-            # Try to load from feature_generation step artifacts
+            # Generate regime-specific features from market data
             try:
                 from datetime import datetime
+                from src.feature_generation.categories.regime_feature_categorization import (
+                    get_regime_clustering_features,
+                    RegimeFeatureCategorizer,
+                    FeatureUseCase
+                )
+                from src.feature_generation.categories.regime_feature_integration import (
+                    RegimeFeatureIntegration,
+                    RegimeFeatureConfig
+                )
+                
+                tprint_info("🔍 Generating regime-specific features from market data...")
+                
+                # Load market data
                 timeframes = config.get('timeframes', ['15m'])
                 primary_timeframe = timeframes[0] if timeframes else '15m'
                 
-                # Save current context
-                original_step_name = self.artifact_manager._current_step_name
-                original_symbol = self.artifact_manager._current_symbol
-                original_exchange = self.artifact_manager._current_exchange
-                original_datetime = self.artifact_manager._current_datetime
-                original_information = self.artifact_manager._current_information
-                original_direction = self.artifact_manager._current_direction
-                original_model = self.artifact_manager._current_model
-                
-                # Set context to feature_generation step
-                self.artifact_manager.set_context(
-                    step_name="feature_generation_feature_generation_step",
-                    symbol=symbol,
-                    exchange=exchange,
-                    datetime=datetime.now(),
-                    information="feature_generation",
-                    direction="long",
-                    model="Analyst"
-                )
-                
+                # Try to load market data from data_validation step
+                market_data = None
                 try:
-                    # Try to get generated features for the primary timeframe
-                    artifact_name = f"generated_features_{primary_timeframe}"
-                    features_data = self._get_artifact(artifact_name, artifact_type="data")
+                    # Save current context
+                    original_step_name = self.artifact_manager._current_step_name
+                    original_symbol = self.artifact_manager._current_symbol
+                    original_exchange = self.artifact_manager._current_exchange
+                    original_datetime = self.artifact_manager._current_datetime
+                    original_information = self.artifact_manager._current_information
+                    original_direction = self.artifact_manager._current_direction
+                    original_model = self.artifact_manager._current_model
                     
-                    if features_data is not None and not features_data.empty:
-                        tprint_info(f"Loaded features from feature_generation step (timeframe: {primary_timeframe})")
-                        # Regime labels will be None for unsupervised mode
-                        return features_data, None
-                finally:
+                    # Set context to data validation step
+                    self.artifact_manager.set_context(
+                        step_name="feature_generation_data_validation_step",
+                        symbol=symbol,
+                        exchange=exchange,
+                        datetime=datetime.now(),
+                        information="data_validation",
+                        direction="long",
+                        model="Analyst"
+                    )
+                    
+                    market_data = self._get_artifact("validated_dataframe", artifact_type="data")
+                    
                     # Restore original context
                     self.artifact_manager.set_context(
                         step_name=original_step_name,
@@ -1147,8 +1155,64 @@ class EnhancedRegimeFeatureSelector(BaseStep):
                         direction=original_direction,
                         model=original_model
                     )
+                except Exception as e:
+                    self.logger.debug(f"Could not load from data validation step: {e}")
+                
+                # If no market data from artifacts, try loading from data_cache
+                if market_data is None or market_data.empty:
+                    from pathlib import Path
+                    import pandas as pd
+                    
+                    data_cache_paths = [
+                        Path("data_cache") / "unified_cache" / f"{exchange}_{symbol}_{primary_timeframe}_validated.parquet",
+                        Path("data_cache") / "unified_cache" / f"{exchange}_{symbol}_{primary_timeframe}.parquet",
+                        Path("data_cache") / exchange / f"{symbol}_{primary_timeframe}.parquet",
+                    ]
+                    
+                    for path in data_cache_paths:
+                        if path.exists():
+                            market_data = pd.read_parquet(path)
+                            tprint_info(f"✅ Loaded market data from {path}")
+                            break
+                
+                if market_data is None or market_data.empty:
+                    tprint_warning("⚠️ No market data available for regime feature generation")
+                    raise ValueError("No market data available")
+                
+                # Generate regime-specific features using RegimeFeatureIntegration
+                regime_config = RegimeFeatureConfig(
+                    enable_regime_detection=True,
+                    lookback_period=20,
+                    enable_adaptive_features=True,
+                    enable_regime_transitions=True
+                )
+                
+                regime_generator = RegimeFeatureIntegration(config=regime_config)
+                
+                tprint_info("🎯 Generating regime features...")
+                regime_features_dict = regime_generator.generate_features(market_data)
+                
+                # Convert features dict to DataFrame
+                features_data = pd.DataFrame(regime_features_dict)
+                
+                # Get regime clustering feature names from categorizer
+                categorizer = RegimeFeatureCategorizer()
+                regime_feature_names = categorizer.get_priority_features(FeatureUseCase.REGIME_CLUSTERING, max_features=200)
+                
+                # Filter to only include regime clustering features
+                available_features = [col for col in features_data.columns if any(rf in col for rf in regime_feature_names)]
+                
+                if available_features:
+                    features_data = features_data[available_features]
+                    tprint_success(f"✅ Generated {len(features_data.columns)} regime-specific features for clustering")
+                else:
+                    tprint_warning(f"⚠️ Generated {len(features_data.columns)} features (no filtering applied - using all)")
+                
+                return features_data, None
+                
             except Exception as e:
-                self.logger.debug(f"Could not load data from feature_generation artifacts: {e}")
+                self.logger.debug(f"Could not generate regime-specific features: {e}")
+                tprint_warning(f"⚠️ Regime feature generation failed: {e}")
             
             # Try to load from feature bank
             try:
@@ -1204,20 +1268,50 @@ class EnhancedRegimeFeatureSelector(BaseStep):
             
             tprint_info(f"🎯 Found {len(priority_features)} priority regime clustering features")
             
-            # Filter features_df to only include those that match priority feature patterns
-            # Since priority_features contains generic names, match by pattern
-            matching_features = []
+            # ENHANCED: Prioritize regime-specific features with better pattern matching
+            regime_keywords = [
+                'entropy', 'fractal', 'hurst', 'complexity', 'lempel_ziv',
+                'regime', 'persistence', 'memory', 'structural',
+                # Add advanced statistical features that indicate regime changes
+                'cv', 'zscore', 'skew', 'kurt', 'autocorr',
+                # Add volatility ratios and clusters
+                'volatility_ratio', 'vol_cluster', 'vol_regime',
+                # Add trend strength and stability
+                'trend_strength', 'trend_stability', 'trend_persistence',
+                # Add momentum acceleration (indicates regime shifts)
+                'momentum_acceleration', 'acceleration_regime'
+            ]
+            
+            # Two-pass filtering: 1) Regime-specific, 2) High-priority patterns
+            regime_specific = []
+            high_priority = []
+            
             for col in features_df.columns:
                 col_lower = col.lower()
-                # Check if column matches any priority feature pattern
-                for priority_feature in priority_features:
-                    if priority_feature.lower() in col_lower:
-                        matching_features.append(col)
-                        break
+                
+                # Pass 1: Regime-specific features (highest priority)
+                if any(keyword in col_lower for keyword in regime_keywords):
+                    regime_specific.append(col)
+                # Pass 2: High-priority patterns from categorizer
+                elif any(priority_feature.lower() in col_lower for priority_feature in priority_features):
+                    high_priority.append(col)
+            
+            # Combine with regime-specific features first
+            matching_features = regime_specific + high_priority
             
             if matching_features:
                 filtered_df = features_df[matching_features]
-                tprint_success(f"✅ Filtered to {len(filtered_df.columns)} regime-optimized features (from {len(features_df.columns)} total)")
+                tprint_success(f"✅ Filtered to {len(filtered_df.columns)} regime-optimized features")
+                tprint_info(f"   📊 Regime-specific: {len(regime_specific)}, High-priority: {len(high_priority)}")
+                
+                # Log which regime features were found
+                if regime_specific:
+                    tprint_success(f"   🎯 Found {len(regime_specific)} regime-specific features:")
+                    for feat in regime_specific[:10]:
+                        tprint_info(f"      • {feat}")
+                    if len(regime_specific) > 10:
+                        tprint_info(f"      ... and {len(regime_specific) - 10} more")
+                
                 return filtered_df
             else:
                 tprint_warning("⚠️ No matching regime features found, using all features")

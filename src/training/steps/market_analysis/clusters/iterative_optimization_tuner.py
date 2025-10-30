@@ -222,7 +222,9 @@ class IterativeOptimizationTuner:
                  features: np.ndarray,
                  initial_labels: np.ndarray,
                  market_data: pd.DataFrame,
-                 verbose: bool = True):
+                 verbose: bool = True,
+                 apply_correlation_filter: bool = True,
+                 correlation_threshold: float = 0.85):
         """
         Initialize the tuner.
         
@@ -231,23 +233,97 @@ class IterativeOptimizationTuner:
             initial_labels: Initial cluster labels from HDBSCAN
             market_data: Market data DataFrame
             verbose: Enable verbose output
+            apply_correlation_filter: Apply GMM-style correlation filtering (default: True)
+            correlation_threshold: Correlation threshold for feature filtering (default: 0.85)
         """
+        # Import optimization goals from clustering_optimization_goals.py
+        try:
+            from src.training.steps.market_analysis.clusters.clustering_optimization_goals import (
+                DEFAULT_CLUSTERING_GOALS,
+                DEFAULT_OPTIMIZATION_TARGETS
+            )
+            self.optimization_goals = DEFAULT_CLUSTERING_GOALS
+            self.optimization_targets = DEFAULT_OPTIMIZATION_TARGETS
+            tprint(f"✅ Loaded optimization goals from clustering_optimization_goals.py", "INFO")
+            tprint(f"   Target clusters: {self.optimization_targets.min_clusters}-{self.optimization_targets.max_clusters}", "INFO")
+            tprint(f"   Target temporal smoothness: ≥{self.optimization_targets.min_temporal_smoothness:.2f}", "INFO")
+        except ImportError:
+            tprint("⚠️ Could not import clustering optimization goals, using defaults", "WARNING")
+            self.optimization_goals = None
+            self.optimization_targets = None
+        
+        # Store original features
         self.features = features
         self.initial_labels = initial_labels
         self.market_data = market_data
         self.verbose = verbose
+        self.apply_correlation_filter = apply_correlation_filter
+        self.correlation_threshold = correlation_threshold
+        
+        # Apply GMM-style correlation-based feature filtering
+        if apply_correlation_filter and isinstance(features, np.ndarray):
+            tprint(f"🔍 Applying GMM-style correlation-based feature filtering (threshold: {correlation_threshold})", "INFO")
+            features = self._apply_correlation_filter(features, correlation_threshold)
+            tprint(f"📊 Features after correlation filtering: {features.shape[1]} features", "INFO")
         
         # Filter out noise labels for optimization
         self.noise_mask = initial_labels >= 0
         self.filtered_features = features[self.noise_mask]
         self.filtered_labels = initial_labels[self.noise_mask]
         
-        tprint(f"🎯 Initialized tuner with {len(self.filtered_labels)} samples ({len(features) - len(self.filtered_labels)} noise filtered)", "INFO")
+        tprint(f"🎯 Initialized tuner with {len(self.filtered_labels)} samples ({len(initial_labels) - len(self.filtered_labels)} noise filtered)", "INFO")
         
         # Results storage
         self.best_params = None
         self.best_metrics = None
         self.optimization_history = []
+    
+    def _apply_correlation_filter(self, features: np.ndarray, threshold: float = 0.85) -> np.ndarray:
+        """
+        Apply GMM-style correlation-based feature filtering.
+        
+        Removes highly correlated features to reduce redundancy,
+        following the same approach as GMMRegimeDiscoveryStep.
+        
+        Args:
+            features: Feature matrix (n_samples, n_features)
+            threshold: Correlation threshold (default: 0.85)
+            
+        Returns:
+            Filtered feature matrix
+        """
+        try:
+            import pandas as pd
+            
+            # Convert to DataFrame for correlation calculation
+            features_df = pd.DataFrame(features)
+            
+            # Calculate correlation matrix
+            corr_matrix = features_df.corr().abs()
+            
+            # Find highly correlated pairs
+            upper_tri = corr_matrix.where(
+                np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+            )
+            
+            # Find features to drop
+            to_drop_indices = [
+                i for i, column in enumerate(upper_tri.columns)
+                if any(upper_tri.iloc[:, i] > threshold)
+            ]
+            
+            # Keep features that are not in to_drop_indices
+            keep_indices = [i for i in range(features.shape[1]) if i not in to_drop_indices]
+            
+            if len(to_drop_indices) > 0:
+                tprint(f"📉 Removing {len(to_drop_indices)} highly correlated features", "INFO")
+                tprint(f"📊 Features: {features.shape[1]} → {len(keep_indices)}", "INFO")
+            
+            return features[:, keep_indices]
+            
+        except Exception as e:
+            tprint(f"⚠️ Correlation filtering failed: {e}, using all features", "WARNING")
+            return features
         
     def _run_single_trial(self, params: Dict[str, Any]) -> IterativeOptimizationMetrics:
         """
@@ -594,9 +670,21 @@ class IterativeOptimizationTuner:
             'metrics': metrics
         })
         
+        # CRITICAL FIX: Always store user attributes BEFORE checking constraints
+        # This ensures best_trial has attributes even if all trials fail
+        trial.set_user_attr('cv_score', metrics.cv_score)
+        trial.set_user_attr('silhouette_score', metrics.silhouette_score)
+        trial.set_user_attr('dbi_score', metrics.dbi_score)
+        trial.set_user_attr('balance_score', metrics.balance_score)
+        trial.set_user_attr('temporal_smoothness', metrics.temporal_smoothness)
+        trial.set_user_attr('n_clusters', metrics.n_clusters)
+        trial.set_user_attr('meets_constraints', True)  # Will be updated if constraints fail
+        
         # Check if constraints are met (including cluster size validation)
         n_total_samples = len(self.filtered_labels)
         if not metrics.meets_constraints(n_total_samples=n_total_samples):
+            # Mark that this trial failed constraints
+            trial.set_user_attr('meets_constraints', False)
             # Penalize trials that don't meet constraints
             penalty = -10.0
             constraint_info = f"clusters={metrics.n_clusters}, balance={metrics.balance_score:.3f}, temporal={metrics.temporal_smoothness:.3f}"
@@ -610,14 +698,6 @@ class IterativeOptimizationTuner:
         
         if self.verbose:
             tprint(f"✅ Trial {trial.number}: CV={metrics.cv_score:.3f}, Sil={metrics.silhouette_score:.3f}, DBI={metrics.dbi_score:.3f}, Balance={metrics.balance_score:.3f}, Temporal={metrics.temporal_smoothness:.3f}, K={metrics.n_clusters}, Score={composite:.4f}", "INFO")
-        
-        # Store as multi-objective values for Pareto analysis
-        trial.set_user_attr('cv_score', metrics.cv_score)
-        trial.set_user_attr('silhouette_score', metrics.silhouette_score)
-        trial.set_user_attr('dbi_score', metrics.dbi_score)
-        trial.set_user_attr('balance_score', metrics.balance_score)
-        trial.set_user_attr('temporal_smoothness', metrics.temporal_smoothness)
-        trial.set_user_attr('n_clusters', metrics.n_clusters)
         
         return composite
     
@@ -647,19 +727,41 @@ class IterativeOptimizationTuner:
             # Run optimization
             study.optimize(self._objective_function, n_trials=n_trials, show_progress_bar=True)
             
-            # Get best trial
-            best_trial = study.best_trial
-            best_params = best_trial.params
-            best_score = best_trial.value
+            # Check if we have any successful trials
+            if len(study.trials) == 0:
+                tprint("❌ No trials completed", "ERROR")
+                return None
             
-            # Extract metrics from best trial
+            # Get best trial with error handling
+            try:
+                best_trial = study.best_trial
+            except ValueError as e:
+                tprint(f"❌ No best trial found (all trials may have failed): {e}", "ERROR")
+                # Find trial with best score even if it failed constraints
+                best_value = float('-inf')
+                best_trial = None
+                for trial in study.trials:
+                    if trial.value is not None and trial.value > best_value:
+                        best_value = trial.value
+                        best_trial = trial
+                
+                if best_trial is None:
+                    tprint("❌ All trials failed", "ERROR")
+                    return None
+                
+                tprint(f"⚠️ Using best trial #{best_trial.number} even though it failed constraints", "WARNING")
+            
+            best_params = best_trial.params
+            best_score = best_trial.value if best_trial.value is not None else -10.0
+            
+            # Extract metrics from best trial with safe defaults
             best_metrics = IterativeOptimizationMetrics(
-                cv_score=best_trial.user_attrs['cv_score'],
-                silhouette_score=best_trial.user_attrs['silhouette_score'],
-                dbi_score=best_trial.user_attrs['dbi_score'],
-                balance_score=best_trial.user_attrs['balance_score'],
-                temporal_smoothness=best_trial.user_attrs['temporal_smoothness'],
-                n_clusters=best_trial.user_attrs['n_clusters'],
+                cv_score=best_trial.user_attrs.get('cv_score', 0.0),
+                silhouette_score=best_trial.user_attrs.get('silhouette_score', 0.0),
+                dbi_score=best_trial.user_attrs.get('dbi_score', 10.0),
+                balance_score=best_trial.user_attrs.get('balance_score', 0.0),
+                temporal_smoothness=best_trial.user_attrs.get('temporal_smoothness', 0.0),
+                n_clusters=best_trial.user_attrs.get('n_clusters', 4),
                 cluster_sizes=[],
                 optimization_time=0.0
             )

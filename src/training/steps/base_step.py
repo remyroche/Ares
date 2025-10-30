@@ -209,6 +209,93 @@ class BaseStep(ABC):
             self.logger.warning(f"Failed to apply light mode filter: {e}")
             return data
 
+    def _save_ml_scored_data(
+        self,
+        data: Any,
+        predictions: Any,
+        model_type: str,
+        config: Dict[str, Any],
+        metadata: Optional[Dict] = None
+    ) -> str:
+        """
+        Save ML-scored historical data with standardized naming and metadata.
+        
+        This creates a unified artifact that combines historical data with ML predictions,
+        making it easy for backtesting, optimization, and analysis steps to use.
+        
+        Args:
+            data: Historical price/feature data
+            predictions: ML model predictions (can be DataFrame or dict)
+            model_type: Type of model ('analyst' or 'tactician')
+            config: Configuration dictionary with symbol, exchange, timeframe, direction
+            metadata: Additional metadata to include
+            
+        Returns:
+            Path where artifact was saved
+        """
+        try:
+            import pandas as pd
+            from datetime import datetime
+            
+            symbol = config.get('symbol', 'UNKNOWN')
+            exchange = config.get('exchange', 'binance')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+            
+            # Combine data and predictions
+            if isinstance(data, pd.DataFrame) and isinstance(predictions, (pd.DataFrame, pd.Series)):
+                # Ensure indices align
+                if not data.index.equals(predictions.index):
+                    self.logger.warning("Data and predictions indices don't match, aligning...")
+                    predictions = predictions.reindex(data.index)
+                
+                # Combine into scored dataset
+                scored_data = data.copy()
+                
+                # Add predictions with appropriate prefix
+                if isinstance(predictions, pd.Series):
+                    scored_data[f'{model_type}_prediction'] = predictions
+                elif isinstance(predictions, pd.DataFrame):
+                    for col in predictions.columns:
+                        scored_data[f'{model_type}_{col}'] = predictions[col]
+            else:
+                # If not DataFrames, package as dict
+                scored_data = {
+                    'data': data,
+                    'predictions': predictions,
+                    'model_type': model_type
+                }
+            
+            # Prepare metadata
+            artifact_metadata = {
+                'model_type': model_type,
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframe': timeframe,
+                'direction': direction,
+                'created_at': datetime.now().isoformat(),
+                'data_points': len(data) if hasattr(data, '__len__') else 0,
+                **(metadata or {})
+            }
+            
+            # Save with standardized name
+            artifact_name = f"ml_scored_historical_data_{model_type}_{direction}"
+            
+            artifact_path = self._save_artifact(
+                data=scored_data,
+                artifact_name=artifact_name,
+                artifact_type='data',
+                compression='auto',
+                metadata=artifact_metadata
+            )
+            
+            self.logger.info(f"Saved ML scored data: {artifact_name} -> {artifact_path}")
+            return artifact_path
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save ML scored data: {e}")
+            raise
+    
     def _get_sr_levels(self, symbol: str = None, exchange: str = None, 
                       timeframe: str = None, direction: str = None) -> Dict[str, Any]:
         """

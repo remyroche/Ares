@@ -806,16 +806,12 @@ class EnhancedTrainingUtils:
             Walk-forward validation results
         """
         try:
-            if self.cv_utils:
-                # Use existing CV utilities
-                return self.cv_utils.walk_forward_validation(
-                    X, y, model, initial_train_size, test_size, step_size, expanding_window
-                )
-            else:
-                # Implement basic walk-forward validation
-                return self._basic_walk_forward_validation(
-                    model, X, y, initial_train_size, test_size, step_size, expanding_window
-                )
+            # NOTE: CrossValidationUtilities.walk_forward_validation has been removed.
+            # For production use, consider: src.validation.walkforward_validation.WalkForwardValidator
+            # For now, use basic implementation for backward compatibility.
+            return self._basic_walk_forward_validation(
+                model, X, y, initial_train_size, test_size, step_size, expanding_window
+            )
 
         except Exception as e:
             tprint_error(f"❌ Walk-forward validation failed: {e}")

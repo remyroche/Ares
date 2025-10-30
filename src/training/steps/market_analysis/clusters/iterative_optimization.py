@@ -2516,11 +2516,11 @@ class OptConfig:
         self.beta = 0.6  # Step 2 weight
         self.split_tries_max = 5  # KMeans restarts
 
-        # ENHANCED objective weights - AGGRESSIVE CV optimization focus
-        # Prioritizing CV ratio for maximum regime separation quality
-        self.w_cv = 0.70   # Primary: Variance ratio (CV) - MAXIMIZED for regime separation
-        self.w_temp = 0.20 # Secondary: Temporal smoothness - reduced to focus on CV
-        self.w_sil = 0.10  # Tertiary: Cluster cohesion (Silhouette) - reduced
+        # ENHANCED objective weights - BALANCED optimization with strong temporal focus
+        # Prioritizing CV ratio and temporal smoothness for regime separation quality
+        self.w_cv = 0.50   # Primary: Variance ratio (CV) - regime separation
+        self.w_temp = 0.35 # Secondary: Temporal smoothness - INCREASED for stable regimes
+        self.w_sil = 0.15  # Tertiary: Cluster cohesion (Silhouette)
         self.w_dbi = 0.00  # accessory
         self.w_ch = 0.00   # accessory
         self.w_bal = 0.05  # Minimal: Balance constraint - reduced to soft penalty
@@ -2658,9 +2658,12 @@ class IterativeOptimization:
         self.max_alternatives_per_point = 3  # For alternative cluster finding
         self.move_history = {}  # For tracking moves (point_idx -> history list)
         self.use_std_for_rank = True  # For ranking moves
+        self.use_std_for_gate = True  # For gating moves
+        
         # Returns distance blending (for hybrid correlation distance)
         self.returns_lambda = 0.5
         self.returns_mask = None
+        
         # Runtime control params used by Step-1/2 logic
         self.exploratory_quota = 3
         self.max_local_moves_per_iter = 50
@@ -2672,6 +2675,13 @@ class IterativeOptimization:
         self.thrash_threshold = 0.6
         self.boundary_ratio_threshold = 0.45
         self.thrash_count_threshold = 3
+        
+        # Gating thresholds - CRITICAL: Must be initialized to prevent AttributeError
+        self.cv_guard = -0.05  # Soft CV constraint (negative = accept decreases up to this amount)
+        self.sil_guard = -0.35  # Silhouette guard (will be updated adaptively)
+        self.temporal_bonus = 0.20  # Temporal bonus multiplier (will be updated adaptively)
+        self.eps_std_step1 = -0.12  # Step 1 acceptance threshold (negative = improvement required)
+        self.eps_std_step2 = -0.12  # Step 2 acceptance threshold (negative = improvement required)
 
         # CRITICAL FIX: Initialize core state attributes
         self.assignments = None
@@ -2692,6 +2702,11 @@ class IterativeOptimization:
         # Initialize cluster quality assessor for post-optimization assessment
         self.cluster_quality_assessor = ClusterQualityAssessor()
         self.last_quality_metrics = None  # Store the most recent quality assessment
+
+        # Monitoring and anti-oscillation tracking
+        self.step_reports = []
+        self.tabu_list = {}  # (point_idx, cluster) -> iteration_when_tabu_ends
+        self.cluster_thrash_counts = {}  # cluster_id -> thrash_count_over_6_iters
 
         # Call hydrate defaults to ensure all attributes are set
         # Note: features will be set when optimization starts
@@ -3144,6 +3159,10 @@ class IterativeOptimization:
             current_k = int(labels.max()) + 1
             if current_k < self.config.K_MIN:
                 labels = self._enforce_k_and_cap_labels(X, labels)
+
+            # 4) Filter noisy transitions for improved temporal coherence
+            tprint("🔧 Applying temporal coherence filtering...", "INFO")
+            labels = self.filter_noisy_transitions(labels, min_regime_duration=3)
 
             # Final compact
             labels = self._relabel_compact(labels)
@@ -3942,11 +3961,12 @@ class IterativeOptimization:
             return []
     
     def _calculate_persistence_penalty(self, durations: List[int]) -> float:
-        """Calculate penalty for short regime durations."""
+        """Calculate ENHANCED penalty for short regime durations."""
         try:
             if not durations:
                 return 0.0
             
+            # ENHANCED: More aggressive penalties for unstable regimes
             # Penalize regimes that are too short (less than 5 periods)
             short_durations = [d for d in durations if d < 5]
             if not short_durations:
@@ -3955,14 +3975,18 @@ class IterativeOptimization:
             # Calculate penalty based on proportion of short durations
             short_ratio = len(short_durations) / len(durations)
             
-            # Additional penalty for very short durations (1-2 periods)
+            # ENHANCED: Additional penalty for very short durations (1-2 periods)
             very_short_durations = [d for d in durations if d <= 2]
             very_short_ratio = len(very_short_durations) / len(durations)
             
-            # Combined penalty
-            persistence_penalty = 0.3 * short_ratio + 0.5 * very_short_ratio
+            # ENHANCED: Even more aggressive penalty for single-period regimes (flickering)
+            single_period_durations = [d for d in durations if d == 1]
+            flicker_ratio = len(single_period_durations) / len(durations)
             
-            return min(0.3, persistence_penalty)  # Cap at 0.3
+            # ENHANCED: Combined penalty with stronger weights
+            persistence_penalty = 0.4 * short_ratio + 0.6 * very_short_ratio + 0.8 * flicker_ratio
+            
+            return min(0.5, persistence_penalty)  # ENHANCED: Cap increased to 0.5
             
         except Exception:
             return 0.0
@@ -4008,6 +4032,85 @@ class IterativeOptimization:
             
         except Exception:
             return 0.0
+
+    def filter_noisy_transitions(self, labels: np.ndarray, min_regime_duration: int = 3) -> np.ndarray:
+        """
+        Filter out noisy transitions by merging very short regime segments with neighbors.
+        
+        This post-processing step improves temporal coherence by removing regime flickering
+        and ensuring minimum regime persistence.
+        
+        Args:
+            labels: Cluster assignments (1D array)
+            min_regime_duration: Minimum number of consecutive periods for a valid regime
+            
+        Returns:
+            Filtered labels with reduced noise
+        """
+        try:
+            if len(labels) < min_regime_duration:
+                return labels.copy()
+            
+            filtered = labels.copy()
+            
+            # Iteratively merge short segments until all regimes meet minimum duration
+            max_iterations = 10  # Prevent infinite loops
+            for iteration in range(max_iterations):
+                changes_made = False
+                
+                # Find all regime segments
+                i = 0
+                while i < len(filtered):
+                    current_regime = filtered[i]
+                    segment_start = i
+                    
+                    # Find end of current regime segment
+                    while i < len(filtered) and filtered[i] == current_regime:
+                        i += 1
+                    
+                    segment_end = i
+                    segment_length = segment_end - segment_start
+                    
+                    # If segment is too short, merge with neighbor
+                    if segment_length < min_regime_duration and segment_length > 0:
+                        # Determine which neighbor to merge with
+                        prev_regime = filtered[segment_start - 1] if segment_start > 0 else None
+                        next_regime = filtered[segment_end] if segment_end < len(filtered) else None
+                        
+                        # Choose the most common neighbor (or previous if tie)
+                        if prev_regime is not None and next_regime is not None:
+                            # Merge with the regime that appears more frequently around this segment
+                            prev_count = np.sum(filtered[max(0, segment_start-10):segment_start] == prev_regime)
+                            next_count = np.sum(filtered[segment_end:min(len(filtered), segment_end+10)] == next_regime)
+                            merge_regime = prev_regime if prev_count >= next_count else next_regime
+                        elif prev_regime is not None:
+                            merge_regime = prev_regime
+                        elif next_regime is not None:
+                            merge_regime = next_regime
+                        else:
+                            break  # No neighbors to merge with
+                        
+                        # Perform merge
+                        filtered[segment_start:segment_end] = merge_regime
+                        changes_made = True
+                
+                # If no changes were made, we're done
+                if not changes_made:
+                    break
+            
+            # Log filtering results
+            transitions_before = np.sum(labels[1:] != labels[:-1])
+            transitions_after = np.sum(filtered[1:] != filtered[:-1])
+            reduction = transitions_before - transitions_after
+            
+            if reduction > 0:
+                tprint(f"🔧 Filtered {reduction} noisy transitions ({transitions_before} → {transitions_after})", "INFO")
+            
+            return filtered
+            
+        except Exception as e:
+            tprint(f"⚠️ Transition filtering failed: {e}", "WARNING")
+            return labels.copy()
 
     def evaluate_metrics(self, X: np.ndarray, labels: np.ndarray, entity_ids: np.ndarray = None,
                         time_idx: np.ndarray = None, sample_for_indices: np.ndarray = None) -> dict:
@@ -4972,78 +5075,6 @@ class IterativeOptimization:
         """Compute centroids for all clusters using optimized engine with caching."""
         # Use optimized calculation engine
         return self.calculation_engine.calculate_centroids_optimized(X, assignments)
-
-        # Step 3 hardening parameters
-        self.split_tries_max = 8  # not 50
-
-        # Step 1: Local frontier parameters - AGGRESSIVE OPTIMIZATION
-        # Enhanced to maximize CV, Silhouette, and Temporal Smoothness
-        self.frontier_fraction = 0.50  # Increased to 50% for broader exploration
-        self.knn_size = 15  # Increased kNN for better neighborhood detection
-        self.neighbor_consensus_threshold = 0.55  # Slightly relaxed for more candidates
-        self.local_threshold = -0.001  # Require small improvement (negative = better)
-        self.local_churn_cap = 0.03  # 3% of N - increased for more moves
-        self.hysteresis_rounds = 3  # Increased stability rounds
-
-        # Step 2: Global reallocation parameters - AGGRESSIVE OPTIMIZATION
-        # Focus on temporal smoothness and CV improvement
-        self.beta = 0.25  # Increased weight for global coordination
-        self.global_threshold = -0.001  # Require improvement for global moves
-        self.global_churn_cap = 0.10  # 10% of N - increased for global optimization
-        self.min_cluster_size = 20  # Slightly reduced to allow more flexibility
-
-        # Step 3: Break large clusters parameters (LOOSENED FOR TRIAGE)
-        self.size_factor_threshold = 1.3  # Reduced from 1.5 to 1.3
-        self.split_quality_threshold = 0.003  # Reduced from 0.005 to 0.003
-        self.alpha = 1.0  # Size-aware penalty
-        self.max_new_clusters_per_round = 3
-
-        # ENHANCED objective function weights - MAXIMUM CV optimization focus
-        # Prioritizing CV ratio for maximum regime separation quality
-        self.w_cv = 0.70     # Primary: variance ratio (CV) - MAXIMIZED for regime separation
-        self.w_temp = 0.35   # Enhanced: temporal smoothness - increased for better regime persistence
-        self.w_sil = 0.10    # Tertiary: cluster cohesion (Silhouette) - reduced
-        self.w_bal = 0.05    # Minimal: balance constraint (soft penalty)
-        self.lambda_switch = 1e-5  # Reduced by 10x from 1e-4 to 1e-5
-
-        # Gating configuration - single source of truth
-        self.use_std_for_rank = True  # Use standardized objective for ranking
-        self.use_std_for_gate = True  # Use standardized objective for gating (must match log label)
-        # Adaptive thresholds based on iteration (FIXED: negative values are improvements)
-        self.eps_std_step1 = -0.12  # Will be updated per iteration (≤ threshold for acceptance)
-        self.eps_std_step2 = -0.12  # Will be updated per iteration (≤ threshold for acceptance)
-        self.sil_guard = -0.35  # Will be updated per iteration
-        self.temporal_bonus = 0.20  # Will be updated per iteration
-        self.cv_guard = -0.05  # Soft finance-first constraint
-        self.max_local_moves_per_iter = 50  # Max moves per iteration
-        self.exploratory_quota = 5  # Allow top N moves even if guards trip (for exploration)
-
-        # New parameters
-        self.early_stop_threshold = 0.5  # Rolling 4-iter |ΔJ_total| threshold
-        self.early_stop_patience = 2  # Consecutive iterations for early stop
-        self.chunk_size = 4  # Apply moves in chunks (recompute frontier after each)
-        self.max_global_moves = 8  # Cap global reallocation moves
-        self.max_alternatives_per_point = 2  # Limit alternative clusters per point
-        self.split_size_threshold = 1.30  # Size ratio for splitting large clusters
-        self.split_silhouette_threshold = 0.08  # Mean silhouette threshold for splitting
-
-        # Anti-oscillation parameters
-        self.no_reversal_window = 4  # Points cannot return to previous cluster within N iters
-        self.reverse_margin = 0.30  # Override margin for reversal window
-        self.tabu_tenure = 3  # Tabu list tenure for (point, prev_cluster)
-        self.max_moves_per_point = 2  # Max moves per point over 6-iter window
-        self.move_window_size = 6  # Window size for move tracking
-
-        # Thrash detection
-        self.thrash_threshold = 0.6  # Thrash rate threshold
-        self.boundary_ratio_threshold = 0.45  # Boundary ratio for splitting
-        self.thrash_count_threshold = 3  # Thrash count threshold over 6 iters
-
-        # Monitoring and anti-oscillation tracking
-        self.step_reports = []
-        self.move_history = {}  # point_idx -> [(iteration, from_cluster, to_cluster, delta), ...]
-        self.tabu_list = {}  # (point_idx, cluster) -> iteration_when_tabu_ends
-        self.cluster_thrash_counts = {}  # cluster_id -> thrash_count_over_6_iters
 
     @property
     def n_clusters(self) -> int:

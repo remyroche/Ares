@@ -1902,19 +1902,25 @@ class CompositeFeatureScorer:
     
     def _calculate_lgbm_importance(self, X: np.ndarray, y: np.ndarray,
                                    feature_names: List[str]) -> Dict[str, float]:
-        """Calculate LGBM feature importance (normalized to 0-1)."""
+        """Calculate LGBM feature importance using permutation importance (captures interactions)."""
         try:
+            from sklearn.inspection import permutation_importance
+            
             if not LIGHTGBM_AVAILABLE:
-                _LOGGER.warning("⚠️ LightGBM not available, using RandomForest")
+                _LOGGER.warning("⚠️ LightGBM not available, using RandomForest with permutation importance")
                 # Fallback to RandomForest
                 from sklearn.ensemble import RandomForestRegressor
                 model = RandomForestRegressor(
                     n_estimators=50, max_depth=5, random_state=42, n_jobs=-1
                 )
                 model.fit(X, y)
-                importances = model.feature_importances_
+                # Use permutation importance instead of Gini
+                perm_importance = permutation_importance(
+                    model, X, y, n_repeats=10, random_state=42, n_jobs=-1
+                )
+                importances = perm_importance.importances_mean
             else:
-                # Use LightGBM
+                # Use LightGBM with permutation importance
                 import lightgbm as lgb
                 model = lgb.LGBMRegressor(
                     n_estimators=100,
@@ -1925,15 +1931,20 @@ class CompositeFeatureScorer:
                     verbose=-1
                 )
                 model.fit(X, y)
-                importances = model.feature_importances_
+                # Use permutation importance to capture feature interactions
+                perm_importance = permutation_importance(
+                    model, X, y, n_repeats=10, random_state=42, n_jobs=-1
+                )
+                importances = perm_importance.importances_mean
             
             # Normalize to 0-1
             if importances.max() > 0:
                 importances = importances / importances.max()
             
+            _LOGGER.info("✅ Using permutation importance (captures feature interactions)")
             return {feature_names[i]: importances[i] for i in range(len(feature_names))}
         except Exception as e:
-            _LOGGER.warning(f"⚠️ LGBM importance calculation failed: {e}")
+            _LOGGER.warning(f"⚠️ LGBM permutation importance calculation failed: {e}")
             return {name: 0.5 for name in feature_names}
     
     def _calculate_shap_importance(self, X: np.ndarray, y: np.ndarray,

@@ -1,13 +1,13 @@
 # Tactician Ensemble Training Configuration
 # Configuration for ensemble tactician models training (15m timeframe, runs every 3m)
 # Role: When Analyst gives green light, decides WHEN to trade based on 0.5% price change timing
-# Uses outputs from Analyst ensemble + Tactician base models
+# Uses outputs from Analyst ensemble + Tactician base models (separate GRU and LGBM)
 
 tactician_config:
   model_name: "tactician_ensemble"
   model_type: "meta_ensemble"
   target: "entry_timing"  # Timing for 0.5% price change
-  base_timeframe: "1m"  # Base timeframe for cross-timeframe features & optimized lookback
+  base_timeframe: "15m"  # Base timeframe for cross-timeframe features & optimized lookback
   execution_timeframe: "15m"  # When to run the model
   execution_frequency: "3m"  # Run every 3 minutes
   price_change_target: 0.005  # 0.5% price change target
@@ -48,17 +48,25 @@ tactician_config:
     enable: true
     source: "tactician_base_models"
     features:
-      - "lgbm_gru_predictions"
-      - "catboost_predictions"
-      - "causal_dilated_tcn_predictions"
+      - "gru_predictions"          # Standalone GRU model predictions
+      - "lgbm_predictions"         # Standalone LGBM model predictions
+      - "catboost_predictions"     # CatBoost model predictions
+      - "extratrees_predictions"   # Extra Trees model predictions
       - "tactician_base_meta_learner_output"
       - "tactician_base_confidence_scores"
   
   # Training configuration
+  # NOTE: The absolute sample numbers below are now OVERRIDDEN by percentage-based allocations
+  # calculated in unified_models_training_step.py. Default percentages are:
+  # - Training: 70% of total samples
+  # - Validation: 15% of total samples
+  # - Test: 15% of total samples
+  # You can override these percentages by setting train_percentage, validation_percentage, 
+  # and test_percentage in the runtime config
   training:
-    training_samples: 12000
-    validation_samples: 4000
-    test_samples: 2500
+    training_samples: 12000  # Deprecated - calculated as % of total samples
+    validation_samples: 4000  # Deprecated - calculated as % of total samples
+    test_samples: 2500  # Deprecated - calculated as % of total samples
     enable_cross_validation: true
     cv_folds: 5
     enable_early_stopping: true
@@ -93,7 +101,7 @@ feature_engineering:
   # Cross-timeframe features
   cross_timeframe:
     enable: true
-    base_timeframe: "1m"
+    base_timeframe: "15m"
     target_timeframes: ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
     feature_types: ["technical_indicators", "price_action", "volume_profile", "volatility"]
     optimized_lookback: true
@@ -119,9 +127,10 @@ feature_engineering:
     enable: true
     source: "tactician_base_models"
     features:
-      - "lgbm_gru_predictions"
-      - "catboost_predictions"
-      - "causal_dilated_tcn_predictions"
+      - "gru_predictions"          # Standalone GRU model predictions
+      - "lgbm_predictions"         # Standalone LGBM model predictions
+      - "catboost_predictions"     # CatBoost model predictions
+      - "extratrees_predictions"   # Extra Trees model predictions
       - "tactician_base_meta_learner_output"
       - "tactician_base_confidence_scores"
   

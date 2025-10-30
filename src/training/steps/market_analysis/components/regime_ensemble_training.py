@@ -64,6 +64,13 @@ from src.utils.ml_common.post_training.model_validation import (
     ModelValidator, ValidationConfig
 )
 
+# Import new artifact schema and meta-features
+from .regime_artifact_schema import (
+    RegimeLabelsArtifact, FeatureContract, BaseModelContract,
+    RegimeModelsArtifact, RegimeEnsembleArtifact, RegimeArtifactExtractor
+)
+from .ensemble_meta_features import EnsembleMetaFeaturesGenerator, generate_ensemble_meta_features
+
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
@@ -188,6 +195,14 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         )
         tprint("🔧 [REGIME_ENSEMBLE] Model validator initialized", color="green")
 
+        # Initialize meta-features generator
+        self.meta_features_generator = EnsembleMetaFeaturesGenerator(component_name="REGIME_ENSEMBLE")
+        tprint("🔧 [REGIME_ENSEMBLE] Meta-features generator initialized", color="green")
+        
+        # Initialize artifact extractor
+        self.artifact_extractor = RegimeArtifactExtractor()
+        tprint("🔧 [REGIME_ENSEMBLE] Artifact extractor initialized", color="green")
+
         # Initialize ensemble training parameters
         self.ensemble_config = {
             'n_estimators': 100,
@@ -240,61 +255,63 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             protected_data = self.lookahead_protection.automated_future_data_filtering(data)
             tprint("✅ [REGIME_ENSEMBLE] Lookahead protection applied", color="green")
 
-            # Extract required data from pipeline state
-            tprint("📊 [REGIME_ENSEMBLE] Extracting data from pipeline state", color="yellow")
+            # Extract required data from pipeline state using standardized extractors
+            tprint("📊 [REGIME_ENSEMBLE] Extracting data from pipeline state with standardized extractors", color="yellow", bold=True)
 
-            # Extract regime labels from pipeline state artifacts
-            artifacts = pipeline_state.get('artifacts', {})
+            # Extract regime labels using standardized extractor
+            # NOTE: Currently in testing mode (tries all methods). When you choose your winner:
+            # 1. Uncomment the preferred_method parameter below
+            # 2. Set it to your chosen method: "gmm", "hmm", "optimal", or "regime_clustering"
+            # 3. Remove unused clustering steps from pipeline
+            regime_labels_artifact = self.artifact_extractor.extract_regime_labels(
+                pipeline_state, 
+                component_name="REGIME_ENSEMBLE"
+                # preferred_method="gmm"  # 👈 PRODUCTION: Uncomment and set to your winner (gmm/hmm/optimal)
+            )
+            
+            if regime_labels_artifact is None:
+                raise ValueError("❌ Failed to extract regime labels from pipeline state")
+            
+            # Validate regime labels artifact
+            if not regime_labels_artifact.validate():
+                raise ValueError("❌ Regime labels artifact validation failed")
+            
+            regime_labels = regime_labels_artifact.cluster_assignments
+            tprint(
+                f"✅ [REGIME_ENSEMBLE] Extracted regime labels: {len(regime_labels)} samples, "
+                f"{regime_labels_artifact.n_regimes} regimes using {regime_labels_artifact.clustering_method}",
+                color="green",
+                bold=True
+            )
+            tprint(
+                f"📊 [REGIME_ENSEMBLE] Regime distribution: {regime_labels_artifact.regime_distribution}",
+                color="blue"
+            )
 
-            # Try multiple possible artifact keys for clustering results
-            regime_labels = None
-
-            # First try the new optimal_regime_clustering_result structure
-            optimal_clustering_result = artifacts.get('optimal_regime_clustering_result', {})
-            if optimal_clustering_result:
-                clustering_result = optimal_clustering_result.get('clustering_result')
-                if clustering_result:
-                    tprint(f"🔍 [REGIME_ENSEMBLE] clustering_result type: {type(clustering_result)}", color="blue")
-
-                    if isinstance(clustering_result, dict):
-                        # Handle dict case (normal structure)
-                        regime_labels = clustering_result.get('cluster_assignments')
-                        # Handle case where assignments are stored as string representation
-                        if isinstance(regime_labels, str):
-                            try:
-                                # Parse numpy array string representation (e.g., "[2 2 2 ... 4 6 6]")
-                                clean_str = regime_labels.strip('[]')
-                                regime_labels = np.array([int(x) for x in clean_str.split() if x.strip()])
-                                tprint("🔍 [REGIME_ENSEMBLE] Parsed regime labels from string representation", color="blue")
-                            except Exception as e:
-                                tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to parse regime labels string: {e}", color="yellow")
-                                regime_labels = None
-                        if regime_labels is not None:
-                            tprint("🔍 [REGIME_ENSEMBLE] Found regime labels in optimal_regime_clustering_result", color="blue")
-                    elif hasattr(clustering_result, 'cluster_assignments'):
-                        # Handle object case (fallback)
-                        regime_labels = clustering_result.cluster_assignments
-                        if isinstance(regime_labels, str):
-                            try:
-                                clean_str = regime_labels.strip('[]')
-                                regime_labels = np.array([int(x) for x in clean_str.split() if x.strip()])
-                                tprint("🔍 [REGIME_ENSEMBLE] Parsed regime labels from clustering_result object", color="blue")
-                            except Exception as e:
-                                tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to parse regime labels string: {e}", color="yellow")
-                                regime_labels = None
-                        if regime_labels is not None:
-                            tprint("🔍 [REGIME_ENSEMBLE] Found regime labels in clustering_result object", color="blue")
-
-            # Fallback to old regime_clustering_result structure
-            if regime_labels is None:
-                regime_clustering_result = artifacts.get('regime_clustering_result', {})
-                regime_labels = regime_clustering_result.get('cluster_assignments')
-                if regime_labels is not None:
-                    tprint("🔍 [REGIME_ENSEMBLE] Found regime labels in regime_clustering_result", color="blue")
-
-            # Get base models from previous training
-            regime_models_result = artifacts.get('regime_models_training_result', {})
-            base_models = regime_models_result.get('models', {})
+            # Extract base models using standardized extractor
+            regime_models_artifact = self.artifact_extractor.extract_base_models(
+                pipeline_state, component_name="REGIME_ENSEMBLE"
+            )
+            
+            if regime_models_artifact is None:
+                raise ValueError("❌ Failed to extract base models from pipeline state")
+            
+            # Validate base models artifact
+            if not regime_models_artifact.validate_models():
+                raise ValueError("❌ Base models artifact validation failed")
+            
+            # Get ONLY base models (exclude ensemble/meta-learners to avoid circular references)
+            base_models = regime_models_artifact.get_base_models()
+            tprint(
+                f"✅ [REGIME_ENSEMBLE] Extracted {len(base_models)} base models (filtered from {len(regime_models_artifact.models)} total)",
+                color="green",
+                bold=True
+            )
+            
+            # Log base model names for transparency
+            tprint("📋 [REGIME_ENSEMBLE] Base models to use:", color="cyan")
+            for model_name in base_models.keys():
+                tprint(f"   - {model_name}", color="blue")
 
             # Check if regime labels are available before preparing training data
             if regime_labels is None:
@@ -644,67 +661,71 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             return meta_features
 
     def _train_stacker_lgbm_calibrated(self, X: np.ndarray, y: np.ndarray, base_models: Dict[str, Any]) -> Dict[str, Any]:
-        """Train stacker_lgbm_calibrated meta-learner with HPO optimization."""
-        tprint("🎭 [REGIME_ENSEMBLE] Training stacker_lgbm_calibrated meta-learner with HPO", color="yellow")
+        """
+        Train stacker_lgbm_calibrated meta-learner with HPO optimization.
+        
+        Uses comprehensive meta-features including:
+        - Base model predictions (probabilities)
+        - Uncertainty features (entropy, variance)
+        - Confidence features (max prob, margin)
+        - Disagreement features (diversity, agreement rate)
+        
+        Args:
+            X: Feature matrix for base models
+            y: Target labels
+            base_models: Dictionary of trained base models
+            
+        Returns:
+            Dictionary containing trained meta-learner, contracts, and metrics
+        """
+        tprint("🎭 [REGIME_ENSEMBLE] Training stacker_lgbm_calibrated meta-learner with enhanced meta-features", color="yellow", bold=True)
 
         try:
-            # Filter out None models and non-model objects (like feature indices)
-            valid_base_models = {}
-            for name, model in base_models.items():
-                if model is not None and hasattr(model, 'predict'):
-                    valid_base_models[name] = model
-                elif name.endswith('_feature_indices'):
-                    tprint(f"📊 [REGIME_ENSEMBLE] Skipping feature indices metadata: {name}", color="blue")
-                else:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] Skipping non-model object: {name}", color="yellow")
-
-            if not valid_base_models:
-                tprint("❌ [REGIME_ENSEMBLE] No valid base models available for meta-learner", color="red")
+            # Validate base models
+            if not base_models:
+                tprint("❌ [REGIME_ENSEMBLE] No base models provided", color="red")
                 return None
 
-            tprint(f"📊 [REGIME_ENSEMBLE] Using {len(valid_base_models)} valid base models: {list(valid_base_models.keys())}", color="blue")
+            tprint(
+                f"📊 [REGIME_ENSEMBLE] Using {len(base_models)} base models: {list(base_models.keys())}",
+                color="blue"
+            )
+            
+            # Log base model input features for validation
+            tprint(f"📊 [REGIME_ENSEMBLE] Base model input shape: {X.shape}", color="blue")
+            tprint(f"📊 [REGIME_ENSEMBLE] Target shape: {y.shape}", color="blue")
+            tprint(f"📊 [REGIME_ENSEMBLE] Number of classes: {len(np.unique(y))}", color="blue")
 
-            # Generate base model predictions for meta-learning
-            tprint("🔧 [REGIME_ENSEMBLE] Generating base model predictions", color="blue")
-            base_predictions = []
-            base_model_names = []
-
-            for name, model in valid_base_models.items():
-                try:
-                    # Skip problematic models that cause feature mismatches
-                    if name in ['stacker_lgbm_calibrated', 'stacker_lgbm_calibrated_feature_indices']:
-                        tprint(f"⚠️ [REGIME_ENSEMBLE] Skipping problematic model during training: {name}", color="yellow")
-                        continue
-
-                    if hasattr(model, 'predict_proba'):
-                        # Use probability predictions
-                        pred_proba = model.predict_proba(X)
-                        base_predictions.append(pred_proba)
-                        base_model_names.append(f"{name}_proba")
-                        tprint(f"📊 [REGIME_ENSEMBLE] {name}: Using probability predictions (shape: {pred_proba.shape})", color="blue")
-                    else:
-                        # Use class predictions
-                        pred = model.predict(X)
-                        # Convert to one-hot encoding for meta-learner
-                        unique_classes = np.unique(y)
-                        pred_onehot = np.zeros((len(pred), len(unique_classes)))
-                        for i, class_val in enumerate(unique_classes):
-                            pred_onehot[pred == class_val, i] = 1
-                        base_predictions.append(pred_onehot)
-                        base_model_names.append(f"{name}_class")
-                        tprint(f"📊 [REGIME_ENSEMBLE] {name}: Using class predictions (shape: {pred_onehot.shape})", color="blue")
-                except Exception as e:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to get predictions from {name}: {e}", color="yellow")
-                    continue
-
-            if not base_predictions:
-                tprint("❌ [REGIME_ENSEMBLE] No valid predictions generated from base models", color="red")
-                return None
-
-            # Combine base model predictions
-            tprint("🔧 [REGIME_ENSEMBLE] Combining base model predictions", color="blue")
-            meta_features = np.column_stack(base_predictions)
-            tprint(f"📊 [REGIME_ENSEMBLE] Meta-features shape: {meta_features.shape}", color="blue")
+            # Generate comprehensive meta-features using the meta-features generator
+            # This includes: base predictions + uncertainty + confidence + disagreement
+            tprint("🔧 [REGIME_ENSEMBLE] Generating comprehensive meta-features", color="cyan", bold=True)
+            
+            meta_features, meta_feature_names = self.meta_features_generator.generate_meta_features(
+                base_models=base_models,
+                X=X,
+                y=y,
+                include_uncertainty=True,
+                include_confidence=True,
+                include_disagreement=True
+            )
+            
+            tprint(
+                f"✅ [REGIME_ENSEMBLE] Meta-features generated: shape {meta_features.shape} with {len(meta_feature_names)} features",
+                color="green",
+                bold=True
+            )
+            
+            # Log meta-feature composition
+            base_pred_count = sum(1 for name in meta_feature_names if 'class' in name and 'prob' in name)
+            uncertainty_count = sum(1 for name in meta_feature_names if 'uncertainty' in name)
+            confidence_count = sum(1 for name in meta_feature_names if 'confidence' in name)
+            disagreement_count = sum(1 for name in meta_feature_names if 'disagreement' in name)
+            
+            tprint("📋 [REGIME_ENSEMBLE] Meta-feature composition:", color="cyan")
+            tprint(f"   - Base predictions: {base_pred_count}", color="blue")
+            tprint(f"   - Uncertainty features: {uncertainty_count}", color="blue")
+            tprint(f"   - Confidence features: {confidence_count}", color="blue")
+            tprint(f"   - Disagreement features: {disagreement_count}", color="blue")
 
             # Define HPO search space for LightGBM
             def create_lgbm_model(trial):
@@ -786,12 +807,27 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 calibrated_meta_learner.fit(meta_features, y)
                 tprint("✅ [REGIME_ENSEMBLE] Probability calibration applied successfully", color="green")
 
+                # Create feature contract for the ensemble
+                ensemble_contract = FeatureContract(
+                    feature_names=meta_feature_names,
+                    feature_count=len(meta_feature_names),
+                    feature_types={name: self._infer_feature_type(name) for name in meta_feature_names},
+                    expected_shape=(None, len(meta_feature_names)),
+                    metadata={
+                        'source': 'meta_features_generator',
+                        'includes_uncertainty': True,
+                        'includes_confidence': True,
+                        'includes_disagreement': True
+                    }
+                )
+                
                 # Create comprehensive result
                 stacker_result = {
                     'meta_learner': calibrated_meta_learner,
-                    'base_models': valid_base_models,
-                    'base_model_names': base_model_names,
+                    'base_models': base_models,
+                    'meta_feature_names': meta_feature_names,
                     'meta_features_shape': meta_features.shape,
+                    'feature_contract': ensemble_contract,
                     'calibration_method': 'isotonic',
                     'cv_folds': 3,
                     'training_success': True,
@@ -805,12 +841,27 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Probability calibration failed: {e}", color="yellow")
                 tprint("📊 [REGIME_ENSEMBLE] Using uncalibrated meta-learner", color="blue")
 
+                # Create feature contract for the ensemble
+                ensemble_contract = FeatureContract(
+                    feature_names=meta_feature_names,
+                    feature_count=len(meta_feature_names),
+                    feature_types={name: self._infer_feature_type(name) for name in meta_feature_names},
+                    expected_shape=(None, len(meta_feature_names)),
+                    metadata={
+                        'source': 'meta_features_generator',
+                        'includes_uncertainty': True,
+                        'includes_confidence': True,
+                        'includes_disagreement': True
+                    }
+                )
+                
                 # Return uncalibrated result
                 stacker_result = {
                     'meta_learner': meta_learner,
-                    'base_models': valid_base_models,
-                    'base_model_names': base_model_names,
+                    'base_models': base_models,
+                    'meta_feature_names': meta_feature_names,
                     'meta_features_shape': meta_features.shape,
+                    'feature_contract': ensemble_contract,
                     'calibration_method': 'none',
                     'cv_folds': 0,
                     'training_success': True,
@@ -823,10 +874,37 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"❌ [REGIME_ENSEMBLE] stacker_lgbm_calibrated training failed: {e}", color="red")
             return None
+    
+    def _infer_feature_type(self, feature_name: str) -> str:
+        """
+        Infer the type of a feature based on its name.
+        
+        Args:
+            feature_name: Name of the feature
+            
+        Returns:
+            Feature type string
+        """
+        feature_name_lower = feature_name.lower()
+        
+        if 'prob' in feature_name_lower and 'class' in feature_name_lower:
+            return 'base_prediction'
+        elif 'uncertainty' in feature_name_lower:
+            return 'uncertainty'
+        elif 'confidence' in feature_name_lower:
+            return 'confidence'
+        elif 'disagreement' in feature_name_lower:
+            return 'disagreement'
+        else:
+            return 'meta'
 
     def _evaluate_ensemble(self, X: np.ndarray, y: np.ndarray, stacker_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Evaluate ensemble performance using enhanced ML utilities."""
-        tprint("📊 [REGIME_ENSEMBLE] Evaluating ensemble performance with enhanced ML utilities", color="yellow")
+        """
+        Evaluate ensemble performance using enhanced ML utilities.
+        
+        Uses same meta-features generation as training for consistency.
+        """
+        tprint("📊 [REGIME_ENSEMBLE] Evaluating ensemble performance with enhanced ML utilities", color="yellow", bold=True)
 
         metrics = {}
 
@@ -837,42 +915,40 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         try:
             meta_learner = stacker_result['meta_learner']
             base_models = stacker_result['base_models']
-            base_model_names = stacker_result['base_model_names']
+            meta_feature_names = stacker_result.get('meta_feature_names', [])
+            feature_contract = stacker_result.get('feature_contract')
 
-            # Generate meta-features for evaluation
-            tprint("🔧 [REGIME_ENSEMBLE] Generating meta-features for evaluation", color="blue")
-            base_predictions = []
+            tprint(f"📊 [REGIME_ENSEMBLE] Evaluation input shape: {X.shape}", color="blue")
+            tprint(f"📊 [REGIME_ENSEMBLE] Evaluation target shape: {y.shape}", color="blue")
+            tprint(f"📊 [REGIME_ENSEMBLE] Base models count: {len(base_models)}", color="blue")
 
-            for name, model in base_models.items():
+            # Generate meta-features for evaluation using the SAME method as training
+            tprint("🔧 [REGIME_ENSEMBLE] Generating meta-features for evaluation (consistent with training)", color="cyan", bold=True)
+            
+            meta_features, generated_feature_names = self.meta_features_generator.generate_meta_features(
+                base_models=base_models,
+                X=X,
+                y=y,
+                include_uncertainty=True,
+                include_confidence=True,
+                include_disagreement=True
+            )
+            
+            tprint(
+                f"✅ [REGIME_ENSEMBLE] Meta-features generated for evaluation: {meta_features.shape}",
+                color="green",
+                bold=True
+            )
+
+            # Validate feature contract if available
+            if feature_contract is not None:
+                tprint("🔍 [REGIME_ENSEMBLE] Validating meta-features against feature contract", color="cyan")
                 try:
-                    # Skip problematic models that cause feature mismatches
-                    if name in ['stacker_lgbm_calibrated', 'stacker_lgbm_calibrated_feature_indices']:
-                        tprint(f"⚠️ [REGIME_ENSEMBLE] Skipping problematic model: {name}", color="yellow")
-                        continue
-
-                    if hasattr(model, 'predict_proba'):
-                        pred_proba = model.predict_proba(X)
-                        base_predictions.append(pred_proba)
-                        tprint(f"📊 [REGIME_ENSEMBLE] {name}: Using probability predictions (shape: {pred_proba.shape})", color="blue")
-                    else:
-                        pred = model.predict(X)
-                        unique_classes = np.unique(y)
-                        pred_onehot = np.zeros((len(pred), len(unique_classes)))
-                        for i, class_val in enumerate(unique_classes):
-                            pred_onehot[pred == class_val, i] = 1
-                        base_predictions.append(pred_onehot)
-                        tprint(f"📊 [REGIME_ENSEMBLE] {name}: Using class predictions (shape: {pred_onehot.shape})", color="blue")
-                except Exception as e:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to get predictions from {name}: {e}", color="yellow")
-                    continue
-
-            if not base_predictions:
-                tprint("❌ [REGIME_ENSEMBLE] No valid predictions for evaluation", color="red")
-                return {'error': 'No valid predictions for evaluation'}
-
-            # Combine predictions
-            meta_features = np.column_stack(base_predictions)
-            tprint(f"📊 [REGIME_ENSEMBLE] Meta-features shape: {meta_features.shape}", color="blue")
+                    feature_contract.validate_features(meta_features, generated_feature_names)
+                    tprint("✅ [REGIME_ENSEMBLE] Feature contract validation passed", color="green")
+                except ValueError as e:
+                    tprint(f"⚠️ [REGIME_ENSEMBLE] Feature contract validation failed: {e}", color="yellow")
+                    tprint("⚠️ [REGIME_ENSEMBLE] Continuing with evaluation despite validation failure", color="yellow")
 
             # Check if meta-learner expects different number of features
             if hasattr(meta_learner, 'n_features_') and meta_learner.n_features_ != meta_features.shape[1]:

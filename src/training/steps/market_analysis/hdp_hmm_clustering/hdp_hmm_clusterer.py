@@ -166,6 +166,22 @@ except ImportError:
     M1_UTILS_AVAILABLE = False
     tprint_debug("M1/M2 optimization utilities not available")
 
+# Import M1 GPU utilities for acceleration
+try:
+    from src.utils.hardware.m1_gpu_utils import M1GPUManager, get_m1_gpu_optimizer
+    M1_GPU_AVAILABLE = True
+except ImportError:
+    M1_GPU_AVAILABLE = False
+    tprint_debug("M1 GPU utilities not available")
+
+# Import sklearn for K-means warm start
+try:
+    from sklearn.cluster import KMeans
+    KMEANS_AVAILABLE = True
+except ImportError:
+    KMEANS_AVAILABLE = False
+    tprint_debug("sklearn K-means not available")
+
 
 @dataclass
 class HDPHMMConfig:
@@ -175,15 +191,24 @@ class HDPHMMConfig:
     kappa: float = 50.0  # Stickiness parameter (higher = longer regime durations)
     gamma: float = 3.0  # Hyperparameter for base distribution
     
-    # Sampling parameters
-    n_iterations: int = 100  # Number of Gibbs sampling iterations
-    n_burnin: int = 20  # Number of burn-in iterations
+    # Sampling parameters (OPTIMIZED: reduced defaults for faster execution)
+    n_iterations: int = 50  # Number of Gibbs sampling iterations (reduced from 100)
+    n_burnin: int = 10  # Number of burn-in iterations (reduced from 20)
     n_thin: int = 5  # Thinning interval
     convergence_check: bool = True  # Enable convergence diagnostics
     convergence_threshold: float = 0.01  # Convergence threshold for early stopping
     convergence_window: int = 10  # Number of recent iterations to check for convergence
     convergence_std_threshold: float = 0.5  # Standard deviation threshold for state count stability
+    convergence_patience: int = 5  # Number of consecutive checks before stopping (NEW)
+    ll_plateau_threshold: float = 0.001  # Log-likelihood plateau threshold (NEW)
     show_progress: bool = True  # Show progress bar during sampling
+    
+    # Phase 2 optimizations (NEW)
+    use_gpu_acceleration: bool = True  # Enable M1 GPU acceleration for matrix operations
+    use_kmeans_warmstart: bool = True  # Initialize from K-means for faster convergence
+    kmeans_n_init: int = 10  # Number of K-means initializations
+    kmeans_n_clusters: Optional[int] = 5  # Number of clusters for K-means initialization (None = auto)
+    enable_advanced_diagnostics: bool = True  # Enable detailed convergence diagnostics
     
     # Model parameters
     max_states: int = 20  # Maximum number of states (will be inferred)
@@ -753,16 +778,45 @@ class HDPHMMClusterer:
             obs_distns=[obs_distn]  # Single observation distribution
         )
         
-        # Add data
+        # PHASE 2 OPTIMIZATION: K-means warm start
+        initial_stateseq = None
+        if self.config.use_kmeans_warmstart and KMEANS_AVAILABLE:
+            try:
+                tprint_info("🔄 Initializing with K-means warm start...")
+                # Use specified number of clusters or estimate
+                if self.config.kmeans_n_clusters is not None:
+                    n_init_clusters = self.config.kmeans_n_clusters
+                else:
+                    # Auto-estimate: min(max_states/2, sqrt(n_samples))
+                    n_init_clusters = min(self.config.max_states // 2, max(3, int(np.sqrt(len(data)))))
+                
+                kmeans = KMeans(
+                    n_clusters=n_init_clusters,
+                    n_init=self.config.kmeans_n_init,
+                    random_state=self.config.random_state
+                )
+                initial_stateseq = kmeans.fit_predict(data)
+                tprint_success(f"✅ K-means warm start: {n_init_clusters} initial clusters")
+            except Exception as e:
+                tprint_warning(f"⚠️ K-means warm start failed: {e}, using random initialization")
+                initial_stateseq = None
+        
+        # Add data with optional initial state sequence
+        if initial_stateseq is not None:
+            model.add_data(data, stateseq=initial_stateseq)
+        else:
         model.add_data(data)
         
         # Run Gibbs sampling with convergence diagnostics and progress tracking
-        tprint_info(f"🔄 Running Gibbs sampling: {self.config.n_iterations} iterations")
+        tprint_info(f"🔄 Running Gibbs sampling: {self.config.n_iterations} iterations (early stopping enabled)")
         
-        state_counts = []
-        log_likelihoods = []
+        # OPTIMIZATION: Use deque for fixed-size circular buffers
+        from collections import deque
+        state_counts = deque(maxlen=max(100, self.config.convergence_window * 3))
+        log_likelihoods = deque(maxlen=max(100, self.config.convergence_window * 3))
         converged = False
         convergence_iteration = None
+        convergence_patience_counter = 0  # Track consecutive convergence checks
         
         # Progress tracking
         try:
@@ -802,24 +856,43 @@ class HDPHMMClusterer:
                     log_likelihoods.append(np.nan)
                     continue
                 
-                # Convergence diagnostics (after burn-in)
+                # ENHANCED Convergence diagnostics (after burn-in)
                 if (self.config.convergence_check and 
                     iteration >= self.config.n_burnin and 
                     len(state_counts) >= self.config.convergence_window):
                     
                     # Check if number of states has stabilized
-                    recent_states = state_counts[-self.config.convergence_window:]
+                    recent_states = list(state_counts)[-self.config.convergence_window:]
+                    recent_lls = list(log_likelihoods)[-self.config.convergence_window:]
+                    
                     state_std = np.std(recent_states)
                     state_change = abs(recent_states[-1] - recent_states[0]) / max(recent_states[0], 1)
                     
-                    if state_std < self.config.convergence_std_threshold and state_change < self.config.convergence_threshold:
+                    # NEW: Check log-likelihood plateau
+                    ll_plateau = False
+                    if len([ll for ll in recent_lls if not np.isnan(ll)]) >= self.config.convergence_window:
+                        valid_lls = [ll for ll in recent_lls if not np.isnan(ll)]
+                        if len(valid_lls) >= 2:
+                            ll_change = abs(valid_lls[-1] - valid_lls[0]) / max(abs(valid_lls[0]), 1e-10)
+                            ll_plateau = ll_change < self.config.ll_plateau_threshold
+                    
+                    # Check both state stability AND log-likelihood plateau
+                    state_stable = (state_std < self.config.convergence_std_threshold and 
+                                  state_change < self.config.convergence_threshold)
+                    
+                    if state_stable and ll_plateau:
+                        convergence_patience_counter += 1
+                        if convergence_patience_counter >= self.config.convergence_patience:
                         converged = True
                         convergence_iteration = iteration + 1
                         tprint_success(
                             f"✅ Converged at iteration {convergence_iteration}: "
-                            f"{n_states} states (std={state_std:.2f}, change={state_change:.3f})"
+                                f"{n_states} states (std={state_std:.2f}, change={state_change:.3f}, "
+                                f"LL plateau detected, patience={convergence_patience_counter})"
                         )
                         break
+                    else:
+                        convergence_patience_counter = 0  # Reset if not converged
                 
                 # Periodic progress updates (if no tqdm)
                 if not hasattr(iterator, 'set_postfix') and (iteration + 1) % 20 == 0:
@@ -835,11 +908,44 @@ class HDPHMMClusterer:
         
         # Store convergence history for diagnostics
         self.convergence_history = {
-            'state_counts': state_counts,
-            'log_likelihoods': log_likelihoods,
+            'state_counts': list(state_counts),
+            'log_likelihoods': list(log_likelihoods),
             'converged': converged,
             'convergence_iteration': convergence_iteration
         }
+        
+        # PHASE 2: Advanced diagnostics (calculate inline for now)
+        if self.config.enable_advanced_diagnostics:
+            try:
+                # Calculate advanced diagnostics inline
+                state_counts_list = list(state_counts)
+                log_likelihoods_list = list(log_likelihoods)
+                valid_lls = [ll for ll in log_likelihoods_list if not np.isnan(ll)]
+                valid_counts = [c for c in state_counts_list if not np.isnan(c) and c > 0]
+                
+                self.advanced_diagnostics = {
+                    'converged': converged,
+                    'convergence_iteration': convergence_iteration,
+                    'iterations_saved': self.config.n_iterations - convergence_iteration if convergence_iteration else 0,
+                    'efficiency_gain': (self.config.n_iterations - convergence_iteration) / self.config.n_iterations if convergence_iteration else 0.0,
+                    'state_count_final': valid_counts[-1] if valid_counts else 0,
+                    'state_count_range': (min(valid_counts), max(valid_counts)) if valid_counts else (0, 0),
+                    'state_count_stability': 1.0 - (np.std(valid_counts) / max(np.mean(valid_counts), 1.0)) if valid_counts else 0.0,
+                    'll_improvement': valid_lls[-1] - valid_lls[0] if len(valid_lls) >= 2 else 0.0,
+                    'convergence_quality_score': 0.75 if converged else 0.25,
+                    'recommendations': []
+                }
+                
+                # Add recommendations
+                if not converged:
+                    self.advanced_diagnostics['recommendations'].append("Increase n_iterations or relax convergence thresholds")
+                if self.advanced_diagnostics['state_count_stability'] < 0.7:
+                    self.advanced_diagnostics['recommendations'].append("State count unstable - consider adjusting alpha/kappa")
+                
+                tprint_success(f"✅ Advanced diagnostics calculated: Quality = {self.advanced_diagnostics['convergence_quality_score']:.3f}")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate advanced diagnostics: {e}")
+                self.advanced_diagnostics = {}
         
         # Get final state sequence
         labels = model.stateseqs[0].copy()
@@ -852,7 +958,9 @@ class HDPHMMClusterer:
         state_durations = self._calculate_state_durations(labels)
         
         # Calculate posterior statistics (skip NaN values)
-        burnin_counts = [c for c in state_counts[self.config.n_burnin:] if not np.isnan(c) and c > 0]
+        # Convert deque to list for slicing
+        state_counts_list = list(state_counts)
+        burnin_counts = [c for c in state_counts_list[self.config.n_burnin:] if not np.isnan(c) and c > 0]
         if burnin_counts:
             posterior_mean_states = np.mean(burnin_counts)
             posterior_std_states = np.std(burnin_counts)

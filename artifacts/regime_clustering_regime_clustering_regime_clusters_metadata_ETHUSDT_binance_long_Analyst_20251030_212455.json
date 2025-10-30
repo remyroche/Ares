@@ -1,0 +1,8 @@
+{
+  "artifact_name": "regime_clusters",
+  "artifact_type": "data",
+  "file_path": "artifacts/pre_training/ETHUSDT/binance/long/Analyst/regime_clustering/regime_clustering_regime_clustering_regime_clusters_ETHUSDT_binance_long_Analyst_20251030_212455.parquet",
+  "file_size": 8949,
+  "timestamp": "2025-10-30T21:24:58.636742",
+  "compression": "auto"
+}

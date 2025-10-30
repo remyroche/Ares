@@ -1,5 +1,5 @@
 """
-Causal Dilated TCN Model for Tactician
+Causal Dilated TCN Model
 
 This module implements a Causal Dilated Temporal Convolutional Network (TCN)
 for the tactician models. TCNs are particularly effective for time series
@@ -13,8 +13,10 @@ from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass
 import logging
 import warnings
+import os  # <-- Added for path checking
 from sklearn.preprocessing import StandardScaler
 from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
+from src.utils.logging_config import setup_logging  # <-- Added for logging
 
 # Try to import PyTorch - gracefully handle if not available
 try:
@@ -22,6 +24,9 @@ try:
     import torch.nn as nn
     import torch.optim as optim
     from torch.utils.data import DataLoader, TensorDataset
+    # --- New Imports (conditional on PyTorch) ---
+    from src.analyst.autoencoder_feature_generator import TimeSeriesAutoencoder, load_autoencoder_config
+    # --- End New Imports ---
     PYTORCH_AVAILABLE = True
 except ImportError:
     PYTORCH_AVAILABLE = False
@@ -39,10 +44,18 @@ except ImportError:
             pass
         class MSELoss:
             pass
+    # --- Add dummy classes for AE if torch fails ---
+    class TimeSeriesAutoencoder(nn.Module):
+        pass
+    def load_autoencoder_config(path):
+        return None
+    # --- End dummy classes ---
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
+# Setup logging
+setup_logging()
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -62,6 +75,11 @@ class CausalTCNConfig:
     epochs: int = 100
     early_stopping_patience: int = 10
     random_state: int = 42
+
+    # --- Autoencoder Integration ---
+    autoencoder_model_path: str = "models/autoencoder.pth"
+    autoencoder_config_path: str = "models/autoencoder_config.json"
+    use_autoencoder: bool = True  # Flag to enable/disable autoencoder
 
 class CausalDilatedConv1d(nn.Module):
     """Causal dilated 1D convolution layer."""
@@ -219,8 +237,6 @@ class CausalDilatedTCN(nn.Module):
 
 class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
     """
-    Causal Dilated TCN Model for Tactician.
-
     This model uses dilated convolutions to capture long-range dependencies
     in time series data while maintaining causality (no future information leakage).
     """
@@ -232,10 +248,51 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
         # Components
         self.tcn_model = None
         self.scaler = None
+        self.autoencoder = None  # <-- Autoencoder model
+        self.latent_dim = None  # <-- AE latent dimension
 
         # State
         self.fitted = False
         self.feature_names = None
+
+        # --- NEW: Load Frozen Autoencoder ---
+        if PYTORCH_AVAILABLE and self.config.use_autoencoder:
+            try:
+                logger.info("Attempting to load frozen autoencoder...")
+                ae_config_path = self.config.autoencoder_config_path
+                ae_model_path = self.config.autoencoder_model_path
+
+                if not (os.path.exists(ae_config_path) and os.path.exists(ae_model_path)):
+                    logger.warning(f"Autoencoder model/config not found at {ae_config_path}/{ae_model_path}. Disabling AE.")
+                    self.config.use_autoencoder = False
+                else:
+                    # 1. Load AE Config
+                    ae_config = load_autoencoder_config(ae_config_path)
+                    if 'latent_dim' not in ae_config or 'input_dim' not in ae_config:
+                        logger.warning("AE config missing 'latent_dim' or 'input_dim'. Disabling AE.")
+                        self.config.use_autoencoder = False
+                    else:
+                        self.latent_dim = ae_config['latent_dim']
+                        
+                        # 2. Initialize AE Model
+                        # Assumes TimeSeriesAutoencoder init matches the config dict keys
+                        self.autoencoder = TimeSeriesAutoencoder(**ae_config)
+                        
+                        # 3. Load Saved Weights
+                        self.autoencoder.load_state_dict(torch.load(ae_model_path))
+                        
+                        # 4. Freeze Weights and set to eval mode
+                        self.autoencoder.eval()
+                        for param in self.autoencoder.parameters():
+                            param.requires_grad = False
+                        
+                        logger.info(f"✅ Successfully loaded and froze autoencoder. Latent dim: {self.latent_dim}")
+            except Exception as e:
+                logger.error(f"❌ Failed to load autoencoder: {e}. Disabling AE.")
+                self.config.use_autoencoder = False
+                self.autoencoder = None
+        # --- End Autoencoder Load ---
+    
 
     def _prepare_sequences(self, X: np.ndarray, y: np.ndarray, sequence_length: int) -> Tuple[np.ndarray, np.ndarray]:
         """Prepare sequences for TCN input.
@@ -363,93 +420,27 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
             X_tensor = torch.FloatTensor(X_seq)
             y_tensor = torch.FloatTensor(y_seq)
             
-            logger.info(f"✅ Tensor shapes - X_tensor: {X_tensor.shape}, y_tensor: {y_tensor.shape}")
+                # --- NEW: Apply Autoencoder ---
+                if self.autoencoder is not None:
+                    logger.info(f"Compressing sequences with autoencoder...")
+                    with torch.no_grad():
+                        # AE expects [N, S, F], which X_tensor already is
+                        X_tensor = self.autoencoder.encoder(X_tensor)
+                    logger.info(f"✅ Compressed sequences shape: {X_tensor.shape}")
+                # --- End Apply Autoencoder ---
+                
+                logger.info(f"✅ Tensor shapes - X_tensor: {X_tensor.shape}, y_tensor: {y_tensor.shape}")
 
-            # Create TCN model with correct input size (number of features)
-            # X_seq shape is (n_sequences, sequence_length, n_features)
-            # input_size should be n_features (which is X_seq.shape[2])
-            actual_n_features = X_seq.shape[2]
-            logger.info(f"📊 Creating TCN with input_size={actual_n_features} features")
-            
-            self.tcn_model = CausalDilatedTCN(
-                input_size=actual_n_features,
-                num_filters=self.config.num_filters,
-                kernel_size=self.config.kernel_size,
-                dilation_base=self.config.dilation_base,
-                num_layers=self.config.num_layers,
-                dropout=self.config.dropout,
-                use_skip_connections=self.config.use_skip_connections
-            )
-            
-            # Store the input size for later use
-            self.input_size = actual_n_features
-
-            # Training setup
-            optimizer = optim.Adam(self.tcn_model.parameters(), lr=self.config.learning_rate)
-            criterion = nn.MSELoss()
-
-            # Data loader
-            dataset = TensorDataset(X_tensor, y_tensor)
-            dataloader = DataLoader(
-                dataset,
-                batch_size=self.config.batch_size,
-                shuffle=True
-            )
-
-            # Training loop
-            self.tcn_model.train()
-            best_loss = float('inf')
-            patience_counter = 0
-
-            for epoch in range(self.config.epochs):
-                epoch_loss = 0.0
-
-                for batch_X, batch_y in dataloader:
-                    optimizer.zero_grad()
-
-                    # Forward pass
-                    predictions = self.tcn_model(batch_X)
+                # Create TCN model with correct input size (number of features or latent_dim)
+                # X_seq shape is (n_sequences, sequence_length, n_features)
+                # X_tensor shape is (n_sequences, sequence_length, n_features_or_latent_dim)
+                actual_n_features = X_tensor.shape[2]
+                logger.info(f"📊 Creating TCN with input_size={actual_n_features} features")
+                
+                self.tcn_model = CausalDilatedTCN(
+                    input_size=actual_n_features,
+                    num_filters=self.config.num_filters,
                     
-                    # Handle batch_y shape - ensure it's 1D
-                    if len(batch_y.shape) > 1:
-                        batch_y = batch_y.squeeze()
-                    
-                    loss = criterion(predictions.squeeze(), batch_y)
-
-                    # Backward pass
-                    loss.backward()
-                    optimizer.step()
-
-                    epoch_loss += loss.item()
-
-                avg_loss = epoch_loss / len(dataloader)
-
-                # Early stopping
-                if avg_loss < best_loss:
-                    best_loss = avg_loss
-                    patience_counter = 0
-                else:
-                    patience_counter += 1
-
-                if patience_counter >= self.config.early_stopping_patience:
-                    logger.info(f"Early stopping at epoch {epoch}")
-                    break
-
-                if epoch % 10 == 0:
-                    logger.info(f"Epoch {epoch}, Loss: {avg_loss:.6f}")
-
-            self.fitted = True
-            logger.info(f"✅ Causal Dilated TCN model fitted with {X.shape[1]} features")
-
-            return self
-
-        except ImportError:
-            logger.warning("⚠️ PyTorch not available, using fallback linear model")
-            return self._fit_fallback(X, y, sample_weight)
-        except Exception as e:
-            logger.error(f"❌ Causal Dilated TCN model fitting failed: {e}")
-            return self._fit_fallback(X, y, sample_weight)
-
     def _fit_fallback(self, X: np.ndarray, y: np.ndarray, sample_weight: Optional[np.ndarray] = None) -> 'CausalDilatedTCNModel':
         """Fallback to simple linear model."""
         try:
@@ -534,7 +525,14 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
 
                 # Convert to tensor
                 X_tensor = torch.FloatTensor(X_seq)
-
+                
+                if self.autoencoder is not None:
+                    logger.info(f"Compressing prediction sequences with autoencoder...")
+                    with torch.no_grad():
+                        # AE expects [N, S, F]
+                        X_tensor = self.autoencoder.encoder(X_tensor)
+                    logger.info(f"✅ Compressed prediction sequences shape: {X_tensor.shape}")
+                        
                 # Predict
                 self.tcn_model.eval()
                 with torch.no_grad():

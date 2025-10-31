@@ -15,6 +15,17 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 from pathlib import Path
 
+# --- ADDED IMPORTS ---
+import optuna
+import lightgbm as lgb
+from sklearn.metrics import mean_squared_error
+from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
+    HierarchicalParameterOptimizer,
+    ParameterGroup,
+    OptimizationStage
+)
+# --- END ADDED IMPORTS ---
+
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error, tprint_warning
@@ -388,6 +399,45 @@ class UnifiedModelsTrainingStep(BaseStep):
         
         return yaml_config
     
+    # --- Define the LGBM Parameter Groups ---
+    
+    # 1st Layer: Core structure and learning rate
+    lgbm_group_1 = ParameterGroup(
+        name="structure_learning_rate",
+        params={
+            "max_depth": {"type": "int", "low": 3, "high": 6},
+            "learning_rate": {"type": "float", "low": 0.01, "high": 0.1, "log": True}
+        },
+        priority=1,
+        description="Optimize core structure (max_depth) and learning_rate first."
+    )
+    
+    # 2nd Layer: Regularization and subsampling, dependent on Layer 1
+    lgbm_group_2 = ParameterGroup(
+        name="regularization_subsampling",
+        params={
+            # Per your guideline: num_leaves ≈ 2^max_depth ± 2
+            # Since max_depth range is [3, 6], 2^max_depth is [8, 64].
+            # This static range [6, 66] covers all possibilities.
+            "num_leaves": {"type": "int", "low": 6, "high": 66},
+            
+            "reg_alpha": {"type": "float", "low": 0.1, "high": 5.0},
+            "reg_lambda": {"type": "float", "low": 0.1, "high": 5.0},
+            
+            "subsample": {"type": "float", "low": 0.8, "high": 0.9},
+            "colsample_bytree": {"type": "float", "low": 0.8, "high": 0.9},
+            
+            "min_child_samples": {"type": "int", "low": 20, "high": 50},
+        },
+        priority=2,
+        depends_on=["structure_learning_rate"], # Ensures this group runs second
+        description="Optimize regularization and subsampling parameters."
+    )
+    
+    # List of all groups to pass to the optimizer
+    lgbm_parameter_groups: List[ParameterGroup] = [lgbm_group_1, lgbm_group_2]
+
+    # --- MODIFIED HPO METHOD ---
     async def _perform_hyperparameter_optimization(
         self,
         training_data: pd.DataFrame,
@@ -396,7 +446,7 @@ class UnifiedModelsTrainingStep(BaseStep):
         config: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Perform hyperparameter optimization for model parameters.
+        Perform hierarchical hyperparameter optimization for model parameters.
         
         Args:
             training_data: Training data
@@ -414,82 +464,136 @@ class UnifiedModelsTrainingStep(BaseStep):
                 tprint_info("Hyperparameter optimization disabled, using default parameters")
                 return model_config
             
-            tprint_info("🔍 Starting hyperparameter optimization...")
+            tprint_info("🔍 Starting Hierarchical Hyperparameter Optimization (LGBM)...")
             
-            # Import HPO utilities
-            try:
-                from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
-                from src.utils.ml_common.optimization.auto_tuner import AutoTuner
-            except ImportError:
-                tprint_warning("HPO utilities not available, using default parameters")
-                return model_config
-            
-            # Define search space based on model type
-            search_space = self._get_hpo_search_space(model_config)
-            
-            if not search_space:
-                tprint_info("No HPO search space defined for this model, using default parameters")
-                return model_config
-            
-            # Split data for HPO validation
+            # 1. Split data for HPO validation (80/20 split for HPO)
             hpo_train_size = int(len(training_data) * 0.8)
             hpo_train_data = training_data.iloc[:hpo_train_size]
             hpo_val_data = training_data.iloc[hpo_train_size:]
             hpo_train_targets = targets.iloc[:hpo_train_size]
             hpo_val_targets = targets.iloc[hpo_train_size:]
             
-            # Initialize HPO optimizer
-            optimizer = BayesianTPEOptimizer()
-            
-            # Run HPO
-            tprint_info(f"Running HPO with {len(hpo_train_data)} training samples and {len(hpo_val_data)} validation samples")
-            
-            # Create objective function
-            def objective(params):
-                """Objective function for HPO."""
+            tprint_info(f"Running HPO with {len(hpo_train_data)} train samples and {len(hpo_val_data)} validation samples")
+
+            # 2. Define the synchronous objective function
+            # This is defined *inside* the method to close over the data variables
+            def lgbm_objective_function(params: Dict[str, Any], **kwargs) -> float:
+                """Synchronous objective function for HPO."""
                 try:
-                    # Update model config with trial parameters
-                    trial_config = model_config.copy()
+                    # Get data from closure
+                    X_train_hpo = kwargs.get('X_train')
+                    y_train_hpo = kwargs.get('y_train')
+                    X_val_hpo = kwargs.get('X_val')
+                    y_val_hpo = kwargs.get('y_val')
+
+                    # Add fixed params for LGBM (assuming regression as per dummy data)
+                    fixed_params = {
+                        'objective': 'regression_l1', # MAE is robust to outliers
+                        'metric': 'l1',
+                        'n_estimators': 1000, # High number, will use early stopping
+                        'verbose': -1,
+                        'n_jobs': -1,
+                    }
                     
-                    # Update base model parameters
-                    if 'base_models' in trial_config:
-                        for model_name, model_params in trial_config['base_models'].items():
-                            if 'params' in model_params:
-                                model_params['params'].update(params.get(model_name, {}))
+                    # Combine trial params with fixed params
+                    model_params = {**fixed_params, **params}
+
+                    # --- Handle potential int/float type mismatches from optimizer ---
+                    for int_param in ['max_depth', 'num_leaves', 'min_child_samples']:
+                        if int_param in model_params:
+                            model_params[int_param] = int(model_params[int_param])
+                    # ---
+
+                    model = lgb.LGBMRegressor(**model_params)
                     
-                    # Simple validation score (placeholder - should use actual model training)
-                    # In production, this would train the model and return validation score
-                    validation_score = 0.8  # Placeholder
+                    model.fit(
+                        X_train_hpo, y_train_hpo,
+                        eval_set=[(X_val_hpo, y_val_hpo)],
+                        eval_metric='l1',
+                        callbacks=[lgb.early_stopping(patience=50, verbose=False)]
+                    )
                     
-                    return validation_score
+                    preds = model.predict(X_val_hpo)
+                    score = mean_squared_error(y_val_hpo, preds) # Minimize MSE
                     
+                    return score
+
                 except Exception as e:
                     self.logger.warning(f"HPO trial failed: {e}")
-                    return 0.0
+                    # Return a very high score to penalize this trial
+                    return float('inf')
+
+            # 3. Initialize the Hierarchical Optimizer
+            hpo_param_groups = self.lgbm_parameter_groups
             
-            # Run optimization (limited trials for performance)
-            # Use dynamic config value if available, otherwise use config override
-            max_trials = model_config.get('hpo_max_trials', config.get('hpo_max_trials', 20))
-            tprint_info(f"Running {max_trials} HPO trials...")
+            execution_mode = config.get('execution_mode', 'full')
+            if execution_mode == 'light':
+                tprint_info("HPO Light Mode: Using Coarse Grid only")
+                hpo_stages = [OptimizationStage.COARSE_GRID]
+                n_rounds = 1
+                final_refinement = False
+            else:
+                tprint_info("HPO Full Mode: Using Coarse Grid -> TPE")
+                hpo_stages = [
+                    OptimizationStage.COARSE_GRID,
+                    OptimizationStage.TPE
+                ]
+                n_rounds = 1
+                final_refinement = True
+                
+            optimizer = HierarchicalParameterOptimizer(
+                param_groups=hpo_param_groups,
+                objective_func=lgbm_objective_function,
+                stages=hpo_stages,
+                direction='minimize', # We are minimizing mean_squared_error
+                n_rounds=n_rounds,
+                enable_final_refinement=final_refinement,
+                verbose=True # Will use the logger
+            )
+
+            # 4. Run the optimization in a separate thread
+            tprint_info("🚀 Starting hierarchical HPO for LGBM stacker...")
             
-            # Note: This is a simplified implementation
-            # In production, integrate with actual Bayesian optimizer
-            best_params = search_space  # Placeholder - use optimizer.optimize(objective, search_space, max_trials)
+            # Run the synchronous, CPU-bound HPO in a separate thread
+            # to avoid blocking the asyncio event loop.
+            opt_result = await asyncio.to_thread(
+                optimizer.optimize,
+                X_train=hpo_train_data,
+                y_train=hpo_train_targets,
+                X_val=hpo_val_data,
+                y_val=hpo_val_targets,
+                model=None # Objective func creates the model
+            )
             
-            # Update model config with best parameters
+            best_hyperparams = opt_result.best_params
+            tprint_success(f"✅ Hierarchical HPO complete. Best score: {opt_result.best_score:.6f}")
+
+            # 5. Update the model_config
+            # This assumes the stacker/main model's params are at the root of model_config
+            if 'params' not in model_config:
+                model_config['params'] = {}
+            
+            model_config['params'].update(best_hyperparams)
+            tprint_info(f"Updated model config with {len(best_hyperparams)} optimized parameters.")
+            
+            # Also, update any 'base_models' that are LGBM
             if 'base_models' in model_config:
                 for model_name, model_params in model_config['base_models'].items():
-                    if 'params' in model_params and model_name in best_params:
-                        model_params['params'].update(best_params[model_name])
-                        tprint_success(f"✅ Updated {model_name} with optimized hyperparameters")
-            
-            tprint_success(f"✅ Hyperparameter optimization completed")
+                    if 'lgbm' in model_params.get('model_type', '').lower():
+                        if 'params' not in model_params:
+                            model_params['params'] = {}
+                        # Update with keys that are relevant
+                        relevant_params = {k: v for k, v in best_hyperparams.items() if k in model_params['params']}
+                        model_params['params'].update(relevant_params)
+                        tprint_info(f"Updated base_model '{model_name}' with relevant HPO params.")
+
             return model_config
             
         except Exception as e:
             tprint_error(f"Hyperparameter optimization failed: {e}")
-            self.logger.error(f"HPO error: {e}")
-            return model_config
+            import traceback
+            self.logger.error(f"HPO error: {e}\n{traceback.format_exc()}")
+            return model_config # Return original config on failure
     
     def _get_hpo_search_space(self, model_config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -501,6 +605,11 @@ class UnifiedModelsTrainingStep(BaseStep):
         Returns:
             Search space dictionary for HPO
         """
+        # This method is now superseded by the hierarchical optimizer,
+        # but we keep it for any legacy logic that might still call it.
+        # The new HPO logic in _perform_hyperparameter_optimization
+        # does NOT use this method.
+        
         search_space = {}
         
         # Define search spaces for different model types
@@ -509,13 +618,10 @@ class UnifiedModelsTrainingStep(BaseStep):
                 model_type = model_params.get('model_type', '').lower()
                 
                 if 'lgbm' in model_type.lower():
+                    # Use the hierarchical definitions as a default
                     search_space[model_name] = {
-                        'n_estimators': [500, 1000, 1500],
-                        'learning_rate': [0.01, 0.05, 0.1],
-                        'max_depth': [6, 8, 10],
-                        'num_leaves': [31, 63, 127, 255],
-                        'subsample': [0.7, 0.8, 0.9],
-                        'colsample_bytree': [0.7, 0.8, 0.9]
+                        **self.lgbm_group_1.params,
+                        **self.lgbm_group_2.params
                     }
                 
                 elif 'catboost' in model_type.lower():

@@ -138,8 +138,6 @@ class QualityThresholds:
     WEIGHT_BALANCE = 0.10
     WEIGHT_NOISE_RATIO = 0.10
     
-    # Normalization constants
-    CH_NORMALIZATION_DIVISOR = 100.0
     # *** MODIFIED: Use 1e-9 for more stability ***
     DBI_EPSILON = 1e-9  
     
@@ -757,11 +755,8 @@ class ClusterQualityAssessor:
         # 8. Economic validation (if forward returns provided)
         if forward_returns is not None:
             try:
-                with tprint_timer("Economic Validation"):
-                    metrics.economic_validation = self._validate_regime_quality(
-                        regime_labels, forward_returns, feature_data
-                    )
-                tprint_success("✅ Economic validation complete")
+                metrics.economic_validation = metrics.per_regime_metrics
+                tprint_success("✅ Economic validation populated from per-regime metrics")
             except Exception as e:
                 tprint_error(f"❌ Failed to validate regime quality: {e}")
         
@@ -1564,6 +1559,13 @@ class ClusterQualityAssessor:
                 'balance_contribution': float(regime_size / (mean_cluster_size + QualityThresholds.DBI_EPSILON))
             }
             
+            # Add avg feature values (logic moved from _validate_regime_quality)
+            features_to_check = ['spread', 'volume', 'volatility', 'momentum']
+            for col in features_to_check:
+                if col in regime_features.columns:
+                    regime_metrics[f'avg_{col}'] = float(regime_features[col].mean())
+            # *** END OF NEW BLOCK ***
+
             # Detect regime type and calculate regime-specific characteristics
             # Handle index alignment for forward_returns (already aligned, but ensure positional indexing)
             if forward_returns is not None:
@@ -1799,68 +1801,7 @@ class ClusterQualityAssessor:
             self.logger.warning(f"Failed to generate complete economic interpretation: {e}")
         
         return interpretation
-    
-    def _validate_regime_quality(self,
-                                 regime_labels: np.ndarray,
-                                 forward_returns: pd.Series,
-                                 feature_data: pd.DataFrame) -> Dict[str, Any]:
-        """
-        Test if discovered regimes are actually predictive.
         
-        This is based on the user's provided validate_regime_quality function.
-        
-        Args:
-            regime_labels: Regime/cluster labels (must be aligned with indices)
-            forward_returns: Forward returns series (must share index with feature_data)
-            feature_data: Feature DataFrame (must share index with forward_returns)
-            
-        Returns:
-            Dictionary of validation results per regime
-        """
-        results = {}
-        
-        # Ensure proper alignment before processing
-        regime_labels, feature_data, forward_returns = self._ensure_aligned_data(
-            regime_labels, feature_data, forward_returns
-        )
-        
-        # Per-regime statistics
-        for regime_id in np.unique(regime_labels):
-            if regime_id == -1:  # Skip noise
-                continue
-            
-            regime_mask = (regime_labels == regime_id)
-            
-            # Extract aligned data using positional indexing (iloc)
-            regime_returns = forward_returns.iloc[regime_mask] if hasattr(forward_returns, 'iloc') else forward_returns[regime_mask]
-            
-            if len(regime_returns) == 0:
-                continue
-            
-            results[f'regime_{regime_id}'] = {
-                'mean_return': float(regime_returns.mean()),
-                'volatility': float(regime_returns.std()),
-                'sharpe': float(regime_returns.mean() / (regime_returns.std() + QualityThresholds.DBI_EPSILON)),
-                'skewness': float(regime_returns.skew()) if hasattr(regime_returns, 'skew') else 0.0,
-                'max_drawdown': float(self._compute_max_drawdown(regime_returns))
-            }
-            
-            # Add feature behavior in this regime (using selected columns)
-            numeric_features = feature_data.select_dtypes(include=[np.number])
-            
-            # *** MODIFIED: Check against existing features, as requested ***
-            features_to_check = ['spread', 'volume', 'volatility', 'momentum']
-            for col in features_to_check:
-                if col in numeric_features.columns:
-                    # Use positional indexing for consistent alignment
-                    col_data = numeric_features.iloc[regime_mask, numeric_features.columns.get_loc(col)]
-                    results[f'regime_{regime_id}'][f'avg_{col}'] = float(col_data.mean())
-        
-        # Regime stability
-        results['regime_persistence'] = float(self._calculate_regime_persistence(regime_labels))
-        
-        return results
-    
     def _calculate_predictive_power(self,
                                       regime_labels: np.ndarray,
                                       forward_returns: pd.Series) -> float:

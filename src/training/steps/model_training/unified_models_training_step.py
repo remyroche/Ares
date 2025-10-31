@@ -106,6 +106,25 @@ class UnifiedModelsTrainingStep(BaseStep):
             # Retrieve training data and targets from artifacts
             training_data, analyst_targets, tactician_targets = await self._retrieve_training_data(config)
             
+            # --- MODIFIED: Retrieve and merge additional features for ensemble/tactician models ---
+            if training_type.endswith('ensemble') or training_type == 'tactician_base':
+                tprint_info(f"Retrieving additional model outputs for {training_type}...")
+                additional_outputs = await self._get_additional_model_outputs(training_type, config)
+                
+                if additional_outputs is not None:
+                    # Align indices before concatenating
+                    aligned_training_data, aligned_additional_outputs = training_data.align(additional_outputs, join='inner', axis=0)
+                    
+                    if aligned_training_data.empty:
+                        tprint_warning("Data alignment resulted in empty DataFrame. Check for index mismatches.")
+                        # Fallback to original data if alignment fails
+                    else:
+                        training_data = pd.concat([aligned_training_data, aligned_additional_outputs], axis=1)
+                        tprint_success(f"✅ Merged additional features. New training data shape: {training_data.shape}")
+                else:
+                    tprint_warning(f"No additional model outputs found for {training_type}. Proceeding with primary features only.")
+            # --- END MODIFICATION ---
+
             # Apply light mode filtering if needed
             training_data = self._apply_light_mode_filter(training_data, config, timeframe)
             
@@ -569,14 +588,14 @@ class UnifiedModelsTrainingStep(BaseStep):
             tprint_success(f"✅ Hierarchical HPO complete. Best score: {opt_result.best_score:.6f}")
 
             # 5. Update the model_config
-            # This assumes the stacker/main model's params are at the root of model_config
+            # This ensures the HPO parameters are passed to the ensemble config
             if 'params' not in model_config:
                 model_config['params'] = {}
             
             model_config['params'].update(best_hyperparams)
             tprint_info(f"Updated model config with {len(best_hyperparams)} optimized parameters.")
             
-            # Also, update any 'base_models' that are LGBM
+            # Also, update any 'base_models' that are LGBM (if they exist in the config)
             if 'base_models' in model_config:
                 for model_name, model_params in model_config['base_models'].items():
                     if 'lgbm' in model_params.get('model_type', '').lower():
@@ -865,41 +884,71 @@ class UnifiedModelsTrainingStep(BaseStep):
             self.logger.error(f"Error retrieving regime features: {e}")
             return None
 
+    # --- MODIFIED: Added statistical meta-feature generation ---
     async def _get_additional_model_outputs(self, training_type: str, config: Dict[str, Any]) -> pd.DataFrame:
         """Get additional model outputs based on training type."""
         try:
-            additional_features = []
-            
+            additional_features_list = []
+            base_outputs_for_stats = None # Store the specific DataFrame to calculate stats on
+
             if training_type == 'analyst_ensemble':
-                # Get Analyst base model outputs
+                # Base models for analyst_ensemble are the analyst_base outputs
                 base_outputs = await self._get_artifact('analyst_base_outputs', config)
                 if base_outputs is not None:
-                    additional_features.append(base_outputs)
+                    additional_features_list.append(base_outputs)
+                    base_outputs_for_stats = base_outputs # Calculate stats on these
             
             elif training_type == 'tactician_base':
-                # Get Analyst ensemble outputs
+                # Base model for tactician_base is the analyst_ensemble output
                 analyst_outputs = await self._get_artifact('analyst_ensemble_outputs', config)
                 if analyst_outputs is not None:
-                    additional_features.append(analyst_outputs)
+                    additional_features_list.append(analyst_outputs)
+                # No stats needed here, this is for a base model
             
             elif training_type == 'tactician_ensemble':
-                # Get both Analyst ensemble and Tactician base outputs
+                # Base models for tactician_ensemble are the tactician_base outputs
+                # Analyst_ensemble outputs are also included as features.
                 analyst_outputs = await self._get_artifact('analyst_ensemble_outputs', config)
-                tactician_outputs = await self._get_artifact('tactician_base_outputs', config)
+                tactician_base_outputs = await self._get_artifact('tactician_base_outputs', config)
                 
                 if analyst_outputs is not None:
-                    additional_features.append(analyst_outputs)
-                if tactician_outputs is not None:
-                    additional_features.append(tactician_outputs)
+                    additional_features_list.append(analyst_outputs)
+                if tactician_base_outputs is not None:
+                    additional_features_list.append(tactician_base_outputs)
+                    base_outputs_for_stats = tactician_base_outputs # Calculate stats on these
+
+            # --- NEW: Calculate ensemble meta-features ---
+            if base_outputs_for_stats is not None and not base_outputs_for_stats.empty:
+                tprint_info(f"Calculating ensemble meta-features from {base_outputs_for_stats.shape[1]} base model outputs...")
+                meta_features = pd.DataFrame(index=base_outputs_for_stats.index)
+                
+                meta_features['ens_pred_variance'] = base_outputs_for_stats.var(axis=1)
+                meta_features['ens_avg_confidence'] = base_outputs_for_stats.mean(axis=1)
+                meta_features['ens_conf_spread'] = base_outputs_for_stats.max(axis=1) - base_outputs_for_stats.min(axis=1)
+                
+                # Calculate normalized spread with protection against division by zero
+                mean_abs = base_outputs_for_stats.mean(axis=1).abs().replace(0, 1e-6)
+                std_dev = base_outputs_for_stats.std(axis=1)
+                meta_features['ens_norm_pred_spread'] = (std_dev / mean_abs).fillna(0) # fillna if std is 0 and mean is 0
+                
+                meta_features['ens_quartile_spread_iqr'] = base_outputs_for_stats.quantile(0.75, axis=1) - base_outputs_for_stats.quantile(0.25, axis=1)
+                meta_features['ens_skewness'] = base_outputs_for_stats.skew(axis=1).fillna(0) # Skew is NaN if variance is 0
+                meta_features['ens_kurtosis'] = base_outputs_for_stats.kurt(axis=1).fillna(0) # Kurtosis is NaN if variance is 0
+                
+                # Add these new features to the list
+                additional_features_list.append(meta_features)
+                tprint_success(f"✅ Added {len(meta_features.columns)} statistical meta-features for ensemble.")
             
-            if additional_features:
-                return pd.concat(additional_features, axis=1)
+            if additional_features_list:
+                # Concatenate all features (base outputs + meta-features)
+                return pd.concat(additional_features_list, axis=1)
             else:
                 return None
                 
         except Exception as e:
             self.logger.error(f"Error retrieving additional model outputs: {e}")
             return None
+    # --- END MODIFICATION ---
 
     async def _execute_training_by_type(
         self, 
@@ -984,7 +1033,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                         'created_at': datetime.now().isoformat()
                     }
                 )
-                artifacts[f"{training_type}_metrics"] = metrics_path
+                artifacts[f"{training_type}_metrics}"] = metrics_path
             
             # Save configuration
             config_path = self._save_artifact(
@@ -996,7 +1045,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                     'created_at': datetime.now().isoformat()
                 }
             )
-            artifacts[f"{training_type}_config"] = config_path
+            artifacts[f"{training_type}_config}"] = config_path
             
             return artifacts
             

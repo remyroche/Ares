@@ -9,10 +9,10 @@ quality metrics including:
 - Silhouette scores (global and per-cluster)
 - Davies-Bouldin Index (DBI)
 - Calinski-Harabasz Index (CH)
-- Within/Between regime coefficient of variation
+- Within/Between regime coefficient of variation (for features and economics)
 - Temporal smoothness
 - Regime persistence
-- Economic validation
+- Economic validation (including target return analysis)
 - Predictive power
 """
 
@@ -36,18 +36,33 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score
 
 # Import tprint utilities
-from src.utils.tprint import (
-    tprint,
-    tprint_info,
-    tprint_warning,
-    tprint_error,
-    tprint_success,
-    tprint_debug,
-    tprint_data_preview,
-    tprint_data_format,
-    tprint_timer,
-    tprint_logged
-)
+try:
+    from src.utils.tprint import (
+        tprint,
+        tprint_info,
+        tprint_warning,
+        tprint_error,
+        tprint_success,
+        tprint_debug,
+        tprint_data_preview,
+        tprint_data_format,
+        tprint_timer,
+        tprint_logged
+    )
+except ImportError:
+    # Fallback basic logging if tprint is not available
+    print("Warning: 'tprint' utilities not found. Using standard logging.")
+    logging.basicConfig(level=logging.INFO)
+    tprint_info = logging.info
+    tprint_warning = logging.warning
+    tprint_error = logging.error
+    tprint_success = logging.info
+    tprint_debug = logging.debug
+    tprint_timer = lambda x: (lambda y: (lambda: y))(None) # No-op timer
+    tprint_logged = lambda **kwargs: lambda f: f # No-op decorator
+    def tprint_data_preview(data, name, **kwargs): logging.info(f"Data Preview ({name}):\n{data}")
+    def tprint_data_format(data, name, **kwargs): logging.info(f"Data Format ({name}):\n{type(data)}")
+
 
 # Import hardware utilities
 try:
@@ -113,6 +128,8 @@ class QualityThresholds:
     MIN_SHARPE_FOR_STRATEGY = 0.5
     HIGH_DRAWDOWN_THRESHOLD = -0.15
     NEGATIVE_SHARPE_THRESHOLD = -0.5
+    # *** NEW: Target return (0.7%) as requested ***
+    ECONOMIC_TARGET_RETURN = 0.007 
     
     # Quality score weights
     WEIGHT_TEMPORAL_SMOOTHNESS = 0.30
@@ -123,7 +140,8 @@ class QualityThresholds:
     
     # Normalization constants
     CH_NORMALIZATION_DIVISOR = 100.0
-    DBI_EPSILON = 1e-8  # Small epsilon for safe division
+    # *** MODIFIED: Use 1e-9 for more stability ***
+    DBI_EPSILON = 1e-9  
     
     # Minimum requirements
     MIN_SAMPLES_FOR_PREDICTIVE_POWER = 10
@@ -141,8 +159,12 @@ class ClusterQualityMetrics:
         silhouette_per_cluster: Per-cluster silhouette scores
         davies_bouldin_score: Davies-Bouldin Index (lower is better)
         calinski_harabasz_score: Calinski-Harabasz Index (higher is better)
-        within_regime_cv: Within-regime coefficient of variation
-        between_regime_cv: Between-regime coefficient of variation
+        within_regime_cv: Avg within-regime CV for features
+        within_regime_cv_std: Std dev of within-regime CVs for features
+        between_regime_cv: Avg between-regime CV for features
+        between_regime_cv_std: Std dev of between-regime CVs for features
+        per_regime_cv: Per-regime CV values for features
+        economic_cv_metrics: CV metrics for economic outcomes
         temporal_smoothness: Temporal smoothness score (0 to 1, higher is better)
         regime_persistence: Average regime duration
         n_regimes: Number of regimes (excluding noise)
@@ -158,12 +180,16 @@ class ClusterQualityMetrics:
     davies_bouldin_score: Optional[float] = None
     calinski_harabasz_score: Optional[float] = None
     
-    # Coefficient of variation metrics (with std dev)
+    # *** REVERTED: Kept original names for backward compatibility ***
+    # Coefficient of variation metrics (with std dev) - for FEATURES
     within_regime_cv: Optional[float] = None
     within_regime_cv_std: Optional[float] = None
     between_regime_cv: Optional[float] = None
     between_regime_cv_std: Optional[float] = None
     per_regime_cv: Optional[Dict[int, float]] = None  # Per-regime CV values
+    
+    # *** NEW: CV metrics for ECONOMIC outcomes ***
+    economic_cv_metrics: Dict[str, Any] = field(default_factory=dict)
     
     # Temporal metrics
     temporal_smoothness: Optional[float] = None
@@ -327,12 +353,15 @@ class ClusterQualityMetrics:
             'davies_bouldin_score': self.davies_bouldin_score,
             'calinski_harabasz_score': self.calinski_harabasz_score,
             
-            # CV metrics with std dev
+            # *** REVERTED: Kept original names ***
             'within_regime_cv': self.within_regime_cv,
             'within_regime_cv_std': self.within_regime_cv_std,
             'between_regime_cv': self.between_regime_cv,
             'between_regime_cv_std': self.between_regime_cv_std,
             'per_regime_cv': self.per_regime_cv,
+            
+            # *** NEW: Economic CV metrics ***
+            'economic_cv_metrics': self.economic_cv_metrics,
             
             # Temporal metrics
             'temporal_smoothness': self.temporal_smoothness,
@@ -580,11 +609,11 @@ class ClusterQualityAssessor:
     
     @tprint_logged(include_args=False, include_result=False)
     def assess_quality(self,
-                      regime_labels: np.ndarray,
-                      feature_data: pd.DataFrame,
-                      forward_returns: Optional[pd.Series] = None,
-                      timestamps: Optional[pd.DatetimeIndex] = None,
-                      min_regime_size: int = 10) -> ClusterQualityMetrics:
+                       regime_labels: np.ndarray,
+                       feature_data: pd.DataFrame,
+                       forward_returns: Optional[pd.Series] = None,
+                       timestamps: Optional[pd.DatetimeIndex] = None,
+                       min_regime_size: int = 10) -> ClusterQualityMetrics:
         """
         Comprehensive cluster quality assessment.
         
@@ -664,14 +693,14 @@ class ClusterQualityAssessor:
         except Exception as e:
             tprint_error(f"❌ Failed to calculate CH score: {e}")
         
-        # 4. Coefficient of variation metrics (with std dev and per-regime)
+        # 4. *** REVERTED: Kept original function call ***
         try:
             with tprint_timer("CV Metrics Calculation"):
                 (metrics.within_regime_cv, metrics.within_regime_cv_std,
                  metrics.between_regime_cv, metrics.between_regime_cv_std,
                  metrics.per_regime_cv) = self._calculate_cv_metrics(
-                    regime_labels, features_clean, non_noise_mask
-                )
+                     regime_labels, features_clean, non_noise_mask
+                 )
             tprint_success(f"✅ Within CV: {metrics.within_regime_cv:.4f}, Between CV: {metrics.between_regime_cv:.4f}")
         except Exception as e:
             tprint_error(f"❌ Failed to calculate CV metrics: {e}")
@@ -698,7 +727,7 @@ class ClusterQualityAssessor:
             except Exception as e:
                 tprint_error(f"❌ Failed to calculate temporal metrics: {e}")
         
-        # 7. Per-regime metrics (includes regime type detection)
+        # 7. Per-regime metrics (includes regime type detection and NEW economic targets)
         try:
             with tprint_timer("Per-Regime Metrics Calculation"):
                 metrics.per_regime_metrics = self._calculate_per_regime_metrics(
@@ -713,7 +742,18 @@ class ClusterQualityAssessor:
             tprint_success(f"✅ Calculated metrics for {len(metrics.per_regime_metrics)} regimes")
         except Exception as e:
             tprint_error(f"❌ Failed to calculate per-regime metrics: {e}")
-        
+            
+        # *** NEW: 7b. Economic Coefficient of Variation ***
+        if forward_returns is not None:
+            try:
+                with tprint_timer("Economic CV Metrics Calculation"):
+                    metrics.economic_cv_metrics = self._calculate_economic_cv_metrics(
+                        metrics.per_regime_metrics, forward_returns, regime_labels
+                    )
+                tprint_success("✅ Economic CV metrics complete")
+            except Exception as e:
+                tprint_error(f"❌ Failed to calculate economic CV metrics: {e}")
+
         # 8. Economic validation (if forward returns provided)
         if forward_returns is not None:
             try:
@@ -948,9 +988,9 @@ class ClusterQualityAssessor:
         return metrics
     
     def _calculate_silhouette_scores(self,
-                                    regime_labels: np.ndarray,
-                                    features: pd.DataFrame,
-                                    non_noise_mask: np.ndarray) -> Tuple[float, Dict[int, Dict[str, float]]]:
+                                      regime_labels: np.ndarray,
+                                      features: pd.DataFrame,
+                                      non_noise_mask: np.ndarray) -> Tuple[float, Dict[int, Dict[str, float]]]:
         """Calculate global and per-cluster silhouette scores."""
         features_clean = features.iloc[non_noise_mask]
         labels_clean = regime_labels[non_noise_mask]
@@ -979,9 +1019,9 @@ class ClusterQualityAssessor:
         return global_silhouette, per_cluster_silhouette
     
     def _calculate_dbi(self,
-                       regime_labels: np.ndarray,
-                       features: pd.DataFrame,
-                       non_noise_mask: np.ndarray) -> float:
+                         regime_labels: np.ndarray,
+                         features: pd.DataFrame,
+                         non_noise_mask: np.ndarray) -> float:
         """Calculate Davies-Bouldin Index (lower is better)."""
         features_clean = features.iloc[non_noise_mask]
         labels_clean = regime_labels[non_noise_mask]
@@ -992,9 +1032,9 @@ class ClusterQualityAssessor:
         return davies_bouldin_score(features_clean, labels_clean)
     
     def _calculate_ch(self,
-                      regime_labels: np.ndarray,
-                      features: pd.DataFrame,
-                      non_noise_mask: np.ndarray) -> float:
+                        regime_labels: np.ndarray,
+                        features: pd.DataFrame,
+                        non_noise_mask: np.ndarray) -> float:
         """Calculate Calinski-Harabasz Index (higher is better)."""
         features_clean = features.iloc[non_noise_mask]
         labels_clean = regime_labels[non_noise_mask]
@@ -1003,18 +1043,34 @@ class ClusterQualityAssessor:
             return 0.0
         
         return calinski_harabasz_score(features_clean, labels_clean)
-    
+
+    # *** NEW: Helper function for safe CV calculation ***
+    def _calculate_cv(self, x: np.ndarray) -> float:
+        """Calculates the Coefficient of Variation (std / |mean|)."""
+        if x is None or len(x) < 2:
+            return np.nan
+        
+        mean = np.nanmean(x)
+        std = np.nanstd(x)
+        
+        if np.abs(mean) < QualityThresholds.DBI_EPSILON:
+            return np.nan  # Avoid division by zero
+        
+        return std / np.abs(mean)
+
+    # *** REVERTED: Kept original function name ***
     def _calculate_cv_metrics(self,
-                              regime_labels: np.ndarray,
-                              features: pd.DataFrame,
-                              non_noise_mask: np.ndarray) -> Tuple[float, float, float, float, Dict[int, float]]:
+                                regime_labels: np.ndarray,
+                                features: pd.DataFrame,
+                                non_noise_mask: np.ndarray) -> Tuple[float, float, float, float, Dict[int, float]]:
         """
-        Calculate within-regime and between-regime coefficient of variation with std dev.
+        Calculate within-regime and between-regime coefficient of variation with std dev
+        for clustering features.
         
         Returns:
             Tuple of (within_regime_cv_mean, within_regime_cv_std, 
-                     between_regime_cv_mean, between_regime_cv_std,
-                     per_regime_cv_dict)
+                      between_regime_cv_mean, between_regime_cv_std,
+                      per_regime_cv_dict)
         """
         features_clean = features.iloc[non_noise_mask]
         labels_clean = regime_labels[non_noise_mask]
@@ -1039,7 +1095,7 @@ class ClusterQualityAssessor:
                 cv_values = np.divide(
                     cluster_std,
                     denominator,
-                    out=np.zeros_like(cluster_std),
+                    out=np.zeros_like(cluster_std, dtype=float),
                     where=denominator != 0
                 )
                 
@@ -1047,13 +1103,13 @@ class ClusterQualityAssessor:
                 cv_values = cv_values[np.isfinite(cv_values)]
                 
                 if len(cv_values) > 0:
-                    cluster_cv = float(np.mean(cv_values))
+                    cluster_cv = float(np.nanmean(cv_values))
                     within_cvs.append(cluster_cv)
                     per_regime_cv[int(cluster_id)] = cluster_cv
         
         # Calculate mean and std dev of within-regime CVs
-        within_regime_cv_mean = float(np.mean(within_cvs)) if within_cvs else 0.0
-        within_regime_cv_std = float(np.std(within_cvs)) if len(within_cvs) > 1 else 0.0
+        within_regime_cv_mean = float(np.nanmean(within_cvs)) if within_cvs else 0.0
+        within_regime_cv_std = float(np.nanstd(within_cvs)) if len(within_cvs) > 1 else 0.0
         
         # Between-regime CV
         cluster_means = []
@@ -1077,24 +1133,101 @@ class ClusterQualityAssessor:
             between_cvs = []
             for feature_idx in range(cluster_means_array.shape[1]):
                 feature_means = cluster_means_array[:, feature_idx]
-                feature_std = np.std(feature_means)
-                feature_mean = np.mean(feature_means)
-                
-                # Safe division
-                denominator = np.abs(feature_mean) + QualityThresholds.DBI_EPSILON
-                cv = feature_std / denominator
+                # *** MODIFIED: Use new safe CV helper ***
+                cv = self._calculate_cv(feature_means)
                 
                 if np.isfinite(cv):
                     between_cvs.append(cv)
             
-            between_regime_cv_mean = float(np.mean(between_cvs)) if between_cvs else 0.0
-            between_regime_cv_std = float(np.std(between_cvs)) if len(between_cvs) > 1 else 0.0
+            between_regime_cv_mean = float(np.nanmean(between_cvs)) if between_cvs else 0.0
+            between_regime_cv_std = float(np.nanstd(between_cvs)) if len(between_cvs) > 1 else 0.0
         
         return within_regime_cv_mean, within_regime_cv_std, between_regime_cv_mean, between_regime_cv_std, per_regime_cv
-    
+
+    # *** NEW: Function to calculate CV metrics for economic outcomes ***
+    def _calculate_economic_cv_metrics(self, 
+                                     per_regime_metrics: Dict[int, Dict[str, Any]],
+                                     forward_returns: pd.Series,
+                                     regime_labels: np.ndarray) -> Dict[str, Any]:
+        """
+        Calculates CV metrics for the economic relevance results.
+        
+        This calculates:
+        1.  Within-Regime CV: Avg. CV of 1h forward returns *within* each regime.
+        2.  Between-Regime CV: CV of the *mean* economic metrics (mean_return, sharpe, etc.)
+            *across* regimes.
+        3.  Ratio: Between-CV / Within-CV.
+
+        Args:
+            per_regime_metrics (Dict): Output from _calculate_per_regime_metrics.
+            forward_returns (pd.Series): The raw forward returns timeseries.
+            regime_labels (np.ndarray): The raw regime labels timeseries.
+
+        Returns:
+            dict: CV metrics for economic results.
+        """
+        
+        if not per_regime_metrics:
+            return {}
+
+        metrics_data = {}
+        
+        # --- 1. Within-Regime CV (based on timeseries data) ---
+        # We only calculate this for the raw forward returns, as it measures
+        # the compactness of the return distribution within each regime.
+        within_cvs = []
+        non_noise_labels = [l for l in np.unique(regime_labels) if l != -1]
+        
+        for label in non_noise_labels:
+            regime_mask = (regime_labels == label)
+            regime_returns_ts = forward_returns[regime_mask].values
+            within_cvs.append(self._calculate_cv(regime_returns_ts))
+        
+        avg_within_cv_fwd_return = np.nanmean(within_cvs) if within_cvs else np.nan
+        metrics_data['economic_avg_within_cv_fwd_return'] = avg_within_cv_fwd_return
+
+        # --- 2. Between-Regime CV (based on per-regime aggregate metrics) ---
+        # This measures the separation of the *average* economic outcomes
+        # between regimes.
+        try:
+            metrics_df = pd.DataFrame.from_dict(per_regime_metrics, orient='index')
+        except Exception:
+            self.logger.warning("Could not create DataFrame for economic CV metrics.")
+            return metrics_data
+            
+        # Define which economic metrics to compare across regimes
+        metrics_to_compare = [
+            'mean_return', 'volatility', 'sharpe', 
+            'pct_above_target', 'pct_below_neg_target', 'pct_target_hits'
+        ]
+        
+        for col in metrics_to_compare:
+            if col in metrics_df.columns:
+                metric_values = metrics_df[col].dropna().values
+                if len(metric_values) > 1:
+                    cv = self._calculate_cv(metric_values)
+                    metrics_data[f'economic_between_cv_{col}'] = cv
+                else:
+                    metrics_data[f'economic_between_cv_{col}'] = np.nan
+            else:
+                 metrics_data[f'economic_between_cv_{col}'] = np.nan
+        
+        # --- 3. Ratio ---
+        # We can create a ratio for mean_return
+        between_mean_return_cv = metrics_data.get('economic_between_cv_mean_return', np.nan)
+        
+        if not np.isnan(avg_within_cv_fwd_return) and avg_within_cv_fwd_return > QualityThresholds.DBI_EPSILON:
+            ratio = between_mean_return_cv / avg_within_cv_fwd_return
+            metrics_data['economic_cv_ratio_mean_return'] = ratio
+        else:
+            metrics_data['economic_cv_ratio_mean_return'] = np.nan
+            
+        return metrics_data
+
+
     def _calculate_temporal_smoothness(self,
-                                       regime_labels: np.ndarray,
-                                       timestamps: Optional[pd.DatetimeIndex] = None) -> float:
+                                         regime_labels: np.ndarray,
+                                         timestamps: Optional[pd.DatetimeIndex] = None) -> float:
         """
         Calculate temporal smoothness score.
         
@@ -1104,7 +1237,7 @@ class ClusterQualityAssessor:
         Args:
             regime_labels: Regime/cluster labels
             timestamps: Optional timestamps for time-aware analysis (currently not used but
-                       validated for future enhancements)
+                        validated for future enhancements)
         
         Returns:
             Temporal smoothness score between 0 and 1
@@ -1149,13 +1282,13 @@ class ClusterQualityAssessor:
         return avg_regime_duration
     
     def _calculate_balance_metrics(self,
-                                   regime_labels: np.ndarray) -> Tuple[float, float, float, float, List[float]]:
+                                     regime_labels: np.ndarray) -> Tuple[float, float, float, float, List[float]]:
         """
         Calculate cluster balance metrics.
         
         Returns:
             Tuple of (balance_score, min_cluster_size_pct, max_cluster_size_pct,
-                     cluster_size_std, cluster_size_distribution)
+                      cluster_size_std, cluster_size_distribution)
         """
         unique_labels = np.unique(regime_labels)
         non_noise_labels = unique_labels[unique_labels != -1]
@@ -1193,8 +1326,8 @@ class ClusterQualityAssessor:
         return balance_score, min_cluster_size_pct, max_cluster_size_pct, cluster_size_std, cluster_size_distribution
     
     def _detect_regime_type(self, 
-                           regime_data: pd.DataFrame,
-                           returns: Optional[pd.Series] = None) -> Tuple[RegimeType, Dict[str, float]]:
+                            regime_data: pd.DataFrame,
+                            returns: Optional[pd.Series] = None) -> Tuple[RegimeType, Dict[str, float]]:
         """
         Detect regime type based on data characteristics (data-driven).
         
@@ -1290,9 +1423,9 @@ class ClusterQualityAssessor:
             return RegimeType.UNKNOWN, {}
     
     def _calculate_regime_specific_metrics(self,
-                                          regime_type: RegimeType,
-                                          regime_data: pd.DataFrame,
-                                          returns: Optional[pd.Series] = None) -> Dict[str, Any]:
+                                             regime_type: RegimeType,
+                                             regime_data: pd.DataFrame,
+                                             returns: Optional[pd.Series] = None) -> Dict[str, Any]:
         """
         Calculate regime-specific metrics based on detected regime type.
         
@@ -1324,7 +1457,7 @@ class ClusterQualityAssessor:
                     specific_metrics['trend_acceleration'] = float(
                         (second_half_mean - first_half_mean) / (abs(first_half_mean) + QualityThresholds.DBI_EPSILON)
                     )
-                
+            
             elif regime_type == RegimeType.MEAN_REVERTING:
                 # Mean reverting regime metrics
                 mean_return = returns.mean()
@@ -1452,13 +1585,23 @@ class ClusterQualityAssessor:
                 )
                 regime_metrics['regime_specific_metrics'] = specific_metrics
                 
+                # *** NEW: Add economic target metrics ***
+                target_return = QualityThresholds.ECONOMIC_TARGET_RETURN
+                pct_above_target = (regime_returns > target_return).mean()
+                pct_below_neg_target = (regime_returns < -target_return).mean()
+                pct_target_hits = pct_above_target + pct_below_neg_target
+                
                 # Add return characteristics
                 regime_metrics.update({
                     'mean_return': float(regime_returns.mean()),
                     'volatility': float(regime_returns.std()),
                     'sharpe': float(regime_returns.mean() / (regime_returns.std() + QualityThresholds.DBI_EPSILON)),
                     'skewness': float(regime_returns.skew()) if hasattr(regime_returns, 'skew') else 0.0,
-                    'max_drawdown': float(self._compute_max_drawdown(regime_returns))
+                    'max_drawdown': float(self._compute_max_drawdown(regime_returns)),
+                    # Add new economic target metrics
+                    'pct_above_target': float(pct_above_target),
+                    'pct_below_neg_target': float(pct_below_neg_target),
+                    'pct_target_hits': float(pct_target_hits),
                 })
             else:
                 regime_metrics['regime_type'] = RegimeType.UNKNOWN.value
@@ -1704,7 +1847,10 @@ class ClusterQualityAssessor:
             
             # Add feature behavior in this regime (using selected columns)
             numeric_features = feature_data.select_dtypes(include=[np.number])
-            for col in ['spread', 'volume', 'volatility']:
+            
+            # *** MODIFIED: Check against existing features, as requested ***
+            features_to_check = ['spread', 'volume', 'volatility', 'momentum']
+            for col in features_to_check:
                 if col in numeric_features.columns:
                     # Use positional indexing for consistent alignment
                     col_data = numeric_features.iloc[regime_mask, numeric_features.columns.get_loc(col)]
@@ -1716,8 +1862,8 @@ class ClusterQualityAssessor:
         return results
     
     def _calculate_predictive_power(self,
-                                   regime_labels: np.ndarray,
-                                   forward_returns: pd.Series) -> float:
+                                      regime_labels: np.ndarray,
+                                      forward_returns: pd.Series) -> float:
         """
         Calculate predictive power: can current regime predict future returns?
         
@@ -1811,6 +1957,7 @@ class ClusterQualityAssessor:
         tprint_info(f"📊 Using quality score weights: Temporal={QualityThresholds.WEIGHT_TEMPORAL_SMOOTHNESS:.2f}, CV={QualityThresholds.WEIGHT_CV_RATIO:.2f}, Silhouette={QualityThresholds.WEIGHT_SILHOUETTE:.2f}, Balance={QualityThresholds.WEIGHT_BALANCE:.2f}, Noise={QualityThresholds.WEIGHT_NOISE_RATIO:.2f}")
         
         # 1. CV ratio (higher between/lower within is better) - PRIMARY METRIC
+        # *** REVERTED: Kept original field names ***
         if metrics.within_regime_cv is not None and metrics.between_regime_cv is not None:
             # Ideal: low within, high between
             # Ratio of between/within, normalized
@@ -1818,32 +1965,32 @@ class ClusterQualityAssessor:
             cv_normalized = np.tanh(cv_ratio)  # Sigmoid-like normalization
             score_components.append(cv_normalized)
             weights.append(QualityThresholds.WEIGHT_CV_RATIO)
-            tprint_info(f"   • CV Ratio: {cv_normalized:.4f} (weight: {QualityThresholds.WEIGHT_CV_RATIO:.2f})")
+            tprint_info(f"    • CV Ratio: {cv_normalized:.4f} (weight: {QualityThresholds.WEIGHT_CV_RATIO:.2f})")
         
         # 2. Silhouette score (normalize to 0-1, already in [-1, 1]) - SECONDARY METRIC
         if metrics.silhouette_score is not None:
             silhouette_normalized = (metrics.silhouette_score + 1) / 2  # Map [-1, 1] to [0, 1]
             score_components.append(silhouette_normalized)
             weights.append(QualityThresholds.WEIGHT_SILHOUETTE)
-            tprint_info(f"   • Silhouette: {silhouette_normalized:.4f} (weight: {QualityThresholds.WEIGHT_SILHOUETTE:.2f})")
+            tprint_info(f"    • Silhouette: {silhouette_normalized:.4f} (weight: {QualityThresholds.WEIGHT_SILHOUETTE:.2f})")
         
         # 3. Temporal smoothness (already in [0, 1])
         if metrics.temporal_smoothness is not None:
             score_components.append(metrics.temporal_smoothness)
             weights.append(QualityThresholds.WEIGHT_TEMPORAL_SMOOTHNESS)
-            tprint_info(f"   • Temporal Smoothness: {metrics.temporal_smoothness:.4f} (weight: {QualityThresholds.WEIGHT_TEMPORAL_SMOOTHNESS:.2f})")
+            tprint_info(f"    • Temporal Smoothness: {metrics.temporal_smoothness:.4f} (weight: {QualityThresholds.WEIGHT_TEMPORAL_SMOOTHNESS:.2f})")
         
         # 4. Balance score (already in [0, 1])
         if metrics.balance_score is not None:
             score_components.append(metrics.balance_score)
             weights.append(QualityThresholds.WEIGHT_BALANCE)
-            tprint_info(f"   • Balance: {metrics.balance_score:.4f} (weight: {QualityThresholds.WEIGHT_BALANCE:.2f})")
+            tprint_info(f"    • Balance: {metrics.balance_score:.4f} (weight: {QualityThresholds.WEIGHT_BALANCE:.2f})")
         
         # 5. Noise ratio (lower is better, invert)
         noise_score = 1.0 - metrics.noise_ratio
         score_components.append(noise_score)
         weights.append(QualityThresholds.WEIGHT_NOISE_RATIO)
-        tprint_info(f"   • Noise Ratio (inverted): {noise_score:.4f} (weight: {QualityThresholds.WEIGHT_NOISE_RATIO:.2f})")
+        tprint_info(f"    • Noise Ratio (inverted): {noise_score:.4f} (weight: {QualityThresholds.WEIGHT_NOISE_RATIO:.2f})")
         
         # Calculate weighted average
         if len(score_components) > 0:
@@ -1962,6 +2109,8 @@ class ClusterQualityAssessor:
     def _build_markdown_content(self, metrics: ClusterQualityMetrics, symbol: str) -> str:
         """Build the markdown content for the report."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # *** NEW: Get target return for report ***
+        target_pct = QualityThresholds.ECONOMIC_TARGET_RETURN * 100
         
         md = f"""# Cluster Quality Assessment Report
 
@@ -2011,13 +2160,14 @@ This report provides a comprehensive assessment of cluster quality for {symbol}.
 - **Davies-Bouldin Index:** {metrics.davies_bouldin_score:.4f if metrics.davies_bouldin_score else 'N/A'} (lower is better)
 - **Calinski-Harabasz Index:** {metrics.calinski_harabasz_score:.2f if metrics.calinski_harabasz_score else 'N/A'} (higher is better)
 
+<!-- *** REVERTED: Kept original section name *** -->
 ### Coefficient of Variation
 
 - **Within-Regime CV:** {metrics.within_regime_cv:.4f if metrics.within_regime_cv else 'N/A'} ± {metrics.within_regime_cv_std:.4f if metrics.within_regime_cv_std else 'N/A'}
 - **Between-Regime CV:** {metrics.between_regime_cv:.4f if metrics.between_regime_cv else 'N/A'} ± {metrics.between_regime_cv_std:.4f if metrics.between_regime_cv_std else 'N/A'}
 """
         
-        # Add per-regime CV if available
+        # Add per-regime feature CV if available
         if metrics.per_regime_cv:
             md += "\n#### Per-Regime CV Values\n\n"
             md += "| Regime | CV |\n"
@@ -2025,6 +2175,29 @@ This report provides a comprehensive assessment of cluster quality for {symbol}.
             for regime_id, cv in sorted(metrics.per_regime_cv.items()):
                 md += f"| {regime_id} | {cv:.4f} |\n"
             md += "\n"
+
+        # *** NEW: Section for Economic CV ***
+        if metrics.economic_cv_metrics:
+            md += """
+### Economic Coefficient of Variation
+
+- **Avg. Within-Regime CV (fwd_return):** {0:.4f}
+- **Between-Regime CV (mean_return):** {1:.4f}
+- **CV Ratio (mean_return):** {2:.4f}
+
+""".format(
+    metrics.economic_cv_metrics.get('economic_avg_within_cv_fwd_return', 0.0),
+    metrics.economic_cv_metrics.get('economic_between_cv_mean_return', 0.0),
+    metrics.economic_cv_metrics.get('economic_cv_ratio_mean_return', 0.0)
+)
+            md += "| Economic Metric | Between-Regime CV |\n"
+            md += "|---|---|\n"
+            for key, val in sorted(metrics.economic_cv_metrics.items()):
+                if key.startswith('economic_between_cv_'):
+                    metric_name = key.replace('economic_between_cv_', '')
+                    md += f"| {metric_name} | {val:.4f} |\n"
+            md += "\n"
+
         
         md += """
 ---
@@ -2079,11 +2252,15 @@ This report provides a comprehensive assessment of cluster quality for {symbol}.
                 if 'mean_return' in regime_data:
                     md += f"""
 **Performance Metrics:**
-- Mean Return: {regime_data['mean_return']:.4f}
-- Volatility: {regime_data['volatility']:.4f}
+- Mean Return: {regime_data['mean_return']:.5f}
+- Volatility: {regime_data['volatility']:.5f}
 - Sharpe Ratio: {regime_data['sharpe']:.4f}
-- Skewness: {regime_data.get('skewness', 'N/A')}
-- Max Drawdown: {regime_data.get('max_drawdown', 'N/A')}
+- Skewness: {regime_data.get('skewness', 0.0):.4f}
+- Max Drawdown: {regime_data.get('max_drawdown', 0.0):.4f}
+<!-- *** NEW: Added Economic Target Metrics *** -->
+- Pct > {target_pct:.1f}% (Longs): {regime_data.get('pct_above_target', 0.0):.2%}
+- Pct < -{target_pct:.1f}% (Shorts): {regime_data.get('pct_below_neg_target', 0.0):.2%}
+- Pct Target Hits: {regime_data.get('pct_target_hits', 0.0):.2%}
 
 """
                 
@@ -2189,7 +2366,7 @@ This score indicates how well the current regime can predict future return direc
 
 - **Generated by:** ClusterQualityAssessor
 - **Timestamp:** {metrics.timestamp}
-- **Report Version:** 1.0
+- **Report Version:** 1.2 (Backward Compatible)
 
 """
         
@@ -2197,8 +2374,8 @@ This score indicates how well the current regime can predict future return direc
 
 
 def create_cluster_quality_assessor(artifact_manager=None, 
-                                   enable_hardware_optimization=True,
-                                   enable_vectorization=True) -> ClusterQualityAssessor:
+                                    enable_hardware_optimization=True,
+                                    enable_vectorization=True) -> ClusterQualityAssessor:
     """
     Factory function to create a cluster quality assessor.
     

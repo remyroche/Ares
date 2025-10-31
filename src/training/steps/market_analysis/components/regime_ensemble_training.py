@@ -288,6 +288,26 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 color="blue"
             )
 
+            # EXTRACT SOFT LABELS (POSTERIOR PROBABILITIES)
+            soft_labels = None
+            sample_weights = None
+            if self.enable_soft_labels: # This flag exists in ensemble component too
+                try:
+                    # Try to get HDP-HMM probabilities first
+                    hdp_probs_artifact = self.artifact_extractor.extract_artifact(
+                        pipeline_state, "hdp_hmm_regime_probabilities", "hdp_hmm_regime_discovery"
+                    )
+                    
+                    if hdp_probs_artifact is not None:
+                        soft_labels = hdp_probs_artifact
+                        tprint(f"✅ [REGIME_ENSEMBLE] Extracted HDP-HMM soft labels (probabilities): {soft_labels.shape}", "green")
+                    else:
+                        tprint("⚠️ [REGIME_ENSEMBLE] HDP-HMM soft labels not found. Will use hard labels.", "yellow")
+                        
+                except Exception as e:
+                    tprint(f"⚠️ [REGIME_ENSEMBLE] Error extracting soft labels: {e}", "yellow")
+
+            
             # Extract base models using standardized extractor
             regime_models_artifact = self.artifact_extractor.extract_base_models(
                 pipeline_state, component_name="REGIME_ENSEMBLE"
@@ -356,6 +376,21 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             X_processed, y_processed, regime_labels_processed = self._prepare_data(X, y, regime_labels)
             tprint(f"✅ [REGIME_ENSEMBLE] Data prepared - X: {X_processed.shape}, y: {y_processed.shape}", color="green")
 
+            # ALIGN SOFT LABELS AND CREATE SAMPLE WEIGHTS
+            weights_processed = None
+            if soft_labels is not None:
+                min_length = len(y_processed)
+                if len(soft_labels) >= min_length:
+                    try:
+                        soft_labels_aligned = soft_labels[:min_length]
+                        weights_processed = soft_labels_aligned[np.arange(min_length), y_processed]
+                        tprint(f"✅ [REGIME_ENSEMBLE] Created sample weights from soft labels. Mean weight: {np.mean(weights_processed):.3f}", "green")
+                    except Exception as e:
+                        tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to create sample weights from soft labels: {e}", "yellow")
+                else:
+                    tprint(f"⚠️ [REGIME_ENSEMBLE] Soft labels length ({len(soft_labels)}) mismatch with processed labels ({min_length}). No weights applied.", "yellow")
+
+
             # Perform proper temporal split to prevent data leakage using temporal validator
             tprint("🔄 [REGIME_ENSEMBLE] Performing temporal train/test split to prevent data leakage", color="cyan")
 
@@ -394,13 +429,24 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
 
             tprint(f"📊 [REGIME_ENSEMBLE] Train set: {X_train.shape}, Test set: {X_test.shape}", color="blue")
 
+            # SPLIT SAMPLE WEIGHTS
+            weights_train, weights_test = None, None
+            if weights_processed is not None:
+                try:
+                    weights_train = weights_processed[train_indices]
+                    weights_test = weights_processed[test_indices]
+                    tprint(f"✅ [REGIME_ENSEMBLE] Sample weights split: Train={len(weights_train)}, Test={len(weights_test)}", "green")
+                except Exception as e:
+                    tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to split sample weights: {e}", "yellow")
+                    weights_train = None # Disable weighting if split fails
+
             # Train stacker_lgbm_calibrated meta-learner on training data only
             tprint("🎭 [REGIME_ENSEMBLE] Training stacker_lgbm_calibrated meta-learner on training data", color="yellow")
-            stacker_result = self._train_stacker_lgbm_calibrated(X_train, y_train, base_models)
+            stacker_result = self._train_stacker_lgbm_calibrated(X_train, y_train, base_models, weights_train)
 
             # Evaluate ensemble on holdout test data
             tprint("📊 [REGIME_ENSEMBLE] Evaluating ensemble performance on holdout test data", color="yellow")
-            ensemble_metrics = self._evaluate_ensemble(X_test, y_test, stacker_result)
+            ensemble_metrics = self._evaluate_ensemble(X_test, y_test, stacker_result, weights_test)
 
             # Create comprehensive results
             tprint("📦 [REGIME_ENSEMBLE] Creating comprehensive results", color="yellow")
@@ -567,8 +613,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         tprint(f"✅ [REGIME_ENSEMBLE] Data prepared - X: {X.shape}, y: {y.shape}, regime_labels: {regime_labels.shape if regime_labels is not None else 'None'}", color="green")
         return X, y, regime_labels
 
-    def _create_enhanced_meta_features(self, meta_features: np.ndarray, y: np.ndarray, base_model_predictions: Optional[np.ndarray] = None) -> np.ndarray:
-        """
+    def _create_enhanced_meta_features(self, meta_features: np.ndarray, y: np.ndarray, base_model_predictions: Optional[np.ndarray] = None) -> np.ndarray:        """
         Create enhanced meta-features for better ensemble performance.
 
         Args:
@@ -660,7 +705,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"⚠️ [REGIME_ENSEMBLE] Enhanced feature creation failed, using base features: {e}", color="yellow")
             return meta_features
 
-    def _train_stacker_lgbm_calibrated(self, X: np.ndarray, y: np.ndarray, base_models: Dict[str, Any]) -> Dict[str, Any]:
+    def _train_stacker_lgbm_calibrated(self, X: np.ndarray, y: np.ndarray, base_models: Dict[str, Any], sample_weight: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """
         Train stacker_lgbm_calibrated meta-learner with HPO optimization.
         
@@ -748,8 +793,14 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             # Use transition-aware scorer for HPO
             scoring = create_transition_aware_scorer(
                 alpha=self.temporal_smoothing_alpha,
-                accuracy_weight=0.7,
-                stability_weight=0.3
+                accuracy_weight=0.8,
+                stability_weight=0.2
+            )
+            
+            fit_params = {}
+            if sample_weight is not None:
+                fit_params = {'sample_weight': sample_weight}
+                tprint("⚖️ [REGIME_ENSEMBLE] Applying sample weights to HPO", "blue")
             )
             
             # Perform HPO optimization
@@ -760,7 +811,8 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 y=y,
                 cv_folds=3,
                 scoring=scoring,  # Use transition-aware scorer
-                n_trials=20
+                n_trials=20,
+                fit_params=fit_params
             )
 
             if hpo_result.success:
@@ -793,7 +845,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
 
             # Train meta-learner
             tprint("🏋️ [REGIME_ENSEMBLE] Training meta-learner", color="blue")
-            meta_learner.fit(enhanced_meta_features, y)
+            meta_learner.fit(enhanced_meta_features, y, sample_weight=sample_weight)
             tprint("✅ [REGIME_ENSEMBLE] Meta-learner trained successfully", color="green")
 
             # Apply probability calibration
@@ -804,7 +856,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     method='isotonic',
                     cv=3
                 )
-                calibrated_meta_learner.fit(meta_features, y)
+                calibrated_meta_learner.fit(meta_features, y, sample_weight=sample_weight) 
                 tprint("✅ [REGIME_ENSEMBLE] Probability calibration applied successfully", color="green")
 
                 # Create feature contract for the ensemble
@@ -898,7 +950,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         else:
             return 'meta'
 
-    def _evaluate_ensemble(self, X: np.ndarray, y: np.ndarray, stacker_result: Dict[str, Any]) -> Dict[str, Any]:
+    def _evaluate_ensemble(self, X: np.ndarray, y: np.ndarray, stacker_result: Dict[str, Any], sample_weight: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """
         Evaluate ensemble performance using enhanced ML utilities.
         
@@ -968,7 +1020,8 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 X=meta_features,
                 y=y,
                 y_pred=y_pred,
-                y_pred_proba=y_pred_proba
+                y_pred_proba=y_pred_proba,
+                sample_weight=sample_weight
             )
 
             # Use model validator for additional validation
@@ -977,15 +1030,17 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 model=meta_learner,
                 X=meta_features,
                 y=y,
-                cv_folds=5
+                cv_folds=5,
+                fit_params={'sample_weight': sample_weight}
             )
 
             # Calculate basic metrics
-            accuracy = accuracy_score(y, y_pred)
+            accuracy = accuracy_score(y, y_pred, sample_weight=sample_weight)
             
             # Calculate comprehensive temporal and regime-persistence metrics
             comprehensive_metrics = self.temporal_metrics_calc.calculate_comprehensive_metrics(
-                y, y_pred, y_pred_proba
+                y, y_pred, y_pred_proba,
+                sample_weight=sample_weight
             )
             
             # Calculate temporal smoothness penalty
@@ -999,7 +1054,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             # Enhanced metrics with ML utilities
             metrics['stacker_lgbm_calibrated'] = {
                 'accuracy': accuracy,
-                'classification_report': classification_report(y, y_pred, output_dict=True),
+                'classification_report': classification_report(y, y_pred, sample_weight=sample_weight, output_dict=True),
                 'classification': comprehensive_metrics.get('classification', {}),
                 'temporal': comprehensive_metrics.get('temporal', {}),
                 'persistence': comprehensive_metrics.get('persistence', {}),
@@ -1018,7 +1073,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             }
 
             # Calculate comprehensive metrics for meta-learner
-            precision, recall, f1, support = precision_recall_fscore_support(y, y_pred, average='weighted')
+            precision, recall, f1, support = precision_recall_fscore_support(y, y_pred, average='weighted', sample_weight=sample_weight)
             confidence_mean = y_pred_proba.max(axis=1).mean()
             confidence_std = y_pred_proba.max(axis=1).std()
 
@@ -1076,7 +1131,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     try:
                         if name not in ['stacker_lgbm_calibrated', 'stacker_lgbm_calibrated_feature_indices']:
                             y_pred_base = model.predict(X)
-                            base_accuracy = accuracy_score(y, y_pred_base)
+                            base_accuracy = accuracy_score(y, y_pred_base, sample_weight=sample_weight)
                             base_accuracies[name] = base_accuracy
                     except Exception as e:
                         tprint(f"⚠️ [REGIME_ENSEMBLE] Could not evaluate {name}: {e}", color="yellow")

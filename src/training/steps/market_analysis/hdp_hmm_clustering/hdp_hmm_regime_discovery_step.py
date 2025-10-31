@@ -177,7 +177,10 @@ class HDPHMMRegimeDiscoveryStep(BaseStep):
             
             # Save artifacts
             await self._save_results(result, symbol, exchange, timeframe, config)
-            
+            labels_df, probs_df = await self._save_results(result, symbol, exchange, timeframe, config)
+
+
+             )
             # Calculate execution time
             execution_time = time.time() - start_time
             
@@ -186,9 +189,21 @@ class HDPHMMRegimeDiscoveryStep(BaseStep):
                 "SUCCESS"
             )
             
+            # Prepare artifacts dictionary for pipeline_state
+            step_artifacts = {
+                'hdp_hmm_regime_labels': labels_df,
+                'hdp_hmm_regime_probabilities': probs_df,
+                'hdp_hmm_cluster_statistics': self._get_artifact(
+                    "hdp_hmm_cluster_statistics", "metadata"
+                ),
+                'hdp_hmm_transition_matrix': self._get_artifact(
+                    "hdp_hmm_transition_matrix", "data"
+                )
+            }
+
             return {
                 'success': True,
-                'artifacts': result.get('artifacts', {}),
+                'artifacts': step_artifacts,
                 'metrics': result.get('quality_metrics', {}),
                 'execution_time': execution_time,
                 'n_regimes': result.get('n_clusters', 0),
@@ -482,6 +497,20 @@ class HDPHMMRegimeDiscoveryStep(BaseStep):
             artifact_type="data"
         )
         
+        # Save cluster probabilities (soft labels)
+        cluster_probs_df = None
+        if results.get('cluster_probabilities') is not None:
+            cluster_probs_df = pd.DataFrame(results['cluster_probabilities'])
+            self._save_artifact(
+                data=cluster_probs_df,
+                artifact_name="hdp_hmm_regime_probabilities",
+                artifact_type="data"
+            )
+            tprint("✅ Saved HDP-HMM regime probabilities (soft labels)", "SUCCESS")
+        else:
+            tprint_warning("⚠️ HDP-HMM cluster probabilities not available to save")
+
+
         # Save transition matrix
         if results.get('transition_matrix') is not None:
             transition_df = pd.DataFrame(results['transition_matrix'])
@@ -520,6 +549,7 @@ class HDPHMMRegimeDiscoveryStep(BaseStep):
             )
         
         tprint(f"✅ Saved {results['n_clusters']} regime labels and metrics", "SUCCESS")
+        return cluster_labels_df, cluster_probs_df
     
     def _validate_config(self, config: Dict[str, Any]) -> None:
         """

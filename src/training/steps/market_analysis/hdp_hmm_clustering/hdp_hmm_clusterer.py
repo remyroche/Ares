@@ -251,7 +251,6 @@ class HDPHMMConfig:
     use_m1_optimization: bool = True  # Enable M1/M2 Mac optimizations
     parallel_workers: Optional[int] = None  # Number of parallel workers (None = auto)
 
-
 @dataclass
 class HDPHMMResult:
     """Result container for HDP-HMM clustering."""
@@ -469,7 +468,7 @@ class HDPHMMClusterer:
             # Create result
             hdp_result = HDPHMMResult(
                 cluster_labels=result['labels'],
-                cluster_probabilities=result.get('probabilities', np.ones(len(result['labels']))),
+                cluster_probabilities=result.get('probabilities'),                
                 n_clusters=result['n_states'],
                 transition_matrix=result.get('transition_matrix'),
                 emission_params=result.get('emission_params'),
@@ -517,7 +516,7 @@ class HDPHMMClusterer:
             
             return HDPHMMResult(
                 cluster_labels=np.zeros(len(data)),
-                cluster_probabilities=np.ones(len(data)),
+                cluster_probabilities=None,                
                 n_clusters=0,
                 transition_matrix=None,
                 emission_params=None,
@@ -995,6 +994,10 @@ class HDPHMMClusterer:
         cluster_means = {}
         cluster_covariances = {}
         
+        # Get posterior probabilities (soft labels)
+        # expected_states is the (T, K) array of posterior state probabilities
+        probabilities = model.stateseqs[0].expected_states.copy()
+
         # Get observation distribution parameters per state
         # Note: In HDP-HMM, states share observation distributions
         # We'll compute cluster-specific statistics from the data
@@ -1006,8 +1009,13 @@ class HDPHMMClusterer:
                 cluster_means[int(state)] = np.mean(state_data, axis=0).tolist()
                 cluster_covariances[int(state)] = np.cov(state_data.T).tolist() if len(state_data) > 1 else np.eye(obs_dim).tolist()
         
+        # Get posterior probabilities (soft labels)
+        # expected_states returns a tuple (probs, E[z_t, z_t-1], log_likelihood)
+        probabilities = hmm.expected_states(data)[0]
+
         return {
             'labels': labels,
+            'probabilities': probabilities,  # <-- ADD THIS LINE
             'n_states': len(unique_states),
             'transition_matrix': transition_matrix,
             'emission_params': {
@@ -1359,6 +1367,62 @@ class HDPHMMClusterer:
         
         tprint_success(f"✅ Prediction complete: {len(labels)} labels generated")
         return labels
+
+
+def predict_proba(self, data: np.ndarray) -> np.ndarray:
+        """
+        Predict posterior probabilities (soft labels) for new data.
+        
+        Args:
+            data: Input data (n_samples, n_features)
+            
+        Returns:
+            Posterior probabilities (n_samples, n_states)
+        """
+        tprint_info(f"🔮 Predicting regime probabilities for {len(data)} samples")
+        
+        if self.model is None:
+            tprint_error("❌ Model not fitted. Call fit_predict first.")
+            raise ValueError("Model not fitted. Call fit_predict first.")
+        
+        # Preprocess data
+        data_scaled = self.scaler.transform(data)
+        
+        if self.pca is not None:
+            data_processed = self.pca.transform(data_scaled)
+        else:
+            data_processed = data_scaled
+        
+        # Predict probabilities using fitted model
+        if HMM_LIBRARY == 'pyhsmm':
+            # For pyhsmm, we need to add data, run smoothing, get probs, then remove data
+            tprint_debug("Running pyhsmm smoothing for probabilities...")
+            
+            # Add new data as a temporary sequence
+            self.model.add_data(data_processed)
+            
+            # Run forward-backward (smooth) on the new sequence
+            self.model.states_list[-1].smooth()
+            
+            # Extract the posterior probabilities
+            probabilities = self.model.states_list[-1].expected_states.copy()
+            
+            # Remove the temporary data to keep model clean
+            self.model.states_list.pop()
+            
+            tprint_debug(f"✅ Predicted probabilities shape {probabilities.shape} using pyhsmm")
+            
+        elif HMM_LIBRARY == 'ssm':
+            # ssm can directly calculate expected states
+            tprint_debug("Running ssm expected_states for probabilities...")
+            probabilities = self.model.expected_states(data_processed)[0]
+            tprint_debug(f"✅ Predicted probabilities shape {probabilities.shape} using ssm")
+        else:
+            tprint_error(f"❌ Unsupported HMM library: {HMM_LIBRARY}")
+            raise ValueError(f"Unsupported HMM library: {HMM_LIBRARY}")
+        
+        tprint_success(f"✅ Probability prediction complete: {probabilities.shape} array generated")
+        return probabilities
 
 
 # Convenience functions

@@ -7,7 +7,7 @@ analyst_config:
   model_name: "analyst_ensemble"
   model_type: "meta_ensemble"
   target: "trading_signal"  # Green light signal for trading
-  base_timeframe: "5m"  # Base timeframe for cross-timeframe features
+  base_timeframe: "15m"  # Base timeframe for cross-timeframe features
   execution_timeframe: "15m"  # When to run the model
   execution_frequency: "15m"  # Run every 15 minutes
   

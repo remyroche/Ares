@@ -414,7 +414,9 @@ class RegimeArtifactExtractor:
             unique_regimes, regime_counts = np.unique(cluster_assignments, return_counts=True)
             n_regimes = len(unique_regimes)
             regime_distribution = dict(zip(unique_regimes.astype(int), regime_counts.astype(int)))
-            
+            # (n_samples, n_regimes) DataFrame of posterior probabilities (soft labels)
+            probabilities: Optional[pd.DataFrame] = None
+    
             tprint(f"✅ [{component_name}] Extracted {len(cluster_assignments)} labels with {n_regimes} regimes", color="green")
             tprint(f"📊 [{component_name}] Regime distribution: {regime_distribution}", color="blue")
             

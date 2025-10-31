@@ -10,7 +10,8 @@ analyst_config:
   base_timeframe: "15m"  # Base timeframe for cross-timeframe features
   execution_timeframe: "15m"  # When to run the model
   execution_frequency: "15m"  # Run every 15 minutes
-  
+  params: {}
+
   # Meta-learner configuration (uses Analyst base model outputs)
   meta_learner:
     model_type: "stacker_lgbm_calibrated"

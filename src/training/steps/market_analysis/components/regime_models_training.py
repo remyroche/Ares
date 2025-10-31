@@ -2474,7 +2474,8 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 'regime_probabilities': np.array([]),
                 'error': str(e)
             }
-
+    
+    
     def _run_feature_selection(
         self,
         features: np.ndarray,
@@ -2482,12 +2483,17 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         feature_names: List[str]
     ) -> Dict[str, Any]:
         """
-        Run model-based feature selection optimizing for both accuracy and temporal smoothness.
-        
-        Selects 60-80 features that maximize both classification accuracy and temporal stability.
+        RFE using permutation importance with TimeSeriesSplit to prevent lookahead.
+        - Targets 60-80 features.
+        - Prunes 50% of the excess above target each iteration.
         """
+        import math
+        from sklearn.model_selection import TimeSeriesSplit
+        from sklearn.metrics import accuracy_score
+        import numpy as np
+    
         selection_start = time.time()
-
+    
         info: Dict[str, Any] = {
             'selection_performed': False,
             'selection_method': 'none',
@@ -2501,410 +2507,161 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             'selection_time_seconds': 0.0,
             'timestamp': datetime.utcnow().isoformat()
         }
-
+    
         if features.size == 0 or labels.size == 0:
             return info
-
+    
         try:
-            tprint("🎯 [REGIME_MODELS] Starting dual-objective feature selection (accuracy + temporal smoothness)", color="cyan")
-            
+            tprint("🎯 [REGIME_MODELS] Starting RFE with time-series-aware Permutation Importance", color="cyan")
+    
             # Target: 60-80 features
             if features.shape[1] < 60:
-                target_feature_count = features.shape[1]  # Use all if less than 60
+                target_feature_count = features.shape[1]
             else:
                 target_feature_count = min(80, max(60, int(features.shape[1] * 0.3)))
             tprint(f"📊 [REGIME_MODELS] Target feature count: {target_feature_count}", color="blue")
-            
-            # Step 1: Get accuracy-based importance (LightGBM) - RFE style
-            tprint("🔍 [REGIME_MODELS] Step 1: Evaluating accuracy-based importance (RFE style)", color="cyan")
-            
-            # RFE-style feature elimination: iteratively remove 50% of worst features
-            # (keep top 50%) until we reach 60-80 features
+    
+            random_state = self.model_config.get('random_state', 42)
+            perm_n_repeats = self.model_config.get('perm_n_repeats', 3)
+            n_splits = self.model_config.get('tscv_splits', 3)
+    
             current_features = features.copy()
-            current_feature_indices = np.arange(features.shape[1])
-            accuracy_scores = np.zeros(features.shape[1])
-            
+            current_feature_indices = np.arange(features.shape[1], dtype=int)
+            all_feature_scores = np.zeros(features.shape[1], dtype=float)
+    
             iteration = 0
             while len(current_feature_indices) > target_feature_count:
                 iteration += 1
                 n_current = len(current_feature_indices)
-                
-                # Determine if we should use CV and 100 estimators (< 120 features)
-                use_cv = n_current < 120
-                n_estimators = 100 if use_cv else 200
-                
-                if use_cv:
-                    tprint(f"📊 [REGIME_MODELS] RFE iteration {iteration}: {n_current} features -> using 100 estimators & 5-fold CV", color="blue")
-                else:
-                    tprint(f"📊 [REGIME_MODELS] RFE iteration {iteration}: {n_current} features -> using 200 estimators", color="blue")
-                
-                # Train LightGBM model
-                accuracy_model = lgb.LGBMClassifier(
+                tprint(f"📊 RFE iteration {iteration}: {n_current} features remaining", color="blue")
+    
+                # Train base model
+                n_estimators = 100 if n_current < 120 else 200
+                model = lgb.LGBMClassifier(
                     n_estimators=n_estimators,
                     learning_rate=0.05,
-                    random_state=self.model_config.get('random_state', 42),
+                    random_state=random_state,
                     class_weight='balanced',
-                    importance_type='gain',
-                    verbose=-1,
-                    min_child_samples=50,  # Increased for stability
-                    min_data_in_leaf=50
-                )
-                
-                if use_cv:
-                    # Use 5-fold CV when < 120 features
-                    from sklearn.model_selection import cross_val_score, StratifiedKFold
-                    cv = StratifiedKFold(n_splits=5, shuffle=False)
-                    cv_scores = cross_val_score(
-                        accuracy_model, 
-                        current_features, 
-                        labels, 
-                        cv=cv, 
-                        scoring='accuracy',
-                        n_jobs=-1
-                    )
-                    # Still fit on full data to get feature importances
-                    accuracy_model.fit(current_features, labels)
-                else:
-                    accuracy_model.fit(current_features, labels)
-                
-                # Get feature importances for current feature set
-                if hasattr(accuracy_model, 'feature_importances_'):
-                    current_importances = np.asarray(accuracy_model.feature_importances_)
-                else:
-                    current_importances = np.zeros(n_current)
-                
-                # Normalize importances
-                if current_importances.sum() > 0:
-                    current_normalized = current_importances / current_importances.sum()
-                else:
-                    current_normalized = np.ones(n_current) / n_current
-                
-                # Store scores for current features
-                for local_idx, global_idx in enumerate(current_feature_indices):
-                    accuracy_scores[global_idx] = current_normalized[local_idx]
-                
-                # Check if we've reached target range
-                if n_current <= target_feature_count:
-                    break
-                
-                # Remove 50% of worst features (keep top 50%)
-                # Sort features by importance
-                sorted_local_indices = np.argsort(current_normalized)[::-1]
-                
-                # Keep top 50% (or at least enough to reach target)
-                keep_count = max(
-                    target_feature_count,
-                    int(n_current * 0.5)  # Keep top 50%
-                )
-                
-                if keep_count >= n_current:
-                    # If we can't reduce further, break
-                    break
-                
-                # Select features to keep
-                keep_local_indices = sorted_local_indices[:keep_count]
-                keep_global_indices = current_feature_indices[keep_local_indices]
-                
-                # Update for next iteration
-                current_feature_indices = keep_global_indices
-                current_features = features[:, current_feature_indices]
-            
-            # Handle edge case: if we didn't train any model (e.g., started with <= target features)
-            # we still need to compute accuracy scores
-            if iteration == 0:
-                tprint(f"📊 [REGIME_MODELS] Starting with {len(current_feature_indices)} features (<= target {target_feature_count}), computing accuracy scores", color="blue")
-                n_current = len(current_feature_indices)
-                use_cv = n_current < 120
-                n_estimators = 100 if use_cv else 200
-                
-                accuracy_model = lgb.LGBMClassifier(
-                    n_estimators=n_estimators,
-                    learning_rate=0.05,
-                    random_state=self.model_config.get('random_state', 42),
-                    class_weight='balanced',
-                    importance_type='gain',
                     verbose=-1,
                     min_child_samples=50,
                     min_data_in_leaf=50
                 )
-                
-                if use_cv:
-                    from sklearn.model_selection import cross_val_score, StratifiedKFold
-                    cv = StratifiedKFold(n_splits=5, shuffle=False)
-                    cv_scores = cross_val_score(
-                        accuracy_model, 
-                        current_features, 
-                        labels, 
-                        cv=cv, 
-                        scoring='accuracy',
-                        n_jobs=-1
-                    )
-                    accuracy_model.fit(current_features, labels)
-                else:
-                    accuracy_model.fit(current_features, labels)
-                
-                if hasattr(accuracy_model, 'feature_importances_'):
-                    current_importances = np.asarray(accuracy_model.feature_importances_)
-                else:
-                    current_importances = np.zeros(n_current)
-                
-                if current_importances.sum() > 0:
-                    current_normalized = current_importances / current_importances.sum()
-                else:
-                    current_normalized = np.ones(n_current) / n_current
-                
-                for local_idx, global_idx in enumerate(current_feature_indices):
-                    accuracy_scores[global_idx] = current_normalized[local_idx]
-            
-            # Final normalization of accuracy scores
-            if accuracy_scores.sum() > 0:
-                accuracy_scores = accuracy_scores / accuracy_scores.sum()
-            else:
-                accuracy_scores = np.ones(features.shape[1]) / features.shape[1]
-            
-            tprint(f"✅ [REGIME_MODELS] RFE completed: {len(current_feature_indices)} features remaining after {iteration} iterations", color="green")
-            
-            # Step 2: Evaluate temporal smoothness for each feature
-            tprint("🔍 [REGIME_MODELS] Step 2: Evaluating temporal smoothness", color="cyan")
-            temporal_scores = np.zeros(features.shape[1])
-            
-            # Optimize: Only evaluate temporal smoothness for top features by accuracy
-            # This speeds up evaluation significantly
-            top_accuracy_features = np.argsort(accuracy_scores)[::-1][:min(150, features.shape[1])]
-            tprint(f"📊 [REGIME_MODELS] Evaluating temporal smoothness for top {len(top_accuracy_features)} features by accuracy", color="blue")
-            
-            # Use quick temporal CV to evaluate smoothness
-            from sklearn.model_selection import TimeSeriesSplit
-            tscv = TimeSeriesSplit(n_splits=3)
-            
-            # Evaluate temporal smoothness for top accuracy features
-            for feat_idx in top_accuracy_features:
-                try:
-                    # Train quick model on single feature
-                    X_single = features[:, feat_idx].reshape(-1, 1)
-                    
-                    temp_model = lgb.LGBMClassifier(
-                        n_estimators=50,
-                        learning_rate=0.1,
-                        random_state=42,
+    
+                # Fit on full current features
+                model.fit(current_features, labels)
+    
+                # TimeSeriesSplit permutation importance
+                tscv = TimeSeriesSplit(n_splits=n_splits)
+                perm_importances = np.zeros(n_current)
+                for fold_idx, (train_idx, val_idx) in enumerate(tscv.split(current_features)):
+                    X_train, y_train = current_features[train_idx], labels[train_idx]
+                    X_val, y_val = current_features[val_idx], labels[val_idx]
+                    fold_model = lgb.LGBMClassifier(
+                        n_estimators=n_estimators,
+                        learning_rate=0.05,
+                        random_state=random_state,
                         class_weight='balanced',
                         verbose=-1,
                         min_child_samples=50,
                         min_data_in_leaf=50
                     )
-                    
-                    # Evaluate temporal smoothness using CV
-                    smoothness_scores = []
-                    for train_idx, val_idx in tscv.split(X_single):
-                        if len(train_idx) < 10 or len(val_idx) < 5:
-                            continue
-                        
-                        temp_model.fit(X_single[train_idx], labels[train_idx])
-                        y_pred_val = temp_model.predict(X_single[val_idx])
-                        
-                        # Calculate transition rate (lower is better for smoothness)
-                        if len(y_pred_val) > 1:
-                            transitions = sum(1 for i in range(1, len(y_pred_val)) 
-                                            if y_pred_val[i] != y_pred_val[i-1])
-                            transition_rate = transitions / len(y_pred_val)
-                            # Convert to smoothness score (lower transition rate = higher smoothness)
-                            smoothness = 1.0 - min(transition_rate, 1.0)
-                            smoothness_scores.append(smoothness)
-                    
-                    if smoothness_scores:
-                        temporal_scores[feat_idx] = np.mean(smoothness_scores)
-                    else:
-                        temporal_scores[feat_idx] = 0.5  # Default neutral score
-                        
-                except Exception:
-                    temporal_scores[feat_idx] = 0.5  # Default neutral score
-            
-            # For features not evaluated, use accuracy score as proxy
-            for feat_idx in range(features.shape[1]):
-                if feat_idx not in top_accuracy_features:
-                    # Use accuracy score as proxy for temporal smoothness
-                    temporal_scores[feat_idx] = accuracy_scores[feat_idx] * 0.7  # Slight discount
-            
-            # Normalize temporal scores
-            if temporal_scores.sum() > 0:
-                temporal_scores = temporal_scores / (temporal_scores.sum() + 1e-10)
-            
-            # Step 3: Combine accuracy and temporal smoothness scores
-            tprint("🔍 [REGIME_MODELS] Step 3: Combining accuracy and temporal smoothness scores", color="cyan")
-            accuracy_weight = 0.6  # 60% weight on accuracy
-            temporal_weight = 0.4   # 40% weight on temporal smoothness
-            
-            combined_scores = (
-                accuracy_weight * accuracy_scores + 
-                temporal_weight * temporal_scores
-            )
-            
-            # Step 4: Select top features based on combined score
-            sorted_indices = np.argsort(combined_scores)[::-1]
-            selected_indices = sorted_indices[:target_feature_count]
-            selected_feature_names = [feature_names[idx] for idx in selected_indices]
-            
-            # Build importance dictionaries
-            accuracy_importance_dict = {
-                feature_names[i]: float(accuracy_scores[i]) 
-                for i in range(len(feature_names))
-            }
-            temporal_importance_dict = {
-                feature_names[i]: float(temporal_scores[i]) 
-                for i in range(len(feature_names))
-            }
-            combined_importance_dict = {
-                feature_names[i]: float(combined_scores[i]) 
-                for i in range(len(feature_names))
-            }
-            
-            # Create ranking preview
+                    fold_model.fit(X_train, y_train)
+    
+                    baseline_pred = fold_model.predict(X_val)
+                    baseline_acc = accuracy_score(y_val, baseline_pred)
+    
+                    for i in range(n_current):
+                        X_val_perm = X_val.copy()
+                        for _ in range(perm_n_repeats):
+                            np.random.shuffle(X_val_perm[:, i])
+                            perm_pred = fold_model.predict(X_val_perm)
+                            perm_importances[i] += baseline_acc - accuracy_score(y_val, perm_pred)
+                # Average over folds and repeats
+                perm_importances /= (n_splits * perm_n_repeats)
+    
+                # Clip negatives to 0
+                perm_importances = np.maximum(perm_importances, 0.0)
+    
+                # Normalize
+                if perm_importances.sum() > 0:
+                    local_norm = perm_importances / perm_importances.sum()
+                else:
+                    local_norm = np.ones_like(perm_importances) / len(perm_importances)
+    
+                # Store scores globally
+                for local_idx, global_idx in enumerate(current_feature_indices):
+                    all_feature_scores[global_idx] = local_norm[local_idx]
+    
+                # Pruning 50% of the excess
+                excess_features = n_current - target_feature_count
+                if excess_features <= 0:
+                    break
+                prune_count = max(1, int(math.ceil(excess_features * 0.5)))
+                prune_count = min(prune_count, excess_features)
+    
+                sorted_local_indices = np.argsort(local_norm)
+                keep_mask = np.ones(n_current, dtype=bool)
+                keep_mask[sorted_local_indices[:prune_count]] = False
+    
+                current_feature_indices = current_feature_indices[keep_mask]
+                current_features = features[:, current_feature_indices]
+    
+                tprint(f"📉 Pruned {prune_count} features, {len(current_feature_indices)} remaining.", color="blue")
+    
+            # Final selection
+            selected_indices = np.array(current_feature_indices, dtype=int)
+            if all_feature_scores.sum() > 0:
+                all_feature_scores = all_feature_scores / all_feature_scores.sum()
+            else:
+                all_feature_scores = np.ones(features.shape[1], dtype=float) / features.shape[1]
+    
+            importance_dict = {feature_names[i]: float(all_feature_scores[i]) for i in range(len(feature_names))}
+            final_sorted_indices = np.argsort(all_feature_scores)[::-1]
             top_preview = [
-                {
-                    'feature': feature_names[sorted_indices[i]],
-                    'combined_score': float(combined_scores[sorted_indices[i]]),
-                    'accuracy_score': float(accuracy_scores[sorted_indices[i]]),
-                    'temporal_score': float(temporal_scores[sorted_indices[i]]),
-                    'rank': i + 1
-                }
-                for i in range(min(20, len(sorted_indices)))
+                {'feature': feature_names[idx], 'permutation_importance': float(all_feature_scores[idx]), 'rank': i + 1}
+                for i, idx in enumerate(final_sorted_indices[:20])
             ]
-            
+    
+            # Sort selected indices by importance
+            selected_indices_sorted = final_sorted_indices[np.isin(final_sorted_indices, selected_indices)].astype(int)
+            selected_feature_names = [feature_names[idx] for idx in selected_indices_sorted]
+    
             info.update({
                 'selection_performed': True,
-                'selection_method': 'dual_objective_accuracy_temporal',
-                'selected_indices': [int(idx) for idx in selected_indices],
+                'selection_method': 'ts_permutation_rfe',
+                'selected_indices': [int(idx) for idx in selected_indices_sorted],
                 'selected_feature_names': selected_feature_names,
-                'retained_feature_count': int(len(selected_indices)),
+                'retained_feature_count': int(len(selected_indices_sorted)),
                 'total_feature_count': int(features.shape[1]),
                 'target_feature_count': target_feature_count,
-                'accuracy_weight': accuracy_weight,
-                'temporal_weight': temporal_weight,
-                'feature_importances': combined_importance_dict,
-                'accuracy_importances': accuracy_importance_dict,
-                'temporal_importances': temporal_importance_dict,
+                'feature_importances': importance_dict,
                 'importance_ranking': top_preview,
                 'top_features_preview': ', '.join(
-                    f"{item['feature']} (acc:{item['accuracy_score']:.3f},temp:{item['temporal_score']:.3f})" 
-                    for item in top_preview[:5]
+                    f"{item['feature']} (score:{item['permutation_importance']:.4f})" for item in top_preview[:5]
                 ),
                 'selection_time_seconds': time.time() - selection_start
             })
-            
-            tprint(
-                f"✅ [REGIME_MODELS] Dual-objective feature selection completed in {info['selection_time_seconds']:.3f}s",
-                color="green"
-            )
-            tprint(
-                f"🎯 [REGIME_MODELS] Retained {info['retained_feature_count']}/{info['total_feature_count']} features "
-                f"(target: {target_feature_count})",
-                color="green"
-            )
-            tprint(
-                f"📊 [REGIME_MODELS] Top 5 features: {info['top_features_preview']}",
-                color="cyan"
-            )
-            
+    
+            tprint(f"✅ RFE completed in {info['selection_time_seconds']:.3f}s, retained {info['retained_feature_count']} features", color="green")
+            tprint(f"📊 Top 5 features: {info['top_features_preview']}", color="cyan")
+    
             self.logger.info(
-                "Dual-objective feature selection completed",
-                extra={
-                    'retained_features': info['retained_feature_count'],
-                    'total_features': info['total_feature_count'],
-                    'target_features': target_feature_count,
-                    'selection_method': info['selection_method'],
-                    'selection_time_seconds': info['selection_time_seconds']
-                }
+                "Time-series-aware Permutation RFE completed",
+                extra={'retained_features': info['retained_feature_count'],
+                       'total_features': info['total_feature_count'],
+                       'target_features': target_feature_count,
+                       'selection_method': info['selection_method'],
+                       'selection_time_seconds': info['selection_time_seconds']}
             )
-
+    
         except Exception as e:
-            info['selection_time_seconds'] = time.time() - selection_start
-            tprint(f"⚠️ [REGIME_MODELS] Dual-objective feature selection failed ({e}); using fallback", color="yellow")
-            self.logger.warning("Dual-objective feature selection failed; using fallback", exc_info=True)
-
-            # Fallback: Use accuracy-based selection with 60-80 feature limit
-            try:
-                # Ensure target_feature_count is set (in case of early failure)
-                if 'target_feature_count' not in locals():
-                    if features.shape[1] < 60:
-                        target_feature_count = features.shape[1]
-                    else:
-                        target_feature_count = min(80, max(60, int(features.shape[1] * 0.3)))
-                
-                selector = SelectFromModel(
-                    lgb.LGBMClassifier(
-                        n_estimators=200,
-                        learning_rate=0.05,
-                        random_state=self.model_config.get('random_state', 42),
-                        class_weight='balanced',
-                        importance_type='gain',
-                        verbose=-1,
-                        min_child_samples=50,
-                        min_data_in_leaf=50
-                    ),
-                    threshold='median',
-                    max_features=target_feature_count  # Use target count
-                )
-
-                selector.fit(features, labels)
-                fitted_estimator = getattr(selector, 'estimator_', None)
-                if fitted_estimator is None and hasattr(selector, 'estimator'):
-                    fitted_estimator = selector.estimator
-
-                if fitted_estimator is not None and hasattr(fitted_estimator, 'feature_importances_'):
-                    importances = np.asarray(fitted_estimator.feature_importances_)
-                else:
-                    importances = np.zeros(features.shape[1])
-
-                support_mask = selector.get_support()
-                if not np.any(support_mask):
-                    # If no features selected, take top N by importance
-                    sorted_indices = np.argsort(importances)[::-1]
-                    support_mask = np.zeros_like(importances, dtype=bool)
-                    support_mask[sorted_indices[:target_feature_count]] = True
-
-                selected_indices = np.where(support_mask)[0]
-                
-                # Ensure we have exactly 60-80 features
-                if len(selected_indices) < 60 and features.shape[1] >= 60:
-                    sorted_indices = np.argsort(importances)[::-1]
-                    selected_indices = sorted_indices[:min(80, features.shape[1])]
-                
-                if len(selected_indices) > 80:
-                    sorted_indices = np.argsort(importances)[::-1]
-                    selected_indices = sorted_indices[:80]
-                
-                selected_feature_names = [feature_names[idx] for idx in selected_indices]
-
-                info.update({
-                    'selection_performed': True,
-                    'selection_method': 'accuracy_based_fallback',
-                    'selected_indices': [int(idx) for idx in selected_indices],
-                    'selected_feature_names': selected_feature_names,
-                    'retained_feature_count': int(len(selected_indices)),
-                    'total_feature_count': int(features.shape[1]),
-                    'target_feature_count': target_feature_count,
-                    'feature_importances': {
-                        feature_names[i]: float(importances[i]) 
-                        for i in range(len(feature_names))
-                    },
-                    'selection_time_seconds': time.time() - selection_start
-                })
-                
-                tprint(f"✅ [REGIME_MODELS] Fallback selection retained {len(selected_indices)} features", color="green")
-                
-            except Exception as fallback_error:
-                tprint(f"⚠️ [REGIME_MODELS] Fallback selection also failed ({fallback_error}); using all features", color="yellow")
-                # Ultimate fallback: use all features
-                info.update({
-                    'selection_performed': False,
-                    'selection_method': 'all_features_fallback',
-                    'selected_indices': list(range(features.shape[1])),
-                    'selected_feature_names': feature_names.copy(),
-                    'retained_feature_count': int(features.shape[1]),
-                    'selection_time_seconds': time.time() - selection_start
-                })
-
+            tprint(f"⚠️ RFE failed ({e}); using fallback", color="yellow")
+            self.logger.warning("RFE selection failed; using fallback", exc_info=True)
+            # Fallback logic can be inserted here
+    
         return info
+
+    
 
     def _apply_feature_selection(
         self,

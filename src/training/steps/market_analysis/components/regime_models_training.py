@@ -507,7 +507,8 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         
         # Note: Using existing feature bank system instead of custom feature generator
         tprint("✅ [REGIME_MODELS] Using existing feature bank system", color="green")
-    async def _train_models_with_hpo(self, X_train: np.ndarray, y_train: np.ndarray, X_test: np.ndarray, y_test: np.ndarray) -> Dict[str, Any]:
+        
+    async def _train_models_with_hpo(self, X_train: np.ndarray, y_train: np.ndarray, X_test: np.ndarray, y_test: np.ndarray, sample_weight: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """Train models with HPO optimization."""
         tprint("🔍 [REGIME_MODELS] Training models with HPO optimization", color="cyan")
         
@@ -537,15 +538,15 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     # For now, use transition-aware composite scorer
                     scoring = create_transition_aware_scorer(
                         alpha=self.temporal_smoothing_alpha,
-                        accuracy_weight=0.7,
-                        stability_weight=0.3
+                        accuracy_weight=0.8,
+                        stability_weight=0.2
                     )
                 else:
                     # Use transition-aware composite scorer (single objective)
                     scoring = create_transition_aware_scorer(
                         alpha=self.temporal_smoothing_alpha,
-                        accuracy_weight=0.7,
-                        stability_weight=0.3
+                        accuracy_weight=0.8,
+                        stability_weight=0.2
                     )
                 
                 search_space = self.hpo_optimizer._get_default_search_space('catboost_regime')
@@ -571,7 +572,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         random_seed=42,
                         verbose=False
                     )
-                    catboost_model.fit(X_train, y_train)
+                    catboost_model.fit(X_train, y_train, sample_weight=sample_weight)
                     trained_models['catboost'] = catboost_model
                     tprint("⚠️ [REGIME_MODELS] CatBoost HPO failed, using default parameters", color="yellow")
                     
@@ -600,6 +601,11 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     stability_weight=0.3
                 )
                 
+                fit_params = {}
+                if sample_weight is not None:
+                    fit_params = {'sample_weight': sample_weight}
+                    tprint("⚖️ [REGIME_MODELS] Applying sample weights to HPO", "blue")
+
                 search_space = self.hpo_optimizer._get_default_search_space('extratrees_regime')
                 hpo_result = self.hpo_optimizer.bayesian_optimization(
                     model_factory=create_extratrees_model,
@@ -608,7 +614,8 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     search_space=search_space,
                     cv=3,
                     scoring=scoring,  # Use transition-aware scorer
-                    n_trials=15
+                    n_trials=15,
+                    fit_params=fit_params
                 )
                 
                 if hpo_result.success:
@@ -625,7 +632,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         random_state=42,
                         n_jobs=-1
                     )
-                    extratrees_model.fit(X_train, y_train)
+                    extratrees_model.fit(X_train, y_train, sample_weight=sample_weight)
                     trained_models['extra_trees'] = extratrees_model
                     tprint("⚠️ [REGIME_MODELS] ExtraTrees HPO failed, using default parameters", color="yellow")
                     
@@ -686,7 +693,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         n_jobs=-1,
                         verbosity=0
                     )
-                    xgb_model.fit(X_train, y_train)
+                    xgb_model.fit(X_train, y_train, sample_weight=sample_weight)
                     trained_models['xgboost'] = xgb_model
                     tprint("⚠️ [REGIME_MODELS] XGBoost HPO failed, using default parameters", color="yellow")
                     
@@ -736,7 +743,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         random_state=42,
                         n_jobs=-1
                     )
-                    rf_model.fit(X_train, y_train)
+                    rf_model.fit(X_train, y_train, sample_weight=sample_weight)
                     trained_models['random_forest'] = rf_model
                     tprint("⚠️ [REGIME_MODELS] Random Forest HPO failed, using default parameters", color="yellow")
                     
@@ -751,7 +758,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     criterion='gini',
                     class_weight='balanced'
                 )
-                rule_model.fit(X_train, y_train)
+                rule_model.fit(X_train, y_train, sample_weight=sample_weight)
                 trained_models['greedy_rule_lists'] = rule_model
                 tprint("✅ [REGIME_MODELS] Greedy Rule Lists trained successfully", color="green")
                 
@@ -759,22 +766,23 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 tprint(f"❌ [REGIME_MODELS] Greedy Rule Lists training failed: {e}", color="red")
 
         # Dynamic model selection based on performance
-        selected_models = self._select_best_models(trained_models, X_train, y_train)
+        selected_models = self._select_best_models(trained_models, X_train, y_train, fit_params)
         
         tprint(f"✅ [REGIME_MODELS] Model training completed - {len(trained_models)} models trained, {len(selected_models)} selected", color="green")
         return selected_models
 
-    def _select_best_models(self, trained_models: Dict[str, Any], X_train: np.ndarray, y_train: np.ndarray) -> Dict[str, Any]:
+    def _select_best_models(self, trained_models: Dict[str, Any], X_train: np.ndarray, y_train: np.ndarray, fit_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Select best models based on cross-validation performance."""
         tprint("🎯 [REGIME_MODELS] Selecting best models based on CV performance", color="cyan")
         
         model_scores = {}
+        fit_params = fit_params or {}
         
         for name, model in trained_models.items():
             if model is not None:
                 try:
                     # Use 3-fold CV for quick evaluation
-                    cv_scores = cross_val_score(model, X_train, y_train, cv=3, scoring='accuracy')
+                    cv_scores = cross_val_score(model, X_train, y_train, cv=3, scoring='accuracy', fit_params=fit_params)
                     avg_score = np.mean(cv_scores)
                     std_score = np.std(cv_scores)
                     model_scores[name] = {'score': avg_score, 'std': std_score}
@@ -1041,6 +1049,31 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 regime_labels = np.random.randint(0, n_regimes, n_samples)
                 tprint(f"✅ [REGIME_MODELS] Created synthetic regime labels: {n_samples} samples, {n_regimes} regimes", color="green")
 
+            # EXTRACT SOFT LABELS (POSTERIOR PROBABILITIES)
+            soft_labels = None
+            sample_weights = None
+            if self.enable_soft_labels:
+                try:
+                    # Use the artifact extractor pattern from the ensemble component for consistency
+                    from .regime_artifact_schema import RegimeArtifactExtractor
+                    artifact_extractor = RegimeArtifactExtractor()
+                    
+                    # Try to get HDP-HMM probabilities first
+                    hdp_probs_artifact = artifact_extractor.extract_artifact(
+                        pipeline_state, "hdp_hmm_regime_probabilities", "hdp_hmm_regime_discovery"
+                    )
+                    
+                    if hdp_probs_artifact is not None:
+                        soft_labels = hdp_probs_artifact
+                        tprint(f"✅ [REGIME_MODELS] Extracted HDP-HMM soft labels (probabilities): {soft_labels.shape}", "green")
+                    else:
+                        tprint("⚠️ [REGIME_MODELS] HDP-HMM soft labels not found. Will use hard labels.", "yellow")
+                        
+                except ImportError:
+                    tprint("⚠️ [REGIME_MODELS] RegimeArtifactExtractor not available. Cannot load soft labels.", "yellow")
+                except Exception as e:
+                    tprint(f"⚠️ [REGIME_MODELS] Error extracting soft labels: {e}", "yellow")
+            
             # Prepare training data with existing feature bank
             tprint("🔧 [REGIME_MODELS] Preparing training data with existing feature bank", color="cyan")
             try:
@@ -1053,6 +1086,17 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     artifacts={},
                     metadata={'execution_time': time.time() - execution_start_time}
                 )
+
+            # ALIGN SOFT LABELS AND CREATE SAMPLE WEIGHTS
+            if soft_labels is not None and len(soft_labels) == len(y):
+                try:
+                    # Sample weight is the probability of the assigned hard label
+                    sample_weights = soft_labels[np.arange(len(y)), y]
+                    tprint(f"✅ [REGIME_MODELS] Created sample weights from soft labels. Mean weight: {np.mean(sample_weights):.3f}", "green")
+                except Exception as e:
+                    tprint(f"⚠️ [REGIME_MODELS] Failed to create sample weights from soft labels: {e}", "yellow")
+                    sample_weights = None
+            
 
 
             tprint(f"📊 [REGIME_MODELS] Training data prepared - X: {X.shape}, y: {y.shape}", color="green")
@@ -1073,6 +1117,23 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             else:
                 tprint("✅ [REGIME_MODELS] Temporal validation passed", color="green")
 
+            # SPLIT SAMPLE WEIGHTS
+            weights_train, weights_val, weights_test = None, None, None
+            if sample_weights is not None:
+                try:
+                    train_idx = self.temporal_splitter.train_indices
+                    val_idx = self.temporal_splitter.val_indices
+                    test_idx = self.temporal_splitter.test_indices
+                    
+                    weights_train = sample_weights[train_idx]
+                    weights_val = sample_weights[val_idx]
+                    weights_test = sample_weights[test_idx]
+                    tprint(f"✅ [REGIME_MODELS] Sample weights split: Train={len(weights_train)}, Val={len(weights_val)}, Test={len(weights_test)}", "green")
+                except Exception as e:
+                    tprint(f"⚠️ [REGIME_MODELS] Failed to split sample weights: {e}", "yellow")
+                    weights_train = None # Disable weighting if split fails
+
+
             # Train models with HPO optimization using memory manager
             tprint("🏋️ [REGIME_MODELS] Training models with HPO optimization (with memory management)", color="yellow")
             
@@ -1088,7 +1149,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 memory_mgr.monitor_memory("Before Training")
                 
                 # Train models
-                trained_models = await self._train_models_with_hpo(X_train, y_train, X_test, y_test)
+                trained_models = await self._train_models_with_hpo(X_train, y_train, X_test, y_test, weights_train)
                 
                 # Monitor memory after training
                 memory_mgr.monitor_memory("After Training")

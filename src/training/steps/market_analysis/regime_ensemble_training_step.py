@@ -92,11 +92,9 @@ class RegimeEnsembleTrainingStep(BaseStep):
             # Get pipeline state from config (should contain artifacts from previous steps)
             pipeline_state = config.get('pipeline_state', {})
             
-            # Get market data from pipeline state or create synthetic data if not available
-            market_data = pipeline_state.get('market_data')
             if market_data is None:
-                tprint("⚠️ No market data found in pipeline state, creating synthetic data", "WARNING")
-                market_data = self._create_synthetic_market_data(config)
+                tprint("⚠️ No market data found in pipeline state"WARNING")
+                return
             
             # Convert market data to DataFrame if it's not already
             if not isinstance(market_data, pd.DataFrame):

@@ -112,6 +112,7 @@ class UnifiedEvaluationResult:
     regime_aware_score: float = 0.0
     economic_score: float = 0.0
     trading_score: float = 0.0
+    custom_balanced_score: float = 0.0
 
     # Performance breakdown
     performance_by_regime: Dict[str, Dict[str, float]] = field(default_factory=dict)
@@ -712,7 +713,9 @@ class UnifiedEvaluator:
             regime_aware_score = self._calculate_regime_aware_score(regime_metrics, statistical_metrics)
             economic_score = self._calculate_economic_score(economic_metrics, financial_metrics)
             trading_score = self._calculate_trading_score(financial_metrics, economic_metrics)
-
+            custom_balanced_score = self._calculate_custom_balanced_score(financial_metrics, economic_metrics)
+           
+            
             self.logger.info("✅ Unified evaluation completed")
             self.logger.info(f"   Overall score: {overall_score:.4f}")
             self.logger.info(f"   Risk-adjusted score: {risk_adjusted_score:.4f}")
@@ -829,6 +832,153 @@ class UnifiedEvaluator:
             return (trading_score + economic_score) / 2.0
         except Exception:
             return 0.0
+    
+    def _calculate_custom_balanced_score(
+        self,
+        financial_metrics,
+        statistical_metrics,
+        *,
+        weights: dict | None = None,
+        norm_config: dict | None = None,
+        sample_count: int | None = None,
+        sample_count_min: int = 30,
+        apply_sample_penalty: bool = True,
+        return_components: bool = False
+    ) -> float:
+        """
+        Returns:
+          - If return_components=False -> single scalar score in [0,1].
+          - If return_components=True -> tuple (single_score, financial_obj, statistical_obj, normed_dict)
+            where:
+              - financial_obj is the composite to maximize in financial space (0..1)
+              - statistical_obj is the composite to maximize in statistical space (0..1)
+              - normed_dict contains normalized metric values for inspection
+        Notes:
+          - financial_metrics expected attrs: sharpe_ratio, max_drawdown, profit_factor, total_return (optional)
+          - statistical_metrics expected attrs: f1_score, accuracy, r2_score
+        """
+        import math
+    
+        # ---------- Defaults ----------
+        default_weights = {
+            # used for single scalar score only (weights across all metrics)
+            'sharpe': 0.25,
+            'max_drawdown': 0.20,
+            'profit_factor': 0.15,
+            'total_return': 0.10,    # optional, if available
+            'f1_score': 0.12,
+            'r2_score': 0.08,
+            'accuracy': 0.10
+        }
+        if weights is None:
+            weights = default_weights
+        # normalize passed weights
+        total_w = sum(weights.values()) or 1.0
+        weights = {k: v / total_w for k, v in weights.items()}
+    
+        # ---------- Normalization config ----------
+        default_norm = {
+            # clamp mapping; higher_is_better indicates direction
+            'sharpe': {'method': 'clamp', 'min': -1.0, 'max': 3.0, 'higher_is_better': True},
+            # max_drawdown provided as positive fraction (0..1). lower is better -> higher_is_better False
+            'max_drawdown': {'method': 'clamp', 'min': 0.0, 'max': 0.6, 'higher_is_better': False},
+            # profit factor typical range: 0..10 (but clamp at 5 for robustness)
+            'profit_factor': {'method': 'clamp', 'min': 0.0, 'max': 5.0, 'higher_is_better': True},
+            # total_return as fraction/decimal 0..inf, clamp to reasonable range
+            'total_return': {'method': 'clamp', 'min': -1.0, 'max': 2.0, 'higher_is_better': True},
+            'f1_score': {'method': 'clamp', 'min': 0.0, 'max': 1.0, 'higher_is_better': True},
+            'accuracy': {'method': 'clamp', 'min': 0.0, 'max': 1.0, 'higher_is_better': True},
+            'r2_score': {'method': 'clamp', 'min': 0.0, 'max': 1.0, 'higher_is_better': True},
+        }
+        if norm_config is None:
+            norm_config = {}
+        # merge defaults
+        for k, v in default_norm.items():
+            norm_config.setdefault(k, v)
+    
+        def _norm(value, conf):
+            try:
+                if value is None or (isinstance(value, float) and (math.isnan(value) or math.isinf(value))):
+                    return 0.0
+                method = conf.get('method', 'clamp')
+                hib = conf.get('higher_is_better', True)
+                if method == 'clamp':
+                    lo = conf.get('min', 0.0)
+                    hi = conf.get('max', 1.0)
+                    # Protect if hi == lo
+                    if hi == lo:
+                        v = 0.0
+                    else:
+                        v = max(lo, min(hi, value))
+                        v = (v - lo) / (hi - lo)
+                else:
+                    # fallback: treat as clamp
+                    lo = conf.get('min', 0.0)
+                    hi = conf.get('max', 1.0)
+                    v = max(lo, min(hi, value))
+                    v = (v - lo) / (hi - lo) if hi != lo else 0.0
+                if not hib:
+                    v = 1.0 - v
+                return max(0.0, min(1.0, v))
+            except Exception:
+                return 0.0
+    
+        # ---------- Extract raw metrics ----------
+        raw = {}
+        raw['sharpe'] = getattr(financial_metrics, 'sharpe_ratio', None)
+        raw_mdd = getattr(financial_metrics, 'max_drawdown', None)
+        if raw_mdd is not None:
+            # convert negative MDD to positive fraction if necessary
+            raw['max_drawdown'] = abs(raw_mdd)
+        else:
+            raw['max_drawdown'] = None
+        raw['profit_factor'] = getattr(financial_metrics, 'profit_factor', None)
+        raw['total_return'] = getattr(financial_metrics, 'total_return', None)  # optional
+        raw['f1_score'] = getattr(statistical_metrics, 'f1_score', 0.0)
+        raw['accuracy'] = getattr(statistical_metrics, 'accuracy', 0.0)
+        raw['r2_score'] = getattr(statistical_metrics, 'r2_score', 0.0)
+    
+        # ---------- Normalize ----------
+        normed = {k: _norm(v, norm_config.get(k, {})) for k, v in raw.items()}
+    
+        # ---------- Compose multi-objective components ----------
+        # Financial objective: combine Sharpe, Profit Factor, (inverted) MaxDrawdown, Total Return
+        fin_weights = {'sharpe': 0.45, 'profit_factor': 0.30, 'max_drawdown': 0.20, 'total_return': 0.05}
+        # normalize fin_weights
+        s = sum(fin_weights.values()) or 1.0
+        fin_weights = {k: v / s for k, v in fin_weights.items()}
+        financial_obj = sum(fin_weights.get(k, 0.0) * normed.get(k, 0.0) for k in fin_weights.keys())
+    
+        # Statistical objective: combine F1, Accuracy, R2
+        stat_weights = {'f1_score': 0.6, 'accuracy': 0.25, 'r2_score': 0.15}
+        s2 = sum(stat_weights.values()) or 1.0
+        stat_weights = {k: v / s2 for k, v in stat_weights.items()}
+        statistical_obj = sum(stat_weights.get(k, 0.0) * normed.get(k, 0.0) for k in stat_weights.keys())
+    
+        # ---------- Single scalar balanced score (if needed) ----------
+        # Uses user-provided weights (default normalized above)
+        scalar_score = sum(weights.get(k, 0.0) * normed.get(k, 0.0) for k in weights.keys())
+    
+        # ---------- Sample count penalty ----------
+        if apply_sample_penalty and sample_count is not None:
+            if sample_count < sample_count_min:
+                penalty = float(sample_count) / float(sample_count_min)
+                penalty = max(0.0, min(1.0, penalty))
+                scalar_score *= penalty
+                financial_obj *= penalty
+                statistical_obj *= penalty
+    
+        # clamp safety
+        scalar_score = max(0.0, min(1.0, scalar_score))
+        financial_obj = max(0.0, min(1.0, financial_obj))
+        statistical_obj = max(0.0, min(1.0, statistical_obj))
+    
+        if return_components:
+            return scalar_score, financial_obj, statistical_obj, normed
+    
+        return scalar_score
+
+            
 
 # Convenience functions
 def create_unified_evaluator() -> UnifiedEvaluator:

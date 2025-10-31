@@ -6,6 +6,7 @@
 tactician_config:
   model_name: "tactician_ensemble"
   model_type: "meta_ensemble"
+  params: {}
   target: "entry_timing"  # Timing for 0.5% price change
   base_timeframe: "15m"  # Base timeframe for cross-timeframe features & optimized lookback
   execution_timeframe: "15m"  # When to run the model

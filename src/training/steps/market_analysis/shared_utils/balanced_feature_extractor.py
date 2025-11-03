@@ -106,7 +106,7 @@ class BalancedFeatureConfig:
     enabled_categories: List[FeatureCategory] = field(default_factory=lambda: [
         FeatureCategory.PRICE, FeatureCategory.VOLUME, FeatureCategory.VOLATILITY,
         FeatureCategory.MOMENTUM, FeatureCategory.TREND, FeatureCategory.TECHNICAL,
-        FeatureCategory.REGIME
+        FeatureCategory.REGIME, FeatureCategory.MICROSTRUCTURE  # Microstructure features (no orderbook dependency)
     ])
 
     # TAS-style balanced extraction settings
@@ -267,6 +267,8 @@ class BalancedFeatureExtractor:
                         features, names = self._extract_technical_features_balanced(data_df)
                     elif category == FeatureCategory.REGIME:
                         features, names = self._extract_statistical_features_balanced(data_df)
+                    elif category == FeatureCategory.MICROSTRUCTURE:
+                        features, names = self._extract_microstructure_features_balanced(data_df)
                     elif category == FeatureCategory.INTERACTION:
                         features, names = self._extract_interaction_features_balanced(data_df)
                     else:
@@ -536,6 +538,51 @@ class BalancedFeatureExtractor:
             return pd.Series(data).rolling(window=window).apply(
                 lambda x: x.skew() if len(x) == window else np.nan
             ).values
+
+    def _numpy_rolling_vwap(self, price: np.ndarray, volume: np.ndarray, window: int) -> np.ndarray:
+        """Numpy-based rolling VWAP calculation."""
+        try:
+            if len(price) < window or len(volume) < window:
+                return np.full(len(price), np.nan)
+
+            result = np.full(len(price), np.nan)
+
+            for i in range(window - 1, len(price)):
+                window_price = price[i - window + 1:i + 1]
+                window_volume = volume[i - window + 1:i + 1]
+                if not np.any(np.isnan(window_price)) and not np.any(np.isnan(window_volume)):
+                    vwap = np.sum(window_price * window_volume) / (np.sum(window_volume) + 1e-8)
+                    result[i] = vwap
+
+            return result
+
+        except Exception as e:
+            self.logger.warning(f"Numpy rolling VWAP failed: {e}")
+            # Fallback to pandas
+            return (pd.Series(price * volume).rolling(window=window).sum() / 
+                   pd.Series(volume).rolling(window=window).sum()).values
+
+    def _numpy_rolling_corr(self, x: np.ndarray, y: np.ndarray, window: int) -> np.ndarray:
+        """Numpy-based rolling correlation calculation."""
+        try:
+            if len(x) < window or len(y) < window:
+                return np.full(len(x), np.nan)
+
+            result = np.full(len(x), np.nan)
+
+            for i in range(window - 1, len(x)):
+                window_x = x[i - window + 1:i + 1]
+                window_y = y[i - window + 1:i + 1]
+                if not np.any(np.isnan(window_x)) and not np.any(np.isnan(window_y)):
+                    corr = np.corrcoef(window_x, window_y)[0, 1]
+                    result[i] = corr
+
+            return result
+
+        except Exception as e:
+            self.logger.warning(f"Numpy rolling correlation failed: {e}")
+            # Fallback to pandas
+            return pd.Series(x).rolling(window=window).corr(pd.Series(y)).values
 
     def _numpy_rolling_kurtosis(self, data: np.ndarray, window: int) -> np.ndarray:
         """Numpy-based rolling kurtosis for better performance."""
@@ -1015,6 +1062,90 @@ class BalancedFeatureExtractor:
             raise
         except Exception as e:
             self.logger.warning(f"Statistical features extraction failed: {e}")
+            return None, []
+
+    def _extract_microstructure_features_balanced(self, data_df: pd.DataFrame) -> Tuple[Optional[np.ndarray], List[str]]:
+        """Extract balanced microstructure features (no orderbook dependency)."""
+        try:
+            features = []
+            names = []
+
+            if 'close' not in data_df.columns or 'volume' not in data_df.columns:
+                raise FeatureCategoryError("Close price and volume columns required for microstructure features")
+
+            close_price = data_df['close'].values
+            volume = data_df['volume'].values
+
+            # VWAP-based features (no orderbook needed)
+            periods = [10, 20]
+            for period in periods:
+                if len(close_price) <= period:
+                    continue
+
+                try:
+                    # Calculate VWAP
+                    if self.config.use_numpy_optimization:
+                        rolling_vwap = self._numpy_rolling_vwap(close_price, volume, period)
+                    else:
+                        rolling_vwap = (pd.Series(close_price * volume).rolling(window=period).sum() / 
+                                       pd.Series(volume).rolling(window=period).sum()).values
+
+                    # VWAP ratio
+                    vwap_ratio = close_price / (rolling_vwap + 1e-8)
+                    vwap_ratio = np.clip(vwap_ratio, 0.5, 2.0)
+                    vwap_ratio = np.nan_to_num(vwap_ratio, nan=1.0)
+
+                    features.append(vwap_ratio.reshape(-1, 1))
+                    names.append(f'vwap_ratio_{period}')
+
+                except Exception as e:
+                    self.logger.warning(f"VWAP feature for period {period} failed: {e}")
+                    continue
+
+            # Order flow imbalance (price-volume correlation, no orderbook needed)
+            if len(close_price) > 20:
+                try:
+                    price_change = np.diff(close_price, prepend=close_price[0])
+                    volume_change = np.diff(volume, prepend=volume[0])
+                    
+                    # Rolling correlation
+                    if self.config.use_numpy_optimization:
+                        order_flow = self._numpy_rolling_corr(price_change, volume_change, 20)
+                    else:
+                        order_flow = pd.Series(price_change).rolling(window=20).corr(pd.Series(volume_change)).values
+                    
+                    order_flow = np.clip(order_flow, -1.0, 1.0)
+                    order_flow = np.nan_to_num(order_flow, nan=0.0)
+
+                    features.append(order_flow.reshape(-1, 1))
+                    names.append('order_flow_imbalance')
+
+                except Exception as e:
+                    self.logger.warning(f"Order flow imbalance feature failed: {e}")
+
+            # Trade intensity (volume-based, no orderbook needed)
+            if len(volume) > 20:
+                try:
+                    volume_ma = pd.Series(volume).rolling(window=20).mean().values
+                    trade_intensity = volume / (volume_ma + 1e-8)
+                    trade_intensity = np.clip(trade_intensity, 0, 5.0)
+                    trade_intensity = np.nan_to_num(trade_intensity, nan=1.0)
+
+                    features.append(trade_intensity.reshape(-1, 1))
+                    names.append('trade_intensity')
+
+                except Exception as e:
+                    self.logger.warning(f"Trade intensity feature failed: {e}")
+
+            if features:
+                return np.concatenate(features, axis=1), names
+            else:
+                return None, []
+
+        except FeatureCategoryError:
+            raise
+        except Exception as e:
+            self.logger.warning(f"Microstructure features extraction failed: {e}")
             return None, []
 
     def _extract_interaction_features_balanced(self, data_df: pd.DataFrame) -> Tuple[Optional[np.ndarray], List[str]]:
@@ -1581,7 +1712,7 @@ def create_unified_config() -> BalancedFeatureConfig:
         enabled_categories=[
             FeatureCategory.PRICE, FeatureCategory.VOLUME, FeatureCategory.VOLATILITY,
             FeatureCategory.MOMENTUM, FeatureCategory.TREND, FeatureCategory.TECHNICAL,
-            FeatureCategory.REGIME
+            FeatureCategory.REGIME, FeatureCategory.MICROSTRUCTURE  # Microstructure features (no orderbook dependency)
         ],
         use_tas_style_extraction=True,
         use_balanced_scaling=True,

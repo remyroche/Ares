@@ -79,6 +79,10 @@ class PaperTradingSimulator:
             f"Paper trading simulator initialized: {self.simulator_id} "
             f"({exchange}, balance={initial_balance:.2f}, direction={direction_constraint})"
         )
+        
+        # Register this simulator globally for balance tracking
+        from . import register_simulator
+        register_simulator(self.simulator_id, self)
     
     async def simulate_order(
         self,
@@ -287,7 +291,7 @@ class PaperTradingSimulator:
             
             # Return exchange-compatible response
             return {
-                "orderId": str(uuid.uuid4()),
+                "orderId": f"mock-{uuid.uuid4()}",
                 "symbol": symbol,
                 "status": "FILLED",
                 "side": side.upper(),
@@ -322,7 +326,7 @@ class PaperTradingSimulator:
     ) -> Dict[str, Any]:
         """Create a rejected order response."""
         return {
-            "orderId": str(uuid.uuid4()),
+            "orderId": f"mock-{uuid.uuid4()}",
             "symbol": symbol,
             "status": "REJECTED",
             "side": side.upper(),

@@ -1,0 +1,15 @@
+
+bounce_strength:
+  rmse: 0.2445
+  mae: 0.1709
+  r2: -0.1672
+
+hold_strength:
+  rmse: 0.4023
+  mae: 0.3581
+  r2: -0.0671
+
+trade_profit:
+  rmse: 0.6544
+  mae: 0.4777
+  r2: -0.0435

@@ -189,9 +189,18 @@ class ClusterQualityMetrics:
     # *** NEW: CV metrics for ECONOMIC outcomes ***
     economic_cv_metrics: Dict[str, Any] = field(default_factory=dict)
     
+    # *** NEW: Per-category CV metrics for features ***
+    feature_category_cv_metrics: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    
     # Temporal metrics
     temporal_smoothness: Optional[float] = None
+    temporal_smoothness_raw: Optional[float] = None  # Without flip-flop penalty
+    flip_flop_ratio: Optional[float] = None  # Ratio of flip-flop transitions
     regime_persistence: Optional[float] = None
+
+    # Enhanced temporal metrics
+    regime_duration_distribution: Dict[str, Any] = field(default_factory=dict)
+    transition_probability_matrix: Dict[str, Any] = field(default_factory=dict)
     
     # Cluster composition
     n_regimes: int = 0
@@ -611,17 +620,23 @@ class ClusterQualityAssessor:
                        feature_data: pd.DataFrame,
                        forward_returns: Optional[pd.Series] = None,
                        timestamps: Optional[pd.DatetimeIndex] = None,
-                       min_regime_size: int = 10) -> ClusterQualityMetrics:
+                       min_regime_size: int = 10,
+                       temporal_sensitivity_mode: str = "standard") -> ClusterQualityMetrics:
         """
         Comprehensive cluster quality assessment.
-        
+
         Args:
             regime_labels: Regime/cluster labels (-1 for noise)
             feature_data: Feature data used for clustering
             forward_returns: Optional forward returns for economic validation
             timestamps: Optional timestamps for temporal analysis
             min_regime_size: Minimum regime size to consider
-            
+            temporal_sensitivity_mode: Sensitivity mode for temporal smoothness calculation
+                - "standard": Original calculation
+                - "exponential_decay": More aggressive transition penalty
+                - "weighted_transitions": Weight transitions by regime duration
+                - "regime_persistence_focused": Emphasize long regime persistence
+
         Returns:
             ClusterQualityMetrics object with all computed metrics
         """
@@ -713,17 +728,36 @@ class ClusterQualityAssessor:
         except Exception as e:
             tprint_error(f"❌ Failed to calculate balance metrics: {e}")
         
-        # 6. Temporal smoothness and persistence
+        # 6. Temporal smoothness and persistence (with flip-flop penalty)
         if timestamps is not None:
             try:
                 with tprint_timer("Temporal Metrics Calculation"):
-                    metrics.temporal_smoothness = self._calculate_temporal_smoothness(
-                        regime_labels, timestamps
+                    (metrics.temporal_smoothness,
+                     metrics.temporal_smoothness_raw,
+                     metrics.flip_flop_ratio) = self._calculate_temporal_smoothness(
+                        regime_labels, timestamps, sensitivity_mode=temporal_sensitivity_mode
                     )
                     metrics.regime_persistence = self._calculate_regime_persistence(regime_labels)
-                tprint_success(f"✅ Temporal smoothness: {metrics.temporal_smoothness:.4f}, Persistence: {metrics.regime_persistence:.2f}")
+
+                    # Enhanced temporal metrics
+                    metrics.regime_duration_distribution = self._calculate_regime_duration_distribution(regime_labels)
+                    metrics.transition_probability_matrix = self._calculate_transition_probability_matrix(regime_labels)
+
+                tprint_success(f"✅ Temporal smoothness: {metrics.temporal_smoothness:.4f} (raw: {metrics.temporal_smoothness_raw:.4f}, flip-flop: {metrics.flip_flop_ratio:.3f}), Persistence: {metrics.regime_persistence:.2f}")
+                tprint_success(f"✅ Enhanced temporal: Duration stability={metrics.regime_duration_distribution.get('duration_stability_score', 0):.3f}, Transition stability={metrics.transition_probability_matrix.get('transition_stability_score', 0):.3f}")
             except Exception as e:
                 tprint_error(f"❌ Failed to calculate temporal metrics: {e}")
+        
+        # 6b. Per-category CV metrics
+        try:
+            with tprint_timer("Per-Category CV Metrics Calculation"):
+                metrics.feature_category_cv_metrics = self._calculate_cv_metrics_by_category(
+                    regime_labels, features_clean, non_noise_mask
+                )
+                num_categories = len(metrics.feature_category_cv_metrics)
+                tprint_success(f"✅ Calculated CV metrics for {num_categories} feature categories")
+        except Exception as e:
+            tprint_error(f"❌ Failed to calculate per-category CV metrics: {e}")
         
         # 7. Per-regime metrics (includes regime type detection and NEW economic targets)
         try:
@@ -803,7 +837,8 @@ class ClusterQualityAssessor:
         timestamps: Optional[pd.DatetimeIndex] = None,
         timeframe: str = "1h",
         min_regime_size: int = 10,
-        run_validators: bool = True
+        run_validators: bool = True,
+        temporal_sensitivity_mode: str = "standard"
     ) -> ClusterQualityMetrics:
         """
         ENHANCED cluster quality assessment with HMM-specific validators.
@@ -839,7 +874,8 @@ class ClusterQualityAssessor:
             feature_data=feature_data,
             forward_returns=forward_returns,
             timestamps=timestamps,
-            min_regime_size=min_regime_size
+            min_regime_size=min_regime_size,
+            temporal_sensitivity_mode=temporal_sensitivity_mode
         )
         
         # If validators disabled, return standard metrics
@@ -1106,6 +1142,13 @@ class ClusterQualityAssessor:
         within_regime_cv_mean = float(np.nanmean(within_cvs)) if within_cvs else 0.0
         within_regime_cv_std = float(np.nanstd(within_cvs)) if len(within_cvs) > 1 else 0.0
         
+        # SAFEGUARD: Ensure minimum within_regime_cv to prevent extreme CV ratios
+        # If within-regime CV is too small (overly homogeneous regimes), this indicates
+        # potential numerical instability or overfitting
+        MIN_WITHIN_CV = 0.01  # Minimum 1% coefficient of variation
+        if 0 < within_regime_cv_mean < MIN_WITHIN_CV:
+            within_regime_cv_mean = MIN_WITHIN_CV
+        
         # Between-regime CV
         cluster_means = []
         for cluster_id in set(labels_clean):
@@ -1138,6 +1181,130 @@ class ClusterQualityAssessor:
             between_regime_cv_std = float(np.nanstd(between_cvs)) if len(between_cvs) > 1 else 0.0
         
         return within_regime_cv_mean, within_regime_cv_std, between_regime_cv_mean, between_regime_cv_std, per_regime_cv
+
+    def _auto_detect_feature_categories(self, feature_names: pd.Index) -> Dict[str, List[str]]:
+        """
+        Auto-detect feature categories from feature names using pattern matching.
+        
+        Args:
+            feature_names: Index or list of feature names
+            
+        Returns:
+            Dict mapping category names to lists of feature names
+        """
+        categories = {
+            'momentum': [],
+            'volume': [],
+            'volatility': [],
+            'spread': [],
+            'microstructure': [],
+            'price': [],
+            'other': []
+        }
+        
+        for feature in feature_names:
+            feature_lower = str(feature).lower()
+            
+            # Momentum indicators
+            if any(keyword in feature_lower for keyword in ['rsi', 'macd', 'momentum', 'cci', 'stoch', 'roc', 'trix', 'adx']):
+                categories['momentum'].append(feature)
+            # Volume indicators
+            elif any(keyword in feature_lower for keyword in ['volume', 'obv', 'vwap', 'mfi', 'cmf', 'vpt']):
+                categories['volume'].append(feature)
+            # Volatility indicators
+            elif any(keyword in feature_lower for keyword in ['volatility', 'atr', 'bb', 'bollinger', 'keltner', 'std', 'variance']):
+                categories['volatility'].append(feature)
+            # Spread/book indicators
+            elif any(keyword in feature_lower for keyword in ['spread', 'bid', 'ask', 'depth', 'book']):
+                categories['spread'].append(feature)
+            # Microstructure
+            elif any(keyword in feature_lower for keyword in ['tick', 'trades', 'order', 'imbalance', 'flow']):
+                categories['microstructure'].append(feature)
+            # Price-based
+            elif any(keyword in feature_lower for keyword in ['price', 'close', 'open', 'high', 'low', 'ema', 'sma', 'ma_']):
+                categories['price'].append(feature)
+            else:
+                categories['other'].append(feature)
+        
+        # Remove empty categories
+        return {k: v for k, v in categories.items() if v}
+
+    def _calculate_cv_metrics_by_category(self,
+                                           regime_labels: np.ndarray,
+                                           features: pd.DataFrame,
+                                           non_noise_mask: np.ndarray,
+                                           feature_categories: Optional[Dict[str, List[str]]] = None) -> Dict[str, Dict[str, Any]]:
+        """
+        Calculate CV metrics grouped by feature category.
+        
+        This provides more granular insights into which feature types are most
+        discriminative across regimes vs. homogeneous within regimes.
+        
+        Args:
+            regime_labels: Cluster/regime labels
+            features: Feature DataFrame
+            non_noise_mask: Boolean mask for non-noise samples
+            feature_categories: Optional dict mapping category names to lists of feature names.
+                               If None, auto-detects categories from feature names.
+        
+        Returns:
+            Dict with structure:
+            {
+                'momentum': {
+                    'within_cv_mean': 0.5,
+                    'within_cv_std': 0.1,
+                    'between_cv_mean': 1.2,
+                    'between_cv_std': 0.3,
+                    'cv_ratio': 2.4,
+                    'num_features': 5,
+                    'features': ['rsi', 'macd', ...]
+                },
+                'volume': {...},
+                ...
+            }
+        """
+        if feature_categories is None:
+            # Auto-detect categories from feature names
+            feature_categories = self._auto_detect_feature_categories(features.columns)
+        
+        category_cv_metrics = {}
+        
+        for category_name, feature_list in feature_categories.items():
+            # Filter to features that exist in the DataFrame
+            valid_features = [f for f in feature_list if f in features.columns]
+            
+            if not valid_features:
+                continue
+            
+            # Extract category features
+            category_features = features[valid_features]
+            
+            try:
+                # Calculate CV metrics for this category
+                within_cv, within_std, between_cv, between_std, per_regime = self._calculate_cv_metrics(
+                    regime_labels, category_features, non_noise_mask
+                )
+                
+                # Calculate ratio
+                cv_ratio = between_cv / (within_cv + QualityThresholds.DBI_EPSILON)
+                
+                category_cv_metrics[category_name] = {
+                    'within_cv_mean': float(within_cv),
+                    'within_cv_std': float(within_std),
+                    'between_cv_mean': float(between_cv),
+                    'between_cv_std': float(between_std),
+                    'cv_ratio': float(cv_ratio),
+                    'num_features': len(valid_features),
+                    'features': valid_features
+                }
+                
+                tprint_debug(f"  Category '{category_name}': CV ratio={cv_ratio:.3f} ({len(valid_features)} features)")
+                
+            except Exception as e:
+                tprint_warning(f"Failed to calculate CV metrics for category '{category_name}': {e}")
+                continue
+        
+        return category_cv_metrics
 
     # *** NEW: Function to calculate CV metrics for economic outcomes ***
     def _calculate_economic_cv_metrics(self, 
@@ -1222,23 +1389,38 @@ class ClusterQualityAssessor:
 
     def _calculate_temporal_smoothness(self,
                                          regime_labels: np.ndarray,
-                                         timestamps: Optional[pd.DatetimeIndex] = None) -> float:
+                                         timestamps: Optional[pd.DatetimeIndex] = None,
+                                         flip_flop_weight: float = 1.0,
+                                         penalty_mode: str = "effective_transitions",
+                                         sensitivity_mode: str = "standard") -> Tuple[float, float, float]:
         """
-        Calculate temporal smoothness score.
-        
+        Calculate temporal smoothness score with flip-flop penalty.
+
         Higher score means fewer regime transitions (more stable regimes).
         Score is normalized to [0, 1] where 1 is perfectly smooth.
-        
+
+        Flip-flop penalty: Detects rapid back-and-forth transitions (A→B→A)
+        which are particularly undesirable as they indicate instability.
+
         Args:
             regime_labels: Regime/cluster labels
             timestamps: Optional timestamps for time-aware analysis (currently not used but
                         validated for future enhancements)
-        
+            flip_flop_weight: Weight for flip-flop penalty (default 1.0 = count as 2 transitions)
+            penalty_mode: How to apply penalty:
+                - "effective_transitions": Count each flip-flop as additional transitions (default)
+                - "multiplier": Multiply raw smoothness by (1 - flip_flop_ratio * weight)
+            sensitivity_mode: How to calculate smoothness for parameter sensitivity:
+                - "standard": Original calculation (default)
+                - "exponential_decay": Penalize transitions more aggressively
+                - "weighted_transitions": Weight transitions by duration
+                - "regime_persistence_focused": Emphasize long regime persistence
+
         Returns:
-            Temporal smoothness score between 0 and 1
+            Tuple of (smoothness_with_penalty, smoothness_raw, flip_flop_ratio)
         """
         if len(regime_labels) < 2:
-            return 1.0
+            return 1.0, 1.0, 0.0
         
         # Validate alignment if timestamps provided
         if timestamps is not None and len(timestamps) != len(regime_labels):
@@ -1252,13 +1434,511 @@ class ClusterQualityAssessor:
         max_possible_changes = len(regime_labels) - 1
         
         if max_possible_changes == 0:
-            return 1.0
+            return 1.0, 1.0, 0.0
         
-        # Smoothness score: fewer changes = higher smoothness
-        smoothness = 1.0 - (regime_changes / max_possible_changes)
+        # Raw smoothness score: fewer changes = higher smoothness
+        if sensitivity_mode == "standard":
+            smoothness_raw = 1.0 - (regime_changes / max_possible_changes)
+        elif sensitivity_mode == "exponential_decay":
+            # More aggressive penalty: transitions are exponentially costly
+            transition_ratio = regime_changes / max_possible_changes
+            smoothness_raw = np.exp(-3.0 * transition_ratio)  # Sharp decay
+        elif sensitivity_mode == "weighted_transitions":
+            # Weight transitions by their duration context
+            transition_weights = self._calculate_transition_weights(regime_labels)
+            weighted_transitions = np.sum(transition_weights)
+            smoothness_raw = 1.0 - min(1.0, weighted_transitions / max_possible_changes)
+        elif sensitivity_mode == "regime_persistence_focused":
+            # Emphasize long regimes, penalize short ones heavily
+            regime_durations = self._get_regime_durations(regime_labels)
+            if len(regime_durations) > 0:
+                avg_duration = np.mean(regime_durations)
+                duration_score = min(1.0, avg_duration / 50.0)  # Assume 50 is a good duration
+                smoothness_raw = duration_score
+            else:
+                smoothness_raw = 0.0
+        else:
+            smoothness_raw = 1.0 - (regime_changes / max_possible_changes)
         
-        return float(smoothness)
+        # Detect flip-flop patterns (A→B→A): regime at t-2 equals regime at t, but differs from t-1
+        flip_flops = 0.0
+        if len(regime_labels) >= 3:
+            flip_flops = np.sum(
+                (regime_labels[:-2] == regime_labels[2:]) & 
+                (regime_labels[:-2] != regime_labels[1:-1])
+            )
+        
+        # Calculate flip-flop ratio
+        flip_flop_ratio = flip_flops / max_possible_changes if max_possible_changes > 0 else 0.0
+        
+        # NEW: Duration-weighted short-lived regime penalty
+        # Penalize regimes that are short-lived between longer regimes (broader than 3-step flip-flops)
+        # SCALED DOWN: These penalties were too aggressive, zeroing out temporal smoothness
+        short_lived_penalty = self._calculate_short_lived_regime_penalty(regime_labels, threshold_hours=3) * 0.3
+        
+        # NEW: Temporal autocorrelation penalty
+        # Penalize regime sequences that look random (low autocorrelation = unstable)
+        # SCALED DOWN: These penalties were too aggressive, zeroing out temporal smoothness
+        autocorr_penalty = self._calculate_temporal_autocorrelation_penalty(regime_labels) * 0.3
+        
+        # NEW: BONUSES for "good" regime configurations
+        # These reward high-quality temporal behavior (can push score above raw smoothness)
+        regime_duration_bonus = self._calculate_regime_duration_bonus(regime_labels)
+        low_transition_bonus = self._calculate_low_transition_bonus(regime_labels, smoothness_raw)
+        
+        # Apply penalty based on mode
+        if penalty_mode == "effective_transitions":
+            # Each flip-flop counts as additional transitions beyond the already counted ones
+            # With weight=1.0: each flip-flop adds 1 extra transition (total 2 transitions)
+            # With weight=0.5: each flip-flop adds 0.5 extra transitions (total 1.5 transitions)
+            flip_flop_penalty = flip_flop_ratio * flip_flop_weight
+        elif penalty_mode == "multiplier":
+            # Directly multiply raw smoothness by penalty factor
+            flip_flop_penalty = flip_flop_ratio * flip_flop_weight
+        else:
+            # Default to effective_transitions
+            flip_flop_penalty = flip_flop_ratio * flip_flop_weight
+        
+        # Final smoothness with ALL penalties AND bonuses
+        # Penalties subtract from raw score, bonuses add to it
+        total_penalties = flip_flop_penalty + short_lived_penalty + autocorr_penalty
+        total_bonuses = regime_duration_bonus + low_transition_bonus
+        smoothness_final = max(0.0, min(1.0, smoothness_raw - total_penalties + total_bonuses))
+        
+        return float(smoothness_final), float(smoothness_raw), float(flip_flop_ratio)
+
+    def _calculate_transition_weights(self, regime_labels: np.ndarray) -> np.ndarray:
+        """Calculate weights for transitions based on regime durations."""
+        if len(regime_labels) < 2:
+            return np.array([])
+
+        # Find transition points
+        transitions = np.where(regime_labels[1:] != regime_labels[:-1])[0]
+
+        if len(transitions) == 0:
+            return np.array([0.0])
+
+        weights = []
+        for i, trans_idx in enumerate(transitions):
+            # Weight based on duration of the regime being left
+            if i == 0:
+                regime_duration = trans_idx + 1
+            else:
+                regime_duration = trans_idx - transitions[i-1]
+
+            # Shorter regimes get higher transition weights (more disruptive)
+            weight = 1.0 / max(1.0, regime_duration / 10.0)
+            weights.append(weight)
+
+        return np.array(weights)
+
+    def _get_regime_durations(self, regime_labels: np.ndarray) -> np.ndarray:
+        """Extract duration of each regime period."""
+        if len(regime_labels) < 1:
+            return np.array([])
+
+        durations = []
+        current_regime = regime_labels[0]
+        current_length = 1
+
+        for i in range(1, len(regime_labels)):
+            if regime_labels[i] == current_regime:
+                current_length += 1
+            else:
+                durations.append(current_length)
+                current_regime = regime_labels[i]
+                current_length = 1
+
+        # Add the last regime
+        durations.append(current_length)
+
+        return np.array(durations)
+
+    def _calculate_short_lived_regime_penalty(self, regime_labels: np.ndarray, threshold_hours: int = 3) -> float:
+        """
+        Calculate penalty/bonus for regime duration patterns.
+        
+        PENALTIES for:
+        - Short-lived regimes: A(10h)→B(2h)→A(8h) where B is transient noise
+        - Sandwiched short regimes between long regimes
+        
+        BONUSES for:
+        - Long-duration regimes (>24h sustained regimes)
+        - Very long regimes (>48h = strong structural regimes)
+        - Consistent regime durations (stable pattern)
+        
+        Args:
+            regime_labels: Regime sequence
+            threshold_hours: Regimes shorter than this are penalized (default 3h)
+        
+        Returns:
+            Net score: negative = penalty, positive = bonus (range: -0.5 to +0.3)
+        """
+        if len(regime_labels) < 3:
+            return 0.0
+        
+        # Get regime durations and their corresponding regime IDs
+        durations = []
+        regime_ids = []
+        current_regime = regime_labels[0]
+        current_length = 1
+        
+        for i in range(1, len(regime_labels)):
+            if regime_labels[i] == current_regime:
+                current_length += 1
+            else:
+                durations.append(current_length)
+                regime_ids.append(current_regime)
+                current_regime = regime_labels[i]
+                current_length = 1
+        
+        # Add final regime
+        durations.append(current_length)
+        regime_ids.append(current_regime)
+        
+        if len(durations) < 3:
+            return 0.0
+        
+        # PENALTIES and BONUSES: Analyze regime duration patterns with LINEAR functions
+        total_penalty = 0.0
+        total_bonus = 0.0
+        total_internal_regimes = max(1, len(durations) - 2)  # Don't count first/last
+        
+        for i in range(1, len(durations) - 1):  # Skip first and last (edge effects)
+            duration = durations[i]
+            prev_duration = durations[i-1]
+            next_duration = durations[i+1]
+            
+            # LINEAR PENALTY for short regimes (continuous, not thresholds)
+            if duration < threshold_hours:
+                # Base penalty: inversely proportional to duration
+                # duration=1h → penalty=1.0, duration=2.9h → penalty≈0.03
+                base_penalty = (threshold_hours - duration) / threshold_hours
+                
+                # Context multiplier: how much longer are neighboring regimes?
+                neighbor_avg = (prev_duration + next_duration) / 2.0
+                context_multiplier = 1.0 + min(2.0, neighbor_avg / (threshold_hours * 2))
+                # If neighbors are 2x threshold (6h+): multiplier = 2.0
+                # If neighbors are threshold (3h): multiplier = 1.25
+                
+                total_penalty += base_penalty * context_multiplier
+            
+            # LINEAR BONUS for long regimes (continuous scale)
+            else:
+                # Logarithmic-linear bonus: diminishing returns for very long regimes
+                # duration=6h → 0.5, duration=12h → 1.0, duration=24h → 1.5, duration=48h → 2.0, duration=72h → 2.25
+                if duration >= 6:
+                    # Smooth function: log-linear with saturation
+                    normalized_duration = duration / 24.0  # Normalize to 24h
+                    bonus = min(2.5, 0.5 + np.log1p(normalized_duration) * 1.5)
+                    total_bonus += bonus
+        
+        # BONUS: Regime duration consistency (continuous function)
+        if len(durations) >= 3:
+            duration_mean = np.mean(durations)
+            duration_std = np.std(durations)
+            duration_cv = duration_std / (duration_mean + 1e-9)
+            
+            # Linear decay: CV=0 → bonus=1.0, CV=1.0 → bonus=0.0
+            consistency_bonus = max(0.0, 1.0 - duration_cv)
+            total_bonus += consistency_bonus
+        
+        # BONUS: Clean transition diversity (continuous function)
+        unique_transitions = len(set(zip(regime_ids[:-1], regime_ids[1:])))
+        total_transitions = len(regime_ids) - 1
+        if total_transitions > 0:
+            transition_diversity = unique_transitions / total_transitions
+            # Linear: diversity=1.0 → bonus=0.5, diversity=0.5 → bonus=0.0
+            diversity_bonus = max(0.0, (transition_diversity - 0.5) * 1.0)
+            total_bonus += diversity_bonus
+        
+        # Normalize penalty and bonus
+        penalty = total_penalty / total_internal_regimes
+        bonus = total_bonus / total_internal_regimes
+        
+        # Net score: positive bonus - penalty
+        # Cap penalty at 0.5, bonus at 0.5 (symmetric)
+        net_score = min(0.5, bonus) - min(0.5, penalty)
+        
+        return -net_score  # Return as penalty (negative = bonus, positive = penalty)
+
+    def _calculate_temporal_autocorrelation_penalty(self, regime_labels: np.ndarray) -> float:
+        """
+        Calculate penalty/bonus based on temporal autocorrelation of regime sequence.
+        
+        PENALTIES for:
+        - Low autocorrelation (random switching)
+        - Negative autocorrelation (alternating pattern)
+        
+        BONUSES for:
+        - Very high autocorrelation (>0.85 = exceptional persistence)
+        - Multi-lag autocorrelation (regimes persist across multiple lags)
+        
+        This catches unstable configurations that pass other metrics but have
+        regime sequences that look random/noisy.
+        
+        Returns:
+            Net penalty score (negative values are bonuses)
+        """
+        if len(regime_labels) < 10:  # Need minimum length for autocorr
+            return 0.0
+        
+        try:
+            # Convert regime labels to numeric sequence
+            unique_regimes = np.unique(regime_labels)
+            regime_to_int = {r: i for i, r in enumerate(unique_regimes)}
+            numeric_sequence = np.array([regime_to_int[r] for r in regime_labels])
+            
+            # Calculate lag-1 autocorrelation
+            mean_val = np.mean(numeric_sequence)
+            numerator = np.sum((numeric_sequence[:-1] - mean_val) * (numeric_sequence[1:] - mean_val))
+            denominator = np.sum((numeric_sequence - mean_val) ** 2)
+            
+            if denominator > 0:
+                autocorr_lag1 = numerator / denominator
+            else:
+                autocorr_lag1 = 0.0
+            
+            # Calculate lag-2 autocorrelation (additional stability check)
+            autocorr_lag2 = 0.0
+            if len(regime_labels) >= 12:
+                numerator_lag2 = np.sum((numeric_sequence[:-2] - mean_val) * (numeric_sequence[2:] - mean_val))
+                if denominator > 0:
+                    autocorr_lag2 = numerator_lag2 / denominator
+            
+            # LINEAR BONUS for high autocorrelation (continuous function)
+            # autocorr=0.7 → bonus=0.0, autocorr=1.0 → bonus=0.25
+            bonus = 0.0
+            if autocorr_lag1 >= 0.7:
+                # Smooth linear bonus above 0.7 threshold
+                bonus = (autocorr_lag1 - 0.7) / (1.0 - 0.7) * 0.25  # Scales from 0 to 0.25
+            
+            # BONUS: Multi-lag persistence (continuous combination)
+            if autocorr_lag2 > 0.0:
+                # Both lag-1 and lag-2 contribute (weighted average)
+                multi_lag_score = 0.7 * autocorr_lag1 + 0.3 * autocorr_lag2
+                if multi_lag_score >= 0.7:
+                    # Linear bonus: multi_lag=0.7 → 0.0, multi_lag=1.0 → 0.15
+                    bonus += (multi_lag_score - 0.7) / (1.0 - 0.7) * 0.15
+            
+            # LINEAR PENALTY for low autocorrelation (continuous function)
+            penalty = 0.0
+            
+            if autocorr_lag1 < 0.0:
+                # Negative autocorr (alternating): linear from 0.30 at -1.0 to 0.20 at 0.0
+                penalty = 0.20 + abs(autocorr_lag1) * 0.10
+            elif autocorr_lag1 < 0.7:
+                # Below good threshold: linear penalty
+                # autocorr=0.0 → 0.20, autocorr=0.3 → 0.14, autocorr=0.5 → 0.08, autocorr=0.7 → 0.0
+                penalty = (0.7 - autocorr_lag1) / 0.7 * 0.20
+            
+            # Net score: penalty - bonus (negative = net bonus, positive = net penalty)
+            net_score = penalty - bonus
+            
+            return net_score
+            
+        except Exception as e:
+            # On error, return no penalty
+            return 0.0
     
+    def _calculate_regime_duration_bonus(self, regime_labels: np.ndarray) -> float:
+        """
+        Calculate bonus for long-duration, stable regimes.
+        
+        Rewards:
+        - Average regime duration > 5 hours (stable regimes) - MORE GENEROUS
+        - Very long regimes (>20 hours = structural regimes) - MORE GENEROUS
+        - Consistent durations across all regimes
+        
+        Returns:
+            Bonus score (0.0 to 1.5) - SCALED UP 5x
+        """
+        if len(regime_labels) < 3:
+            return 0.0
+        
+        # Get regime durations
+        durations = []
+        current_regime = regime_labels[0]
+        current_length = 1
+        
+        for i in range(1, len(regime_labels)):
+            if regime_labels[i] == current_regime:
+                current_length += 1
+            else:
+                durations.append(current_length)
+                current_regime = regime_labels[i]
+                current_length = 1
+        durations.append(current_length)
+        
+        if len(durations) == 0:
+            return 0.0
+        
+        durations = np.array(durations)
+        avg_duration = np.mean(durations)
+        max_duration = np.max(durations)
+        
+        bonus = 0.0
+        
+        # BONUS 1: Average duration bonus (0.0 to 0.75) - MORE GENEROUS, SCALED 5x
+        # avg=5h → 0.10, avg=10h → 0.30, avg=20h → 0.50, avg=30h → 0.65, avg=50h → 0.75
+        if avg_duration >= 3:  # Start rewarding at 3h (more generous)
+            # More positive linear progression
+            bonus += min(0.75, np.log1p(avg_duration / 3.0) * 0.40)
+        
+        # BONUS 2: Exceptional long regime bonus (0.0 to 0.50) - MORE GENEROUS, SCALED 5x
+        # max=20h → 0.15, max=30h → 0.25, max=48h → 0.35, max=72h → 0.42, max=100h → 0.50
+        if max_duration >= 15:  # Start rewarding at 15h (more generous)
+            bonus += min(0.50, np.log1p(max_duration / 15.0) * 0.30)
+        
+        # BONUS 3: Duration consistency bonus (0.0 to 0.25) - MORE GENEROUS, SCALED 5x
+        # Low coefficient of variation = stable, predictable regime durations
+        if len(durations) >= 3:
+            duration_std = np.std(durations)
+            duration_cv = duration_std / (avg_duration + 1e-9)
+            # cv=0.0 → 0.25, cv=0.3 → 0.175, cv=0.5 → 0.125, cv=1.0 → 0.0
+            # More positive progression
+            consistency_bonus = max(0.0, (1.0 - duration_cv) * 0.25)
+            bonus += consistency_bonus
+        
+        return float(min(1.5, bonus))
+    
+    def _calculate_low_transition_bonus(self, regime_labels: np.ndarray, raw_smoothness: float) -> float:
+        """
+        Calculate bonus for configurations with exceptionally few transitions.
+        
+        Rewards:
+        - High raw smoothness (>0.5 = good, >0.7 = exceptional) - MORE GENEROUS
+        - Ultra-stable configurations (low transition rate) - MORE GENEROUS
+        
+        Returns:
+            Bonus score (0.0 to 1.0) - SCALED UP 5x
+        """
+        if len(regime_labels) < 2:
+            return 0.0
+        
+        bonus = 0.0
+        
+        # BONUS 1: Exceptional smoothness (0.0 to 0.75) - MORE GENEROUS, SCALED 5x
+        # smoothness=0.5 → 0.10, smoothness=0.6 → 0.25, smoothness=0.7 → 0.40, 
+        # smoothness=0.85 → 0.60, smoothness=0.95 → 0.70, smoothness=1.0 → 0.75
+        if raw_smoothness >= 0.4:  # Start rewarding at 0.4 (more generous)
+            # More positive linear/exponential progression
+            normalized = (raw_smoothness - 0.4) / (1.0 - 0.4)
+            bonus += normalized ** 0.7 * 0.75  # More accelerating bonus
+        
+        # BONUS 2: Ultra-stable bonus (0.0 to 0.25) - MORE GENEROUS, SCALED 5x
+        # Very few transitions relative to sequence length
+        transitions = np.sum(regime_labels[1:] != regime_labels[:-1])
+        total_possible = len(regime_labels) - 1
+        transition_rate = transitions / total_possible if total_possible > 0 else 1.0
+        
+        # transition_rate < 0.2 (less than 20% transitions) = good - MORE GENEROUS
+        if transition_rate < 0.25:  # More generous threshold
+            # Linear bonus: 0.25 → 0.0, 0.15 → 0.10, 0.05 → 0.20, 0.0 → 0.25
+            ultra_stable_bonus = max(0.0, (0.25 - transition_rate) / 0.25 * 0.25)
+            bonus += ultra_stable_bonus
+        
+        return float(min(1.0, bonus))
+
+    def _calculate_regime_duration_distribution(self, regime_labels: np.ndarray) -> Dict[str, Any]:
+        """Calculate comprehensive statistics about regime duration distribution."""
+        durations = self._get_regime_durations(regime_labels)
+
+        if len(durations) == 0:
+            return {
+                'mean_duration': 0.0,
+                'std_duration': 0.0,
+                'min_duration': 0,
+                'max_duration': 0,
+                'duration_stability_score': 0.0,
+                'long_regime_ratio': 0.0,
+                'short_regime_penalty': 1.0
+            }
+
+        mean_duration = np.mean(durations)
+        std_duration = np.std(durations)
+        min_duration = np.min(durations)
+        max_duration = np.max(durations)
+
+        # Duration stability: lower CV (coefficient of variation) is better
+        cv_duration = std_duration / mean_duration if mean_duration > 0 else float('inf')
+        duration_stability_score = 1.0 / (1.0 + cv_duration)
+
+        # Long regime ratio: fraction of time spent in regimes longer than median
+        median_duration = np.median(durations)
+        long_regimes = np.sum(durations > median_duration)
+        long_regime_ratio = long_regimes / len(durations)
+
+        # Short regime penalty: penalize too many short regimes
+        short_regime_threshold = 5  # Very short regimes
+        short_regime_ratio = np.sum(durations <= short_regime_threshold) / len(durations)
+        short_regime_penalty = 1.0 - min(0.5, short_regime_ratio)  # Cap penalty at 0.5
+
+        return {
+            'mean_duration': mean_duration,
+            'std_duration': std_duration,
+            'min_duration': min_duration,
+            'max_duration': max_duration,
+            'duration_stability_score': duration_stability_score,
+            'long_regime_ratio': long_regime_ratio,
+            'short_regime_penalty': short_regime_penalty
+        }
+
+    def _calculate_transition_probability_matrix(self, regime_labels: np.ndarray) -> Dict[str, Any]:
+        """Calculate transition probabilities between regimes."""
+        unique_regimes = np.unique(regime_labels)
+        n_regimes = len(unique_regimes)
+
+        if n_regimes <= 1:
+            return {
+                'transition_matrix': np.array([[1.0]]),
+                'transition_entropy': 0.0,
+                'regime_stickiness': 1.0,
+                'transition_stability_score': 1.0
+            }
+
+        # Create transition matrix
+        transition_matrix = np.zeros((n_regimes, n_regimes))
+
+        # Count transitions
+        for i in range(len(regime_labels) - 1):
+            from_regime = np.where(unique_regimes == regime_labels[i])[0][0]
+            to_regime = np.where(unique_regimes == regime_labels[i + 1])[0][0]
+            transition_matrix[from_regime, to_regime] += 1
+
+        # Convert to probabilities
+        row_sums = transition_matrix.sum(axis=1, keepdims=True)
+        row_sums = np.where(row_sums == 0, 1, row_sums)  # Avoid division by zero
+        transition_matrix = transition_matrix / row_sums
+
+        # Calculate transition entropy (lower entropy = more predictable transitions)
+        transition_entropies = []
+        for i in range(n_regimes):
+            row_probs = transition_matrix[i, :]
+            if np.sum(row_probs) > 0:
+                # Normalize to ensure sum to 1
+                row_probs = row_probs / np.sum(row_probs)
+                entropy = -np.sum(row_probs * np.log(row_probs + 1e-10))
+                transition_entropies.append(entropy)
+
+        avg_transition_entropy = np.mean(transition_entropies) if transition_entropies else 0.0
+        max_entropy = np.log(n_regimes)
+
+        # Regime stickiness: how likely regimes are to stay the same
+        diagonal_sum = np.sum(np.diag(transition_matrix))
+        regime_stickiness = diagonal_sum / n_regimes
+
+        # Transition stability score: combines low entropy and high stickiness
+        entropy_score = 1.0 - (avg_transition_entropy / max_entropy)
+        transition_stability_score = (entropy_score + regime_stickiness) / 2.0
+
+        return {
+            'transition_matrix': transition_matrix,
+            'transition_entropy': avg_transition_entropy,
+            'regime_stickiness': regime_stickiness,
+            'transition_stability_score': transition_stability_score
+        }
+
     def _calculate_regime_persistence(self, regime_labels: np.ndarray) -> float:
         """
         Calculate average regime persistence (how long regimes typically last).
@@ -1593,17 +2273,42 @@ class ClusterQualityAssessor:
                 pct_below_neg_target = (regime_returns < -target_return).mean()
                 pct_target_hits = pct_above_target + pct_below_neg_target
                 
+                # Calculate risk-adjusted metrics
+                volatility = regime_returns.std()
+                mean_return = regime_returns.mean()
+                
+                # Risk-adjusted target hits: target hits normalized by volatility
+                # Higher value = achieving targets with lower risk
+                risk_adj_target_hits = pct_target_hits / (volatility + QualityThresholds.DBI_EPSILON)
+                
+                # Win rate: proportion of target hits that are positive (long bias)
+                win_rate = pct_above_target / (pct_target_hits + QualityThresholds.DBI_EPSILON) if pct_target_hits > 0 else 0.0
+                
+                # Return per unit volatility (Sharpe-like but using absolute return)
+                return_per_vol = abs(mean_return) / (volatility + QualityThresholds.DBI_EPSILON)
+                
+                # Profit factor approximation: avg winning return vs avg losing return
+                winning_returns = regime_returns[regime_returns > 0]
+                losing_returns = regime_returns[regime_returns < 0]
+                profit_factor = (abs(winning_returns.mean()) / abs(losing_returns.mean()) 
+                                if len(losing_returns) > 0 and losing_returns.mean() != 0 else np.nan)
+                
                 # Add return characteristics
                 regime_metrics.update({
                     'mean_return': float(regime_returns.mean()),
-                    'volatility': float(regime_returns.std()),
-                    'sharpe': float(regime_returns.mean() / (regime_returns.std() + QualityThresholds.DBI_EPSILON)),
+                    'volatility': float(volatility),
+                    'sharpe': float(mean_return / (volatility + QualityThresholds.DBI_EPSILON)),
                     'skewness': float(regime_returns.skew()) if hasattr(regime_returns, 'skew') else 0.0,
                     'max_drawdown': float(self._compute_max_drawdown(regime_returns)),
                     # Add new economic target metrics
                     'pct_above_target': float(pct_above_target),
                     'pct_below_neg_target': float(pct_below_neg_target),
                     'pct_target_hits': float(pct_target_hits),
+                    # *** NEW: Risk-adjusted metrics ***
+                    'risk_adj_target_hits': float(risk_adj_target_hits),
+                    'win_rate': float(win_rate),
+                    'return_per_vol': float(return_per_vol),
+                    'profit_factor': float(profit_factor) if not np.isnan(profit_factor) else 0.0,
                 })
             else:
                 regime_metrics['regime_type'] = RegimeType.UNKNOWN.value
@@ -1903,10 +2608,14 @@ class ClusterQualityAssessor:
             # Ideal: low within, high between
             # Ratio of between/within, normalized
             cv_ratio = metrics.between_regime_cv / (metrics.within_regime_cv + QualityThresholds.DBI_EPSILON)
-            cv_normalized = np.tanh(cv_ratio)  # Sigmoid-like normalization
+            # ENHANCED: Use log-scaled tanh to prevent CV ratio from dominating the score
+            # tanh(log(1 + cv_ratio)) spreads values more evenly across the range
+            # This prevents small changes in high CV ratios from being ignored while
+            # preventing small changes in low CV ratios from dominating
+            cv_normalized = np.tanh(np.log1p(cv_ratio))  # Log-scaled sigmoid normalization
             score_components.append(cv_normalized)
             weights.append(QualityThresholds.WEIGHT_CV_RATIO)
-            tprint_info(f"    • CV Ratio: {cv_normalized:.4f} (weight: {QualityThresholds.WEIGHT_CV_RATIO:.2f})")
+            tprint_info(f"    • CV Ratio: {cv_normalized:.4f} (raw: {cv_ratio:.2f}, weight: {QualityThresholds.WEIGHT_CV_RATIO:.2f})")
         
         # 2. Silhouette score (normalize to 0-1, already in [-1, 1]) - SECONDARY METRIC
         if metrics.silhouette_score is not None:
@@ -2139,6 +2848,27 @@ This report provides a comprehensive assessment of cluster quality for {symbol}.
                     md += f"| {metric_name} | {val:.4f} |\n"
             md += "\n"
 
+        # *** NEW: Section for Per-Category CV ***
+        if metrics.feature_category_cv_metrics:
+            md += """
+### Per-Category Coefficient of Variation
+
+This shows how different feature types (momentum, volume, volatility, etc.) 
+contribute to regime discrimination.
+
+"""
+            md += "| Category | Within CV | Between CV | Ratio | # Features |\n"
+            md += "|----------|-----------|------------|-------|------------|\n"
+            for category, cv_data in sorted(metrics.feature_category_cv_metrics.items()):
+                within_cv = cv_data.get('within_cv_mean', 0.0)
+                within_std = cv_data.get('within_cv_std', 0.0)
+                between_cv = cv_data.get('between_cv_mean', 0.0)
+                between_std = cv_data.get('between_cv_std', 0.0)
+                ratio = cv_data.get('cv_ratio', 0.0)
+                num_feats = cv_data.get('num_features', 0)
+                md += f"| {category} | {within_cv:.3f} ± {within_std:.3f} | "
+                md += f"{between_cv:.3f} ± {between_std:.3f} | {ratio:.3f} | {num_feats} |\n"
+            md += "\n**Interpretation:** Higher CV ratio indicates better regime separation for that feature category.\n\n"
         
         md += """
 ---
@@ -2163,15 +2893,20 @@ This report provides a comprehensive assessment of cluster quality for {symbol}.
         
         # Temporal metrics
         if metrics.temporal_smoothness is not None:
-            md += f"""
+            md += """
 ---
 
 ## Temporal Analysis
 
-- **Temporal Smoothness:** {metrics.temporal_smoothness:.4f} (0-1, higher = fewer transitions)
-- **Regime Persistence:** {metrics.regime_persistence:.2f} bars (average duration)
-
 """
+            md += f"- **Temporal Smoothness (Penalized):** {metrics.temporal_smoothness:.4f} (0-1, higher = fewer transitions)\n"
+            if metrics.temporal_smoothness_raw is not None:
+                md += f"- **Temporal Smoothness (Raw):** {metrics.temporal_smoothness_raw:.4f}\n"
+            if metrics.flip_flop_ratio is not None:
+                md += f"- **Flip-Flop Ratio:** {metrics.flip_flop_ratio:.4f} (rapid back-and-forth transitions)\n"
+            if metrics.regime_persistence is not None:
+                md += f"- **Regime Persistence:** {metrics.regime_persistence:.2f} bars (average duration)\n"
+            md += "\n"
         
         # Per-regime metrics
         if metrics.per_regime_metrics:
@@ -2198,10 +2933,17 @@ This report provides a comprehensive assessment of cluster quality for {symbol}.
 - Sharpe Ratio: {regime_data['sharpe']:.4f}
 - Skewness: {regime_data.get('skewness', 0.0):.4f}
 - Max Drawdown: {regime_data.get('max_drawdown', 0.0):.4f}
-<!-- *** NEW: Added Economic Target Metrics *** -->
+
+**Target-Based Metrics:**
 - Pct > {target_pct:.1f}% (Longs): {regime_data.get('pct_above_target', 0.0):.2%}
 - Pct < -{target_pct:.1f}% (Shorts): {regime_data.get('pct_below_neg_target', 0.0):.2%}
 - Pct Target Hits: {regime_data.get('pct_target_hits', 0.0):.2%}
+
+**Risk-Adjusted Metrics:**
+- Risk-Adj Target Hits: {regime_data.get('risk_adj_target_hits', 0.0):.4f}
+- Win Rate (Long Bias): {regime_data.get('win_rate', 0.0):.2%}
+- Return per Vol: {regime_data.get('return_per_vol', 0.0):.4f}
+- Profit Factor: {regime_data.get('profit_factor', 0.0):.4f}
 
 """
                 

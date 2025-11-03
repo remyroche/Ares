@@ -2,94 +2,87 @@
 Common ML Backtesting Utilities
 
 This package provides comprehensive backtesting utilities for the ML pipeline,
-including walk-forward validation, Monte Carlo simulations, A/B testing, and model saving.
+including walk-forward validation, Monte Carlo simulations, and model saving.
 
 Available modules:
-- backtesting_engine: Core backtesting functionality with M1 optimizations
 - monte_carlo_engine: Monte Carlo simulation engine with GPU acceleration
-- ab_testing_engine: A/B testing framework with statistical validation
 - model_saver: Model saving and persistence utilities
 - analytics_reporter: Comprehensive analytics and reporting
+- turnover: Turnover calculation utilities
 """
 
-from .backtesting_engine import (
-    BacktestingEngine,
-    WalkForwardValidator,
-    BacktestingConfig,
-    BacktestingResults
-)
+# Import only modules that exist
+try:
+    from .monte_carlo_engine import (
+        MonteCarloEngine,
+        MonteCarloConfig,
+        MonteCarloResults,
+        SimulationParameters,
+        SimulationType
+    )
+    _has_monte_carlo = True
+except ImportError:
+    _has_monte_carlo = False
 
-from .monte_carlo_engine import (
-    MonteCarloEngine,
-    MonteCarloConfig,
-    MonteCarloResults,
-    SimulationParameters
-)
+try:
+    from .model_saver import (
+        ModelSaver,
+        get_model_saver
+    )
+    _has_model_saver = True
+except ImportError:
+    _has_model_saver = False
 
-from .ab_testing_engine import (
-    ABTestingEngine,
-    ABTestConfig,
-    ABTestResults,
-    StatisticalTest
-)
+try:
+    from .analytics_reporter import (
+        AnalyticsReporter,
+        get_analytics_reporter
+    )
+    _has_analytics = True
+except ImportError:
+    _has_analytics = False
 
-from .model_saver import (
-    ModelSaver,
-    ModelSaveConfig,
-    ModelMetadata,
-    ModelVersion
-)
+try:
+    from .turnover import (
+        calculate_turnover_metrics,
+        apply_market_impact_model,
+        reject_high_turnover_configs,
+    )
+    _has_turnover = True
+except ImportError:
+    _has_turnover = False
 
-from .analytics_reporter import (
-    AnalyticsReporter,
-    AnalyticsConfig,
-    PerformanceMetrics,
-    RiskMetrics
-)
+# Build __all__ based on what's actually available
+__all__ = []
 
-from .turnover import (
-    calculate_turnover_metrics,
-    apply_market_impact_model,
-    reject_high_turnover_configs,
-)
+if _has_monte_carlo:
+    __all__.extend([
+        'MonteCarloEngine',
+        'MonteCarloConfig',
+        'MonteCarloResults',
+        'SimulationParameters',
+        'SimulationType',
+    ])
 
-__all__ = [
-    # Backtesting
-    'BacktestingEngine',
-    'WalkForwardValidator',
-    'BacktestingConfig',
-    'BacktestingResults',
+if _has_model_saver:
+    __all__.extend([
+        'ModelSaver',
+        'get_model_saver',
+    ])
 
-    # Monte Carlo
-    'MonteCarloEngine',
-    'MonteCarloConfig',
-    'MonteCarloResults',
-    'SimulationParameters',
+if _has_analytics:
+    __all__.extend([
+        'AnalyticsReporter',
+        'get_analytics_reporter',
+    ])
 
-    # A/B Testing
-    'ABTestingEngine',
-    'ABTestConfig',
-    'ABTestResults',
-    'StatisticalTest',
-
-    # Model Saving
-    'ModelSaver',
-    'ModelSaveConfig',
-    'ModelMetadata',
-    'ModelVersion',
-
-    # Analytics
-    'AnalyticsReporter',
-    'AnalyticsConfig',
-    'PerformanceMetrics',
-    'RiskMetrics',
-
-    # Turnover utilities
-    'calculate_turnover_metrics',
-    'apply_market_impact_model',
-    'reject_high_turnover_configs',
-]
+if _has_turnover:
+    __all__.extend([
+        'calculate_turnover_metrics',
+        'apply_market_impact_model',
+        'reject_high_turnover_configs',
+    ])
 
 __version__ = "1.0.0"
 __author__ = "Ares Trading Bot Team"
-__description__ = "Common ML Backtesting Utilities - Comprehensive backtesting, Monte Carlo, A/B testing, and model saving"
+__description__ = "Common ML Backtesting Utilities - Monte Carlo simulation and model saving"

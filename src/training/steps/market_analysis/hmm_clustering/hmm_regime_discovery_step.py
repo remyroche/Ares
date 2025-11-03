@@ -185,11 +185,14 @@ class HMMRegimeDiscoveryStep(BaseStep):
             Dictionary containing execution results
         """
         try:
+            # Store config for later use
+            self.config = config
+
             symbol = config.get('symbol')
             exchange = config.get('exchange', 'binance')
             timeframe = config.get('timeframe', '1h')
             execution_mode = config.get('execution_mode', 'light')
-            
+
             tprint(f"🚀 Starting HMM Regime Discovery for {symbol} on {exchange} ({timeframe})", "INFO")
             tprint(f"📊 Execution mode: {execution_mode}", "INFO")
             
@@ -1624,8 +1627,9 @@ This GMM regime discovery run was guided by the following optimization goals fro
             logger.error(f"Tiny regime merging failed: {e}", exc_info=True)
             return regime_labels, {}
     
-    def _assess_quality(self, features_df: pd.DataFrame, regime_labels: np.ndarray, 
-                       timestamps: Optional[pd.Series] = None) -> ClusterQualityMetrics:
+    def _assess_quality(self, features_df: pd.DataFrame, regime_labels: np.ndarray,
+                       timestamps: Optional[pd.Series] = None,
+                       temporal_sensitivity_mode: str = "standard") -> ClusterQualityMetrics:
         """Assess clustering quality using the unified quality assessor."""
         try:
             # Convert to the format expected by ClusterQualityAssessor
@@ -1638,7 +1642,8 @@ This GMM regime discovery run was guided by the following optimization goals fro
             quality_metrics = self.quality_assessor.assess_quality(
                 regime_labels=regime_labels,
                 feature_data=features_df,
-                timestamps=timestamps_array
+                timestamps=timestamps_array,
+                temporal_sensitivity_mode=temporal_sensitivity_mode
             )
             
             return quality_metrics

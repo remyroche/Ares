@@ -84,8 +84,12 @@ class UncertaintyCalculator:
             0.065...
         """
         try:
-            if not predictions:
+            # Check for empty predictions (handle both lists and numpy arrays)
+            if isinstance(predictions, (list, tuple)) and len(predictions) == 0:
                 self.logger.warning("Empty predictions list for variance calculation")
+                return 0.0
+            elif isinstance(predictions, np.ndarray) and predictions.size == 0:
+                self.logger.warning("Empty predictions array for variance calculation")
                 return 0.0
             
             # Convert to numpy array
@@ -111,7 +115,7 @@ class UncertaintyCalculator:
                 variance = np.mean(np.var(predictions_array, axis=0))
             
             # Normalize by mean to get relative variance (coefficient of variation squared)
-            mean_pred = np.mean(predictions_array)
+            mean_pred = float(np.mean(predictions_array))
             if abs(mean_pred) > self.epsilon:
                 normalized_variance = variance / (mean_pred ** 2 + self.epsilon)
             else:

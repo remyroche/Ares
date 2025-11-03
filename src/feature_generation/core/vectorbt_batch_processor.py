@@ -133,16 +133,20 @@ class VectorBTBatchProcessor:
         # Initialize VectorBT settings
         if self.use_vectorbt:
             try:
-                # VectorBT settings structure may vary by version
-                if hasattr(vbt.settings, 'parallel') and isinstance(vbt.settings.parallel, dict):
-                    vbt.settings.parallel['enabled'] = self.config.vectorbt_enable_parallel
-                elif hasattr(vbt.settings, 'parallel_enabled'):
-                    vbt.settings.parallel_enabled = self.config.vectorbt_enable_parallel
+                # Check if settings attribute exists first
+                if not hasattr(vbt, 'settings'):
+                    pass  # Continue without settings
+                else:
+                    # VectorBT settings structure may vary by version
+                    if hasattr(vbt.settings, 'parallel') and isinstance(vbt.settings.parallel, dict):
+                        vbt.settings.parallel['enabled'] = self.config.vectorbt_enable_parallel
+                    elif hasattr(vbt.settings, 'parallel_enabled'):
+                        vbt.settings.parallel_enabled = self.config.vectorbt_enable_parallel
 
-                if hasattr(vbt.settings, 'array_wrapper') and isinstance(vbt.settings.array_wrapper, dict):
-                    vbt.settings.array_wrapper['freq'] = self.config.vectorbt_freq
-                elif hasattr(vbt.settings, 'array_wrapper_freq'):
-                    vbt.settings.array_wrapper_freq = self.config.vectorbt_freq
+                    if hasattr(vbt.settings, 'array_wrapper') and isinstance(vbt.settings.array_wrapper, dict):
+                        vbt.settings.array_wrapper['freq'] = self.config.vectorbt_freq
+                    elif hasattr(vbt.settings, 'array_wrapper_freq'):
+                        vbt.settings.array_wrapper_freq = self.config.vectorbt_freq
             except Exception as e:
                 # If VectorBT settings are not available, continue without them
                 pass

@@ -435,42 +435,67 @@ class ModelTrainer(BaseTrainer):
             return data
     
     async def _train_lightgbm_model(self, model: Any, data: pd.DataFrame, targets: pd.Series) -> TrainingResult:
-        """Train LightGBM model with role-specific parameters."""
+        """Train LightGBM model with role-specific parameters from YAML config."""
         try:
             # Import LightGBM
             import lightgbm as lgb
             from sklearn.model_selection import train_test_split
+            import os
+            
+            # Get CPU optimizer for threading
+            cpu_optimizer = get_m1_cpu_optimizer()
+            n_threads = cpu_optimizer.get_optimal_thread_count() if cpu_optimizer else (os.cpu_count() or 4)
             
             # Split data for validation (required for early stopping)
             X_train, X_val, y_train, y_val = train_test_split(
                 data, targets, test_size=0.2, random_state=42
             )
             
-            # Role-specific parameters
-            if self.config.role == TrainingRole.ANALYST:
-                params = {
-                    'objective': 'regression',  # Changed from binary to regression
-                    'metric': 'rmse',  # Changed from binary_logloss to rmse
-                    'boosting_type': 'gbdt',
-                    'num_leaves': 31,
-                    'learning_rate': 0.05,
-                    'feature_fraction': 0.9,
-                    'bagging_fraction': 0.8,
-                    'bagging_freq': 5,
-                    'verbose': -1
-                }
-            else:  # Tactician
-                params = {
-                    'objective': 'regression',
-                    'metric': 'rmse',
-                    'boosting_type': 'gbdt',
-                    'num_leaves': 63,
-                    'learning_rate': 0.03,
-                    'feature_fraction': 0.8,
-                    'bagging_fraction': 0.7,
-                    'bagging_freq': 5,
-                    'verbose': -1
-                }
+            # Get model parameters from config (if model was passed with params)
+            # Otherwise use defaults that will be optimized by HPO
+            model_params = {}
+            if hasattr(model, 'get_params'):
+                try:
+                    model_params = model.get_params()
+                except:
+                    pass
+            
+            # Extract hyperparameters (these come from YAML and HPO)
+            n_estimators = model_params.get('n_estimators', 1000)
+            learning_rate = model_params.get('learning_rate', 0.1)
+            max_depth = model_params.get('max_depth', 8)
+            num_leaves = model_params.get('num_leaves', 255)
+            subsample = model_params.get('subsample', 0.8)
+            colsample_bytree = model_params.get('colsample_bytree', 0.8)
+            reg_alpha = model_params.get('reg_alpha', 0.0)
+            reg_lambda = model_params.get('reg_lambda', 0.0)
+            min_child_samples = model_params.get('min_child_samples', 20)
+            
+            # Build parameters dictionary
+            params = {
+                # Task configuration
+                'objective': 'regression',
+                'metric': 'rmse',
+                'boosting_type': 'gbdt',
+                
+                # Hyperparameters (from YAML/HPO)
+                'num_leaves': num_leaves,
+                'learning_rate': learning_rate,
+                'max_depth': max_depth,
+                'subsample': subsample,
+                'colsample_bytree': colsample_bytree,
+                'reg_alpha': reg_alpha,
+                'reg_lambda': reg_lambda,
+                'min_child_samples': min_child_samples,
+                
+                # Performance optimizations (NOT tuned by HPO)
+                'n_jobs': n_threads,
+                'bagging_freq': 5,
+                'verbose': -1,
+                'force_col_wise': True,  # Faster for many features
+            }
+            
+            tprint_info(f"Training LightGBM: depth={max_depth}, leaves={num_leaves}, lr={learning_rate}")
             
             # Create datasets
             train_data = lgb.Dataset(X_train, label=y_train)
@@ -480,7 +505,7 @@ class ModelTrainer(BaseTrainer):
             model = lgb.train(
                 params,
                 train_data,
-                num_boost_round=1000,
+                num_boost_round=n_estimators,
                 valid_sets=[valid_data],
                 callbacks=[lgb.early_stopping(stopping_rounds=50, verbose=False)]
             )
@@ -494,11 +519,15 @@ class ModelTrainer(BaseTrainer):
                 'mse': mean_squared_error(targets, predictions),
                 'mae': mean_absolute_error(targets, predictions),
                 'r2': r2_score(targets, predictions),
-                'rmse': np.sqrt(mean_squared_error(targets, predictions))
+                'rmse': np.sqrt(mean_squared_error(targets, predictions)),
+                'iterations_used': model.current_iteration(),
+                'best_iteration': model.best_iteration
             }
             
             # Get feature importance
             feature_importance = dict(zip(data.columns, model.feature_importance()))
+            
+            tprint_success(f"✅ LightGBM trained: {model.current_iteration()} iterations, RMSE={metrics['rmse']:.4f}")
             
             return TrainingResult(
                 success=True,
@@ -509,42 +538,127 @@ class ModelTrainer(BaseTrainer):
             
         except Exception as e:
             self.logger.error(f"LightGBM training failed: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return TrainingResult(success=False, error_message=str(e))
     
     async def _train_catboost_model(self, model: Any, data: pd.DataFrame, targets: pd.Series) -> TrainingResult:
-        """Train CatBoost model with role-specific parameters."""
+        """Train CatBoost model with role-specific parameters from YAML config."""
         try:
+            import numpy as np
+            
+            # CRITICAL: Validate shape alignment
+            if len(data) != len(targets):
+                error_msg = f"❌ CRITICAL SHAPE MISMATCH: Features={len(data)}, Targets={len(targets)}"
+                tprint_error(error_msg)
+                tprint_error(f"   Aligning by truncating to min length...")
+                
+                # Align by taking common indices
+                min_len = min(len(data), len(targets))
+                data = data.iloc[:min_len].copy()
+                targets = targets.iloc[:min_len].copy()
+                tprint_success(f"✅ Aligned to {min_len} samples")
+            
+            # CRITICAL: Keep ONLY numeric columns for CatBoost (drop datetime, string, categorical)
+            original_cols = data.columns.tolist()
+            data = data.select_dtypes(include=[np.number]).copy()
+            
+            if len(data.columns) < len(original_cols):
+                dropped_cols = set(original_cols) - set(data.columns)
+                tprint_warning(f"⚠️ Dropped {len(dropped_cols)} non-numeric columns: {dropped_cols}")
+                tprint_info(f"✅ Using {len(data.columns)} numeric features: {list(data.columns)}")
+            
             # Import CatBoost
             from catboost import CatBoostRegressor
             from sklearn.model_selection import train_test_split
+            import os
+            
+            # Get GPU manager for hardware acceleration
+            gpu_manager = get_m1_gpu_manager()
+            cpu_optimizer = get_m1_cpu_optimizer()
+            
+            # Determine optimal thread count from hardware
+            n_threads = cpu_optimizer.get_optimal_thread_count() if cpu_optimizer else (os.cpu_count() or 4)
+            
+            # Check GPU availability for CatBoost
+            gpu_available = gpu_manager.is_m1 if gpu_manager else False
             
             # Split data for validation (required for early stopping)
             X_train, X_val, y_train, y_val = train_test_split(
                 data, targets, test_size=0.2, random_state=42
             )
             
-            # Create regressor for all roles (targets are continuous)
-            if self.config.role == TrainingRole.ANALYST:
-                model = CatBoostRegressor(
-                    iterations=1000,
-                    learning_rate=0.05,
-                    depth=6,
-                    loss_function='RMSE',
-                    eval_metric='RMSE',
-                    verbose=False
-                )
-            else:  # Tactician
-                model = CatBoostRegressor(
-                    iterations=1000,
-                    learning_rate=0.03,
-                    depth=8,
-                    loss_function='RMSE',
-                    eval_metric='RMSE',
-                    verbose=False
-                )
+            # Get model parameters from config (if model was passed with params)
+            # Otherwise use defaults that will be optimized by HPO
+            model_params = {}
+            if hasattr(model, 'get_params'):
+                try:
+                    model_params = model.get_params()
+                except:
+                    pass
+            
+            # Extract hyperparameters (these come from YAML and HPO)
+            iterations = model_params.get('iterations', 500)
+            learning_rate = model_params.get('learning_rate', 0.1)
+            depth = model_params.get('depth', 6)
+            l2_leaf_reg = model_params.get('l2_leaf_reg', 3.0)
+            subsample = model_params.get('subsample', 0.8)
+            colsample_bylevel = model_params.get('colsample_bylevel', 0.8)
+            border_count = model_params.get('border_count', 128)
+            max_ctr_complexity = model_params.get('max_ctr_complexity', 2)
+            early_stopping_rounds = model_params.get('early_stopping_rounds', 50)
+            random_seed = model_params.get('random_seed', 42)
+            
+            # Performance optimizations (NOT tuned by HPO)
+            performance_params = {
+                'thread_count': n_threads,  # Use all available CPU threads
+                'bootstrap_type': 'Bayesian',  # Faster than default 'MVS'
+                'verbose': False,
+                'random_seed': random_seed,
+                'allow_writing_files': False,  # Disable temp file writing
+            }
+            
+            # Add GPU acceleration if available
+            if gpu_available:
+                performance_params['task_type'] = 'GPU'
+                performance_params['devices'] = '0'
+                tprint_info("🚀 CatBoost using GPU acceleration (Metal)")
+            else:
+                performance_params['task_type'] = 'CPU'
+                tprint_info(f"🔧 CatBoost using CPU with {n_threads} threads")
+            
+            # Hyperparameters (tuned by HPO)
+            hyperparameters = {
+                'iterations': iterations,
+                'learning_rate': learning_rate,
+                'depth': depth,
+                'l2_leaf_reg': l2_leaf_reg,
+                'subsample': subsample,
+                'colsample_bylevel': colsample_bylevel,
+                'border_count': border_count,
+                'max_ctr_complexity': max_ctr_complexity,
+            }
+            
+            # Combine all parameters
+            all_params = {**performance_params, **hyperparameters}
+            
+            # Add loss function and eval metric based on role
+            all_params['loss_function'] = 'RMSE'
+            all_params['eval_metric'] = 'RMSE'
+            
+            # Create CatBoost model (always Regressor for continuous targets)
+            model = CatBoostRegressor(**all_params)
+            
+            tprint_info(f"Training CatBoost: depth={depth}, iterations={iterations}, lr={learning_rate}")
             
             # Train model with validation set
-            model.fit(X_train, y_train, eval_set=(X_val, y_val), early_stopping_rounds=50, verbose=False)
+            model.fit(
+                X_train, y_train, 
+                eval_set=(X_val, y_val), 
+                early_stopping_rounds=early_stopping_rounds,
+                verbose=False,
+                use_best_model=True
+            )
             
             # Get predictions and metrics (on full data)
             predictions = model.predict(data)
@@ -555,11 +669,15 @@ class ModelTrainer(BaseTrainer):
                 'mse': mean_squared_error(targets, predictions),
                 'mae': mean_absolute_error(targets, predictions),
                 'r2': r2_score(targets, predictions),
-                'rmse': np.sqrt(mean_squared_error(targets, predictions))
+                'rmse': np.sqrt(mean_squared_error(targets, predictions)),
+                'iterations_used': model.get_best_iteration() or model.tree_count_,
+                'best_iteration': model.get_best_iteration()
             }
             
             # Get feature importance
             feature_importance = dict(zip(data.columns, model.get_feature_importance()))
+            
+            tprint_success(f"✅ CatBoost trained: {metrics['iterations_used']} iterations, RMSE={metrics['rmse']:.4f}")
             
             return TrainingResult(
                 success=True,
@@ -570,6 +688,8 @@ class ModelTrainer(BaseTrainer):
             
         except Exception as e:
             self.logger.error(f"CatBoost training failed: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return TrainingResult(success=False, error_message=str(e))
     
     async def _train_tcn_model(self, model: Any, data: pd.DataFrame, targets: pd.Series) -> TrainingResult:
@@ -584,7 +704,8 @@ class ModelTrainer(BaseTrainer):
                 data, targets, test_size=0.2, random_state=42
             )
             
-            # Check if HPO is enabled in config
+            # Get model parameters from YAML config
+            model_params = {}
             hpo_enabled = False
             hpo_config = None
             if hasattr(model, 'get_params'):
@@ -596,43 +717,46 @@ class ModelTrainer(BaseTrainer):
                 except:
                     pass
             
-            # Role-specific TCN configuration
-            if self.config.role == TrainingRole.ANALYST:
-                tcn_config = CausalTCNConfig(
-                    num_filters=64,
-                    num_layers=4,
-                    kernel_size=3,
-                    dilation_base=2,
-                    dropout=0.2,
-                    learning_rate=0.001,
-                    batch_size=32,
-                    epochs=100,
-                    early_stopping_patience=10,
-                    # Enable autoencoder compression for faster training
-                    use_autoencoder=True,
-                    autoencoder_path="models/analyst_autoencoder_encoder.pth",
-                    latent_dim=16,
-                    train_autoencoder_if_missing=True,
-                    autoencoder_epochs=50
-                )
-            else:  # Tactician
-                tcn_config = CausalTCNConfig(
-                    num_filters=64,
-                    num_layers=4,
-                    kernel_size=3,
-                    dilation_base=2,
-                    dropout=0.1,
-                    learning_rate=0.001,
-                    batch_size=32,
-                    epochs=100,
-                    early_stopping_patience=10,
-                    # Enable autoencoder compression for faster training
-                    use_autoencoder=True,
-                    autoencoder_path="models/tactician_autoencoder_encoder.pth",
-                    latent_dim=16,
-                    train_autoencoder_if_missing=True,
-                    autoencoder_epochs=50
-                )
+            # Extract hyperparameters from YAML (or use defaults)
+            num_filters = model_params.get('num_filters', 64)
+            num_layers = model_params.get('num_layers', 4)
+            kernel_size = model_params.get('kernel_size', 3)
+            dilation_base = model_params.get('dilation_base', 2)
+            dropout = model_params.get('dropout', 0.2 if self.config.role == TrainingRole.ANALYST else 0.1)
+            learning_rate = model_params.get('learning_rate', 0.001)
+            batch_size = model_params.get('batch_size', 64)
+            epochs = model_params.get('epochs', 50)
+            early_stopping_patience = model_params.get('early_stopping_patience', 7)
+            use_autoencoder = model_params.get('use_autoencoder', True)
+            latent_dim = model_params.get('latent_dim', 16)
+            train_autoencoder_if_missing = model_params.get('train_autoencoder_if_missing', True)
+            autoencoder_epochs = model_params.get('autoencoder_epochs', 25)
+            
+            # Determine autoencoder path based on role
+            autoencoder_path = model_params.get(
+                'autoencoder_path',
+                "models/analyst_autoencoder_encoder.pth" if self.config.role == TrainingRole.ANALYST else "models/tactician_autoencoder_encoder.pth"
+            )
+            
+            # Create TCN configuration from YAML parameters
+            tcn_config = CausalTCNConfig(
+                num_filters=num_filters,
+                num_layers=num_layers,
+                kernel_size=kernel_size,
+                dilation_base=dilation_base,
+                dropout=dropout,
+                learning_rate=learning_rate,
+                batch_size=batch_size,
+                epochs=epochs,
+                early_stopping_patience=early_stopping_patience,
+                use_autoencoder=use_autoencoder,
+                autoencoder_path=autoencoder_path,
+                latent_dim=latent_dim,
+                train_autoencoder_if_missing=train_autoencoder_if_missing,
+                autoencoder_epochs=autoencoder_epochs
+            )
+            
+            tprint_info(f"Training TCN: layers={num_layers}, filters={num_filters}, latent_dim={latent_dim}")
             
             # Run HPO if enabled
             if hpo_enabled and hpo_config:
@@ -844,13 +968,15 @@ class ModelTrainer(BaseTrainer):
         try:
             if model_type == ModelType.LIGHTGBM:
                 import lightgbm as lgb
-                return lgb.LGBMClassifier() if self.config.role == TrainingRole.ANALYST else lgb.LGBMRegressor()
+                # Always use Regressor for trading models (predicting continuous values like directional_confidence)
+                return lgb.LGBMRegressor()
             elif model_type == ModelType.TCN:
                 # Return None, will be created in training method
                 return None
             elif model_type == ModelType.CATBOOST:
-                from catboost import CatBoostClassifier, CatBoostRegressor
-                return CatBoostClassifier() if self.config.role == TrainingRole.ANALYST else CatBoostRegressor()
+                from catboost import CatBoostRegressor
+                # Always use Regressor for trading models (predicting continuous values)
+                return CatBoostRegressor()
             elif model_type == ModelType.NEURAL_NETWORK:
                 # Return None, will be created in training method
                 return None

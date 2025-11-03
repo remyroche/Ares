@@ -1,0 +1,693 @@
+{
+  "total_levels": 85,
+  "support_levels": 41,
+  "resistance_levels": 44,
+  "levels": [
+    {
+      "price": 5000.0,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 4,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 1721.5699462890625,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 33,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 1663.06005859375,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 122,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 3581.5134252929683,
+      "type": "support",
+      "strength": 1.0,
+      "touches": 412,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 3620.253322753906,
+      "type": "support",
+      "strength": 1.0,
+      "touches": 427,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 3813.952810058594,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 426,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 7299.258332409816,
+      "type": "resistance",
+      "strength": 0.875,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.875
+    },
+    {
+      "price": 1636.6953442980678,
+      "type": "support",
+      "strength": 1.0,
+      "touches": 185,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 3658.993220214844,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 473,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 3697.733117675781,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 451,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 4395.051271972656,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 667,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 4240.0916821289065,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 332,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 7036.485736429989,
+      "type": "resistance",
+      "strength": 0.8500000000000001,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.8500000000000001
+    },
+    {
+      "price": 4317.571477050781,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 1072,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 3736.4730151367185,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 509,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 1368.75,
+      "type": "support",
+      "strength": 1.0,
+      "touches": 11,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 4550.010861816406,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 308,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 6773.7131404501615,
+      "type": "resistance",
+      "strength": 0.825,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.825
+    },
+    {
+      "price": 4599.243912109375,
+      "type": "resistance",
+      "strength": 0.9853737003058103,
+      "touches": 327,
+      "method": "unknown",
+      "quality_score": 0.9853737003058103
+    },
+    {
+      "price": 6510.940544470333,
+      "type": "resistance",
+      "strength": 0.8,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.8
+    },
+    {
+      "price": 4472.531066894531,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 480,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 6248.167948490506,
+      "type": "resistance",
+      "strength": 0.775,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.775
+    },
+    {
+      "price": 3542.7735278320315,
+      "type": "support",
+      "strength": 1.0,
+      "touches": 346,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 5985.395352510679,
+      "type": "resistance",
+      "strength": 0.75,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.75
+    },
+    {
+      "price": 3775.212912597656,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 519,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 5722.622756530851,
+      "type": "resistance",
+      "strength": 0.725,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.725
+    },
+    {
+      "price": 5459.850160551023,
+      "type": "resistance",
+      "strength": 0.7,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.7
+    },
+    {
+      "price": 4749.622647394761,
+      "type": "resistance",
+      "strength": 0.8375162732919255,
+      "touches": 322,
+      "method": "unknown",
+      "quality_score": 0.8375162732919255
+    },
+    {
+      "price": 1082.7900390625,
+      "type": "support",
+      "strength": 1.0,
+      "touches": 2,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 5197.077564571196,
+      "type": "resistance",
+      "strength": 0.675,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.675
+    },
+    {
+      "price": 1998.2837219238281,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 40,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 1311.8900146484373,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 47,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 2832.124200752747,
+      "type": "support",
+      "strength": 0.8666666666666667,
+      "touches": 12,
+      "method": "unknown",
+      "quality_score": 0.8666666666666667
+    },
+    {
+      "price": 1518.0213464872265,
+      "type": "support",
+      "strength": 1.0,
+      "touches": 31,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 1387.010009765625,
+      "type": "resistance",
+      "strength": 0.9200000000000002,
+      "touches": 10,
+      "method": "unknown",
+      "quality_score": 0.9200000000000002
+    },
+    {
+      "price": 1588.719970703125,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 130,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 4934.304968591368,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 12,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 1759.0,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 53,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 1915.9200439453125,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 118,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 1815.9000244140625,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 181,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 1682.9100341796875,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 70,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 1231.0899658203125,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 32,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 42.400368045725656,
+      "type": "support",
+      "strength": 0.9,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.9
+    },
+    {
+      "price": 157.5999790382794,
+      "type": "support",
+      "strength": 0.9,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.9
+    },
+    {
+      "price": 527.4709808398128,
+      "type": "support",
+      "strength": 0.9,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.9
+    },
+    {
+      "price": 536.596761523826,
+      "type": "support",
+      "strength": 0.9,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.9
+    },
+    {
+      "price": 648.5698749151131,
+      "type": "support",
+      "strength": 0.9,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.9
+    },
+    {
+      "price": 663.5689060966913,
+      "type": "support",
+      "strength": 0.9,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.9
+    },
+    {
+      "price": 702.123939563382,
+      "type": "support",
+      "strength": 0.9,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.9
+    },
+    {
+      "price": 756.2361770618033,
+      "type": "support",
+      "strength": 0.9,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.9
+    },
+    {
+      "price": 770.3957657038723,
+      "type": "support",
+      "strength": 0.9,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.9
+    },
+    {
+      "price": 873.2054586687769,
+      "type": "support",
+      "strength": 0.9,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.9
+    },
+    {
+      "price": 1066.0653196377925,
+      "type": "support",
+      "strength": 0.9,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.9
+    },
+    {
+      "price": 1543.0,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 65,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 1781.033816833437,
+      "type": "support",
+      "strength": 0.9091836734693877,
+      "touches": 98,
+      "method": "unknown",
+      "quality_score": 0.9091836734693877
+    },
+    {
+      "price": 1265.6600341796875,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 66,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 1325.9630551545517,
+      "type": "support",
+      "strength": 1.0,
+      "touches": 67,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 7500.0,
+      "type": "resistance",
+      "strength": 0.45,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.45
+    },
+    {
+      "price": 1296.219970703125,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 60,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 2569.35160477292,
+      "type": "support",
+      "strength": 0.8416666666666666,
+      "touches": 66,
+      "method": "unknown",
+      "quality_score": 0.8416666666666666
+    },
+    {
+      "price": 1606.5159912109375,
+      "type": "support",
+      "strength": 1.0,
+      "touches": 103,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 4700.0,
+      "type": "support",
+      "strength": 0.8177165354330709,
+      "touches": 254,
+      "method": "unknown",
+      "quality_score": 0.8177165354330709
+    },
+    {
+      "price": 1218.1300048828125,
+      "type": "resistance",
+      "strength": 1.0,
+      "touches": 66,
+      "method": "unknown",
+      "quality_score": 1.0
+    },
+    {
+      "price": 3883.2145846720578,
+      "type": "resistance",
+      "strength": 0.8219367588932807,
+      "touches": 253,
+      "method": "unknown",
+      "quality_score": 0.8219367588932807
+    },
+    {
+      "price": 2306.579008793092,
+      "type": "support",
+      "strength": 0.8526315789473682,
+      "touches": 76,
+      "method": "unknown",
+      "quality_score": 0.8526315789473682
+    },
+    {
+      "price": 1353.800048828125,
+      "type": "resistance",
+      "strength": 0.8640000000000001,
+      "touches": 25,
+      "method": "unknown",
+      "quality_score": 0.8640000000000001
+    },
+    {
+      "price": 1166.5999755859375,
+      "type": "support",
+      "strength": 0.8947368421052633,
+      "touches": 19,
+      "method": "unknown",
+      "quality_score": 0.8947368421052633
+    },
+    {
+      "price": 1482.1800537109375,
+      "type": "resistance",
+      "strength": 0.8933333333333333,
+      "touches": 15,
+      "method": "unknown",
+      "quality_score": 0.8933333333333333
+    },
+    {
+      "price": 1340.0899658203125,
+      "type": "resistance",
+      "strength": 0.8586206896551725,
+      "touches": 58,
+      "method": "unknown",
+      "quality_score": 0.8586206896551725
+    },
+    {
+      "price": 4145.987180651885,
+      "type": "resistance",
+      "strength": 0.8287313432835821,
+      "touches": 67,
+      "method": "unknown",
+      "quality_score": 0.8287313432835821
+    },
+    {
+      "price": 1245.6700439453125,
+      "type": "support",
+      "strength": 0.8764705882352941,
+      "touches": 34,
+      "method": "unknown",
+      "quality_score": 0.8764705882352941
+    },
+    {
+      "price": 1465.8599853515625,
+      "type": "support",
+      "strength": 0.8842105263157896,
+      "touches": 19,
+      "method": "unknown",
+      "quality_score": 0.8842105263157896
+    },
+    {
+      "price": 2043.8064128132644,
+      "type": "support",
+      "strength": 0.8827777777777779,
+      "touches": 45,
+      "method": "unknown",
+      "quality_score": 0.8827777777777779
+    },
+    {
+      "price": 4000.0,
+      "type": "support",
+      "strength": 0.7933333333333334,
+      "touches": 60,
+      "method": "unknown",
+      "quality_score": 0.7933333333333334
+    },
+    {
+      "price": 1560.030029296875,
+      "type": "support",
+      "strength": 0.8738738738738738,
+      "touches": 111,
+      "method": "unknown",
+      "quality_score": 0.8738738738738738
+    },
+    {
+      "price": 1419.27001953125,
+      "type": "support",
+      "strength": 0.8714285714285714,
+      "touches": 14,
+      "method": "unknown",
+      "quality_score": 0.8714285714285714
+    },
+    {
+      "price": 3094.896796732575,
+      "type": "support",
+      "strength": 0.7729166666666667,
+      "touches": 96,
+      "method": "unknown",
+      "quality_score": 0.7729166666666667
+    },
+    {
+      "price": 4650.0,
+      "type": "support",
+      "strength": 0.7225388601036269,
+      "touches": 193,
+      "method": "unknown",
+      "quality_score": 0.7225388601036269
+    },
+    {
+      "price": 1280.31005859375,
+      "type": "support",
+      "strength": 0.861764705882353,
+      "touches": 68,
+      "method": "unknown",
+      "quality_score": 0.861764705882353
+    },
+    {
+      "price": 1199.0999755859375,
+      "type": "support",
+      "strength": 0.8528301886792453,
+      "touches": 53,
+      "method": "unknown",
+      "quality_score": 0.8528301886792453
+    },
+    {
+      "price": 1498.1099853515625,
+      "type": "support",
+      "strength": 0.8461538461538463,
+      "touches": 13,
+      "method": "unknown",
+      "quality_score": 0.8461538461538463
+    },
+    {
+      "price": 204.39824095447148,
+      "type": "support",
+      "strength": 0.8,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.8
+    },
+    {
+      "price": 467.1708369342987,
+      "type": "support",
+      "strength": 0.775,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.775
+    },
+    {
+      "price": 729.9434329141263,
+      "type": "support",
+      "strength": 0.75,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.75
+    },
+    {
+      "price": 992.716028893954,
+      "type": "support",
+      "strength": 0.725,
+      "touches": 0,
+      "method": "unknown",
+      "quality_score": 0.725
+    }
+  ],
+  "metadata": {
+    "ml_model_used": true,
+    "optimized_parameters_applied": true,
+    "parameters_applied_count": 4,
+    "total_parameters_available": 5
+  }
+}

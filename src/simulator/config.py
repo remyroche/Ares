@@ -26,6 +26,8 @@ class SimulatorConfig:
         default_taker_fee: Default taker fee (0.0008 = 0.08%)
         default_maker_fee: Default maker fee (0.0006 = 0.06%)
         use_maker_taker_distinction: Whether to distinguish maker/taker fees
+        base_spread_bps: Base spread in basis points (2.0 = 0.02%)
+        spread_multiplier_by_exchange: Exchange-specific spread multipliers
         slippage_model: Model for calculating slippage
         max_slippage_pct: Maximum slippage percentage allowed
         orderbook_depth_limit: Number of price levels to use from order book
@@ -53,6 +55,17 @@ class SimulatorConfig:
     default_taker_fee: float = 0.0008  # 0.08%
     default_maker_fee: float = 0.0006  # 0.06%
     use_maker_taker_distinction: bool = True
+    
+    # Spread configuration
+    base_spread_bps: float = 2.0  # 0.02% base spread
+    spread_multiplier_by_exchange: Dict[str, float] = field(default_factory=lambda: {
+        "binance": 1.0,      # Lowest spread (most liquid)
+        "okx": 1.2,          # Slightly wider
+        "gateio": 1.5,       # Moderate
+        "mexc": 1.8,         # Wider spread
+        "phemex": 1.3,       # Moderate
+        "bingx": 1.6,        # Moderate-wide
+    })
     
     # Slippage configuration
     slippage_model: SlippageModel = SlippageModel.ORDERBOOK
@@ -91,6 +104,21 @@ class SimulatorConfig:
         maker_fee = fees.get("maker", self.default_maker_fee)
         taker_fee = fees.get("taker", self.default_taker_fee)
         return maker_fee, taker_fee
+    
+    def get_spread_pct(self, exchange: str) -> float:
+        """
+        Get spread percentage for an exchange.
+        
+        Args:
+            exchange: Exchange name (e.g., "binance")
+            
+        Returns:
+            Spread as decimal (e.g., 0.0002 for 0.02%)
+        """
+        multiplier = self.spread_multiplier_by_exchange.get(exchange.lower(), 1.0)
+        # Convert basis points to decimal: 2.0 bps = 0.0002
+        spread_pct = (self.base_spread_bps * multiplier) / 10000.0
+        return spread_pct
     
     def validate(self) -> bool:
         """Validate configuration parameters."""

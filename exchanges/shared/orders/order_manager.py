@@ -298,7 +298,12 @@ class OrderManager:
                         self._update_local_orders_from_exchange(order_data)
                         
         except Exception as e:
-            self.logger.error(f"Failed to sync orders from exchange: {e}")
+            # Only log as error if it's not an authentication issue for public data
+            error_msg = str(e)
+            if "auth" in error_msg.lower() or "authentication" in error_msg.lower():
+                self.logger.debug(f"Order sync skipped (public data access): {e}")
+            else:
+                self.logger.error(f"❌ Failed to sync orders from exchange: {e}")
     
     def _store_order(self, order: Order) -> None:
         """Store order in internal data structures."""

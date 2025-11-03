@@ -113,17 +113,24 @@ class VectorBTFinancialMetrics:
     def _configure_vectorbt(self):
         """Configure VectorBT global settings."""
         try:
+            # Check if settings attribute exists first
+            if not hasattr(vbt, 'settings'):
+                logger.debug("⚠️ VectorBT settings not available in this version")
+                return
+            
             # Set parallel processing (check if attribute exists)
             if self.config.enable_parallel and hasattr(vbt.settings, 'parallel'):
-                vbt.settings.parallel['threading'] = True
-                logger.debug("✅ VectorBT parallel processing enabled")
+                if 'threading' in vbt.settings['parallel']:
+                    vbt.settings.parallel['threading'] = True
+                    logger.debug("✅ VectorBT parallel processing enabled")
             elif self.config.enable_parallel:
                 logger.debug("⚠️ VectorBT parallel settings not available in this version")
 
             # Set array wrapper settings (check if attribute exists)
             if hasattr(vbt.settings, 'array_wrapper'):
-                vbt.settings.array_wrapper['freq'] = '1min'
-                logger.debug("✅ VectorBT array wrapper frequency set to 1min")
+                if 'freq' in vbt.settings['array_wrapper']:
+                    vbt.settings.array_wrapper['freq'] = '1min'
+                    logger.debug("✅ VectorBT array wrapper frequency set to 1min")
             else:
                 logger.debug("⚠️ VectorBT array_wrapper settings not available in this version")
 

@@ -125,7 +125,7 @@ class StandardizedFeatureGenerator:
         # Autocorrelation features using VectorBT
         try:
             import vectorbt as vbt
-            from vectorbt.generic import rolling_corr
+            from src.vectorbt import rolling_corr
             
             for w in [10, 20]:
                 # Use VectorBT for rolling autocorrelation
@@ -173,7 +173,7 @@ class StandardizedFeatureGenerator:
         # Rolling correlation with VWAP basis using VectorBT
         try:
             import vectorbt as vbt
-            from vectorbt.generic import rolling_corr
+            from src.vectorbt import rolling_corr
             
             for w in [10, 20]:
                 df[f'ret_vwap_corr_w{w}'] = rolling_corr(df['ret_t1'], df['vwap_basis_w20'], window=w)

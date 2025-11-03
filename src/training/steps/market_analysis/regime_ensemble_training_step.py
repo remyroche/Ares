@@ -93,7 +93,7 @@ class RegimeEnsembleTrainingStep(BaseStep):
             pipeline_state = config.get('pipeline_state', {})
             
             if market_data is None:
-                tprint("⚠️ No market data found in pipeline state"WARNING")
+                tprint("⚠️ No market data found in pipeline state", "WARNING")
                 return
             
             # Convert market data to DataFrame if it's not already

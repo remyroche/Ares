@@ -92,9 +92,11 @@ class MemoryOptimizer:
         }
 
         # Configure VectorBT memory settings
-        if VECTORBT_AVAILABLE:
-            vbt.settings.memory['limit'] = self.config.vectorbt_memory_limit_gb * 1024**3
-            vbt.settings.array_wrapper['freq'] = '1min'
+        if VECTORBT_AVAILABLE and hasattr(vbt, 'settings'):
+            if hasattr(vbt.settings, 'memory') and 'limit' in vbt.settings['memory']:
+                vbt.settings.memory['limit'] = self.config.vectorbt_memory_limit_gb * 1024**3
+            if hasattr(vbt.settings, 'array_wrapper') and 'freq' in vbt.settings['array_wrapper']:
+                vbt.settings.array_wrapper['freq'] = '1min'
 
         logger.info(f"MemoryOptimizer initialized: Max memory={self.config.max_memory_gb}GB, Chunk size={self.config.chunk_size}")
 
@@ -335,10 +337,11 @@ class MemoryOptimizer:
             gc.collect()
 
         # Clear VectorBT cache if available
-        if VECTORBT_AVAILABLE:
+        if VECTORBT_AVAILABLE and hasattr(vbt, 'settings'):
             try:
-                vbt.settings.caching['enabled'] = False
-                vbt.settings.caching['enabled'] = True
+                if hasattr(vbt.settings, 'caching') and 'enabled' in vbt.settings['caching']:
+                    vbt.settings.caching['enabled'] = False
+                    vbt.settings.caching['enabled'] = True
             except Exception as e:
                 logger.warning(f"VectorBT cache cleanup failed: {e}")
 

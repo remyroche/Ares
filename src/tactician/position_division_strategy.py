@@ -279,22 +279,45 @@ class PositionDivisionStrategy:
 
     def _calculate_tp_sl_levels(self, market_conditions: dict[str, Any] | None, num_positions: int) -> dict[str, list[Any]]:
         """
-        Calculate take profit and stop loss levels.
+        Calculate take profit and stop loss levels with uncertainty and confidence adjustments.
 
         Args:
-            market_conditions: Current market conditions
+            market_conditions: Current market conditions (includes uncertainty, confidence, volatility)
 
         Returns:
             Dict: Take profit and stop loss levels
         """
         try:
             market_conditions = market_conditions or {}
-            # Get market volatility
+            
+            # Extract metrics for dynamic calculation
             volatility = market_conditions.get("volatility", 0.02)  # Default 2%
+            uncertainty = market_conditions.get("uncertainty", 0.3)  # Default moderate uncertainty
+            confidence = market_conditions.get("confidence", 0.6)  # Default moderate confidence
+            
+            # Base TP/SL configuration from config
+            tp_base_atr = self.config.get("tp_base_atr_multiplier", 2.5)
+            sl_base_atr = self.config.get("sl_base_atr_multiplier", 1.5)
+            
+            # Confidence scaling factors
+            tp_confidence_scaling = self.config.get("tp_confidence_scaling", 1.0)
+            tp_uncertainty_scaling = self.config.get("tp_uncertainty_scaling", 0.8)
+            sl_volatility_scaling = self.config.get("sl_volatility_scaling", 1.2)
+            
+            # Scale TP by confidence and uncertainty
+            # Higher confidence = more ambitious TP
+            # Higher uncertainty = closer TP (more conservative)
+            tp_confidence_multiplier = 1.0 + (confidence - 0.5) * tp_confidence_scaling
+            tp_uncertainty_multiplier = 1.0 - (uncertainty * (1.0 - tp_uncertainty_scaling))
+            
+            # Scale SL by volatility
+            # Higher volatility = wider SL
+            normalized_volatility = min(volatility, 0.10) / 0.10
+            sl_volatility_multiplier = 1.0 + (normalized_volatility * (sl_volatility_scaling - 1.0))
 
-            # Adjust TP/SL based on volatility
-            tp_adjustment = min(volatility * 2, 0.05)  # Max 5%
-            sl_adjustment = min(volatility, 0.03)  # Max 3%
+            # Adjust TP/SL based on scaled values
+            tp_adjustment = min(volatility * 2 * tp_confidence_multiplier * tp_uncertainty_multiplier, 0.05)  # Max 5%
+            sl_adjustment = min(volatility * sl_volatility_multiplier, 0.03)  # Max 3%
 
             take_profit_levels = []
             stop_loss_levels = []
@@ -341,11 +364,27 @@ class PositionDivisionStrategy:
 
             # Persist latest templates for future child position creation
             self.child_trailing_templates = deepcopy(trailing_templates)
+            
+            # Log dynamic TP/SL calculation
+            self.logger.info(
+                f"Dynamic TP/SL calculated: "
+                f"confidence={confidence:.3f}, uncertainty={uncertainty:.3f}, volatility={volatility:.4f}, "
+                f"tp_mult={tp_confidence_multiplier * tp_uncertainty_multiplier:.3f}, "
+                f"sl_mult={sl_volatility_multiplier:.3f}"
+            )
 
             return {
                 "take_profit": take_profit_levels,
                 "stop_loss": stop_loss_levels,
                 "trailing": trailing_templates,
+                "metadata": {
+                    "confidence": confidence,
+                    "uncertainty": uncertainty,
+                    "volatility": volatility,
+                    "tp_confidence_multiplier": tp_confidence_multiplier,
+                    "tp_uncertainty_multiplier": tp_uncertainty_multiplier,
+                    "sl_volatility_multiplier": sl_volatility_multiplier
+                }
             }
 
         except Exception as e:

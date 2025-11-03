@@ -103,15 +103,15 @@ class DynamicConfigCalculator:
         try:
             if self.hardware_manager:
                 # Use unified hardware manager to get system info
-                hw_config = self.hardware_manager.get_hardware_config()
+                hw_status = self.hardware_manager.get_system_status()
                 
                 return {
-                    'total_memory_gb': hw_config.total_memory_gb,
-                    'available_memory_gb': hw_config.available_memory_gb,
-                    'cpu_cores': hw_config.cpu_cores,
-                    'cpu_threads': hw_config.cpu_threads,
-                    'has_gpu': hw_config.has_gpu,
-                    'gpu_memory_gb': hw_config.gpu_memory_gb if hw_config.has_gpu else 0.0
+                    'total_memory_gb': hw_status.get('memory', {}).get('total_gb', 16.0),
+                    'available_memory_gb': hw_status.get('memory', {}).get('available_gb', 8.0),
+                    'cpu_cores': hw_status.get('cpu', {}).get('total_cores', 8),
+                    'cpu_threads': hw_status.get('cpu', {}).get('total_cores', 8),
+                    'has_gpu': hw_status.get('gpu', {}).get('available', False),
+                    'gpu_memory_gb': hw_status.get('gpu', {}).get('memory_gb', 0.0)
                 }
             else:
                 # Fallback to basic detection

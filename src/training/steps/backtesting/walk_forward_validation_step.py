@@ -453,12 +453,12 @@ class WalkForwardValidationStep(BaseStep):
 
     def _error_response(self, error_msg: str) -> Dict[str, Any]:
         """Create standardized error response."""
-            return {
-                'success': False,
-                'artifacts': {},
-                'metrics': {},
-                'error': error_msg
-            }
+        return {
+            'success': False,
+            'artifacts': {},
+            'metrics': {},
+            'error': error_msg
+        }
 
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Run method required by BaseStep interface."""

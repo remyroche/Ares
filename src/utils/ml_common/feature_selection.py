@@ -318,25 +318,34 @@ class FeatureSelectionFramework:
         try:
             # Check VectorBT availability
             import vectorbt as vbt
-            from vectorbt.generic import rolling_mean, rolling_std, rolling_corr
+            from src.utils.vectorbt_compat import rolling_mean, rolling_std, rolling_corr
             self.vectorbt_available = True
             self.vbt = vbt
 
-            # Initialize VectorBT settings for optimal performance
-            vbt.settings.set_theme("dark")
-            vbt.settings['array_wrapper']['enable_parallel'] = True
-            vbt.settings['array_wrapper']['enable_chunked'] = True
-            vbt.settings['array_wrapper']['enable_rolling'] = True
-            vbt.settings['array_wrapper']['chunk_size'] = self.chunk_size
-
-            # Configure for financial data optimization
-            vbt.settings['array_wrapper']['freq_precision'] = 0
-            vbt.settings['array_wrapper']['freq_rep'] = 'auto'
-
-            # Enhanced VectorBT settings for feature selection
-            vbt.settings['array_wrapper']['enable_memory_mapping'] = True
-            vbt.settings['array_wrapper']['enable_lazy_evaluation'] = True
-            vbt.settings['array_wrapper']['enable_financial_optimization'] = True
+            # Initialize VectorBT settings for optimal performance (if available)
+            if hasattr(vbt, 'settings'):
+                if hasattr(vbt.settings, 'set_theme'):
+                    vbt.settings.set_theme("dark")
+                
+                if hasattr(vbt.settings, 'array_wrapper'):
+                    if 'enable_parallel' in vbt.settings['array_wrapper']:
+                        vbt.settings['array_wrapper']['enable_parallel'] = True
+                    if 'enable_chunked' in vbt.settings['array_wrapper']:
+                        vbt.settings['array_wrapper']['enable_chunked'] = True
+                    if 'enable_rolling' in vbt.settings['array_wrapper']:
+                        vbt.settings['array_wrapper']['enable_rolling'] = True
+                    if 'chunk_size' in vbt.settings['array_wrapper']:
+                        vbt.settings['array_wrapper']['chunk_size'] = self.chunk_size
+                    if 'freq_precision' in vbt.settings['array_wrapper']:
+                        vbt.settings['array_wrapper']['freq_precision'] = 0
+                    if 'freq_rep' in vbt.settings['array_wrapper']:
+                        vbt.settings['array_wrapper']['freq_rep'] = 'auto'
+                    if 'enable_memory_mapping' in vbt.settings['array_wrapper']:
+                        vbt.settings['array_wrapper']['enable_memory_mapping'] = True
+                    if 'enable_lazy_evaluation' in vbt.settings['array_wrapper']:
+                        vbt.settings['array_wrapper']['enable_lazy_evaluation'] = True
+                    if 'enable_financial_optimization' in vbt.settings['array_wrapper']:
+                        vbt.settings['array_wrapper']['enable_financial_optimization'] = True
 
             # Initialize VectorBT financial data settings
             self.vectorbt_financial_settings = {

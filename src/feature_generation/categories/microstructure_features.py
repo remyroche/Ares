@@ -46,12 +46,12 @@ from src.feature_generation.utils.math_validation import safe_divide, validate_f
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import (
+    from src.utils.vectorbt_compat import (
         rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
         rolling_sum, rolling_apply, rolling_corr, rolling_cov,
         rolling_skew, rolling_kurt, rolling_quantile
     )
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
@@ -1747,36 +1747,42 @@ class RangeVolumeShockOpen30Generator(VectorizedFeatureGenerator):
 # ============================================================================
 
 def create_microstructure_feature_generators() -> List[FeatureGenerator]:
-    """Create all microstructure feature generators."""
+    """Create all microstructure feature generators (numpy/numba optimized, no orderbook dependency)."""
     generators = []
 
-    # Core microstructure generators
+    # Core microstructure generators (numpy-optimized, work without orderbook data)
     generators.append(MicrostructureFeatureGenerator())
-    generators.append(BidAskSpreadGenerator())
-    generators.append(OrderFlowImbalanceGenerator())
+    generators.append(BidAskSpreadGenerator())  # Optional: uses bid/ask if available
+    generators.append(OrderFlowImbalanceGenerator())  # Works with OHLCV
     generators.append(TradeSizeImbalanceGenerator())
-    generators.append(PriceImpactGenerator())
-    generators.append(VolumeWeightedPriceGenerator())
-    generators.append(TradeIntensityGenerator())
-    generators.append(LiquidityProxyGenerator())
-    generators.append(MarketDepthGenerator())
+    generators.append(PriceImpactGenerator())  # Works with OHLCV
+    generators.append(VolumeWeightedPriceGenerator())  # Works with OHLCV
+    generators.append(TradeIntensityGenerator())  # Works with OHLCV
+    generators.append(LiquidityProxyGenerator())  # Works with OHLCV
+    generators.append(MarketDepthGenerator())  # Optional: uses bid_size/ask_size if available
 
-    # VectorBT-optimized generators
-    for window in [10, 20, 30]:
-        generators.append(VectorBTTakerBuyRatioGenerator(window))
-        generators.append(VectorBTTakerSellRatioGenerator(window))
-        generators.append(VectorBTMarketAggressionIndexGenerator(window))
-        generators.append(VectorBTOrderFlowImbalanceGenerator(window))
-        generators.append(VectorBTBidAskImbalanceGenerator(window))
-        generators.append(VectorBTMarketOrderFlowGenerator(window))
-        generators.append(VectorBTVolumeWeightedOrderFlowGenerator(window))
-        generators.append(VectorBTOrderFlowMomentumGenerator(window))
-        generators.append(VectorBTOrderFlowVolatilityGenerator(window))
-        generators.append(VectorBTOrderFlowTrendStrengthGenerator(window))
-        generators.append(VectorBTOrderFlowConsistencyGenerator(window))
-        generators.append(VectorBTOrderFlowAccelerationGenerator(window))
-        generators.append(VectorBTOrderFlowJerkGenerator(window))
-        generators.append(VectorBTOrderFlowRegimeGenerator(window))
+    # VectorBT-optimized generators (optional, only if VectorBT is available)
+    if VECTORBT_AVAILABLE:
+        try:
+            for window in [10, 20, 30]:
+                generators.append(VectorBTTakerBuyRatioGenerator(window))
+                generators.append(VectorBTTakerSellRatioGenerator(window))
+                generators.append(VectorBTMarketAggressionIndexGenerator(window))
+                generators.append(VectorBTOrderFlowImbalanceGenerator(window))
+                generators.append(VectorBTBidAskImbalanceGenerator(window))
+                generators.append(VectorBTMarketOrderFlowGenerator(window))
+                generators.append(VectorBTVolumeWeightedOrderFlowGenerator(window))
+                generators.append(VectorBTOrderFlowMomentumGenerator(window))
+                generators.append(VectorBTOrderFlowVolatilityGenerator(window))
+                generators.append(VectorBTOrderFlowTrendStrengthGenerator(window))
+                generators.append(VectorBTOrderFlowConsistencyGenerator(window))
+                generators.append(VectorBTOrderFlowAccelerationGenerator(window))
+                generators.append(VectorBTOrderFlowJerkGenerator(window))
+                generators.append(VectorBTOrderFlowRegimeGenerator(window))
+        except Exception as e:
+            tprint(f"⚠️ VectorBT microstructure generators failed to initialize: {e}")
+    else:
+        tprint("ℹ️ VectorBT not available, using core microstructure generators only (numpy-optimized)")
 
     # Analyst generators
     generators.append(AnalystSpreadNormalizedGenerator())

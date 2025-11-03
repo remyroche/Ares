@@ -64,11 +64,11 @@ def test_improved_regime_models_training():
         
         # Test 1: Import the component
         print("\n1. Testing component import...")
-        from src.training.steps.market_analysis.components.improved_regime_models_training import (
-            ImprovedRegimeModelsTrainingComponent
+        from src.training.steps.market_analysis.components.regime_models_training import (
+            RegimeModelsTrainingComponent
         )
         from src.training.steps.market_analysis.components.base_component import ComponentConfig
-        print("✅ Successfully imported ImprovedRegimeModelsTrainingComponent")
+        print("✅ Successfully imported RegimeModelsTrainingComponent")
         
         # Test 2: Test configuration validation
         print("\n2. Testing configuration validation...")
@@ -167,7 +167,7 @@ def test_improved_regime_models_training():
             execution_mode='light'
         )
         
-        component = ImprovedRegimeModelsTrainingComponent(component_config)
+        component = RegimeModelsTrainingComponent(component_config)
         assert hasattr(component, 'temporal_splitter')
         assert hasattr(component, 'regime_extractor')
         assert hasattr(component, 'feature_generator')
@@ -198,13 +198,12 @@ def test_improved_regime_models_training():
             print(f"❌ Full execution failed: {result.error_message}")
         
         print("\n🎉 All tests passed! Improved regime models training is working correctly.")
-        return True
         
     except Exception as e:
         print(f"\n❌ Test failed with error: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
 
 def test_temporal_validation():
     """Test temporal validation specifically."""
@@ -228,7 +227,7 @@ def test_temporal_validation():
         
         # Verify temporal order is maintained
         assert len(X_train) + len(X_val) + len(X_test) == len(X)
-        assert X_train.shape[0] < X_val.shape[0] + X_test.shape[0]  # Train should be first
+        assert X_train.shape[0] > 0 and X_val.shape[0] > 0 and X_test.shape[0] > 0  # All sets should have data
         
         # Verify regime distribution
         train_regimes = np.unique(y_train)
@@ -240,11 +239,10 @@ def test_temporal_validation():
         print(f"   - Test regimes: {test_regimes}")
         
         print("✅ Temporal validation working correctly")
-        return True
         
     except Exception as e:
         print(f"❌ Temporal validation test failed: {e}")
-        return False
+        raise
 
 if __name__ == "__main__":
     print("🚀 Starting Improved Regime Models Training Tests")

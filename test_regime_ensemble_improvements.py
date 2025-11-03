@@ -49,19 +49,18 @@ def test_feature_contract():
         tprint("✅ Validation passed for correct features", color="green")
     except ValueError as e:
         tprint(f"❌ Validation failed: {e}", color="red")
-        return False
+        raise AssertionError(f"Validation failed: {e}")
     
     # Test validation with incorrect feature count
     X_incorrect = np.random.rand(100, 5)
     try:
         contract.validate_features(X_incorrect)
         tprint("❌ Validation should have failed for incorrect feature count", color="red")
-        return False
+        raise AssertionError("Validation should have failed for incorrect feature count")
     except ValueError as e:
         tprint(f"✅ Validation correctly failed: {e}", color="green")
     
     tprint("✅ TEST 1 PASSED", color="green", bold=True)
-    return True
 
 
 def test_regime_labels_artifact():
@@ -90,7 +89,7 @@ def test_regime_labels_artifact():
         tprint("✅ Artifact validation passed", color="green")
     else:
         tprint("❌ Artifact validation failed", color="red")
-        return False
+        raise AssertionError("Artifact validation failed")
     
     # Test serialization
     artifact_dict = artifact.to_dict()
@@ -100,10 +99,9 @@ def test_regime_labels_artifact():
         tprint("✅ Serialization/deserialization passed", color="green")
     else:
         tprint("❌ Serialization/deserialization failed", color="red")
-        return False
+        raise AssertionError("Serialization/deserialization failed")
     
     tprint("✅ TEST 2 PASSED", color="green", bold=True)
-    return True
 
 
 def test_base_model_contract():
@@ -144,13 +142,13 @@ def test_base_model_contract():
         tprint("✅ Correctly identified base model", color="green")
     else:
         tprint("❌ Failed to identify base model", color="red")
-        return False
+        raise AssertionError("Failed to identify base model")
     
     if ensemble_contract.is_ensemble_model():
         tprint("✅ Correctly identified ensemble model", color="green")
     else:
         tprint("❌ Failed to identify ensemble model", color="red")
-        return False
+        raise AssertionError("Failed to identify ensemble model")
     
     # Test with name-based detection
     name_based_ensemble = BaseModelContract(
@@ -165,10 +163,9 @@ def test_base_model_contract():
         tprint("✅ Correctly identified ensemble by name", color="green")
     else:
         tprint("❌ Failed to identify ensemble by name", color="red")
-        return False
+        raise AssertionError("Failed to identify ensemble by name")
     
     tprint("✅ TEST 3 PASSED", color="green", bold=True)
-    return True
 
 
 def test_meta_features_generator():
@@ -231,16 +228,15 @@ def test_meta_features_generator():
         tprint("✅ Feature count matches feature names", color="green")
     else:
         tprint(f"❌ Feature count mismatch: {meta_features.shape[1]} != {len(feature_names)}", color="red")
-        return False
+        raise AssertionError(f"Feature count mismatch: {meta_features.shape[1]} != {len(feature_names)}")
     
     if uncertainty_count > 0 and confidence_count > 0 and disagreement_count > 0:
         tprint("✅ All feature types generated", color="green")
     else:
         tprint("❌ Some feature types missing", color="red")
-        return False
+        raise AssertionError("Some feature types missing")
     
     tprint("✅ TEST 4 PASSED", color="green", bold=True)
-    return True
 
 
 def main():
@@ -253,10 +249,18 @@ def main():
     results = []
     
     # Run tests
-    results.append(("Feature Contract Validation", test_feature_contract()))
-    results.append(("Regime Labels Artifact", test_regime_labels_artifact()))
-    results.append(("Base Model Contract", test_base_model_contract()))
-    results.append(("Meta-Features Generation", test_meta_features_generator()))
+    for test_name, test_func in [
+        ("Feature Contract Validation", test_feature_contract),
+        ("Regime Labels Artifact", test_regime_labels_artifact),
+        ("Base Model Contract", test_base_model_contract),
+        ("Meta-Features Generation", test_meta_features_generator)
+    ]:
+        try:
+            test_func()
+            results.append((test_name, True))
+        except Exception as e:
+            tprint(f"❌ {test_name} failed: {e}", color="red")
+            results.append((test_name, False))
     
     # Summary
     tprint("\n" + "=" * 80, color="magenta")

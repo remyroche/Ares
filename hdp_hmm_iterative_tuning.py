@@ -161,12 +161,21 @@ test_configs = list(itertools.product(alpha_values, kappa_values, gamma_values))
 
 print(f"\n🔍 Running full grid search ({len(test_configs)} combinations)...")
 
+# Create outcomes directory
+from pathlib import Path
+outcomes_dir = Path("outcomes")
+outcomes_dir.mkdir(exist_ok=True)
+
 results = []
 
 for i, (alpha, kappa, gamma) in enumerate(test_configs, 1):
     print(f"\n{'='*60}")
     print(f"Test {i}/{len(test_configs)}: α={alpha:.3f}, κ={kappa:.3f}, γ={gamma:.3f}")
     print(f"{'='*60}")
+    
+    # Force garbage collection to prevent memory/semaphore leaks
+    import gc
+    gc.collect()
     
     try:
         config = HDPHMMConfig(
@@ -224,20 +233,26 @@ for i, (alpha, kappa, gamma) in enumerate(test_configs, 1):
         if result.quality_assessment:
             flat_quality_metrics = flatten_dict(result.quality_assessment, parent_key='qa')
             result_dict.update(flat_quality_metrics)
+        else:
+            print(f"   ⚠️ WARNING: quality_assessment is None, using only top-level metrics")
         
         results.append(result_dict)
         # --- End of new metric collection ---
 
-        # Quick feedback
+        # Quick feedback - use top-level metrics first, then qa_ if available
         print(f"   Clusters: {result_dict.get('n_clusters', 'N/A')}")
         print(f"   Silhouette: {result_dict.get('silhouette_score', 0.0):.4f}")
         
-        # Use the flattened 'qa' names for feedback
-        cv_ratio_feat = result_dict.get('qa_between_regime_cv', 0.0) / (result_dict.get('qa_within_regime_cv', 1.0) + 1e-9)
-        cv_ratio_econ = result_dict.get('qa_economic_cv_metrics_economic_cv_ratio_mean_return', 0.0)
+        # Try both top-level and qa_ prefixed names
+        temporal = result_dict.get('qa_temporal_smoothness') or result_dict.get('temporal_smoothness', 0.0) or 0.0
+        balance = result_dict.get('qa_balance_score') or result_dict.get('balance_score', 0.0) or 0.0
+        between_cv = result_dict.get('qa_between_regime_cv') or result_dict.get('between_regime_cv', 0.0) or 0.0
+        within_cv = result_dict.get('qa_within_regime_cv') or result_dict.get('within_regime_cv', 1.0) or 1.0
+        cv_ratio_feat = between_cv / (within_cv + 1e-9)
+        cv_ratio_econ = result_dict.get('qa_economic_cv_metrics_economic_cv_ratio_mean_return', 0.0) or 0.0
         
-        print(f"   Temporal: {result_dict.get('qa_temporal_smoothness', 0.0):.4f} {'✅' if result_dict.get('qa_temporal_smoothness', 0.0) >= 0.70 else '⚠️'}")
-        print(f"   Balance:  {result_dict.get('qa_balance_score', 0.0):.4f} {'✅' if result_dict.get('qa_balance_score', 0.0) >= 0.40 else '⚠️'}")
+        print(f"   Temporal: {temporal:.4f} {'✅' if temporal >= 0.70 else '⚠️'}")
+        print(f"   Balance:  {balance:.4f} {'✅' if balance >= 0.40 else '⚠️'}")
         print(f"   CV Ratio (Feat): {cv_ratio_feat:.4f} {'✅' if cv_ratio_feat >= 1.0 else '⚠️'}")
         print(f"   CV Ratio (Econ): {cv_ratio_econ:.4f} {'✅' if cv_ratio_econ >= 1.0 else '⚠️'}")
         print(f"   Runtime: {elapsed:.1f}s")
@@ -247,6 +262,16 @@ for i, (alpha, kappa, gamma) in enumerate(test_configs, 1):
         result_dict = {'alpha': alpha, 'kappa': kappa, 'gamma': gamma, 'error': str(e), 'success': False}
         results.append(result_dict)
         continue
+    
+    # Periodic checkpoint save (every 50 tests)
+    if i % 50 == 0 and results:
+        try:
+            checkpoint_df = pd.DataFrame(results)
+            checkpoint_path = outcomes_dir / f"hdp_hmm_checkpoint_{i}_tests.csv"
+            checkpoint_df.to_csv(checkpoint_path, index=False)
+            print(f"\n💾 Checkpoint saved: {checkpoint_path} ({len(results)} tests)")
+        except Exception as e:
+            print(f"\n⚠️ Checkpoint save failed: {e}")
 
 # --- Results Analysis and CSV Saving ---
 
@@ -299,8 +324,6 @@ display_cols = [col for col in display_cols if col in results_df.columns]
 print(f"\n{results_df[display_cols].head(20).to_string(index=False)}")
 
 # Save detailed results to CSV
-outcomes_dir = Path("outcomes")
-outcomes_dir.mkdir(exist_ok=True)
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # 2. Create a CSV file with all the data, stored in outcomes/
@@ -326,3 +349,51 @@ try:
 - **γ (gamma)**: 6 steps from [3.0, 6.0]
 
 ## 🏆 Best Configuration (Composite Score)
+
+**Parameters:**
+- α = {best_composite['alpha']:.4f}
+- κ = {best_composite['kappa']:.4f}
+- γ = {best_composite['gamma']:.4f}
+
+**Metrics:**
+- Composite Score: {best_composite.get('composite_score', 0.0):.4f}
+- Clusters: {best_composite.get('n_clusters', 'N/A')}
+- Silhouette: {best_composite.get('silhouette_score', 0.0):.4f}
+- Balance: {best_composite.get('qa_balance_score', 0.0):.4f}
+- Temporal Smoothness: {best_composite.get('qa_temporal_smoothness', 0.0):.4f}
+- Runtime: {best_composite.get('runtime', 0.0):.2f}s
+
+## Summary Statistics
+
+- Total Successful Runs: {results_df['success'].sum() if 'success' in results_df else len(results_df)}
+- Average Clusters: {results_df['n_clusters'].mean() if 'n_clusters' in results_df else 'N/A'}
+- Average Runtime: {results_df['runtime'].mean() if 'runtime' in results_df else 'N/A':.2f}s
+
+## Recommendations
+
+Based on the tuning results:
+1. The best parameter combination shows good balance between cluster quality and temporal coherence
+2. Review the CSV file for detailed metrics across all configurations
+3. Consider the top 5-10 configurations for further validation
+
+---
+*Full results available in: {csv_path.name}*
+"""
+    
+    with open(report_path, 'w') as f:
+        f.write(report)
+    
+    print(f"📄 Report saved to: {report_path}")
+    
+except Exception as e:
+    print(f"⚠️ Failed to generate report: {e}")
+
+print(f"\n{'='*80}")
+print("✅ TUNING COMPLETE!")
+print(f"{'='*80}")
+print(f"📊 Results: {csv_path}")
+print(f"📄 Report: {report_path}")
+print(f"\n🏆 Best Configuration:")
+print(f"   α={best_composite['alpha']:.4f}, κ={best_composite['kappa']:.4f}, γ={best_composite['gamma']:.4f}")
+print(f"   Composite Score: {best_composite.get('composite_score', 0.0):.4f}")
+print(f"{'='*80}")

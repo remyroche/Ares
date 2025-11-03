@@ -144,6 +144,17 @@ try:
         optimize_vectorbt_backtesting, optimize_vectorbt_metrics, optimize_vectorbt_portfolio,
         get_unified_vectorization_manager
     )
+    
+    # Hardware and component singletons (NEW - prevents repeated initialization)
+    from .hardware_singleton import (
+        HardwareCapabilitiesManager, HardwareCapabilities,
+        get_hardware_capabilities_manager, get_hardware_capabilities, get_hardware_capabilities_dict
+    )
+    from .component_pool import (
+        ComponentPool, get_component_pool,
+        get_or_create_vectorbt_optimizer, get_or_create_performance_monitor,
+        get_or_create_unified_vectorization_manager
+    )
     from .pipeline_orchestrator import MLPipelineOrchestrator as PipelineOrchestrator
     from .feature_selection_backwards_compat import FeatureSelector as LegacyFeatureSelector
     from ...feature_selection.analysis.feature_importance_analyzer import (
@@ -226,6 +237,13 @@ try:
         'optimize_cross_validation', 'optimize_backtesting', 'optimize_financial_operation',
         'optimize_vectorbt_backtesting', 'optimize_vectorbt_metrics', 'optimize_vectorbt_portfolio',
         'get_unified_vectorization_manager',
+        
+        # Hardware and Component Singletons (NEW - Performance Optimization)
+        'HardwareCapabilitiesManager', 'HardwareCapabilities',
+        'get_hardware_capabilities_manager', 'get_hardware_capabilities', 'get_hardware_capabilities_dict',
+        'ComponentPool', 'get_component_pool',
+        'get_or_create_vectorbt_optimizer', 'get_or_create_performance_monitor',
+        'get_or_create_unified_vectorization_manager',
 
         # Backward compatibility
         'tprint'

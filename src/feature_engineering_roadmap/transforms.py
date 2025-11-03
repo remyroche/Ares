@@ -119,7 +119,7 @@ class OnlineEWZ(BaseScaler):
         if VECTORBT_AVAILABLE and len(data) > 1000:
             try:
                 # Use VectorBT's optimized rolling operations
-                from vectorbt.generic import rolling_apply
+                from src.utils.vectorbt_compat import rolling_apply
 
                 def online_ewz_func(window_data):
                     if len(window_data) < 2:

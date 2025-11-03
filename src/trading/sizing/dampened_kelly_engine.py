@@ -177,13 +177,16 @@ class DampenedKellyEngine:
         self.entropy_scale = self.lambda_eff_components.get('entropy_scale', 0.5)
         self.variance_penalty = self.lambda_eff_components.get('variance_penalty', 2.0)
         
-        # Safety limits (hot-swappable)
+        # Safety limits (hot-swappable, except fixed risk parameters)
         self.max_leverage = self.safety_limits.get('max_leverage', 3.0)
         self.max_per_trade_pct = self.safety_limits.get('max_per_trade_pct', 0.15)
         self.max_exposure_per_asset = self.safety_limits.get('max_exposure_per_asset', 0.3)
-        self.max_kelly_fraction = self.safety_limits.get('max_kelly_fraction', 0.5)
         self.high_leverage_threshold = self.safety_limits.get('high_leverage_threshold', 2.0)
         self.max_acceptable_drawdown = self.safety_limits.get('max_acceptable_drawdown', 0.15)
+        
+        # Fixed risk parameters (not optimized - strategic choices)
+        self.f_floor = 0.005  # Exploration floor for position sizing
+        self.max_kelly_fraction = 0.33  # Risk cap: 1/3 Kelly for robustness
         
         # R tracking parameters
         self.use_realized_r = self.r_tracking.get('use_realized_r', True)
@@ -257,6 +260,71 @@ class DampenedKellyEngine:
         # Fallback to global if regime not found
         self.logger.warning(f"Regime {regime_id} not found, using global fallback")
         return self.global_fallback.copy()
+    
+    @staticmethod
+    def calculate_system_half_life_params(
+        system_half_life: float,
+        target_samples: int = 200
+    ) -> Tuple[float, float]:
+        """
+        Calculate decay_theta and prior_alpha from a single system half-life parameter.
+        
+        The system_half_life represents the number of trades after which the system's
+        belief should be 50% based on historical data.
+        
+        Args:
+            system_half_life: Number of trades for 50% belief decay (e.g., 200)
+            target_samples: Target samples for half-life calculation
+            
+        Returns:
+            Tuple of (decay_theta, prior_alpha)
+        """
+        # decay_theta: exponential decay factor where 0.5 = theta^system_half_life
+        # Solving: 0.5 = theta^N => theta = 0.5^(1/N)
+        decay_theta = 0.5 ** (1.0 / system_half_life)
+        
+        # prior_alpha: Bayesian prior strength
+        # Higher half-life = trust old data more = higher prior
+        # Map half-life [100, 300] to prior_alpha [10, 50]
+        # Using linear interpolation
+        prior_alpha = 10.0 + (system_half_life - 100.0) * (50.0 - 10.0) / (300.0 - 100.0)
+        prior_alpha = np.clip(prior_alpha, 5.0, 100.0)  # Ensure reasonable bounds
+        
+        return decay_theta, prior_alpha
+    
+    @staticmethod
+    def calculate_model_consensus_thresholds(
+        model_consensus_tolerance: float,
+        ess_min: float = 20.0,
+        ess_max: float = 80.0,
+        entropy_min: float = 0.4,
+        entropy_max: float = 1.2
+    ) -> Tuple[float, float]:
+        """
+        Calculate ess_threshold and entropy_threshold from single consensus tolerance parameter.
+        
+        Uses linear interpolation to map [0, 1] tolerance to financial min/max ranges.
+        
+        Args:
+            model_consensus_tolerance: Single parameter in [0, 1] range
+                0.0 = very strict (high ESS required, low entropy tolerated)
+                1.0 = very permissive (low ESS accepted, high entropy tolerated)
+            ess_min: Minimum ESS threshold (strict end)
+            ess_max: Maximum ESS threshold (permissive end)
+            entropy_min: Minimum entropy threshold (strict end)
+            entropy_max: Maximum entropy threshold (permissive end)
+            
+        Returns:
+            Tuple of (ess_threshold, entropy_threshold)
+        """
+        # ESS: Higher tolerance = lower threshold (easier to meet)
+        # Invert the tolerance for ESS since high ESS is good
+        ess_threshold = ess_max - model_consensus_tolerance * (ess_max - ess_min)
+        
+        # Entropy: Higher tolerance = higher threshold (more permissive)
+        entropy_threshold = entropy_min + model_consensus_tolerance * (entropy_max - entropy_min)
+        
+        return ess_threshold, entropy_threshold
     
     @staticmethod
     def compute_posterior_mean_var(wins: int, losses: int, a: float, b: float) -> Tuple[float, float]:
@@ -389,23 +457,34 @@ class DampenedKellyEngine:
         return lambda_eff, components
     
     @staticmethod
-    def compute_f_final(f_kelly: float, lambda_eff: float, beta: float, f_floor: float) -> float:
+    def compute_f_final(
+        f_kelly: float,
+        lambda_eff: float,
+        beta_base: float,
+        beta_multiplier: float,
+        f_floor: float = 0.005
+    ) -> float:
         """
         Compute final dampened position size with exploration floor.
         
-        Formula: f_final = f_floor + (lambda_eff - f_floor) * tanh(beta * f_kelly)
+        Formula: f_final = f_floor + (lambda_eff - f_floor) * tanh(beta_effective * f_kelly)
+        where beta_effective = beta_base * beta_multiplier
         
         Args:
             f_kelly: Kelly fraction
             lambda_eff: Effective dampening factor
-            beta: Tanh steepness parameter
-            f_floor: Exploration floor (minimum position size)
+            beta_base: Base beta parameter (shared denominator)
+            beta_multiplier: Position-specific multiplier
+            f_floor: Exploration floor (fixed at 0.005 for consistency)
             
         Returns:
             Final position size fraction
         """
+        # Calculate effective beta (unified parameter structure)
+        beta_effective = beta_base * beta_multiplier
+        
         # Tanh dampening
-        dampened = np.tanh(beta * f_kelly)
+        dampened = np.tanh(beta_effective * f_kelly)
         
         # Apply with exploration floor
         f_final = f_floor + (lambda_eff - f_floor) * dampened
@@ -417,28 +496,33 @@ class DampenedKellyEngine:
     def compute_leverage_final(
         lev_kelly: float,
         lambda_eff: float,
-        beta_lev: float,
+        beta_base: float,
+        beta_multiplier: float,
         lev_floor: float
     ) -> float:
         """
         Compute final dampened leverage with exploration floor.
         
-        Same formula as position sizing but for leverage.
+        Uses same unified beta structure as position sizing: beta_effective = beta_base * beta_multiplier
         
         Args:
             lev_kelly: Kelly leverage
             lambda_eff: Effective dampening factor
-            beta_lev: Tanh steepness for leverage
+            beta_base: Base beta parameter (shared with position sizing)
+            beta_multiplier: Leverage-specific multiplier
             lev_floor: Exploration floor (minimum leverage)
             
         Returns:
             Final leverage
         """
+        # Calculate effective beta (unified with position sizing)
+        beta_effective = beta_base * beta_multiplier
+        
         # Normalize leverage to [0, 1] range for tanh
         # Assume max leverage is captured in lev_kelly calculation
         # Apply tanh to the fraction
         if lev_kelly > 0:
-            dampened = np.tanh(beta_lev * (lev_kelly / 10.0))  # Normalize by typical max leverage
+            dampened = np.tanh(beta_effective * (lev_kelly / 10.0))  # Normalize by typical max leverage
             lev_final = lev_floor + (lambda_eff * 10.0 - lev_floor) * dampened
         else:
             lev_final = lev_floor
@@ -549,7 +633,11 @@ class DampenedKellyEngine:
         """
         Calculate both position size and leverage using unified dampened Kelly logic.
         
-        This is the main entry point for the engine.
+        This is the main entry point for the engine with reduced parameter space:
+        - Unified beta structure (beta_base * multiplier)
+        - n_min_samples derived from prior_alpha
+        - Single model_consensus_tolerance parameter
+        - Fixed f_floor and max_kelly_fraction
         
         Args:
             wins: Number of winning trades in bin
@@ -569,14 +657,28 @@ class DampenedKellyEngine:
         # Get regime-specific parameters
         params = self.get_regime_params(regime_id)
         
+        # Core parameters (reduced set)
         lambda_base = params.get('lambda_base', 0.15)
-        beta_position = params.get('beta_position', 2.0)
-        beta_leverage = params.get('beta_leverage', 1.5)
-        prior_alpha = params.get('prior_alpha', 30.0)
-        ess_threshold = params.get('ess_threshold', 60)
-        entropy_threshold = params.get('entropy_threshold', 1.0)
-        n_min = params.get('n_min_samples', 25)
-        f_floor = params.get('f_floor', 0.005)
+        
+        # Unified beta structure
+        beta_base = params.get('beta_base', 1.0)
+        beta_position_multiplier = params.get('beta_position_multiplier', 1.8)
+        beta_leverage_multiplier = params.get('beta_leverage_multiplier', 1.2)
+        
+        # System half-life (single parameter controlling decay and prior)
+        system_half_life = params.get('system_half_life', 200.0)
+        decay_theta, prior_alpha = self.calculate_system_half_life_params(system_half_life)
+        
+        # Model consensus tolerance (single parameter for ESS and entropy)
+        model_consensus_tolerance = params.get('model_consensus_tolerance', 0.5)
+        ess_threshold, entropy_threshold = self.calculate_model_consensus_thresholds(
+            model_consensus_tolerance
+        )
+        
+        # n_min_samples enforced as ratio of prior_alpha
+        n_min = int(prior_alpha / 2.0)
+        
+        # Leverage floor (still regime-specific)
         lev_floor = params.get('lev_floor', 1.2)
         
         # Initialize reason codes
@@ -632,9 +734,13 @@ class DampenedKellyEngine:
         if entropy > entropy_threshold:
             reason_codes.append(ReasonCode.ENTROPY_VETO.value)
         
-        # Compute final dampened values
-        f_final = self.compute_f_final(f_kelly, lambda_eff, beta_position, f_floor)
-        leverage_final = self.compute_leverage_final(leverage_kelly, lambda_eff, beta_leverage, lev_floor)
+        # Compute final dampened values using unified beta structure
+        f_final = self.compute_f_final(
+            f_kelly, lambda_eff, beta_base, beta_position_multiplier, self.f_floor
+        )
+        leverage_final = self.compute_leverage_final(
+            leverage_kelly, lambda_eff, beta_base, beta_leverage_multiplier, lev_floor
+        )
         
         # Apply drawdown dampening
         if current_dd > 0:
@@ -683,9 +789,16 @@ class DampenedKellyEngine:
                 'lambda_eff_components': components,
                 'regime_params_used': {
                     'lambda_base': lambda_base,
-                    'beta_position': beta_position,
-                    'beta_leverage': beta_leverage,
-                    'prior_alpha': prior_alpha
+                    'beta_base': beta_base,
+                    'beta_position_multiplier': beta_position_multiplier,
+                    'beta_leverage_multiplier': beta_leverage_multiplier,
+                    'system_half_life': system_half_life,
+                    'decay_theta': decay_theta,
+                    'prior_alpha': prior_alpha,
+                    'model_consensus_tolerance': model_consensus_tolerance,
+                    'ess_threshold': ess_threshold,
+                    'entropy_threshold': entropy_threshold,
+                    'n_min_samples': n_min
                 }
             }
         )

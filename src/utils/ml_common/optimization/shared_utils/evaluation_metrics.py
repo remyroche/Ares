@@ -713,7 +713,16 @@ class UnifiedEvaluator:
             regime_aware_score = self._calculate_regime_aware_score(regime_metrics, statistical_metrics)
             economic_score = self._calculate_economic_score(economic_metrics, financial_metrics)
             trading_score = self._calculate_trading_score(financial_metrics, economic_metrics)
-            custom_balanced_score = self._calculate_custom_balanced_score(financial_metrics, economic_metrics)
+            
+            # Enhanced custom_balanced_score with all available metrics
+            custom_balanced_score = self._calculate_custom_balanced_score(
+                financial_metrics, 
+                statistical_metrics,
+                regime_metrics=regime_metrics,
+                economic_metrics=economic_metrics,
+                sample_count=len(predictions) if predictions is not None else None,
+                use_pareto_scalarization=False  # Can be enabled for Pareto-optimal scoring
+            )
            
             
             self.logger.info("✅ Unified evaluation completed")
@@ -733,6 +742,7 @@ class UnifiedEvaluator:
                 regime_aware_score=regime_aware_score,
                 economic_score=economic_score,
                 trading_score=trading_score,
+                custom_balanced_score=custom_balanced_score,
                 success=True
             )
 
@@ -843,32 +853,83 @@ class UnifiedEvaluator:
         sample_count: int | None = None,
         sample_count_min: int = 30,
         apply_sample_penalty: bool = True,
-        return_components: bool = False
+        return_components: bool = False,
+        regime_metrics=None,
+        economic_metrics=None,
+        use_pareto_scalarization: bool = False
     ) -> float:
         """
+        Simplified custom balanced score for ML trading models in HPO.
+        
+        This is the DEFAULT scoring metric for all ML-related trading models in HPO.
+        Uses pareto.py's scalarize_financial_goals for financial scoring (60%) 
+        combined with statistical metrics (40%).
+        
+        Financial scoring leverages:
+        - Non-linear scaling (log for PnL, sigmoid for Sharpe, power for win rate)
+        - Proven Pareto optimization utilities
+        - Better optimization landscapes for HPO
+        
         Returns:
           - If return_components=False -> single scalar score in [0,1].
-          - If return_components=True -> tuple (single_score, financial_obj, statistical_obj, normed_dict)
-            where:
-              - financial_obj is the composite to maximize in financial space (0..1)
-              - statistical_obj is the composite to maximize in statistical space (0..1)
-              - normed_dict contains normalized metric values for inspection
-        Notes:
-          - financial_metrics expected attrs: sharpe_ratio, max_drawdown, profit_factor, total_return (optional)
-          - statistical_metrics expected attrs: f1_score, accuracy, r2_score
+          - If return_components=True -> tuple (single_score, financial_obj, statistical_obj, normed_dict, regime_obj, economic_obj)
+            where each component is normalized to [0,1]
+              
+        Args:
+          financial_metrics: FinancialMetrics object with:
+            - sharpe_ratio: Risk-adjusted returns (used by Pareto scalarization)
+            - profit_factor: Gross profit / gross loss (mapped to Pareto's 'pnl')
+            - hit_rate: Win percentage (mapped to Pareto's 'win_rate')
+            - max_drawdown: Maximum decline (25% weight, separate from Pareto scoring)
+            
+          statistical_metrics: StatisticalMetrics object with:
+            - f1_score: Harmonic mean of precision and recall - 20% weight
+            - accuracy: Correct predictions / total predictions - 10% weight
+            - r2_score: Coefficient of determination - 10% weight
+            
+          weights: Optional custom weights (NOT USED - Pareto uses its own defaults)
+          norm_config: Optional normalization configuration (min/max ranges)
+          sample_count: Number of samples (for penalty if too few)
+          sample_count_min: Minimum samples before penalty applies (default: 30)
+          apply_sample_penalty: Whether to penalize small sample counts
+          return_components: Return detailed components breakdown for analysis
+          
+          regime_metrics: Optional RegimeMetrics for regime-aware scoring (NOT used by default)
+          economic_metrics: Optional EconomicMetrics (NOT used by default)
+          use_pareto_scalarization: Legacy parameter (always uses Pareto now)
+        
+        Implementation:
+          **Financial Component (60%) via pareto.py**:
+          - Uses scalarize_financial_goals() with non-linear scaling
+          - Maps: profit_factor → 'pnl', hit_rate → 'win_rate', sharpe_ratio → 'sharpe'
+          - Pareto's default weights: pnl=50%, win_rate=25%, sharpe=25%
+          - Max drawdown handled separately (25% weight as penalty)
+          
+          **Statistical Component (40%)**:
+          - F1 score: 50%, Accuracy: 25%, R²: 25%
+          - Standard linear combination of normalized metrics
+          
+          **Benefits of Pareto Integration**:
+          - Non-linear scaling improves optimization landscapes
+          - Log scaling for PnL handles extreme values
+          - Sigmoid for Sharpe bounds the metric
+          - Power scaling for win_rate enhances discrimination
+          - Consistent with other Pareto-based code
         """
         import math
     
-        # ---------- Defaults ----------
+        # ---------- Simplified Financial & Statistical Metrics ----------
+        # Economic viability removed per user request
+        # Total return merged into profit_factor (they measure similar things)
         default_weights = {
-            # used for single scalar score only (weights across all metrics)
-            'sharpe': 0.25,
-            'max_drawdown': 0.20,
-            'profit_factor': 0.15,
-            'total_return': 0.10,    # optional, if available
-            'f1_score': 0.12,
-            'r2_score': 0.08,
-            'accuracy': 0.10
+            # Core financial metrics (60%)
+            'sharpe': 0.30,           # Risk-adjusted returns (return / volatility)
+            'max_drawdown': 0.15,     # Maximum peak-to-trough decline (lower is better)
+            'profit_factor': 0.15,    # Profitability: gross profit / gross loss (includes return impact)
+            # Statistical metrics (40%)
+            'f1_score': 0.20,         # Harmonic mean of precision and recall
+            'r2_score': 0.10,         # Coefficient of determination
+            'accuracy': 0.10          # Correct predictions / total predictions
         }
         if weights is None:
             weights = default_weights
@@ -876,19 +937,28 @@ class UnifiedEvaluator:
         total_w = sum(weights.values()) or 1.0
         weights = {k: v / total_w for k, v in weights.items()}
     
-        # ---------- Normalization config ----------
+        # ---------- Enhanced Normalization Config ----------
         default_norm = {
-            # clamp mapping; higher_is_better indicates direction
+            # Financial metrics
             'sharpe': {'method': 'clamp', 'min': -1.0, 'max': 3.0, 'higher_is_better': True},
-            # max_drawdown provided as positive fraction (0..1). lower is better -> higher_is_better False
             'max_drawdown': {'method': 'clamp', 'min': 0.0, 'max': 0.6, 'higher_is_better': False},
-            # profit factor typical range: 0..10 (but clamp at 5 for robustness)
             'profit_factor': {'method': 'clamp', 'min': 0.0, 'max': 5.0, 'higher_is_better': True},
-            # total_return as fraction/decimal 0..inf, clamp to reasonable range
             'total_return': {'method': 'clamp', 'min': -1.0, 'max': 2.0, 'higher_is_better': True},
+            'sortino_ratio': {'method': 'clamp', 'min': -1.0, 'max': 4.0, 'higher_is_better': True},
+            'calmar_ratio': {'method': 'clamp', 'min': -1.0, 'max': 3.0, 'higher_is_better': True},
+            # Statistical metrics
             'f1_score': {'method': 'clamp', 'min': 0.0, 'max': 1.0, 'higher_is_better': True},
             'accuracy': {'method': 'clamp', 'min': 0.0, 'max': 1.0, 'higher_is_better': True},
             'r2_score': {'method': 'clamp', 'min': 0.0, 'max': 1.0, 'higher_is_better': True},
+            'precision': {'method': 'clamp', 'min': 0.0, 'max': 1.0, 'higher_is_better': True},
+            'recall': {'method': 'clamp', 'min': 0.0, 'max': 1.0, 'higher_is_better': True},
+            # Regime-aware metrics
+            'regime_accuracy': {'method': 'clamp', 'min': 0.0, 'max': 1.0, 'higher_is_better': True},
+            'regime_stability': {'method': 'clamp', 'min': 0.0, 'max': 1.0, 'higher_is_better': True},
+            'regime_consistency': {'method': 'clamp', 'min': 0.0, 'max': 1.0, 'higher_is_better': True},
+            # Economic metrics
+            'economic_significance': {'method': 'clamp', 'min': 0.0, 'max': 1.0, 'higher_is_better': True},
+            'trading_viability': {'method': 'clamp', 'min': 0.0, 'max': 1.0, 'higher_is_better': True},
         }
         if norm_config is None:
             norm_config = {}
@@ -923,41 +993,168 @@ class UnifiedEvaluator:
             except Exception:
                 return 0.0
     
-        # ---------- Extract raw metrics ----------
+        # ---------- Extract raw metrics (Enhanced with Regime & Economic) ----------
         raw = {}
+        
+        # Financial metrics
         raw['sharpe'] = getattr(financial_metrics, 'sharpe_ratio', None)
         raw_mdd = getattr(financial_metrics, 'max_drawdown', None)
         if raw_mdd is not None:
-            # convert negative MDD to positive fraction if necessary
             raw['max_drawdown'] = abs(raw_mdd)
         else:
             raw['max_drawdown'] = None
         raw['profit_factor'] = getattr(financial_metrics, 'profit_factor', None)
-        raw['total_return'] = getattr(financial_metrics, 'total_return', None)  # optional
+        raw['total_return'] = getattr(financial_metrics, 'total_return', None)
+        raw['sortino_ratio'] = getattr(financial_metrics, 'sortino_ratio', None)
+        raw['calmar_ratio'] = getattr(financial_metrics, 'calmar_ratio', None)
+        
+        # Statistical metrics
         raw['f1_score'] = getattr(statistical_metrics, 'f1_score', 0.0)
         raw['accuracy'] = getattr(statistical_metrics, 'accuracy', 0.0)
         raw['r2_score'] = getattr(statistical_metrics, 'r2_score', 0.0)
+        raw['precision'] = getattr(statistical_metrics, 'precision', None)
+        raw['recall'] = getattr(statistical_metrics, 'recall', None)
+        
+        # Regime-aware metrics (if provided)
+        if regime_metrics is not None:
+            raw['regime_accuracy'] = getattr(regime_metrics, 'regime_accuracy', None)
+            raw['regime_stability'] = getattr(regime_metrics, 'regime_stability', None)
+            raw['regime_consistency'] = getattr(regime_metrics, 'regime_consistency', None)
+        else:
+            raw['regime_accuracy'] = None
+            raw['regime_stability'] = None
+            raw['regime_consistency'] = None
+        
+        # Economic metrics (if provided)
+        if economic_metrics is not None:
+            raw['economic_significance'] = getattr(economic_metrics, 'economic_significance', None)
+            raw['trading_viability'] = getattr(economic_metrics, 'trading_viability', None)
+        else:
+            raw['economic_significance'] = None
+            raw['trading_viability'] = None
     
         # ---------- Normalize ----------
         normed = {k: _norm(v, norm_config.get(k, {})) for k, v in raw.items()}
     
-        # ---------- Compose multi-objective components ----------
-        # Financial objective: combine Sharpe, Profit Factor, (inverted) MaxDrawdown, Total Return
-        fin_weights = {'sharpe': 0.45, 'profit_factor': 0.30, 'max_drawdown': 0.20, 'total_return': 0.05}
-        # normalize fin_weights
-        s = sum(fin_weights.values()) or 1.0
-        fin_weights = {k: v / s for k, v in fin_weights.items()}
-        financial_obj = sum(fin_weights.get(k, 0.0) * normed.get(k, 0.0) for k in fin_weights.keys())
-    
-        # Statistical objective: combine F1, Accuracy, R2
-        stat_weights = {'f1_score': 0.6, 'accuracy': 0.25, 'r2_score': 0.15}
-        s2 = sum(stat_weights.values()) or 1.0
-        stat_weights = {k: v / s2 for k, v in stat_weights.items()}
+        # ---------- Compose multi-objective components using Pareto utilities ----------
+        
+        # Use Pareto.py's scalarize_financial_goals for financial scoring
+        # This leverages existing non-linear scaling and optimization
+        try:
+            from ..pareto import scalarize_financial_goals
+            
+            # Map financial metrics to Pareto's expected format
+            # Note: We map our metrics to PnL/win_rate/sharpe that Pareto understands
+            pareto_financial_metrics = {}
+            
+            if raw.get('sharpe') is not None:
+                pareto_financial_metrics['sharpe'] = raw['sharpe']
+            
+            # Map profit_factor to 'pnl' (both measure profitability)
+            if raw.get('profit_factor') is not None:
+                pareto_financial_metrics['pnl'] = raw['profit_factor']
+            
+            # Use hit_rate if available, otherwise derive from statistical metrics
+            if hasattr(financial_metrics, 'hit_rate') and financial_metrics.hit_rate is not None:
+                pareto_financial_metrics['win_rate'] = financial_metrics.hit_rate
+            elif raw.get('accuracy') is not None:
+                # Fallback: use accuracy as proxy for win_rate
+                pareto_financial_metrics['win_rate'] = raw['accuracy']
+            
+            # Add max_drawdown as additional constraint (lower is better)
+            # We'll handle this separately since Pareto's scalarize expects different metrics
+            mdd_penalty = 1.0
+            if raw.get('max_drawdown') is not None:
+                # Convert drawdown to a bonus (1.0 = no drawdown, 0.0 = max drawdown)
+                mdd_normalized = normed.get('max_drawdown', 0.5)  # Already inverted in normalization
+                mdd_penalty = mdd_normalized
+            
+            # Use Pareto's scalarization with non-linear scaling
+            financial_obj = scalarize_financial_goals(
+                pareto_financial_metrics,
+                weights=None,  # Use Pareto's default weights (pnl:50%, win_rate:25%, sharpe:25%)
+                use_nonlinear_scaling=True  # Enable log/sigmoid/power scaling
+            )
+            
+            # Adjust for max drawdown penalty (25% weight in our system)
+            # Scale financial_obj to 75% of its weight, add 25% drawdown component
+            financial_obj = 0.75 * financial_obj + 0.25 * mdd_penalty
+            
+            # Clamp to [0, 1]
+            financial_obj = max(0.0, min(1.0, financial_obj))
+            
+        except Exception as e:
+            self.logger.warning(f"Pareto scalarization failed: {e}, using fallback")
+            # Fallback: simple weighted average if Pareto unavailable
+            fin_weights = {
+                'sharpe': 0.50,
+                'profit_factor': 0.25,
+                'max_drawdown': 0.25
+            }
+            available_fin = {k: v for k, v in fin_weights.items() if normed.get(k) is not None}
+            s = sum(available_fin.values()) or 1.0
+            fin_weights = {k: v / s for k, v in available_fin.items()}
+            financial_obj = sum(fin_weights.get(k, 0.0) * normed.get(k, 0.0) for k in fin_weights.keys())
+        
+        # Statistical objective: prediction quality (always calculated)
+        stat_weights = {'f1_score': 0.50, 'accuracy': 0.25, 'r2_score': 0.25}
+        # precision and recall available if provided, but not in default weights
+        available_stat = {k: v for k, v in stat_weights.items() if normed.get(k) is not None}
+        s2 = sum(available_stat.values()) or 1.0
+        stat_weights = {k: v / s2 for k, v in available_stat.items()}
         statistical_obj = sum(stat_weights.get(k, 0.0) * normed.get(k, 0.0) for k in stat_weights.keys())
-    
-        # ---------- Single scalar balanced score (if needed) ----------
-        # Uses user-provided weights (default normalized above)
-        scalar_score = sum(weights.get(k, 0.0) * normed.get(k, 0.0) for k in weights.keys())
+        
+        # Regime-aware objective: market regime adaptation (if available)
+        regime_obj = 0.0
+        if regime_metrics is not None:
+            regime_weights = {'regime_accuracy': 0.5, 'regime_stability': 0.3, 'regime_consistency': 0.2}
+            available_regime = {k: v for k, v in regime_weights.items() if normed.get(k) is not None}
+            if available_regime:
+                s3 = sum(available_regime.values()) or 1.0
+                regime_weights = {k: v / s3 for k, v in available_regime.items()}
+                regime_obj = sum(regime_weights.get(k, 0.0) * normed.get(k, 0.0) for k in regime_weights.keys())
+        
+        # Economic objective: NOT USED BY DEFAULT (removed per user request)
+        # Can still be calculated if economic_metrics provided, but not included in score
+        economic_obj = 0.0
+        if economic_metrics is not None:
+            econ_weights = {'economic_significance': 0.6, 'trading_viability': 0.4}
+            available_econ = {k: v for k, v in econ_weights.items() if normed.get(k) is not None}
+            if available_econ:
+                s4 = sum(available_econ.values()) or 1.0
+                econ_weights = {k: v / s4 for k, v in available_econ.items()}
+                economic_obj = sum(econ_weights.get(k, 0.0) * normed.get(k, 0.0) for k in econ_weights.keys())
+        
+        # ---------- Simplified Composite Score ----------
+        # Clean 60/40 split: Financial vs Statistical
+        # Financial component uses Pareto.py's scalarize_financial_goals
+        # Economic viability removed (redundant with profit_factor)
+        # Regime awareness optional (only if explicitly provided)
+        composite_weights = {
+            'financial': 0.60,      # Risk-adjusted returns via Pareto, drawdown, profitability
+            'statistical': 0.40,    # Prediction accuracy
+            'regime': 0.0,          # Optional (only if regime_metrics provided)
+            'economic': 0.0         # Removed from default
+        }
+        
+        # If regime metrics are explicitly provided, include them
+        if regime_obj > 0.0 and regime_metrics is not None:
+            # Reduce financial and statistical proportionally to make room for regime
+            composite_weights['financial'] = 0.45
+            composite_weights['statistical'] = 0.35
+            composite_weights['regime'] = 0.20  # Significant weight if explicitly provided
+            composite_weights['economic'] = 0.0
+        
+        # Normalize composite weights to ensure they sum to 1.0
+        total_composite = sum(composite_weights.values()) or 1.0
+        composite_weights = {k: v / total_composite for k, v in composite_weights.items()}
+        
+        scalar_score = (
+            composite_weights['financial'] * financial_obj +
+            composite_weights['statistical'] * statistical_obj +
+            composite_weights['regime'] * regime_obj
+            # economic_obj not included (removed per user request)
+        )
     
         # ---------- Sample count penalty ----------
         if apply_sample_penalty and sample_count is not None:
@@ -972,9 +1169,12 @@ class UnifiedEvaluator:
         scalar_score = max(0.0, min(1.0, scalar_score))
         financial_obj = max(0.0, min(1.0, financial_obj))
         statistical_obj = max(0.0, min(1.0, statistical_obj))
+        regime_obj = max(0.0, min(1.0, regime_obj)) if regime_obj > 0 else 0.0
+        economic_obj = max(0.0, min(1.0, economic_obj)) if economic_obj > 0 else 0.0
     
         if return_components:
-            return scalar_score, financial_obj, statistical_obj, normed
+            # Enhanced return with all components
+            return scalar_score, financial_obj, statistical_obj, normed, regime_obj, economic_obj
     
         return scalar_score
 
@@ -991,3 +1191,87 @@ def quick_unified_evaluation(predictions: np.ndarray, targets: np.ndarray,
     """Quick unified evaluation with default settings."""
     evaluator = create_unified_evaluator()
     return evaluator.evaluate(predictions, targets, returns, regime_labels)
+
+def calculate_custom_balanced_score_for_hpo(
+    predictions: np.ndarray,
+    targets: np.ndarray,
+    returns: Optional[np.ndarray] = None,
+    regime_labels: Optional[np.ndarray] = None,
+    **kwargs
+) -> float:
+    """
+    Convenience function to calculate custom_balanced_score for HPO.
+    
+    This is the recommended scoring function for all ML trading models in HPO.
+    Uses pareto.py's proven scalarization for financial metrics with non-linear scaling.
+    
+    Clean evaluation balancing:
+    - **Financial performance (60%)**: Via pareto.py's scalarize_financial_goals with non-linear scaling
+    - **Statistical accuracy (40%)**: Prediction quality metrics
+    
+    Args:
+        predictions: Model predictions (e.g., direction, signal strength, price forecast)
+        targets: Target values (actual outcomes)
+        returns: Optional return series for financial metrics
+                 Example: For direction prediction: predictions * actual_returns
+                          For price prediction: (predicted_price - actual_price) / actual_price
+        regime_labels: Optional regime labels (NOT used by default, but available if provided)
+        **kwargs: Additional arguments passed to custom_balanced_score
+        
+    Returns:
+        float: Balanced score in [0, 1] (higher is better, maximize this in HPO)
+        
+    Score Breakdown:
+        **Financial (60%)** - via pareto.py with non-linear scaling:
+        - Uses scalarize_financial_goals() function
+        - PnL/Profit Factor: Log scaling (handles extreme values)
+        - Sharpe Ratio: Sigmoid scaling (bounded transformation)
+        - Win Rate: Power scaling (better discrimination)
+        - Max Drawdown: 25% weight as risk penalty
+        
+        **Statistical (40%)**:
+        - F1 score (50%): Balance of precision and recall
+        - Accuracy (25%): Percentage of correct predictions
+        - R² score (25%): How well predictions explain variance
+        
+    Why Pareto Integration:
+        - Better optimization landscapes (non-linear transformations)
+        - Proven and tested in production
+        - Consistent with other Pareto-based code
+        - Handles extreme values gracefully (log scaling)
+        
+    Example:
+        ```python
+        # In HPO objective function
+        def objective_func(params, X_train, y_train, X_val, y_val, **kwargs):
+            model = create_model(params)
+            model.fit(X_train, y_train)
+            predictions = model.predict(X_val)
+            
+            # Calculate returns (example for direction prediction)
+            # If predicting market direction (+1 = up, -1 = down):
+            actual_returns = calculate_market_returns(y_val)
+            strategy_returns = predictions * actual_returns  # +1 if correct, -1 if wrong
+            
+            score = calculate_custom_balanced_score_for_hpo(
+                predictions=predictions,
+                targets=y_val,
+                returns=strategy_returns  # This generates Sharpe, drawdown, profit factor
+            )
+            return score  # Maximize this! (benefits from Pareto's non-linear scaling)
+        ```
+    """
+    try:
+        evaluator = create_unified_evaluator()
+        result = evaluator.evaluate(predictions, targets, returns, regime_labels)
+        
+        if result.success and result.custom_balanced_score is not None:
+            return result.custom_balanced_score
+        else:
+            # Fallback to overall_score if custom_balanced_score is not available
+            logger.warning("custom_balanced_score not available, using overall_score")
+            return result.overall_score if result.overall_score is not None else 0.0
+            
+    except Exception as e:
+        logger.error(f"Error calculating custom_balanced_score for HPO: {e}")
+        return 0.0

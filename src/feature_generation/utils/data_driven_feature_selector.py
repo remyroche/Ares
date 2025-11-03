@@ -41,7 +41,7 @@ except ImportError:
 # VectorBT imports for optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_corr, rolling_std, rolling_mean
+    from src.utils.vectorbt_compat import rolling_corr, rolling_std, rolling_mean
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False

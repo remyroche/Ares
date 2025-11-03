@@ -1,0 +1,101 @@
+================================================================================
+QUALITY SCORE INVESTIGATION - FILE INDEX
+================================================================================
+
+📂 START HERE:
+   → README_QUALITY_INVESTIGATION.md (Master guide with navigation)
+
+📋 REPORTS (Read in order):
+   1. INVESTIGATION_SUMMARY.md
+      ├─ Quick overview of findings
+      ├─ Key issues identified  
+      └─ Expected improvements after fixes
+
+   2. QUALITY_SCORE_INVESTIGATION_FINDINGS.md
+      ├─ Detailed technical analysis
+      ├─ Root cause analysis
+      ├─ Comprehensive fix recommendations
+      └─ Implementation code examples
+
+   3. analysis_output/quality_score_investigation_report.txt
+      └─ Statistical summary (text format)
+
+📊 VISUALIZATIONS:
+   1. analysis_output/quality_issues_summary.png
+      └─ ⭐ MOST IMPORTANT: Shows all critical issues at a glance
+
+   2. analysis_output/quality_score_distribution.png
+      └─ Distribution analysis (histogram, CDF, density)
+
+   3. analysis_output/quality_components.png
+      └─ Component breakdown (bounce, hold, trade profit)
+
+   4. analysis_output/feature_correlations.png
+      └─ Feature correlation analysis
+
+🔧 SCRIPTS:
+   1. validate_quality_score.py
+      ├─ Run this to validate current state
+      └─ Re-run after applying fixes to verify improvements
+
+   2. proposed_fixes.py
+      ├─ Shows before/after comparisons
+      └─ Contains implementation code for all fixes
+
+   3. visualize_quality_issues.py
+      └─ Generates quality_issues_summary.png
+
+📍 SOURCE CODE TO MODIFY:
+   → src/tactician/sr_levels/ml_quality/sr_quality_data_collector.py
+      ├─ Lines 410-420: Fix bounce_strength calculation
+      ├─ Lines 470-505: Fix trade_profit simulation
+      └─ Lines 442-446: Rebalance quality_score formula
+
+================================================================================
+QUICK WORKFLOW:
+================================================================================
+
+1. UNDERSTAND:
+   open README_QUALITY_INVESTIGATION.md
+   open analysis_output/quality_issues_summary.png
+
+2. IMPLEMENT:
+   python3 proposed_fixes.py  # See before/after
+   # Edit sr_quality_data_collector.py with fixes
+
+3. VALIDATE:
+   # Recollect training data (with your collection script)
+   python3 validate_quality_score.py  # Verify improvements
+
+================================================================================
+KEY FINDINGS AT A GLANCE:
+================================================================================
+
+✅ GOOD:
+   • Quality score is forward-looking (uses future data)
+   • Proper filtering of untested levels
+   • Decent distribution (not binary)
+
+❌ CRITICAL ISSUES:
+   • bounce_strength SATURATED (mean 0.98 → should be ~0.6)
+   • trade_profit NEGATIVE (mean -0.05 → should be ~0.15)
+   • Quality dominated by hold_strength only
+   • Weak feature correlations (only 3 strong)
+
+💡 FIXES:
+   • Use early bounce (first 10 bars) not max
+   • Use tighter R/R (0.5% SL, 1% TP) or 1:1
+   • Rebalance formula after fixes
+   → Expected: All components contribute meaningfully!
+
+================================================================================
+FILES GENERATED: 10 total
+   • 3 comprehensive reports
+   • 4 visualizations (PNG)
+   • 3 analysis/validation scripts
+================================================================================
+
+Investigation completed: November 2, 2025
+Dataset: ETHUSDT 15m (499 samples, May-Sept 2025)
+Status: ✅ COMPLETE - Ready for implementation
+

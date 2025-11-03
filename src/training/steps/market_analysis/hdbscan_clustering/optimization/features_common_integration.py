@@ -339,7 +339,8 @@ class FeaturesCommonHDBSCANIntegration:
             FeatureCategory.VOLATILITY, 
             FeatureCategory.MOMENTUM,
             FeatureCategory.TREND,
-            FeatureCategory.VOLUME
+            FeatureCategory.VOLUME,
+            FeatureCategory.MICROSTRUCTURE  # Microstructure features (no orderbook dependency)
         ]
         
         features_df = data.copy()

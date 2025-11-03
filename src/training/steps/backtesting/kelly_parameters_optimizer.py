@@ -53,6 +53,14 @@ class OptimizationConfig:
     test_window_months: int = 6
     timeout_hours: int = 16
     parallel_jobs: int = 4
+    
+    # Multi-seed validation
+    n_seeds: int = 5  # Run optimization 5-10 times with different seeds
+    stability_threshold: float = 0.15  # Max allowed coefficient of variation across seeds
+    
+    # Parameter sensitivity analysis
+    sensitivity_perturbation: float = 0.20  # ±20% perturbation
+    max_performance_degradation: float = 0.15  # 15% max degradation tolerance
 
 
 class KellyParametersOptimizer:
@@ -118,18 +126,23 @@ class KellyParametersOptimizer:
             
             Returns: Combined score from multi-objective optimization
             """
-            # Sample global parameters
+            # Sample global parameters (REDUCED PARAMETER SPACE)
             params = {
                 'lambda_base': trial.suggest_float('lambda_base', 0.1, 0.6),
-                'beta_position': trial.suggest_float('beta_position', 0.4, 2.0),
-                'beta_leverage': trial.suggest_float('beta_leverage', 0.4, 2.0),
-                'prior_alpha': trial.suggest_float('prior_alpha', 5.0, 200.0, log=True),
-                'ess_threshold': trial.suggest_float('ess_threshold', 10.0, 200.0),
-                'entropy_threshold': trial.suggest_float('entropy_threshold', 0.5, 1.5),
-                'n_min_samples': trial.suggest_int('n_min_samples', 5, 50),
-                'f_floor': trial.suggest_float('f_floor', 0.001, 0.02),
+                
+                # Unified beta structure
+                'beta_base': trial.suggest_float('beta_base', 0.5, 2.0),
+                'beta_position_multiplier': trial.suggest_float('beta_position_multiplier', 0.8, 2.5),
+                'beta_leverage_multiplier': trial.suggest_float('beta_leverage_multiplier', 0.6, 2.0),
+                
+                # System half-life (replaces decay_theta and prior_alpha)
+                'system_half_life': trial.suggest_float('system_half_life', 100.0, 300.0),
+                
+                # Model consensus tolerance (replaces ess_threshold and entropy_threshold)
+                'model_consensus_tolerance': trial.suggest_float('model_consensus_tolerance', 0.0, 1.0),
+                
+                # Leverage floor (still tunable)
                 'lev_floor': trial.suggest_float('lev_floor', 1.0, 2.0),
-                'decay_theta': trial.suggest_float('decay_theta', 0.85, 0.98)
             }
             
             # Sample lambda_eff components
@@ -137,8 +150,9 @@ class KellyParametersOptimizer:
             params['entropy_scale'] = trial.suggest_float('entropy_scale', 0.3, 0.8)
             params['variance_penalty'] = trial.suggest_float('variance_penalty', 1.0, 5.0)
             
-            # Sample safety parameters
-            params['max_kelly_fraction'] = trial.suggest_float('max_kelly_fraction', 0.3, 0.7)
+            # Fixed parameters (not optimized):
+            # f_floor = 0.005 (exploration floor)
+            # max_kelly_fraction = 0.33 (risk cap)
             
             # Create config with these parameters
             test_config = self._create_test_config(params, is_global=True)
@@ -185,18 +199,11 @@ class KellyParametersOptimizer:
         """
         def objective(trial: optuna.Trial) -> float:
             """Objective for regime-specific parameters."""
-            # Sample regime-specific parameters
+            # Sample regime-specific parameters (REDUCED PARAMETER SPACE)
+            # Only allow tuning of 1-2 key parameters per regime
             params = {
                 'lambda_base': trial.suggest_float('lambda_base', 0.1, 0.6),
-                'beta_position': trial.suggest_float('beta_position', 0.4, 2.0),
-                'beta_leverage': trial.suggest_float('beta_leverage', 0.4, 2.0),
-                'prior_alpha': trial.suggest_float('prior_alpha', 5.0, 200.0, log=True),
-                'ess_threshold': trial.suggest_float('ess_threshold', 10.0, 200.0),
-                'entropy_threshold': trial.suggest_float('entropy_threshold', 0.5, 1.5),
-                'n_min_samples': trial.suggest_int('n_min_samples', 5, 50),
-                'f_floor': trial.suggest_float('f_floor', 0.001, 0.02),
-                'lev_floor': trial.suggest_float('lev_floor', 1.0, 2.0),
-                'decay_theta': trial.suggest_float('decay_theta', 0.85, 0.98)
+                'system_half_life': trial.suggest_float('system_half_life', 100.0, 300.0),
             }
             
             # Create config with regime-specific parameters
@@ -307,7 +314,10 @@ class KellyParametersOptimizer:
         global_params: Dict[str, Any]
     ) -> float:
         """
-        Calculate L2 penalty for deviation from global parameters.
+        Calculate enhanced L2 penalty for deviation from global parameters.
+        
+        Strong regularization: makes it expensive for optimizer to deviate from robust
+        global parameters unless there's significant performance improvement.
         
         Args:
             regime_params: Regime-specific parameters
@@ -319,6 +329,9 @@ class KellyParametersOptimizer:
         penalty = 0.0
         n_params = 0
         
+        # Key parameters that should be heavily penalized if changed
+        critical_params = ['lambda_base', 'system_half_life', 'model_consensus_tolerance']
+        
         for key in regime_params:
             if key in global_params:
                 # Normalize difference by global value to handle different scales
@@ -327,11 +340,25 @@ class KellyParametersOptimizer:
                 
                 if global_val != 0:
                     normalized_diff = (regime_val - global_val) / abs(global_val)
-                    penalty += normalized_diff ** 2
+                    
+                    # Apply stronger penalty for critical parameters
+                    if key in critical_params:
+                        # Quadratic penalty with 2x weight for critical params
+                        penalty += 2.0 * (normalized_diff ** 2)
+                    else:
+                        # Standard quadratic penalty
+                        penalty += normalized_diff ** 2
+                    
                     n_params += 1
         
-        # Average penalty
-        return penalty / n_params if n_params > 0 else 0.0
+        # Average penalty with floor to ensure some minimum regularization
+        avg_penalty = penalty / n_params if n_params > 0 else 0.0
+        
+        # Add stability bonus: fewer parameters changed = lower penalty
+        param_change_ratio = n_params / len(global_params) if len(global_params) > 0 else 1.0
+        stability_factor = 1.0 + (param_change_ratio * 0.5)  # Up to 50% extra penalty
+        
+        return avg_penalty * stability_factor
     
     def _create_test_config(
         self,
@@ -514,6 +541,254 @@ class KellyParametersOptimizer:
         self.best_regime_params = regime_params
         
         return regime_params
+    
+    @handles_errors
+    def run_multi_seed_validation(
+        self,
+        data: Any,
+        signals: Any,
+        returns: Any,
+        regimes: Optional[Any] = None,
+        confidences: Optional[Any] = None
+    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
+        """
+        Run optimization multiple times with different seeds to test stability.
+        
+        If results vary wildly across seeds, the solution is unstable and overfit.
+        
+        Args:
+            data: Market data
+            signals: Trading signals
+            returns: Forward returns
+            regimes: Regime labels
+            confidences: Model confidences
+            
+        Returns:
+            Tuple of (best_params, all_seed_results, stability_metrics)
+        """
+        tprint_info("\n" + "="*80)
+        tprint_info("🎲 MULTI-SEED VALIDATION")
+        tprint_info("="*80)
+        tprint_info(f"Running optimization {self.opt_config.n_seeds} times with different seeds...")
+        
+        seed_results = []
+        
+        for seed_idx in range(self.opt_config.n_seeds):
+            tprint_info(f"\n🔄 Seed {seed_idx + 1}/{self.opt_config.n_seeds}")
+            
+            # Create study with unique seed
+            study_name = f"kelly_multiseed_{seed_idx}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            study = optuna.create_study(
+                study_name=study_name,
+                direction='maximize',
+                sampler=optuna.samplers.TPESampler(seed=42 + seed_idx * 100)
+            )
+            
+            # Run optimization
+            objective = self._create_global_objective(data, signals, returns, regimes, confidences)
+            study.optimize(
+                objective,
+                n_trials=self.opt_config.global_trials,
+                n_jobs=self.opt_config.parallel_jobs,
+                show_progress_bar=False
+            )
+            
+            seed_results.append({
+                'seed': seed_idx,
+                'best_params': study.best_params,
+                'best_score': study.best_value,
+                'study': study
+            })
+            
+            tprint_info(f"  Seed {seed_idx + 1} score: {study.best_value:.4f}")
+        
+        # Calculate stability metrics
+        stability = self._calculate_stability_metrics(seed_results)
+        
+        # Check if solution is stable
+        is_stable = stability['param_cv_max'] < self.opt_config.stability_threshold
+        
+        tprint_info("\n" + "-"*80)
+        tprint_info("📊 Stability Analysis:")
+        tprint_info(f"  Max Parameter CV: {stability['param_cv_max']:.2%}")
+        tprint_info(f"  Score CV: {stability['score_cv']:.2%}")
+        tprint_info(f"  Stable: {'✅ Yes' if is_stable else '❌ No - HIGH OVERFITTING RISK'}")
+        
+        if not is_stable:
+            tprint_warning(f"⚠️ UNSTABLE SOLUTION: Parameters vary by >{self.opt_config.stability_threshold:.0%} across seeds!")
+            tprint_warning("  This indicates overfitting. Consider:")
+            tprint_warning("  - Increasing L2 penalty")
+            tprint_warning("  - Using more regularization")
+            tprint_warning("  - Collecting more data")
+        
+        # Return best result (highest score)
+        best_result = max(seed_results, key=lambda x: x['best_score'])
+        
+        return best_result['best_params'], seed_results, stability
+    
+    def _calculate_stability_metrics(self, seed_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Calculate stability metrics across multiple seed runs.
+        
+        Args:
+            seed_results: List of results from different seeds
+            
+        Returns:
+            Dictionary with stability metrics
+        """
+        # Extract parameters and scores
+        scores = [r['best_score'] for r in seed_results]
+        
+        # Calculate coefficient of variation for each parameter
+        param_cvs = {}
+        param_names = list(seed_results[0]['best_params'].keys())
+        
+        for param_name in param_names:
+            param_values = [r['best_params'][param_name] for r in seed_results]
+            mean_val = np.mean(param_values)
+            std_val = np.std(param_values)
+            cv = std_val / mean_val if mean_val != 0 else 0.0
+            param_cvs[param_name] = {
+                'mean': mean_val,
+                'std': std_val,
+                'cv': cv,
+                'min': np.min(param_values),
+                'max': np.max(param_values)
+            }
+        
+        # Overall metrics
+        max_cv = max(p['cv'] for p in param_cvs.values())
+        score_cv = np.std(scores) / np.mean(scores) if np.mean(scores) != 0 else 0.0
+        
+        return {
+            'param_cvs': param_cvs,
+            'param_cv_max': max_cv,
+            'score_mean': np.mean(scores),
+            'score_std': np.std(scores),
+            'score_cv': score_cv,
+            'scores': scores
+        }
+    
+    @handles_errors
+    def run_parameter_sensitivity_analysis(
+        self,
+        params: Dict[str, Any],
+        data: Any,
+        signals: Any,
+        returns: Any,
+        regimes: Optional[Any] = None,
+        confidences: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Test parameter sensitivity with ±20% perturbations.
+        
+        If performance collapses with small parameter changes, the solution is brittle and overfit.
+        If performance degrades gracefully, the solution is robust.
+        
+        Args:
+            params: Optimized parameters to test
+            data: Market data
+            signals: Trading signals
+            returns: Forward returns
+            regimes: Regime labels
+            confidences: Model confidences
+            
+        Returns:
+            Dictionary with sensitivity results
+        """
+        tprint_info("\n" + "="*80)
+        tprint_info("🔬 PARAMETER SENSITIVITY ANALYSIS (±20%)")
+        tprint_info("="*80)
+        
+        # Get baseline performance
+        tprint_info("\n📊 Baseline performance...")
+        baseline_config = self._create_test_config(params, is_global=True)
+        validator = WalkForwardKellyValidator(
+            baseline_config,
+            train_window_months=self.opt_config.train_window_months,
+            test_window_months=self.opt_config.test_window_months,
+            n_folds=self.opt_config.n_folds
+        )
+        baseline_results = validator.validate_variant(
+            'full_system', data, signals, returns, regimes, confidences
+        )
+        baseline_sharpe = np.median([f.sharpe_ratio for f in baseline_results])
+        baseline_return = np.median([f.geometric_return for f in baseline_results])
+        
+        tprint_info(f"  Baseline Sharpe: {baseline_sharpe:.2f}")
+        tprint_info(f"  Baseline Return: {baseline_return:.2%}")
+        
+        # Test each parameter with ±20% perturbation
+        sensitivity_results = {}
+        perturbation = self.opt_config.sensitivity_perturbation
+        
+        for param_name in params.keys():
+            tprint_info(f"\n🔍 Testing {param_name}...")
+            
+            param_results = {'baseline': params[param_name]}
+            
+            for direction, multiplier in [('minus', 1 - perturbation), ('plus', 1 + perturbation)]:
+                # Create perturbed params
+                perturbed = params.copy()
+                perturbed[param_name] = params[param_name] * multiplier
+                
+                # Run validation
+                perturbed_config = self._create_test_config(perturbed, is_global=True)
+                validator = WalkForwardKellyValidator(perturbed_config)
+                perturbed_results = validator.validate_variant(
+                    'full_system', data, signals, returns, regimes, confidences
+                )
+                
+                perturbed_sharpe = np.median([f.sharpe_ratio for f in perturbed_results])
+                perturbed_return = np.median([f.geometric_return for f in perturbed_results])
+                
+                sharpe_degradation = (baseline_sharpe - perturbed_sharpe) / baseline_sharpe if baseline_sharpe != 0 else 0.0
+                return_degradation = (baseline_return - perturbed_return) / baseline_return if baseline_return != 0 else 0.0
+                
+                param_results[direction] = {
+                    'value': perturbed[param_name],
+                    'sharpe': perturbed_sharpe,
+                    'return': perturbed_return,
+                    'sharpe_degradation_pct': sharpe_degradation * 100,
+                    'return_degradation_pct': return_degradation * 100
+                }
+                
+                tprint_info(f"  {direction.capitalize():5s} ({multiplier:.0%}): Sharpe={perturbed_sharpe:.2f} ({sharpe_degradation:+.1%}), Return={perturbed_return:.2%} ({return_degradation:+.1%})")
+            
+            # Determine if parameter is robust
+            max_sharpe_deg = max(
+                abs(param_results['minus']['sharpe_degradation_pct']),
+                abs(param_results['plus']['sharpe_degradation_pct'])
+            ) / 100.0
+            
+            is_robust = max_sharpe_deg < self.opt_config.max_performance_degradation
+            param_results['is_robust'] = is_robust
+            param_results['max_degradation'] = max_sharpe_deg
+            
+            sensitivity_results[param_name] = param_results
+        
+        # Overall assessment
+        all_robust = all(r['is_robust'] for r in sensitivity_results.values())
+        max_degradation = max(r['max_degradation'] for r in sensitivity_results.values())
+        
+        tprint_info("\n" + "-"*80)
+        tprint_info("📊 Sensitivity Summary:")
+        tprint_info(f"  All Parameters Robust: {'✅ Yes' if all_robust else '❌ No'}")
+        tprint_info(f"  Max Degradation: {max_degradation:.1%}")
+        
+        if not all_robust:
+            tprint_warning("⚠️ BRITTLE SOLUTION: Performance degrades significantly with parameter changes!")
+            tprint_warning("  This indicates overfitting or solution instability.")
+        else:
+            tprint_success("✅ ROBUST SOLUTION: Parameters are in a stable region of parameter space.")
+        
+        return {
+            'baseline_sharpe': baseline_sharpe,
+            'baseline_return': baseline_return,
+            'param_sensitivity': sensitivity_results,
+            'all_robust': all_robust,
+            'max_degradation': max_degradation
+        }
     
     def generate_pareto_configs(
         self,

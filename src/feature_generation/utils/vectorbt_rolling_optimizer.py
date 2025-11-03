@@ -153,7 +153,11 @@ class VectorBTRollingOptimizer:
             verbose: Enable verbose success messages (default: False for reduced output)
             workload_type: Workload type for hardware optimization
         """
-        tprint_info("🚀 Initializing VectorBTRollingOptimizer with enhanced logging and fast failing")
+        # Set verbose first so it's available for validation
+        self.verbose = verbose
+        
+        if verbose:
+            tprint_info("🚀 Initializing VectorBTRollingOptimizer with enhanced logging and fast failing")
 
         # Validate input parameters
         self._validate_init_parameters(enable_gpu, enable_parallel, memory_efficient, chunk_size)
@@ -171,9 +175,11 @@ class VectorBTRollingOptimizer:
                         self.workload_type,
                         OptimizationLevel.BALANCED
                     )
-                tprint_success("✅ Hardware manager initialized and optimized")
+                if verbose:
+                    tprint_success("✅ Hardware manager initialized and optimized")
             except Exception as e:
-                tprint_warning(f"⚠️ Hardware manager initialization failed: {e}")
+                if verbose:
+                    tprint_warning(f"⚠️ Hardware manager initialization failed: {e}")
                 self.hardware_manager = None
 
         self.enable_gpu = enable_gpu and HARDWARE_AVAILABLE and self.hardware_manager is not None
@@ -183,7 +189,7 @@ class VectorBTRollingOptimizer:
         self.use_vectorbt = VECTORBT_AVAILABLE
         self.fast_fail = fast_fail
         self.enable_logging = enable_logging
-        self.verbose = verbose
+        # verbose already set at the beginning of __init__
 
         # Enhanced performance tracking with error tracking
         self.performance_stats = {
@@ -224,12 +230,15 @@ class VectorBTRollingOptimizer:
         # Configure VectorBT settings with error handling
         try:
             if self.use_vectorbt:
-                tprint_info("🔧 Configuring VectorBT settings")
+                if self.verbose:
+                    tprint_info("🔧 Configuring VectorBT settings")
                 # VectorBT 0.28+ has different settings structure
                 # Skip settings configuration as they may not be available or needed
-                tprint_success("✅ VectorBT settings configured successfully")
+                if self.verbose:
+                    tprint_success("✅ VectorBT settings configured successfully")
             else:
-                tprint_warning("⚠️ VectorBT not available, using pandas/numpy fallback methods")
+                if self.verbose:
+                    tprint_warning("⚠️ VectorBT not available, using pandas/numpy fallback methods")
         except Exception as e:
             error_msg = f"Failed to configure VectorBT settings: {e}"
             tprint_error(error_msg)
@@ -239,14 +248,15 @@ class VectorBTRollingOptimizer:
                 tprint_warning("⚠️ Continuing with fallback configuration")
 
         # Only log initialization once per session to reduce verbosity
-        if not hasattr(VectorBTRollingOptimizer, '_logged_initialization'):
+        if self.verbose and not hasattr(VectorBTRollingOptimizer, '_logged_initialization'):
             tprint_success(f"✅ VectorBTRollingOptimizer initialized: VectorBT={self.use_vectorbt}, GPU={self.enable_gpu}, Memory={self.memory_efficient}, FastFail={self.fast_fail}")
             logger.info(f"VectorBTRollingOptimizer initialized: VectorBT={self.use_vectorbt}, GPU={self.enable_gpu}, Memory={self.memory_efficient}")
             VectorBTRollingOptimizer._logged_initialization = True
 
     def rolling_mean(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """Optimized rolling mean calculation with enhanced logging and validation."""
-        tprint_debug(f"🔄 Starting rolling mean calculation: window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
+        if self.verbose:
+            tprint_debug(f"🔄 Starting rolling mean calculation: window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
 
         # Validate inputs
         self._validate_rolling_inputs(data, window, 'mean')
@@ -268,7 +278,8 @@ class VectorBTRollingOptimizer:
 
     def rolling_std(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """Optimized rolling standard deviation calculation with enhanced logging and validation."""
-        tprint_debug(f"🔄 Starting rolling std calculation: window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
+        if self.verbose:
+            tprint_debug(f"🔄 Starting rolling std calculation: window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
         self._validate_rolling_inputs(data, window, 'std')
         try:
             result = self._rolling_operation(data, 'std', window, **kwargs)
@@ -287,7 +298,8 @@ class VectorBTRollingOptimizer:
 
     def rolling_var(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """Optimized rolling variance calculation with enhanced logging and validation."""
-        tprint_debug(f"🔄 Starting rolling var calculation: window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
+        if self.verbose:
+            tprint_debug(f"🔄 Starting rolling var calculation: window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
         self._validate_rolling_inputs(data, window, 'var')
         try:
             result = self._rolling_operation(data, 'var', window, **kwargs)
@@ -306,7 +318,8 @@ class VectorBTRollingOptimizer:
 
     def rolling_min(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """Optimized rolling minimum calculation with enhanced logging and validation."""
-        tprint_debug(f"🔄 Starting rolling min calculation: window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
+        if self.verbose:
+            tprint_debug(f"🔄 Starting rolling min calculation: window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
         self._validate_rolling_inputs(data, window, 'min')
         try:
             result = self._rolling_operation(data, 'min', window, **kwargs)
@@ -325,11 +338,13 @@ class VectorBTRollingOptimizer:
 
     def rolling_max(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """Optimized rolling maximum calculation with enhanced logging and validation."""
-        tprint_debug(f"🔄 Starting rolling max calculation: window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
+        if self.verbose:
+            tprint_debug(f"🔄 Starting rolling max calculation: window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
         self._validate_rolling_inputs(data, window, 'max')
         try:
             result = self._rolling_operation(data, 'max', window, **kwargs)
-            tprint_success(f"✅ Rolling max completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
+            if self.verbose:
+                tprint_success(f"✅ Rolling max completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
             return result
         except Exception as e:
             error_msg = f"Rolling max calculation failed"
@@ -343,11 +358,13 @@ class VectorBTRollingOptimizer:
 
     def rolling_sum(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """Optimized rolling sum calculation with enhanced logging and validation."""
-        tprint_debug(f"🔄 Starting rolling sum calculation: window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
+        if self.verbose:
+            tprint_debug(f"🔄 Starting rolling sum calculation: window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
         self._validate_rolling_inputs(data, window, 'sum')
         try:
             result = self._rolling_operation(data, 'sum', window, **kwargs)
-            tprint_success(f"✅ Rolling sum completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
+            if self.verbose:
+                tprint_success(f"✅ Rolling sum completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
             return result
         except Exception as e:
             error_msg = f"Rolling sum calculation failed"
@@ -766,7 +783,7 @@ class VectorBTRollingOptimizer:
         start_time = time.time()
         self.performance_stats['total_operations'] += 1
 
-        if self.enable_logging:
+        if self.enable_logging and self.verbose:
             tprint_debug(f"🔄 Starting rolling operation: {operation}, window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
 
         # Validate inputs before processing
@@ -774,11 +791,11 @@ class VectorBTRollingOptimizer:
 
         # Optimize data for processing
         if self.memory_efficient:
-            if self.enable_logging:
+            if self.enable_logging and self.verbose:
                 tprint_debug("🧠 Optimizing data types for memory efficiency")
             try:
                 data = self._optimize_data_types(data)
-                if self.enable_logging:
+                if self.enable_logging and self.verbose:
                     tprint_success("✅ Data type optimization completed")
             except Exception as e:
                 error_msg = f"Data type optimization failed: {e}"
@@ -790,32 +807,32 @@ class VectorBTRollingOptimizer:
         try:
             # Check if data is large enough for chunked processing
             if len(data) > self.chunk_size and self.memory_efficient:
-                if self.enable_logging:
+                if self.enable_logging and self.verbose:
                     tprint_info(f"📦 Using chunked processing: data_size={len(data)}, chunk_size={self.chunk_size}")
                 result = self._chunked_rolling_operation(data, operation, window, **kwargs)
                 self.performance_stats['chunk_operations'] += 1
-                if self.enable_logging:
+                if self.enable_logging and self.verbose:
                     tprint_success("✅ Chunked processing completed")
             else:
                 # Determine optimal processing method
                 strategy = self._select_processing_strategy(data, window, operation)
-                if self.enable_logging:
+                if self.enable_logging and self.verbose:
                     tprint_debug(f"🎯 Selected processing strategy: {strategy}")
 
                 if strategy == 'vectorbt':
                     result = self._vectorbt_rolling_operation(data, operation, window, **kwargs)
                     self.performance_stats['vectorbt_operations'] += 1
-                    if self.enable_logging:
+                    if self.enable_logging and self.verbose:
                         tprint_success("✅ VectorBT processing completed")
                 elif strategy == 'gpu':
                     result = self._gpu_rolling_operation(data, operation, window, **kwargs)
                     self.performance_stats['gpu_operations'] += 1
-                    if self.enable_logging:
+                    if self.enable_logging and self.verbose:
                         tprint_success("✅ GPU processing completed")
                 else:
                     result = self._pandas_rolling_operation(data, operation, window, **kwargs)
                     self.performance_stats['pandas_fallbacks'] += 1
-                    if self.enable_logging:
+                    if self.enable_logging and self.verbose:
                         tprint_success("✅ Pandas processing completed")
 
             # Update timing and validate result
@@ -825,7 +842,7 @@ class VectorBTRollingOptimizer:
             # Validate result
             self._validate_rolling_result(result, operation, window)
 
-            if self.enable_logging:
+            if self.enable_logging and self.verbose:
                 tprint_performance(f"Rolling {operation}", execution_time)
             return result
 
@@ -839,12 +856,12 @@ class VectorBTRollingOptimizer:
                 self.performance_stats['fast_failures'] += 1
                 raise VectorBTOptimizationError(error_msg, operation=operation, data_shape=data.shape if hasattr(data, 'shape') else None, window=window, original_error=e)
             else:
-                if self.enable_logging:
+                if self.enable_logging and self.verbose:
                     tprint_warning("⚠️ Fast fail disabled, attempting numpy fallback")
                 try:
                     result = self._numpy_rolling_operation(data, operation, window, **kwargs)
                     self.performance_stats['numpy_fallbacks'] += 1
-                    if self.enable_logging:
+                    if self.enable_logging and self.verbose:
                         tprint_success("✅ Numpy fallback completed")
                     return result
                 except Exception as fallback_error:
@@ -1191,12 +1208,14 @@ class VectorBTRollingOptimizer:
         if chunk_size > 1000000:  # 1M rows
             tprint_warning(f"⚠️ Large chunk_size detected: {chunk_size}, this may cause memory issues")
 
-        tprint_success("✅ Initialization parameters validated successfully")
+        if self.verbose:
+            tprint_success("✅ Initialization parameters validated successfully")
 
     def _validate_rolling_inputs(self, data: Union[pd.Series, pd.DataFrame],
                                 window: int, operation: str):
         """Validate rolling operation inputs with comprehensive checks."""
-        tprint_debug(f"🔍 Validating rolling inputs for {operation}")
+        if self.verbose:
+            tprint_debug(f"🔍 Validating rolling inputs for {operation}")
 
         # Check data type
         if not isinstance(data, (pd.Series, pd.DataFrame)):
@@ -1235,7 +1254,8 @@ class VectorBTRollingOptimizer:
     def _validate_rolling_result(self, result: Union[pd.Series, pd.DataFrame],
                                 operation: str, window: int):
         """Validate rolling operation result."""
-        tprint_debug(f"🔍 Validating rolling result for {operation}")
+        if self.verbose:
+            tprint_debug(f"🔍 Validating rolling result for {operation}")
 
         if result is None:
             raise VectorBTValidationError("Result cannot be None", "null_check", result)

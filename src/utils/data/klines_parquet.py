@@ -864,16 +864,183 @@ class KlinesParquetManager:
                         self.logger.warning(f"Could not apply date filtering: {e}")
                         # Continue without filtering if conversion fails
 
+            # Final cleanup: filter epoch timestamps and fill missing OHLCV values
+            combined_df = self._clean_and_fill_data(combined_df)
+            
             # Only log final successful data retrieval with timeframe and period info
             final_start_str = start_date.date() if hasattr(start_date, 'date') else str(start_date) if start_date else None
             final_end_str = end_date.date() if hasattr(end_date, 'date') else str(end_date) if end_date else None
             period_info = f"from {final_start_str} to {final_end_str}" if start_date and end_date else "full period"
             self.logger.info(f"✅ Data loaded: {symbol} {interval} {period_info} -> {len(combined_df)} records")
+            
             return combined_df
 
         except Exception as e:
             self.logger.exception(f"❌ Failed to read data: {e}")
             return None
+
+    def _clean_and_fill_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Clean and fill missing OHLCV values in the data.
+        
+        Filters out epoch timestamps and fills missing OHLCV values for small gaps
+        (less than 2 consecutive rows).
+        
+        Args:
+            data: DataFrame to clean and fill
+            
+        Returns:
+            Cleaned and filled DataFrame
+        """
+        if data is None or data.empty:
+            return data
+        
+        try:
+            # Filter out epoch timestamps (1970-01-01)
+            data = self._filter_epoch_timestamps(data)
+            
+            # Fill missing OHLCV values for small gaps
+            data = self._fill_missing_ohlcv(data)
+            
+            return data
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not clean and fill data: {e}")
+            return data
+    
+    def _filter_epoch_timestamps(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Filter out invalid epoch timestamps (1970-01-01).
+        
+        Args:
+            data: DataFrame to filter
+            
+        Returns:
+            Filtered DataFrame without epoch timestamps
+        """
+        try:
+            initial_rows = len(data)
+            
+            # Check if data has timestamp column or DatetimeIndex
+            if 'timestamp' in data.columns:
+                # Convert timestamp to datetime if needed
+                if not pd.api.types.is_datetime64_any_dtype(data['timestamp']):
+                    data['timestamp'] = pd.to_datetime(data['timestamp'], unit='s', errors='coerce')
+                
+                # Filter out 1970-01-01 (epoch)
+                epoch_date = pd.Timestamp('1970-01-01')
+                epoch_mask = data['timestamp'].dt.date == epoch_date.date()
+                epoch_count = epoch_mask.sum()
+                
+                if epoch_count > 0:
+                    self.logger.warning(f"⚠️ Filtering {epoch_count} records with epoch timestamp (1970-01-01)")
+                    data = data[~epoch_mask].copy()
+                    
+            elif isinstance(data.index, pd.DatetimeIndex):
+                # Filter by index
+                epoch_date = pd.Timestamp('1970-01-01')
+                epoch_mask = data.index.date == epoch_date.date()
+                epoch_count = epoch_mask.sum()
+                
+                if epoch_count > 0:
+                    self.logger.warning(f"⚠️ Filtering {epoch_count} records with epoch timestamp (1970-01-01)")
+                    data = data[~epoch_mask].copy()
+            
+            if len(data) < initial_rows:
+                self.logger.info(f"🔧 Filtered {initial_rows - len(data)} epoch timestamp records, {len(data)} rows remaining")
+            
+            return data
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not filter epoch timestamps: {e}")
+            return data
+    
+    def _fill_missing_ohlcv(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Fill missing OHLCV values using forward-fill or interpolation for small gaps.
+        
+        Only fills gaps of less than 2 consecutive rows. Larger gaps are left as-is.
+        
+        Args:
+            data: DataFrame to fill
+            
+        Returns:
+            DataFrame with filled missing values
+        """
+        try:
+            critical_cols = ['open', 'high', 'low', 'close', 'volume']
+            available_cols = [col for col in critical_cols if col in data.columns]
+            
+            if not available_cols:
+                return data
+            
+            data_filled = data.copy()
+            
+            # Check each column for missing values
+            for col in available_cols:
+                missing_mask = data_filled[col].isnull()
+                missing_count = missing_mask.sum()
+                
+                if missing_count == 0:
+                    continue
+                
+                # Identify consecutive missing value groups
+                missing_groups = []
+                in_group = False
+                group_start = None
+                
+                for idx, is_missing in enumerate(missing_mask):
+                    if is_missing and not in_group:
+                        # Start of a new group
+                        group_start = idx
+                        in_group = True
+                    elif not is_missing and in_group:
+                        # End of current group
+                        missing_groups.append((group_start, idx - 1))
+                        in_group = False
+                
+                # Handle group that extends to end
+                if in_group:
+                    missing_groups.append((group_start, len(data_filled) - 1))
+                
+                # Fill only groups with 1 or 2 consecutive missing values
+                filled_count = 0
+                for start_idx, end_idx in missing_groups:
+                    gap_size = end_idx - start_idx + 1
+                    
+                    if gap_size <= 2:
+                        # Small gap: use forward-fill first, then backward-fill if needed
+                        if start_idx > 0:
+                            # Forward fill from the last valid value
+                            fill_value = data_filled[col].iloc[start_idx - 1]
+                            data_filled.loc[data_filled.index[start_idx:end_idx + 1], col] = fill_value
+                            filled_count += gap_size
+                        elif end_idx < len(data_filled) - 1:
+                            # No previous value, use backward fill
+                            fill_value = data_filled[col].iloc[end_idx + 1]
+                            data_filled.loc[data_filled.index[start_idx:end_idx + 1], col] = fill_value
+                            filled_count += gap_size
+                
+                if filled_count > 0:
+                    self.logger.info(f"🔧 Filled {filled_count} missing values in '{col}' column (gaps ≤ 2 rows)")
+                
+                # For remaining gaps, use interpolation as a fallback
+                remaining_missing = data_filled[col].isnull().sum()
+                if remaining_missing > 0:
+                    try:
+                        # Use linear interpolation for remaining missing values
+                        interpolated = data_filled[col].interpolate(method='linear', limit_direction='both')
+                        still_missing = interpolated.isnull().sum()
+                        
+                        if still_missing < remaining_missing:
+                            data_filled[col] = interpolated
+                            newly_filled = remaining_missing - still_missing
+                            self.logger.info(f"🔧 Interpolated {newly_filled} additional missing values in '{col}' column")
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Could not interpolate remaining missing values in '{col}': {e}")
+            
+            return data_filled
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not fill missing OHLCV values: {e}")
+            return data
 
     def write_data(
         self,
@@ -917,6 +1084,12 @@ class KlinesParquetManager:
 
             # Add time-based columns for partitioning
             df_with_partitions = df.copy()
+            
+            # Ensure index is DatetimeIndex before extracting year/month/day
+            if not isinstance(df_with_partitions.index, pd.DatetimeIndex):
+                self.logger.warning(f"Index is not DatetimeIndex (type: {type(df_with_partitions.index)}), converting...")
+                df_with_partitions.index = pd.to_datetime(df_with_partitions.index, utc=True).tz_localize(None)
+            
             df_with_partitions['year'] = df_with_partitions.index.year
             df_with_partitions['month'] = df_with_partitions.index.month
             df_with_partitions['day'] = df_with_partitions.index.day
@@ -943,13 +1116,24 @@ class KlinesParquetManager:
                                             combined_df.index = combined_df.index.tz_convert('UTC').tz_localize(None)
                                     else:
                                         # Convert non-datetime index, forcing timezone-naive
-                                        combined_df.index = pd.to_datetime(combined_df.index, utc=True).tz_localize(None)
+                                        # Handle both millisecond and microsecond timestamps
+                                        if pd.api.types.is_integer_dtype(combined_df.index):
+                                            # Check if timestamps are in milliseconds or microseconds
+                                            sample_val = combined_df.index[0] if len(combined_df.index) > 0 else 0
+                                            if sample_val > 1e12:  # Milliseconds (13+ digits)
+                                                combined_df.index = pd.to_datetime(combined_df.index, unit='ms', utc=True).tz_localize(None)
+                                            elif sample_val > 1e9:  # Seconds (10+ digits)
+                                                combined_df.index = pd.to_datetime(combined_df.index, unit='s', utc=True).tz_localize(None)
+                                            else:
+                                                # Already in a datetime-compatible format
+                                                combined_df.index = pd.to_datetime(combined_df.index, utc=True).tz_localize(None)
+                                        else:
+                                            combined_df.index = pd.to_datetime(combined_df.index, utc=True).tz_localize(None)
                                 except Exception as e:
-                                    self.logger.warning(f"Could not convert index to datetime: {e}")
-                                    try:
-                                        combined_df.index = pd.to_numeric(combined_df.index, errors='coerce')
-                                    except Exception as e2:
-                                        self.logger.warning(f"Could not convert index to numeric either: {e2}")
+                                    self.logger.error(f"❌ Failed to convert index to datetime: {e}")
+                                    self.logger.error(f"Index dtype: {combined_df.index.dtype}, first values: {combined_df.index[:5].tolist() if len(combined_df.index) > 0 else 'empty'}")
+                                    # DO NOT fall back to numeric conversion - that corrupts timestamps!
+                                    raise ValueError(f"Cannot convert index to datetime: {e}") from e
 
                             combined_df = combined_df.sort_index()
                             combined_df = combined_df[~combined_df.index.duplicated(keep='last')]

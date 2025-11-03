@@ -113,3 +113,6 @@ class PurgedKFoldTime:
                 train_mask[val_idx] = False
                 train_idx = np.nonzero(train_mask)[0]
             yield (train_idx, val_idx)
+
+# Backward compatibility alias
+PurgedKFold = PurgedKFoldTime

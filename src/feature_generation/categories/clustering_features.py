@@ -83,11 +83,11 @@ except ImportError:
 
 try:
     import vectorbt as vbt
-    from vectorbt.generic import (
+    from src.utils.vectorbt_compat import (
         rolling_sum, rolling_apply, rolling_corr, rolling_cov,
         rolling_skew, rolling_kurt, rolling_quantile
     )
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False

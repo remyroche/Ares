@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+import numpy as np
 
 logger = system_logger.getChild("UnifiedTrailingManager")
 
@@ -99,6 +100,240 @@ class UnifiedTrailingManager:
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
         self.config = self._merge_config(config or {})
         self.positions: Dict[str, TrailingState] = {}
+        
+        # Dynamic trailing configuration
+        self._load_dynamic_trailing_config()
+
+    def _load_dynamic_trailing_config(self) -> None:
+        """Load dynamic trailing configuration from config."""
+        dynamic_config = self.config.get('dynamic_trailing', {})
+        
+        # Multiplicative approach parameters
+        mult_config = dynamic_config.get('multiplicative', {})
+        self.mult_base_pct = mult_config.get('base_pct', 0.015)
+        self.mult_confidence_weight = mult_config.get('confidence_weight', 1.5)
+        self.mult_uncertainty_weight = mult_config.get('uncertainty_weight', 1.0)
+        self.mult_volatility_weight = mult_config.get('volatility_weight', 1.2)
+        self.mult_regime_weight = mult_config.get('regime_weight', 0.8)
+        self.mult_enabled = mult_config.get('enabled', True)
+        
+        # Log-space approach parameters
+        log_config = dynamic_config.get('log_space', {})
+        self.log_base = log_config.get('base', -3.5)
+        self.log_confidence_weight = log_config.get('confidence_weight', 1.0)
+        self.log_uncertainty_weight = log_config.get('uncertainty_weight', -0.5)
+        self.log_volatility_weight = log_config.get('volatility_weight', 0.3)
+        self.log_regime_weight = log_config.get('regime_weight', 0.2)
+        self.log_enabled = log_config.get('enabled', True)
+        
+        # Method selection
+        self.dynamic_method = dynamic_config.get('method', 'ensemble')
+        
+        # Ensemble weights
+        ensemble_weights = dynamic_config.get('ensemble_weights', {})
+        self.ensemble_mult_weight = ensemble_weights.get('multiplicative', 0.6)
+        self.ensemble_log_weight = ensemble_weights.get('log_space', 0.4)
+        
+        self.epsilon = 1e-10  # For numerical stability
+
+    def calculate_dynamic_trailing_multiplicative(
+        self,
+        base_distance: float,
+        confidence: float,
+        uncertainty: float,
+        volatility: float,
+        regime: str = 'normal'
+    ) -> float:
+        """
+        Calculate dynamic trailing distance using multiplicative approach.
+        
+        Formula: base_distance * confidence_factor * (1 + uncertainty_factor) * volatility_factor * regime_factor
+        
+        Args:
+            base_distance: Base trailing distance (in price units or percentage)
+            confidence: ML confidence score (0.0 to 1.0)
+            uncertainty: Combined uncertainty metric (0.0 to 1.0)
+            volatility: Normalized volatility measure (0.0 to 1.0)
+            regime: Market regime string
+        
+        Returns:
+            Dynamic trailing distance
+        """
+        try:
+            # Confidence factor - higher confidence = tighter trailing
+            confidence_factor = confidence ** self.mult_confidence_weight if confidence > 0 else 1.0
+            
+            # Uncertainty factor - higher uncertainty = wider trailing
+            uncertainty_factor = 1.0 + (uncertainty * self.mult_uncertainty_weight)
+            
+            # Volatility factor - higher volatility = wider trailing
+            volatility_factor = 1.0 + (volatility * self.mult_volatility_weight)
+            
+            # Regime factor
+            regime_multipliers = {
+                'high': 1.2,
+                'normal': 1.0,
+                'low': 0.8
+            }
+            regime_factor = regime_multipliers.get(regime, 1.0) ** self.mult_regime_weight
+            
+            # Calculate dynamic distance
+            dynamic_distance = (base_distance * 
+                              confidence_factor * 
+                              uncertainty_factor * 
+                              volatility_factor * 
+                              regime_factor)
+            
+            logger.debug(
+                f"Multiplicative trailing: base={base_distance:.4f}, "
+                f"conf_factor={confidence_factor:.3f}, unc_factor={uncertainty_factor:.3f}, "
+                f"vol_factor={volatility_factor:.3f}, regime_factor={regime_factor:.3f}, "
+                f"result={dynamic_distance:.4f}"
+            )
+            
+            return float(dynamic_distance)
+            
+        except Exception as e:
+            logger.error(f"❌ Multiplicative trailing calculation failed: {e}")
+            return base_distance
+
+    def calculate_dynamic_trailing_log_space(
+        self,
+        base_distance: float,
+        confidence: float,
+        uncertainty: float,
+        volatility: float,
+        regime: str = 'normal'
+    ) -> float:
+        """
+        Calculate dynamic trailing distance using log-space approach.
+        
+        Formula: exp(log_base + w_conf*log(conf) + w_unc*log(1+unc) + w_vol*log(vol+eps) + w_regime*regime_value)
+        
+        Args:
+            base_distance: Base trailing distance (reference, not directly used)
+            confidence: ML confidence score (0.0 to 1.0)
+            uncertainty: Combined uncertainty metric (0.0 to 1.0)
+            volatility: Normalized volatility measure (0.0 to 1.0)
+            regime: Market regime string
+        
+        Returns:
+            Dynamic trailing distance
+        """
+        try:
+            # Start with log base
+            log_distance = self.log_base
+            
+            # Add confidence component (log of confidence)
+            if confidence > self.epsilon:
+                log_distance += self.log_confidence_weight * np.log(confidence + self.epsilon)
+            
+            # Add uncertainty component (log of 1 + uncertainty)
+            # Negative weight means higher uncertainty reduces trailing distance
+            log_distance += self.log_uncertainty_weight * np.log(1.0 + uncertainty)
+            
+            # Add volatility component
+            if volatility > 0:
+                log_distance += self.log_volatility_weight * np.log(volatility + self.epsilon)
+            
+            # Add regime component
+            regime_values = {
+                'high': 1.2,
+                'normal': 1.0,
+                'low': 0.8
+            }
+            regime_value = regime_values.get(regime, 1.0)
+            log_distance += self.log_regime_weight * np.log(regime_value + self.epsilon)
+            
+            # Exponentiate to get actual distance
+            dynamic_distance = np.exp(log_distance)
+            
+            # Scale by base distance to keep in reasonable range
+            dynamic_distance = dynamic_distance * base_distance / np.exp(self.log_base)
+            
+            logger.debug(
+                f"Log-space trailing: log_dist={log_distance:.3f}, "
+                f"conf={confidence:.3f}, unc={uncertainty:.3f}, vol={volatility:.3f}, "
+                f"regime={regime}, result={dynamic_distance:.4f}"
+            )
+            
+            return float(dynamic_distance)
+            
+        except Exception as e:
+            logger.error(f"❌ Log-space trailing calculation failed: {e}")
+            return base_distance
+
+    def calculate_dynamic_trailing(
+        self,
+        base_distance: float,
+        confidence: float,
+        uncertainty: float,
+        volatility: float,
+        regime: str = 'normal'
+    ) -> float:
+        """
+        Calculate dynamic trailing distance using configured method.
+        
+        Args:
+            base_distance: Base trailing distance
+            confidence: ML confidence score (0.0 to 1.0)
+            uncertainty: Combined uncertainty metric (0.0 to 1.0)
+            volatility: Normalized volatility measure (0.0 to 1.0)
+            regime: Market regime string
+        
+        Returns:
+            Dynamic trailing distance
+        """
+        try:
+            if self.dynamic_method == 'multiplicative':
+                if self.mult_enabled:
+                    return self.calculate_dynamic_trailing_multiplicative(
+                        base_distance, confidence, uncertainty, volatility, regime
+                    )
+                return base_distance
+                
+            elif self.dynamic_method == 'log_space':
+                if self.log_enabled:
+                    return self.calculate_dynamic_trailing_log_space(
+                        base_distance, confidence, uncertainty, volatility, regime
+                    )
+                return base_distance
+                
+            elif self.dynamic_method == 'ensemble':
+                # Calculate both methods and blend
+                mult_distance = base_distance
+                log_distance = base_distance
+                
+                if self.mult_enabled:
+                    mult_distance = self.calculate_dynamic_trailing_multiplicative(
+                        base_distance, confidence, uncertainty, volatility, regime
+                    )
+                
+                if self.log_enabled:
+                    log_distance = self.calculate_dynamic_trailing_log_space(
+                        base_distance, confidence, uncertainty, volatility, regime
+                    )
+                
+                # Weighted ensemble
+                ensemble_distance = (
+                    mult_distance * self.ensemble_mult_weight +
+                    log_distance * self.ensemble_log_weight
+                )
+                
+                logger.debug(
+                    f"Ensemble trailing: mult={mult_distance:.4f}, log={log_distance:.4f}, "
+                    f"ensemble={ensemble_distance:.4f}"
+                )
+                
+                return float(ensemble_distance)
+            
+            else:
+                logger.warning(f"Unknown dynamic trailing method: {self.dynamic_method}, using base distance")
+                return base_distance
+                
+        except Exception as e:
+            logger.error(f"❌ Dynamic trailing calculation failed: {e}")
+            return base_distance
 
     def register_position(
         self,
@@ -215,9 +450,33 @@ class UnifiedTrailingManager:
         )
         trail_distance = max(base_multiplier * atr, state.profit_buffer)
 
-        trail_distance = self._apply_volatility_adjustment(
-            trail_distance, atr, sigma, state.entry_sigma
-        )
+        # Apply dynamic trailing if uncertainty and confidence info available
+        if ml_context and 'uncertainty' in ml_context and 'tactician_confidence' in ml_context:
+            uncertainty = ml_context['uncertainty']
+            confidence = ml_context['tactician_confidence']
+            
+            # Normalize volatility (sigma as percentage of entry)
+            normalized_volatility = sigma / state.entry_price if state.entry_price > 0 else 0.02
+            normalized_volatility = min(normalized_volatility, 0.10) / 0.10  # Scale to 0-1
+            
+            # Calculate dynamic trailing distance
+            trail_distance = self.calculate_dynamic_trailing(
+                base_distance=trail_distance,
+                confidence=confidence,
+                uncertainty=uncertainty,
+                volatility=normalized_volatility,
+                regime=state.regime
+            )
+            
+            logger.debug(
+                f"Applied dynamic trailing for {position_id}: distance={trail_distance:.4f}, "
+                f"conf={confidence:.3f}, unc={uncertainty:.3f}, vol={normalized_volatility:.3f}"
+            )
+        else:
+            # Fall back to traditional adjustments
+            trail_distance = self._apply_volatility_adjustment(
+                trail_distance, atr, sigma, state.entry_sigma
+            )
 
         trail_distance = self._apply_ml_adjustments(
             trail_distance, atr, ml_context, state

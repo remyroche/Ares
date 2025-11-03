@@ -1,0 +1,13 @@
+{
+  "total_levels": 0,
+  "support_levels": 0,
+  "resistance_levels": 0,
+  "levels": [],
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "timeframe": "1h",
+    "data_points": 26274,
+    "ml_model_used": true,
+    "mode": "light"
+  }
+}

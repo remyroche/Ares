@@ -1,6 +1,29 @@
 """
-import warnings
+DEPRECATED: This module is deprecated and will be removed in a future version.
+
 SR Feature Extractor - Comprehensive Support/Resistance Feature Engineering
+
+⚠️ DEPRECATION WARNING ⚠️
+This module is being phased out in favor of the unified feature generation system.
+Please use the following replacements:
+
+1. For S/R feature generation, use:
+   - src/feature_generation/categories/support_resistance.py
+     * SupportResistanceFeatureGenerator
+     * AdvancedSupportResistanceGenerator
+     * SupportLevelGenerator / ResistanceLevelGenerator
+     * PivotPointGenerator / FibonacciLevelGenerator
+
+2. For ML-based S/R detection and quality scoring, use:
+   - src/tactician/sr_levels/enhanced_sr_detection.py (EnhancedSRDetector)
+   - src/tactician/sr_levels/ml_quality/ (SRQualityModel, SRQualityDataCollector)
+   - src/tactician/sr_levels/sr_breakout_predictor_enhanced.py (EnhancedSRBreakoutPredictor)
+
+3. These classes are automatically registered in the FeatureBank and provide:
+   - Better VectorBT optimization
+   - ML-based quality scoring
+   - Improved breakout detection
+   - Better integration with the pipeline
 
 This module provides comprehensive SR (Support/Resistance) feature extraction with:
 - Integration with pre-optimized parameters from sr_clustering/parameter_optimization_engine.py
@@ -15,6 +38,18 @@ This module provides comprehensive SR (Support/Resistance) feature extraction wi
 The module is designed to be called from the main feature engineering pipeline
 and uses pre-optimized parameters for maximum performance.
 """
+
+import warnings
+
+# Issue deprecation warning when module is imported
+warnings.warn(
+    "sr_feature_extractor.py is deprecated and will be removed in a future version. "
+    "Please use the unified feature generation system in src/feature_generation/categories/support_resistance.py "
+    "and the ML-based detection in src/tactician/sr_levels/ instead. "
+    "See module docstring for migration guide.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 import numpy as np
 import pandas as pd
@@ -57,8 +92,8 @@ try:
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    from src.utils.vectorbt_compat import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False

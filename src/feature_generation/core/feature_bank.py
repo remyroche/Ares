@@ -1656,7 +1656,7 @@ class FeatureBank:
             FeatureCategory.NORMALIZATION,  # Not a feature category, it's a transform
             # Additional exclusions as specified in feature generation step
             FeatureCategory.ORDER_FLOW,
-            FeatureCategory.MICROSTRUCTURE,  # Exclude microstructure features
+            # FeatureCategory.MICROSTRUCTURE,  # ENABLED: Microstructure features now enabled (no orderbook dependency)
             # FeatureCategory.ADVANCED_STATISTICAL,  # REMOVED: Allow advanced statistical features
             # Exclude empty categories that have 0 generators but still consume processing time
             FeatureCategory.CROSS_TIMEFRAME,  # 0 generators but still processed
@@ -2413,13 +2413,13 @@ class FeatureBank:
             # Initialize artifact manager
             artifact_manager = ArtifactManager(config={})
             
-            # Set context for artifact retrieval
-            if symbol:
-                artifact_manager.set_context(symbol=symbol)
-            if exchange:
-                artifact_manager.set_context(exchange=exchange)
-            if direction:
-                artifact_manager.set_context(direction=direction)
+            # Set context for artifact retrieval (step_name is required)
+            artifact_manager.set_context(
+                step_name='feature_bank',
+                symbol=symbol,
+                exchange=exchange,
+                direction=direction or 'long'
+            )
             
             # Retrieve the SR levels dictionary
             sr_levels_dict = artifact_manager.get_artifact(
@@ -2427,7 +2427,17 @@ class FeatureBank:
                 artifact_type='data'
             )
             
-            if not sr_levels_dict:
+            # Handle case where artifact manager returns DataFrame instead of dict
+            import pandas as pd
+            if isinstance(sr_levels_dict, pd.DataFrame):
+                self.logger.warning("SR levels returned as DataFrame, expected dict - skipping")
+                return {
+                    'levels': [],
+                    'summary': {'total_levels': 0, 'total_clusters': 0},
+                    'error': 'SR levels returned as DataFrame instead of dict'
+                }
+            
+            if sr_levels_dict is None or (isinstance(sr_levels_dict, dict) and not sr_levels_dict):
                 self.logger.warning("SR levels dictionary not found in artifacts")
                 return {
                     'levels': [],
@@ -2435,20 +2445,27 @@ class FeatureBank:
                     'error': 'SR levels dictionary not found'
                 }
             
-            # Apply filters if specified
-            if any([symbol, exchange, timeframe, direction]):
+            # Apply filters if specified (only apply if any filter is a non-empty string)
+            should_filter = any([
+                symbol is not None and isinstance(symbol, str) and symbol != '',
+                exchange is not None and isinstance(exchange, str) and exchange != '',
+                timeframe is not None and isinstance(timeframe, str) and timeframe != '',
+                direction is not None and isinstance(direction, str) and direction != ''
+            ])
+            
+            if should_filter:
                 filtered_levels = []
                 for level in sr_levels_dict.get('levels', []):
                     level_metadata = level.get('metadata', {})
                     
-                    # Check filters
-                    if symbol and level_metadata.get('symbol') != symbol:
+                    # Check filters (only if they are valid strings)
+                    if symbol and isinstance(symbol, str) and level_metadata.get('symbol') != symbol:
                         continue
-                    if exchange and level_metadata.get('exchange') != exchange:
+                    if exchange and isinstance(exchange, str) and level_metadata.get('exchange') != exchange:
                         continue
-                    if timeframe and level_metadata.get('timeframe') != timeframe:
+                    if timeframe and isinstance(timeframe, str) and level_metadata.get('timeframe') != timeframe:
                         continue
-                    if direction and level_metadata.get('direction') != direction:
+                    if direction and isinstance(direction, str) and level_metadata.get('direction') != direction:
                         continue
                     
                     filtered_levels.append(level)

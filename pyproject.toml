@@ -162,9 +162,19 @@ module = [
     "hmmlearn.*",
     "shap.*",
     "lime.*",
-    "optuna.*"
+    "optuna.*",
+    "pyhsmm.*",
+    "ssm.*"
 ]
 ignore_missing_imports = true
+
+[tool.basedpyright]
+typeCheckingMode = "basic"
+pythonVersion = "3.11"
+pythonPlatform = "Darwin"
+reportMissingImports = "warning"
+reportMissingTypeStubs = false
+reportMissingModuleSource = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -172,8 +182,10 @@ python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short --strict-markers"
+asyncio_mode = "auto"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
-    "unit: marks tests as unit tests"
+    "unit: marks tests as unit tests",
+    "asyncio: marks tests as async tests"
 ]

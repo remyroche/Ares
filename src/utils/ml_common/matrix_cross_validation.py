@@ -97,11 +97,16 @@ class MatrixCrossValidator:
         if not VECTORBT_AVAILABLE:
             return
 
+        # Check if settings attribute exists first
+        if not hasattr(vbt, 'settings'):
+            return
+
         # Configure VectorBT for optimal performance
-        vbt.settings.array_wrapper['freq'] = '1min'
+        if hasattr(vbt.settings, 'array_wrapper') and 'freq' in vbt.settings['array_wrapper']:
+            vbt.settings.array_wrapper['freq'] = '1min'
 
         # Enable parallel processing if available
-        if hasattr(vbt.settings, 'parallel'):
+        if hasattr(vbt.settings, 'parallel') and 'threading' in vbt.settings['parallel']:
             vbt.settings.parallel['threading'] = True
 
         logger.info("🚀 VectorBT configured for cross-validation optimization")

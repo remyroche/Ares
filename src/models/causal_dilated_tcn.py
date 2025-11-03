@@ -51,6 +51,18 @@ warnings.filterwarnings('ignore')
 setup_logging()
 logger = logging.getLogger(__name__)
 
+# GPU/MPS device detection for Apple Silicon
+def get_torch_device():
+    """Get the best available PyTorch device (MPS for Apple Silicon, CUDA, or CPU)."""
+    if not PYTORCH_AVAILABLE:
+        return None
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    elif torch.cuda.is_available():
+        return torch.device("cuda")
+    else:
+        return torch.device("cpu")
+
 
 class PyTorchAutoencoder(nn.Module):
     """
@@ -325,6 +337,11 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
         # State
         self.fitted = False
         self.feature_names = None
+        
+        # Device detection
+        self.device = get_torch_device()
+        if self.device:
+            logger.info(f"🚀 TCN using device: {self.device}")
 
         # --- Load Frozen Autoencoder if enabled ---
         if PYTORCH_AVAILABLE and self.config.use_autoencoder:
@@ -365,14 +382,18 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
             logger.info("🏋️ Training new autoencoder for feature compression...")
             logger.info(f"📊 Input features: {X_scaled.shape[1]}, Target latent dim: {self.config.latent_dim}")
             
-            # Create autoencoder
+            # Create autoencoder and move to device
             autoencoder = PyTorchAutoencoder(
                 input_dim=X_scaled.shape[1],
                 latent_dim=self.config.latent_dim
             )
+            if self.device:
+                autoencoder = autoencoder.to(self.device)
             
-            # Prepare training data
+            # Prepare training data and move to device
             X_tensor = torch.FloatTensor(X_scaled)
+            if self.device:
+                X_tensor = X_tensor.to(self.device)
             
             # Split into train/val
             n_train = int(0.8 * len(X_tensor))
@@ -577,14 +598,21 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
                     logger.warning("⚠️ Autoencoder disabled - encoder not found and training disabled")
                     self.config.use_autoencoder = False
             
-            # Convert to tensors
+            # Convert to tensors and move to device
             X_tensor = torch.FloatTensor(X_seq)
             y_tensor = torch.FloatTensor(y_seq)
+            if self.device:
+                X_tensor = X_tensor.to(self.device)
+                y_tensor = y_tensor.to(self.device)
             
             # --- Apply Frozen Autoencoder Compression ---
             if self.config.use_autoencoder and self.frozen_encoder is not None:
                 logger.info(f"🗜️ Compressing sequences with frozen autoencoder...")
                 logger.info(f"   Original shape: {X_tensor.shape}")
+                
+                # Move frozen encoder to device if needed
+                if self.device:
+                    self.frozen_encoder = self.frozen_encoder.to(self.device)
                 
                 # Reshape for encoder: (n_sequences, sequence_length, n_features) -> (n_sequences * sequence_length, n_features)
                 batch_size, seq_len, n_features = X_tensor.shape
@@ -607,7 +635,7 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
             self.input_size = actual_n_features
             logger.info(f"📊 Creating TCN with input_size={actual_n_features} features")
             
-            # Create TCN model
+            # Create TCN model and move to device
             self.tcn_model = CausalDilatedTCN(
                 input_size=actual_n_features,
                 num_filters=self.config.num_filters,
@@ -617,6 +645,9 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
                 dropout=self.config.dropout,
                 use_skip_connections=self.config.use_skip_connections
             )
+            if self.device:
+                self.tcn_model = self.tcn_model.to(self.device)
+                logger.info(f"✅ TCN model moved to {self.device}")
             
             # Training setup
             criterion = nn.MSELoss()
@@ -753,12 +784,18 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
                 dummy_targets = np.zeros(len(X_scaled))
                 X_seq, _ = self._prepare_sequences(X_scaled, dummy_targets, sequence_length)
 
-                # Convert to tensor
+                # Convert to tensor and move to device
                 X_tensor = torch.FloatTensor(X_seq)
+                if self.device:
+                    X_tensor = X_tensor.to(self.device)
                 
                 # --- Apply Frozen Autoencoder Compression (same as in training) ---
                 if self.config.use_autoencoder and self.frozen_encoder is not None:
                     logger.info(f"🗜️ Compressing prediction sequences with frozen autoencoder...")
+                    
+                    # Move frozen encoder to device if needed
+                    if self.device:
+                        self.frozen_encoder = self.frozen_encoder.to(self.device)
                     
                     # Reshape for encoder
                     batch_size, seq_len, n_features = X_tensor.shape
@@ -778,7 +815,7 @@ class CausalDilatedTCNModel(BaseEstimator, RegressorMixin):
                 self.tcn_model.eval()
                 with torch.no_grad():
                     predictions = self.tcn_model(X_tensor)
-                    predictions = predictions.squeeze().numpy()
+                    predictions = predictions.squeeze().cpu().numpy()  # Move to CPU before numpy conversion
 
                 # Ensure we have the right number of predictions
                 if len(predictions) < X.shape[0]:

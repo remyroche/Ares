@@ -2,7 +2,7 @@
 Portfolio Correlation Handler - Correlation-Adjusted Position Limits
 
 Manages portfolio-level correlation to prevent correlated blow-ups:
-- Rolling correlation matrix of active positions
+- EWMA correlation matrix (exponentially weighted for faster adaptation)
 - Adjusts max_portfolio_in_high_leverage based on correlation
 - Per-trade correlation checks vs existing high-leverage positions
 - Penalties for high correlation clusters
@@ -31,7 +31,7 @@ class PortfolioCorrelationHandler:
     Handle correlation-adjusted portfolio limits for Kelly sizing.
     
     Features:
-    - Rolling correlation matrix (30-day window by default)
+    - EWMA correlation matrix (exponentially weighted for faster adaptation)
     - Portfolio-level high-leverage limit adjustment
     - Per-trade correlation checks
     - High-leverage position tracking
@@ -51,6 +51,12 @@ class PortfolioCorrelationHandler:
         corr_config = config.get('correlation', {})
         self.enabled = corr_config.get('enabled', True)
         self.window_days = corr_config.get('window_days', 30)
+        
+        # EWMA parameters (more responsive to recent changes than rolling window)
+        # span=60 => approximately 30-day effective window with exponential weighting
+        self.ewma_span = corr_config.get('ewma_span', 60)
+        self.min_periods = corr_config.get('min_periods', 20)
+        
         self.high_corr_threshold = corr_config.get('high_corr_threshold', 0.7)
         self.high_corr_penalty = corr_config.get('high_corr_penalty', 0.3)
         self.moderate_corr_threshold = corr_config.get('moderate_corr_threshold', 0.4)
@@ -79,8 +85,8 @@ class PortfolioCorrelationHandler:
             tprint_warning("⚠️ Portfolio correlation handling is DISABLED")
             self.logger.warning("Correlation handling disabled")
         else:
-            tprint_info("✅ Portfolio Correlation Handler initialized")
-            self.logger.info(f"Window: {self.window_days} days, High corr threshold: {self.high_corr_threshold}")
+            tprint_info("✅ Portfolio Correlation Handler initialized (EWMA)")
+            self.logger.info(f"EWMA span: {self.ewma_span}, High corr threshold: {self.high_corr_threshold}")
     
     @handles_errors
     def update_price(self, symbol: str, price: float, timestamp: Optional[datetime] = None) -> None:
@@ -141,15 +147,16 @@ class PortfolioCorrelationHandler:
     @handles_errors
     def calculate_correlation_matrix(self, current_time: Optional[datetime] = None) -> Optional[pd.DataFrame]:
         """
-        Calculate rolling correlation matrix from price history.
+        Calculate EWMA correlation matrix from price history.
         
-        Uses returns over the window period.
+        Uses exponentially weighted moving average correlation, which gives more weight
+        to recent data and adapts faster to changing market conditions than rolling correlation.
         
         Args:
             current_time: Current timestamp
             
         Returns:
-            Correlation matrix as DataFrame (or None if insufficient data)
+            EWMA correlation matrix as DataFrame (or None if insufficient data)
         """
         if not self.enabled:
             return None
@@ -164,7 +171,7 @@ class PortfolioCorrelationHandler:
             return self._correlation_matrix
         
         # Get symbols with sufficient price history
-        symbols = [s for s in self.price_history if len(self.price_history[s]) > 20]
+        symbols = [s for s in self.price_history if len(self.price_history[s]) > self.min_periods]
         
         if len(symbols) < 2:
             self.logger.debug("Insufficient symbols for correlation matrix")
@@ -178,14 +185,14 @@ class PortfolioCorrelationHandler:
             # Filter to window
             prices = [(ts, p) for ts, p in self.price_history[symbol] if ts >= cutoff_time]
             
-            if len(prices) < 20:
+            if len(prices) < self.min_periods:
                 continue
             
             # Calculate returns
             price_series = pd.Series([p for _, p in prices], index=[ts for ts, _ in prices])
             returns = price_series.pct_change().dropna()
             
-            if len(returns) > 10:
+            if len(returns) >= self.min_periods:
                 returns_dict[symbol] = returns
         
         if len(returns_dict) < 2:
@@ -195,22 +202,43 @@ class PortfolioCorrelationHandler:
         returns_df = pd.DataFrame(returns_dict)
         returns_df = returns_df.dropna()  # Drop rows with any NaN
         
-        if len(returns_df) < 10:
+        if len(returns_df) < self.min_periods:
             return None
         
-        # Calculate correlation matrix
+        # Calculate EWMA correlation matrix
         try:
-            corr_matrix = returns_df.corr()
+            # Use pandas ewm().corr() for exponentially weighted correlation
+            # This gives more weight to recent observations
+            corr_matrix = returns_df.ewm(span=self.ewma_span, min_periods=self.min_periods).corr()
+            
+            # Get the last correlation matrix (most recent)
+            # ewm().corr() returns a multi-index DataFrame with time series of correlations
+            # We want the latest snapshot
+            if isinstance(corr_matrix.index, pd.MultiIndex):
+                # Extract the last time period's correlation matrix
+                last_time = corr_matrix.index.get_level_values(0)[-1]
+                corr_matrix = corr_matrix.loc[last_time]
             
             # Cache the result
             self._correlation_matrix = corr_matrix
             self._last_corr_update = current_time
             
+            self.logger.debug(f"EWMA correlation matrix calculated: {corr_matrix.shape}")
+            
             return corr_matrix
         
         except Exception as e:
-            self.logger.error(f"Error calculating correlation matrix: {e}")
-            return None
+            self.logger.error(f"Error calculating EWMA correlation matrix: {e}")
+            # Fallback to standard correlation if EWMA fails
+            try:
+                corr_matrix = returns_df.corr()
+                self._correlation_matrix = corr_matrix
+                self._last_corr_update = current_time
+                self.logger.warning("Fell back to standard correlation calculation")
+                return corr_matrix
+            except Exception as e2:
+                self.logger.error(f"Fallback correlation also failed: {e2}")
+                return None
     
     def get_high_leverage_positions(self) -> List[str]:
         """

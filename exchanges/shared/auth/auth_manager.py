@@ -176,14 +176,15 @@ class AuthenticationManager:
             Headers dictionary if authenticated, None otherwise
         """
         if not self.is_authenticated or not self.current_key_id:
-            self.logger.warning("Not authenticated, cannot generate headers")
+            # Only log at debug level for public data access
+            self.logger.debug("Not authenticated, skipping auth headers (public data access)")
             return None
         
         try:
             # Get current API key info
             key_info = self.api_key_manager.get_api_key(self.current_key_id)
             if not key_info:
-                self.logger.error("API key not found")
+                self.logger.debug("API key not found (public data access)")
                 return None
             
             # Generate exchange-specific headers
@@ -194,7 +195,11 @@ class AuthenticationManager:
             return headers
             
         except Exception as e:
-            self.logger.error(f"Failed to generate auth headers: {e}")
+            # Only log as error if we actually have credentials (not public data access)
+            if self.is_authenticated:
+                self.logger.error(f"❌ Failed to generate auth headers: {e}")
+            else:
+                self.logger.debug(f"Auth headers not generated (public data access): {e}")
             return None
     
     def _generate_exchange_headers(
@@ -234,6 +239,11 @@ class AuthenticationManager:
         import hmac
         import hashlib
         from urllib.parse import urlencode
+        
+        # Check if we have valid API credentials
+        if not key_info or not key_info.api_secret or not key_info.api_key:
+            self.logger.debug("No API credentials available for Binance (public data access)")
+            return headers
         
         # Add timestamp
         timestamp = int(time.time() * 1000)

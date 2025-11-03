@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 from ..core.decorators import handles_errors
 from ..core.decorators.validate import validates
+from src.utils.ml_common.uncertainty_calculator import get_global_uncertainty_calculator
 
 try:
     from src.training.steps.market_analysis.model_persistence_components.model_serializer import ModelSerializer
@@ -86,6 +87,9 @@ class MLTacticsManager:
             'directional_weight': ml_tactics_optimization.get('directional_weight', 0.1)
         }
         self.model_storage_dir: str = self.config.get('model_storage_dir', 'models')
+        
+        # Uncertainty calculator for exit evaluation
+        self.uncertainty_calculator = get_global_uncertainty_calculator()
 
     class ProbabilityAveragingEnsemble:
         """Simple ensemble that averages predict_proba outputs across models."""
@@ -159,10 +163,7 @@ class MLTacticsManager:
             if self.regime_weight <= 0 or self.regime_weight > 1:
                 self.logger.error(invalid('Invalid regime_weight configuration'))
                 return False
-            for barrier_type, config in self.barrier_config.items():
-                if config['profit_target_multiplier'] <= 0 or config['stop_loss_multiplier'] <= 0:
-                    self.logger.error(invalid(f'Invalid barrier configuration for {barrier_type}'))
-                    return False
+            # Legacy barrier_config validation removed - now using micro_movement_config
             for threshold_type, threshold in self.green_light_thresholds.items():
                 if threshold <= 0 or threshold > 1:
                     self.logger.error(invalid(f'Invalid green light threshold for {threshold_type}'))
@@ -200,10 +201,25 @@ class MLTacticsManager:
                 self.regime_threshold = ml_tactics_optimization.get('regime_threshold', self.regime_threshold)
                 self.ml_weight = ml_tactics_optimization.get('ml_weight', self.ml_weight)
                 self.regime_weight = ml_tactics_optimization.get('regime_weight', self.regime_weight)
-                self.barrier_config = {'fifty_percent': {'profit_target_multiplier': ml_tactics_optimization.get('fifty_percent_profit_target_multiplier', 0.5), 'stop_loss_multiplier': ml_tactics_optimization.get('fifty_percent_stop_loss_multiplier', 0.5), 'timeframe': ml_tactics_optimization.get('fifty_percent_timeframe', '1m')}, 'twenty_five_percent': {'profit_target_multiplier': ml_tactics_optimization.get('twenty_five_percent_profit_target_multiplier', 0.25), 'stop_loss_multiplier': ml_tactics_optimization.get('twenty_five_percent_stop_loss_multiplier', 0.25), 'timeframe': ml_tactics_optimization.get('twenty_five_percent_timeframe', '1m')}, 'fifty_percent_5m': {'profit_target_multiplier': ml_tactics_optimization.get('fifty_percent_5m_profit_target_multiplier', 0.5), 'stop_loss_multiplier': ml_tactics_optimization.get('fifty_percent_5m_stop_loss_multiplier', 0.5), 'timeframe': ml_tactics_optimization.get('fifty_percent_5m_timeframe', '5m')}, 'twenty_five_percent_5m': {'profit_target_multiplier': ml_tactics_optimization.get('twenty_five_percent_5m_profit_target_multiplier', 0.25), 'stop_loss_multiplier': ml_tactics_optimization.get('twenty_five_percent_5m_stop_loss_multiplier', 0.25), 'timeframe': ml_tactics_optimization.get('twenty_five_percent_5m_timeframe', '5m')}}
-                self.green_light_thresholds = {'fifty_percent': ml_tactics_optimization.get('fifty_percent_threshold', 0.75), 'twenty_five_percent': ml_tactics_optimization.get('twenty_five_percent_threshold', 0.8), 'combined_threshold': ml_tactics_optimization.get('combined_threshold', 0.7)}
-                self.exit_thresholds = {'fifty_percent': ml_tactics_optimization.get('exit_fifty_percent_threshold', 0.4), 'twenty_five_percent': ml_tactics_optimization.get('exit_twenty_five_percent_threshold', 0.35), 'combined_exit_threshold': ml_tactics_optimization.get('combined_exit_threshold', 0.45)}
-                self.confidence_weights = {'analyst_weight': ml_tactics_optimization.get('analyst_confidence_weight', 0.3), 'fifty_percent_1m_weight': ml_tactics_optimization.get('fifty_percent_1m_weight', 0.25), 'twenty_five_percent_1m_weight': ml_tactics_optimization.get('twenty_five_percent_1m_weight', 0.15), 'fifty_percent_5m_weight': ml_tactics_optimization.get('fifty_percent_5m_weight', 0.2), 'twenty_five_percent_5m_weight': ml_tactics_optimization.get('twenty_five_percent_5m_weight', 0.1)}
+                
+                # Legacy barrier_config removed - now using micro_movement thresholds
+                self.green_light_thresholds.update({
+                    'micro_immediate_long': ml_tactics_optimization.get('micro_immediate_long_threshold', 0.75),
+                    'micro_immediate_short': ml_tactics_optimization.get('micro_immediate_short_threshold', 0.78),
+                    'combined_threshold': ml_tactics_optimization.get('combined_threshold', 0.70)
+                })
+                self.exit_thresholds.update({
+                    'micro_immediate_long': ml_tactics_optimization.get('exit_micro_immediate_long_threshold', 0.40),
+                    'micro_immediate_short': ml_tactics_optimization.get('exit_micro_immediate_short_threshold', 0.35),
+                    'combined_exit_threshold': ml_tactics_optimization.get('combined_exit_threshold', 0.45)
+                })
+                # Updated confidence weights to use micro_movement naming
+                self.confidence_weights = {
+                    'analyst_weight': ml_tactics_optimization.get('analyst_confidence_weight', 0.3),
+                    'micro_immediate_weight': ml_tactics_optimization.get('micro_immediate_weight', 0.4),
+                    'micro_short_weight': ml_tactics_optimization.get('micro_short_weight', 0.2),
+                    'directional_weight': ml_tactics_optimization.get('directional_weight', 0.1)
+                }
                 self.logger.info('✅ ML tactics manager configuration refreshed from step17 results')
         except Exception as e:
             self.logger.exception(f'Error refreshing step17 configuration: {e}')
@@ -701,56 +717,9 @@ class MLTacticsManager:
             self.logger.exception(failed(f'❌ Multi-output predictions generation failed: {e}'))
             return self._generate_fallback_predictions()
 
-    def _calculate_tactician_barriers(self, analyst_barriers: dict[str, float]) -> dict[str, dict[str, float]]:
-        """
-        Calculate Tactician barriers as 50% and 25% of Analyst barriers.
-
-        Args:
-            analyst_barriers: Analyst's barrier values
-
-        Returns:
-            dict: Tactician barriers for 50% and 25% levels
-        """
-        try:
-            analyst_upper = analyst_barriers.get('upper_barrier', 0.02)
-            analyst_lower = analyst_barriers.get('lower_barrier', -0.01)
-            tactician_barriers = {}
-            tactician_barriers['fifty_percent'] = {'upper_barrier': analyst_upper * self.barrier_config['fifty_percent']['profit_target_multiplier'], 'lower_barrier': analyst_lower * self.barrier_config['fifty_percent']['stop_loss_multiplier'], 'timeframe': self.barrier_config['fifty_percent']['timeframe']}
-            tactician_barriers['twenty_five_percent'] = {'upper_barrier': analyst_upper * self.barrier_config['twenty_five_percent']['profit_target_multiplier'], 'lower_barrier': analyst_lower * self.barrier_config['twenty_five_percent']['stop_loss_multiplier'], 'timeframe': self.barrier_config['twenty_five_percent']['timeframe']}
-            tactician_barriers['fifty_percent_5m'] = {'upper_barrier': analyst_upper * self.barrier_config['fifty_percent_5m']['profit_target_multiplier'], 'lower_barrier': analyst_lower * self.barrier_config['fifty_percent_5m']['stop_loss_multiplier'], 'timeframe': self.barrier_config['fifty_percent_5m']['timeframe']}
-            tactician_barriers['twenty_five_percent_5m'] = {'upper_barrier': analyst_upper * self.barrier_config['twenty_five_percent_5m']['profit_target_multiplier'], 'lower_barrier': analyst_lower * self.barrier_config['twenty_five_percent_5m']['stop_loss_multiplier'], 'timeframe': self.barrier_config['twenty_five_percent_5m']['timeframe']}
-            return tactician_barriers
-        except Exception as e:
-            self.logger.exception(failed(f'❌ Barrier calculation failed: {e}'))
-            return {'fifty_percent': {'upper_barrier': 0.01, 'lower_barrier': -0.005, 'timeframe': '1m'}, 'twenty_five_percent': {'upper_barrier': 0.005, 'lower_barrier': -0.0025, 'timeframe': '1m'}, 'fifty_percent_5m': {'upper_barrier': 0.01, 'lower_barrier': -0.005, 'timeframe': '5m'}, 'twenty_five_percent_5m': {'upper_barrier': 0.005, 'lower_barrier': -0.0025, 'timeframe': '5m'}}
-
-    async def _generate_barrier_prediction(self, barrier_type: str, market_data: pd.DataFrame, barriers: dict[str, float], symbol: str, timeframe: str) -> dict[str, Any]:
-        """
-        Generate prediction for a specific barrier type.
-
-        Args:
-            barrier_type: "fifty_percent" or "twenty_five_percent"
-            market_data: Market data
-            barriers: Barrier values
-            symbol: Trading symbol
-            timeframe: Timeframe
-
-        Returns:
-            dict: Barrier prediction with confidence and direction
-        """
-        try:
-            features = self._extract_features(market_data)
-            if self.multi_output_models[barrier_type]['model'] == 'fallback':
-                confidence = self._generate_fallback_confidence(barrier_type, features)
-                direction = self._determine_direction(features)
-            else:
-                confidence = self._predict_with_model(barrier_type, features)
-                direction = self._determine_direction(features)
-            confidence = np.clip(confidence, 0.0, 1.0)
-            return {'confidence': confidence, 'direction': direction, 'upper_barrier': barriers['upper_barrier'], 'lower_barrier': barriers['lower_barrier'], 'timeframe': barriers['timeframe'], 'barrier_type': barrier_type}
-        except Exception as e:
-            self.logger.exception(failed(f'❌ Barrier prediction failed for {barrier_type}: {e}'))
-            return None
+    # Legacy barrier-based methods removed - now using micro_movement predictions
+    # _calculate_tactician_barriers() - DEPRECATED
+    # _generate_barrier_prediction() - DEPRECATED
 
     def _extract_features(self, market_data: pd.DataFrame) -> np.ndarray:
         """
@@ -1081,153 +1050,115 @@ class MLTacticsManager:
             self.logger.exception(failed(f'❌ Prediction calibration failed: {e}'))
             return confidence
 
-    def _calculate_combined_confidence(self, predictions: dict[str, Any], analyst_confidence: float = 0.5) -> float:
+    def _calculate_combined_micro_confidence(self, predictions: dict[str, Any], analyst_confidence: float = 0.5) -> float:
         """
-        Calculate combined confidence from Analyst and Tactician predictions.
+        Calculate combined confidence from Analyst and Tactician micro-movement predictions.
 
         Args:
-            predictions: Tactician predictions dictionary
+            predictions: Tactician micro-movement predictions dictionary
             analyst_confidence: Analyst confidence score
 
         Returns:
             float: Combined confidence score
         """
         try:
-            combined_confidence = analyst_confidence * self.confidence_weights['analyst_weight']
-            for barrier_type, prediction in predictions.items():
-                if prediction and 'confidence' in prediction:
-                    confidence = prediction['confidence']
-                    if barrier_type == 'fifty_percent':
-                        weight = self.confidence_weights['fifty_percent_1m_weight']
-                    elif barrier_type == 'twenty_five_percent':
-                        weight = self.confidence_weights['twenty_five_percent_1m_weight']
-                    elif barrier_type == 'fifty_percent_5m':
-                        weight = self.confidence_weights['fifty_percent_5m_weight']
-                    elif barrier_type == 'twenty_five_percent_5m':
-                        weight = self.confidence_weights['twenty_five_percent_5m_weight']
-                    else:
-                        weight = 0.0
-                    combined_confidence += confidence * weight
+            combined_confidence = analyst_confidence * self.confidence_weights.get('analyst_weight', 0.3)
+            
+            # Extract micro-movement probabilities
+            micro_immediate_long = predictions.get('micro_immediate_long', {}).get('probability', 0.5)
+            micro_immediate_short = predictions.get('micro_immediate_short', {}).get('probability', 0.5)
+            micro_short_long = predictions.get('micro_short_long', {}).get('probability', 0.5)
+            micro_short_short = predictions.get('micro_short_short', {}).get('probability', 0.5)
+            
+            # Combine immediate predictions
+            immediate_avg = (micro_immediate_long + micro_immediate_short) / 2.0
+            combined_confidence += immediate_avg * self.confidence_weights.get('micro_immediate_weight', 0.4)
+            
+            # Combine short-term predictions
+            short_avg = (micro_short_long + micro_short_short) / 2.0
+            combined_confidence += short_avg * self.confidence_weights.get('micro_short_weight', 0.2)
+            
+            # Add directional confidence if available
+            if 'directional_analysis' in predictions:
+                dir_conf = predictions['directional_analysis'].get('directional_confidence', 0.0)
+                combined_confidence += dir_conf * self.confidence_weights.get('directional_weight', 0.1)
+            
             return np.clip(combined_confidence, 0.0, 1.0)
         except Exception as e:
             self.logger.exception(failed(f'❌ Combined confidence calculation failed: {e}'))
             return 0.5
 
-    def _evaluate_green_light_signal(self, predictions: dict[str, Any], combined_confidence: float) -> dict[str, Any]:
+    def _evaluate_micro_movement_signal(self, predictions: dict[str, Any], combined_confidence: float, directional_analysis: dict[str, Any]) -> dict[str, Any]:
         """
-        Evaluate green light signal based on predictions and thresholds.
+        Evaluate green light signal based on micro-movement predictions and directional analysis.
 
         Args:
-            predictions: Predictions dictionary
+            predictions: Micro-movement predictions dictionary
             combined_confidence: Combined confidence score
+            directional_analysis: Directional analysis results
 
         Returns:
             dict: Green light signal evaluation
         """
         try:
-            fifty_percent_ok = False
-            twenty_five_percent_ok = False
-            fifty_percent_confidences = []
-            if 'fifty_percent' in predictions and predictions['fifty_percent']:
-                fifty_percent_confidences.append(predictions['fifty_percent']['confidence'])
-            if 'fifty_percent_5m' in predictions and predictions['fifty_percent_5m']:
-                fifty_percent_confidences.append(predictions['fifty_percent_5m']['confidence'])
-            if fifty_percent_confidences:
-                fifty_percent_ok = max(fifty_percent_confidences) >= self.green_light_thresholds['fifty_percent']
-            twenty_five_percent_confidences = []
-            if 'twenty_five_percent' in predictions and predictions['twenty_five_percent']:
-                twenty_five_percent_confidences.append(predictions['twenty_five_percent']['confidence'])
-            if 'twenty_five_percent_5m' in predictions and predictions['twenty_five_percent_5m']:
-                twenty_five_percent_confidences.append(predictions['twenty_five_percent_5m']['confidence'])
-            if twenty_five_percent_confidences:
-                twenty_five_percent_ok = max(twenty_five_percent_confidences) >= self.green_light_thresholds['twenty_five_percent']
-            combined_ok = combined_confidence >= self.green_light_thresholds['combined_threshold']
-            if fifty_percent_ok and twenty_five_percent_ok and combined_ok:
+            # Check immediate micro-movement probabilities
+            micro_immediate_long_ok = False
+            micro_immediate_short_ok = False
+            
+            if 'micro_immediate_long' in predictions and predictions['micro_immediate_long']:
+                prob = predictions['micro_immediate_long'].get('probability', 0.0)
+                micro_immediate_long_ok = prob >= self.green_light_thresholds.get('micro_immediate_long', 0.75)
+            
+            if 'micro_immediate_short' in predictions and predictions['micro_immediate_short']:
+                prob = predictions['micro_immediate_short'].get('probability', 0.0)
+                micro_immediate_short_ok = prob >= self.green_light_thresholds.get('micro_immediate_short', 0.78)
+            
+            # Check combined threshold
+            combined_ok = combined_confidence >= self.green_light_thresholds.get('combined_threshold', 0.70)
+            
+            # Check directional bias
+            directional_bias = directional_analysis.get('directional_bias', 'NEUTRAL')
+            directional_confidence = directional_analysis.get('directional_confidence', 0.0)
+            directional_ok = directional_confidence > 0.2  # Minimum directional conviction
+            
+            # Determine signal
+            if (micro_immediate_long_ok or micro_immediate_short_ok) and combined_ok and directional_ok:
                 signal = 'GREEN_LIGHT'
-                reason = 'All thresholds met'
+                reason = f'Micro-movement thresholds met with directional bias {directional_bias}'
             elif combined_ok:
                 signal = 'YELLOW_LIGHT'
-                reason = 'Combined threshold met, individual thresholds partial'
+                reason = 'Combined threshold met, but micro-movement or directional weak'
             else:
                 signal = 'RED_LIGHT'
                 reason = 'Thresholds not met'
-            return {'signal': signal, 'reason': reason, 'fifty_percent_ok': fifty_percent_ok, 'twenty_five_percent_ok': twenty_five_percent_ok, 'combined_ok': combined_ok, 'combined_confidence': combined_confidence, 'thresholds': self.green_light_thresholds}
+            
+            return {
+                'signal': signal,
+                'reason': reason,
+                'micro_immediate_long_ok': micro_immediate_long_ok,
+                'micro_immediate_short_ok': micro_immediate_short_ok,
+                'combined_ok': combined_ok,
+                'directional_ok': directional_ok,
+                'directional_bias': directional_bias,
+                'combined_confidence': combined_confidence,
+                'thresholds': self.green_light_thresholds
+            }
         except Exception as e:
-            self.logger.exception(failed(f'❌ Green light signal evaluation failed: {e}'))
-            return {'signal': 'RED_LIGHT', 'reason': 'Evaluation failed', 'fifty_percent_ok': False, 'twenty_five_percent_ok': False, 'combined_ok': False, 'combined_confidence': 0.0, 'thresholds': self.green_light_thresholds}
+            self.logger.exception(failed(f'❌ Micro-movement signal evaluation failed: {e}'))
+            return {
+                'signal': 'RED_LIGHT',
+                'reason': 'Evaluation failed',
+                'micro_immediate_long_ok': False,
+                'micro_immediate_short_ok': False,
+                'combined_ok': False,
+                'directional_ok': False,
+                'combined_confidence': 0.0,
+                'thresholds': self.green_light_thresholds
+            }
 
-    def _generate_tactician_triple_barrier_analysis(self, predictions: dict[str, Any]) -> dict[str, Any]:
-        """
-        Generate triple barrier analysis for tactician predictions.
-        Converts tactician predictions to price target format and applies triple barrier logic.
-
-        Args:
-            predictions: Tactician predictions dictionary
-
-        Returns:
-            dict: Triple barrier analysis results
-        """
-        try:
-            upside_probabilities = {}
-            downside_probabilities = {}
-            for barrier_type, prediction in predictions.items():
-                if not prediction:
-                    continue
-                confidence = prediction.get('confidence', 0.5)
-                upper_barrier = prediction.get('upper_barrier', 0.01)
-                lower_barrier = prediction.get('lower_barrier', -0.005)
-                upper_pct = f'{upper_barrier * 100:.1f}%'
-                lower_pct = f'{abs(lower_barrier) * 100:.1f}%'
-                if upper_barrier > 0:
-                    upside_probabilities[upper_pct] = confidence
-                if lower_barrier < 0:
-                    downside_probabilities[lower_pct] = confidence
-            tactician_profit_take = 0.002
-            tactician_stop_loss = 0.001
-            tactician_confidence_threshold = 0.6
-            cumulative_upper_confidence = 0.0
-            upper_barrier_targets = []
-            for target, prob in upside_probabilities.items():
-                target_value = float(target.replace('%', ''))
-                upper_barrier_value = tactician_profit_take * 100
-                if target_value >= upper_barrier_value:
-                    cumulative_upper_confidence += prob
-                    upper_barrier_targets.append({'target': target, 'probability': prob, 'contribution': prob})
-            cumulative_lower_confidence = 0.0
-            lower_barrier_targets = []
-            for target, prob in downside_probabilities.items():
-                target_value = float(target.replace('%', ''))
-                lower_barrier_value = tactician_stop_loss * 100
-                if target_value >= lower_barrier_value:
-                    cumulative_lower_confidence += prob
-                    lower_barrier_targets.append({'target': target, 'probability': prob, 'contribution': prob})
-            threshold_met = cumulative_upper_confidence >= tactician_confidence_threshold
-            green_light = threshold_met and cumulative_upper_confidence > cumulative_lower_confidence and (cumulative_upper_confidence > 0.5)
-            risk_reward_ratio = cumulative_upper_confidence / cumulative_lower_confidence if cumulative_lower_confidence > 0 else float('inf')
-            return {'upper_barrier_threshold': f'{tactician_profit_take * 100:.1f}%', 'lower_barrier_threshold': f'{tactician_stop_loss * 100:.1f}%', 'confidence_threshold': tactician_confidence_threshold, 'cumulative_upper_confidence': float(cumulative_upper_confidence), 'cumulative_lower_confidence': float(cumulative_lower_confidence), 'threshold_met': threshold_met, 'green_light': green_light, 'risk_reward_ratio': float(risk_reward_ratio), 'upper_barrier_targets': upper_barrier_targets, 'lower_barrier_targets': lower_barrier_targets, 'decision_reasoning': self._get_tactician_ml_decision_reasoning(cumulative_upper_confidence, cumulative_lower_confidence, threshold_met, green_light), 'tactician_specific': {'barrier_types_analyzed': list(predictions.keys()), 'upside_probabilities': upside_probabilities, 'downside_probabilities': downside_probabilities}}
-        except Exception as e:
-            self.logger.error(f'Error generating tactician triple barrier analysis: {e}')
-            return {'upper_barrier_threshold': '0.2%', 'lower_barrier_threshold': '0.1%', 'confidence_threshold': 0.6, 'cumulative_upper_confidence': 0.0, 'cumulative_lower_confidence': 0.0, 'threshold_met': False, 'green_light': False, 'risk_reward_ratio': 0.0, 'upper_barrier_targets': [], 'lower_barrier_targets': [], 'decision_reasoning': f'Error in calculation: {str(e)}', 'tactician_specific': {'error': str(e)}}
-
-    def _get_tactician_ml_decision_reasoning(self, cumulative_upper_confidence: float, cumulative_lower_confidence: float, threshold_met: bool, green_light: bool) -> str:
-        """
-        Generate human-readable decision reasoning for tactician ML predictions.
-
-        Args:
-            cumulative_upper_confidence: Cumulative confidence for upper barrier
-            cumulative_lower_confidence: Cumulative confidence for lower barrier
-            threshold_met: Whether confidence threshold is met
-            green_light: Whether green light decision is made
-
-        Returns:
-            str: Decision reasoning
-        """
-        if green_light:
-            return f'TACTICIAN ML GREEN LIGHT: Upper barrier confidence ({cumulative_upper_confidence:.1%}) exceeds threshold (60.0%) and is higher than lower barrier confidence ({cumulative_lower_confidence:.1%})'
-        elif threshold_met:
-            return f'TACTICIAN ML THRESHOLD MET but NO GREEN LIGHT: Upper barrier confidence ({cumulative_upper_confidence:.1%}) meets threshold but lower barrier confidence ({cumulative_lower_confidence:.1%}) is too high'
-        else:
-            return f'TACTICIAN ML NO GREEN LIGHT: Upper barrier confidence ({cumulative_upper_confidence:.1%}) below threshold (60.0%)'
+    # Legacy triple barrier analysis methods removed - now using micro_movement and directional analysis
+    # _generate_tactician_triple_barrier_analysis() - DEPRECATED
+    # _get_tactician_ml_decision_reasoning() - DEPRECATED
 
     async def _generate_micro_movement_prediction(self, movement_type: str, market_data: pd.DataFrame, symbol: str, timeframe: str) -> dict[str, Any]:
         """
@@ -1356,21 +1287,51 @@ class MLTacticsManager:
         }
 
     @handles_errors(fallback = None)
-    async def evaluate_exit_signal(self, current_predictions: dict[str, Any], position_context: dict[str, Any], market_conditions: dict[str, Any] = None) -> dict[str, Any]:
+    async def evaluate_exit_signal(
+        self, 
+        current_predictions: dict[str, Any], 
+        position_context: dict[str, Any], 
+        market_conditions: dict[str, Any] = None,
+        uncertainty_metrics: dict[str, Any] = None,
+        confidence_degradation: float = None,
+        recent_confidence_series: list[float] = None
+    ) -> dict[str, Any]:
         """
-        Evaluate exit signal based on 0.3% micro movement predictions and position context.
+        Evaluate exit signal based on Tactician predictions, uncertainty, and confidence degradation.
 
         Args:
             current_predictions: Current multi-output predictions with micro movements
             position_context: Current position context (including position direction)
             market_conditions: Optional market conditions (volatility, regime) for adaptive thresholds
+            uncertainty_metrics: Model uncertainty metrics (variance, disagreement)
+            confidence_degradation: Pre-calculated confidence degradation value
+            recent_confidence_series: Series of recent confidence values for degradation tracking
 
         Returns:
-            dict: Exit signal evaluation based on probability degradation with adaptive thresholds
+            dict: Exit signal evaluation with uncertainty and confidence considerations
         """
         try:
-            combined_confidence = current_predictions.get('combined_confidence', 0.5)
+            # Use Tactician confidence specifically (not combined with Analyst)
+            tactician_confidence = current_predictions.get('tactician_confidence', 0.5)
+            if 'combined_confidence' in current_predictions:
+                # Fallback if tactician_confidence not available
+                tactician_confidence = current_predictions.get('combined_confidence', 0.5)
+            
             directional_analysis = current_predictions.get('directional_analysis', {})
+            
+            # Calculate confidence degradation if not provided
+            if confidence_degradation is None and recent_confidence_series:
+                confidence_degradation = self.uncertainty_calculator.calculate_confidence_degradation(
+                    confidence_series=recent_confidence_series,
+                    window=8
+                )
+            
+            # Get uncertainty metrics
+            if uncertainty_metrics is None:
+                uncertainty_metrics = {}
+            
+            combined_uncertainty = uncertainty_metrics.get('combined_uncertainty', 0.3)
+            model_disagreement = uncertainty_metrics.get('model_disagreement', 0.0)
 
             # Apply adaptive thresholds based on market conditions
             current_thresholds = self.exit_thresholds.copy()
@@ -1411,11 +1372,33 @@ class MLTacticsManager:
                 (position_side == 'SHORT' and directional_bias == 'LONG')
             )
 
-            # Check combined confidence exit
-            combined_exit = combined_confidence <= current_thresholds['combined_exit_threshold']
+            # Check uncertainty-based exit
+            uncertainty_exit = combined_uncertainty > 0.6  # High uncertainty threshold
+            
+            # Check confidence degradation exit
+            confidence_degradation_exit = False
+            if confidence_degradation is not None:
+                # Negative degradation means confidence dropped
+                confidence_degradation_exit = confidence_degradation < -0.3  # 30% drop threshold
+            
+            # Check model disagreement exit
+            disagreement_exit = model_disagreement > 0.4  # High disagreement threshold
+            
+            # Check combined confidence exit (use Tactician confidence)
+            combined_exit = tactician_confidence <= current_thresholds['combined_exit_threshold']
 
-            # Determine exit signal - PRIORITIZE directional reversal as main exit trigger
-            if directional_reversal:
+            # Determine exit signal - PRIORITIZE based on severity
+            # Order: disagreement > uncertainty > confidence degradation > directional reversal > combined > immediate
+            if disagreement_exit:
+                exit_signal = 'EXIT'
+                reason = f'MODEL DISAGREEMENT: High disagreement ({model_disagreement:.3f}) indicates uncertain predictions'
+            elif uncertainty_exit:
+                exit_signal = 'EXIT'
+                reason = f'HIGH UNCERTAINTY: Combined uncertainty ({combined_uncertainty:.3f}) exceeds safe threshold'
+            elif confidence_degradation_exit and confidence_degradation is not None:
+                exit_signal = 'EXIT'
+                reason = f'CONFIDENCE DEGRADATION: Tactician confidence dropped by {abs(confidence_degradation):.1%} (threshold: 30%)'
+            elif directional_reversal:
                 exit_signal = 'EXIT'
                 if directional_bias != 'NEUTRAL' and ((position_side == 'LONG' and directional_bias == 'SHORT') or (position_side == 'SHORT' and directional_bias == 'LONG')):
                     reason = f'DIRECTIONAL REVERSAL: Price direction changed from {position_side} to {directional_bias} (confidence: {directional_confidence:.3f})'
@@ -1423,13 +1406,13 @@ class MLTacticsManager:
                     reason = f'DIRECTIONAL CONFIDENCE LOSS: Direction confidence ({directional_confidence:.3f}) below minimum ({current_thresholds["directional_confidence_min"]:.3f})'
             elif combined_exit:
                 exit_signal = 'EXIT'
-                reason = f'Combined confidence ({combined_confidence:.3f}) below threshold ({current_thresholds["combined_exit_threshold"]:.3f})'
+                reason = f'TACTICIAN CONFIDENCE LOW: Confidence ({tactician_confidence:.3f}) below threshold ({current_thresholds["combined_exit_threshold"]:.3f})'
             elif immediate_exit:
                 exit_signal = 'EXIT'
                 reason = f'Immediate probability degraded: {micro_immediate_prob:.3f} below threshold ({current_thresholds[f"micro_immediate_{position_side.lower()}"]:.3f})'
             else:
                 exit_signal = 'HOLD'
-                reason = f'No exit signals - immediate: {micro_immediate_prob:.3f}, directional: {directional_confidence:.3f} ({directional_bias}), combined: {combined_confidence:.3f}'
+                reason = f'No exit signals - tactician_conf: {tactician_confidence:.3f}, uncertainty: {combined_uncertainty:.3f}, directional: {directional_confidence:.3f} ({directional_bias})'
 
             return {
                 'exit_signal': exit_signal,
@@ -1437,10 +1420,18 @@ class MLTacticsManager:
                 'immediate_exit': immediate_exit,
                 'directional_reversal': directional_reversal,
                 'combined_exit': combined_exit,
-                'combined_confidence': combined_confidence,
+                'uncertainty_exit': uncertainty_exit,
+                'confidence_degradation_exit': confidence_degradation_exit,
+                'disagreement_exit': disagreement_exit,
+                'tactician_confidence': tactician_confidence,  # Use Tactician-specific confidence
+                'combined_confidence': tactician_confidence,  # For backward compatibility
                 'directional_confidence': directional_confidence,
                 'directional_bias': directional_bias,
                 'micro_immediate_prob': micro_immediate_prob,
+                'uncertainty_metrics': uncertainty_metrics,
+                'combined_uncertainty': combined_uncertainty,
+                'model_disagreement': model_disagreement,
+                'confidence_degradation': confidence_degradation,
                 'exit_thresholds': current_thresholds,  # Return adaptive thresholds
                 'position_side': position_side,
                 'market_conditions_applied': market_conditions is not None,

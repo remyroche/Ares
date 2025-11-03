@@ -364,3 +364,20 @@ class LeverageManager:
             stats['sources'] = sources
         
         return stats
+
+
+async def setup_leverage_manager(config: TradingConfig) -> Optional[LeverageManager]:
+    """Setup and initialize leverage manager."""
+    try:
+        tprint_info("🔄 Setting up Leverage Manager...")
+        leverage_manager = LeverageManager(config)
+        success = await leverage_manager.initialize()
+        if success:
+            tprint_success("✅ Leverage Manager setup completed successfully")
+            return leverage_manager
+        tprint_warning("⚠️ Leverage Manager setup completed but initialization failed")
+        return None
+    except Exception as e:
+        tprint_error(f"❌ Failed to setup leverage manager: {e}")
+        logger.error(f"❌ Failed to setup leverage manager: {e}")
+        return None

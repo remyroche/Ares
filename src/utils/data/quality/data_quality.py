@@ -254,6 +254,15 @@ class DataQualityFramework:
             result.add_issue('empty_data', 'DataFrame is None or empty')
             return result
 
+        # Enhanced logging for debugging
+        self.logger.info(f"🔍 Starting quality validation for {context}")
+        self.logger.info(f"📊 DataFrame shape: {df.shape}")
+        self.logger.info(f"📋 DataFrame columns ({len(df.columns)}): {list(df.columns)[:20]}{'...' if len(df.columns) > 20 else ''}")
+        self.logger.info(f"📐 DataFrame index type: {type(df.index).__name__}")
+        if hasattr(df.index, 'name'):
+            self.logger.info(f"📐 DataFrame index name: {df.index.name}")
+        self.logger.info(f"💾 Memory usage: {df.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+
         result.add_metric('rows', len(df))
         result.add_metric('columns', len(df.columns))
         result.add_metric('memory_mb', df.memory_usage(deep=True).sum() / 1024 / 1024)
@@ -283,10 +292,22 @@ class DataQualityFramework:
 
     def _validate_nan_values(self, df: pd.DataFrame, result: QualityResult) -> None:
         """Validate NaN values in DataFrame with detailed per-column statistics."""
+        # Define required OHLCV columns that MUST NOT have NaN values
+        required_ohlcv_columns = {'open', 'high', 'low', 'close', 'volume'}
+        
+        # Define optional columns that CAN have NaN values
+        optional_columns = {
+            'quote_volume', 'quote_asset_volume',
+            'trades_count', 'number_of_trades',
+            'taker_buy_base_volume', 'taker_buy_base_asset_volume',
+            'taker_buy_quote_volume', 'taker_buy_quote_asset_volume'
+        }
+        
         # Define calculated features that can legitimately have NaN values due to rolling calculations
         calculated_features = {
             'price_std', 'price_ma', 'price_ema', 'price_min', 'price_max',
-            'volume_ma', 'volume_ratio', 'price_vs_ma', 'price_vs_ema'
+            'volume_ma', 'volume_ratio', 'price_vs_ma', 'price_vs_ema',
+            'year', 'month', 'day', 'hour', 'minute'  # Time-based features
         }
 
         # Calculate NaN statistics per column
@@ -297,43 +318,90 @@ class DataQualityFramework:
         nan_stats = {}
         for col in df.columns:
             count = nan_counts[col]
+            # Handle case where duplicate column names cause count to be a Series
+            if hasattr(count, 'iloc'):
+                count = count.iloc[0] if len(count) > 0 else 0
+                # If still a Series after iloc, take the first value
+                if hasattr(count, 'iloc'):
+                    count = count.values[0] if len(count) > 0 else 0
+            # Ensure count is a scalar
+            if hasattr(count, '__iter__') and not isinstance(count, str):
+                count = count[0] if len(count) > 0 else 0
             ratio = count / total_rows if total_rows > 0 else 0
+            
+            # Determine column type
+            is_required = col in required_ohlcv_columns
+            is_optional = col in optional_columns
+            is_calculated = any(calc in col for calc in calculated_features)
+            
             nan_stats[col] = {
                 'count': int(count),
                 'ratio': round(ratio, 4),
                 'percentage': round(ratio * 100, 2),
-                'is_calculated': any(calc in col for calc in calculated_features)
+                'is_required': is_required,
+                'is_optional': is_optional,
+                'is_calculated': is_calculated
             }
 
         # Calculate overall metrics
         total_nans = nan_counts.sum()
         overall_nan_ratio = total_nans / (total_rows * len(df.columns)) if total_rows > 0 and len(df.columns) > 0 else 0
 
-        # Calculate strict metrics (excluding calculated features)
-        strict_columns = [col for col in df.columns if not any(calc in col for calc in calculated_features)]
-        if strict_columns:
-            nan_counts_strict = df[strict_columns].isnull().sum()
-            total_nans_strict = nan_counts_strict.sum()
-            nan_ratio_strict = total_nans_strict / (len(df) * len(strict_columns)) if len(df) > 0 and len(strict_columns) > 0 else 0
+        # Calculate metrics for REQUIRED columns only (excluding calculated and optional features)
+        required_columns = [col for col in df.columns 
+                          if col in required_ohlcv_columns 
+                          and not any(calc in col for calc in calculated_features)]
+        
+        if required_columns:
+            nan_counts_required = df[required_columns].isnull().sum()
+            total_nans_required = nan_counts_required.sum()
+            nan_ratio_required = total_nans_required / (len(df) * len(required_columns)) if len(df) > 0 and len(required_columns) > 0 else 0
         else:
-            nan_ratio_strict = 0
-            total_nans_strict = 0
+            nan_ratio_required = 0
+            total_nans_required = 0
 
         # Add metrics
         result.add_metric('nan_count', int(total_nans))
         result.add_metric('nan_ratio', round(overall_nan_ratio, 4))
-        result.add_metric('nan_count_strict', int(total_nans_strict))
-        result.add_metric('nan_ratio_strict', round(nan_ratio_strict, 4))
+        result.add_metric('nan_count_required', int(total_nans_required))
+        result.add_metric('nan_ratio_required', round(nan_ratio_required, 4))
         result.add_metric('nan_stats_per_column', nan_stats)
         result.add_metric('nan_by_column', nan_counts.to_dict())
 
-        # Quality gate - use strict ratio (excluding calculated features)
-        if nan_ratio_strict > self.thresholds.max_nan_ratio:
-            result.add_issue('nan_values', f'NaN ratio {nan_ratio_strict:.4f} exceeds threshold {self.thresholds.max_nan_ratio} (calculated features excluded)')
+        # Enhanced logging for NaN analysis
+        self.logger.info(f"📊 NaN Analysis: Total NaN count = {int(total_nans)}, Overall ratio = {overall_nan_ratio:.4f}")
+        self.logger.info(f"📊 NaN Analysis (required OHLCV only): Total NaN count = {int(total_nans_required)}, Required ratio = {nan_ratio_required:.4f}")
+        self.logger.info(f"📊 NaN threshold for required columns: {self.thresholds.max_nan_ratio}")
+        
+        # Quality gate - ONLY check required OHLCV columns
+        if nan_ratio_required > self.thresholds.max_nan_ratio:
+            self.logger.error(f"❌ REQUIRED columns have NaN ratio {nan_ratio_required:.4f} exceeds threshold {self.thresholds.max_nan_ratio}")
+            result.add_issue('nan_values', f'Required OHLCV columns have NaN ratio {nan_ratio_required:.4f} exceeds threshold {self.thresholds.max_nan_ratio}')
+        else:
+            self.logger.info(f"✅ Required OHLCV columns are complete (NaN ratio: {nan_ratio_required:.4f})")
+        
+        # Report on optional columns as info only (not an issue)
+        optional_cols_with_nans = [col for col in df.columns if col in optional_columns and nan_counts[col] > 0]
+        if optional_cols_with_nans:
+            self.logger.info(f"ℹ️ Optional columns with NaN values ({len(optional_cols_with_nans)}): {optional_cols_with_nans}")
+            for col in optional_cols_with_nans[:5]:  # Show first 5
+                pct = (nan_counts[col] / total_rows * 100) if total_rows > 0 else 0
+                self.logger.info(f"   - {col}: {pct:.1f}% NaN")
 
-        # Detailed per-column analysis
+        # Detailed per-column analysis for non-optional, non-calculated columns
         high_nan_columns = nan_counts[nan_counts > total_rows * 0.1]  # >10% NaN
         very_high_nan_columns = nan_counts[nan_counts > total_rows * 0.5]  # >50% NaN
+        
+        # Filter out optional and calculated columns from high NaN warnings
+        high_nan_required = [col for col in high_nan_columns.index 
+                            if col not in optional_columns and not any(calc in col for calc in calculated_features)]
+        very_high_nan_required = [col for col in very_high_nan_columns.index 
+                                 if col not in optional_columns and not any(calc in col for calc in calculated_features)]
+        
+        if len(high_nan_required) > 0:
+            self.logger.warning(f"⚠️ Required columns with >10% NaN ({len(high_nan_required)}): {high_nan_required[:10]}")
+        if len(very_high_nan_required) > 0:
+            self.logger.error(f"❌ Required columns with >50% NaN ({len(very_high_nan_required)}): {very_high_nan_required[:10]}")
 
         # Categorize by NaN levels
         nan_categories = {
@@ -387,7 +455,8 @@ class DataQualityFramework:
             'columns_high_nan': len(nan_categories['high_nan']),
             'columns_very_high_nan': len(nan_categories['very_high_nan']),
             'columns_all_nan': len(nan_categories['all_nan']),
-            'strict_columns_count': len(strict_columns),
+            'required_columns_count': len(required_columns),
+            'optional_columns_count': len([col for col in df.columns if col in optional_columns]),
             'calculated_features_count': len([col for col in df.columns if any(calc in col for calc in calculated_features)])
         }
 
@@ -621,7 +690,16 @@ class DataQualityFramework:
 
     def _validate_timestamp_consistency(self, df: pd.DataFrame, result: QualityResult) -> None:
         """Validate timestamp consistency with klines-aware gap detection."""
+        # Enhanced logging for timestamp detection
+        self.logger.info(f"🕐 Timestamp validation: Checking for timestamp column or index")
+        self.logger.info(f"🕐 DataFrame has 'timestamp' column: {'timestamp' in df.columns}")
+        self.logger.info(f"🕐 DataFrame index name: {df.index.name}")
+        self.logger.info(f"🕐 DataFrame index type: {type(df.index).__name__}")
+        
         if 'timestamp' not in df.columns and df.index.name != 'timestamp':
+            self.logger.warning(f"⚠️ Timestamp column 'timestamp' not found in DataFrame")
+            self.logger.info(f"📋 Available columns: {list(df.columns)[:20]}")
+            self.logger.info(f"📐 Index details: name={df.index.name}, type={type(df.index).__name__}")
             return
 
         issues = []
@@ -629,15 +707,20 @@ class DataQualityFramework:
             # Handle both datetime64[ns] and int64 timestamps
             if df.index.name == 'timestamp' and isinstance(df.index, pd.DatetimeIndex):
                 timestamps = df.index
+                self.logger.info(f"🕐 Using DatetimeIndex as timestamp source")
             elif 'timestamp' in df.columns and df['timestamp'].dtype == 'datetime64[ns]':
                 timestamps = df['timestamp']
+                self.logger.info(f"🕐 Using 'timestamp' column (datetime64[ns]) as timestamp source")
             elif 'timestamp' in df.columns:
                 timestamps = pd.to_datetime(df['timestamp'], unit='ms', utc=True, errors='coerce')
+                self.logger.info(f"🕐 Converting 'timestamp' column to datetime using milliseconds")
             else:
                 # Use DataFrame index if it's datetime
                 if isinstance(df.index, pd.DatetimeIndex):
                     timestamps = df.index
+                    self.logger.info(f"🕐 Using DatetimeIndex (no name) as timestamp source")
                 else:
+                    self.logger.warning(f"⚠️ No recognizable timestamp column or index found")
                     result.add_warning('timestamp_validation', 'No recognizable timestamp column or index found')
                     return
 

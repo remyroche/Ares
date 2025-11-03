@@ -1,0 +1,10 @@
+{
+  "total_levels": 0,
+  "support_levels": 0,
+  "resistance_levels": 0,
+  "levels": [],
+  "metadata": {
+    "ml_model_used": true,
+    "optimized_parameters_applied": false
+  }
+}

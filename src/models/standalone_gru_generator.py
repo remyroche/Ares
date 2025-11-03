@@ -22,6 +22,16 @@ from sklearn.base import BaseEstimator, TransformerMixin
 warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
 
+# GPU/MPS device detection for Apple Silicon
+def get_torch_device():
+    """Get the best available PyTorch device (MPS for Apple Silicon, CUDA, or CPU)."""
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    elif torch.cuda.is_available():
+        return torch.device("cuda")
+    else:
+        return torch.device("cpu")
+
 @dataclass
 class GRUGeneratorConfig:
     """Configuration for the GRU embedding generator."""
@@ -66,6 +76,8 @@ class GRUEmbeddingGenerator(BaseEstimator, TransformerMixin):
         self.gru_model = None
         self.input_size_ = None
         self.lookback_bars_ = self.config.lookback_hours * 12
+        self.device = get_torch_device()
+        logger.info(f"🚀 GRU using device: {self.device}")
 
     def _prepare_sequences(self, X: np.ndarray) -> np.ndarray:
         """Prepare sequences for GRU input."""
@@ -107,9 +119,10 @@ class GRUEmbeddingGenerator(BaseEstimator, TransformerMixin):
             num_layers=self.config.num_layers,
             dropout=self.config.dropout
         )
-        self.gru_model.eval() # Set to evaluation mode
+        self.gru_model.to(self.device)  # Move model to GPU/MPS if available
+        self.gru_model.eval()  # Set to evaluation mode
         
-        logger.info("✅ GRUEmbeddingGenerator fitted (Scaler + GRU initialized)")
+        logger.info(f"✅ GRUEmbeddingGenerator fitted (Scaler + GRU initialized on {self.device})")
         return self
 
     def transform(self, X: np.ndarray) -> np.ndarray:
@@ -129,13 +142,13 @@ class GRUEmbeddingGenerator(BaseEstimator, TransformerMixin):
             if sequences.size == 0:
                 return np.zeros((X.shape[0], self.config.hidden_size))
 
-            # 3. Convert to tensor
-            X_tensor = torch.FloatTensor(sequences)
+            # 3. Convert to tensor and move to device
+            X_tensor = torch.FloatTensor(sequences).to(self.device)
 
             # 4. Generate embeddings
             with torch.no_grad():
                 embeddings = self.gru_model(X_tensor)
-                embeddings = embeddings.numpy()
+                embeddings = embeddings.cpu().numpy()  # Move back to CPU for numpy conversion
 
             # 5. Ensure correct shape (pad missing initial rows)
             if len(embeddings) < X.shape[0]:

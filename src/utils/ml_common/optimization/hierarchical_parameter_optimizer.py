@@ -116,6 +116,14 @@ from .grid_utils import (
     build_fine_grid_around_best
 )
 
+# Import custom_balanced_score for default HPO scoring
+try:
+    from .shared_utils.evaluation_metrics import calculate_custom_balanced_score_for_hpo
+    CUSTOM_BALANCED_SCORE_AVAILABLE = True
+except ImportError:
+    CUSTOM_BALANCED_SCORE_AVAILABLE = False
+    calculate_custom_balanced_score_for_hpo = None
+
 # Optional imports
 try:
     import optuna
@@ -273,14 +281,15 @@ class HierarchicalParameterOptimizer:
         stages: Optional[List[OptimizationStage]] = None,
         stage_configs: Optional[Dict[OptimizationStage, StageConfig]] = None,
         cv_folds: int = 5,
-        scoring_metric: str = 'neg_mean_squared_error',
+        scoring_metric: str = 'custom_balanced_score',
         direction: str = 'maximize',
         n_rounds: int = 2,
         enable_final_refinement: bool = True,
         final_refinement_trials: int = 50,
         cache_dir: Optional[str] = None,
         random_state: int = 42,
-        verbose: bool = True
+        verbose: bool = True,
+        use_custom_balanced_score: bool = True
     ):
         """
         Initialize hierarchical parameter optimizer.
@@ -291,7 +300,10 @@ class HierarchicalParameterOptimizer:
             stages: Optimization stages to use (default: [COARSE_GRID, FINE_GRID, TPE])
             stage_configs: Custom configuration for each stage
             cv_folds: Number of cross-validation folds
-            scoring_metric: Metric to optimize
+            scoring_metric: Metric to optimize (default: 'custom_balanced_score')
+                           For ML trading models, 'custom_balanced_score' is recommended
+                           as it balances financial performance, statistical accuracy,
+                           regime awareness, and economic viability
             direction: 'maximize' or 'minimize'
             n_rounds: Number of rounds to iterate through all parameter groups (default: 2)
                      Round 1: Full exploration with coarse/fine/TPE
@@ -301,6 +313,9 @@ class HierarchicalParameterOptimizer:
             cache_dir: Directory to cache results
             random_state: Random seed for reproducibility
             verbose: Whether to print progress
+            use_custom_balanced_score: If True and scoring_metric='custom_balanced_score',
+                                      uses the enhanced custom_balanced_score from evaluation_metrics.py
+                                      (default: True)
         """
         self.param_groups = self._sort_param_groups_by_priority(param_groups)
         self.objective_func = objective_func
@@ -319,6 +334,20 @@ class HierarchicalParameterOptimizer:
         self.cache_dir = cache_dir
         self.random_state = random_state
         self.verbose = verbose
+        self.use_custom_balanced_score = use_custom_balanced_score
+        
+        # Log if custom_balanced_score is being used
+        if self.scoring_metric == 'custom_balanced_score' and self.use_custom_balanced_score:
+            if CUSTOM_BALANCED_SCORE_AVAILABLE:
+                logger.info("✅ Using custom_balanced_score for HPO (recommended for ML trading models)")
+                logger.info("   Balances: Financial (60%), Statistical (40%)")
+                logger.info("   Financial: Via pareto.py with non-linear scaling (log/sigmoid/power)")
+                logger.info("              - Profit factor (PnL), Sharpe ratio, Win rate, Max drawdown")
+                logger.info("   Statistical: F1 score (50%), Accuracy (25%), R² (25%)")
+                logger.info("   Optimization: Leverages pareto.py's scalarize_financial_goals()")
+            else:
+                logger.warning("⚠️  custom_balanced_score requested but not available, using default objective")
+                self.use_custom_balanced_score = False
         
         # Internal state
         self.optimized_params: Dict[str, Any] = {}  # Accumulated best parameters
@@ -955,7 +984,11 @@ class HierarchicalParameterOptimizer:
         
         # Narrow search space around current best (if available)
         search_space = self._create_narrowed_search_space(
-            group.params, current_best_params
+            group.params, 
+            current_best_params,
+            narrow_factor=0.1,
+            use_log_space_narrowing=True,  # Enable log-space narrowing
+            importance_weights=None  # Not used in TPE stage (only in final refinement)
         ) if current_best_params else group.params
         
         # Create Optuna study
@@ -1102,6 +1135,74 @@ class HierarchicalParameterOptimizer:
             all_trials=all_trials
         )
     
+    def _calculate_parameter_importance(self) -> Dict[str, float]:
+        """
+        Calculate parameter importance from optimization history.
+        
+        Analyzes trial history to determine which parameters have the most impact
+        on the objective score. Uses correlation-based sensitivity analysis.
+        
+        Returns:
+            Dict mapping parameter names to importance scores [0, 1]
+            Higher importance = more sensitive parameter = should narrow more
+        """
+        if not self.group_results:
+            return {}
+        
+        logger.info("    📊 Analyzing parameter importance from trial history...")
+        
+        # Collect all trials across all groups
+        all_trial_data = {}  # param_name -> [(value, score), ...]
+        
+        for group_result in self.group_results:
+            for trial in group_result.all_trials:
+                params = trial.get('params', {})
+                score = trial.get('score', 0.0)
+                
+                for param_name, param_value in params.items():
+                    if param_name not in all_trial_data:
+                        all_trial_data[param_name] = []
+                    
+                    all_trial_data[param_name].append({
+                        'value': param_value,
+                        'score': score
+                    })
+        
+        # Calculate importance (sensitivity) for each parameter
+        importance = {}
+        
+        for param_name, data_points in all_trial_data.items():
+            if len(data_points) < 3:  # Need at least 3 points for meaningful correlation
+                importance[param_name] = 0.5  # Default medium importance
+                continue
+            
+            try:
+                values = np.array([d['value'] for d in data_points])
+                scores = np.array([d['score'] for d in data_points])
+                
+                # Calculate correlation (absolute value - direction doesn't matter)
+                if len(np.unique(values)) > 1:  # Need variation in parameter values
+                    correlation = np.corrcoef(values, scores)[0, 1]
+                    # Absolute correlation = sensitivity
+                    sensitivity = abs(correlation) if not np.isnan(correlation) else 0.5
+                    importance[param_name] = float(np.clip(sensitivity, 0.0, 1.0))
+                else:
+                    importance[param_name] = 0.5  # No variation, unknown importance
+                
+                logger.debug(f"      {param_name}: importance={importance[param_name]:.3f}")
+            
+            except Exception as e:
+                logger.debug(f"      {param_name}: importance calculation failed ({e}), using default")
+                importance[param_name] = 0.5
+        
+        if importance:
+            logger.info(f"    ✅ Parameter importance calculated for {len(importance)} parameters")
+            # Log top 3 most important parameters
+            sorted_importance = sorted(importance.items(), key=lambda x: x[1], reverse=True)
+            logger.info(f"       Most important: {sorted_importance[:3]}")
+        
+        return importance
+    
     def _final_refinement(
         self,
         X_train: np.ndarray,
@@ -1112,18 +1213,43 @@ class HierarchicalParameterOptimizer:
         current_best_params: Dict[str, Any]
     ) -> OptimizationResult:
         """
-        Final refinement: jointly optimize all parameters around the best point.
-        This allows for interaction effects between parameter groups.
+        Enhanced final refinement with adaptive parameter importance.
+        
+        Jointly optimize all parameters around the best point with:
+        - Log-space narrowing for log-scale parameters
+        - Adaptive narrowing based on parameter importance
+        - Better handling of interaction effects
         """
-        logger.info(f"    Running final joint refinement ({self.final_refinement_trials} trials)")
+        logger.info(f"    Running enhanced final joint refinement ({self.final_refinement_trials} trials)")
+        logger.info(f"    Enhancements: Log-space narrowing + Adaptive importance weighting")
         
         # Combine all parameter groups into one
         all_params = {}
         for group in self.param_groups:
             all_params.update(group.params)
         
-        # Create narrowed search space around current best
-        narrow_space = self._create_narrowed_search_space(all_params, current_best_params)
+        logger.info(f"    Combined {len(all_params)} parameters from {len(self.param_groups)} groups")
+        
+        # Calculate parameter importance from trial history
+        importance_weights = self._calculate_parameter_importance()
+        
+        if importance_weights:
+            logger.info(f"    Adaptive narrowing enabled: important params narrowed more")
+        else:
+            logger.info(f"    Using uniform narrowing (no trial history available)")
+        
+        # Create adaptive narrowed search space
+        # Important parameters get narrower ranges (more focus)
+        # Less important parameters get wider ranges (more exploration)
+        logger.info(f"    Creating adaptive narrowed search space...")
+        narrow_space = self._create_narrowed_search_space(
+            all_params, 
+            current_best_params,
+            narrow_factor=0.1,
+            use_log_space_narrowing=True,  # Enable log-space narrowing
+            importance_weights=importance_weights  # Adaptive based on importance
+        )
+        logger.info(f"    ✅ Narrowed search space created")
         
         if not OPTUNA_AVAILABLE:
             logger.warning("    Optuna not available for final refinement")
@@ -1268,18 +1394,29 @@ class HierarchicalParameterOptimizer:
         self,
         search_space: Dict[str, Dict[str, Any]],
         best_params: Dict[str, Any],
-        narrow_factor: float = 0.1
+        narrow_factor: float = 0.1,
+        use_log_space_narrowing: bool = True,
+        importance_weights: Optional[Dict[str, float]] = None
     ) -> Dict[str, Dict[str, Any]]:
         """
-        Create a narrowed search space around best parameters.
+        Create a narrowed search space around best parameters with adaptive scaling.
+        
+        Enhanced with:
+        - Log-space narrowing for log-scale parameters
+        - Adaptive narrowing based on parameter importance
+        - Proper handling of different parameter scales
         
         Args:
             search_space: Original search space
             best_params: Best parameters found so far
-            narrow_factor: Factor to narrow range (0.1 = ±10% of original range)
+            narrow_factor: Base factor to narrow range (0.1 = ±10% of original range)
+            use_log_space_narrowing: If True, narrow log-scale params in log space
+            importance_weights: Optional dict of parameter importance scores [0, 1]
+                               Higher importance → narrower range (focus optimization)
+                               Lower importance → wider range (allow exploration)
         
         Returns:
-            Narrowed search space
+            Narrowed search space with adaptive scaling
         """
         narrowed = {}
         
@@ -1291,20 +1428,68 @@ class HierarchicalParameterOptimizer:
             best_value = best_params[param_name]
             narrowed_config = param_config.copy()
             
+            # Calculate adaptive narrow factor based on parameter importance
+            if importance_weights and param_name in importance_weights:
+                importance = importance_weights[param_name]
+                # High importance (close to 1.0) → narrow more (focus here)
+                # Low importance (close to 0.0) → narrow less (explore more)
+                adaptive_factor = narrow_factor * (0.5 + importance)
+            else:
+                adaptive_factor = narrow_factor
+            
             if param_config['type'] == 'float':
                 low, high = param_config['low'], param_config['high']
-                range_size = high - low
-                narrow_range = range_size * narrow_factor
                 
-                narrowed_config['low'] = max(low, best_value - narrow_range)
-                narrowed_config['high'] = min(high, best_value + narrow_range)
+                # Enhanced: narrow in log space for log-scale parameters
+                if use_log_space_narrowing and param_config.get('log', False):
+                    # Log-space narrowing (proper for learning_rate, reg_alpha, etc.)
+                    log_low = np.log(max(low, 1e-10))
+                    log_high = np.log(max(high, 1e-10))
+                    log_best = np.log(max(best_value, 1e-10))
+                    log_range = log_high - log_low
+                    
+                    narrow_log_range = log_range * adaptive_factor
+                    narrowed_log_low = max(log_low, log_best - narrow_log_range)
+                    narrowed_log_high = min(log_high, log_best + narrow_log_range)
+                    
+                    # Convert back to linear space
+                    narrowed_config['low'] = max(low, np.exp(narrowed_log_low))
+                    narrowed_config['high'] = min(high, np.exp(narrowed_log_high))
+                    
+                    if self.verbose:
+                        importance = importance_weights.get(param_name, 0.5) if importance_weights else 0.5
+                        logger.debug(
+                            f"      {param_name} (log-scale, importance={importance:.2f}): "
+                            f"[{low:.6f}, {high:.6f}] → [{narrowed_config['low']:.6f}, {narrowed_config['high']:.6f}]"
+                        )
+                else:
+                    # Linear narrowing (original approach)
+                    range_size = high - low
+                    narrow_range = range_size * adaptive_factor
+                    
+                    narrowed_config['low'] = max(low, best_value - narrow_range)
+                    narrowed_config['high'] = min(high, best_value + narrow_range)
+                    
+                    if self.verbose:
+                        importance = importance_weights.get(param_name, 0.5) if importance_weights else 0.5
+                        logger.debug(
+                            f"      {param_name} (linear, importance={importance:.2f}): "
+                            f"[{low:.4f}, {high:.4f}] → [{narrowed_config['low']:.4f}, {narrowed_config['high']:.4f}]"
+                        )
             
             elif param_config['type'] == 'int':
                 low, high = param_config['low'], param_config['high']
-                narrow_amount = max(1, int((high - low) * narrow_factor))
+                narrow_amount = max(1, int((high - low) * adaptive_factor))
                 
                 narrowed_config['low'] = max(low, best_value - narrow_amount)
                 narrowed_config['high'] = min(high, best_value + narrow_amount)
+                
+                if self.verbose:
+                    importance = importance_weights.get(param_name, 0.5) if importance_weights else 0.5
+                    logger.debug(
+                        f"      {param_name} (int, importance={importance:.2f}): "
+                        f"[{low}, {high}] → [{narrowed_config['low']}, {narrowed_config['high']}]"
+                    )
             
             # Categorical parameters stay the same
             narrowed[param_name] = narrowed_config
@@ -1320,6 +1505,8 @@ class HierarchicalParameterOptimizer:
         """
         Create a narrowed parameter group around best parameters for refinement rounds.
         
+        Enhanced with log-space narrowing for proper parameter scaling.
+        
         Args:
             group: Original parameter group
             best_params: Best parameters found for this group
@@ -1328,10 +1515,14 @@ class HierarchicalParameterOptimizer:
         Returns:
             New ParameterGroup with narrowed search space
         """
+        # For refinement rounds, we don't use importance weights (not enough history yet)
+        # But we do use log-space narrowing
         narrowed_params = self._create_narrowed_search_space(
             group.params,
             best_params,
-            narrow_factor=narrow_factor
+            narrow_factor=narrow_factor,
+            use_log_space_narrowing=True,  # Enable log-space narrowing
+            importance_weights=None  # Not used for group refinement
         )
         
         # Create new group with narrowed parameters but same metadata
@@ -1449,6 +1640,92 @@ def default_objective_function(
         return float('-inf')
 
 
+def create_custom_balanced_score_objective(
+    model_trainer: Callable,
+    use_returns: bool = True,
+    use_regime_labels: bool = False
+) -> Callable:
+    """
+    Create an objective function that uses custom_balanced_score for HPO.
+    
+    This is a convenience function to create objective functions compatible with
+    HierarchicalParameterOptimizer that use the recommended custom_balanced_score.
+    
+    Args:
+        model_trainer: Function(params, X_train, y_train, X_val, y_val) -> (model, predictions)
+                      that trains a model and returns predictions
+        use_returns: Whether to calculate returns from predictions for financial metrics
+        use_regime_labels: Whether to use regime labels (if available in kwargs)
+        
+    Returns:
+        Callable: Objective function compatible with HierarchicalParameterOptimizer
+        
+    Example:
+        ```python
+        def train_my_model(params, X_train, y_train, X_val, y_val):
+            model = MyModel(**params)
+            model.fit(X_train, y_train)
+            predictions = model.predict(X_val)
+            return model, predictions
+        
+        objective_func = create_custom_balanced_score_objective(train_my_model)
+        
+        optimizer = HierarchicalParameterOptimizer(
+            param_groups=param_groups,
+            objective_func=objective_func,
+            direction='maximize'  # custom_balanced_score should be maximized
+        )
+        ```
+    """
+    if not CUSTOM_BALANCED_SCORE_AVAILABLE:
+        logger.warning("custom_balanced_score not available, returning basic objective")
+        return default_objective_function
+    
+    def objective_func(
+        params: Dict[str, Any],
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        X_val: Optional[np.ndarray] = None,
+        y_val: Optional[np.ndarray] = None,
+        model: Optional[Any] = None,
+        cv_folds: int = 5,
+        scoring_metric: str = 'custom_balanced_score',
+        **kwargs
+    ) -> float:
+        """Objective function using custom_balanced_score."""
+        try:
+            # Train model and get predictions
+            trained_model, predictions = model_trainer(params, X_train, y_train, X_val, y_val)
+            
+            # Calculate returns if requested
+            returns = None
+            if use_returns and y_val is not None:
+                # Simple return calculation: pred * actual
+                # More sophisticated return calculation can be provided in kwargs
+                returns = kwargs.get('returns', predictions * y_val)
+            
+            # Get regime labels if requested
+            regime_labels = None
+            if use_regime_labels:
+                regime_labels = kwargs.get('regime_labels', None)
+            
+            # Calculate custom_balanced_score
+            score = calculate_custom_balanced_score_for_hpo(
+                predictions=predictions,
+                targets=y_val,
+                returns=returns,
+                regime_labels=regime_labels
+            )
+            
+            return score
+            
+        except Exception as e:
+            logger.warning(f"Objective evaluation failed: {e}")
+            return 0.0  # Return poor score on failure
+    
+    return objective_func
+
+
 __all__ = [
     'HierarchicalParameterOptimizer',
     'ParameterGroup',
@@ -1459,4 +1736,6 @@ __all__ = [
     'HierarchicalOptimizationResult',
     'create_param_group',
     'default_objective_function',
+    'create_custom_balanced_score_objective',
+    'CUSTOM_BALANCED_SCORE_AVAILABLE',
 ]

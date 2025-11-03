@@ -290,22 +290,23 @@ class UnifiedOHLCVStandardizer:
         # Uses substring matching: if "low" in column name → map to "low"
         # Priority order matters (e.g., check "quote_volume" before "volume")
         # All comparisons are case-insensitive (converted to lowercase)
+        # MORE SPECIFIC PATTERNS MUST COME FIRST
         self.column_patterns = [
-            # OHLCV core fields - simple substring matching
-            ('open', ['open']),
-            ('high', ['high']),
-            ('low', ['low']),
-            ('close', ['close']),
-            
-            # Timestamp - check multiple patterns
+            # Timestamp - check multiple patterns (before 'open' to catch 'open_time')
             ('timestamp', ['timestamp', 'ts', 'open_time', 'start_time']),
             
             # Additional fields (more specific first to avoid substring conflicts)
+            ('close_time', ['close_time', 'end_time']),  # BEFORE 'close' to avoid substring match
             ('quote_volume', ['quote_asset_volume', 'quote_volume', 'quotevol', 'vol_ccy', 'volccy']),
             ('taker_buy_base_volume', ['taker_buy_base_asset_volume', 'taker_buy_base', 'takerbuybase']),
             ('taker_buy_quote_volume', ['taker_buy_quote_asset_volume', 'taker_buy_quote', 'takerbuyquote']),
             ('trades_count', ['number_of_trades', 'trades', 'count']),
-            ('close_time', ['close_time', 'end_time']),
+            
+            # OHLCV core fields - AFTER more specific patterns
+            ('open', ['open']),
+            ('high', ['high']),
+            ('low', ['low']),
+            ('close', ['close']),
             
             # Volume - MUST come after other volume fields to avoid conflicts
             ('volume', ['volume', 'vol', 'quantity', 'qty']),
@@ -368,8 +369,30 @@ class UnifiedOHLCVStandardizer:
                 self.logger.debug(f"No pattern match found for column: {col}")
         
         if rename_map:
-            df_renamed = df.rename(columns=rename_map)
-            self.logger.debug(f"Renamed columns: {rename_map}")
+            # Check for potential duplicate columns after rename
+            new_column_names = [rename_map.get(col, col) for col in df.columns]
+            duplicates = [col for col in new_column_names if new_column_names.count(col) > 1]
+            
+            if duplicates:
+                # Remove mappings that would create duplicates (keep the first occurrence)
+                seen = set()
+                filtered_rename_map = {}
+                for col in df.columns:
+                    new_name = rename_map.get(col, col)
+                    if new_name not in seen:
+                        if col in rename_map:
+                            filtered_rename_map[col] = new_name
+                        seen.add(new_name)
+                    else:
+                        # Don't rename this column as it would create a duplicate
+                        self.logger.debug(f"Skipping rename {col} -> {new_name} to avoid duplicate")
+                
+                df_renamed = df.rename(columns=filtered_rename_map)
+                self.logger.debug(f"Renamed columns (filtered for duplicates): {filtered_rename_map}")
+            else:
+                df_renamed = df.rename(columns=rename_map)
+                self.logger.debug(f"Renamed columns: {rename_map}")
+            
             return df_renamed
         
         return df
@@ -626,7 +649,14 @@ class UnifiedOHLCVStandardizer:
             # Automatically detects timestamp format and converts to UTC
             df = self._normalize_timestamp_format(df)
             
-            # Step 3: Validate required columns exist after normalization
+            # Step 3: Remove duplicate columns if any exist (keep first occurrence)
+            if len(df.columns) != len(set(df.columns)):
+                self.logger.warning(f"Found duplicate columns: {df.columns.tolist()}")
+                # Keep only the first occurrence of each column
+                df = df.loc[:, ~df.columns.duplicated()]
+                self.logger.info(f"Removed duplicate columns, remaining: {df.columns.tolist()}")
+            
+            # Step 4: Validate required columns exist after normalization
             required_cols = ['open', 'high', 'low', 'close', 'volume']
             missing_cols = [col for col in required_cols if col not in df.columns]
             if missing_cols:
@@ -634,7 +664,8 @@ class UnifiedOHLCVStandardizer:
                 available_cols = [col.lower() for col in df.columns]
                 for missing_col in missing_cols[:]:  # Copy list to iterate
                     for col in df.columns:
-                        if missing_col in col.lower() or col.lower() in missing_col:
+                        # Only rename if it won't create a duplicate
+                        if (missing_col in col.lower() or col.lower() in missing_col) and missing_col not in df.columns:
                             rename_map = {col: missing_col}
                             df = df.rename(columns=rename_map)
                             missing_cols.remove(missing_col)
@@ -644,7 +675,7 @@ class UnifiedOHLCVStandardizer:
                 if missing_cols:
                     raise ValueError(f"Missing required OHLCV columns after normalization: {missing_cols}. Available columns: {list(df.columns)}")
             
-            # Step 4: Ensure numeric types
+            # Step 5: Ensure numeric types
             for col in required_cols:
                 if col in df.columns:
                     try:
@@ -664,7 +695,7 @@ class UnifiedOHLCVStandardizer:
                             self.logger.error(f"Could not convert column '{col}' to numeric, keeping as is")
                             pass
             
-            # Step 5: Validate OHLC relationships
+            # Step 6: Validate OHLC relationships
             invalid_mask = (
                 (df['high'] < df[['open', 'close']].max(axis=1)) |
                 (df['low'] > df[['open', 'close']].min(axis=1)) |
@@ -677,7 +708,7 @@ class UnifiedOHLCVStandardizer:
                 df.loc[invalid_mask, 'high'] = df.loc[invalid_mask, ['open', 'close']].max(axis=1)
                 df.loc[invalid_mask, 'low'] = df.loc[invalid_mask, ['open', 'close']].min(axis=1)
             
-            # Step 6: Ensure timestamp index is UTC datetime (double-check)
+            # Step 7: Ensure timestamp index is UTC datetime (double-check)
             if not isinstance(df.index, pd.DatetimeIndex):
                 self.logger.warning("Timestamp index missing after normalization, attempting recovery")
                 df = self._normalize_timestamp_format(df)
@@ -688,10 +719,10 @@ class UnifiedOHLCVStandardizer:
                 elif df.index.tz != timezone.utc:
                     df.index = df.index.tz_convert('UTC')
             
-            # Step 7: Apply data processing optimizations
+            # Step 8: Apply data processing optimizations
             df = self._apply_data_processing_optimizations(df)
             
-            # Step 8: Validate with src/utils/data/ framework
+            # Step 9: Validate with src/utils/data/ framework
             context = f"{exchange.value if hasattr(exchange, 'value') else exchange}" if exchange else "dataframe"
             self._validate_with_data_framework(df, f"{context} standardization")
             

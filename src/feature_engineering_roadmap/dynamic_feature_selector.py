@@ -28,7 +28,7 @@ from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning
 # VectorBT imports for optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_apply
+    from src.utils.vectorbt_compat import rolling_apply
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False

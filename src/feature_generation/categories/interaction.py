@@ -14,7 +14,7 @@ import logging
 
 # VectorBT rolling functions
 try:
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum
+    from src.utils.vectorbt_compat import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum
     VECTORBT_ROLLING_AVAILABLE = True
 except ImportError:
     VECTORBT_ROLLING_AVAILABLE = False

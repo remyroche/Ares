@@ -53,7 +53,7 @@ except ImportError:
 
 # VectorBT imports
 try:
-    from src.vectorbt import vbt, VECTORBT_AVAILABLE
+    from src.utils.vectorbt_compat import vbt, VECTORBT_AVAILABLE
     # Additional VectorBT components
     try:
         import vectorbt as real_vbt

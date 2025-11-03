@@ -274,3 +274,66 @@ class SlippageCalculator:
             )
         
         return is_fresh, age_seconds
+    
+    def generate_synthetic_orderbook(
+        self,
+        mid_price: float,
+        exchange: str,
+        depth_levels: int = 20
+    ) -> Dict[str, Any]:
+        """
+        Generate a synthetic order book with realistic spread and depth.
+        
+        Args:
+            mid_price: Mid market price
+            exchange: Exchange name for spread calculation
+            depth_levels: Number of price levels to generate
+            
+        Returns:
+            Synthetic order book with bids and asks
+        """
+        # Get exchange-specific spread
+        spread_pct = self.config.get_spread_pct(exchange)
+        
+        # Calculate bid and ask prices at best level
+        half_spread = mid_price * (spread_pct / 2)
+        best_bid = mid_price - half_spread
+        best_ask = mid_price + half_spread
+        
+        # Generate bids (decreasing price, increasing size)
+        bids = []
+        for i in range(depth_levels):
+            # Price decreases with each level
+            price_offset = (i * 0.0001 * mid_price)  # 0.01% per level
+            price = best_bid - price_offset
+            
+            # Quantity increases slightly with worse prices (liquidity aggregation)
+            base_qty = random.uniform(0.5, 2.0)
+            qty = base_qty * (1 + i * 0.1)  # 10% more per level
+            
+            bids.append([price, qty])
+        
+        # Generate asks (increasing price, increasing size)
+        asks = []
+        for i in range(depth_levels):
+            # Price increases with each level
+            price_offset = (i * 0.0001 * mid_price)  # 0.01% per level
+            price = best_ask + price_offset
+            
+            # Quantity increases slightly with worse prices
+            base_qty = random.uniform(0.5, 2.0)
+            qty = base_qty * (1 + i * 0.1)  # 10% more per level
+            
+            asks.append([price, qty])
+        
+        self.logger.debug(
+            f"Generated synthetic order book: mid={mid_price:.2f}, "
+            f"spread={spread_pct:.4%}, best_bid={best_bid:.2f}, best_ask={best_ask:.2f}"
+        )
+        
+        return {
+            "bids": bids,
+            "asks": asks,
+            "timestamp": int(random.random() * 1000),  # Synthetic timestamp
+            "synthetic": True
+        }

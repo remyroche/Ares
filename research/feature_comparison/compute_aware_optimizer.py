@@ -334,7 +334,7 @@ class ComputeAwareOptimizer:
         """Set up cached rolling cores using VectorBT for efficient computation."""
         try:
             import vectorbt as vbt
-            from vectorbt.generic import rolling_mean, rolling_std
+            from src.vectorbt import rolling_mean, rolling_std
             
             rolling_cores = {}
             

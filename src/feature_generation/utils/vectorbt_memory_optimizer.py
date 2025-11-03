@@ -468,11 +468,19 @@ class VectorBTMemoryOptimizer:
         if not VECTORBT_AVAILABLE:
             return
 
+        # Check if settings attribute exists first
+        if not hasattr(vbt, 'settings'):
+            logger.debug("VectorBT settings not available in this version")
+            return
+
         # Configure VectorBT for optimal performance using newer API
         # Check if array_wrapper structure exists and set wrapper if available
         if hasattr(vbt.settings, 'array_wrapper') and 'wrapper' in vbt.settings['array_wrapper']:
             vbt.settings['array_wrapper']['wrapper'] = 'pandas'
-        vbt.settings['caching']['enabled'] = True
+        
+        # Check if caching exists before accessing it
+        if hasattr(vbt.settings, 'caching') and 'enabled' in vbt.settings['caching']:
+            vbt.settings['caching']['enabled'] = True
 
         if self.enable_gpu:
             try:

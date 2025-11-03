@@ -206,8 +206,8 @@ class VectorBTMixin:
         """Execute operation using direct VectorBT functions."""
         try:
             import vectorbt as vbt
-            from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply
-            from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+            from src.utils.vectorbt_compat import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply
+            from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile
 
             # Map common operations to VectorBT functions
             operation_name = operation_func.__name__ if hasattr(operation_func, '__name__') else str(operation_func)

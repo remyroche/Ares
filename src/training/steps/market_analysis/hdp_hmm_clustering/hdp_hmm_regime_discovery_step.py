@@ -176,11 +176,8 @@ class HDPHMMRegimeDiscoveryStep(BaseStep):
                 )
             
             # Save artifacts
-            await self._save_results(result, symbol, exchange, timeframe, config)
             labels_df, probs_df = await self._save_results(result, symbol, exchange, timeframe, config)
 
-
-             )
             # Calculate execution time
             execution_time = time.time() - start_time
             

@@ -48,7 +48,7 @@ except ImportError:
 
 # VectorBT imports
 try:
-    from src.vectorbt import vbt, VECTORBT_AVAILABLE
+    from src.utils.vectorbt_compat import vbt, VECTORBT_AVAILABLE
 except ImportError:
     VECTORBT_AVAILABLE = False
     warnings.warn("VectorBT not available. Some optimizations will be disabled.")

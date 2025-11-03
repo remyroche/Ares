@@ -27,12 +27,12 @@ from src.utils.parallel_processing_optimizer import MacM1ParallelOptimizer
 # VectorBT imports for high-performance optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import (
+    from src.utils.vectorbt_compat import (
         rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, 
         rolling_apply, rolling_corr, rolling_cov, rolling_quantile, rolling_skew, 
         rolling_kurt, rolling_rank, rolling_ewm, rolling_ewm_std, rolling_ewm_var
     )
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False

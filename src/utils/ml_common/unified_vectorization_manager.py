@@ -123,11 +123,11 @@ class UnifiedVectorizationManager:
         # Initialize strategy_config first
         self.strategy_config = strategy_config or StrategySelectionConfig()
         
+        # Use singleton hardware manager (no repeated detection)
+        from .hardware_singleton import get_hardware_capabilities_dict
+        self.hardware_caps = get_hardware_capabilities_dict()
+        
         if UnifiedVectorizationManager._init_done:
-            # Ensure hardware_caps is available even if already initialized
-            if not hasattr(self, 'hardware_caps') or self.hardware_caps is None:
-                self.logger.warning("⚠️ hardware_caps not initialized, detecting hardware capabilities...")
-                self._detect_hardware_capabilities()
             # Ensure strategy_config is available
             if not hasattr(self, 'strategy_config') or self.strategy_config is None:
                 self.strategy_config = StrategySelectionConfig()
@@ -153,10 +153,6 @@ class UnifiedVectorizationManager:
         # Initialize optimization components
         tprint("🔄 Initializing optimization components...")
         self._initialize_components()
-
-        # Initialize hardware capabilities early to prevent access errors
-        tprint("🔄 Detecting hardware capabilities...")
-        self._detect_hardware_capabilities()
 
         # Performance tracking
         tprint("🔄 Setting up performance tracking...")
@@ -304,52 +300,13 @@ class UnifiedVectorizationManager:
         tprint("✅ Component initialization completed")
 
     def _detect_hardware_capabilities(self):
-        """Detect available hardware capabilities."""
-        tprint("🔄 Detecting hardware capabilities...")
-        self.hardware_caps = {
-            'cpu_cores': 1,
-            'gpu_available': False,
-            'gpu_type': None,
-            'memory_gb': 4.0,
-            'mps_available': False
-        }
-
-        # Detect CPU cores
-        tprint("🔄 Detecting CPU cores...")
-        import multiprocessing
-        self.hardware_caps['cpu_cores'] = multiprocessing.cpu_count()
-        tprint(f"📊 CPU cores detected: {self.hardware_caps['cpu_cores']}")
-
-        # Detect GPU availability
-        tprint("🔄 Detecting GPU availability...")
-        if TORCH_AVAILABLE:
-            if torch.cuda.is_available():
-                self.hardware_caps['gpu_available'] = True
-                self.hardware_caps['gpu_type'] = 'cuda'
-                self.hardware_caps['gpu_memory_gb'] = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-                tprint(f"📊 CUDA GPU detected with {self.hardware_caps['gpu_memory_gb']:.1f}GB memory")
-            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-                self.hardware_caps['gpu_available'] = True
-                self.hardware_caps['gpu_type'] = 'mps'
-                self.hardware_caps['mps_available'] = True
-                tprint("📊 MPS GPU detected")
-            else:
-                tprint("📊 No GPU detected")
-        else:
-            tprint("⚠️ PyTorch not available for GPU detection")
-
-        # Detect memory
-        tprint("🔄 Detecting system memory...")
-        try:
-            import psutil
-            self.hardware_caps['memory_gb'] = psutil.virtual_memory().total / (1024**3)
-            tprint(f"📊 System memory: {self.hardware_caps['memory_gb']:.1f}GB")
-        except ImportError:
-            tprint("⚠️ psutil not available, using default memory estimate")
-            self.hardware_caps['memory_gb'] = 4.0  # Default estimate
-
-        tprint(f"🖥️ Hardware capabilities: {self.hardware_caps}")
-        self.logger.info(f"🖥️ Hardware detected: {self.hardware_caps}")
+        """
+        DEPRECATED: Hardware detection now uses singleton manager.
+        This method is kept for backward compatibility but does nothing.
+        Hardware capabilities are set in __init__ via singleton.
+        """
+        # Hardware capabilities already set via singleton in __init__
+        pass
 
     def optimize_operation(self, operation_type: OperationType,
                           data: Any,

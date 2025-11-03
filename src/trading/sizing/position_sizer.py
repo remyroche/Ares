@@ -696,3 +696,24 @@ class PositionSizer:
             stats['portfolio'] = self.correlation_handler.get_portfolio_stats()
         
         return stats
+
+
+async def setup_position_sizer(
+    config: TradingConfig,
+    leverage_manager: Optional[LeverageManager] = None,
+    risk_calculator: Optional[RiskCalculator] = None
+) -> Optional[PositionSizer]:
+    """Setup and initialize position sizer."""
+    try:
+        tprint_info("🔄 Setting up Position Sizer...")
+        position_sizer = PositionSizer(config, leverage_manager, risk_calculator)
+        success = await position_sizer.initialize()
+        if success:
+            tprint_success("✅ Position Sizer setup completed successfully")
+            return position_sizer
+        tprint_warning("⚠️ Position Sizer setup completed but initialization failed")
+        return None
+    except Exception as e:
+        tprint_error(f"❌ Failed to setup position sizer: {e}")
+        logger.error(f"❌ Failed to setup position sizer: {e}")
+        return None

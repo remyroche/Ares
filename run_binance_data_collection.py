@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
 """
-Binance Data Collection Script
-Collects 4 years of historical klines data with gap detection, filling, quality filtering, and resampling.
+Enhanced Klines Data Collection Script
+Collects historical klines data with gap detection, filling, quality filtering, and resampling.
+
+Usage:
+    python3 run_binance_data_collection.py [--exchange EXCHANGE] [--symbol SYMBOL] [--interval INTERVAL] [--years YEARS]
+
+Examples:
+    python3 run_binance_data_collection.py --exchange binance
+    python3 run_binance_data_collection.py --exchange binance --symbol ETHUSDT --interval 1m --years 4
+    python3 run_binance_data_collection.py --exchange okx --symbol BTCUSDT --interval 5m --years 2
 """
 
 import asyncio
 import sys
+import argparse
 from pathlib import Path
 from datetime import datetime
 
@@ -20,38 +29,113 @@ from src.training.steps.data_collection.enhanced_klines_processing_pipeline impo
 from src.trading.execution.exchange_interface import ExchangeInterface
 
 
+def parse_args():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description='Enhanced Klines Data Collection with Gap Filling',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s --exchange binance
+  %(prog)s --exchange binance --symbol ETHUSDT --interval 1m --years 4
+  %(prog)s --exchange okx --symbol BTCUSDT --interval 5m --years 2
+        """
+    )
+    
+    parser.add_argument(
+        '--exchange',
+        type=str,
+        default='binance',
+        choices=['binance', 'okx', 'gateio', 'bingx', 'mexc'],
+        help='Exchange to collect data from (default: binance)'
+    )
+    
+    parser.add_argument(
+        '--symbol',
+        type=str,
+        default='ETHUSDT',
+        help='Trading symbol (default: ETHUSDT)'
+    )
+    
+    parser.add_argument(
+        '--interval',
+        type=str,
+        default='1m',
+        choices=['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d'],
+        help='Kline interval (default: 1m)'
+    )
+    
+    parser.add_argument(
+        '--years',
+        type=int,
+        default=4,
+        help='Number of years of historical data to collect (default: 4)'
+    )
+    
+    parser.add_argument(
+        '--data-dir',
+        type=str,
+        default='historical_data',
+        help='Base directory for data storage (default: historical_data)'
+    )
+    
+    parser.add_argument(
+        '--no-gap-filling',
+        action='store_true',
+        help='Disable gap filling'
+    )
+    
+    parser.add_argument(
+        '--no-resampling',
+        action='store_true',
+        help='Disable resampling to higher timeframes'
+    )
+    
+    parser.add_argument(
+        '--force-download',
+        action='store_true',
+        help='Force fresh download, ignore existing data'
+    )
+    
+    return parser.parse_args()
+
+
 async def main():
-    """Run Binance data collection for 4 years."""
+    """Run data collection with command-line arguments."""
+    
+    args = parse_args()
     
     print("=" * 80)
-    print("🚀 BINANCE DATA COLLECTION - 4 YEARS")
+    print(f"🚀 ENHANCED KLINES DATA COLLECTION - {args.exchange.upper()}")
     print("=" * 80)
     print()
     
-    # Configuration
-    EXCHANGE = "binance"
-    SYMBOL = "ETHUSDT"
-    INTERVAL = "1m"
-    YEARS = 4
+    # Configuration from command-line arguments
+    EXCHANGE = args.exchange
+    SYMBOL = args.symbol
+    INTERVAL = args.interval
+    YEARS = args.years
     
     print(f"📊 Configuration:")
     print(f"   - Exchange: {EXCHANGE}")
     print(f"   - Symbol: {SYMBOL}")
     print(f"   - Interval: {INTERVAL}")
     print(f"   - Lookback: {YEARS} years")
+    print(f"   - Data Directory: {args.data_dir}")
     print()
     
-    # Configure pipeline with all requested features enabled
+    # Configure pipeline with command-line options
     pipeline_config = PipelineConfig(
-        data_dir="data_cache",  # Use data_cache as base directory per memory
+        data_dir=args.data_dir,
         exchange=EXCHANGE,
         enable_logging=True,
-        enable_gap_filling=True,      # ✅ Gap filling enabled
-        enable_resampling=True,        # ✅ Resampling enabled
-        enable_duplicate_handling=True, # Quality filtering
-        enable_quality_validation=True, # ✅ Quality filtering enabled
+        enable_gap_filling=not args.no_gap_filling,
+        enable_resampling=not args.no_resampling,
+        enable_duplicate_handling=True,
+        enable_quality_validation=True,
         batch_compatible=True,
-        max_gap_minutes=1              # ✅ Gap detection threshold
+        force_download=args.force_download,
+        max_gap_minutes=1
     )
     
     # Configure resampling for multiple timeframes
@@ -64,10 +148,20 @@ async def main():
     )
     
     print(f"⚙️  Pipeline Configuration:")
-    print(f"   - Gap Detection: ✅ (max gap: {pipeline_config.max_gap_minutes} minutes)")
-    print(f"   - Gap Filling: ✅")
+    print(f"   - Pipeline: EnhancedKlinesProcessingPipeline")
+    print(f"   - Mode: {'Force Download' if args.force_download else 'Incremental (gap filling)'}")
+    print(f"   - Target: {YEARS} years of data")
+    print(f"   - Gap Detection: ✅")
+    print(f"   - Gap Filling: {'❌ Disabled' if args.no_gap_filling else '✅ Enabled (downloads missing periods only)'}")
     print(f"   - Quality Filtering: ✅")
-    print(f"   - Resampling: ✅ (to {', '.join(resampling_config.target_intervals)})")
+    
+    # Handle resampling display
+    if args.no_resampling:
+        print(f"   - Resampling: ❌ Disabled")
+    else:
+        intervals_str = ', '.join(resampling_config.target_intervals)
+        print(f"   - Resampling: ✅ Enabled (to {intervals_str})")
+    
     print(f"   - Data Directory: {pipeline_config.data_dir}")
     print()
     

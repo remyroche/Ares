@@ -50,6 +50,9 @@ from src.core.errors import (
 
 logger = logging.getLogger(__name__)
 
+# Alias for backward compatibility
+OOFConfig = None  # Will be set after class definition
+
 @dataclass
 class OOFStackingEnsembleConfig:
     """Configuration for OOF stacking ensemble manager."""
@@ -110,6 +113,9 @@ class OOFStackingEnsembleConfig:
     # OOF-specific settings
     oof_validation_metric: str = "accuracy"
     oof_aggregation_method: str = "mean"  # mean, median, weighted
+
+# Backward compatibility alias
+OOFConfig = OOFStackingEnsembleConfig
 
 @dataclass
 class OOFStackingEnsembleResult:

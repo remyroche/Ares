@@ -23,7 +23,7 @@ import warnings
 
 # Import VectorBT optimizations
 try:
-    from src.vectorbt import (
+    from src.utils.vectorbt_compat import (
         vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
         rolling_sum, rolling_apply, VECTORBT_AVAILABLE
     )

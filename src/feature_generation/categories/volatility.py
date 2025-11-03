@@ -35,11 +35,12 @@ from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
 try:
     import vectorbt as vbt
     # VectorBT doesn't have rolling functions, use pandas instead
-    # from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = True  # Force True for comprehensive volatility generators
+    # from src.utils.vectorbt_compat import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True  # VectorBT successfully loaded
+    logging.info("✅ VectorBT compatibility layer loaded successfully")
+except ImportError as e:
+    VECTORBT_AVAILABLE = False  # VectorBT not available
     vbt = None
     rolling_mean = None
     rolling_std = None
@@ -56,7 +57,11 @@ except ImportError:
     winsorize = None
     clip = None
     quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+    # Provide more detailed error message
+    if "partially initialized" in str(e) or "circular import" in str(e):
+        logging.warning(f"VectorBT compatibility module unavailable due to initialization issue: {e}. Using fallback implementations.")
+    else:
+        logging.warning(f"VectorBT not available: {e}. Install with: pip install vectorbt for optimized performance")
 
 # VectorBT Rolling Optimizer - NOW USING NEW OPTIMIZED VERSION
 try:
@@ -134,13 +139,16 @@ try:
         create_enhanced_volatility_generators,
         create_default_enhanced_volatility_generators
     )
-    ENHANCED_VECTORBT_AVAILABLE = True
-except ImportError:
-    ENHANCED_VECTORBT_AVAILABLE = True  # Force True for comprehensive volatility generators
+    ENHANCED_VECTORBT_AVAILABLE = True  # Enhanced VectorBT successfully loaded
+    logging.info("✅ Enhanced VectorBT volatility generators loaded successfully")
+except ImportError as e:
+    ENHANCED_VECTORBT_AVAILABLE = False  # Enhanced VectorBT not available
     EnhancedVectorBTVolatilityGenerator = None
     VolatilityConfig = None
     create_enhanced_volatility_generators = None
     create_default_enhanced_volatility_generators = None
+    # Log the reason for unavailability
+    logging.debug(f"Enhanced VectorBT volatility generators not available: {e}")
 
 # Unified Vectorization Manager
 try:

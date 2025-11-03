@@ -468,6 +468,11 @@ async def main():
         'execution_mode': args.execution_mode
     }
     
+    # Set execution mode for HPO optimizations
+    from src.utils.ml_common.optimization import set_execution_mode
+    set_execution_mode(args.execution_mode)
+    logger.info(f"🔧 Execution mode set to: {args.execution_mode.upper()}")
+    
     # Handle different execution modes
     try:
         if args.step:

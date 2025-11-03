@@ -249,7 +249,8 @@ class WalkForwardValidator:
         # Convert to binary targets
         binary_targets = (actual > 0).astype(int)
 
-        if binary_targets.nunique() < 2:
+        # Check if we have both classes
+        if len(np.unique(binary_targets)) < 2:
             return 0.5
 
         try:

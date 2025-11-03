@@ -35,7 +35,7 @@ except ImportError:
 # VectorBT imports
 try:
     # Import from src.vectorbt instead of direct vectorbt import
-    from src.vectorbt import (
+    from src.utils.vectorbt_compat import (
         vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
         rolling_sum, rolling_apply, VECTORBT_AVAILABLE as VBT_AVAILABLE
     )
@@ -148,11 +148,13 @@ except ImportError as e:
 
 try:
     from src.utils.ml_common.ensembles.oof_stacking_ensemble_manager import (
-        OOFStackingEnsembleManager, OOFConfig
+        OOFStackingEnsembleManager, OOFStackingEnsembleConfig
     )
     OOF_ENSEMBLE_AVAILABLE = True
 except ImportError as e:
     OOF_ENSEMBLE_AVAILABLE = False
+    OOFStackingEnsembleConfig = None
+    OOFStackingEnsembleManager = None
     print(f"Warning: OOF ensemble not available: {e}")
 
 try:
@@ -208,21 +210,44 @@ except ImportError as e:
     print(f"Warning: SR detection not available for parameter testing: {e}")
 
 @dataclass
+class StrengthWeights:
+    """Optimizable weights for SR level strength calculation."""
+    # Positive boosts
+    touch_weight: float = 0.1          # Touch boost weight
+    volume_weight: float = 0.2         # Volume confirmation weight
+    consistency_weight: float = 0.2    # Consistency weight
+    confluence_weight: float = 0.1     # Confluence weight
+    pivot_boost: float = 0.1           # Pivot level boost
+    psychological_boost: float = 0.05  # Psychological level boost
+    hvn_boost: float = 0.1             # High Volume Node boost
+    
+    # Negative penalties (failures/breakouts)
+    failure_penalty_base: float = 0.2           # Base penalty per failure
+    failure_volume_multiplier: float = 1.5      # Volume scaling (2.0 - volume_factor) 
+    failure_max_penalty: float = 0.6            # Maximum total penalty cap
+
+
+@dataclass
 class EnhancedSRConfig:
     """Enhanced configuration for SR parameter optimization with advanced ML utilities."""
     # Optimization settings
-    enable_bayesian_hpo: bool = True
-    enable_hierarchical_hpo: bool = True  # Use hierarchical optimization (recommended for 6+ params)
+    enable_bayesian_hpo: bool = False  # Disabled in favor of hierarchical (faster + better)
+    enable_hierarchical_hpo: bool = True  # DEFAULT: Use hierarchical (recommended for 4+ params)
+    enable_strength_weight_optimization: bool = True  # NEW: Optimize strength weights via HPO
     enable_vectorbt_optimization: bool = True
     enable_hardware_optimization: bool = True
     enable_advanced_validation: bool = True
     
-    # Bayesian HPO settings
-    n_trials: int = 100
+    # Hierarchical HPO settings (Coarse → Fine → TPE strategy)
+    n_trials: int = 120  # Total trials across all stages
     enable_staged_optimization: bool = True
-    coarse_grid_points: int = 20
-    fine_grid_points: int = 50
-    tpe_trials: int = 100
+    coarse_grid_points: int = 4   # Coarse grid: 4 points per param
+    fine_grid_points: int = 6      # Fine grid: 6 points per param (denser)
+    tpe_trials: int = 50           # TPE Bayesian optimization trials
+    
+    # Strength weight optimization settings
+    strength_weight_trials: int = 60  # Trials for strength weight optimization
+    strength_optimization_metric: str = 'spearman_correlation'  # Metric to optimize
     
     # Hardware optimization settings
     workload_type: str = 'BACKTESTING'
@@ -348,11 +373,12 @@ class SRParameterOptimizationStep(BaseStep):
         
         # Initialize OOF ensemble components
         if OOF_ENSEMBLE_AVAILABLE:
-            self.oof_config = OOFConfig(
-                n_splits=5,
-                test_size=0.2,
-                gap_days=3,
-                enable_advanced_validation=True
+            self.oof_config = OOFStackingEnsembleConfig(
+                ensemble_name="sr_parameter_optimization",
+                output_dir="models/sr_optimization",
+                cv_folds=5,
+                enable_temporal_validation=True,
+                purge_periods=3
             )
             self.oof_manager = OOFStackingEnsembleManager(self.oof_config)
             self.logger.info("✅ OOF ensemble manager initialized")
@@ -382,7 +408,7 @@ class SRParameterOptimizationStep(BaseStep):
         """Get list of required input artifacts this step needs from previous steps."""
         return ['sr_clustering_result', 'sr_levels_dictionary']
 
-    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, config: Dict[str, Any], enhanced_config: EnhancedSRConfig = None) -> Dict[str, Any]:
         """
         Execute enhanced SR parameter optimization with advanced techniques.
 
@@ -395,6 +421,9 @@ class SRParameterOptimizationStep(BaseStep):
                 - enable_bayesian_hpo: Enable Bayesian optimization (default: True)
                 - enable_vectorbt: Enable VectorBT optimization (default: True)
                 - enable_hardware_optimization: Enable hardware optimization (default: True)
+            enhanced_config: Optional EnhancedSRConfig instance with custom optimization settings.
+                           If provided, uses these settings instead of defaults.
+                           If None, creates default config and overrides from config dict.
 
         Returns:
             Dict containing:
@@ -419,18 +448,30 @@ class SRParameterOptimizationStep(BaseStep):
                     'error': f"Failed to fetch required input artifacts: {input_artifacts['error']}"
                 }
             
-            # Create enhanced configuration
-            enhanced_config = EnhancedSRConfig()
-            
-            # Override with user config if provided
-            if 'enable_bayesian_hpo' in config:
-                enhanced_config.enable_bayesian_hpo = config['enable_bayesian_hpo']
-            if 'enable_hierarchical_hpo' in config:
-                enhanced_config.enable_hierarchical_hpo = config['enable_hierarchical_hpo']
-            if 'enable_vectorbt' in config:
-                enhanced_config.enable_vectorbt_optimization = config['enable_vectorbt']
-            if 'enable_hardware_optimization' in config:
-                enhanced_config.enable_hardware_optimization = config['enable_hardware_optimization']
+            # Use provided enhanced configuration or create default
+            if enhanced_config is None:
+                self.logger.info("📊 Creating default enhanced configuration")
+                enhanced_config = EnhancedSRConfig()
+                
+                # Override with user config if provided
+                if 'enable_bayesian_hpo' in config:
+                    enhanced_config.enable_bayesian_hpo = config['enable_bayesian_hpo']
+                if 'enable_hierarchical_hpo' in config:
+                    enhanced_config.enable_hierarchical_hpo = config['enable_hierarchical_hpo']
+                if 'enable_vectorbt' in config:
+                    enhanced_config.enable_vectorbt_optimization = config['enable_vectorbt']
+                if 'enable_hardware_optimization' in config:
+                    enhanced_config.enable_hardware_optimization = config['enable_hardware_optimization']
+            else:
+                self.logger.info("✅ Using provided enhanced configuration")
+                self.logger.info(f"   - n_trials: {enhanced_config.n_trials}")
+                self.logger.info(f"   - coarse_grid_points: {enhanced_config.coarse_grid_points}")
+                self.logger.info(f"   - fine_grid_points: {enhanced_config.fine_grid_points}")
+                self.logger.info(f"   - tpe_trials: {enhanced_config.tpe_trials}")
+                self.logger.info(f"   - optimization_level: {enhanced_config.optimization_level}")
+                self.logger.info(f"   - max_workers: {enhanced_config.max_workers}")
+                self.logger.info(f"   - hierarchical_hpo: {enhanced_config.enable_hierarchical_hpo}")
+                self.logger.info(f"   - strength_weight_optimization: {enhanced_config.enable_strength_weight_optimization}")
 
             # Get and validate market data
             market_data = await self._load_market_data(config)
@@ -452,6 +493,16 @@ class SRParameterOptimizationStep(BaseStep):
                 market_data, enhanced_config, config, input_artifacts['artifacts']
             )
 
+            # Handle None optimization_result
+            if optimization_result is None:
+                self.logger.error("❌ Optimization returned None result")
+                return {
+                    'success': False,
+                    'artifacts': {},
+                    'metrics': {},
+                    'error': "Optimization returned None result"
+                }
+            
             # Extract results
             optimized_parameters = optimization_result.get('optimized_parameters', {})
             quality_thresholds = optimization_result.get('quality_thresholds', {})
@@ -459,6 +510,8 @@ class SRParameterOptimizationStep(BaseStep):
 
             # Validate that we have the required data
             if not optimized_parameters or not quality_thresholds:
+                self.logger.error(f"❌ Missing required data: optimized_parameters={bool(optimized_parameters)}, quality_thresholds={bool(quality_thresholds)}")
+                self.logger.error(f"❌ optimization_result keys: {list(optimization_result.keys())}")
                 raise ValueError("Parameter optimization failed to produce required data")
 
             # Create enhanced consolidated artifact
@@ -1130,14 +1183,13 @@ class SRParameterOptimizationStep(BaseStep):
         enhanced_config: EnhancedSRConfig
     ) -> Dict[str, Any]:
         """
-        Run hierarchical 3-phase optimization for SR parameters.
+        Run hierarchical 3-phase optimization for SR parameters with FAST FILTERING.
         
         Phase 1: Detection parameters (min_touches, strength_threshold)
         Phase 2: Distance thresholds (distance_threshold)
         Phase 3: Lookback parameters (lookback_periods, time_decay)
         
-        This achieves ~30-50% faster convergence by optimizing parameter groups
-        sequentially rather than all parameters simultaneously.
+        OPTIMIZATION: Detects levels ONCE, then filters for each trial (100x faster).
         
         Args:
             market_data: Market data DataFrame
@@ -1148,11 +1200,13 @@ class SRParameterOptimizationStep(BaseStep):
             Optimization result dictionary
         """
         if not HIERARCHICAL_HPO_AVAILABLE:
-            self.logger.warning("Hierarchical HPO not available, falling back to Bayesian")
-            return await self._run_bayesian_optimization(market_data, search_space, enhanced_config)
+            self.logger.warning("Hierarchical HPO not available, falling back to traditional")
+            # Split data for traditional optimization
+            train_data, test_data = self._split_data_for_optimization(market_data)
+            return await self._run_traditional_optimization(search_space, train_data, test_data, enhanced_config)
         
         self.logger.info("=" * 80)
-        self.logger.info("🚀 HIERARCHICAL SR PARAMETER OPTIMIZATION")
+        self.logger.info("🚀 HIERARCHICAL SR PARAMETER OPTIMIZATION (FAST MODE)")
         self.logger.info("=" * 80)
         self.logger.info("Phase 1: Detection (min_touches, strength_threshold)")
         self.logger.info("Phase 2: Distance (distance_threshold)")
@@ -1160,88 +1214,245 @@ class SRParameterOptimizationStep(BaseStep):
         self.logger.info("=" * 80)
         
         try:
-            # Define parameter groups
+            # OPTIMIZATION: Detect levels ONCE with relaxed parameters
+            self.logger.info("🚀 Pre-detecting SR levels once (FAST MODE)...")
+            relaxed_params = {
+                'min_touches': 1,
+                'strength_threshold': 0.1,
+                'distance_threshold': 0.01,
+                'lookback_periods': 50,
+                'volume_threshold': 0.5
+            }
+            all_detected_levels = self._detect_sr_levels(market_data, relaxed_params)
+            self.logger.info(f"✅ Pre-detected {len(all_detected_levels)} candidate SR levels")
+            
+            if not all_detected_levels:
+                self.logger.warning("⚠️ No SR levels detected, cannot optimize")
+                return {
+                    'optimized_parameters': relaxed_params,
+                    'best_score': 0.0,
+                    'total_combinations_tested': 0,
+                    'error': 'No SR levels detected'
+                }
+            # Define parameter groups with improved logical grouping
+            # Group 1: Core Detection (highest priority - affects what gets detected)
+            # Group 2: Quality Filtering (depends on detection - filters detected levels)
+            # Group 3: Temporal/Lookback (depends on detection - historical context)
+            # Group 4: Market Context (lowest priority - refinement parameters)
             param_groups = [
                 create_param_group(
-                    name="detection",
+                    name="core_detection",
                     params={
-                        "min_touches": search_space.get('min_touches', {"type": "int", "low": 2, "high": 5}),
-                        "strength_threshold": search_space.get('strength_threshold', {"type": "float", "low": 0.3, "high": 0.8})
+                        "min_touches": search_space.get('min_touches', {"type": "int", "low": 2, "high": 5})
+                        # NOTE: strength_threshold removed - belongs in Group 5 (calculated strength filtering)
+                        # Can't filter by strength before optimizing how strength is calculated!
                     },
                     priority=1,
-                    description="Core SR detection parameters"
+                    description="Core SR detection: minimum touches required"
                 ),
                 create_param_group(
-                    name="distance",
+                    name="quality_filtering",
                     params={
-                        "distance_threshold": search_space.get('distance_threshold', {"type": "float", "low": 0.005, "high": 0.03})
+                        "distance_threshold": search_space.get('distance_threshold', {"type": "float", "low": 0.005, "high": 0.03}),
+                        "volume_threshold": search_space.get('volume_threshold', {"type": "float", "low": 0.5, "high": 2.0})
                     },
                     priority=2,
-                    depends_on=["detection"],
-                    description="Distance threshold for SR level grouping"
+                    depends_on=["core_detection"],
+                    description="Quality filters: distance and volume confirmation"
                 ),
                 create_param_group(
-                    name="lookback",
+                    name="temporal_lookback",
                     params={
                         "lookback_periods": search_space.get('lookback_periods', {"type": "int", "low": 20, "high": 100})
                     },
                     priority=3,
-                    depends_on=["detection"],
-                    description="Historical lookback parameters"
+                    depends_on=["core_detection"],
+                    description="Historical lookback: how far to search for patterns"
+                ),
+                create_param_group(
+                    name="market_context",
+                    params={
+                        "trend_strength_threshold": search_space.get('trend_strength_threshold', {"type": "float", "low": 0.3, "high": 0.7}),
+                        "breakout_threshold": search_space.get('breakout_threshold', {"type": "float", "low": 0.01, "high": 0.05})
+                    },
+                    priority=4,
+                    depends_on=["core_detection", "quality_filtering"],
+                    description="Market context: trend and breakout refinement"
                 )
             ]
             
-            # Define objective function
+            # Add strength weight optimization if enabled
+            # CRITICAL: Split into multiple groups to avoid combinatorial explosion
+            # 11 params in 1 group = 5^11 = 48M combinations (INTRACTABLE!)
+            # Split into 3 groups of ≤5 params each
+            if enhanced_config.enable_strength_weight_optimization:
+                # Group 5a: Core Positive Boosts (5 params) - Most impactful weights
+                strength_boosts_core = create_param_group(
+                    name="strength_boosts_core",
+                    params={
+                        "touch_weight": {"type": "float", "low": 0.05, "high": 0.3, "step": 0.05},
+                        "volume_weight": {"type": "float", "low": 0.1, "high": 0.4, "step": 0.05},
+                        "consistency_weight": {"type": "float", "low": 0.1, "high": 0.4, "step": 0.05},
+                        "confluence_weight": {"type": "float", "low": 0.05, "high": 0.2, "step": 0.025},
+                        "pivot_boost": {"type": "float", "low": 0.05, "high": 0.2, "step": 0.025}
+                    },
+                    priority=5,
+                    depends_on=["core_detection", "quality_filtering"],
+                    description="Core strength boosts: touch, volume, consistency, confluence, pivot"
+                )
+                param_groups.append(strength_boosts_core)
+                
+                # Group 5b: Secondary Boosts + Filter (3 params) - Special case boosts
+                strength_boosts_special = create_param_group(
+                    name="strength_boosts_special",
+                    params={
+                        "psychological_boost": {"type": "float", "low": 0.02, "high": 0.1, "step": 0.01},
+                        "hvn_boost": {"type": "float", "low": 0.05, "high": 0.2, "step": 0.025},
+                        "strength_filter_threshold": {"type": "float", "low": 0.3, "high": 0.8, "step": 0.05}
+                    },
+                    priority=6,
+                    depends_on=["core_detection", "strength_boosts_core"],
+                    description="Special boosts (psychological, HVN) + post-calculation filter"
+                )
+                param_groups.append(strength_boosts_special)
+                
+                # Group 5c: Failure Penalties (3 params) - Negative adjustments
+                strength_penalties = create_param_group(
+                    name="strength_penalties",
+                    params={
+                        "failure_penalty_base": {"type": "float", "low": 0.1, "high": 0.5, "step": 0.05},
+                        "failure_volume_multiplier": {"type": "float", "low": 1.0, "high": 2.5, "step": 0.25},
+                        "failure_max_penalty": {"type": "float", "low": 0.4, "high": 1.0, "step": 0.1}
+                    },
+                    priority=7,
+                    depends_on=["core_detection", "strength_boosts_core"],
+                    description="Failure penalties: base, volume multiplier, max penalty"
+                )
+                param_groups.append(strength_penalties)
+                
+                self.logger.info("✅ Added strength weight optimization (split into 3 groups to avoid combinatorial explosion)")
+                self.logger.info("   - Group 5a: Core boosts (5 params) - 5^5 = 3,125 combos")
+                self.logger.info("   - Group 5b: Special boosts + filter (3 params) - 5^3 = 125 combos")
+                self.logger.info("   - Group 5c: Penalties (3 params) - 5^3 = 125 combos")
+                self.logger.info("   - Total: 11 params split across 3 groups (vs. 5^11 = 48M in 1 group)")
+            
+            # Define objective function (OPTIMIZED: uses pre-detected levels)
             def objective_func(params, X_train, y_train, X_val=None, y_val=None,
                               model=None, cv_folds=None, scoring_metric=None):
-                """Objective function for SR parameter optimization."""
+                """Objective function for SR parameter optimization (FAST: filters pre-detected levels)."""
                 try:
-                    # Use SR detector to evaluate parameters
-                    if SR_DETECTION_AVAILABLE:
-                        # Create config dict for EnhancedSRDetector
-                        detector_config = {
-                            'min_touches': int(params.get('min_touches', 2)),
-                            'strength_threshold': float(params.get('strength_threshold', 0.5)),
-                            'distance_threshold': float(params.get('distance_threshold', 0.01)),
-                            'lookback_periods': int(params.get('lookback_periods', 50))
-                        }
+                    # Handle None params
+                    if params is None:
+                        self.logger.warning("Objective function received None params")
+                        return 0.0
+                    
+                    # OPTIMIZATION: Filter pre-detected levels instead of re-detecting
+                    param_dict = {
+                        'min_touches': int(params.get('min_touches', 2) if isinstance(params, dict) else getattr(params, 'min_touches', 2)),
+                        'distance_threshold': float(params.get('distance_threshold', 0.01) if isinstance(params, dict) else getattr(params, 'distance_threshold', 0.01)),
+                        'lookback_periods': int(params.get('lookback_periods', 50) if isinstance(params, dict) else getattr(params, 'lookback_periods', 50)),
+                        'volume_threshold': float(params.get('volume_threshold', 1.0) if isinstance(params, dict) else getattr(params, 'volume_threshold', 1.0)),
+                        # NOTE: strength_threshold removed from here - now in Group 5 as strength_filter_threshold
+                    }
+                    
+                    # Extract strength weights if being optimized
+                    strength_weights = None
+                    if enhanced_config.enable_strength_weight_optimization:
+                        strength_weights = StrengthWeights(
+                            # Positive boosts
+                            touch_weight=float(params.get('touch_weight', 0.1) if isinstance(params, dict) else getattr(params, 'touch_weight', 0.1)),
+                            volume_weight=float(params.get('volume_weight', 0.2) if isinstance(params, dict) else getattr(params, 'volume_weight', 0.2)),
+                            consistency_weight=float(params.get('consistency_weight', 0.2) if isinstance(params, dict) else getattr(params, 'consistency_weight', 0.2)),
+                            confluence_weight=float(params.get('confluence_weight', 0.1) if isinstance(params, dict) else getattr(params, 'confluence_weight', 0.1)),
+                            pivot_boost=float(params.get('pivot_boost', 0.1) if isinstance(params, dict) else getattr(params, 'pivot_boost', 0.1)),
+                            psychological_boost=float(params.get('psychological_boost', 0.05) if isinstance(params, dict) else getattr(params, 'psychological_boost', 0.05)),
+                            hvn_boost=float(params.get('hvn_boost', 0.1) if isinstance(params, dict) else getattr(params, 'hvn_boost', 0.1)),
+                            # Negative penalties
+                            failure_penalty_base=float(params.get('failure_penalty_base', 0.2) if isinstance(params, dict) else getattr(params, 'failure_penalty_base', 0.2)),
+                            failure_volume_multiplier=float(params.get('failure_volume_multiplier', 1.5) if isinstance(params, dict) else getattr(params, 'failure_volume_multiplier', 1.5)),
+                            failure_max_penalty=float(params.get('failure_max_penalty', 0.6) if isinstance(params, dict) else getattr(params, 'failure_max_penalty', 0.6))
+                        )
+                    
+                    # Filter pre-detected levels (MUCH faster than re-detecting)
+                    filtered_levels = self._filter_sr_levels_by_params(all_detected_levels, param_dict)
+                    
+                    # Calculate quality score based on filtered levels
+                    if len(filtered_levels) == 0:
+                        return 0.0
+                    
+                    # If optimizing strength weights, recalculate strengths and evaluate
+                    if strength_weights is not None:
+                        # Recalculate strengths with new weights
+                        recalc_strengths = []
+                        for level in filtered_levels:
+                            new_strength = self._calculate_strength_with_weights(level, strength_weights)
+                            recalc_strengths.append(new_strength)
                         
-                        detector = EnhancedSRDetector(detector_config)
+                        # Apply strength filter threshold (moved from Group 1 to Group 5)
+                        strength_filter_threshold = float(
+                            params.get('strength_filter_threshold', 0.5) if isinstance(params, dict) 
+                            else getattr(params, 'strength_filter_threshold', 0.5)
+                        )
+                        final_strengths = [s for s in recalc_strengths if s >= strength_filter_threshold]
                         
-                        # Detect SR levels
-                        sr_levels = detector.detect_sr_levels(market_data)
-                        
-                        # Calculate quality score
-                        if len(sr_levels) == 0:
+                        # Calculate score with filtered strengths
+                        if len(final_strengths) == 0:
                             return 0.0
                         
-                        # Score based on level count and average strength
-                        level_count_score = min(len(sr_levels) / 20.0, 1.0)
-                        avg_strength = np.mean([level.strength for level in sr_levels])
-                        
-                        combined_score = (level_count_score * 0.4 + avg_strength * 0.6)
-                        return combined_score
+                        avg_strength = np.mean(final_strengths)
+                        level_count_score = min(len(final_strengths) / 20.0, 1.0)
                     else:
-                        # Fallback scoring when SR detector unavailable
-                        return np.random.rand() * 0.5  # Random score for testing
+                        # Use original strengths (no recalculation)
+                        strengths = [l.get('strength', 0) if isinstance(l, dict) else getattr(l, 'strength', 0) for l in filtered_levels]
+                        avg_strength = np.mean(strengths) if strengths else 0.0
+                        level_count_score = min(len(filtered_levels) / 20.0, 1.0)
+                    
+                    # Combined score
+                    combined_score = (level_count_score * 0.4 + avg_strength * 0.6)
+                    return combined_score
                         
                 except Exception as e:
                     self.logger.error(f"Objective evaluation failed: {e}")
                     return 0.0
             
-            # Create hierarchical optimizer
+            # Create hierarchical optimizer with 3-stage optimization
+            # Stage 1: Coarse Grid (broad exploration, 3-5 points per param)
+            # Stage 2: Fine Grid (dense sampling around best region, 5-7 points)
+            # Stage 3: TPE (Bayesian optimization for final refinement)
+            self.logger.info("🔧 Optimizer Strategy: Coarse Grid → Fine Grid → TPE (Bayesian)")
+            
+            # Configure stages with grid points
+            from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import StageConfig
+            stage_configs = {
+                OptimizationStage.COARSE_GRID: StageConfig(
+                    stage=OptimizationStage.COARSE_GRID,
+                    grid_points=enhanced_config.coarse_grid_points,  # 5 points per param
+                    n_trials=20  # Coarse grid trials
+                ),
+                OptimizationStage.FINE_GRID: StageConfig(
+                    stage=OptimizationStage.FINE_GRID,
+                    grid_points=enhanced_config.fine_grid_points,  # 8 points per param
+                    n_trials=30  # Fine grid trials
+                ),
+                OptimizationStage.TPE: StageConfig(
+                    stage=OptimizationStage.TPE,
+                    n_trials=enhanced_config.tpe_trials  # 150 TPE trials
+                )
+            }
+            
             hierarchical_optimizer = HierarchicalParameterOptimizer(
                 param_groups=param_groups,
                 objective_func=objective_func,
                 stages=[
-                    OptimizationStage.COARSE_GRID,
-                    OptimizationStage.FINE_GRID,
-                    OptimizationStage.TPE
+                    OptimizationStage.COARSE_GRID,    # Fast broad exploration
+                    OptimizationStage.FINE_GRID,      # Refined local search
+                    OptimizationStage.TPE              # Bayesian optimization (tree-structured Parzen estimator)
                 ],
+                stage_configs=stage_configs,  # Pass stage configurations
                 direction='maximize',
-                n_rounds=2,
-                enable_final_refinement=True,
-                final_refinement_trials=max(20, enhanced_config.n_trials // 5),
+                n_rounds=2,  # Run 2 rounds of group optimization for convergence
+                enable_final_refinement=True,  # Final joint optimization of all params
+                final_refinement_trials=max(30, enhanced_config.n_trials // 4),  # 25-30% of trials for refinement
                 random_state=42,
                 verbose=True
             )
@@ -1269,17 +1480,33 @@ class SRParameterOptimizationStep(BaseStep):
                 'success': True,
                 'best_params': result.best_params,
                 'optimized_parameters': result.best_params,  # Also include as optimized_parameters for consistency
+                'quality_thresholds': {  # Add required quality_thresholds
+                    'min_strength': result.best_params.get('strength_threshold', 0.5),
+                    'min_touches': result.best_params.get('min_touches', 2),
+                    'min_quality_score': 0.5
+                },
+                'parameter_optimization_metrics': {  # Add required metrics
+                    'best_score': result.best_score,
+                    'total_trials': result.total_trials,
+                    'total_time': result.total_time,
+                    'method': 'hierarchical'
+                },
                 'best_score': result.best_score,
                 'total_trials': result.total_trials,
                 'total_time': result.total_time,
+                'total_combinations_tested': result.total_trials,
+                'optimization_time': result.total_time,
                 'method': 'hierarchical',
                 'optimization_result': result
             }
             
         except Exception as e:
             self.logger.error(f"Hierarchical optimization failed: {e}")
-            # Fallback to Bayesian optimization
-            return await self._run_bayesian_optimization(market_data, search_space, enhanced_config)
+            import traceback
+            self.logger.error(f"Error details: {traceback.format_exc()}")
+            # Fallback to traditional optimization
+            train_data, test_data = self._split_data_for_optimization(market_data)
+            return await self._run_traditional_optimization(search_space, train_data, test_data, enhanced_config)
     
     async def _run_bayesian_optimization(
         self, 
@@ -1291,9 +1518,30 @@ class SRParameterOptimizationStep(BaseStep):
         market_data: Any = None,
         input_artifacts: Dict[str, Any] = None
     ) -> Dict[str, Any]:
-        """Run enhanced Bayesian optimization for SR parameters with staged approach."""
+        """Run enhanced Bayesian optimization for SR parameters with FAST FILTERING."""
         try:
-            self.logger.info("🧠 Starting enhanced Bayesian optimization with staged approach...")
+            self.logger.info("🧠 Starting enhanced Bayesian optimization (FAST MODE)...")
+            
+            # OPTIMIZATION: Detect levels ONCE with relaxed parameters
+            self.logger.info("🚀 Pre-detecting SR levels once (FAST MODE)...")
+            relaxed_params = {
+                'min_touches': 1,
+                'strength_threshold': 0.1,
+                'distance_threshold': 0.01,
+                'lookback_periods': 50,
+                'volume_threshold': 0.5
+            }
+            all_detected_levels = self._detect_sr_levels(train_data, relaxed_params)
+            self.logger.info(f"✅ Pre-detected {len(all_detected_levels)} candidate SR levels")
+            
+            if not all_detected_levels:
+                self.logger.warning("⚠️ No SR levels detected, cannot optimize")
+                return {
+                    'optimized_parameters': relaxed_params,
+                    'best_score': 0.0,
+                    'total_combinations_tested': 0,
+                    'error': 'No SR levels detected'
+                }
             
             # Create optimization config with enhanced settings
             opt_config = OptimizationConfig(
@@ -1310,7 +1558,7 @@ class SRParameterOptimizationStep(BaseStep):
                 n_startup_trials=10
             )
             
-            # Enhanced objective function with ML utilities
+            # OPTIMIZED objective function: filters pre-detected levels
             def objective_function(trial):
                 params = {}
                 for param_name, param_config in search_space.items():
@@ -1323,9 +1571,9 @@ class SRParameterOptimizationStep(BaseStep):
                             param_name, param_config['low'], param_config['high']
                         )
                 
-                # Enhanced evaluation with ML utilities
-                score = self._evaluate_sr_parameters_enhanced(
-                    params, train_data, test_data, enhanced_config
+                # OPTIMIZATION: Use filtered evaluation instead of re-detecting
+                score = self._evaluate_sr_parameters_filtered(
+                    params, all_detected_levels, train_data, test_data
                 )
                 return score
             
@@ -1374,6 +1622,17 @@ class SRParameterOptimizationStep(BaseStep):
             # Enhanced result with ML utilities
             return {
                 'optimized_parameters': result.best_params,
+                'quality_thresholds': {
+                    'min_strength': result.best_params.get('strength_threshold', 0.5),
+                    'min_touches': result.best_params.get('min_touches', 2),
+                    'min_quality_score': 0.5
+                },
+                'parameter_optimization_metrics': {
+                    'best_score': result.best_value,
+                    'bayesian_trials': result.n_trials,
+                    'bayesian_efficiency': result.efficiency_score if hasattr(result, 'efficiency_score') else 0.0,
+                    'method': 'bayesian_hpo'
+                },
                 'best_score': result.best_value,
                 'bayesian_trials': result.n_trials,
                 'bayesian_efficiency': result.efficiency_score if hasattr(result, 'efficiency_score') else 0.0,
@@ -1381,6 +1640,8 @@ class SRParameterOptimizationStep(BaseStep):
                 'coarse_grid_points': enhanced_config.coarse_grid_points,
                 'fine_grid_points': enhanced_config.fine_grid_points,
                 'tpe_trials': enhanced_config.tpe_trials,
+                'total_combinations_tested': result.n_trials,
+                'optimization_time': 0.0,
                 'explainability_results': explainability_results,
                 'optimization_history': result.trials if hasattr(result, 'trials') else []
             }
@@ -1474,13 +1735,37 @@ class SRParameterOptimizationStep(BaseStep):
         test_data: Any, 
         enhanced_config: EnhancedSRConfig
     ) -> Dict[str, Any]:
-        """Run traditional grid search optimization."""
+        """Run traditional grid search optimization with optimized single-detection approach."""
         try:
+            self.logger.info("🚀 Detecting SR levels once with relaxed parameters (FAST MODE)...")
+            
+            # OPTIMIZATION: Detect levels ONCE with relaxed parameters to get comprehensive candidate pool
+            relaxed_params = {
+                'min_touches': 1,  # Relaxed to capture all potential levels
+                'strength_threshold': 0.1,  # Very relaxed threshold
+                'distance_threshold': 0.01,
+                'lookback_periods': 50,
+                'volume_threshold': 0.5,  # Relaxed volume requirement
+                'touch_tolerance': 0.5
+            }
+            
+            all_detected_levels = self._detect_sr_levels(train_data, relaxed_params)
+            self.logger.info(f"✅ Detected {len(all_detected_levels)} candidate SR levels (will filter by parameters)")
+            
+            if not all_detected_levels:
+                self.logger.warning("⚠️ No SR levels detected even with relaxed parameters")
+                return {
+                    'optimized_parameters': relaxed_params,
+                    'best_score': 0.0,
+                    'total_combinations_tested': 0,
+                    'error': 'No SR levels detected'
+                }
+            
             best_score = 0.0
             best_params = {}
             total_combinations = 0
             
-            # Simple grid search
+            # OPTIMIZATION: Now filter and evaluate (much faster than re-detecting)
             for min_touches in range(2, 6):
                 for strength_threshold in [0.3, 0.5, 0.7]:
                     params = {
@@ -1491,17 +1776,32 @@ class SRParameterOptimizationStep(BaseStep):
                         'volume_threshold': 1.0
                     }
                     
-                    score = self._evaluate_sr_parameters(params, train_data, test_data)
+                    # Filter already-detected levels instead of re-detecting
+                    score = self._evaluate_sr_parameters_filtered(
+                        params, all_detected_levels, train_data, test_data
+                    )
                     total_combinations += 1
                     
                     if score > best_score:
                         best_score = score
                         best_params = params
             
+            self.logger.info(f"✅ Optimized parameter search: {total_combinations} combinations tested (detected once, filtered {total_combinations} times)")
             return {
                 'optimized_parameters': best_params,
+                'quality_thresholds': {
+                    'min_strength': best_params.get('strength_threshold', 0.5),
+                    'min_touches': best_params.get('min_touches', 2),
+                    'min_quality_score': 0.5
+                },
+                'parameter_optimization_metrics': {
+                    'best_score': best_score,
+                    'total_combinations': total_combinations,
+                    'method': 'traditional_grid_search'
+                },
                 'best_score': best_score,
-                'total_combinations_tested': total_combinations
+                'total_combinations_tested': total_combinations,
+                'optimization_time': 0.0
             }
             
         except Exception as e:
@@ -1509,7 +1809,11 @@ class SRParameterOptimizationStep(BaseStep):
             return {'error': str(e)}
 
     def _evaluate_sr_parameters(self, params: Dict[str, Any], train_data: Any, test_data: Any) -> float:
-        """Evaluate SR parameters using real SR detection and backtesting."""
+        """Evaluate SR parameters using real SR detection and backtesting.
+        
+        NOTE: For optimization loops, use _evaluate_sr_parameters_filtered() instead
+        to avoid re-detecting levels on every iteration.
+        """
         try:
             # Validate parameters first
             if not self._validate_parameters(params):
@@ -1536,6 +1840,84 @@ class SRParameterOptimizationStep(BaseStep):
             
         except Exception as e:
             self.logger.error(f"Parameter evaluation failed: {e}")
+            return 0.0
+    
+    def _filter_sr_levels_by_params(self, all_levels: List[Dict[str, Any]], params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Filter already-detected SR levels based on parameter thresholds.
+        
+        This is MUCH faster than re-detecting levels for each parameter combination.
+        """
+        try:
+            min_touches = params.get('min_touches', 2)
+            strength_threshold = params.get('strength_threshold', 0.5)
+            volume_threshold = params.get('volume_threshold', 1.0)
+            
+            filtered_levels = []
+            for level in all_levels:
+                # Extract level attributes (handle both dict and object formats)
+                touch_count = level.get('touch_count', 0) if isinstance(level, dict) else getattr(level, 'touch_count', 0)
+                strength = level.get('strength', 0.0) if isinstance(level, dict) else getattr(level, 'strength', 0.0)
+                volume_ratio = level.get('volume_ratio', 1.0) if isinstance(level, dict) else getattr(level, 'volume_confirmation_score', 1.0)
+                
+                # Apply parameter-based filtering
+                if (touch_count >= min_touches and 
+                    strength >= strength_threshold and 
+                    volume_ratio >= volume_threshold):
+                    filtered_levels.append(level)
+            
+            return filtered_levels
+            
+        except Exception as e:
+            self.logger.error(f"Level filtering failed: {e}")
+            return []
+    
+    def _evaluate_sr_parameters_filtered(
+        self, 
+        params: Dict[str, Any], 
+        all_detected_levels: List[Dict[str, Any]],
+        train_data: Any, 
+        test_data: Any
+    ) -> float:
+        """Evaluate SR parameters by filtering already-detected levels (FAST).
+        
+        This method is optimized for parameter optimization loops where you want
+        to test many parameter combinations without re-detecting levels each time.
+        
+        Args:
+            params: Parameter dictionary to test
+            all_detected_levels: Pre-detected SR levels (from relaxed parameters)
+            train_data: Training data (for validation)
+            test_data: Test data (for backtesting)
+            
+        Returns:
+            Evaluation score (0.0 to 1.0)
+        """
+        try:
+            # Validate parameters first
+            if not self._validate_parameters(params):
+                self.logger.warning("Invalid parameters provided for evaluation")
+                return 0.0
+            
+            # OPTIMIZATION: Filter pre-detected levels instead of re-detecting
+            filtered_levels = self._filter_sr_levels_by_params(all_detected_levels, params)
+            if not filtered_levels or len(filtered_levels) == 0:
+                self.logger.debug(f"No levels passed filter: min_touches={params.get('min_touches')}, strength={params.get('strength_threshold')}")
+                return 0.0
+            
+            # Backtest the filtered SR levels on test data
+            backtest_results = self._backtest_sr_levels(filtered_levels, test_data, params)
+            if not backtest_results:
+                self.logger.debug("Backtest failed for filtered SR levels")
+                return 0.0
+            
+            # Calculate composite score based on backtest results
+            score = self._calculate_composite_score(backtest_results, params)
+            
+            self.logger.debug(f"Filtered parameter evaluation: score={score:.4f}, levels={len(filtered_levels)}/{len(all_detected_levels)}")
+            return min(max(score, 0.0), 1.0)  # Clamp between 0 and 1
+            
+        except Exception as e:
+            self.logger.error(f"Filtered parameter evaluation failed: {e}")
             return 0.0
 
     async def _evaluate_sr_parameters_enhanced(
@@ -2593,6 +2975,78 @@ class SRParameterOptimizationStep(BaseStep):
         except Exception as e:
             self.logger.error(f"Score combination failed: {e}")
             return 0.0
+    
+    def _calculate_strength_with_weights(self, level: Any, weights: StrengthWeights) -> float:
+        """Calculate SR level strength using custom weights.
+        
+        Args:
+            level: SR level (dict or SRLevel object)
+            weights: StrengthWeights with custom weight values
+            
+        Returns:
+            Calculated strength score [0, 1]
+        """
+        try:
+            # Extract level attributes (handle both dict and object)
+            def get_attr(obj, attr, default=0.0):
+                if isinstance(obj, dict):
+                    return obj.get(attr, default)
+                return getattr(obj, attr, default)
+            
+            base_strength = get_attr(level, 'strength', 0.3)
+            touch_count = get_attr(level, 'touch_count', 0)
+            avg_bounce_ratio = get_attr(level, 'avg_bounce_ratio', 0.0)
+            volume_confirmation_score = get_attr(level, 'volume_confirmation_score', 0.0)
+            consistency_score = get_attr(level, 'consistency_score', 0.0)
+            confluence_score = get_attr(level, 'confluence_score', 0.0)
+            failure_count = get_attr(level, 'failure_count', 0)
+            pivot_level = get_attr(level, 'pivot_level', False)
+            psychological_level = get_attr(level, 'psychological_level', False)
+            volume_at_level = get_attr(level, 'volume_at_level', 0.0)
+            
+            # Touch boost: Only count touches with rejection
+            rejection_ratio = min(avg_bounce_ratio / 0.02, 1.0)
+            effective_touches = touch_count * rejection_ratio if avg_bounce_ratio > 0 else 0
+            touch_boost = min(effective_touches * weights.touch_weight, 0.3)
+            
+            # Volume boost
+            volume_boost = volume_confirmation_score * weights.volume_weight
+            
+            # Consistency boost
+            consistency_boost = consistency_score * weights.consistency_weight
+            
+            # Confluence boost
+            confluence_boost = confluence_score * weights.confluence_weight
+            
+            # Failure penalty: base penalty × volume multiplier × volume scaling, capped at max
+            volume_factor = max(0.5, volume_confirmation_score)
+            # Low volume = high multiplier (weak breakout), high volume = low multiplier (strong breakout)
+            volume_scaling = weights.failure_volume_multiplier * (2.0 - volume_factor)
+            failure_penalty = min(
+                failure_count * weights.failure_penalty_base * volume_scaling,
+                weights.failure_max_penalty
+            )
+            
+            # Special boosts
+            special_boost = 0.0
+            if pivot_level:
+                special_boost += weights.pivot_boost
+            if psychological_level:
+                special_boost += weights.psychological_boost
+            if volume_at_level > 0:
+                hvn_boost = min(volume_at_level * weights.hvn_boost, weights.hvn_boost)
+                special_boost += hvn_boost
+            
+            # Final strength
+            final_strength = (base_strength + touch_boost + volume_boost + 
+                            consistency_boost + confluence_boost + 
+                            special_boost - failure_penalty)
+            
+            return max(0.0, min(1.0, final_strength))
+            
+        except Exception as e:
+            self.logger.warning(f"Strength calculation with weights failed: {e}")
+            return get_attr(level, 'strength', 0.5)
 
     def _generate_enhancement_summary(self) -> Dict[str, Any]:
         """Generate a comprehensive summary of all enhancements made to the SR parameter optimization."""

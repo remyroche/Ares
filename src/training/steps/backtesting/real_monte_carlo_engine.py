@@ -43,9 +43,15 @@ from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt
 
 # ML utilities
 from src.utils.ml_common.optimization import HyperparameterOptimizer
-from src.utils.ml_common.cv_utils import TimeSeriesSplitValidator
-from src.utils.ml_common.oof_generator import OOFGenerator
-from src.utils.ml_common.data_leakage_detector import DataLeakageDetector
+from src.utils.ml_common.validation.cv_utils import TimeSeriesSplitValidator
+try:
+    from src.utils.ml_common.oof_generator import OOFGenerator
+except ImportError:
+    OOFGenerator = None
+try:
+    from src.utils.ml_common.validation.data_leakage_detector import DataLeakageDetector
+except ImportError:
+    DataLeakageDetector = None
 
 # Math validation
 from src.utils.math_validation import (
@@ -55,12 +61,21 @@ from src.utils.math_validation import (
 )
 
 # Common operations
-from src.utils.common_operations import (
-    safe_json_dump, safe_json_load, ensure_directory,
-    calculate_sharpe_ratio, calculate_sortino_ratio, calculate_max_drawdown,
-    calculate_win_rate, calculate_profit_factor, calculate_calmar_ratio
-)
-from src.utils.common_utilities import ensure_list, ensure_array, flatten_dict
+try:
+    from src.utils.common_operations import (
+        safe_json_dump, safe_json_load, ensure_directory
+    )
+except ImportError:
+    safe_json_dump = None
+    safe_json_load = None
+    ensure_directory = None
+
+try:
+    from src.utils.common_utilities import ensure_list, ensure_array, flatten_dict
+except ImportError:
+    ensure_list = list
+    ensure_array = lambda x: np.array(x) if hasattr(x, '__iter__') else np.array([x])
+    flatten_dict = lambda d: d
 
 # Monte Carlo base engine
 try:
@@ -303,13 +318,13 @@ class RealMonteCarloEngine:
                 test_size=1.0 / config.cv_folds,
                 embargo_pct=config.embargo_pct
             )
-            self.oof_generator = OOFGenerator()
+            self.oof_generator = OOFGenerator() if OOFGenerator is not None else None
             tprint("✅ CV utilities initialized", "success")
         else:
             self.cv_validator = None
             self.oof_generator = None
 
-        if config.enable_leakage_detection:
+        if config.enable_leakage_detection and DataLeakageDetector is not None:
             self.leakage_detector = DataLeakageDetector()
             tprint("✅ Data leakage detector initialized", "success")
         else:

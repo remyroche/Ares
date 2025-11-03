@@ -391,7 +391,7 @@ class ContextualFeatureEngineer:
         """Engineer volatility-based features using VectorBT."""
         try:
             import vectorbt as vbt
-            from vectorbt.generic import rolling_std, rolling_rank, rolling_quantile
+            from src.utils.vectorbt_compat import rolling_std, rolling_rank, rolling_quantile
             from vectorbt.indicators.basic import ATR
 
             features = pd.DataFrame(index=market_data.index)

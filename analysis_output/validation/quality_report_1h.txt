@@ -1,0 +1,57 @@
+================================================================================
+QUALITY SCORE DATA QUALITY REPORT
+================================================================================
+
+Generated: 2025-11-02 18:23:19.143583
+Samples: 400
+Columns: 98
+
+COMPONENT STATISTICS:
+--------------------------------------------------------------------------------
+
+bounce_strength:
+  Mean:   0.8229
+  Median: 0.9018
+  Std:    0.2009
+  Min:    0.2716
+  Max:    1.0000
+  NaN:    0
+
+hold_strength:
+  Mean:   0.3379
+  Median: 0.0500
+  Std:    0.3802
+  Min:    0.0500
+  Max:    1.0000
+  NaN:    0
+
+trade_profit:
+  Mean:   0.1591
+  Median: -0.5000
+  Std:    0.7443
+  Min:    -0.5918
+  Max:    1.0000
+  NaN:    0
+
+--------------------------------------------------------------------------------
+QUALITY SCORE DISTRIBUTION:
+--------------------------------------------------------------------------------
+  Mean:   0.5327
+  Median: 0.3497
+  Std:    0.2722
+  IQR:    0.4473
+  Range:  [0.2007, 0.9990]
+
+--------------------------------------------------------------------------------
+TOP FEATURE CORRELATIONS:
+--------------------------------------------------------------------------------
+   1. distance_to_current_pct                  0.3130
+   2. distance_x_volatility                    0.3032
+   3. approach_velocity                        0.2902
+   4. distance_to_price_atr                    0.2902
+   5. failure_count                            0.2624
+   6. success_rate                             0.2280
+   7. vol_adjusted_strength                    0.2182
+   8. strength_percentile                      0.2158
+   9. strength                                 0.2158
+  10. relative_strength_rank                   0.2158

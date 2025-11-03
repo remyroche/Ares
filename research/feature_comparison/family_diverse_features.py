@@ -357,7 +357,7 @@ class FamilyDiverseFeatureGenerator:
         # Higher moments using VectorBT
         try:
             import vectorbt as vbt
-            from vectorbt.generic import rolling_apply
+            from src.vectorbt import rolling_apply
             
             for period in [5, 10, 20, 50]:
                 returns = data['close'].pct_change()
@@ -375,7 +375,7 @@ class FamilyDiverseFeatureGenerator:
         # Autocorrelation using VectorBT
         try:
             import vectorbt as vbt
-            from vectorbt.generic import rolling_corr
+            from src.vectorbt import rolling_corr
             
             for period in [5, 10, 20]:
                 returns = data['close'].pct_change()

@@ -505,6 +505,103 @@ def calculate_max_drawdown(prices: pd.Series) -> pd.Series:
     drawdown = (prices - peak) / peak
     return drawdown
 
+
+def calculate_win_rate(returns: Union[pd.Series, np.ndarray]) -> float:
+    """
+    Calculate win rate from trade returns.
+    
+    Args:
+        returns: Series or array of trade returns
+        
+    Returns:
+        Win rate as a float between 0 and 1
+    """
+    try:
+        if isinstance(returns, pd.Series):
+            returns = returns.values
+        
+        # Filter out zeros (no trade)
+        active_returns = returns[returns != 0]
+        
+        if len(active_returns) == 0:
+            return 0.0
+        
+        # Count winning trades (positive returns)
+        winning_trades = np.sum(active_returns > 0)
+        total_trades = len(active_returns)
+        
+        return float(winning_trades / total_trades)
+    except Exception as e:
+        logger.warning(f"Win rate calculation failed: {e}")
+        return 0.0
+
+
+def calculate_profit_factor(returns: Union[pd.Series, np.ndarray]) -> float:
+    """
+    Calculate profit factor from trade returns.
+    
+    Profit factor = Gross profit / Gross loss
+    
+    Args:
+        returns: Series or array of trade returns
+        
+    Returns:
+        Profit factor as a float (>1 is profitable, <1 is losing)
+    """
+    try:
+        if isinstance(returns, pd.Series):
+            returns = returns.values
+        
+        # Filter out zeros (no trade)
+        active_returns = returns[returns != 0]
+        
+        if len(active_returns) == 0:
+            return 0.0
+        
+        # Calculate gross profit and gross loss
+        gross_profit = np.sum(active_returns[active_returns > 0])
+        gross_loss = abs(np.sum(active_returns[active_returns < 0]))
+        
+        if gross_loss == 0:
+            # All winning trades
+            return float('inf') if gross_profit > 0 else 0.0
+        
+        return float(gross_profit / gross_loss)
+    except Exception as e:
+        logger.warning(f"Profit factor calculation failed: {e}")
+        return 0.0
+
+
+def calculate_calmar_ratio(returns: Union[pd.Series, np.ndarray, float],
+                          max_drawdown: float) -> float:
+    """
+    Calculate Calmar ratio (annualized return / max drawdown).
+    
+    Args:
+        returns: Annualized return or series of returns
+        max_drawdown: Maximum drawdown (should be negative)
+        
+    Returns:
+        Calmar ratio as a float
+    """
+    try:
+        # If returns is a series/array, calculate total return
+        if isinstance(returns, (pd.Series, np.ndarray)):
+            total_return = float(np.sum(returns))
+        else:
+            total_return = float(returns)
+        
+        # Max drawdown should be negative
+        if max_drawdown == 0:
+            return float('inf') if total_return > 0 else 0.0
+        
+        # Calmar ratio = return / abs(max_drawdown)
+        return float(abs(total_return / max_drawdown))
+    except Exception as e:
+        logger.warning(f"Calmar ratio calculation failed: {e}")
+        return 0.0
+
+
 def calculate_correlation_matrix(df: pd.DataFrame, 
                                 method: str = 'pearson') -> pd.DataFrame:
     """Calculate correlation matrix with error handling."""

@@ -158,7 +158,7 @@ class OptimizedFeatureVersions:
         """Add rolling features using VectorBT operations."""
         try:
             import vectorbt as vbt
-            from vectorbt.generic import rolling_mean, rolling_std, rolling_apply
+            from src.vectorbt import rolling_mean, rolling_std, rolling_apply
             from vectorbt.indicators.basic import RSI
             
             # Get returns data
@@ -192,7 +192,7 @@ class OptimizedFeatureVersions:
         """Add rolling features using VectorBT operations."""
         try:
             import vectorbt as vbt
-            from vectorbt.generic import rolling_mean, rolling_std, rolling_apply
+            from src.vectorbt import rolling_mean, rolling_std, rolling_apply
             from vectorbt.indicators.basic import RSI
             
             windows = [5, 10, 20, 50]

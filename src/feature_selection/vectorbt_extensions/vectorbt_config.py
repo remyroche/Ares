@@ -167,22 +167,30 @@ class VectorBTFeatureSelectionConfig:
 
             logger = logging.getLogger(__name__)
 
+            # Check if settings attribute exists first
+            if not hasattr(vbt, 'settings'):
+                logger.warning("⚠️ VectorBT settings not available in this version")
+                return self
+
             # Configure VectorBT theme
-            vbt.settings.set_theme(self.vectorbt_theme)
+            if hasattr(vbt.settings, 'set_theme'):
+                vbt.settings.set_theme(self.vectorbt_theme)
 
             # Configure array wrapper settings
-            for key, value in self.vectorbt_array_wrapper.items():
-                vbt.settings['array_wrapper'][key] = value
+            if hasattr(vbt.settings, 'array_wrapper'):
+                for key, value in self.vectorbt_array_wrapper.items():
+                    if key in vbt.settings['array_wrapper']:
+                        vbt.settings['array_wrapper'][key] = value
 
-            # Enable VectorBT optimizations
-            if self.enable_vectorbt_rolling:
-                vbt.settings['array_wrapper']['enable_rolling'] = True
+                # Enable VectorBT optimizations
+                if self.enable_vectorbt_rolling and 'enable_rolling' in vbt.settings['array_wrapper']:
+                    vbt.settings['array_wrapper']['enable_rolling'] = True
 
-            if self.enable_vectorbt_chunked:
-                vbt.settings['array_wrapper']['enable_chunked'] = True
+                if self.enable_vectorbt_chunked and 'enable_chunked' in vbt.settings['array_wrapper']:
+                    vbt.settings['array_wrapper']['enable_chunked'] = True
 
-            if self.enable_vectorbt_parallel:
-                vbt.settings['array_wrapper']['enable_parallel'] = True
+                if self.enable_vectorbt_parallel and 'enable_parallel' in vbt.settings['array_wrapper']:
+                    vbt.settings['array_wrapper']['enable_parallel'] = True
 
         except Exception as e:
             import logging

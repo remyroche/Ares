@@ -386,6 +386,7 @@ class PipelineConfig:
     enable_duplicate_handling: bool = True
     enable_quality_validation: bool = True
     batch_compatible: bool = True
+    force_download: bool = False  # If True, ignore existing data and download fresh
     storage_config: Optional[StorageConfig] = None
 
 class EnhancedKlinesProcessingPipeline:
@@ -1152,13 +1153,130 @@ class EnhancedKlinesProcessingPipeline:
                         df = pd.read_parquet(file_path)
                         if not df.empty:
                             all_data.append(df)
-                            if self.enable_logging:
+                            # Show date range of loaded file
+                            if self.enable_logging and hasattr(df.index, 'min'):
+                                date_min = df.index.min()
+                                date_max = df.index.max()
+                                tprint_info(f"  📊 Loaded {len(df)} records from {file_path.name} ({date_min} to {date_max})")
+                            elif self.enable_logging:
                                 tprint_info(f"  📊 Loaded {len(df)} records from {file_path.name}")
                     except Exception as e:
                         result.warnings.append(f"Failed to load {file_path.name}: {e}")
+                        if self.enable_logging:
+                            tprint_warning(f"  ⚠️ Failed to load {file_path.name}: {e}")
                 
                 if all_data:
-                    klines_data = pd.concat(all_data, ignore_index=True)
+                    # Concatenate but DON'T ignore the index - it's our timestamp!
+                    klines_data = pd.concat(all_data, ignore_index=False)
+                    klines_data = klines_data.sort_index().drop_duplicates()
+                    
+                    if self.enable_logging:
+                        tprint_success(f"✅ Loaded {len(klines_data)} total records from existing files")
+                        # Show overall date range using the index
+                        if isinstance(klines_data.index, pd.DatetimeIndex):
+                            date_min = klines_data.index.min()
+                            date_max = klines_data.index.max()
+                            tprint_info(f"📅 Existing data range: {date_min} to {date_max}")
+                    
+                    # Identify missing data gaps relative to target range
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=years * 365)
+                    
+                    if isinstance(klines_data.index, pd.DatetimeIndex):
+                        existing_start = klines_data.index.min().to_pydatetime().replace(tzinfo=None)
+                        existing_end = klines_data.index.max().to_pydatetime().replace(tzinfo=None)
+                        
+                        gaps_to_fill = []
+                        
+                        # Gap 1: Historical data before existing data
+                        if existing_start > start_date:
+                            gap_days = (existing_start - start_date).days
+                            if self.enable_logging:
+                                tprint_warning(f"⚠️ Gap 1: Missing {gap_days} days before {existing_start.strftime('%Y-%m-%d')}")
+                            gaps_to_fill.append(("historical", start_date, existing_start))
+                        
+                        # Gap 2: Recent data after existing data
+                        if existing_end < end_date - timedelta(hours=1):  # Allow 1 hour tolerance
+                            gap_hours = (end_date - existing_end).total_seconds() / 3600
+                            if self.enable_logging:
+                                tprint_warning(f"⚠️ Gap 2: Missing {gap_hours:.1f} hours after {existing_end.strftime('%Y-%m-%d %H:%M')}")
+                            gaps_to_fill.append(("recent", existing_end, end_date))
+                        
+                        # Download and merge gaps
+                        if gaps_to_fill:
+                            if self.enable_logging:
+                                tprint_info(f"📥 Downloading {len(gaps_to_fill)} gap(s) to complete {years}-year dataset")
+                            
+                            for gap_type, gap_start, gap_end in gaps_to_fill:
+                                if self.enable_logging:
+                                    tprint_info(f"📦 Filling {gap_type} gap: {gap_start.strftime('%Y-%m-%d')} to {gap_end.strftime('%Y-%m-%d')}")
+                                
+                                gap_batches = []
+                                current_start = gap_start
+                                batch_size = 1000
+                                batch_num = 1
+                                interval_minutes = self._interval_to_minutes(interval) or 1
+                                batch_duration = timedelta(minutes=batch_size * interval_minutes)
+                                total_gap_minutes = (gap_end - gap_start).total_seconds() / 60
+                                
+                                while current_start < gap_end:
+                                    batch_end = min(current_start + batch_duration, gap_end)
+                                    
+                                    if self.enable_logging and (batch_num == 1 or batch_num % 100 == 0):
+                                        progress_minutes = (current_start - gap_start).total_seconds() / 60
+                                        progress_pct = (progress_minutes / total_gap_minutes) * 100 if total_gap_minutes > 0 else 0
+                                        tprint_info(f"  Batch {batch_num}: {current_start.strftime('%Y-%m-%d %H:%M')} ({progress_pct:.1f}%)")
+                                    
+                                    try:
+                                        batch_data = await exchange_interface.get_klines(
+                                            symbol=symbol,
+                                            interval=interval,
+                                            start_time=current_start,
+                                            end_time=batch_end,
+                                            limit=batch_size
+                                        )
+                                        
+                                        if batch_data and len(batch_data) > 0:
+                                            gap_batches.append(batch_data)
+                                        else:
+                                            break
+                                        
+                                        current_start = batch_end
+                                        batch_num += 1
+                                        await asyncio.sleep(0.05)
+                                        
+                                    except Exception as e:
+                                        if self.enable_logging:
+                                            tprint_warning(f"  ⚠️ Batch {batch_num} failed: {e}")
+                                        current_start = batch_end
+                                        batch_num += 1
+                                        await asyncio.sleep(1.0)
+                                
+                                # Convert and merge gap data
+                                if gap_batches:
+                                    gap_klines = []
+                                    for batch in gap_batches:
+                                        gap_klines.extend(batch)
+                                    
+                                    if self.enable_logging:
+                                        tprint_success(f"  ✅ Downloaded {len(gap_klines):,} candles for {gap_type} gap")
+                                    
+                                    # Convert to DataFrame
+                                    gap_df = self._klines_to_dataframe(gap_klines, symbol, interval)
+                                    if not gap_df.empty:
+                                        # Merge with existing data
+                                        klines_data = pd.concat([klines_data, gap_df], ignore_index=False)
+                                        klines_data = klines_data.sort_index().drop_duplicates()
+                                        
+                                        if self.enable_logging:
+                                            tprint_success(f"  ✅ Merged {gap_type} gap: now have {len(klines_data):,} total records")
+                            
+                            if self.enable_logging and isinstance(klines_data.index, pd.DatetimeIndex):
+                                tprint_success(f"✅ Complete dataset: {len(klines_data):,} records")
+                                tprint_info(f"📅 Full range: {klines_data.index.min()} to {klines_data.index.max()}")
+                        else:
+                            if self.enable_logging:
+                                tprint_success(f"✅ Existing data covers full {years}-year range")
                 else:
                     raise ValueError("No valid data found in parquet files")
             else:
@@ -1188,8 +1306,10 @@ class EnhancedKlinesProcessingPipeline:
                 while current_start < end_date:
                     batch_end = min(current_start + batch_duration, end_date)
                     
-                    if self.enable_logging and batch_num % 10 == 1:  # Log every 10th batch
-                        tprint_info(f"📦 Fetching batch {batch_num}: {current_start.strftime('%Y-%m-%d %H:%M')}")
+                    # Log every 50th batch to show progress without spamming
+                    if self.enable_logging and (batch_num == 1 or batch_num % 50 == 0):
+                        progress_pct = ((current_start - start_date).days / (years * 365)) * 100
+                        tprint_info(f"📦 Batch {batch_num}: {current_start.strftime('%Y-%m-%d %H:%M')} ({progress_pct:.1f}%)")
                     
                     try:
                         batch_data = await exchange_interface.get_klines(
@@ -1202,15 +1322,22 @@ class EnhancedKlinesProcessingPipeline:
                         
                         if batch_data and len(batch_data) > 0:
                             all_batches.append(batch_data)
+                            # Log progress every 100 batches
                             if self.enable_logging and batch_num % 100 == 0:
                                 total_candles = sum(len(b) for b in all_batches)
-                                tprint_info(f"   📊 Progress: {len(all_batches)} batches, {total_candles:,} candles")
+                                progress_pct = ((current_start - start_date).days / (years * 365)) * 100
+                                tprint_info(f"   📊 Progress: {len(all_batches)} batches, {total_candles:,} candles ({progress_pct:.1f}%)")
+                        else:
+                            # No data returned, might have reached the end of available data
+                            if self.enable_logging:
+                                tprint_info(f"   ℹ️ No data returned for batch {batch_num}, stopping download")
+                            break
                         
                         # Move to next batch
                         current_start = batch_end
                         batch_num += 1
                         
-                        # Small delay to respect rate limits
+                        # Small delay to respect rate limits (50ms = 20 requests/sec max)
                         await asyncio.sleep(0.05)
                         
                     except Exception as e:
@@ -1218,6 +1345,8 @@ class EnhancedKlinesProcessingPipeline:
                             tprint_warning(f"⚠️ Batch {batch_num} failed: {e}")
                         current_start = batch_end
                         batch_num += 1
+                        # Longer delay after error
+                        await asyncio.sleep(1.0)
                 
                 if not all_batches:
                     raise ValueError("No data received from exchange")
@@ -1248,16 +1377,34 @@ class EnhancedKlinesProcessingPipeline:
                     if isinstance(kline.timestamp, datetime):
                         ts = int(kline.timestamp.timestamp() * 1000)
                     elif isinstance(kline.timestamp, (int, float)):
-                        ts = int(kline.timestamp)
+                        # Binance returns milliseconds timestamps (13 digits)
+                        # If timestamp is too small (< 1e10), it's likely in seconds or invalid
+                        if kline.timestamp < 1e10:
+                            # Likely seconds, convert to milliseconds
+                            ts = int(kline.timestamp * 1000)
+                        else:
+                            ts = int(kline.timestamp)
                     else:
-                        ts = int(float(kline.timestamp))
+                        ts_val = float(kline.timestamp)
+                        if ts_val < 1e10:
+                            ts = int(ts_val * 1000)
+                        else:
+                            ts = int(ts_val)
                     
                     if isinstance(kline.close_time, datetime):
                         ct = int(kline.close_time.timestamp() * 1000)
                     elif isinstance(kline.close_time, (int, float)):
-                        ct = int(kline.close_time)
+                        # Same logic for close_time
+                        if kline.close_time < 1e10:
+                            ct = int(kline.close_time * 1000)
+                        else:
+                            ct = int(kline.close_time)
                     else:
-                        ct = int(float(kline.close_time))
+                        ct_val = float(kline.close_time)
+                        if ct_val < 1e10:
+                            ct = int(ct_val * 1000)
+                        else:
+                            ct = int(ct_val)
                     
                     raw_data.append([
                         ts,  # timestamp
@@ -1404,11 +1551,15 @@ class EnhancedKlinesProcessingPipeline:
                     timestamp = kline[0]
                     # Handle timestamp being in various formats
                     if isinstance(timestamp, (int, float)):
-                        if timestamp > 1e12:  # Microseconds
+                        # Binance uses milliseconds (13 digits for 2021-2025, e.g., 1730000000000)
+                        # Microseconds would be 16 digits (e.g., 1730000000000000)
+                        if timestamp > 1e15:  # Microseconds (16+ digits)
                             converted_timestamp = pd.to_datetime(timestamp, unit='us', utc=True)
-                        elif timestamp > 1e9:  # Milliseconds
+                        elif timestamp > 1e12:  # Milliseconds (13-15 digits) - CORRECT for Binance
                             converted_timestamp = pd.to_datetime(timestamp, unit='ms', utc=True)
-                        else:  # Seconds
+                        elif timestamp > 1e9:  # Seconds (10-12 digits)
+                            converted_timestamp = pd.to_datetime(timestamp, unit='s', utc=True)
+                        else:  # Too small, likely an error but treat as seconds
                             converted_timestamp = pd.to_datetime(timestamp, unit='s', utc=True)
                     else:
                         # Already a datetime or string
@@ -1453,7 +1604,7 @@ class EnhancedKlinesProcessingPipeline:
         symbol: str,
         interval: str
     ) -> ProcessingResult:
-        """Standardize data format using ExchangeDataStandardizer."""
+        """Standardize data format using UnifiedOHLCVStandardizer."""
         start_time = datetime.now()
         result = ProcessingResult(
             step=ProcessingStep.STANDARDIZE,
@@ -1470,20 +1621,11 @@ class EnhancedKlinesProcessingPipeline:
             print(f"DEBUG: DataFrame shape before standardization: {df.shape}")
             print(f"DEBUG: DataFrame columns: {df.columns.tolist()}")
             
-            # The data from ExchangeInterface is already standardized
-            # Just ensure we have the required columns and proper types
-            standardized_df = df.copy()
-            
-            # Ensure required columns exist
-            required_cols = ['open', 'high', 'low', 'close', 'volume']
-            for col in required_cols:
-                if col not in standardized_df.columns:
-                    result.errors.append(f"Missing required column: {col}")
-                    result.success = False
-                    return result
-                # Ensure numeric type
-                if not pd.api.types.is_numeric_dtype(standardized_df[col]):
-                    standardized_df[col] = pd.to_numeric(standardized_df[col], errors='coerce')
+            # Use the UnifiedOHLCVStandardizer for consistent data formatting
+            # This ensures the same standardization logic is used for both main downloads and gap filling
+            standardized_df = self.data_standardizer.standardize(
+                df, exchange=self.exchange
+            )
             
             # Add metadata columns if missing
             if 'symbol' not in standardized_df.columns:
@@ -1500,7 +1642,6 @@ class EnhancedKlinesProcessingPipeline:
                 "final_shape": standardized_df.shape,
                 "processing_time": 0.0
             }
-            # No warnings from unified standardizer
 
             if self.enable_logging:
                 tprint_success(f"✅ Data standardized: {len(standardized_df)} records")
@@ -1734,6 +1875,16 @@ class EnhancedKlinesProcessingPipeline:
             if self.enable_logging:
                 tprint_warning(f"⚠️ Found {len(gaps)} gaps > {max_gap_minutes} minutes")
 
+            # Debug: Log gap priorities
+            if self.enable_logging:
+                priority_1_gaps = [g for g in gaps if g.priority == 1]
+                priority_2_gaps = [g for g in gaps if g.priority > 1]
+                tprint_info(f"   Priority 1 gaps (will fill): {len(priority_1_gaps)}")
+                tprint_info(f"   Priority 2 gaps (will skip): {len(priority_2_gaps)}")
+                if priority_1_gaps:
+                    for i, g in enumerate(priority_1_gaps[:3], 1):  # Show first 3
+                        tprint_info(f"     Gap {i}: {g.duration_minutes:.0f} min ({g.start_time} to {g.end_time})")
+
             # Fill gaps by re-downloading data
             filled_data = await self._fill_gaps(df, gaps, symbol, interval, exchange_interface)
 
@@ -1747,6 +1898,9 @@ class EnhancedKlinesProcessingPipeline:
 
             if self.enable_logging:
                 tprint_success(f"✅ Gap handling completed: {result.metadata['gaps_filled']} gaps filled")
+                tprint_info(f"   Data before gap filling: {len(df):,} records")
+                tprint_info(f"   Data after gap filling: {len(filled_data):,} records")
+                tprint_info(f"   Net gain: {len(filled_data) - len(df):,} records")
 
         except Exception as e:
             error_msg = f"Gap handling failed: {str(e)}"
@@ -1815,45 +1969,66 @@ class EnhancedKlinesProcessingPipeline:
         interval: str,
         exchange_interface: ExchangeInterface
     ) -> pd.DataFrame:
-        """Fill gaps by re-downloading data."""
+        """Fill gaps by re-downloading data in batches."""
         filled_data = df.copy()
 
-        for gap in gaps:
+        for gap_idx, gap in enumerate(gaps):
             if gap.priority > 1:  # Skip low priority gaps
                 continue
 
             try:
                 if self.enable_logging:
-                    tprint_info(f"📥 Re-downloading data for gap: {gap.start_time} to {gap.end_time}")
+                    tprint_info(f"📥 Re-downloading data for gap {gap_idx+1}/{len(gaps)}: {gap.start_time} to {gap.end_time}")
+                    tprint_info(f"   Gap size: {gap.duration_minutes:.0f} minutes ({gap.duration_minutes/60:.1f} hours, {gap.duration_minutes/1440:.1f} days)")
 
-                # Download data for the gap period
-                gap_klines = await exchange_interface.get_klines(
-                    symbol=symbol,
-                    interval=interval,
-                    start_time=gap.start_time,
-                    end_time=gap.end_time,
-                    limit=1000
-                )
+                # For large gaps (> 1000 minutes), download in batches
+                interval_minutes = self._interval_to_minutes(interval) or 1
+                batch_size = 1000
+                batch_duration = timedelta(minutes=batch_size * interval_minutes)
                 
-                # Convert KlineData objects to list format
-                gap_data = []
-                for kline in gap_klines:
-                    gap_data.append([
-                        int(kline.timestamp.timestamp() * 1000),  # timestamp
-                        kline.open_price,  # open
-                        kline.high_price,  # high
-                        kline.low_price,   # low
-                        kline.close_price, # close
-                        kline.volume,      # volume
-                        int(kline.close_time.timestamp() * 1000),  # close_time
-                        kline.quote_asset_volume,  # quote_volume
-                        kline.number_of_trades,     # trades
-                        kline.taker_buy_base_asset_volume,  # taker_buy_base
-                        kline.taker_buy_quote_asset_volume   # taker_buy_quote
-                    ])
+                gap_batches = []
+                current_start = gap.start_time
+                batch_num = 1
+                
+                while current_start < gap.end_time:
+                    batch_end = min(current_start + batch_duration, gap.end_time)
+                    
+                    if self.enable_logging and (batch_num == 1 or batch_num % 20 == 0):
+                        tprint_info(f"   Batch {batch_num}: {current_start.strftime('%Y-%m-%d %H:%M')}")
+                    
+                    try:
+                        batch_klines = await exchange_interface.get_klines(
+                            symbol=symbol,
+                            interval=interval,
+                            start_time=current_start,
+                            end_time=batch_end,
+                            limit=batch_size
+                        )
+                        
+                        if batch_klines and len(batch_klines) > 0:
+                            gap_batches.extend(batch_klines)
+                        else:
+                            if self.enable_logging:
+                                tprint_warning(f"   No data returned for batch {batch_num}, stopping")
+                            break
+                        
+                        current_start = batch_end
+                        batch_num += 1
+                        await asyncio.sleep(0.05)
+                        
+                    except Exception as e:
+                        if self.enable_logging:
+                            tprint_warning(f"   ⚠️ Batch {batch_num} failed: {e}")
+                        current_start = batch_end
+                        batch_num += 1
+                        await asyncio.sleep(1.0)
 
-                if gap_data:
-                    gap_df = self._klines_to_dataframe(gap_data, symbol, interval)
+                # Convert all batches to DataFrame
+                if gap_batches:
+                    if self.enable_logging:
+                        tprint_success(f"   ✅ Downloaded {len(gap_batches)} candles in {batch_num-1} batches")
+                    
+                    gap_df = self._klines_to_dataframe(gap_batches, symbol, interval)
                     if not gap_df.empty:
                         # Standardize the gap data
                         standardized_gap_df = self.data_standardizer.standardize(
@@ -1861,12 +2036,12 @@ class EnhancedKlinesProcessingPipeline:
                         )
 
                         # Merge with existing data
-                        filled_data = pd.concat([filled_data, standardized_gap_df])
+                        filled_data = pd.concat([filled_data, standardized_gap_df], ignore_index=False)
                         filled_data = filled_data[~filled_data.index.duplicated(keep='first')]
                         filled_data.sort_index(inplace=True)
 
                         if self.enable_logging:
-                            tprint_success(f"✅ Filled gap with {len(standardized_gap_df)} records")
+                            tprint_success(f"✅ Filled gap with {len(standardized_gap_df)} records (total now: {len(filled_data):,})")
 
             except Exception as e:
                 if self.enable_logging:
@@ -2284,8 +2459,9 @@ class EnhancedKlinesProcessingPipeline:
                 tprint_info(f"💾 Storing original data for {symbol} {interval}")
 
             # Store data using KlinesParquetManager
+            # Use overwrite=False to merge with existing monthly files instead of replacing them
             success = self.klines_manager.write_data(
-                df, symbol, interval, "raw", overwrite=True
+                df, symbol, interval, "raw", overwrite=False
             )
 
             if success:

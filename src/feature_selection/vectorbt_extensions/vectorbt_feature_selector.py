@@ -218,20 +218,31 @@ class VectorBTFeatureSelector:
             # Use the enhanced VectorBT configuration
             self.config.setup_vectorbt_optimizations()
 
+            # Check if settings attribute exists first
+            if not hasattr(vbt, 'settings'):
+                tprint_warning("⚠️ VectorBT settings not available in this version")
+                return
+
             # Set chunk size for memory optimization
-            if self.config.enable_memory_optimization:
-                vbt.settings['array_wrapper']['chunk_size'] = self.config.chunk_size
+            if self.config.enable_memory_optimization and hasattr(vbt.settings, 'array_wrapper'):
+                if 'chunk_size' in vbt.settings['array_wrapper']:
+                    vbt.settings['array_wrapper']['chunk_size'] = self.config.chunk_size
 
             # Enable parallel processing if available
-            if self.config.enable_parallel:
-                vbt.settings['array_wrapper']['enable_parallel'] = True
-                if self.config.max_workers:
+            if self.config.enable_parallel and hasattr(vbt.settings, 'array_wrapper'):
+                if 'enable_parallel' in vbt.settings['array_wrapper']:
+                    vbt.settings['array_wrapper']['enable_parallel'] = True
+                if self.config.max_workers and 'max_workers' in vbt.settings['array_wrapper']:
                     vbt.settings['array_wrapper']['max_workers'] = self.config.max_workers
 
             # Enable VectorBT optimizations by default
-            vbt.settings['array_wrapper']['enable_rolling'] = True
-            vbt.settings['array_wrapper']['enable_chunked'] = True
-            vbt.settings['array_wrapper']['enable_parallel'] = True
+            if hasattr(vbt.settings, 'array_wrapper'):
+                if 'enable_rolling' in vbt.settings['array_wrapper']:
+                    vbt.settings['array_wrapper']['enable_rolling'] = True
+                if 'enable_chunked' in vbt.settings['array_wrapper']:
+                    vbt.settings['array_wrapper']['enable_chunked'] = True
+                if 'enable_parallel' in vbt.settings['array_wrapper']:
+                    vbt.settings['array_wrapper']['enable_parallel'] = True
 
             tprint_success("✅ VectorBT configured with enhanced optimizations and enabled by default")
 

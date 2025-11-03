@@ -858,7 +858,7 @@ class SRDetectionComponent(BaseStep):
     ) -> List[Dict[str, Any]]:
         """Apply hardware optimization to SR levels."""
         try:
-            if self.hardware_manager:
+            if self.hardware_manager and hasattr(self.hardware_manager, 'get_optimal_config'):
                 # Get hardware configuration
                 hardware_config = self.hardware_manager.get_optimal_config(
                     WorkloadType.ML_TRAINING,

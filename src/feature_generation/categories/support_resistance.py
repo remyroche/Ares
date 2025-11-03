@@ -37,8 +37,8 @@ except ImportError:
 # Fallback VectorBT imports for direct operations
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    from src.utils.vectorbt_compat import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
@@ -634,6 +634,18 @@ def create_default_support_resistance_generators(enable_gpu: bool = False, memor
 
     generators = []
 
+    # Add comprehensive support/resistance feature generator
+    generators.append(SupportResistanceFeatureGenerator(
+        enable_gpu=enable_gpu,
+        memory_efficient=memory_efficient
+    ))
+
+    # Add advanced support/resistance feature generator
+    generators.append(AdvancedSupportResistanceGenerator(
+        enable_gpu=enable_gpu,
+        memory_efficient=memory_efficient
+    ))
+
     # Create generators for each window with VectorBT optimization
     for window in windows:
         generators.extend([
@@ -735,8 +747,9 @@ class AdvancedSupportResistanceGenerator(VectorizedFeatureGenerator):
             # Support/resistance strength and quality
             features['sr_quality'] = self._calculate_sr_quality(close)
 
-            # Breakout detection
-            features['sr_breakout'] = self._calculate_breakout_detection(close)
+            # NOTE: Breakout detection is now handled by EnhancedSRBreakoutPredictor
+            # from src.tactician.sr_levels.sr_breakout_predictor_enhanced
+            # Use that class directly for ML-based breakout predictions
 
             # Volume-weighted support/resistance
             if 'volume' in data.columns:
@@ -750,13 +763,13 @@ class AdvancedSupportResistanceGenerator(VectorizedFeatureGenerator):
         # Combine features into a single comprehensive score
         if features:
             # Weighted combination of all features
+            # Note: sr_breakout removed - use EnhancedSRBreakoutPredictor instead
             weights = {
-                'sr_multi_timeframe': 0.25,
-                'sr_dynamic': 0.25,
-                'sr_quality': 0.20,
-                'sr_breakout': 0.15,
-                'sr_volume_weighted': 0.10,
-                'sr_pivot_advanced': 0.05
+                'sr_multi_timeframe': 0.30,  # Increased from 0.25
+                'sr_dynamic': 0.30,  # Increased from 0.25
+                'sr_quality': 0.25,  # Increased from 0.20
+                'sr_volume_weighted': 0.10,  # Keep same
+                'sr_pivot_advanced': 0.05  # Keep same
             }
 
             combined_sr = pd.Series(0.0, index=data.index)
@@ -824,26 +837,10 @@ class AdvancedSupportResistanceGenerator(VectorizedFeatureGenerator):
 
         return quality
 
-    def _calculate_breakout_detection(self, close: pd.Series) -> pd.Series:
-        """Detect support/resistance breakouts."""
-        if not self.rolling_optimizer:
-            return pd.Series(np.zeros(len(close)), index=close.index)
-
-        window = 20
-        rolling_min = self.rolling_optimizer.rolling_min(close, window)
-        rolling_max = self.rolling_optimizer.rolling_max(close, window)
-
-        # Breakout detection
-        breakout_threshold = self.config.parameters.get('breakout_threshold', 0.02)
-        breakout = pd.Series(0.0, index=close.index)
-
-        # Resistance breakout
-        resistance_breakout = (close > rolling_max * (1 + breakout_threshold)).astype(float)
-        # Support breakout
-        support_breakout = (close < rolling_min * (1 - breakout_threshold)).astype(float)
-
-        breakout = resistance_breakout - support_breakout
-        return breakout
+    # REMOVED: _calculate_breakout_detection method
+    # Breakout detection is now exclusively handled by EnhancedSRBreakoutPredictor
+    # from src.tactician.sr_levels.sr_breakout_predictor_enhanced
+    # This provides ML-based breakout predictions with superior accuracy
 
     def _calculate_volume_weighted_sr(self, close: pd.Series, volume: pd.Series) -> pd.Series:
         """Calculate volume-weighted support/resistance."""

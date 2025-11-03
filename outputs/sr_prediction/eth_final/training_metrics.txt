@@ -1,0 +1,35 @@
+SR PERFORMANCE PREDICTION - TRAINING METRICS
+================================================================================
+
+Training completed: 2025-11-02T17:38:18.227746
+
+
+BOUNCE_STRENGTH:
+----------------------------------------
+  rmse_mean: 0.197954
+  rmse_std: 0.047861
+  mae_mean: 0.126711
+  mae_std: 0.033192
+  r2_mean: -0.146896
+  r2_std: 0.109916
+  spearman_correlation: 0.184884
+
+HOLD_STRENGTH:
+----------------------------------------
+  rmse_mean: 0.371774
+  rmse_std: 0.030925
+  mae_mean: 0.340433
+  mae_std: 0.026719
+  r2_mean: -0.144967
+  r2_std: 0.161862
+  spearman_correlation: 0.044777
+
+TRADE_PROFIT:
+----------------------------------------
+  rmse_mean: 0.561763
+  rmse_std: 0.014438
+  mae_mean: 0.525794
+  mae_std: 0.025220
+  r2_mean: -0.235653
+  r2_std: 0.181673
+  spearman_correlation: 0.091371

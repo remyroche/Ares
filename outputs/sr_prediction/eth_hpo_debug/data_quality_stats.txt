@@ -1,0 +1,17 @@
+total_samples: 16
+date_range: (Timestamp('2024-01-15 00:00:00'), Timestamp('2024-01-29 00:00:00'))
+symbols: 1
+timeframes: ['1h']
+bounce_strength_mean: 0.2489951477981047
+bounce_strength_std: 0.1664443390840656
+bounce_strength_min: 0.05587434346161704
+bounce_strength_max: 0.7199282461525411
+hold_strength_mean: 0.5125
+hold_strength_std: 0.39051248379533265
+hold_strength_min: 0.05
+hold_strength_max: 1.0
+trade_profit_mean: 0.7238217589607275
+trade_profit_std: 0.5940117764197945
+trade_profit_min: -0.5
+trade_profit_max: 1.0
+tested_levels_pct: 100.0

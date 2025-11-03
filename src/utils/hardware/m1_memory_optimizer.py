@@ -749,6 +749,20 @@ class M1MemoryOptimizer:
 
         self.logger.debug(f"🧹 Forced garbage collection: freed {objects_freed} objects, cleared {garbage_cleared} garbage")
 
+    def is_memory_pressure(self, threshold: Optional[float] = None) -> bool:
+        """Check if memory usage indicates pressure.
+        
+        Args:
+            threshold: Optional custom threshold (0.0-1.0). If None, uses the 'medium' threshold.
+            
+        Returns:
+            True if memory pressure is above threshold, False otherwise.
+        """
+        if threshold is None:
+            threshold = self.thresholds['medium']
+        
+        return self.memory_pressure > threshold
+
 # Global instance - lazy initialization to avoid circular import issues
 _m1_memory_optimizer_instance: Optional[M1MemoryOptimizer] = None
 

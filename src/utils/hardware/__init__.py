@@ -24,7 +24,10 @@ __all__ = [
     'optimize_dataframe_advanced', 'record_performance_adaptive',
 
     # Legacy compatibility
-    'get_m1_cpu_optimizer', 'm1_gpu_manager', 'm1_memory_optimizer'
+    'get_m1_cpu_optimizer', 'm1_gpu_manager', 'm1_memory_optimizer',
+
+    # Utility functions
+    'get_optimal_workers', 'get_memory_info'
 ]
 
 # Import core components
@@ -122,3 +125,35 @@ def get_available_features():
 def is_feature_available(feature_name: str) -> bool:
     """Check if a specific feature is available."""
     return FEATURES.get(feature_name, False)
+
+def get_optimal_workers() -> int:
+    """Get optimal number of worker threads based on hardware."""
+    try:
+        cpu_optimizer = get_m1_cpu_optimizer()
+        return cpu_optimizer.get_optimal_threads()
+    except Exception:
+        # Fallback to CPU count
+        import multiprocessing
+        return max(1, multiprocessing.cpu_count() - 1)
+
+def get_memory_info() -> dict:
+    """Get memory information from the system."""
+    try:
+        import psutil
+        mem = psutil.virtual_memory()
+        return {
+            'total': mem.total,
+            'available': mem.available,
+            'percent': mem.percent,
+            'used': mem.used,
+            'free': mem.free
+        }
+    except ImportError:
+        # Fallback if psutil not available
+        return {
+            'total': 0,
+            'available': 0,
+            'percent': 0,
+            'used': 0,
+            'free': 0
+        }

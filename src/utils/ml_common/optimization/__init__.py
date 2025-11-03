@@ -23,12 +23,24 @@ from .hierarchical_parameter_optimizer import (
     OptimizationResult,
     HierarchicalOptimizationResult,
     create_param_group,
-    default_objective_function
+    default_objective_function,
+    create_custom_balanced_score_objective,
+    CUSTOM_BALANCED_SCORE_AVAILABLE
 )
+from .execution_mode_adapter import (
+    get_execution_mode,
+    adjust_hpo_params_for_mode,
+    adjust_model_iterations_for_mode,
+    set_execution_mode
+)
+
+# Backward compatibility alias
+HyperparameterOptimizer = HyperparameterOptimization
 
 __all__ = [
     # Hyperparameter Optimization
     'HyperparameterOptimization',
+    'HyperparameterOptimizer',  # Backward compatibility alias
 
     # Pareto Optimization
     'ParetoFront', 'ParetoFrontAnalyzer', 'ParetoOptimizer',
@@ -49,7 +61,15 @@ __all__ = [
     'HierarchicalOptimizationResult',
     'create_param_group',
     'default_objective_function',
+    'create_custom_balanced_score_objective',
+    'CUSTOM_BALANCED_SCORE_AVAILABLE',
 
     # Grid utilities
-    'build_coarse_grid_from_search_space', 'build_fine_grid_around_best'
+    'build_coarse_grid_from_search_space', 'build_fine_grid_around_best',
+    
+    # Execution mode adapter
+    'get_execution_mode',
+    'adjust_hpo_params_for_mode',
+    'adjust_model_iterations_for_mode',
+    'set_execution_mode'
 ]

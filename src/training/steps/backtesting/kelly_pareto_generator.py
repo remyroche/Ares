@@ -215,16 +215,25 @@ class KellyParetoGenerator:
         
         global_params = {
             'lambda_base': 0.20,  # Lower aggression
-            'beta_position': 1.8,  # Higher dampening
-            'beta_leverage': 1.5,
-            'prior_alpha': 40.0,  # Higher prior (more conservative)
-            'ess_threshold': 70,  # Higher threshold
-            'entropy_threshold': 0.6,  # Stricter
-            'n_min_samples': 30,  # More samples required
-            'f_floor': 0.005,
+            
+            # Unified beta structure
+            'beta_base': 1.2,
+            'beta_position_multiplier': 1.5,  # Higher dampening for position
+            'beta_leverage_multiplier': 1.25,  # Higher dampening for leverage
+            
+            # System half-life (conservative = higher value = trust old data more)
+            'system_half_life': 250.0,  # Conservative: slow adaptation
+            
+            # Model consensus tolerance (0 = strict)
+            'model_consensus_tolerance': 0.3,  # Strict: require high ESS, low entropy
+            
+            # Leverage floor
             'lev_floor': 1.2,
-            'decay_theta': 0.92
         }
+        
+        # Fixed parameters (NOT optimized):
+        # f_floor = 0.005 (exploration floor)
+        # max_kelly_fraction = 0.33 (risk cap)
         
         robustness = self._calculate_robustness_metrics(validation, sensitivity)
         
@@ -233,7 +242,7 @@ class KellyParetoGenerator:
             global_params=global_params,
             regime_params=regime_params,
             lambda_eff_components={'ess_sigmoid_kappa': 0.1, 'entropy_scale': 0.5, 'variance_penalty': 3.0},
-            safety_limits={'max_kelly_fraction': 0.4, 'max_leverage': 2.5},
+            safety_limits={'max_kelly_fraction': 0.33, 'max_leverage': 2.5},  # Fixed at 0.33
             sharpe_ratio=1.8,
             geometric_return=0.20,
             max_drawdown=0.08,
@@ -258,16 +267,25 @@ class KellyParetoGenerator:
         """Generate balanced configuration."""
         global_params = {
             'lambda_base': 0.30,
-            'beta_position': 1.2,
-            'beta_leverage': 1.0,
-            'prior_alpha': 20.0,
-            'ess_threshold': 50,
-            'entropy_threshold': 0.8,
-            'n_min_samples': 20,
-            'f_floor': 0.008,
+            
+            # Unified beta structure
+            'beta_base': 1.0,
+            'beta_position_multiplier': 1.2,
+            'beta_leverage_multiplier': 1.0,
+            
+            # System half-life (balanced)
+            'system_half_life': 200.0,  # Balanced adaptation speed
+            
+            # Model consensus tolerance (balanced)
+            'model_consensus_tolerance': 0.5,  # Moderate requirements
+            
+            # Leverage floor
             'lev_floor': 1.4,
-            'decay_theta': 0.95
         }
+        
+        # Fixed parameters (NOT optimized):
+        # f_floor = 0.005 (exploration floor)
+        # max_kelly_fraction = 0.33 (risk cap)
         
         robustness = self._calculate_robustness_metrics(validation, sensitivity)
         
@@ -276,7 +294,7 @@ class KellyParetoGenerator:
             global_params=global_params,
             regime_params=regime_params,
             lambda_eff_components={'ess_sigmoid_kappa': 0.1, 'entropy_scale': 0.5, 'variance_penalty': 2.0},
-            safety_limits={'max_kelly_fraction': 0.5, 'max_leverage': 3.0},
+            safety_limits={'max_kelly_fraction': 0.33, 'max_leverage': 3.0},  # Fixed at 0.33
             sharpe_ratio=1.5,
             geometric_return=0.28,
             max_drawdown=0.12,
@@ -301,16 +319,25 @@ class KellyParetoGenerator:
         """Generate aggressive configuration."""
         global_params = {
             'lambda_base': 0.40,  # Higher aggression
-            'beta_position': 0.8,  # Lower dampening (more aggressive)
-            'beta_leverage': 0.7,
-            'prior_alpha': 12.0,  # Lower prior (trust data more)
-            'ess_threshold': 35,  # Lower threshold (easier to meet)
-            'entropy_threshold': 1.0,  # More permissive
-            'n_min_samples': 12,  # Fewer samples needed
-            'f_floor': 0.01,
+            
+            # Unified beta structure
+            'beta_base': 0.8,
+            'beta_position_multiplier': 1.0,  # Lower dampening (more aggressive)
+            'beta_leverage_multiplier': 0.875,  # Lower dampening for leverage
+            
+            # System half-life (aggressive = lower value = fast adaptation)
+            'system_half_life': 150.0,  # Aggressive: fast adaptation
+            
+            # Model consensus tolerance (higher = permissive)
+            'model_consensus_tolerance': 0.7,  # Permissive: lower ESS requirement, higher entropy tolerance
+            
+            # Leverage floor
             'lev_floor': 1.6,
-            'decay_theta': 0.96
         }
+        
+        # Fixed parameters (NOT optimized):
+        # f_floor = 0.005 (exploration floor)
+        # max_kelly_fraction = 0.33 (risk cap)
         
         robustness = self._calculate_robustness_metrics(validation, sensitivity)
         
@@ -319,7 +346,7 @@ class KellyParetoGenerator:
             global_params=global_params,
             regime_params=regime_params,
             lambda_eff_components={'ess_sigmoid_kappa': 0.15, 'entropy_scale': 0.6, 'variance_penalty': 1.5},
-            safety_limits={'max_kelly_fraction': 0.6, 'max_leverage': 4.0},
+            safety_limits={'max_kelly_fraction': 0.33, 'max_leverage': 4.0},  # Fixed at 0.33
             sharpe_ratio=1.2,
             geometric_return=0.38,
             max_drawdown=0.18,

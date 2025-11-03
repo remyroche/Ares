@@ -30,6 +30,20 @@ from src.utils.ml_common.unified_vectorization_manager import (
 from src.utils.ml_common.optimization.hpo_utils import (
     HyperparameterOptimization
 )
+from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
+    HierarchicalParameterOptimizer,
+    ParameterGroup,
+    OptimizationStage,
+    create_param_group
+)
+from src.utils.ml_common.optimization.auto_tuner import (
+    AutoTuner,
+    DatasetCharacteristics
+)
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer,
+    OptimizationConfig as TPEOptimizationConfig
+)
 from src.utils.ml_common.optimization.transition_aware_scoring import (
     create_transition_aware_scorer,
     create_pareto_multi_objective_hpo
@@ -243,6 +257,14 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         )
         tprint("🔧 [REGIME_MODELS] HPO optimizer initialized", color="green")
         
+        # Initialize Auto Tuner for intelligent HPO configuration
+        self.auto_tuner = AutoTuner(
+            conservative_mode=False,
+            enable_adaptive_timeout=True,
+            enable_resource_monitoring=True
+        )
+        tprint("🔧 [REGIME_MODELS] Auto-tuner initialized for adaptive HPO", color="green")
+        
         # Initialize Pareto optimizer for multi-objective HPO
         if PARETO_AVAILABLE:
             self.pareto_optimizer = ParetoOptimizer()
@@ -254,6 +276,10 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         # Enable transition-aware multi-objective HPO by default
         self.enable_multi_objective_hpo = True
         self.use_pareto_optimization = PARETO_AVAILABLE
+        
+        # Enable hierarchical optimization for models with many parameters (7+)
+        self.use_hierarchical_hpo = True
+        tprint("✅ [REGIME_MODELS] Hierarchical HPO enabled for complex models", color="green")
 
         # Initialize temporal validator for data leakage prevention
         self.temporal_validator = UniversalTemporalValidator(
@@ -557,7 +583,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     search_space=search_space,
                     cv=3,
                     scoring=scoring,  # Use transition-aware scorer
-                    n_trials=15
+                    n_trials=75  # Increased from 15 for better exploration
                 )
                 
                 if hpo_result.success:
@@ -614,7 +640,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     search_space=search_space,
                     cv=3,
                     scoring=scoring,  # Use transition-aware scorer
-                    n_trials=15,
+                    n_trials=75,  # Increased from 15 for better exploration
                     fit_params=fit_params
                 )
                 
@@ -644,6 +670,16 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 tprint("🚀 [REGIME_MODELS] Training XGBoost with HPO", color="blue")
                 
                 def create_xgboost_model(**params):
+                    # Tie removed parameters to optimized ones for correlated parameters
+                    # reg_alpha tied to reg_lambda: L1 = 10% of L2 (L2 typically stronger for trees)
+                    if 'reg_alpha' not in params and 'reg_lambda' in params:
+                        params['reg_alpha'] = params['reg_lambda'] * 0.1
+                    
+                    # colsample_bytree tied to subsample: column sampling slightly higher than row
+                    # This maintains the correlation while allowing dynamic variation
+                    if 'colsample_bytree' not in params and 'subsample' in params:
+                        params['colsample_bytree'] = min(0.95, params['subsample'] + 0.1)
+                    
                     return xgb.XGBClassifier(
                         n_estimators=params.get('n_estimators', 100),
                         max_depth=params.get('max_depth', 6),
@@ -673,7 +709,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     search_space=search_space,
                     cv=3,
                     scoring=scoring,  # Use transition-aware scorer
-                    n_trials=15
+                    n_trials=75  # Increased from 15 for better exploration
                 )
                 
                 if hpo_result.success:
@@ -725,7 +761,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     search_space=search_space,
                     cv=3,
                     scoring='accuracy',
-                    n_trials=15
+                    n_trials=75  # Increased from 15 for better exploration
                 )
                 
                 if hpo_result.success:
@@ -770,6 +806,204 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         
         tprint(f"✅ [REGIME_MODELS] Model training completed - {len(trained_models)} models trained, {len(selected_models)} selected", color="green")
         return selected_models
+
+    def _create_parameter_groups_for_model(self, model_type: str, search_space: Dict[str, Any]) -> List[ParameterGroup]:
+        """
+        Create parameter groups for hierarchical optimization based on model type.
+        
+        Groups parameters by logical categories (structure, regularization, learning)
+        to enable efficient hierarchical optimization.
+        
+        Args:
+            model_type: Type of model ('catboost', 'xgboost', 'lightgbm', etc.)
+            search_space: Full search space for the model
+            
+        Returns:
+            List of parameter groups for hierarchical optimization
+        """
+        tprint(f"📊 [REGIME_MODELS] Creating parameter groups for {model_type}", color="cyan")
+        
+        if model_type == 'catboost':
+            # Group 1: Model structure (most important, optimize first)
+            structure_params = {
+                'depth': search_space.get('depth', {'type': 'int', 'low': 4, 'high': 6}),
+                'iterations': search_space.get('iterations', {'type': 'int', 'low': 500, 'high': 1200})
+            }
+            
+            # Group 2: Regularization (optimize after structure)
+            regularization_params = {
+                'l2_leaf_reg': search_space.get('l2_leaf_reg', {'type': 'float', 'low': 6, 'high': 12}),
+                'subsample': search_space.get('subsample', {'type': 'float', 'low': 0.5, 'high': 0.9}),
+                'colsample_bylevel': search_space.get('colsample_bylevel', {'type': 'float', 'low': 0.5, 'high': 0.9})
+            }
+            
+            # Group 3: Learning rate (fine-tune last)
+            learning_params = {
+                'learning_rate': search_space.get('learning_rate', {'type': 'float', 'low': 0.03, 'high': 0.06, 'log': True})
+            }
+            
+            # Group 4: Categorical parameters (independent)
+            categorical_params = {}
+            if 'bootstrap_type' in search_space:
+                categorical_params['bootstrap_type'] = search_space['bootstrap_type']
+            
+            param_groups = [
+                create_param_group(
+                    name="structure",
+                    params=structure_params,
+                    priority=1,
+                    description="Model structure parameters (depth, iterations)"
+                ),
+                create_param_group(
+                    name="regularization",
+                    params=regularization_params,
+                    priority=2,
+                    depends_on=["structure"],
+                    description="Regularization parameters (l2, subsample, colsample)"
+                ),
+                create_param_group(
+                    name="learning",
+                    params=learning_params,
+                    priority=3,
+                    depends_on=["structure", "regularization"],
+                    description="Learning rate parameters"
+                )
+            ]
+            
+            if categorical_params:
+                param_groups.append(
+                    create_param_group(
+                        name="categorical",
+                        params=categorical_params,
+                        priority=4,
+                        description="Categorical parameters (bootstrap_type)"
+                    )
+                )
+        
+        elif model_type == 'xgboost':
+            # Group 1: Model structure
+            structure_params = {
+                'max_depth': search_space.get('max_depth', {'type': 'int', 'low': 3, 'high': 10}),
+                'n_estimators': search_space.get('n_estimators', {'type': 'int', 'low': 50, 'high': 300})
+            }
+            
+            # Group 2: Regularization (reduced from 3 to 2 params - reg_alpha and reg_lambda are correlated)
+            # Note: Prioritizing L2 (reg_lambda) over L1 (reg_alpha) for tree-based models
+            regularization_params = {
+                'reg_lambda': search_space.get('reg_lambda', {'type': 'float', 'low': 1e-4, 'high': 1.0, 'log': True}),
+                'gamma': search_space.get('gamma', {'type': 'float', 'low': 0, 'high': 5})
+            }
+            
+            # Group 3: Subsampling (combined - subsample and colsample_bytree are correlated)
+            # Using single sampling parameter to reduce dimensionality
+            subsampling_params = {
+                'subsample': search_space.get('subsample', {'type': 'float', 'low': 0.5, 'high': 1.0})
+            }
+            
+            # Group 4: Learning rate
+            learning_params = {
+                'learning_rate': search_space.get('learning_rate', {'type': 'float', 'low': 0.01, 'high': 0.3, 'log': True})
+            }
+            
+            param_groups = [
+                create_param_group(
+                    name="structure",
+                    params=structure_params,
+                    priority=1,
+                    description="Model structure parameters"
+                ),
+                create_param_group(
+                    name="regularization",
+                    params=regularization_params,
+                    priority=2,
+                    depends_on=["structure"],
+                    description="Regularization parameters (L2 + gamma)"
+                ),
+                create_param_group(
+                    name="subsampling",
+                    params=subsampling_params,
+                    priority=3,
+                    depends_on=["structure"],
+                    description="Row subsampling (colsample set to 0.8 default)"
+                ),
+                create_param_group(
+                    name="learning",
+                    params=learning_params,
+                    priority=4,
+                    depends_on=["structure", "regularization", "subsampling"],
+                    description="Learning rate parameters"
+                )
+            ]
+        
+        elif model_type in ['lightgbm', 'lightgbm_meta_regime']:
+            # LightGBM has 8-10 parameters depending on variant
+            # Reduce from 10 to 6 parameters by fixing correlated ones
+            
+            # Group 1: Model structure (num_leaves and max_depth are correlated, prioritize num_leaves)
+            structure_params = {
+                'num_leaves': search_space.get('num_leaves', {'type': 'int', 'low': 15, 'high': 31}),
+                'n_estimators': search_space.get('n_estimators', {'type': 'int', 'low': 200, 'high': 600})
+            }
+            
+            # Group 2: Regularization (lambda_l1 and lambda_l2 are correlated, prioritize L2)
+            regularization_params = {
+                'lambda_l2': search_space.get('lambda_l2', {'type': 'float', 'low': 0, 'high': 0.1}),
+                'min_data_in_leaf': search_space.get('min_data_in_leaf', {'type': 'int', 'low': 50, 'high': 150})
+            }
+            
+            # Group 3: Sampling (feature_fraction and bagging_fraction are correlated, prioritize feature)
+            sampling_params = {
+                'feature_fraction': search_space.get('feature_fraction', {'type': 'float', 'low': 0.6, 'high': 0.9})
+            }
+            
+            # Group 4: Learning rate
+            learning_params = {
+                'learning_rate': search_space.get('learning_rate', {'type': 'float', 'low': 0.03, 'high': 0.05, 'log': True})
+            }
+            
+            param_groups = [
+                create_param_group(
+                    name="structure",
+                    params=structure_params,
+                    priority=1,
+                    description="Model structure (num_leaves, n_estimators)"
+                ),
+                create_param_group(
+                    name="regularization",
+                    params=regularization_params,
+                    priority=2,
+                    depends_on=["structure"],
+                    description="Regularization (L2 + min_data_in_leaf)"
+                ),
+                create_param_group(
+                    name="sampling",
+                    params=sampling_params,
+                    priority=3,
+                    depends_on=["structure"],
+                    description="Feature sampling"
+                ),
+                create_param_group(
+                    name="learning",
+                    params=learning_params,
+                    priority=4,
+                    depends_on=["structure", "regularization", "sampling"],
+                    description="Learning rate"
+                )
+            ]
+        
+        else:
+            # Default: use all parameters in a single group
+            param_groups = [
+                create_param_group(
+                    name="all_parameters",
+                    params=search_space,
+                    priority=1,
+                    description=f"All parameters for {model_type}"
+                )
+            ]
+        
+        tprint(f"✅ [REGIME_MODELS] Created {len(param_groups)} parameter groups for {model_type}", color="green")
+        return param_groups
 
     def _select_best_models(self, trained_models: Dict[str, Any], X_train: np.ndarray, y_train: np.ndarray, fit_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Select best models based on cross-validation performance."""
@@ -1746,7 +1980,8 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 FeatureCategory.VOLUME,
                 FeatureCategory.TREND,
                 FeatureCategory.OSCILLATOR,
-                FeatureCategory.RETURNS
+                FeatureCategory.RETURNS,
+                FeatureCategory.MICROSTRUCTURE  # Microstructure features (no orderbook dependency)
             ]
 
             # Add core regime features with lagged, derived, and temporal features

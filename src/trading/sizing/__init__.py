@@ -7,14 +7,14 @@ Based on existing tactician approach.
 """
 
 from typing import Optional, Dict, Any
-from .position_sizer import PositionSizer, setup_position_sizer
+from .position_sizer import PositionSizer  # Temporarily removed setup_position_sizer due to import issues
 from .leverage_manager import LeverageManager, setup_leverage_manager
 from .risk_calculator import RiskCalculator, setup_risk_calculator
 from ..config.trading_config import TradingConfig
 
 __all__ = [
     "PositionSizer",
-    "setup_position_sizer",
+    # "setup_position_sizer",  # Temporarily disabled
     "LeverageManager",
     "setup_leverage_manager",
     "RiskCalculator",
@@ -32,6 +32,9 @@ async def setup_sizing_components(config: TradingConfig) -> Dict[str, Optional[A
     Returns:
         Dictionary with 'position_sizer', 'leverage_manager', and 'risk_calculator'
     """
+    # Import here to avoid circular import issues
+    from .position_sizer import setup_position_sizer
+    
     # Initialize components
     risk_calculator: Optional[RiskCalculator] = await setup_risk_calculator(config)
     leverage_manager: Optional[LeverageManager] = await setup_leverage_manager(config)

@@ -393,16 +393,25 @@ class BaseTrainer(ABC):
             quality_metrics = calculate_data_quality_metrics(data)
             tprint_debug(f"📊 Data quality metrics: {quality_metrics}")
             
-            # Handle missing values using safe operations
+            # Handle missing values using safe operations (only for numeric columns)
             if data.isnull().any().any():
-                tprint_warning("⚠️ Found missing values, filling with median")
-                data = data.fillna(data.median())
+                tprint_warning("⚠️ Found missing values, filling with median (numeric) or mode (categorical)")
+                # Fill numeric columns with median
+                numeric_cols = data.select_dtypes(include=[np.number]).columns
+                if len(numeric_cols) > 0:
+                    data[numeric_cols] = data[numeric_cols].fillna(data[numeric_cols].median())
+                # Fill categorical columns with mode or drop them
+                categorical_cols = data.select_dtypes(include=['object', 'category']).columns
+                if len(categorical_cols) > 0:
+                    tprint_warning(f"⚠️ Dropping categorical columns: {list(categorical_cols)}")
+                    data = data.drop(columns=categorical_cols)
             
-            # Handle infinite values using safe operations
-            if np.isinf(data).any().any():
+            # Handle infinite values using safe operations (only for numeric columns)
+            if np.isinf(data.select_dtypes(include=[np.number])).any().any():
                 tprint_warning("⚠️ Found infinite values, replacing with finite values")
-                data = data.replace([np.inf, -np.inf], np.nan)
-                data = data.fillna(data.median())
+                numeric_cols = data.select_dtypes(include=[np.number]).columns
+                data[numeric_cols] = data[numeric_cols].replace([np.inf, -np.inf], np.nan)
+                data[numeric_cols] = data[numeric_cols].fillna(data[numeric_cols].median())
             
             # Optimize memory usage
             if self._memory_optimizer:

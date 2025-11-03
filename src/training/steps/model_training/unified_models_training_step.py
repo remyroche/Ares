@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 from pathlib import Path
 
-# --- ADDED IMPORTS ---
+# --- HPO IMPORTS ---
 import optuna
 import lightgbm as lgb
 from sklearn.metrics import mean_squared_error
@@ -24,7 +24,13 @@ from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
     ParameterGroup,
     OptimizationStage
 )
-# --- END ADDED IMPORTS ---
+from src.training.steps.model_training.hpo_config import (
+    HPOOrchestrator,
+    ModelParameterGroups,
+    YAMLConfigUpdater,
+    CustomBalancedScoreObjective
+)
+# --- END HPO IMPORTS ---
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
@@ -57,6 +63,8 @@ class UnifiedModelsTrainingStep(BaseStep):
         super().__init__(step_name)
         self.logger = system_logger.getChild('UnifiedModelsTraining')
         self.unified_pipeline = None
+        self.param_groups_factory = ModelParameterGroups()
+        self.hpo_orchestrator = None
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -156,7 +164,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                 # Determine which targets to use for HPO
                 hpo_targets = analyst_targets if training_type.startswith('analyst') else tactician_targets
                 if hpo_targets is not None:
-                    tprint_info("🔍 Performing hyperparameter optimization before training...")
+                    tprint_info("🔍 Performing hyperparameter optimization using custom_balanced_score...")
                     
                     # Get the appropriate model config
                     if training_type.startswith('analyst'):
@@ -166,12 +174,27 @@ class UnifiedModelsTrainingStep(BaseStep):
                     else:
                         model_config_key = 'ensemble_config'
                     
-                    if model_config_key in yaml_config:
-                        yaml_config[model_config_key] = await self._perform_hyperparameter_optimization(
-                            training_data, hpo_targets, yaml_config[model_config_key], config
+                    # Get config file path for this training type
+                    config_mapping = {
+                        'analyst_base': 'src/training/steps/model_training/analyst_base_config.yaml',
+                        'analyst_ensemble': 'src/training/steps/model_training/analyst_ensemble_config.yaml',
+                        'tactician_base': 'src/training/steps/model_training/tactician_base_config.yaml',
+                        'tactician_ensemble': 'src/training/steps/model_training/tactician_ensemble_config.yaml'
+                    }
+                    config_file = config_mapping.get(training_type)
+                    
+                    if model_config_key in yaml_config and config_file:
+                        # Use new HPO system with custom_balanced_score
+                        yaml_config[model_config_key] = await self._perform_hierarchical_hpo(
+                            training_data=training_data,
+                            targets=hpo_targets,
+                            model_config=yaml_config[model_config_key],
+                            config_file=config_file,
+                            config=config,
+                            training_type=training_type
                         )
                     else:
-                        tprint_warning(f"No {model_config_key} found in config, skipping HPO")
+                        tprint_warning(f"No {model_config_key} found in config or config file, skipping HPO")
                 else:
                     tprint_warning("No targets available for HPO, skipping optimization")
             else:
@@ -339,7 +362,94 @@ class UnifiedModelsTrainingStep(BaseStep):
             'exchange': config.get('exchange', 'binance')
         })
         
+        # Apply light mode optimizations for TCN if in light execution mode
+        execution_mode = config.get('execution_mode', 'light')
+        if execution_mode == 'light':
+            self._apply_light_mode_tcn_optimizations(yaml_config)
+        
         return yaml_config
+    
+    def _apply_light_mode_tcn_optimizations(self, yaml_config: Dict[str, Any]) -> None:
+        """Apply aggressive model optimizations for light mode execution (10x lighter)."""
+        execution_mode = yaml_config.get('execution_mode', 'light')
+        
+        # Check if analyst_config exists
+        if 'analyst_config' in yaml_config:
+            base_models = yaml_config['analyst_config'].get('base_models', {})
+            
+            # Optimize TCN
+            if 'tcn' in base_models:
+                tcn_config = base_models['tcn']
+                tprint_warning(f"⚡ Applying {execution_mode.upper()} mode TCN optimizations (10x lighter)")
+                
+                # Drastically reduce TCN parameters for light mode
+                tcn_params = tcn_config.get('params', {})
+                tcn_params['num_filters'] = 32  # Reduced from 64
+                tcn_params['num_layers'] = 2  # Reduced from 4
+                tcn_params['epochs'] = 10  # Reduced from 50 (10x lighter)
+                tcn_params['batch_size'] = 128  # Increased from 64 (fewer iterations)
+                tcn_params['early_stopping_patience'] = 3  # Reduced from 7
+                tcn_params['use_autoencoder'] = False  # Disabled to save 25 epochs
+                tcn_params['autoencoder_epochs'] = 5  # Reduced from 25 if autoencoder is re-enabled
+                
+                # Disable TCN HPO in light mode
+                if 'hpo' in tcn_config:
+                    tcn_config['hpo']['enabled'] = False
+                
+                tprint_info(f"  TCN epochs: 50 → 10 (10x lighter)")
+                tprint_info(f"  TCN autoencoder: DISABLED (saves 25 epochs)")
+                tprint_info(f"  TCN HPO: DISABLED")
+            
+            # Optimize CatBoost
+            if 'catboost' in base_models:
+                catboost_config = base_models['catboost']
+                tprint_warning(f"⚡ Applying {execution_mode.upper()} mode CatBoost optimizations (10x lighter)")
+                
+                # Reduce CatBoost iterations for light mode
+                catboost_params = catboost_config.get('params', {})
+                catboost_params['iterations'] = 50  # Reduced from 500 (10x lighter)
+                catboost_params['depth'] = 4  # Reduced from 6
+                catboost_params['early_stopping_rounds'] = 10  # Reduced from 50
+                
+                # Disable CatBoost HPO in light mode
+                if 'hpo' in catboost_config:
+                    catboost_config['hpo']['enabled'] = False
+                
+                tprint_info(f"  CatBoost iterations: 500 → 50 (10x lighter)")
+                tprint_info(f"  CatBoost depth: 6 → 4")
+                tprint_info(f"  CatBoost HPO: DISABLED")
+            
+            # Optimize LGBM
+            if 'lgbm' in base_models:
+                lgbm_config = base_models['lgbm']
+                tprint_warning(f"⚡ Applying {execution_mode.upper()} mode LGBM optimizations (10x lighter)")
+                
+                # Reduce LGBM estimators for light mode
+                lgbm_params = lgbm_config.get('params', {})
+                lgbm_params['n_estimators'] = 100  # Reduced from 1000 (10x lighter)
+                lgbm_params['max_depth'] = 6  # Reduced from 8
+                
+                # Disable LGBM HPO in light mode
+                if 'hpo' in lgbm_config:
+                    lgbm_config['hpo']['enabled'] = False
+                
+                tprint_info(f"  LGBM n_estimators: 1000 → 100 (10x lighter)")
+                tprint_info(f"  LGBM max_depth: 8 → 6")
+                tprint_info(f"  LGBM HPO: DISABLED")
+        
+        # Check if tactician_config has GRU model
+        if 'tactician_config' in yaml_config:
+            base_models = yaml_config['tactician_config'].get('base_models', [])
+            for model in base_models:
+                if model.get('model_name') == 'StandaloneGRU':
+                    tprint_warning(f"⚡ Applying {execution_mode.upper()} mode GRU optimizations (10x lighter)")
+                    params = model.get('params', {})
+                    params['epochs'] = 10  # Reduce epochs (10x lighter)
+                    params['batch_size'] = 128  # Increase batch size
+                    if 'hpo' in model:
+                        model['hpo']['enabled'] = False
+                    tprint_info(f"  GRU epochs: Reduced to 10")
+                    tprint_info(f"  GRU HPO: DISABLED")
     
     def _calculate_sample_allocations(self, total_samples: int, config: Dict[str, Any]) -> Dict[str, int]:
         """
@@ -418,63 +528,35 @@ class UnifiedModelsTrainingStep(BaseStep):
         
         return yaml_config
     
-    # --- Define the LGBM Parameter Groups ---
-    
-    # 1st Layer: Core structure and learning rate
-    lgbm_group_1 = ParameterGroup(
-        name="structure_learning_rate",
-        params={
-            "max_depth": {"type": "int", "low": 3, "high": 6},
-            "learning_rate": {"type": "float", "low": 0.01, "high": 0.1, "log": True}
-        },
-        priority=1,
-        description="Optimize core structure (max_depth) and learning_rate first."
-    )
-    
-    # 2nd Layer: Regularization and subsampling, dependent on Layer 1
-    lgbm_group_2 = ParameterGroup(
-        name="regularization_subsampling",
-        params={
-            # Per your guideline: num_leaves ≈ 2^max_depth ± 2
-            # Since max_depth range is [3, 6], 2^max_depth is [8, 64].
-            # This static range [6, 66] covers all possibilities.
-            "num_leaves": {"type": "int", "low": 6, "high": 66},
-            
-            "reg_alpha": {"type": "float", "low": 0.1, "high": 5.0},
-            "reg_lambda": {"type": "float", "low": 0.1, "high": 5.0},
-            
-            "subsample": {"type": "float", "low": 0.8, "high": 0.9},
-            "colsample_bytree": {"type": "float", "low": 0.8, "high": 0.9},
-            
-            "min_child_samples": {"type": "int", "low": 20, "high": 50},
-        },
-        priority=2,
-        depends_on=["structure_learning_rate"], # Ensures this group runs second
-        description="Optimize regularization and subsampling parameters."
-    )
-    
-    # List of all groups to pass to the optimizer
-    lgbm_parameter_groups: List[ParameterGroup] = [lgbm_group_1, lgbm_group_2]
-
-    # --- MODIFIED HPO METHOD ---
-    async def _perform_hyperparameter_optimization(
+    # --- NEW HPO METHOD USING CUSTOM_BALANCED_SCORE ---
+    async def _perform_hierarchical_hpo(
         self,
         training_data: pd.DataFrame,
         targets: pd.Series,
         model_config: Dict[str, Any],
-        config: Dict[str, Any]
+        config_file: str,
+        config: Dict[str, Any],
+        training_type: str
     ) -> Dict[str, Any]:
         """
-        Perform hierarchical hyperparameter optimization for model parameters.
+        Perform hierarchical hyperparameter optimization using custom_balanced_score.
+        
+        This method uses the new HPO system from hpo_config.py which:
+        1. Reads parameter ranges from YAML files
+        2. Uses custom_balanced_score as optimization metric
+        3. Performs hierarchical optimization (2 rounds by default)
+        4. Saves optimal parameters back to YAML files
         
         Args:
             training_data: Training data
             targets: Target variables
             model_config: Model configuration dictionary
+            config_file: Path to YAML config file
             config: General configuration dictionary
+            training_type: Type of training (analyst_base, etc.)
             
         Returns:
-            Optimized hyperparameters dictionary
+            Updated model configuration with optimized parameters
         """
         try:
             # Check if HPO is enabled
@@ -483,192 +565,142 @@ class UnifiedModelsTrainingStep(BaseStep):
                 tprint_info("Hyperparameter optimization disabled, using default parameters")
                 return model_config
             
-            tprint_info("🔍 Starting Hierarchical Hyperparameter Optimization (LGBM)...")
+            tprint_info("🔍 Starting Hierarchical HPO with custom_balanced_score...")
             
-            # 1. Split data for HPO validation (80/20 split for HPO)
+            # Split data for HPO validation (80/20 split)
             hpo_train_size = int(len(training_data) * 0.8)
-            hpo_train_data = training_data.iloc[:hpo_train_size]
-            hpo_val_data = training_data.iloc[hpo_train_size:]
-            hpo_train_targets = targets.iloc[:hpo_train_size]
-            hpo_val_targets = targets.iloc[hpo_train_size:]
+            X_train = training_data.iloc[:hpo_train_size]
+            X_val = training_data.iloc[hpo_train_size:]
+            y_train = targets.iloc[:hpo_train_size]
+            y_val = targets.iloc[hpo_train_size:]
             
-            tprint_info(f"Running HPO with {len(hpo_train_data)} train samples and {len(hpo_val_data)} validation samples")
-
-            # 2. Define the synchronous objective function
-            # This is defined *inside* the method to close over the data variables
-            def lgbm_objective_function(params: Dict[str, Any], **kwargs) -> float:
-                """Synchronous objective function for HPO."""
-                try:
-                    # Get data from closure
-                    X_train_hpo = kwargs.get('X_train')
-                    y_train_hpo = kwargs.get('y_train')
-                    X_val_hpo = kwargs.get('X_val')
-                    y_val_hpo = kwargs.get('y_val')
-
-                    # Add fixed params for LGBM (assuming regression as per dummy data)
-                    fixed_params = {
-                        'objective': 'regression_l1', # MAE is robust to outliers
-                        'metric': 'l1',
-                        'n_estimators': 1000, # High number, will use early stopping
-                        'verbose': -1,
-                        'n_jobs': -1,
-                    }
-                    
-                    # Combine trial params with fixed params
-                    model_params = {**fixed_params, **params}
-
-                    # --- Handle potential int/float type mismatches from optimizer ---
-                    for int_param in ['max_depth', 'num_leaves', 'min_child_samples']:
-                        if int_param in model_params:
-                            model_params[int_param] = int(model_params[int_param])
-                    # ---
-
-                    model = lgb.LGBMRegressor(**model_params)
-                    
-                    model.fit(
-                        X_train_hpo, y_train_hpo,
-                        eval_set=[(X_val_hpo, y_val_hpo)],
-                        eval_metric='l1',
-                        callbacks=[lgb.early_stopping(patience=50, verbose=False)]
-                    )
-                    
-                    preds = model.predict(X_val_hpo)
-                    score = mean_squared_error(y_val_hpo, preds) # Minimize MSE
-                    
-                    return score
-
-                except Exception as e:
-                    self.logger.warning(f"HPO trial failed: {e}")
-                    # Return a very high score to penalize this trial
-                    return float('inf')
-
-            # 3. Initialize the Hierarchical Optimizer
-            hpo_param_groups = self.lgbm_parameter_groups
+            tprint_info(f"HPO split: {len(X_train)} train, {len(X_val)} validation samples")
             
+            # Create HPO orchestrator
             execution_mode = config.get('execution_mode', 'full')
-            if execution_mode == 'light':
-                tprint_info("HPO Light Mode: Using Coarse Grid only")
-                hpo_stages = [OptimizationStage.COARSE_GRID]
-                n_rounds = 1
-                final_refinement = False
+            self.hpo_orchestrator = HPOOrchestrator(
+                config_file=config_file,
+                execution_mode=execution_mode
+            )
+            
+            # Determine which models to optimize
+            models_to_optimize = []
+            
+            if training_type.endswith('ensemble'):
+                # Ensemble models: optimize the meta-learner
+                if 'meta_learner' in model_config:
+                    models_to_optimize.append({
+                        'name': 'meta_learner',
+                        'type': model_config['meta_learner'].get('model_type', 'stacker_lgbm_calibrated'),
+                        'class': lgb.LGBMRegressor,
+                        'is_classification': False
+                    })
             else:
-                tprint_info("HPO Full Mode: Using Coarse Grid -> TPE")
-                hpo_stages = [
-                    OptimizationStage.COARSE_GRID,
-                    OptimizationStage.TPE
-                ]
-                n_rounds = 1
-                final_refinement = True
+                # Base models: optimize each base model
+                if 'base_models' in model_config:
+                    # Handle both list and dict formats
+                    base_models = model_config['base_models']
+                    if isinstance(base_models, list):
+                        # List format: iterate through list items
+                        for model_item in base_models:
+                            model_name = model_item.get('model_name', 'unknown')
+                            model_params = model_item
+                            model_type = model_params.get('model_type', '')
+                            
+                            # Map model types to classes
+                            if 'lgbm' in model_type.lower():
+                                model_class = lgb.LGBMRegressor
+                                is_classification = False
+                            elif 'catboost' in model_type.lower():
+                                import catboost as cb
+                                model_class = cb.CatBoostRegressor
+                                is_classification = False
+                            else:
+                                # Skip models we don't support yet (TCN, GRU, etc.)
+                                tprint_info(f"Skipping HPO for {model_name} ({model_type}) - not yet supported")
+                                continue
+                            
+                            models_to_optimize.append({
+                                'name': model_name,
+                                'type': model_type,
+                                'class': model_class,
+                                'is_classification': is_classification
+                            })
+                    else:
+                        # Dict format: use items()
+                        for model_name, model_params in base_models.items():
+                            model_type = model_params.get('model_type', '')
+                            
+                            # Map model types to classes
+                            if 'lgbm' in model_type.lower():
+                                model_class = lgb.LGBMRegressor
+                                is_classification = False
+                            elif 'catboost' in model_type.lower():
+                                import catboost as cb
+                                model_class = cb.CatBoostRegressor
+                                is_classification = False
+                            else:
+                                # Skip models we don't support yet (TCN, GRU, etc.)
+                                tprint_info(f"Skipping HPO for {model_name} ({model_type}) - not yet supported")
+                                continue
+                            
+                            models_to_optimize.append({
+                                'name': model_name,
+                                'type': model_type,
+                                'class': model_class,
+                                'is_classification': is_classification
+                            })
+            
+            # Run HPO for each model
+            all_results = {}
+            for model_info in models_to_optimize:
+                tprint_info(f"🎯 Optimizing {model_info['name']} ({model_info['type']})...")
                 
-            optimizer = HierarchicalParameterOptimizer(
-                param_groups=hpo_param_groups,
-                objective_func=lgbm_objective_function,
-                stages=hpo_stages,
-                direction='minimize', # We are minimizing mean_squared_error
-                n_rounds=n_rounds,
-                enable_final_refinement=final_refinement,
-                verbose=True # Will use the logger
-            )
-
-            # 4. Run the optimization in a separate thread
-            tprint_info("🚀 Starting hierarchical HPO for LGBM stacker...")
+                # Run HPO in separate thread to avoid blocking event loop
+                result = await asyncio.to_thread(
+                    self.hpo_orchestrator.run_hpo,
+                    model_name=model_info['name'],
+                    model_type=model_info['type'],
+                    X_train=X_train,
+                    y_train=y_train,
+                    X_val=X_val,
+                    y_val=y_val,
+                    model_class=model_info['class'],
+                    is_classification=model_info['is_classification']
+                )
+                
+                if result:
+                    all_results[model_info['name']] = result
+                    tprint_success(f"✅ {model_info['name']} HPO complete: score={result.best_score:.6f}")
+                    tprint_info(f"   Optimal params: {result.best_params}")
+                else:
+                    tprint_warning(f"⚠️ HPO failed for {model_info['name']}, using default parameters")
             
-            # Run the synchronous, CPU-bound HPO in a separate thread
-            # to avoid blocking the asyncio event loop.
-            opt_result = await asyncio.to_thread(
-                optimizer.optimize,
-                X_train=hpo_train_data,
-                y_train=hpo_train_targets,
-                X_val=hpo_val_data,
-                y_val=hpo_val_targets,
-                model=None # Objective func creates the model
-            )
+            # Reload the updated YAML config (it was updated by HPOOrchestrator)
+            with open(config_file, 'r') as f:
+                updated_yaml = yaml.safe_load(f)
             
-            best_hyperparams = opt_result.best_params
-            tprint_success(f"✅ Hierarchical HPO complete. Best score: {opt_result.best_score:.6f}")
-
-            # 5. Update the model_config
-            # This ensures the HPO parameters are passed to the ensemble config
-            if 'params' not in model_config:
-                model_config['params'] = {}
+            # Extract the relevant config section
+            if training_type.startswith('analyst'):
+                updated_model_config = updated_yaml.get('analyst_config', model_config)
+            elif training_type.startswith('tactician'):
+                updated_model_config = updated_yaml.get('tactician_config', model_config)
+            else:
+                updated_model_config = model_config
             
-            model_config['params'].update(best_hyperparams)
-            tprint_info(f"Updated model config with {len(best_hyperparams)} optimized parameters.")
+            tprint_success(f"✅ HPO complete for {len(all_results)} models")
+            tprint_info(f"   Optimal parameters saved to {config_file}")
             
-            # Also, update any 'base_models' that are LGBM (if they exist in the config)
-            if 'base_models' in model_config:
-                for model_name, model_params in model_config['base_models'].items():
-                    if 'lgbm' in model_params.get('model_type', '').lower():
-                        if 'params' not in model_params:
-                            model_params['params'] = {}
-                        # Update with keys that are relevant
-                        relevant_params = {k: v for k, v in best_hyperparams.items() if k in model_params['params']}
-                        model_params['params'].update(relevant_params)
-                        tprint_info(f"Updated base_model '{model_name}' with relevant HPO params.")
-
-            return model_config
+            return updated_model_config
             
         except Exception as e:
-            tprint_error(f"Hyperparameter optimization failed: {e}")
+            tprint_error(f"Hierarchical HPO failed: {e}")
             import traceback
             self.logger.error(f"HPO error: {e}\n{traceback.format_exc()}")
-            return model_config # Return original config on failure
+            return model_config  # Return original config on failure
     
-    def _get_hpo_search_space(self, model_config: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Get hyperparameter search space based on model configuration.
-        
-        Args:
-            model_config: Model configuration dictionary
-            
-        Returns:
-            Search space dictionary for HPO
-        """
-        # This method is now superseded by the hierarchical optimizer,
-        # but we keep it for any legacy logic that might still call it.
-        # The new HPO logic in _perform_hyperparameter_optimization
-        # does NOT use this method.
-        
-        search_space = {}
-        
-        # Define search spaces for different model types
-        if 'base_models' in model_config:
-            for model_name, model_params in model_config['base_models'].items():
-                model_type = model_params.get('model_type', '').lower()
-                
-                if 'lgbm' in model_type.lower():
-                    # Use the hierarchical definitions as a default
-                    search_space[model_name] = {
-                        **self.lgbm_group_1.params,
-                        **self.lgbm_group_2.params
-                    }
-                
-                elif 'catboost' in model_type.lower():
-                    search_space[model_name] = {
-                        'iterations': [1000, 1500, 2000],
-                        'learning_rate': [0.03, 0.05, 0.08],
-                        'depth': [6, 8, 10],
-                        'l2_leaf_reg': [1.0, 3.0, 5.0]
-                    }
-                
-                elif 'tcn' in model_type.lower() or 'temporal' in model_type.lower():
-                    search_space[model_name] = {
-                        'hidden_size': [32, 64, 128],
-                        'num_layers': [2, 3, 4],
-                        'kernel_size': [2, 3, 4],
-                        'dropout': [0.1, 0.2, 0.3],
-                        'learning_rate': [0.0001, 0.001, 0.01]
-                    }
-                
-                elif 'gru' in model_type.lower() or 'lstm' in model_type.lower():
-                    search_space[model_name] = {
-                        'hidden_units': [32, 64, 128],
-                        'num_layers': [1, 2, 3],
-                        'dropout': [0.1, 0.2, 0.3],
-                        'learning_rate': [0.0001, 0.001, 0.01]
-                    }
-        
-        return search_space
+    # Legacy method removed - search spaces now defined in YAML files
+    # See hpo_config.py for parameter group definitions
     
     def _apply_dynamic_config(
         self,
@@ -712,36 +744,76 @@ class UnifiedModelsTrainingStep(BaseStep):
                 
                 # Update base model parameters
                 if 'base_models' in yaml_config[config_key]:
-                    for model_name, model_params in yaml_config[config_key]['base_models'].items():
-                        if 'params' not in model_params:
-                            model_params['params'] = {}
-                        
-                        # Update common parameters
-                        model_type = model_params.get('model_type', '').lower()
-                        
-                        # Neural network models
-                        if any(nn in model_type for nn in ['gru', 'lstm', 'tcn', 'transformer']):
-                            model_params['params'].update({
-                                'batch_size': dynamic_config.batch_size,
-                                'epochs': dynamic_config.epochs if dynamic_config.epochs > 0 else 100,
-                                'learning_rate': dynamic_config.learning_rate,
-                                'early_stopping_patience': dynamic_config.early_stopping_patience
-                            })
+                    base_models = yaml_config[config_key]['base_models']
+                    
+                    # Handle both list and dict formats
+                    if isinstance(base_models, list):
+                        # List format: iterate through list items
+                        for model_item in base_models:
+                            model_name = model_item.get('model_name', 'unknown')
+                            model_params = model_item
                             
-                            # Add sequence length for time series models
-                            if any(ts in model_type for ts in ['gru', 'lstm', 'tcn']):
-                                model_params['params']['sequence_length'] = dynamic_config.sequence_length
-                        
-                        # Tree-based models
-                        elif any(tree in model_type for tree in ['lgbm', 'catboost', 'xgboost']):
-                            if 'lgbm' in model_type:
-                                model_params['params']['n_estimators'] = dynamic_config.n_estimators
-                            elif 'catboost' in model_type:
-                                model_params['params']['iterations'] = dynamic_config.iterations
+                            if 'params' not in model_params:
+                                model_params['params'] = {}
                             
-                            model_params['params']['learning_rate'] = dynamic_config.learning_rate
-                        
-                        tprint_info(f"  Updated {model_name} with dynamic parameters")
+                            # Update common parameters
+                            model_type = model_params.get('model_type', '').lower()
+                            
+                            # Neural network models
+                            if any(nn in model_type for nn in ['gru', 'lstm', 'tcn', 'transformer']):
+                                model_params['params'].update({
+                                    'batch_size': dynamic_config.batch_size,
+                                    'epochs': dynamic_config.epochs if dynamic_config.epochs > 0 else 100,
+                                    'learning_rate': dynamic_config.learning_rate,
+                                    'early_stopping_patience': dynamic_config.early_stopping_patience
+                                })
+                                
+                                # Add sequence length for time series models
+                                if any(ts in model_type for ts in ['gru', 'lstm', 'tcn']):
+                                    model_params['params']['sequence_length'] = dynamic_config.sequence_length
+                            
+                            # Tree-based models
+                            elif any(tree in model_type for tree in ['lgbm', 'catboost', 'xgboost']):
+                                if 'lgbm' in model_type:
+                                    model_params['params']['n_estimators'] = dynamic_config.n_estimators
+                                elif 'catboost' in model_type:
+                                    model_params['params']['iterations'] = dynamic_config.iterations
+                                
+                                model_params['params']['learning_rate'] = dynamic_config.learning_rate
+                            
+                            tprint_info(f"  Updated {model_name} with dynamic parameters")
+                    else:
+                        # Dict format: use items()
+                        for model_name, model_params in base_models.items():
+                            if 'params' not in model_params:
+                                model_params['params'] = {}
+                            
+                            # Update common parameters
+                            model_type = model_params.get('model_type', '').lower()
+                            
+                            # Neural network models
+                            if any(nn in model_type for nn in ['gru', 'lstm', 'tcn', 'transformer']):
+                                model_params['params'].update({
+                                    'batch_size': dynamic_config.batch_size,
+                                    'epochs': dynamic_config.epochs if dynamic_config.epochs > 0 else 100,
+                                    'learning_rate': dynamic_config.learning_rate,
+                                    'early_stopping_patience': dynamic_config.early_stopping_patience
+                                })
+                                
+                                # Add sequence length for time series models
+                                if any(ts in model_type for ts in ['gru', 'lstm', 'tcn']):
+                                    model_params['params']['sequence_length'] = dynamic_config.sequence_length
+                            
+                            # Tree-based models
+                            elif any(tree in model_type for tree in ['lgbm', 'catboost', 'xgboost']):
+                                if 'lgbm' in model_type:
+                                    model_params['params']['n_estimators'] = dynamic_config.n_estimators
+                                elif 'catboost' in model_type:
+                                    model_params['params']['iterations'] = dynamic_config.iterations
+                                
+                                model_params['params']['learning_rate'] = dynamic_config.learning_rate
+                            
+                            tprint_info(f"  Updated {model_name} with dynamic parameters")
                 
                 # Update hardware settings
                 if 'hardware' in yaml_config[config_key]:
@@ -792,52 +864,157 @@ class UnifiedModelsTrainingStep(BaseStep):
             return training_data
     
     async def _retrieve_training_data(self, config: Dict[str, Any]) -> tuple:
-        """Retrieve training data and targets from artifacts."""
+        """Retrieve training data and targets from artifacts with fast-fail on missing data."""
         try:
-            # Try to get training data from artifacts
+            tprint_info("🔍 Retrieving training data from feature generation artifacts...")
+            
             training_data = None
             analyst_targets = None
             tactician_targets = None
             
-            # Get training dataset
-            try:
-                training_data = self._get_artifact('training_dataset', 'data')
-                tprint_info(f"Retrieved training dataset: {training_data.shape if hasattr(training_data, 'shape') else 'unknown shape'}")
-            except Exception as e:
-                self.logger.warning(f"Training dataset not found in artifacts: {e}")
+            # Determine feature set size to use (default to 50 features)
+            feature_set_size = config.get('feature_set_size', 50)
             
-            # Get analyst targets
-            try:
-                analyst_targets = self._get_artifact('analyst_targets', 'data')
-                tprint_info(f"Retrieved analyst targets: {len(analyst_targets) if hasattr(analyst_targets, '__len__') else 'unknown length'}")
-            except Exception as e:
-                self.logger.warning(f"Analyst targets not found in artifacts: {e}")
+            # Try to get selected features from feature_generation_final_feature_selection_step
+            feature_artifact_names = [
+                f'selected_feature_dataframe_{feature_set_size}',  # Specific size
+                f'selected_features_{feature_set_size}',           # Alternative name
+                'selected_feature_dataframe_50',                   # Fallback to 50
+                'selected_feature_dataframe_60',                   # Fallback to 60
+                'selected_feature_dataframe_40',                   # Fallback to 40
+            ]
             
-            # Get tactician targets
-            try:
-                tactician_targets = self._get_artifact('tactician_targets', 'data')
-                tprint_info(f"Retrieved tactician targets: {len(tactician_targets) if hasattr(tactician_targets, '__len__') else 'unknown length'}")
-            except Exception as e:
-                self.logger.warning(f"Tactician targets not found in artifacts: {e}")
+            for artifact_name in feature_artifact_names:
+                try:
+                    training_data = self._get_artifact(artifact_name, 'data')
+                    if training_data is not None:
+                        tprint_success(f"✅ Retrieved training features from '{artifact_name}': {training_data.shape}")
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
+                    continue
             
-            # If no data found, create dummy data for testing
+            # If still no data, try alternative artifact names
             if training_data is None:
-                tprint_info("No training data found, creating dummy data for testing")
+                alternative_names = [
+                    'final_dataset',           # From final validation step
+                    'labeled_data',            # From labeling integration step
+                    'training_dataset',        # Generic name
+                ]
                 
-                # Create dummy training data
-                n_samples = 1000 if config.get('execution_mode') == 'light' else 10000
-                training_data = pd.DataFrame({
-                    'close': np.random.randn(n_samples).cumsum() + 100,
-                    'volume': np.random.exponential(1000, n_samples),
-                    'returns': np.random.randn(n_samples) * 0.01,
-                    'volatility': np.random.exponential(0.02, n_samples)
-                })
+                for artifact_name in alternative_names:
+                    try:
+                        training_data = self._get_artifact(artifact_name, 'data')
+                        if training_data is not None:
+                            tprint_success(f"✅ Retrieved training data from '{artifact_name}': {training_data.shape}")
+                            break
+                    except Exception as e:
+                        self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
+                        continue
+            
+            # FAIL FAST: If no training data found, raise error
+            if training_data is None:
+                error_msg = (
+                    "❌ CRITICAL: No training data found in artifacts!\n"
+                    f"   Expected artifacts from 'feature_generation_final_feature_selection_step':\n"
+                    f"   - selected_feature_dataframe_{feature_set_size}\n"
+                    f"   - selected_feature_dataframe_50/60/40\n"
+                    f"   OR from other steps: final_dataset, labeled_data\n"
+                    f"   \n"
+                    f"   Please ensure feature_generation_final_feature_selection_step has run successfully.\n"
+                    f"   Check artifacts directory for available artifacts."
+                )
+                tprint_error(error_msg)
+                raise ValueError(error_msg)
+            
+            # Get targets from labeling integration step
+            target_artifact_names = [
+                'analyst_targets',             # Specific analyst targets
+                'tactician_targets',           # Specific tactician targets
+                'targets',                     # Generic targets
+                'labeling_metadata',           # From labeling step
+            ]
+            
+            # Try to get analyst targets
+            for artifact_name in ['analyst_targets', 'targets']:
+                try:
+                    analyst_targets = self._get_artifact(artifact_name, 'data')
+                    if analyst_targets is not None:
+                        tprint_success(f"✅ Retrieved analyst targets from '{artifact_name}': {len(analyst_targets)} samples")
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
+                    continue
+            
+            # Try to get tactician targets
+            for artifact_name in ['tactician_targets', 'targets']:
+                try:
+                    tactician_targets = self._get_artifact(artifact_name, 'data')
+                    if tactician_targets is not None:
+                        tprint_success(f"✅ Retrieved tactician targets from '{artifact_name}': {len(tactician_targets)} samples")
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
+                    continue
+            
+            # FALLBACK: Try to extract targets from labeled_data if separate targets not found
+            if analyst_targets is None and tactician_targets is None:
+                tprint_warning("⚠️ No separate target artifacts found, trying to extract from labeled_data...")
                 
-                # Create dummy targets
-                if analyst_targets is None:
-                    analyst_targets = pd.Series(np.random.randn(n_samples), name='analyst_target')
-                if tactician_targets is None:
-                    tactician_targets = pd.Series(np.random.randn(n_samples), name='tactician_target')
+                # Try to get labeled_data artifact
+                for artifact_name in ['labeled_data', 'labeled_features']:
+                    try:
+                        labeled_data = self._get_artifact(artifact_name, 'data')
+                        if labeled_data is not None and isinstance(labeled_data, pd.DataFrame):
+                            tprint_info(f"✅ Found labeled_data artifact: {labeled_data.shape}")
+                            
+                            # Extract target columns
+                            target_cols = [col for col in labeled_data.columns if 'target' in col.lower()]
+                            if target_cols:
+                                tprint_success(f"✅ Extracting targets from labeled_data: {target_cols}")
+                                # Use first target column as analyst targets
+                                analyst_targets = labeled_data[target_cols[0]]
+                                tprint_success(f"✅ Extracted analyst targets: {len(analyst_targets)} samples")
+                                
+                                # CRITICAL: Ensure training_data and targets are aligned
+                                if len(training_data) != len(analyst_targets):
+                                    tprint_warning(f"⚠️ Shape mismatch detected! Features: {len(training_data)}, Targets: {len(analyst_targets)}")
+                                    tprint_warning(f"⚠️ Attempting to align by using labeled_data as both features and targets...")
+                                    
+                                    # Use labeled_data for features (drop target columns)
+                                    feature_cols = [col for col in labeled_data.columns if col not in target_cols]
+                                    training_data = labeled_data[feature_cols]
+                                    analyst_targets = labeled_data[target_cols[0]]
+                                    
+                                    tprint_success(f"✅ Aligned data - Features: {training_data.shape}, Targets: {len(analyst_targets)} samples")
+                                
+                                break
+                    except Exception as e:
+                        self.logger.debug(f"Could not extract targets from '{artifact_name}': {e}")
+                        continue
+            
+            # FAIL FAST: If still no targets found, raise error
+            if analyst_targets is None and tactician_targets is None:
+                error_msg = (
+                    "❌ CRITICAL: No training targets found in artifacts!\n"
+                    f"   Expected artifacts from labeling steps:\n"
+                    f"   - analyst_targets\n"
+                    f"   - tactician_targets\n"
+                    f"   - targets (generic)\n"
+                    f"   - labeled_data (with target columns)\n"
+                    f"   \n"
+                    f"   Please ensure labeling integration steps have run successfully."
+                )
+                tprint_error(error_msg)
+                raise ValueError(error_msg)
+            
+            # Log summary
+            tprint_info("📊 Training Data Summary:")
+            tprint_info(f"   Features: {training_data.shape[0]} samples × {training_data.shape[1]} features")
+            if analyst_targets is not None:
+                tprint_info(f"   Analyst Targets: {len(analyst_targets)} samples")
+            if tactician_targets is not None:
+                tprint_info(f"   Tactician Targets: {len(tactician_targets)} samples")
             
             return training_data, analyst_targets, tactician_targets
             
@@ -845,7 +1022,7 @@ class UnifiedModelsTrainingStep(BaseStep):
             self.logger.error(f"Failed to retrieve training data: {e}")
             raise
 
-    async def _get_primary_features(self, config: Dict[str, Any]) -> pd.DataFrame:
+    async def _get_primary_features(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """Get primary features from feature generation step."""
         try:
             # Determine artifact name based on training type and config
@@ -870,7 +1047,7 @@ class UnifiedModelsTrainingStep(BaseStep):
             self.logger.error(f"Error retrieving primary features: {e}")
             return None
 
-    async def _get_regime_features(self, config: Dict[str, Any]) -> pd.DataFrame:
+    async def _get_regime_features(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """Get regime probability features."""
         try:
             regime_features = await self._get_artifact('regime_probabilities', config)
@@ -885,7 +1062,7 @@ class UnifiedModelsTrainingStep(BaseStep):
             return None
 
     # --- MODIFIED: Added statistical meta-feature generation ---
-    async def _get_additional_model_outputs(self, training_type: str, config: Dict[str, Any]) -> pd.DataFrame:
+    async def _get_additional_model_outputs(self, training_type: str, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """Get additional model outputs based on training type."""
         try:
             additional_features_list = []
@@ -1033,7 +1210,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                         'created_at': datetime.now().isoformat()
                     }
                 )
-                artifacts[f"{training_type}_metrics}"] = metrics_path
+                artifacts[f"{training_type}_metrics"] = metrics_path
             
             # Save configuration
             config_path = self._save_artifact(
@@ -1045,7 +1222,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                     'created_at': datetime.now().isoformat()
                 }
             )
-            artifacts[f"{training_type}_config}"] = config_path
+            artifacts[f"{training_type}_config"] = config_path
             
             return artifacts
             

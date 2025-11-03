@@ -459,3 +459,71 @@ class CommonUtilities:
     def get_file_extension(self, path):
         """Get file extension."""
         return Path(path).suffix
+
+
+def ensure_list(obj: Any) -> List:
+    """
+    Ensure that object is a list.
+    
+    Args:
+        obj: Any object
+        
+    Returns:
+        List version of the object
+    """
+    if obj is None:
+        return []
+    if isinstance(obj, list):
+        return obj
+    if isinstance(obj, (tuple, set)):
+        return list(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, pd.Series):
+        return obj.tolist()
+    return [obj]
+
+
+def ensure_array(obj: Any) -> np.ndarray:
+    """
+    Ensure that object is a numpy array.
+    
+    Args:
+        obj: Any object
+        
+    Returns:
+        Numpy array version of the object
+    """
+    if obj is None:
+        return np.array([])
+    if isinstance(obj, np.ndarray):
+        return obj
+    if isinstance(obj, pd.Series):
+        return obj.values
+    if isinstance(obj, pd.DataFrame):
+        return obj.values
+    if isinstance(obj, (list, tuple)):
+        return np.array(obj)
+    return np.array([obj])
+
+
+def flatten_dict(d: Dict, parent_key: str = '', sep: str = '_') -> Dict:
+    """
+    Flatten a nested dictionary.
+    
+    Args:
+        d: Dictionary to flatten
+        parent_key: Parent key for recursion
+        sep: Separator between keys
+        
+    Returns:
+        Flattened dictionary
+    """
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)

@@ -1,0 +1,234 @@
+# Enhanced SR Parameter Optimization Configuration
+# This configuration increases the search space and trial counts for better optimization
+
+sr_parameter_optimization:
+  # ===================================================================
+  # OPTIMIZATION STRATEGY SETTINGS
+  # ===================================================================
+  
+  # Hierarchical optimization (recommended for 4+ parameters)
+  enable_hierarchical_hpo: true
+  enable_bayesian_hpo: false  # Use hierarchical instead
+  enable_strength_weight_optimization: true
+  
+  # ===================================================================
+  # TRIAL COUNTS - SIGNIFICANTLY INCREASED
+  # ===================================================================
+  
+  # Total budget for optimization (increased from 120 to 300)
+  n_trials: 300
+  
+  # Staged optimization settings
+  enable_staged_optimization: true
+  
+  # Stage 1: Coarse Grid - Broad exploration
+  # 5 points per parameter (increased from 4)
+  coarse_grid_points: 5
+  coarse_grid_trials: 60  # More thorough coarse exploration
+  
+  # Stage 2: Fine Grid - Dense sampling around best region
+  # 8 points per parameter (increased from 6)
+  fine_grid_points: 8
+  fine_grid_trials: 90  # More thorough fine refinement
+  
+  # Stage 3: TPE (Bayesian) - Final optimization
+  # Increased from 50 to 150 for better convergence
+  tpe_trials: 150
+  
+  # ===================================================================
+  # PARAMETER GROUPS - EXPANDED
+  # ===================================================================
+  
+  # Include more parameters from search space in optimization
+  parameter_groups:
+    
+    # Group 1: Core Detection Parameters (Priority 1)
+    core_detection:
+      priority: 1
+      parameters:
+        - min_touches
+        - distance_threshold  # Moved from Group 2 - critical for detection
+      trials_per_stage:
+        coarse: 15
+        fine: 20
+        tpe: 30
+    
+    # Group 2: Threshold & Lookback (Priority 2)
+    thresholds_lookback:
+      priority: 2
+      depends_on: [core_detection]
+      parameters:
+        - lookback_periods
+        - volume_threshold
+        - touch_tolerance  # NEW: Added from search space
+      trials_per_stage:
+        coarse: 20
+        fine: 30
+        tpe: 40
+    
+    # Group 3: Advanced SR Parameters (Priority 3)
+    advanced_sr:
+      priority: 3
+      depends_on: [core_detection, thresholds_lookback]
+      parameters:
+        - breakout_threshold
+        - trend_strength_threshold
+        - consolidation_periods  # NEW: Added from search space
+      trials_per_stage:
+        coarse: 15
+        fine: 20
+        tpe: 35
+    
+    # Group 4: Temporal Parameters (Priority 4)
+    temporal_params:
+      priority: 4
+      depends_on: [core_detection]
+      parameters:
+        - min_formation_time  # NEW: Added from search space
+        - max_formation_time  # NEW: Added from search space
+        - time_decay_factor   # NEW: Added from search space
+      trials_per_stage:
+        coarse: 10
+        fine: 20
+        tpe: 25
+    
+    # Group 5: Strength Weights (Priority 5 - optional but recommended)
+    strength_weights:
+      priority: 5
+      enabled: true
+      depends_on: [core_detection, thresholds_lookback]
+      parameters:
+        - touch_weight
+        - volume_weight
+        - consistency_weight
+        - confluence_weight
+        - pivot_boost
+        - psychological_boost
+        - hvn_boost
+        - failure_penalty_base
+        - failure_volume_multiplier
+        - failure_max_penalty
+        - strength_filter_threshold
+      trials_per_stage:
+        coarse: 0   # Skip coarse for weights (too many combos)
+        fine: 0     # Skip fine for weights
+        tpe: 120    # Use TPE only for this high-dim group
+  
+  # ===================================================================
+  # BAYESIAN OPTIMIZATION SETTINGS
+  # ===================================================================
+  
+  bayesian_tpe:
+    # Sampler configuration
+    sampler: "TPESampler"
+    sampler_params:
+      n_startup_trials: 20  # Random exploration before TPE kicks in
+      n_ei_candidates: 24   # Number of candidates for expected improvement
+      multivariate: true    # Consider parameter interactions
+      constant_liar: true   # Enable parallel optimization
+      
+    # Pruner configuration (stop bad trials early)
+    enable_pruner: true
+    pruner_type: "HyperbandPruner"  # Changed from median to hyperband
+    pruner_params:
+      min_resource: 5       # Minimum trials before pruning
+      max_resource: 50      # Maximum trials
+      reduction_factor: 3   # Aggressiveness of pruning
+    
+    # Study configuration
+    study_params:
+      direction: "maximize"
+      load_if_exists: true  # Resume from previous runs
+      
+  # ===================================================================
+  # HARDWARE OPTIMIZATION
+  # ===================================================================
+  
+  enable_hardware_optimization: true
+  enable_gpu_acceleration: true
+  enable_m1_optimization: true
+  
+  hardware:
+    workload_type: "BACKTESTING"
+    optimization_level: "AGGRESSIVE"  # Changed from BALANCED
+    memory_limit_gb: 12.0  # Increased from 8.0
+    enable_memory_pooling: true
+    enable_cpu_affinity: true
+    
+  # ===================================================================
+  # VALIDATION SETTINGS
+  # ===================================================================
+  
+  enable_advanced_validation: true
+  enable_purged_cv: true
+  enable_data_leakage_detection: true
+  enable_temporal_validation: true
+  
+  validation:
+    temporal_gap_hours: 24
+    validation_gap_days: 5
+    purged_cv_n_splits: 5
+    purged_cv_pct_embargo: 0.01
+  
+  # ===================================================================
+  # PERFORMANCE SETTINGS
+  # ===================================================================
+  
+  enable_caching: true
+  cache_dir: "cache/sr_optimization_enhanced"
+  parallel_processing: true
+  max_workers: 6  # Increased from 4
+  
+  # Timeout settings (prevent infinite optimization)
+  timeout_per_trial_seconds: 30
+  max_optimization_time_minutes: 45
+  
+  # ===================================================================
+  # SEARCH SPACE EXPANSION
+  # ===================================================================
+  
+  # Include additional parameters that were in search_space but not in param_groups
+  expand_search_space: true
+  additional_parameters:
+    - touch_tolerance
+    - consolidation_periods
+    - min_formation_time
+    - max_formation_time
+    - time_decay_factor
+    - volume_spike_threshold
+    - volume_consistency_threshold
+    - wick_ratio_threshold
+    - body_ratio_threshold
+    - price_momentum_threshold
+  
+  # ===================================================================
+  # LOGGING & MONITORING
+  # ===================================================================
+  
+  enable_progress_monitoring: true
+  log_level: "INFO"
+  save_intermediate_results: true
+  intermediate_save_interval: 25  # Save every 25 trials
+  
+  # Enhanced monitoring
+  enable_optuna_dashboard: false  # Set to true to enable web dashboard
+  enable_mlflow_tracking: false   # Set to true for experiment tracking
+  
+  # ===================================================================
+  # RESULT QUALITY SETTINGS
+  # ===================================================================
+  
+  # Minimum requirements for optimization to be considered successful
+  quality_thresholds:
+    min_score: 0.6
+    min_levels_detected: 20
+    max_levels_detected: 200
+    min_strength_avg: 0.4
+    
+  # Early stopping criteria
+  enable_early_stopping: true
+  early_stopping:
+    patience: 50  # Stop if no improvement for 50 trials
+    min_delta: 0.01  # Minimum improvement to be considered
+    
+

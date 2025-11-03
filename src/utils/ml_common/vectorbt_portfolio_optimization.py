@@ -216,6 +216,11 @@ class VectorBTPortfolioOptimizer:
 
     def _configure_vectorbt(self):
         """Configure VectorBT global settings."""
+        # Check if settings attribute exists first
+        if not hasattr(vbt, 'settings'):
+            logger.debug("VectorBT settings not available in this version")
+            return
+            
         if self.config.enable_parallel:
             try:
                 # Try to set parallel settings if available
@@ -229,7 +234,8 @@ class VectorBTPortfolioOptimizer:
                 logger.debug(f"Parallel settings not available in this VectorBT version: {e}")
 
         try:
-            vbt.settings.array_wrapper['freq'] = '1min'
+            if hasattr(vbt.settings, 'array_wrapper'):
+                vbt.settings.array_wrapper['freq'] = '1min'
         except (AttributeError, KeyError) as e:
             logger.debug(f"Array wrapper settings not available: {e}")
 

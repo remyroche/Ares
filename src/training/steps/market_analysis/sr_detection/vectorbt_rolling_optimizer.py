@@ -16,8 +16,8 @@ from src.utils.logger import system_logger
 
 # VectorBT imports
 try:
-    from src.vectorbt import vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, VECTORBT_AVAILABLE
-    from src.vectorbt import rolling_corr, rolling_cov, scale, rank, zscore, winsorize, clip, quantile
+    from src.utils.vectorbt_compat import vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, VECTORBT_AVAILABLE
+    from src.utils.vectorbt_compat import rolling_corr, rolling_cov, scale, rank, zscore, winsorize, clip, quantile
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
@@ -49,7 +49,9 @@ class RollingOperationResult:
 class VectorBTRollingOptimizer:
     """Optimized rolling operations using VectorBT for SR detection."""
     
-    def __init__(self, enable_vectorbt: bool = True, performance_threshold: int = 1000):
+    _init_logged = False  # Class variable to track if we've logged init once
+    
+    def __init__(self, enable_vectorbt: bool = True, performance_threshold: int = 1000, verbose: bool = False):
         self.enable_vectorbt = enable_vectorbt and VECTORBT_AVAILABLE
         self.performance_threshold = performance_threshold
         self.logger = system_logger.getChild('VectorBTRollingOptimizer')
@@ -62,11 +64,14 @@ class VectorBTRollingOptimizer:
             'avg_performance_gain': 0.0
         }
         
-        tprint("🚀 VectorBTRollingOptimizer initialized", "INFO")
-        if self.enable_vectorbt:
-            tprint("✅ VectorBT optimization enabled", "SUCCESS")
-        else:
-            tprint("⚠️ VectorBT optimization disabled - using pandas fallback", "WARNING")
+        # Only log initialization once per session (or if verbose=True)
+        if verbose or not VectorBTRollingOptimizer._init_logged:
+            tprint("🚀 VectorBTRollingOptimizer initialized", "INFO")
+            if self.enable_vectorbt:
+                tprint("✅ VectorBT optimization enabled", "SUCCESS")
+            else:
+                tprint("⚠️ VectorBT optimization disabled - using pandas fallback", "WARNING")
+            VectorBTRollingOptimizer._init_logged = True
     
     def should_use_vectorbt(self, data: pd.Series) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
@@ -366,3 +371,42 @@ class VectorBTRollingOptimizer:
             'avg_performance_gain': 0.0
         }
         tprint("🔄 Performance statistics reset", "INFO")
+
+
+# Singleton accessor using component pool
+_vectorbt_optimizer_instance: Optional[VectorBTRollingOptimizer] = None
+_optimizer_lock = __import__('threading').Lock()
+
+
+def get_vectorbt_rolling_optimizer(
+    enable_vectorbt: bool = True,
+    performance_threshold: int = 1000,
+    use_cache: bool = True
+) -> VectorBTRollingOptimizer:
+    """
+    Get or create a VectorBTRollingOptimizer instance (cached by default).
+    
+    Args:
+        enable_vectorbt: Enable VectorBT optimization
+        performance_threshold: Minimum data size to use VectorBT
+        use_cache: Use cached instance (default: True for performance)
+        
+    Returns:
+        VectorBTRollingOptimizer instance (cached or new)
+    """
+    global _vectorbt_optimizer_instance
+    
+    if use_cache:
+        with _optimizer_lock:
+            if _vectorbt_optimizer_instance is None:
+                _vectorbt_optimizer_instance = VectorBTRollingOptimizer(
+                    enable_vectorbt=enable_vectorbt,
+                    performance_threshold=performance_threshold
+                )
+            return _vectorbt_optimizer_instance
+    else:
+        # Create new instance without caching
+        return VectorBTRollingOptimizer(
+            enable_vectorbt=enable_vectorbt,
+            performance_threshold=performance_threshold
+        )

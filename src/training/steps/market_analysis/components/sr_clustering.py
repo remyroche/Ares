@@ -84,7 +84,7 @@ except ImportError as e:
 
 # VectorBT imports
 try:
-    from src.vectorbt import (
+    from src.utils.vectorbt_compat import (
         vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
         rolling_sum, rolling_apply, VECTORBT_AVAILABLE
     )
@@ -639,6 +639,28 @@ class SRClusteringComponent(BaseStep):
             # Calculate hardware metrics
             hardware_metrics = await self._calculate_hardware_metrics(enhanced_config)
             
+            # Convert explainability_results to JSON-serializable format for Parquet
+            import json
+            import numpy as np
+            
+            def make_json_serializable(obj):
+                """Convert numpy arrays and other non-serializable objects to JSON-compatible types."""
+                if isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                elif isinstance(obj, np.integer):
+                    return int(obj)
+                elif isinstance(obj, np.floating):
+                    return float(obj)
+                elif isinstance(obj, dict):
+                    return {k: make_json_serializable(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [make_json_serializable(item) for item in obj]
+                else:
+                    return obj
+            
+            serializable_explainability = make_json_serializable(explainability_results)
+            explainability_json = json.dumps(serializable_explainability) if serializable_explainability else "{}"
+            
             # Organize results
             result = {
                 'total_clusters': len(clusters),
@@ -650,7 +672,7 @@ class SRClusteringComponent(BaseStep):
                 'hardware_metrics': hardware_metrics,
                 'data_leakage_results': data_leakage_results,
                 'regime_analysis': regime_analysis,
-                'explainability_results': explainability_results,
+                'explainability_results': explainability_json,  # Store as JSON string for Parquet compatibility
                 'metadata': {
                     'symbol': symbol,
                     'timeframe': timeframe,
@@ -835,13 +857,14 @@ class SRClusteringComponent(BaseStep):
     async def _get_hardware_configuration(self, enhanced_config: EnhancedSRClusteringConfig) -> Dict[str, Any]:
         """Get hardware configuration for clustering."""
         try:
-            if self.hardware_manager:
+            if self.hardware_manager and hasattr(self.hardware_manager, 'get_optimal_config'):
                 hardware_config = self.hardware_manager.get_optimal_config(
                     WorkloadType.ML_TRAINING,
                     OptimizationLevel.BALANCED
                 )
                 return hardware_config
             else:
+                self.logger.debug("Hardware manager not available or missing get_optimal_config method")
                 return {}
                 
         except Exception as e:

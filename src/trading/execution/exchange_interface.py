@@ -418,7 +418,7 @@ class ExchangeInterface:
     def _setup_rate_limiting(self) -> None:
         """Set up rate limiting for different endpoints."""
         try:
-            from ...exchanges.shared.reliability.rate_limit_manager import RateLimit
+            from exchanges.shared.reliability.rate_limit_manager import RateLimit
 
             # General API rate limits
             general_limit = RateLimit(
@@ -463,7 +463,7 @@ class ExchangeInterface:
     async def _setup_precision_configs(self) -> None:
         """Set up precision configurations for symbols."""
         try:
-            from ...exchanges.shared.market.precision_helper import PrecisionConfig
+            from exchanges.shared.market.precision_helper import PrecisionConfig
 
             instruments = self.market_metadata.get_active_instruments()
             for instrument in instruments:
@@ -484,7 +484,7 @@ class ExchangeInterface:
     async def _setup_risk_tiers(self) -> None:
         """Set up risk tiers for symbols."""
         try:
-            from ...exchanges.shared.market.risk_tier_manager import SymbolRiskProfile, RiskTier
+            from exchanges.shared.market.risk_tier_manager import SymbolRiskProfile, RiskTier
 
             instruments = self.market_metadata.get_active_instruments()
             for instrument in instruments:
@@ -847,10 +847,21 @@ class ExchangeInterface:
             return await self._get_simulated_klines(symbol, interval, start_time, end_time, limit)
 
         if self.dispatcher:
-            print(f"DEBUG ExchangeInterface.get_klines: Calling dispatcher.get_klines")
-            print(f"DEBUG ExchangeInterface.get_klines: symbol={symbol}, interval={interval}, start_time={start_time}, end_time={end_time}, limit={limit}")
+            # Calculate time gap duration for better visibility
+            if isinstance(start_time, datetime) and isinstance(end_time, datetime):
+                time_gap = end_time - start_time
+                hours = time_gap.total_seconds() / 3600
+                print(f"📥 DOWNLOADING: {symbol} {interval} | {start_time.strftime('%Y-%m-%d %H:%M')} → {end_time.strftime('%Y-%m-%d %H:%M')} | Gap: {hours:.1f} hours ({limit} candles)")
+            else:
+                print(f"DEBUG ExchangeInterface.get_klines: Calling dispatcher.get_klines")
+                print(f"DEBUG ExchangeInterface.get_klines: symbol={symbol}, interval={interval}, start_time={start_time}, end_time={end_time}, limit={limit}")
+            
             ohlcv_data = await self.dispatcher.get_klines(symbol, interval, start_time, end_time, limit)
-            print(f"DEBUG ExchangeInterface.get_klines: Received {len(ohlcv_data) if ohlcv_data else 0} candles from dispatcher")
+            
+            if ohlcv_data:
+                print(f"✅ RECEIVED: {len(ohlcv_data)} candles from {symbol}")
+            else:
+                print(f"⚠️ NO DATA received for {symbol}")
             klines = []
             for candle in ohlcv_data:
                 klines.append(KlineData(
@@ -1005,57 +1016,186 @@ class ExchangeInterface:
 
     # Simulated exchange methods
     async def _get_simulated_ticker(self, symbol: str) -> Optional[TickerData]:
-        """Get simulated ticker data."""
-        # Use the existing simulated exchange logic
-        if symbol not in self.price_feeds:
-            return None
-
-        data = self.price_feeds[symbol]
-        price_variation = np.random.normal(0, data['price'] * 0.001)
-        current_price = data['price'] + price_variation
-
-        return TickerData(
-            symbol=symbol,
-            price=current_price,
-            bid_price=current_price - 0.5,
-            ask_price=current_price + 0.5,
-            bid_quantity=np.random.uniform(1, 10),
-            ask_quantity=np.random.uniform(1, 10),
-            volume_24h=data['volume_24h'],
-            price_change_24h=data['price_change_24h'],
-            price_change_percent_24h=(data['price_change_24h'] / data['price']) * 100,
-            high_24h=data['high_24h'],
-            low_24h=data['low_24h'],
-            timestamp=datetime.now()
-        )
+        """Get simulated ticker data using recent historical prices."""
+        try:
+            # Import historical data loader
+            from src.simulator.historical_data_loader import get_historical_data_loader
+            from src.simulator.config import SimulatorConfig
+            
+            loader = get_historical_data_loader()
+            config = SimulatorConfig()
+            
+            # Try to get exchange name from config
+            exchange_name = self.exchange_type if isinstance(self.exchange_type, str) else 'binance'
+            
+            # Try to get latest price from historical data
+            latest_price = loader.get_latest_price(exchange_name, symbol, interval="1m")
+            
+            if latest_price is None:
+                # Fallback to price feeds
+                if symbol not in self.price_feeds:
+                    # Default price
+                    latest_price = 3000.0 if 'ETH' in symbol.upper() else 50000.0
+                else:
+                    latest_price = self.price_feeds[symbol]['price']
+            
+            # Apply small random variation for real-time feel
+            price_variation = np.random.normal(0, latest_price * 0.0005)  # 0.05% variation
+            current_price = latest_price + price_variation
+            
+            # Calculate bid/ask spread using config
+            spread_pct = config.get_spread_pct(exchange_name)
+            half_spread = current_price * (spread_pct / 2)
+            
+            bid_price = current_price - half_spread
+            ask_price = current_price + half_spread
+            
+            # Get recent klines for 24h stats
+            recent_klines = loader.get_recent_klines(
+                exchange=exchange_name,
+                symbol=symbol,
+                interval="1h",
+                lookback_minutes=1440  # 24 hours
+            )
+            
+            if recent_klines and len(recent_klines) > 0:
+                # Calculate 24h stats from historical data
+                prices = [k.close for k in recent_klines]
+                high_24h = max([k.high for k in recent_klines])
+                low_24h = min([k.low for k in recent_klines])
+                volume_24h = sum([k.volume for k in recent_klines])
+                
+                # Price change calculation
+                if len(prices) > 1:
+                    price_24h_ago = prices[0]
+                    price_change_24h = current_price - price_24h_ago
+                    price_change_percent_24h = (price_change_24h / price_24h_ago) * 100 if price_24h_ago > 0 else 0.0
+                else:
+                    price_change_24h = 0.0
+                    price_change_percent_24h = 0.0
+            else:
+                # Fallback to simulated stats
+                if symbol in self.price_feeds:
+                    data = self.price_feeds[symbol]
+                    high_24h = data.get('high_24h', current_price * 1.02)
+                    low_24h = data.get('low_24h', current_price * 0.98)
+                    volume_24h = data.get('volume_24h', 1000000.0)
+                    price_change_24h = data.get('price_change_24h', 0.0)
+                    price_change_percent_24h = (price_change_24h / current_price) * 100 if current_price > 0 else 0.0
+                else:
+                    high_24h = current_price * 1.02
+                    low_24h = current_price * 0.98
+                    volume_24h = np.random.uniform(500000, 2000000)
+                    price_change_24h = np.random.normal(0, current_price * 0.01)
+                    price_change_percent_24h = (price_change_24h / current_price) * 100 if current_price > 0 else 0.0
+            
+            return TickerData(
+                symbol=symbol,
+                price=current_price,
+                bid_price=bid_price,
+                ask_price=ask_price,
+                bid_quantity=np.random.uniform(1, 10),
+                ask_quantity=np.random.uniform(1, 10),
+                volume_24h=volume_24h,
+                price_change_24h=price_change_24h,
+                price_change_percent_24h=price_change_percent_24h,
+                high_24h=high_24h,
+                low_24h=low_24h,
+                timestamp=datetime.now()
+            )
+            
+        except Exception as e:
+            tprint_error(f"❌ Error getting simulated ticker: {e}")
+            # Fallback to basic simulation
+            if symbol not in self.price_feeds:
+                return None
+            
+            data = self.price_feeds[symbol]
+            price_variation = np.random.normal(0, data['price'] * 0.001)
+            current_price = data['price'] + price_variation
+            
+            return TickerData(
+                symbol=symbol,
+                price=current_price,
+                bid_price=current_price - 0.5,
+                ask_price=current_price + 0.5,
+                bid_quantity=np.random.uniform(1, 10),
+                ask_quantity=np.random.uniform(1, 10),
+                volume_24h=data['volume_24h'],
+                price_change_24h=data['price_change_24h'],
+                price_change_percent_24h=(data['price_change_24h'] / data['price']) * 100,
+                high_24h=data['high_24h'],
+                low_24h=data['low_24h'],
+                timestamp=datetime.now()
+            )
 
     async def _get_simulated_order_book(self, symbol: str, limit: int) -> Optional[Dict[str, Any]]:
-        """Get simulated order book."""
-        if symbol not in self.price_feeds:
-            return None
-
-        data = self.price_feeds[symbol]
-        base_price = data['price']
-
-        bids = []
-        asks = []
-
-        for i in range(limit):
-            bid_price = base_price - 0.5 - (i * 0.1)
-            ask_price = base_price + 0.5 + (i * 0.1)
-
-            bid_quantity = np.random.uniform(0.1, 5.0)
-            ask_quantity = np.random.uniform(0.1, 5.0)
-
-            bids.append([bid_price, bid_quantity])
-            asks.append([ask_price, ask_quantity])
-
-        return {
-            'symbol': symbol,
-            'bids': bids,
-            'asks': asks,
-            'timestamp': datetime.now().isoformat()
-        }
+        """Get simulated order book with realistic spread."""
+        try:
+            # Import required modules
+            from src.simulator.slippage_calculator import SlippageCalculator
+            from src.simulator.config import SimulatorConfig
+            from src.simulator.historical_data_loader import get_historical_data_loader
+            
+            config = SimulatorConfig()
+            calculator = SlippageCalculator(config)
+            loader = get_historical_data_loader()
+            
+            # Try to get exchange name from config
+            exchange_name = self.exchange_type if isinstance(self.exchange_type, str) else 'binance'
+            
+            # Get mid price from historical data or price feeds
+            mid_price = loader.get_latest_price(exchange_name, symbol, interval="1m")
+            
+            if mid_price is None:
+                if symbol in self.price_feeds:
+                    mid_price = self.price_feeds[symbol]['price']
+                else:
+                    # Default price
+                    mid_price = 3000.0 if 'ETH' in symbol.upper() else 50000.0
+            
+            # Generate synthetic order book with realistic spread
+            order_book = calculator.generate_synthetic_orderbook(
+                mid_price=mid_price,
+                exchange=exchange_name,
+                depth_levels=limit
+            )
+            
+            # Add symbol and timestamp
+            order_book['symbol'] = symbol
+            order_book['timestamp'] = datetime.now().isoformat()
+            
+            return order_book
+            
+        except Exception as e:
+            tprint_error(f"❌ Error generating simulated order book: {e}")
+            
+            # Fallback to basic order book
+            if symbol not in self.price_feeds:
+                return None
+            
+            data = self.price_feeds[symbol]
+            base_price = data['price']
+            
+            bids = []
+            asks = []
+            
+            for i in range(limit):
+                bid_price = base_price - 0.5 - (i * 0.1)
+                ask_price = base_price + 0.5 + (i * 0.1)
+                
+                bid_quantity = np.random.uniform(0.1, 5.0)
+                ask_quantity = np.random.uniform(0.1, 5.0)
+                
+                bids.append([bid_price, bid_quantity])
+                asks.append([ask_price, ask_quantity])
+            
+            return {
+                'symbol': symbol,
+                'bids': bids,
+                'asks': asks,
+                'timestamp': datetime.now().isoformat()
+            }
 
     async def _get_simulated_klines(
         self,
@@ -1065,40 +1205,93 @@ class ExchangeInterface:
         end_time: Optional[datetime],
         limit: int
     ) -> List[KlineData]:
-        """Get simulated kline data."""
-        if symbol not in self.price_feeds:
-            return []
-
-        data = self.price_feeds[symbol]
-        base_price = data['price']
-        klines = []
-        current_time = datetime.now()
-
-        for i in range(min(limit, 500)):
-            timestamp = current_time - timedelta(minutes=i)
-            open_price = base_price + np.random.normal(0, base_price * 0.02)
-            high_price = open_price + abs(np.random.normal(0, base_price * 0.01))
-            low_price = open_price - abs(np.random.normal(0, base_price * 0.01))
-            close_price = low_price + np.random.uniform(0, high_price - low_price)
-            volume = np.random.uniform(100, 1000)
-
-            klines.append(KlineData(
+        """Get simulated kline data from historical cache or generate synthetic."""
+        try:
+            # Import historical data loader
+            from src.simulator.historical_data_loader import get_historical_data_loader
+            
+            loader = get_historical_data_loader()
+            
+            # Try to get exchange name from config
+            exchange_name = self.exchange_type if isinstance(self.exchange_type, str) else 'binance'
+            
+            # Check if historical data is available
+            if loader.is_data_available(exchange_name, symbol, interval):
+                tprint_debug(f"Loading historical klines for {symbol}/{interval} from cache")
+                
+                # Load historical data
+                kline_records = loader.load_klines(
+                    exchange=exchange_name,
+                    symbol=symbol,
+                    interval=interval,
+                    start_time=start_time,
+                    end_time=end_time,
+                    limit=limit
+                )
+                
+                if kline_records:
+                    # Convert to KlineData objects
+                    klines = []
+                    for record in kline_records:
+                        klines.append(KlineData(
+                            symbol=record.symbol,
+                            interval=record.interval,
+                            timestamp=record.timestamp,
+                            open_price=record.open,
+                            high_price=record.high,
+                            low_price=record.low,
+                            close_price=record.close,
+                            volume=record.volume,
+                            close_time=record.timestamp + timedelta(minutes=1),
+                            quote_asset_volume=record.close * record.volume,
+                            number_of_trades=int(np.random.uniform(10, 100)),
+                            taker_buy_base_asset_volume=record.volume * np.random.uniform(0.3, 0.7),
+                            taker_buy_quote_asset_volume=record.close * record.volume * np.random.uniform(0.3, 0.7)
+                        ))
+                    
+                    tprint_success(f"✅ Loaded {len(klines)} historical klines for {symbol}/{interval}")
+                    return klines
+                else:
+                    tprint_warning(f"⚠️ No historical data found for {symbol}/{interval}, using synthetic")
+            else:
+                tprint_debug(f"No cached data for {symbol}/{interval}, generating synthetic klines")
+            
+            # Fallback to synthetic generation
+            base_price = self.price_feeds.get(symbol, {}).get('price', 3000.0) if symbol in self.price_feeds else 3000.0
+            
+            # Use historical data loader to generate synthetic klines
+            kline_records = loader.generate_synthetic_klines(
                 symbol=symbol,
                 interval=interval,
-                timestamp=timestamp,
-                open_price=open_price,
-                high_price=high_price,
-                low_price=low_price,
-                close_price=close_price,
-                volume=volume,
-                close_time=timestamp + timedelta(minutes=1),
-                quote_asset_volume=close_price * volume,
-                number_of_trades=int(np.random.uniform(10, 100)),
-                taker_buy_base_asset_volume=volume * np.random.uniform(0.3, 0.7),
-                taker_buy_quote_asset_volume=close_price * volume * np.random.uniform(0.3, 0.7)
-            ))
-
-        return klines
+                count=min(limit, 500),
+                base_price=base_price,
+                volatility=0.02
+            )
+            
+            # Convert to KlineData objects
+            klines = []
+            for record in kline_records:
+                klines.append(KlineData(
+                    symbol=record.symbol,
+                    interval=record.interval,
+                    timestamp=record.timestamp,
+                    open_price=record.open,
+                    high_price=record.high,
+                    low_price=record.low,
+                    close_price=record.close,
+                    volume=record.volume,
+                    close_time=record.timestamp + timedelta(minutes=1),
+                    quote_asset_volume=record.close * record.volume,
+                    number_of_trades=int(np.random.uniform(10, 100)),
+                    taker_buy_base_asset_volume=record.volume * np.random.uniform(0.3, 0.7),
+                    taker_buy_quote_asset_volume=record.close * record.volume * np.random.uniform(0.3, 0.7)
+                ))
+            
+            return klines
+            
+        except Exception as e:
+            tprint_error(f"❌ Error getting simulated klines: {e}")
+            return []
 
     async def _get_simulated_recent_trades(self, symbol: str, limit: int) -> List[Dict[str, Any]]:
         """Get simulated recent trades."""
@@ -1127,7 +1320,32 @@ class ExchangeInterface:
         return trades
 
     def _get_simulated_balance(self, asset: Optional[str]) -> Dict[str, float]:
-        """Get simulated account balance."""
+        """Get simulated account balance from PaperTradingSimulator if available."""
+        try:
+            # Try to get balance from registered simulator
+            from src.simulator import get_simulator_balance
+            
+            simulator_balance = get_simulator_balance()
+            
+            if simulator_balance > 0:
+                # Return simulator balance
+                if asset:
+                    if asset.upper() == 'USDT':
+                        return {asset: simulator_balance}
+                    else:
+                        # For non-USDT assets, return small amount
+                        return {asset: 0.0}
+                else:
+                    return {
+                        'USDT': simulator_balance,
+                        'ETH': 0.0,
+                        'BTC': 0.0
+                    }
+            
+        except Exception as e:
+            tprint_debug(f"Could not get simulator balance: {e}")
+        
+        # Fallback to default simulated balances
         if asset:
             return {asset: 1000.0 if asset == 'USDT' else 10.0}
 
@@ -1462,35 +1680,83 @@ class SimulatedExchange:
         end_time: Optional[datetime] = None,
         limit: int = 500
     ) -> List[List[Any]]:
-        """Get simulated kline data."""
-        base_price = self.current_prices.get(symbol, 0.0)
-        klines = []
-        current_time = datetime.now()
-        
-        for i in range(min(limit, 500)):
-            timestamp = current_time - timedelta(minutes=i)
-            open_price = base_price + np.random.normal(0, base_price * 0.02)
-            high_price = open_price + abs(np.random.normal(0, base_price * 0.01))
-            low_price = open_price - abs(np.random.normal(0, base_price * 0.01))
-            close_price = low_price + np.random.uniform(0, high_price - low_price)
-            volume = np.random.uniform(100, 1000)
+        """Get simulated kline data from historical cache or generate synthetic."""
+        try:
+            # Import historical data loader
+            from src.simulator.historical_data_loader import get_historical_data_loader
             
-            klines.append([
-                int(timestamp.timestamp() * 1000),  # Open time
-                str(open_price),                    # Open
-                str(high_price),                    # High
-                str(low_price),                     # Low
-                str(close_price),                   # Close
-                str(volume),                        # Volume
-                int(timestamp.timestamp() * 1000),  # Close time
-                str(close_price * volume),          # Quote asset volume
-                int(np.random.uniform(10, 100)),    # Number of trades
-                str(volume * np.random.uniform(0.3, 0.7)),  # Taker buy base asset volume
-                str(close_price * volume * np.random.uniform(0.3, 0.7)),  # Taker buy quote asset volume
-                '0'  # Ignore
-            ])
-        
-        return klines
+            loader = get_historical_data_loader()
+            
+            # Check if historical data is available
+            exchange_name = self.exchange_type if hasattr(self, 'exchange_type') else 'binance'
+            
+            if loader.is_data_available(exchange_name, symbol, interval):
+                # Load historical data
+                kline_records = loader.load_klines(
+                    exchange=exchange_name,
+                    symbol=symbol,
+                    interval=interval,
+                    start_time=start_time,
+                    end_time=end_time,
+                    limit=limit
+                )
+                
+                if kline_records:
+                    # Convert to exchange format
+                    klines = []
+                    for record in kline_records:
+                        klines.append([
+                            int(record.timestamp.timestamp() * 1000),  # Open time
+                            str(record.open),                          # Open
+                            str(record.high),                          # High
+                            str(record.low),                           # Low
+                            str(record.close),                         # Close
+                            str(record.volume),                        # Volume
+                            int(record.timestamp.timestamp() * 1000),  # Close time
+                            str(record.close * record.volume),         # Quote asset volume
+                            int(np.random.uniform(10, 100)),           # Number of trades
+                            str(record.volume * np.random.uniform(0.3, 0.7)),  # Taker buy base asset volume
+                            str(record.close * record.volume * np.random.uniform(0.3, 0.7)),  # Taker buy quote asset volume
+                            '0'  # Ignore
+                        ])
+                    
+                    self.logger.info(f"Loaded {len(klines)} historical klines for {symbol}/{interval}")
+                    return klines
+            
+            # Fallback to synthetic generation
+            base_price = self.current_prices.get(symbol, 3000.0)
+            
+            kline_records = loader.generate_synthetic_klines(
+                symbol=symbol,
+                interval=interval,
+                count=min(limit, 500),
+                base_price=base_price,
+                volatility=0.02
+            )
+            
+            # Convert to exchange format
+            klines = []
+            for record in kline_records:
+                klines.append([
+                    int(record.timestamp.timestamp() * 1000),  # Open time
+                    str(record.open),                          # Open
+                    str(record.high),                          # High
+                    str(record.low),                           # Low
+                    str(record.close),                         # Close
+                    str(record.volume),                        # Volume
+                    int(record.timestamp.timestamp() * 1000),  # Close time
+                    str(record.close * record.volume),         # Quote asset volume
+                    int(np.random.uniform(10, 100)),           # Number of trades
+                    str(record.volume * np.random.uniform(0.3, 0.7)),  # Taker buy base asset volume
+                    str(record.close * record.volume * np.random.uniform(0.3, 0.7)),  # Taker buy quote asset volume
+                    '0'  # Ignore
+                ])
+            
+            return klines
+            
+        except Exception as e:
+            self.logger.error(f"Error getting klines: {e}")
+            return []
     
     async def _update_balances_and_positions(
         self,

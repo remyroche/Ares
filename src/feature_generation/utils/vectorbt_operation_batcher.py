@@ -19,7 +19,7 @@ try:
     import vectorbt as vbt
     try:
         # Prefer explicit generic rolling functions when available
-        from vectorbt.generic import (
+        from src.utils.vectorbt_compat import (
             rolling_mean, rolling_std, rolling_var, rolling_min,
             rolling_max, rolling_sum
         )

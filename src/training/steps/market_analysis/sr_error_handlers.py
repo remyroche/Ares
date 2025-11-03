@@ -214,10 +214,16 @@ def handles_sr_data_validation(
                 if missing_columns:
                     raise ValueError(f"Missing required columns: {missing_columns}")
             
-            # Validate data quality
-            if data.isnull().all().any():
-                raise ValueError("Data contains columns with all null values")
+            # Validate data quality - drop columns with all null values
+            null_cols = data.columns[data.isnull().all()].tolist()
+            if null_cols:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"⚠️ Dropping {len(null_cols)} columns with all null values: {null_cols}")
+                # Create a copy with null columns dropped
+                data = data.drop(columns=null_cols).copy()
             
+            # Pass the cleaned data to the function
             return func(self, data, *args, **kwargs)
             
         return wrapper

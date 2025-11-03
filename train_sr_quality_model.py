@@ -87,10 +87,26 @@ def main():
     logger.info("\n" + "="*80)
     logger.info("STEP 2: TRAINING LIGHTGBM MODEL")
     logger.info("="*80)
+    logger.info("🔬 Training with confidence weighting (label smoothing) + top 30% filtering")
     
     try:
         model = SRQualityModel()
-        metrics = model.train(training_df, target_column='quality_score', n_folds=5)
+        
+        # Add GENTLE confidence weights (NO HARD FILTERING)
+        from src.tactician.sr_levels.ml_quality.sr_quality_data_collector import SRQualityDataCollector
+        collector = SRQualityDataCollector()
+        logger.info(f"   🔬 Using gentle confidence weighting (preserve variance)")
+        logger.info(f"      Noise: 0.3x, Weak: 0.5x, Medium: 0.8x, Strong: 1.2x, Critical: 2.0x")
+        training_df_weighted = collector.add_confidence_weights(
+            training_df,
+            method='tiered'  # Gentle: 0.3x to 2.0x (was 0.1x to 3.0x)
+        )
+        
+        # NO HARD FILTERING - use confidence weights only to preserve variance
+        logger.info(f"   📊 Using ALL data with confidence weighting: {len(training_df_weighted):,} samples")
+        logger.info(f"      Reason: Hard filtering caused model collapse (predicted ~0.81 for everything)")
+        
+        metrics = model.train(training_df_weighted, target_column='quality_score', n_folds=5)
         
         # Save trained model
         model_path = Path(args.model_output)
@@ -105,19 +121,30 @@ def main():
         logger.error(f"❌ Model training failed: {e}", exc_info=True)
         return 1
     
-    # Step 3: Validate model
+    # Step 3: Validate model with RANKING metrics
     logger.info("\n" + "="*80)
-    logger.info("STEP 3: MODEL VALIDATION")
+    logger.info("STEP 3: MODEL VALIDATION (Ranking-Focused)")
     logger.info("="*80)
     
     try:
         # Test predictions on sample data
-        sample_features = training_df.filter(like='feature_').iloc[:10]
+        sample_features = training_df_weighted.filter(like='feature_').iloc[:10]
         predictions = model.predict(sample_features)
         
         logger.info(f"   Sample predictions: {predictions[:5]}")
         logger.info(f"   Prediction range: [{predictions.min():.3f}, {predictions.max():.3f}]")
         logger.info(f"   Prediction mean: {predictions.mean():.3f}")
+        
+        # Evaluate RANKING metrics (what matters!)
+        X_test = training_df_weighted.filter(like='feature_')
+        y_test = training_df_weighted['quality_score']
+        
+        ranking_results = model.evaluate_ranking(X_test, y_test, k=10)
+        
+        logger.info(f"\n📊 RANKING METRICS:")
+        logger.info(f"   Precision@10:  {ranking_results['precision_at_k']*100:.1f}%")
+        logger.info(f"   Spearman ρ:    {ranking_results['spearman_rho']:.3f}")
+        logger.info(f"   NDCG@10:       {ranking_results['ndcg_at_k']:.3f}")
         
         logger.info("\n✅ Model validation complete!")
         

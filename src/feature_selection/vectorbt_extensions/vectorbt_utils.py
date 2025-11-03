@@ -221,22 +221,30 @@ def setup_vectorbt_optimizations(config: VectorBTFeatureSelectionConfig) -> bool
     tprint_debug("🔧 Setting up VectorBT optimizations")
 
     try:
+        # Check if settings attribute exists first
+        if not hasattr(vbt, 'settings'):
+            tprint_warning("⚠️ VectorBT settings not available in this version")
+            return False
+            
         # Configure VectorBT theme
-        vbt.settings.set_theme(config.vectorbt_theme)
+        if hasattr(vbt.settings, 'set_theme'):
+            vbt.settings.set_theme(config.vectorbt_theme)
 
         # Configure array wrapper settings
-        for key, value in config.vectorbt_array_wrapper.items():
-            vbt.settings['array_wrapper'][key] = value
+        if hasattr(vbt.settings, 'array_wrapper'):
+            for key, value in config.vectorbt_array_wrapper.items():
+                if key in vbt.settings['array_wrapper']:
+                    vbt.settings['array_wrapper'][key] = value
 
-        # Enable VectorBT optimizations
-        if config.enable_vectorbt_rolling:
-            vbt.settings['array_wrapper']['enable_rolling'] = True
+            # Enable VectorBT optimizations
+            if config.enable_vectorbt_rolling and 'enable_rolling' in vbt.settings['array_wrapper']:
+                vbt.settings['array_wrapper']['enable_rolling'] = True
 
-        if config.enable_vectorbt_chunked:
-            vbt.settings['array_wrapper']['enable_chunked'] = True
+            if config.enable_vectorbt_chunked and 'enable_chunked' in vbt.settings['array_wrapper']:
+                vbt.settings['array_wrapper']['enable_chunked'] = True
 
-        if config.enable_vectorbt_parallel:
-            vbt.settings['array_wrapper']['enable_parallel'] = True
+            if config.enable_vectorbt_parallel and 'enable_parallel' in vbt.settings['array_wrapper']:
+                vbt.settings['array_wrapper']['enable_parallel'] = True
 
         tprint_success("✅ VectorBT optimizations configured")
         return True

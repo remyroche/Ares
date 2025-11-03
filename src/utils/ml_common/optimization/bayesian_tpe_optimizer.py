@@ -42,7 +42,7 @@ except ImportError as e:
 # VectorBT optimization imports
 try:
     # Import from src.vectorbt instead of direct vectorbt import
-    from src.vectorbt import (
+    from src.utils.vectorbt_compat import (
         vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
         rolling_sum, rolling_apply, VECTORBT_AVAILABLE as VBT_AVAILABLE
     )
@@ -390,14 +390,16 @@ class BayesianTPEOptimizer:
 
             # Configure VectorBT settings
             if vbt:
-                # Set memory limit
-                if self.config.vectorbt_memory_limit_gb:
-                    vbt.settings.array_wrapper['freq'] = '1min'
+                # Set memory limit (if settings available)
+                if hasattr(vbt, 'settings') and self.config.vectorbt_memory_limit_gb:
+                    if hasattr(vbt.settings, 'array_wrapper') and 'freq' in vbt.settings.array_wrapper:
+                        vbt.settings.array_wrapper['freq'] = '1min'
 
                 # Configure parallel processing (VectorBT 0.28.1 handles this automatically)
                 # Note: Parallel settings removed in VectorBT 0.28.1 as it's handled automatically
-                # if self.config.vectorbt_enable_parallel:
-                #     vbt.settings.parallel['threading'] = True
+                # if hasattr(vbt, 'settings') and self.config.vectorbt_enable_parallel:
+                #     if hasattr(vbt.settings, 'parallel') and 'threading' in vbt.settings['parallel']:
+                #         vbt.settings.parallel['threading'] = True
 
                 # Configure GPU usage
                 if self.config.vectorbt_use_gpu:
@@ -506,11 +508,24 @@ class BayesianTPEOptimizer:
             self.best_params = best_params
             self.best_value = best_value
 
+            # Calculate efficiency score: quality achieved per unit of computational cost
+            if optimization_time > 0 and len(all_trials) > 0 and best_value is not None:
+                # Efficiency = best_value / (time * trials)
+                # Higher is better for maximize, lower is better for minimize
+                if self.config.direction == 'maximize':
+                    efficiency_score = best_value / (optimization_time * len(all_trials))
+                else:
+                    # For minimize, use inverse of best_value to make higher efficiency better
+                    efficiency_score = 1.0 / (abs(best_value) + 1e-10) / (optimization_time * len(all_trials))
+            else:
+                efficiency_score = 0.0
+
             results = {
                 'best_params': self.best_params,
                 'best_value': self.best_value,
                 'n_trials': len(all_trials),
                 'optimization_time': optimization_time,
+                'efficiency_score': efficiency_score,
                 'history': all_trials,
                 'stages': {
                     'coarse_grid': len([t for t in all_trials if t.get('stage') == 'coarse']),

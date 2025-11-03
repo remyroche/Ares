@@ -313,10 +313,107 @@ def compute_sharpe_ratio(returns: np.ndarray, risk_free_rate: float = 0.0) -> fl
         _logger.warning(f"⚠️ Sharpe ratio calculation failed: {e}")
         return 0.0
 
+class UnifiedEvaluator:
+    """
+    Unified evaluator class for consistent model evaluation.
+    
+    This class wraps the functional API and provides a stateful interface
+    for model evaluation with consistent metric computation.
+    """
+    
+    def __init__(self, task: Optional[str] = None):
+        """
+        Initialize the unified evaluator.
+        
+        Args:
+            task: Task type ('classification' or 'regression'). If None, auto-detects.
+        """
+        self.task = task
+        self.logger = _logger
+    
+    def evaluate(self, 
+                 y_true: np.ndarray, 
+                 y_pred: np.ndarray,
+                 y_prob: Optional[np.ndarray] = None,
+                 include: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Evaluate predictions against true labels.
+        
+        Args:
+            y_true: True labels/targets
+            y_pred: Predicted labels/targets
+            y_prob: Optional prediction probabilities (for classification)
+            include: Optional list of specific metrics to include
+            
+        Returns:
+            Dictionary of evaluation metrics
+        """
+        # Auto-detect task if not specified
+        task = self.task
+        if task is None:
+            task = "classification" if _is_classification_task(y_true, y_pred) else "regression"
+        
+        if task == "classification":
+            return compute_classification_metrics(y_true, y_pred, y_prob, include)
+        else:
+            return compute_regression_metrics(y_true, y_pred, include)
+    
+    def evaluate_model(self,
+                       model: Any,
+                       X: np.ndarray,
+                       y: np.ndarray,
+                       include: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Evaluate a fitted model on data.
+        
+        Args:
+            model: Fitted model with predict method
+            X: Features
+            y: True labels/targets
+            include: Optional list of specific metrics to include
+            
+        Returns:
+            Dictionary of evaluation metrics
+        """
+        return evaluate_model(model, X, y, self.task, include)
+    
+    def evaluate_multiple(self,
+                         datasets: Dict[str, Tuple[np.ndarray, np.ndarray]],
+                         model: Optional[Any] = None,
+                         predictions: Optional[Dict[str, Dict[str, np.ndarray]]] = None,
+                         include: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
+        """
+        Evaluate across multiple datasets.
+        
+        Args:
+            datasets: Dictionary of dataset names to (X, y) tuples
+            model: Optional fitted model to evaluate
+            predictions: Optional precomputed predictions
+            include: Optional list of specific metrics to include
+            
+        Returns:
+            Dictionary mapping dataset names to metrics
+        """
+        return evaluate_multiple_datasets(datasets, model, self.task, predictions, include)
+    
+    def compute_sharpe(self, returns: np.ndarray, risk_free_rate: float = 0.0) -> float:
+        """
+        Compute Sharpe ratio for returns.
+        
+        Args:
+            returns: Array of returns
+            risk_free_rate: Risk-free rate (default 0.0)
+            
+        Returns:
+            Sharpe ratio
+        """
+        return compute_sharpe_ratio(returns, risk_free_rate)
+
 __all__ = [
     "compute_classification_metrics",
     "compute_regression_metrics",
     "evaluate_model",
     "evaluate_multiple_datasets",
     "compute_sharpe_ratio",
+    "UnifiedEvaluator",
 ]

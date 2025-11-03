@@ -347,50 +347,62 @@ class EnsembleTrainer(BaseTrainer):
             if self.meta_learner_type == 'lightgbm':
                 import lightgbm as lgb
                 
-                if self.config.role == TrainingRole.ANALYST:
-                    meta_model = lgb.LGBMClassifier(
-                        objective='binary',
-                        metric='binary_logloss',
-                        num_leaves=31,
-                        learning_rate=0.05,
-                        feature_fraction=0.9,
-                        bagging_fraction=0.8,
-                        bagging_freq=5,
-                        verbose=-1
-                    )
-                else:  # Tactician
-                    meta_model = lgb.LGBMRegressor(
-                        objective='regression',
-                        metric='rmse',
-                        num_leaves=31,
-                        learning_rate=0.05,
-                        feature_fraction=0.9,
-                        bagging_fraction=0.8,
-                        bagging_freq=5,
-                        verbose=-1
-                    )
+                # Always use Regressor for trading models (predicting continuous values)
+                # Both ANALYST and TACTICIAN predict continuous targets
+                meta_model = lgb.LGBMRegressor(
+                    objective='regression',
+                    metric='rmse',
+                    num_leaves=31,
+                    learning_rate=0.05,
+                    feature_fraction=0.9,
+                    bagging_fraction=0.8,
+                    bagging_freq=5,
+                    verbose=-1
+                )
             
             elif self.meta_learner_type == 'catboost':
-                from catboost import CatBoostClassifier, CatBoostRegressor
+                from catboost import CatBoostRegressor
+                import os
                 
-                if self.config.role == TrainingRole.ANALYST:
-                    meta_model = CatBoostClassifier(
-                        iterations=1000,
-                        learning_rate=0.05,
-                        depth=6,
-                        loss_function='Logloss',
-                        eval_metric='AUC',
-                        verbose=False
-                    )
-                else:  # Tactician
-                    meta_model = CatBoostRegressor(
-                        iterations=1000,
-                        learning_rate=0.05,
-                        depth=6,
-                        loss_function='RMSE',
-                        eval_metric='RMSE',
-                        verbose=False
-                    )
+                # Get GPU manager for hardware acceleration
+                from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+                from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+                
+                gpu_manager = get_m1_gpu_manager()
+                cpu_optimizer = get_m1_cpu_optimizer()
+                
+                # Determine optimal thread count from hardware
+                n_threads = cpu_optimizer.get_optimal_thread_count() if cpu_optimizer else (os.cpu_count() or 4)
+                
+                # Check GPU availability for CatBoost
+                gpu_available = gpu_manager.is_m1 if gpu_manager else False
+                
+                # Performance optimizations
+                performance_params = {
+                    'thread_count': n_threads,
+                    'bootstrap_type': 'Bayesian',  # Faster than default
+                    'verbose': False,
+                    'allow_writing_files': False,
+                }
+                
+                # Add GPU acceleration if available
+                if gpu_available:
+                    performance_params['task_type'] = 'GPU'
+                    performance_params['devices'] = '0'
+                    tprint_info("🚀 CatBoost meta-learner using GPU acceleration")
+                else:
+                    performance_params['task_type'] = 'CPU'
+                
+                # Always use Regressor for trading models (predicting continuous values)
+                # Both ANALYST and TACTICIAN predict continuous targets
+                meta_model = CatBoostRegressor(
+                    iterations=1000,
+                    learning_rate=0.05,
+                    depth=6,
+                    loss_function='RMSE',
+                    eval_metric='RMSE',
+                    **performance_params
+                )
             
             else:
                 raise ValueError(f"Unsupported meta-learner type: {self.meta_learner_type}")

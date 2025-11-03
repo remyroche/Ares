@@ -33,7 +33,7 @@ from src.feature_generation.core.feature_generator import FeatureGenerator, Feat
 # VectorBT imports
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_corr, rolling_apply
+    from src.vectorbt import rolling_mean, rolling_std, rolling_corr, rolling_apply
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False

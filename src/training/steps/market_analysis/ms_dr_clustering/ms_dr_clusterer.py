@@ -102,7 +102,7 @@ except ImportError:
 
 # Import VectorBT for efficient operations
 try:
-    from src.vectorbt import (
+    from src.utils.vectorbt_compat import (
         vbt, rolling_mean, rolling_std, rolling_var,
         rolling_min, rolling_max, VECTORBT_AVAILABLE
     )

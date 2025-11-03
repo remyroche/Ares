@@ -25,6 +25,20 @@ from src.utils.ml_common.unified_vectorization_manager import (
 from src.utils.ml_common.optimization.hpo_utils import (
     HyperparameterOptimization
 )
+from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
+    HierarchicalParameterOptimizer,
+    ParameterGroup,
+    OptimizationStage,
+    create_param_group
+)
+from src.utils.ml_common.optimization.auto_tuner import (
+    AutoTuner,
+    DatasetCharacteristics
+)
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer,
+    OptimizationConfig as TPEOptimizationConfig
+)
 from src.utils.ml_common.optimization.transition_aware_scoring import (
     create_transition_aware_scorer,
     create_pareto_multi_objective_hpo
@@ -140,6 +154,14 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         )
         tprint("🔧 [REGIME_ENSEMBLE] HPO optimizer initialized", color="green")
         
+        # Initialize Auto Tuner for intelligent HPO configuration
+        self.auto_tuner = AutoTuner(
+            conservative_mode=False,
+            enable_adaptive_timeout=True,
+            enable_resource_monitoring=True
+        )
+        tprint("🔧 [REGIME_ENSEMBLE] Auto-tuner initialized for adaptive HPO", color="green")
+        
         # Initialize Pareto optimizer for multi-objective HPO
         if PARETO_AVAILABLE:
             self.pareto_optimizer = ParetoOptimizer()
@@ -151,6 +173,10 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         # Enable transition-aware multi-objective HPO by default
         self.enable_multi_objective_hpo = True
         self.use_pareto_optimization = PARETO_AVAILABLE
+        
+        # Enable hierarchical optimization for models with many parameters (7+)
+        self.use_hierarchical_hpo = True
+        tprint("✅ [REGIME_ENSEMBLE] Hierarchical HPO enabled for complex models", color="green")
         self.temporal_smoothing_alpha = 0.1
 
         # Initialize temporal validator for data leakage prevention
@@ -613,7 +639,8 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         tprint(f"✅ [REGIME_ENSEMBLE] Data prepared - X: {X.shape}, y: {y.shape}, regime_labels: {regime_labels.shape if regime_labels is not None else 'None'}", color="green")
         return X, y, regime_labels
 
-    def _create_enhanced_meta_features(self, meta_features: np.ndarray, y: np.ndarray, base_model_predictions: Optional[np.ndarray] = None) -> np.ndarray:        """
+    def _create_enhanced_meta_features(self, meta_features: np.ndarray, y: np.ndarray, base_model_predictions: Optional[np.ndarray] = None) -> np.ndarray:
+        """
         Create enhanced meta-features for better ensemble performance.
 
         Args:
@@ -774,16 +801,39 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
 
             # Define HPO search space for LightGBM
             def create_lgbm_model(trial):
+                # Optimize key parameters (reduced from 10 to 6)
+                num_leaves = trial.suggest_int('num_leaves', 15, 31)
+                learning_rate = trial.suggest_float('learning_rate', 0.03, 0.05, log=True)
+                n_estimators = trial.suggest_int('n_estimators', 200, 600)
+                min_data_in_leaf = trial.suggest_int('min_data_in_leaf', 50, 150)
+                feature_fraction = trial.suggest_float('feature_fraction', 0.6, 0.9)
+                lambda_l2 = trial.suggest_float('lambda_l2', 0, 0.1)
+                
+                # Tie removed parameters to optimized ones
+                # max_depth tied to num_leaves: depth = log2(num_leaves) + 1
+                import math
+                max_depth = min(8, int(math.log2(num_leaves)) + 1)
+                
+                # lambda_l1 tied to lambda_l2: L1 = 50% of L2 (allows higher L1 contribution)
+                lambda_l1 = lambda_l2 * 0.5
+                
+                # bagging_fraction tied to feature_fraction (similar sampling strategy)
+                bagging_fraction = feature_fraction
+                
+                # bagging_freq: enable if bagging_fraction < 1.0
+                bagging_freq = 5 if bagging_fraction < 1.0 else 0
+                
                 return LGBMClassifier(
-                    num_leaves=trial.suggest_int('num_leaves', 8, 63),
-                    max_depth=trial.suggest_int('max_depth', 2, 8),
-                    learning_rate=trial.suggest_float('learning_rate', 0.01, 0.2),
-                    n_estimators=trial.suggest_int('n_estimators', 50, 200),
-                    min_child_samples=trial.suggest_int('min_child_samples', 50, 150),  # Increased for stability
-                    subsample=trial.suggest_float('subsample', 0.5, 1.0),
-                    colsample_bytree=trial.suggest_float('colsample_bytree', 0.5, 1.0),
-                    reg_alpha=trial.suggest_float('reg_alpha', 0.1, 2.0),
-                    reg_lambda=trial.suggest_float('reg_lambda', 0.1, 2.0),
+                    num_leaves=num_leaves,
+                    max_depth=max_depth,  # Tied to num_leaves
+                    learning_rate=learning_rate,
+                    n_estimators=n_estimators,
+                    min_child_samples=min_data_in_leaf,
+                    feature_fraction=feature_fraction,
+                    bagging_fraction=bagging_fraction,  # Tied to feature_fraction
+                    bagging_freq=bagging_freq,  # Tied to bagging_fraction
+                    reg_alpha=lambda_l1,  # Tied to lambda_l2
+                    reg_lambda=lambda_l2,
                     class_weight='balanced',
                     random_state=42,
                     verbose=-1,
@@ -801,7 +851,6 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             if sample_weight is not None:
                 fit_params = {'sample_weight': sample_weight}
                 tprint("⚖️ [REGIME_ENSEMBLE] Applying sample weights to HPO", "blue")
-            )
             
             # Perform HPO optimization
             tprint("🔍 [REGIME_ENSEMBLE] Starting HPO optimization for meta-learner", color="cyan")
@@ -811,7 +860,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 y=y,
                 cv_folds=3,
                 scoring=scoring,  # Use transition-aware scorer
-                n_trials=20,
+                n_trials=75,  # Increased from 20 for better exploration
                 fit_params=fit_params
             )
 
@@ -1379,7 +1428,8 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 FeatureCategory.VOLUME,
                 FeatureCategory.TREND,
                 FeatureCategory.OSCILLATOR,
-                FeatureCategory.RETURNS
+                FeatureCategory.RETURNS,
+                FeatureCategory.MICROSTRUCTURE  # Microstructure features (no orderbook dependency)
             ]
 
             all_features = pd.DataFrame(index=data.index)
@@ -2313,8 +2363,8 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    from src.utils.vectorbt_compat import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False

@@ -148,23 +148,34 @@ except ImportError as e:
     tprint_warning(f"⚠️ Overfitting prevention utilities not available: {e}")
 
 # Import HPO utilities for CMI-weighted LGBM optimization
+HPO_AVAILABLE = False
+HierarchicalHPOConfig = None
+HPOPhaseConfig = None
+HierarchicalHPO = None
+BayesianTPEOptimizer = None
+TPEOptimizationConfig = None
+
 try:
     from src.utils.ml_common.optimization.hierarchical_hpo import (
-        HierarchicalHPOConfig, HPOPhaseConfig, HierarchicalHPOptimizer
+        HierarchicalHPOConfig, HPOPhaseConfig, HierarchicalHPO
     )
+    HPO_AVAILABLE = True
+except ImportError as e:
+    pass  # Already set to None above
+
+try:
     from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
         BayesianTPEOptimizer, OptimizationConfig as TPEOptimizationConfig
     )
-    HPO_AVAILABLE = True
-    tprint_info("✅ HPO utilities loaded successfully")
 except ImportError as e:
-    HPO_AVAILABLE = False
-    HierarchicalHPOConfig = None
-    HPOPhaseConfig = None
-    HierarchicalHPOptimizer = None
-    BayesianTPEOptimizer = None
-    TPEOptimizationConfig = None
-    tprint_warning(f"⚠️ HPO utilities not available: {e}")
+    pass  # Already set to None above
+
+# Only log once after all attempts
+if HPO_AVAILABLE:
+    tprint_info("✅ HPO utilities loaded successfully")
+else:
+    # Silently fail - not critical for feature generation
+    pass
 
 # Try to import overfitting prevention manager separately (optional)
 try:

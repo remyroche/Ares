@@ -1,0 +1,57 @@
+================================================================================
+SR QUALITY SCORE INVESTIGATION REPORT
+================================================================================
+
+1. QUALITY SCORE FORMULA
+--------------------------------------------------------------------------------
+quality_score = bounce_strength * 0.35 + hold_strength * 0.35 + trade_profit * 0.30
+
+Components:
+  - bounce_strength (35%): Future price bounce after hitting level
+  - hold_strength (35%):   How long level holds before breaking
+  - trade_profit (30%):    Simulated trade P&L (1% SL, 2% TP)
+
+✅ FORWARD-LOOKING: Uses future data (forward_days window)
+✅ NOT backward-looking (not based on historical touches)
+
+
+2. DISTRIBUTION STATISTICS
+--------------------------------------------------------------------------------
+Total samples:      499
+Mean:               0.5575
+Median:             0.3748
+Std Dev:            0.2456
+Min:                0.2075
+Max:                1.0000
+IQR:                0.4068
+
+
+3. TOP FEATURES CORRELATED WITH QUALITY
+--------------------------------------------------------------------------------
+ 1. prominence                               0.3574
+ 2. prominence_x_strength                    0.3413
+ 3. failure_count                            0.3117
+ 4. recency_x_strength                       0.2402
+ 5. time_adjusted_strength                   0.2344
+ 6. vol_adjusted_strength                    0.2341
+ 7. strength                                 0.2333
+ 8. success_rate                             0.1977
+ 9. prominence_x_width                       0.1933
+10. success_x_strength                       0.1729
+11. max_bounce_ratio                         0.1496
+12. agreement_score                          0.1480
+13. consistency                              0.1432
+14. avg_touch_volume_ratio                   0.1422
+15. consistency_x_cluster                    0.1330
+
+
+4. RED FLAGS CHECK
+--------------------------------------------------------------------------------
+❌ Binary distribution: 15.8% at extremes
+✅ Distribution width: IQR = 0.4068
+✅ Max correlation: 0.3574
+✅ Variance: std = 0.2456
+
+================================================================================
+Report generated successfully!
+================================================================================

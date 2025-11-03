@@ -50,7 +50,7 @@ except ImportError:
 
 # Import VectorBT for optimized computations
 try:
-    from src.vectorbt import vbt, VECTORBT_AVAILABLE
+    from src.utils.vectorbt_compat import vbt, VECTORBT_AVAILABLE
 except ImportError as e:
     VECTORBT_AVAILABLE = False
     logging.warning(f"VectorBT not available: {e}")

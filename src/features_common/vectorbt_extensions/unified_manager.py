@@ -107,7 +107,7 @@ class UnifiedVectorBTManager(OptimizationMixin, PerformanceMixin, VectorBTMixin,
             
             # Try to import from vectorbt.generic (newer API)
             try:
-                from vectorbt.generic import (
+                from src.utils.vectorbt_compat import (
                     rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply,
                     scale, rank, zscore, winsorize, clip, quantile
                 )

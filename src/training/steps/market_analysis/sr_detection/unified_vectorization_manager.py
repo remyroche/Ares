@@ -18,8 +18,8 @@ from src.utils.hardware import get_optimal_workers, get_memory_info
 
 # VectorBT imports
 try:
-    from src.vectorbt import vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, VECTORBT_AVAILABLE
-    from src.vectorbt import rolling_corr, rolling_cov, scale, rank, zscore, winsorize, clip, quantile
+    from src.utils.vectorbt_compat import vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, VECTORBT_AVAILABLE
+    from src.utils.vectorbt_compat import rolling_corr, rolling_cov, scale, rank, zscore, winsorize, clip, quantile
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None

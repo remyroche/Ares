@@ -21,11 +21,11 @@ import time
 # VectorBT imports
 try:
     import vectorbt as vbt
-    from vectorbt.generic import (
+    from src.utils.vectorbt_compat import (
         rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
         rolling_sum, rolling_apply, rolling_corr, rolling_cov
     )
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
@@ -94,8 +94,15 @@ class VectorBTOptimizationMixin:
             return
 
         try:
+            # Check if settings attribute exists first
+            if not hasattr(vbt, 'settings'):
+                self.logger.debug("⚠️ VectorBT settings not available in this version")
+                self.enable_caching = False
+                return
+            
             # Configure advanced caching using newer API
-            vbt.settings['caching']['enabled'] = True
+            if hasattr(vbt.settings, 'caching') and 'enabled' in vbt.settings['caching']:
+                vbt.settings['caching']['enabled'] = True
 
             # Check if these specific settings are available in this VectorBT version
             if hasattr(vbt.settings, 'caching') and 'cache_size' in vbt.settings['caching']:

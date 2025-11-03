@@ -119,18 +119,28 @@ class VectorBTMemoryOptimizer:
             logger.warning("VectorBT not available, memory optimizations limited")
             return
 
+        # Check if settings attribute exists first
+        if not hasattr(vbt, 'settings'):
+            logger.debug("VectorBT settings not available in this version")
+            return
+
         # Configure VectorBT memory settings
-        vbt.settings.array_wrapper['freq'] = '1min'
+        if hasattr(vbt.settings, 'array_wrapper') and 'freq' in vbt.settings['array_wrapper']:
+            vbt.settings.array_wrapper['freq'] = '1min'
 
         # Enable chunking for large datasets
         if hasattr(vbt.settings, 'chunking'):
-            vbt.settings.chunking['chunk_size'] = self.config.vectorbt_chunk_size
-            vbt.settings.chunking['enable'] = True
+            if 'chunk_size' in vbt.settings['chunking']:
+                vbt.settings.chunking['chunk_size'] = self.config.vectorbt_chunk_size
+            if 'enable' in vbt.settings['chunking']:
+                vbt.settings.chunking['enable'] = True
 
         # Configure parallel processing
         if hasattr(vbt.settings, 'parallel'):
-            vbt.settings.parallel['threading'] = True
-            vbt.settings.parallel['n_threads'] = min(os.cpu_count() or 4, 8)
+            if 'threading' in vbt.settings['parallel']:
+                vbt.settings.parallel['threading'] = True
+            if 'n_threads' in vbt.settings['parallel']:
+                vbt.settings.parallel['n_threads'] = min(os.cpu_count() or 4, 8)
 
     def _initialize_cache(self):
         """Initialize memory cache."""

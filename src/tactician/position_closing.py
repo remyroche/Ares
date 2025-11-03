@@ -13,6 +13,7 @@ import numpy as np
 import src.utils.warning_symbols
 from ..utils.logger import system_logger
 from ..core.decorators import handles_errors
+from src.utils.ml_common.uncertainty_calculator import get_global_uncertainty_calculator
 
 # Optional imports with fallbacks
 try:
@@ -54,6 +55,20 @@ class PositionCloser:
         # Note: ATR-based stop loss, confidence threshold, and min hold time removed
         # Keep only maximum hold time at 3 hours (10800 seconds)
         self.max_hold_time = tpsl_optimization.get("max_hold_time", 10800)  # 3 hours
+        
+        # Confidence degradation parameters
+        confidence_config = config.get("exit_strategy", {}).get("confidence", {})
+        self.confidence_degradation_threshold = confidence_config.get("degradation_threshold", 0.3)
+        self.confidence_degradation_window = confidence_config.get("degradation_window", 8)
+        self.enable_confidence_exits = confidence_config.get("enable_degradation_exits", True)
+        
+        # Uncertainty exit parameters
+        uncertainty_config = config.get("exit_strategy", {}).get("uncertainty", {})
+        self.uncertainty_exit_threshold = uncertainty_config.get("disagreement_threshold", 0.3)
+        self.enable_uncertainty_exits = uncertainty_config.get("enabled", True)
+        
+        # Uncertainty calculator
+        self.uncertainty_calculator = get_global_uncertainty_calculator()
 
         decay_defaults = {
             "enabled": True,
@@ -173,7 +188,37 @@ class PositionCloser:
         """
         try:
             metadata: dict[str, Any] = {"trigger": None, "evaluations": {}}
+            
+            # Check confidence degradation exit
+            conf_exit, conf_result = self._evaluate_confidence_degradation_exit(position_data)
+            metadata["evaluations"]["confidence_degradation"] = conf_result
+            if conf_exit:
+                metadata["trigger"] = "confidence_degradation"
+                metadata["details"] = conf_result.get("details", {})
+                metadata["details"]["degradation"] = conf_result.get("degradation", 0.0)
+                self.last_exit_metadata = metadata
+                self.logger.info(
+                    "Closing position due to confidence degradation: %s",
+                    conf_result.get("degradation", 0.0)
+                )
+                return True, metadata
+            
+            # Check uncertainty-based exit
+            unc_exit, unc_result = self._evaluate_uncertainty_exit(position_data)
+            metadata["evaluations"]["uncertainty"] = unc_result
+            if unc_exit:
+                metadata["trigger"] = unc_result["details"].get("trigger", "high_uncertainty")
+                metadata["details"] = unc_result.get("details", {})
+                metadata["details"]["uncertainty"] = unc_result.get("uncertainty", 0.0)
+                self.last_exit_metadata = metadata
+                self.logger.info(
+                    "Closing position due to %s: uncertainty=%s",
+                    metadata["trigger"],
+                    unc_result.get("uncertainty", 0.0)
+                )
+                return True, metadata
 
+            # Check decay triggers
             decay_result = self._evaluate_decay_triggers(position_data)
             metadata["evaluations"].update(decay_result.get("details", {}))
 
@@ -186,6 +231,7 @@ class PositionCloser:
                 )
                 return True, metadata
 
+            # Check maximum hold time
             if self._should_close_by_max_time(position_data):
                 hold_seconds = self._calculate_hold_time_seconds(position_data)
                 metadata["trigger"] = "max_hold_time"
@@ -223,6 +269,140 @@ class PositionCloser:
         except Exception as e:
             self.logger.exception(failed(f"❌ Maximum time-based closure check failed: {e}"))
             return False
+
+    def _evaluate_confidence_degradation_exit(
+        self,
+        position_data: dict[str, Any]
+    ) -> Tuple[bool, dict[str, Any]]:
+        """
+        Evaluate if position should be closed due to confidence degradation.
+        
+        Args:
+            position_data: Position information including confidence history
+        
+        Returns:
+            Tuple of (should_exit, exit_details)
+        """
+        result = {
+            "should_exit": False,
+            "degradation": 0.0,
+            "details": {}
+        }
+        
+        try:
+            if not self.enable_confidence_exits:
+                return False, result
+            
+            # Extract confidence history from position data
+            confidence_history = position_data.get("confidence_history", [])
+            recent_predictions = position_data.get("recent_predictions", [])
+            
+            # Try to build confidence series from recent predictions
+            if not confidence_history and recent_predictions:
+                confidence_history = []
+                for pred in recent_predictions:
+                    if isinstance(pred, dict) and 'confidence' in pred:
+                        confidence_history.append(pred['confidence'])
+            
+            if len(confidence_history) < 2:
+                return False, result
+            
+            # Calculate degradation using uncertainty calculator
+            degradation = self.uncertainty_calculator.calculate_confidence_degradation(
+                confidence_series=confidence_history,
+                window=self.confidence_degradation_window
+            )
+            
+            result["degradation"] = degradation
+            result["details"]["confidence_history_length"] = len(confidence_history)
+            result["details"]["initial_confidence"] = confidence_history[0]
+            result["details"]["current_confidence"] = confidence_history[-1]
+            
+            # Negative degradation means confidence dropped
+            # Exit if degradation exceeds threshold
+            if degradation < -self.confidence_degradation_threshold:
+                result["should_exit"] = True
+                result["details"]["trigger"] = "confidence_degradation"
+                result["details"]["threshold"] = self.confidence_degradation_threshold
+                
+                self.logger.info(
+                    f"Confidence degradation exit triggered: degradation={degradation:.3f}, "
+                    f"threshold={-self.confidence_degradation_threshold:.3f}"
+                )
+                return True, result
+            
+            return False, result
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Confidence degradation evaluation failed: {e}")
+            return False, result
+    
+    def _evaluate_uncertainty_exit(
+        self,
+        position_data: dict[str, Any]
+    ) -> Tuple[bool, dict[str, Any]]:
+        """
+        Evaluate if position should be closed due to high uncertainty.
+        
+        Args:
+            position_data: Position information including uncertainty metrics
+        
+        Returns:
+            Tuple of (should_exit, exit_details)
+        """
+        result = {
+            "should_exit": False,
+            "uncertainty": 0.0,
+            "details": {}
+        }
+        
+        try:
+            if not self.enable_uncertainty_exits:
+                return False, result
+            
+            # Get current uncertainty metrics
+            uncertainty_metrics = position_data.get("uncertainty_metrics", {})
+            current_uncertainty = position_data.get("current_uncertainty")
+            
+            # Use combined uncertainty if available
+            if isinstance(uncertainty_metrics, dict):
+                current_uncertainty = uncertainty_metrics.get("combined_uncertainty", current_uncertainty)
+            
+            if current_uncertainty is None:
+                return False, result
+            
+            result["uncertainty"] = current_uncertainty
+            result["details"]["uncertainty_threshold"] = self.uncertainty_exit_threshold
+            
+            # Exit if uncertainty is too high
+            if current_uncertainty > self.uncertainty_exit_threshold:
+                result["should_exit"] = True
+                result["details"]["trigger"] = "high_uncertainty"
+                
+                self.logger.info(
+                    f"High uncertainty exit triggered: uncertainty={current_uncertainty:.3f}, "
+                    f"threshold={self.uncertainty_exit_threshold:.3f}"
+                )
+                return True, result
+            
+            # Also check model disagreement if available
+            model_disagreement = uncertainty_metrics.get("model_disagreement")
+            if model_disagreement is not None and model_disagreement > self.uncertainty_exit_threshold:
+                result["should_exit"] = True
+                result["details"]["trigger"] = "model_disagreement"
+                result["details"]["disagreement"] = model_disagreement
+                
+                self.logger.info(
+                    f"Model disagreement exit triggered: disagreement={model_disagreement:.3f}, "
+                    f"threshold={self.uncertainty_exit_threshold:.3f}"
+                )
+                return True, result
+            
+            return False, result
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Uncertainty exit evaluation failed: {e}")
+            return False, result
 
     def _calculate_hold_time_seconds(self, position_data: dict[str, Any]) -> float:
         try:

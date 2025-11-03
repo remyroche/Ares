@@ -182,6 +182,10 @@ class M1CPUOptimizer:
         if self.conservative_mode:
             return self.cpu_count
         return self._get_optimal_cpu_count()
+    
+    def get_optimal_thread_count(self) -> int:
+        """Get optimal thread count for parallel processing (alias for get_optimal_worker_count)."""
+        return self.get_optimal_worker_count()
 
     def _get_performance_cores(self) -> int:
         """Get number of performance cores based on M1 generation."""

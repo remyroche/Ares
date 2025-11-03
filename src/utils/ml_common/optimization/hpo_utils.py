@@ -811,6 +811,24 @@ class HyperparameterOptimization:
             Enhanced Bayesian optimization results
         """
         try:
+            # Adjust HPO parameters based on execution mode (light/blank/full)
+            from .execution_mode_adapter import adjust_hpo_params_for_mode
+            
+            # Get CV folds from cv object if available
+            original_cv_folds = getattr(cv, 'n_splits', 5) if cv is not None else 5
+            n_trials, adjusted_cv_folds = adjust_hpo_params_for_mode(n_trials, original_cv_folds)
+            
+            # Update cv object if it was adjusted
+            if cv is not None and hasattr(cv, 'n_splits') and adjusted_cv_folds != original_cv_folds:
+                # Recreate CV object with adjusted folds
+                if hasattr(cv, '__class__'):
+                    cv_class = cv.__class__
+                    try:
+                        cv = cv_class(n_splits=adjusted_cv_folds)
+                        self.logger.info(f"⚡ Adjusted CV folds: {original_cv_folds} → {adjusted_cv_folds}")
+                    except:
+                        self.logger.warning(f"⚠️ Could not adjust CV folds, using original")
+            
             # Enhanced study context logging
             self._log_study_context(X, y, search_space, optimization_context, study_name, n_trials)
 

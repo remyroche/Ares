@@ -32,7 +32,7 @@ from collections import OrderedDict
 from scipy.sparse import csr_matrix, lil_matrix
 import threading
 
-from ..utils.math_validation import safe_divide, safe_log
+from .math_validation import safe_divide, safe_log
 from src.utils.common_operations import create_fallback_logger
 from src.utils.hardware.m1_gpu_utils import M1GPUManager
 from src.utils.parallel_processing_optimizer import ParallelProcessor

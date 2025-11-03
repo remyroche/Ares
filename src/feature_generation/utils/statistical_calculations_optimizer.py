@@ -24,7 +24,7 @@ from enum import Enum
 # VectorBT imports
 try:
     import vectorbt as vbt
-    from vectorbt.generic import (
+    from src.utils.vectorbt_compat import (
         rolling_mean, rolling_std, rolling_var, rolling_skew, rolling_kurt,
         rolling_quantile, rolling_rank, rolling_apply,
         scale, rank, zscore, winsorize, clip, quantile
@@ -383,7 +383,7 @@ class StatisticalCalculationsOptimizer:
             if config.other_series is None:
                 raise ValueError("other_series must be specified for correlation operation")
             if config.window:
-                from vectorbt.generic import rolling_corr
+                from src.utils.vectorbt_compat import rolling_corr
                 return rolling_corr(data, config.other_series, window=config.window, min_periods=config.min_periods)
             else:
                 return data.corr(config.other_series)
@@ -391,7 +391,7 @@ class StatisticalCalculationsOptimizer:
         elif config.operation == StatisticalOperationType.AUTOCORRELATION:
             if config.window:
                 shifted = data.shift(config.lag)
-                from vectorbt.generic import rolling_corr
+                from src.utils.vectorbt_compat import rolling_corr
                 return rolling_corr(data, shifted, window=config.window, min_periods=config.min_periods)
             else:
                 return data.autocorr(lag=config.lag)

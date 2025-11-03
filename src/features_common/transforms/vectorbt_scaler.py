@@ -22,7 +22,7 @@ import pandas as pd
 # VectorBT availability check
 try:
     import vectorbt as vbt
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False

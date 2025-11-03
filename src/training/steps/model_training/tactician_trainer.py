@@ -14,9 +14,9 @@ from pathlib import Path
 
 # Import ML libraries with fallback support
 try:
-    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.ensemble import RandomForestRegressor
     from sklearn.model_selection import train_test_split, cross_val_score
-    from sklearn.metrics import classification_report, accuracy_score
+    from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
@@ -34,7 +34,7 @@ except ImportError:
     LIGHTGBM_AVAILABLE = False
 
 try:
-    from catboost import CatBoostClassifier
+    from catboost import CatBoostRegressor
     CATBOOST_AVAILABLE = True
 except ImportError:
     CATBOOST_AVAILABLE = False
@@ -102,20 +102,24 @@ class TacticianTrainer:
             else:
                 raise ValueError(f"Unknown model type: {model_type}")
 
-            # Evaluate model
+            # Evaluate model (using regression metrics for continuous targets)
             y_pred = model.predict(X_test)
-            accuracy = accuracy_score(y_test, y_pred)
+            mse = mean_squared_error(y_test, y_pred)
+            mae = mean_absolute_error(y_test, y_pred)
+            r2 = r2_score(y_test, y_pred)
 
             # Store model
             model_key = f"{model_type}_{signal_type}"
             self.models[model_key] = model
 
-            tprint(f"✅ [TACTICIAN_TRAINER] {model_type} model trained with accuracy: {accuracy:.3f}", color="green")
+            tprint(f"✅ [TACTICIAN_TRAINER] {model_type} model trained - R²: {r2:.3f}, MAE: {mae:.4f}", color="green")
 
             return {
                 'success': True,
                 'model': model,
-                'accuracy': accuracy,
+                'r2': r2,
+                'mse': mse,
+                'mae': mae,
                 'model_type': model_type,
                 'signal_type': signal_type,
                 'model_key': model_key
@@ -131,11 +135,11 @@ class TacticianTrainer:
             }
 
     def _train_random_forest(self, X: pd.DataFrame, y: pd.Series):
-        """Train Random Forest model."""
+        """Train Random Forest model (regression for continuous targets)."""
         if not SKLEARN_AVAILABLE:
             raise ImportError("scikit-learn not available")
 
-        model = RandomForestClassifier(
+        model = RandomForestRegressor(
             n_estimators=100,
             max_depth=10,
             random_state=42
@@ -144,11 +148,11 @@ class TacticianTrainer:
         return model
 
     def _train_xgboost(self, X: pd.DataFrame, y: pd.Series):
-        """Train XGBoost model."""
+        """Train XGBoost model (regression for continuous targets)."""
         if not XGBOOST_AVAILABLE:
             raise ImportError("XGBoost not available")
 
-        model = xgb.XGBClassifier(
+        model = xgb.XGBRegressor(
             n_estimators=100,
             max_depth=6,
             random_state=42
@@ -157,24 +161,25 @@ class TacticianTrainer:
         return model
 
     def _train_lightgbm(self, X: pd.DataFrame, y: pd.Series):
-        """Train LightGBM model."""
+        """Train LightGBM model (regression for continuous targets)."""
         if not LIGHTGBM_AVAILABLE:
             raise ImportError("LightGBM not available")
 
-        model = lgb.LGBMClassifier(
+        model = lgb.LGBMRegressor(
             n_estimators=100,
             max_depth=6,
-            random_state=42
+            random_state=42,
+            verbose=-1
         )
         model.fit(X, y)
         return model
 
     def _train_catboost(self, X: pd.DataFrame, y: pd.Series):
-        """Train CatBoost model."""
+        """Train CatBoost model (regression for continuous targets)."""
         if not CATBOOST_AVAILABLE:
             raise ImportError("CatBoost not available")
 
-        model = CatBoostClassifier(
+        model = CatBoostRegressor(
             iterations=100,
             depth=6,
             random_state=42,

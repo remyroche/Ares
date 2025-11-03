@@ -36,6 +36,7 @@ from ..monitoring.unified_trailing_manager import (
     TrailingAction,
     TrailingDecision,
 )
+from ..monitoring.prediction_cache import get_global_prediction_cache, PredictionEntry
 from ..reporting.trade_reporting_manager import (
     trade_reporting_manager,
     create_trade_record_from_execution,
@@ -44,6 +45,7 @@ from ..reporting.performance_reporter import performance_reporter, generate_trad
 from ..reporting.dashboard_generator import dashboard_generator, create_trading_dashboard
 from ..reporting.daily_recorder import daily_recorder, record_daily_trading_summary
 from ..utils.helpers import prepare_trailing_feature_bundle, TrailingFeatureBundle
+from src.utils.ml_common.uncertainty_calculator import get_global_uncertainty_calculator
 
 logger = system_logger.getChild('TradingOrchestrator')
 
@@ -161,6 +163,13 @@ class TradingOrchestrator:
         self.active_positions: Dict[str, Dict[str, Any]] = {}
         self._latest_signals: Dict[str, Any] = {}
         self._latest_market_snapshot: Optional[Dict[str, Any]] = None
+        
+        # Prediction caching and uncertainty tracking
+        self.prediction_cache = get_global_prediction_cache(
+            max_candles=config.get('prediction_cache_size', 50),
+            default_window=config.get('prediction_window', 8)
+        )
+        self.uncertainty_calculator = get_global_uncertainty_calculator()
 
     async def initialize(self) -> bool:
         """
@@ -582,6 +591,31 @@ class TradingOrchestrator:
                 'analyst': analyst_signal,
                 'tactician': tactician_signal,
             }
+            
+            # Cache predictions for uncertainty tracking
+            current_timestamp = datetime.now()
+            
+            # Cache Analyst prediction
+            self.prediction_cache.add_analyst_prediction(
+                predictions={
+                    'confidence': analyst_signal.confidence if hasattr(analyst_signal, 'confidence') else 0.0,
+                    'prediction': analyst_signal.__dict__ if analyst_signal else {}
+                },
+                timestamp=current_timestamp,
+                ohlcv=market_data.iloc[-1] if len(market_data) > 0 else None,
+                confidence=analyst_signal.confidence if hasattr(analyst_signal, 'confidence') else None
+            )
+            
+            # Cache Tactician prediction
+            self.prediction_cache.add_tactician_prediction(
+                predictions={
+                    'confidence': tactician_signal.confidence if hasattr(tactician_signal, 'confidence') else 0.0,
+                    'prediction': tactician_signal.__dict__ if tactician_signal else {}
+                },
+                timestamp=current_timestamp,
+                ohlcv=market_data.iloc[-1] if len(market_data) > 0 else None,
+                confidence=tactician_signal.confidence if hasattr(tactician_signal, 'confidence') else None
+            )
 
             # Combine signals
             combined_signal = await self.signal_combiner.combine_signals(
@@ -901,8 +935,51 @@ class TradingOrchestrator:
         momentum = tact_metrics.get('momentum', 0.0)
         rsi = tact_metrics.get('rsi', 50.0)
         vol_slope = tact_metrics.get('vol_slope', 0.0)
+        
+        # Update position predictions with current data
+        current_timestamp = datetime.now()
+        tactician_signal = self._latest_signals.get('tactician')
+        
+        if tactician_signal:
+            current_prediction = PredictionEntry(
+                timestamp=current_timestamp,
+                predictions={
+                    'confidence': getattr(tactician_signal, 'confidence_score', 0.0),
+                    'prediction': tactician_signal.__dict__ if tactician_signal else {}
+                },
+                ohlcv=None,  # Can add if needed
+                confidence=getattr(tactician_signal, 'confidence_score', None)
+            )
+            
+            # Update prediction cache for all active positions
+            for position_id in self.active_positions.keys():
+                self.prediction_cache.update_position_predictions(
+                    position_id=position_id,
+                    new_prediction=current_prediction
+                )
+                
+                # Update position's confidence history
+                if position_id in self.active_positions:
+                    conf_value = getattr(tactician_signal, 'confidence_score', None)
+                    if conf_value is not None:
+                        self.active_positions[position_id]['confidence_history'].append(conf_value)
+                        # Keep history limited to reasonable size
+                        if len(self.active_positions[position_id]['confidence_history']) > 20:
+                            self.active_positions[position_id]['confidence_history'] = \
+                                self.active_positions[position_id]['confidence_history'][-20:]
 
         for position_id, position in list(self.active_positions.items()):
+            # Update position with current uncertainty metrics
+            position['current_uncertainty'] = self.prediction_cache.get_uncertainty_metrics(
+                source='tactician',
+                window=8
+            ).get('combined_uncertainty', 0.3)
+            
+            position['uncertainty_metrics'] = self.prediction_cache.get_uncertainty_metrics(
+                source='tactician',
+                window=8
+            )
+            
             ml_context = self._build_ml_context(position)
             decision = self.trailing_manager.evaluate_position(
                 position_id,
@@ -1020,6 +1097,19 @@ class TradingOrchestrator:
             metadata={'symbol': decision.symbol, 'ml_entry': ml_entry},
         )
 
+        # Register position with prediction cache to snapshot current predictions
+        self.prediction_cache.register_position(
+            position_id=trade_id,
+            entry_timestamp=decision.timestamp,
+            snapshot_window=8
+        )
+        
+        # Get initial uncertainty metrics
+        initial_uncertainty = self.prediction_cache.get_uncertainty_metrics(
+            source='tactician',
+            window=8
+        )
+        
         self.active_positions[trade_id] = {
             'symbol': decision.symbol,
             'side': side,
@@ -1028,7 +1118,17 @@ class TradingOrchestrator:
             'entry_time': decision.timestamp,
             'ml_entry': ml_entry,
             'trailing_state': state,
+            'position_id': trade_id,
+            'trade_id': trade_id,
+            'initial_uncertainty': initial_uncertainty,
+            'confidence_history': [ml_entry.get('tactician_confidence', 0.6)],
+            'recent_predictions': []
         }
+        
+        self.logger.info(
+            f"Opened position {trade_id}: {side} {decision.quantity} @ {decision.price}, "
+            f"uncertainty={initial_uncertainty.get('combined_uncertainty', 0.0):.3f}"
+        )
 
     def _close_position(self, position_id: str, reason: str) -> None:
         position = self.active_positions.pop(position_id, None)
@@ -1036,6 +1136,10 @@ class TradingOrchestrator:
             return
 
         self.trailing_manager.remove_position(position_id)
+        
+        # Remove from prediction cache
+        self.prediction_cache.remove_position(position_id)
+        
         self.logger.info(
             "🚪 Closed position %s (%s) due to %s",
             position_id,
@@ -1111,6 +1215,23 @@ class TradingOrchestrator:
             )
             if tactician_signal.risk_metrics:
                 context['tactician_momentum'] = tactician_signal.risk_metrics.get('momentum')
+        
+        # Get uncertainty metrics from prediction cache
+        position_id = position.get('position_id') or position.get('trade_id')
+        if position_id:
+            uncertainty_metrics = self.prediction_cache.get_uncertainty_metrics(
+                source='tactician',
+                window=8
+            )
+            context['uncertainty'] = uncertainty_metrics.get('combined_uncertainty', 0.3)
+            context['uncertainty_metrics'] = uncertainty_metrics
+            
+            # Get confidence degradation for this position
+            confidence_degradation = self.prediction_cache.calculate_confidence_degradation(
+                source='tactician',
+                position_id=position_id
+            )
+            context['confidence_degradation'] = confidence_degradation
 
         return context
 

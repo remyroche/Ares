@@ -117,6 +117,10 @@ class BinanceExchange(BaseExchange):
         self.retry_delay = 1.0
         self.timeout = 30
         
+        # Background task management
+        self._running = True
+        self._background_tasks: List[asyncio.Task] = []
+        
     def _initialize_shared_utilities(self) -> None:
         """Initialize all shared utilities."""
         try:
@@ -370,39 +374,47 @@ class BinanceExchange(BaseExchange):
             if self.auth_manager.is_authenticated_and_valid():
                 await self.time_sync_manager.start_auto_sync(self._get_server_time)
             
-            # Start market data refresh
-            asyncio.create_task(self._background_market_data_refresh())
+            # Start market data refresh and track the task
+            task1 = asyncio.create_task(self._background_market_data_refresh())
+            self._background_tasks.append(task1)
             
-            # Start order sync
-            asyncio.create_task(self._background_order_sync())
+            # Start order sync and track the task
+            task2 = asyncio.create_task(self._background_order_sync())
+            self._background_tasks.append(task2)
             
         except Exception as e:
             tprint(f"Failed to start background tasks: {e}", "ERROR")
     
     async def _background_market_data_refresh(self) -> None:
         """Background task to refresh market data."""
-        while True:
+        while self._running:
             try:
-                if self.session:
+                if self.session and self._running:
                     # Refresh market data for active symbols
                     symbols = [self.trade_symbol]
                     await self.market_metadata.refresh_market_data(symbols)
                 
                 await asyncio.sleep(30)  # Refresh every 30 seconds
+            except asyncio.CancelledError:
+                break  # Task was cancelled, exit gracefully
             except Exception as e:
-                tprint(f"Error in background market data refresh: {e}", "ERROR")
+                if self._running:  # Only log if not shutting down
+                    tprint(f"Error in background market data refresh: {e}", "ERROR")
                 await asyncio.sleep(60)
     
     async def _background_order_sync(self) -> None:
         """Background task to sync orders."""
-        while True:
+        while self._running:
             try:
-                if self.session:
+                if self.session and self._running:
                     await self.order_manager.sync_orders_from_exchange()
                 
                 await asyncio.sleep(10)  # Sync every 10 seconds
+            except asyncio.CancelledError:
+                break  # Task was cancelled, exit gracefully
             except Exception as e:
-                tprint(f"Error in background order sync: {e}", "ERROR")
+                if self._running:  # Only log if not shutting down
+                    tprint(f"Error in background order sync: {e}", "ERROR")
                 await asyncio.sleep(30)
 
     async def _test_connection(self) -> bool:
@@ -1277,9 +1289,26 @@ class BinanceExchange(BaseExchange):
 
     async def close(self) -> None:
         """Close the exchange connection."""
+        # Signal background tasks to stop
+        self._running = False
+        
+        # Cancel all background tasks
+        for task in self._background_tasks:
+            if not task.done():
+                task.cancel()
+        
+        # Wait for tasks to complete cancellation
+        if self._background_tasks:
+            await asyncio.gather(*self._background_tasks, return_exceptions=True)
+        
+        # Clear task list
+        self._background_tasks.clear()
+        
+        # Close session
         if self.session:
             await self.session.close()
             self.session = None
+        
         tprint("Binance exchange connection closed", "INFO")
 
 

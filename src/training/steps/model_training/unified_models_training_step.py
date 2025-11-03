@@ -777,8 +777,15 @@ class UnifiedModelsTrainingStep(BaseStep):
                                 if 'lgbm' in model_type:
                                     model_params['params']['n_estimators'] = dynamic_config.n_estimators
                                 elif 'catboost' in model_type:
-                                    model_params['params']['iterations'] = dynamic_config.iterations
-                                
+                                    tprint_info("Applying CatBoost GPU (Apple M1) configuration...")
+                                    model_params['params']['task_type'] = 'GPU'
+                                    model_params['params']['devices'] = '0' # Use '0' for Apple M1 GPU
+                                    
+                                    # Remove subsample if it exists, as it's not supported for GPU training
+                                    if 'subsample' in model_params['params']:
+                                        del model_params['params']['subsample']
+                                        tprint_info("Removed 'subsample' param, not supported by CatBoost GPU.")     
+                                        
                                 model_params['params']['learning_rate'] = dynamic_config.learning_rate
                             
                             tprint_info(f"  Updated {model_name} with dynamic parameters")
@@ -810,7 +817,15 @@ class UnifiedModelsTrainingStep(BaseStep):
                                     model_params['params']['n_estimators'] = dynamic_config.n_estimators
                                 elif 'catboost' in model_type:
                                     model_params['params']['iterations'] = dynamic_config.iterations
-                                
+                                    tprint_info("Applying CatBoost GPU (Apple M1) configuration...")
+                                    model_params['params']['task_type'] = 'GPU'
+                                    model_params['params']['devices'] = '0' # Use '0' for Apple M1 GPU
+                                    
+                                    # Remove subsample if it exists, as it's not supported for GPU training
+                                    if 'subsample' in model_params['params']:
+                                        del model_params['params']['subsample']
+                                        tprint_info("Removed 'subsample' param, not supported by CatBoost GPU.")
+                                        
                                 model_params['params']['learning_rate'] = dynamic_config.learning_rate
                             
                             tprint_info(f"  Updated {model_name} with dynamic parameters")

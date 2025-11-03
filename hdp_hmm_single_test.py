@@ -167,7 +167,7 @@ try:
         n_burnin=n_burnin,                   # Proportional to iterations
         max_states=10,                       # Maximum number of states
         kmeans_n_clusters=kmeans_init_clusters,  # ALPHA-DEPENDENT: α controls initial cluster count
-        pca_components=15,                   # Keep 15 for better feature representation
+        pca_components=None,                 # OPTIMIZATION: PCA is now pre-computed
         covariance_type="diag",              # DIAGONAL covariance using SimpleDiagGaussian (~10x speedup!)
         use_gpu_acceleration=False,          # DISABLED to avoid GPU issues
         use_kmeans_warmstart=True,           # ENABLED - necessary for good initialization

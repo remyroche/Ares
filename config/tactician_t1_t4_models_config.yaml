@@ -54,6 +54,7 @@ tactician_t1_t4_config:
         alpha: 0.1   # LambdaMART regularization
         verbosity: 0
 
+
     # T3: PatchTST-Embed + CatBoost (tree)
     t3_catboost:
       model_type: "PatchTSTCatBoost"
@@ -70,20 +71,23 @@ tactician_t1_t4_config:
         ordered_boosting: true  # Enable ordered boosting for better convergence
 
   # T4: Sequence Model (Causal Dilated TCN or TFT-Small)
-  sequence_model:
-    # T4: Causal Dilated TCN (sequence classifier/regressor)
-    t4_tcn:
-      model_type: "CausalDilatedTCN"
-      task: "multi_label"  # P(up_hit@H), P(down_hit@H) or regression for E[ret_H]
-      config:
-        residual_blocks: 8  # 6-8 residual blocks
-        channels: 64
-        kernel_size: 3
-        dilations: [1, 2, 4, 8, 16, 32, 64]  # 1..64 dilations
-        dropout: 0.1
-        use_batch_norm: true
-        activation: "relu"
-
+    sequence_model:
+      # T4: Causal Dilated TCN (sequence classifier/regressor)
+      t4_tcn:
+        model_type: "CausalDilatedTCN"
+        task: "multi_label"  # P(up_hit@H), P(down_hit@H) or regression for E[ret_H]
+        config:
+          residual_blocks: 8  # 6-8 residual blocks
+          channels: 64
+          kernel_size: 3
+          dilations: [1, 2, 4, 8, 16, 32, 64]  # 1..64 dilations
+          dropout: 0.1
+          use_batch_norm: true
+          activation: "relu"
+  
+      # Alternative: TFT-Small
+      t4_tft_small:
+      
     # Alternative: TFT-Small
     t4_tft_small:
       model_type: "TFTSmall"

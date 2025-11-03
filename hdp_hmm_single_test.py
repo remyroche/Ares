@@ -13,6 +13,7 @@ os.environ['PYTHONWARNINGS'] = 'ignore'  # Suppress Python warnings
 
 import numpy as np
 import pandas as pd
+from numba import njit
 from datetime import datetime, timedelta
 import warnings
 import logging
@@ -255,6 +256,59 @@ try:
         except (TypeError, ValueError, AttributeError):
             return default
     
+    @njit(fastmath=True, cache=True)
+    def calculate_category_cv_ratios_numba(labels, feature_array, cat_indices_list):
+        """
+        Numba-accelerated CV ratio calculation.
+        cat_indices_list is a list of lists, where each inner list has the
+        column indices for a specific category.
+        """
+        # Numba doesn't support dictionaries, so we use a fixed-size array
+        # 0=order_flow, 1=microstructure, 2=momentum, 3=volatility,
+        # 4=volume, 5=trend, 6=temporal
+        category_cvs = np.zeros(7, dtype=np.float64)
+    
+        unique_labels = np.unique(labels)
+        n_clusters = len(unique_labels)
+        if n_clusters == 0:
+            return category_cvs
+    
+        for cat_idx, cat_indices in enumerate(cat_indices_list):
+            if len(cat_indices) == 0:
+                continue
+    
+            # Use Numba-friendly loops to build the feature subset
+            # This is faster inside Numba than advanced slicing
+            cat_features = np.empty((feature_array.shape[0], len(cat_indices)), dtype=np.float64)
+            for i in range(len(cat_indices)):
+                cat_features[:, i] = feature_array[:, cat_indices[i]]
+    
+            # Calculate regime means and variances
+            regime_means = np.empty((n_clusters, cat_features.shape[1]), dtype=np.float64)
+            regime_vars = np.empty((n_clusters,), dtype=np.float64)
+    
+            for i, r in enumerate(unique_labels):
+                mask = (labels == r)
+                regime_data = cat_features[mask]
+    
+                if regime_data.shape[0] > 0:
+                    regime_means[i] = np.mean(regime_data, axis=0)
+                    regime_vars[i] = np.mean(np.var(regime_data, axis=0))
+                else:
+                    regime_means[i] = np.zeros(cat_features.shape[1], dtype=np.float64)
+                    regime_vars[i] = 0.0
+    
+            # Calculate between-regime and within-regime CV
+            between_var = np.mean(np.var(regime_means, axis=0))
+            within_var = np.mean(regime_vars)
+    
+            if within_var > 1e-9:
+                category_cvs[cat_idx] = between_var / within_var
+            else:
+                category_cvs[cat_idx] = 0.0
+    
+        return category_cvs
+        
     # Calculate per-feature-category CV ratios
     def calculate_category_cv_ratios(labels, features, feature_array):
         """Calculate CV ratios for each feature category."""

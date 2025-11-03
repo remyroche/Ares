@@ -70,20 +70,27 @@ tactician_t1_t4_config:
         monotone_constraints: [1, 1, 1, 0, 0, -1, -1, 1, 0, 0]  # Example constraints
         ordered_boosting: true  # Enable ordered boosting for better convergence
 
-  # T4: Sequence Model (Causal Dilated TCN or TFT-Small)
-    sequence_model:
-      # T4: Causal Dilated TCN (sequence classifier/regressor)
-      t4_tcn:
-        model_type: "CausalDilatedTCN"
-        task: "multi_label"  # P(up_hit@H), P(down_hit@H) or regression for E[ret_H]
-        config:
-          residual_blocks: 8  # 6-8 residual blocks
-          channels: 64
-          kernel_size: 3
-          dilations: [1, 2, 4, 8, 16, 32, 64]  # 1..64 dilations
-          dropout: 0.1
-          use_batch_norm: true
-          activation: "relu"
+  # T4: Sequence Model (DepthwiseSeparableCNNRegressor or TFT-Small)
+  sequence_model:
+    # T4: Depthwise Separable CNN (sequence regressor)
+    t4_depthwise_cnn:
+      # This model_type name is arbitrary but should match HPOOrchestrator
+      model_type: "DepthwiseSeparableCNN" 
+      # Class path to the new model
+      class_name: "src.models.tcn_regressor.DepthwiseSeparableCNNRegressor"
+      task: "regression"  # E[ret_H]
+      config: # Corresponds to 'params' in the class
+        filters: 64
+        kernel_size: 3
+        dropout: 0.2
+        epochs: 50
+        batch_size: 32
+        learning_rate: 0.001
+        validation_split: 0.2
+        early_stopping_patience: 10
+        reduce_lr_patience: 5
+        use_batch_norm: false
+        verbose: 0
   
       # Alternative: TFT-Small
       t4_tft_small:

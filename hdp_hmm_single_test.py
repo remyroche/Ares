@@ -309,11 +309,10 @@ try:
     
         return category_cvs
         
-    # Calculate per-feature-category CV ratios
+    # --- THIS IS THE ORIGINAL (NON-NUMBA) FUNCTION ---
     def calculate_category_cv_ratios(labels, features, feature_array):
-        """Calculate CV ratios for each feature category."""
+        """Calculates CV ratios by preparing indices and calling the Numba function."""
         try:
-            # Load feature names from cache if available
             import pickle
             try:
                 with open('hdp_hmm_features_cache.pkl', 'rb') as f:
@@ -321,11 +320,8 @@ try:
                     feature_names = list(feature_df.columns)
             except:
                 feature_names = [f"feat_{i}" for i in range(feature_array.shape[1])]
-            
-            # Define feature categories (patterns match actual feature names in cache)
+    
             categories = {
-                # NOTE: True order flow features don't exist in cache, using volume dynamics as proxies
-                # Volume momentum/clustering/roc capture order flow dynamics indirectly
                 'order_flow': ['volume_momentum', 'volume_clustering', 'volume_roc'],
                 'microstructure': ['price_zscore', 'mean_reversion', 'volume_clustering'],
                 'momentum': ['momentum_', 'roc_', '_acceleration'],
@@ -334,39 +330,26 @@ try:
                 'trend': ['price_to_ma', 'trend_strength', 'temporal_price'],
                 'temporal': ['regime_duration', 'lagged_']
             }
-            
-            category_cvs = {}
-            
-            for cat_name, patterns in categories.items():
-                # Find features matching this category
+    
+            category_names = ['order_flow', 'microstructure', 'momentum', 'volatility', 'volume', 'trend', 'temporal']
+            cat_indices_list = []
+    
+            for cat_name in category_names:
+                patterns = categories[cat_name]
                 cat_indices = []
                 for idx, fname in enumerate(feature_names):
                     if any(pattern in fname for pattern in patterns):
                         cat_indices.append(idx)
-                
-                if not cat_indices:
-                    category_cvs[cat_name] = 0.0
-                    continue
-                
-                # Calculate between-regime and within-regime CV for this category
-                cat_features = feature_array[:, cat_indices]
-                
-                # Between-regime CV: variance of regime means
-                regime_means = np.array([cat_features[labels == r].mean(axis=0) 
-                                        for r in np.unique(labels)])
-                between_var = regime_means.var(axis=0).mean()
-                
-                # Within-regime CV: average variance within regimes
-                within_var = np.mean([cat_features[labels == r].var(axis=0).mean() 
-                                     for r in np.unique(labels)])
-                
-                # CV ratio
-                cv_ratio = between_var / (within_var + 1e-9) if within_var > 0 else 0.0
-                category_cvs[cat_name] = cv_ratio
-            
-            return category_cvs
+                # Numba needs a list of np.arrays for typed lists
+                cat_indices_list.append(np.array(cat_indices, dtype=np.int32))
+    
+            # --- CALL THE NEW NUMBA FUNCTION ---
+            cv_values = calculate_category_cv_ratios_numba(labels, feature_array, cat_indices_list)
+    
+            # Map array back to dictionary
+            return {name: val for name, val in zip(category_names, cv_values)}
+    
         except Exception as e:
-            # Return zeros on error
             return {cat: 0.0 for cat in ['order_flow', 'microstructure', 'momentum', 
                                           'volatility', 'volume', 'trend', 'temporal']}
     

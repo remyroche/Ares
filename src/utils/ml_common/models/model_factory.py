@@ -109,6 +109,7 @@ class ModelType(Enum):
     TEMPORAL_FUSION_TRANSFORMER = "TemporalFusionTransformer"
     WAVENET = "WaveNet"
     TCN = "TCN"  # Temporal Convolutional Network
+    DEPTHWISE_SEPARABLE_CNN = "DepthwiseSeparableCNNRegressor"
     LSTM = "LSTM"
     DEEPSCALER = "DeepScaler"
     DEEPSCALER_CLASSIFIER = "DeepScalerClassifier"

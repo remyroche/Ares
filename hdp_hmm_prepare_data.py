@@ -12,6 +12,7 @@ IMPROVEMENTS:
 
 import numpy as np
 import pandas as pd
+from numba import njit
 from datetime import datetime, timedelta
 import pickle
 from typing import Dict, Tuple
@@ -133,46 +134,53 @@ def generate_microstructure_features(df: pd.DataFrame) -> Dict[str, float]:
     return features
 
 
+@njit(fastmath=True, cache=True)
+def _prune_correlated_numba(corr_matrix, variance, threshold):
+    """Numba-accelerated correlation pruner."""
+    n_features = corr_matrix.shape[0]
+    # Numba doesn't like sets, so we use a boolean array
+    features_to_remove = np.zeros(n_features, dtype=np.bool_)
+
+    for i in range(n_features):
+        if features_to_remove[i]:
+            continue
+
+        for j in range(i + 1, n_features):
+            if features_to_remove[j]:
+                continue
+
+            if corr_matrix[i, j] > threshold:
+                # Remove the feature with lower variance
+                if variance[i] < variance[j]:
+                    features_to_remove[i] = True
+                    break  # Move to next i
+                else:
+                    features_to_remove[j] = True
+
+    return features_to_remove
+
 def prune_correlated_features(df: pd.DataFrame, threshold: float = 0.95) -> pd.DataFrame:
     """
     Remove highly correlated features to reduce redundancy.
-    
-    Strategy:
-    1. For each pair of features with correlation > threshold
-    2. Keep the one with higher variance (more informative)
-    3. Remove the other
+    (Wrapper for the Numba-accelerated function)
     """
     print(f"\n🔍 Pruning features with correlation > {threshold}...")
-    
+
     corr_matrix = df.corr().abs()
-    np.fill_diagonal(corr_matrix.values, 0)
-    
-    features_to_remove = set()
     variance = df.var()
-    
-    # Find highly correlated pairs
-    for i in range(len(corr_matrix.columns)):
-        if corr_matrix.columns[i] in features_to_remove:
-            continue
-            
-        for j in range(i + 1, len(corr_matrix.columns)):
-            if corr_matrix.columns[j] in features_to_remove:
-                continue
-            
-            if corr_matrix.iloc[i, j] > threshold:
-                # Remove the feature with lower variance
-                feat_i = corr_matrix.columns[i]
-                feat_j = corr_matrix.columns[j]
-                
-                if variance[feat_i] < variance[feat_j]:
-                    features_to_remove.add(feat_i)
-                    break  # Move to next i
-                else:
-                    features_to_remove.add(feat_j)
-    
+
+    # Call the fast Numba function
+    features_to_remove_mask = _prune_correlated_numba(
+        corr_matrix.values, 
+        variance.values, 
+        threshold
+    )
+
+    features_to_remove = df.columns[features_to_remove_mask]
+
     print(f"   ❌ Removing {len(features_to_remove)} redundant features")
     remaining_features = [col for col in df.columns if col not in features_to_remove]
-    
+
     return df[remaining_features]
 
 
@@ -242,22 +250,54 @@ try:
     print(f"   📊 Raw features: {feature_df.shape[1]} columns")
     
     # NEW: Two-scale normalization with BOTH short and long windows
-    print("   🔧 Applying two-scale normalization (8h and 48h)...")
-    print("      Computing: short-term (8h) and long-term (48h) z-scores")
-    feature_df_normalized = pd.DataFrame()
+    print("   🔧 Applying two-scale normalization (8h and 48h) with Numpy vectorization...")
     
-    for col in feature_df.columns:
-        # Short-term (8h)
-        mean_8h = feature_df[col].rolling(8, min_periods=3).mean()
-        std_8h = feature_df[col].rolling(8, min_periods=3).std()
-        z_short = (feature_df[col] - mean_8h) / (std_8h + 1e-8)
-        feature_df_normalized[f'{col}_short'] = z_short
-        
-        # Long-term (48h) - INCREASED from 32h
-        mean_48h = feature_df[col].rolling(48, min_periods=12).mean()
-        std_48h = feature_df[col].rolling(48, min_periods=12).std()
-        z_long = (feature_df[col] - mean_48h) / (std_48h + 1e-8)
-        feature_df_normalized[f'{col}_long'] = z_long
+    # Convert to numpy for fast operations
+    feature_values = feature_df.values
+    n_samples, n_features = feature_values.shape
+    
+    # Create empty arrays for results
+    z_short_values = np.zeros_like(feature_values)
+    z_long_values = np.zeros_like(feature_values)
+    
+    # Define windows
+    windows = [(8, 3), (48, 12)] # (window_size, min_periods)
+    result_arrays = [z_short_values, z_long_values]
+    prefixes = ['_short', '_long']
+    
+    with np.errstate(divide='ignore', invalid='ignore'):
+        for i, (win, min_p) in enumerate(windows):
+            # Create a 3D view of the data (n_samples, n_features, window_size)
+            # This is an advanced, memory-efficient way to get rolling windows
+            shape = (n_samples - win + 1, n_features, win)
+            strides = (feature_values.strides[0], feature_values.strides[1], feature_values.strides[0])
+            rolling_view = np.lib.stride_tricks.as_strided(feature_values, shape=shape, strides=strides)
+
+            # Calculate rolling mean and std in a single vectorized operation
+            rolling_mean = np.mean(rolling_view, axis=2)
+            rolling_std = np.std(rolling_view, axis=2)
+
+            # Apply z-score
+            z_score_all = (feature_values[win-1:] - rolling_mean) / (rolling_std + 1e-8)
+            
+            # Pad the beginning (where window was too small)
+            result_arrays[i][win-1:] = z_score_all
+            
+            # Handle min_periods (fill the start)
+            if min_p < win:
+                # Use a simpler expanding window for the start
+                for r in range(min_p, win):
+                    expanding_data = feature_values[:r]
+                    mean = np.mean(expanding_data, axis=0)
+                    std = np.std(expanding_data, axis=0)
+                    z = (feature_values[r-1] - mean) / (std + 1e-8)
+                    result_arrays[i][r-1] = z
+    
+    # Combine results back into a DataFrame
+    feature_df_normalized = pd.DataFrame(
+        np.concatenate([z_short_values, z_long_values], axis=1),
+        columns=[f"{col}_short" for col in feature_df.columns] + [f"{col}_long" for col in feature_df.columns]
+    )
     
     feature_df_normalized = feature_df_normalized.fillna(0).replace([np.inf, -np.inf], 0)
     

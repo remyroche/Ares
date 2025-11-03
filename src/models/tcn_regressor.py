@@ -23,6 +23,7 @@ try:
     from tensorflow.keras.optimizers import Adam
     from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
     import tensorflow as tf
+    from tensorflow.keras.layers import Conv1D, Dense, Dropout, GlobalMaxPooling1D, BatchNormalization, SeparableConv1D
     TENSORFLOW_AVAILABLE = True
 except ImportError:
     TENSORFLOW_AVAILABLE = False
@@ -36,19 +37,20 @@ from sklearn.utils.validation import check_X_y, check_array
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 
-logger = system_logger.getChild('TCNRegressor')
+logger = system_logger.getChild('DepthwiseSeparableCNNRegressor')
 
-class TCNRegressor(BaseEstimator, RegressorMixin):
+class DepthwiseSeparableCNNRegressor(BaseEstimator, RegressorMixin):
     """
-    Temporal Convolutional Network Regressor with sklearn compatibility.
+    Depthwise Separable 1D CNN Regressor with sklearn compatibility.
 
-    This TCN implementation uses 1D convolutions for temporal pattern recognition
-    and is suitable for time series regression tasks in trading strategies.
+    This implementation uses Depthwise Separable 1D convolutions for efficient
+    temporal pattern recognition, offering a lightweight alternative to a standard TCN.
+    It is suitable for time series regression tasks in trading strategies.
 
     Architecture:
-    - Conv1D layer (configurable filters)
+    - SeparableConv1D layer (configurable filters)
     - Dropout
-    - Conv1D layer (2x filters)
+    - SeparableConv1D layer (2x filters)
     - Dropout
     - GlobalMaxPooling1D
     - Dense layer (50 units)
@@ -109,10 +111,10 @@ class TCNRegressor(BaseEstimator, RegressorMixin):
         random_state: int = 42,
         use_batch_norm: bool = False
     ):
-        """Initialize TCN Regressor."""
+        """Initialize CNN Regressor."""
         if not TENSORFLOW_AVAILABLE:
             raise ImportError(
-                "TensorFlow is required for TCNRegressor. "
+                "TensorFlow is required for DepthwiseSeparableCNNRegressor. "
                 "Install with: pip install tensorflow>=2.8.0"
             )
 
@@ -134,58 +136,62 @@ class TCNRegressor(BaseEstimator, RegressorMixin):
         self.scaler_ = None
         self.history_ = None
         self.n_features_in_ = None
-
+    
     def _build_model(self, input_shape: Tuple[int, int]) -> Sequential:
         """
-        Build TCN architecture.
-
+        Build Depthwise Separable CNN architecture.
+    
         Args:
             input_shape: Shape of input (timesteps, features)
-
+    
         Returns:
             Compiled Keras Sequential model
         """
         model = Sequential()
-
+    
         # First convolutional block
-        model.add(Conv1D(
+        model.add(SeparableConv1D(
             self.filters,
             self.kernel_size,
             activation='relu',
             input_shape=input_shape,
-            padding='same'
+            padding='same',
+            depthwise_initializer='glorot_uniform',
+            pointwise_initializer='glorot_uniform'
         ))
         if self.use_batch_norm:
             model.add(BatchNormalization())
         model.add(Dropout(self.dropout))
-
+    
         # Second convolutional block (double filters for hierarchical features)
-        model.add(Conv1D(
+        model.add(SeparableConv1D(
             self.filters * 2,
             self.kernel_size,
             activation='relu',
-            padding='same'
+            padding='same',
+            depthwise_initializer='glorot_uniform',
+            pointwise_initializer='glorot_uniform'
         ))
         if self.use_batch_norm:
             model.add(BatchNormalization())
         model.add(Dropout(self.dropout))
-
+    
         # Global pooling and dense layers
         model.add(GlobalMaxPooling1D())
         model.add(Dense(50, activation='relu'))
         model.add(Dropout(self.dropout))
         model.add(Dense(1, activation='linear'))
-
+    
         # Compile model
         model.compile(
             optimizer=Adam(learning_rate=self.learning_rate),
             loss='mse',
             metrics=['mae']
         )
-
+    
         return model
 
-    def fit(self, X: np.ndarray, y: np.ndarray, **fit_params) -> 'TCNRegressor':
+    def fit(self, X: np.ndarray, y: np.ndarray, **fit_params) -> 'DepthwiseSeparableCNNRegressor':
         """
         Fit TCN model.
 
@@ -323,35 +329,27 @@ class TCNRegressor(BaseEstimator, RegressorMixin):
             'use_batch_norm': self.use_batch_norm
         }
 
-    def set_params(self, **params) -> 'TCNRegressor':
+    def set_params(self, **params) -> 'DepthwiseSeparableCNNRegressor':
         """Set parameters for sklearn compatibility."""
         for param, value in params.items():
             setattr(self, param, value)
         return self
 
-def create_tcn_regressor(
+def create_depthwise_cnn_regressor(
     filters: int = 64,
     kernel_size: int = 3,
     dropout: float = 0.2,
     epochs: int = 50,
     batch_size: int = 32,
     **kwargs
-) -> TCNRegressor:
+) -> DepthwiseSeparableCNNRegressor:
     """
-    Factory function to create TCN regressor with sensible defaults.
-
-    Args:
-        filters: Number of convolutional filters
-        kernel_size: Convolution kernel size
-        dropout: Dropout rate
-        epochs: Number of training epochs
-        batch_size: Training batch size
-        **kwargs: Additional TCNRegressor parameters
-
+    Factory function to create DepthwiseSeparableCNNRegressor with sensible defaults.
+    ... (args) ...
     Returns:
-        TCNRegressor instance
+        DepthwiseSeparableCNNRegressor instance
     """
-    return TCNRegressor(
+    return DepthwiseSeparableCNNRegressor(
         filters=filters,
         kernel_size=kernel_size,
         dropout=dropout,
@@ -359,7 +357,7 @@ def create_tcn_regressor(
         batch_size=batch_size,
         **kwargs
     )
-
+    
 # Example usage and testing
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
@@ -388,7 +386,7 @@ if __name__ == "__main__":
     print(f"Test data: {X_test.shape}")
 
     # Create and train model
-    tcn = TCNRegressor(
+    tcn = DepthwiseSeparableCNNRegressor(
         filters=32,
         kernel_size=3,
         dropout=0.2,

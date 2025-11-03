@@ -352,6 +352,8 @@ class EnhancedModelFactory:
                 model = self._create_time_series_transformer_model(model_config)
             elif model_config.model_type == ModelType.TCN:
                 model = self._create_tcn_model(model_config)
+            elif model_config.model_type == ModelType.DEPTHWISE_SEPARABLE_CNN: # ADD THIS BLOCK
+                model = self._create_depthwise_cnn_model(model_config)
             elif model_config.model_type == ModelType.WAVENET:
                 model = self._create_wavenet_model(model_config)
             elif model_config.model_type == ModelType.TEMPORAL_FUSION_TRANSFORMER:
@@ -1687,6 +1689,21 @@ class EnhancedModelFactory:
 
         return TCN(**params)
 
+    def _create_depthwise_cnn_model(self, model_config: ModelConfig) -> Any:
+        """Create DepthwiseSeparableCNNRegressor model."""
+        if not self.dependencies.get('tensorflow', False):
+            raise ValidationError("TensorFlow not available for DepthwiseSeparableCNNRegressor")
+
+        # Default params (can be empty if YAML is comprehensive)
+        default_params = {
+            'random_state': model_config.random_state
+        }
+        params = {**default_params, **model_config.model_params}
+        model = DepthwiseSeparableCNNRegressor(**params)
+        self.logger.info("✅ DepthwiseSeparableCNNRegressor model created")
+        return model
+
+    
     def _create_wavenet_model(self, model_config: ModelConfig) -> Any:
         """Create WaveNet model with overfitting prevention."""
 

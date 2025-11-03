@@ -252,8 +252,12 @@ class SRPerformancePredictor:
         
         # Log feature importance
         self._log_feature_importance()
-        
-        return all_results
+    
+        # Compute and cache SHAP values
+        self.logger.info("Caching SHAP values from training data...")
+        self.compute_shap_values(training_data=training_data)
+
+    return all_results
     
     def train_with_hpo(self,
                       training_data: pd.DataFrame,
@@ -444,9 +448,41 @@ class SRPerformancePredictor:
         # Log feature importance
         self._log_feature_importance()
         
+        # Compute and cache SHAP values
+        self.logger.info("Caching SHAP values from training data...")
+        self.compute_shap_values(training_data=training_data)
+    
         self.logger.info(f"\n✅ HPO training complete for all targets!")
-        
-        return all_results
+
+    def compute_shap_values(self, training_data: pd.DataFrame):
+        """
+        Computes and caches SHAP values for all models using the provided training data.
+        This is useful after loading a model to avoid re-computing on every call.
+    
+        Args:
+            training_data: The training DataFrame (or compatible data) to use for SHAP.
+        """
+        self.logger.info("Calculating and caching SHAP values for all targets...")
+        if self.feature_names is None:
+            raise ValueError("Model feature names are not set. Load or train a model first.")
+    
+        try:
+            X = training_data[self.feature_names].fillna(0.0)
+        except KeyError as e:
+            missing = set(self.feature_names) - set(training_data.columns)
+            self.logger.error(f"Missing features for SHAP computation: {missing}")
+            raise ValueError(f"Missing features: {missing}")
+    
+        self.X_train_for_shap = X.copy()
+        self.shap_values.clear()  # Clear any old values
+    
+        for target in self.targets:
+            if target in self.shap_explainers:
+                self.logger.info(f"   Calculating for {target}...")
+                self.shap_values[target] = self.shap_explainers[target].shap_values(self.X_train_for_shap)
+            else:
+                self.logger.warning(f"   No SHAP explainer found for {target}, skipping.")
+        self.logger.info("SHAP values cached.")
     
     def predict(self, features: pd.DataFrame) -> Dict[str, np.ndarray]:
         """Predict all performance metrics.
@@ -548,7 +584,26 @@ class SRPerformancePredictor:
         """
         if target not in self.models:
             raise ValueError(f"No model for target '{target}'")
+            
+        if method == 'shap':
+                if target not in self.shap_values or self.X_train_for_shap is None:
+                    self.logger.warning(f"SHAP values not cached for '{target}'.")
+                    self.logger.warning("Call compute_shap_values(training_data) or use 'gain' method.")
+                    # Fallback to gain as before
+                    self.logger.warning("Falling back to 'gain' method.")
+                    method = 'gain'
+                else:
+                    # Use cached values
+                    self.logger.info(f"Using cached SHAP values for {target}.")
+                    shap_sum = np.abs(self.shap_values[target]).mean(axis=0)
+                    importance_df = pd.DataFrame({
+                        'feature': self.feature_names,
+                        'importance': shap_sum
+                    }).sort_values('importance', ascending=False)
         
+                    return importance_df.head(top_n)
+                                   
+                            
         if method == 'shap':
             # Use mean absolute SHAP values
             if target not in self.shap_explainers:
@@ -572,31 +627,31 @@ class SRPerformancePredictor:
         raise ValueError(f"Unknown method: {method}")
     
     def plot_shap_summary(self, 
-                         training_data: pd.DataFrame,
                          target: str,
                          save_path: Optional[Path] = None):
-        """Generate SHAP summary plot.
-        
+        """Generate SHAP summary plot from cached training data.
+    
         Args:
-            training_data: Training data with features
             target: Target to explain
             save_path: Optional path to save plot
         """
         if target not in self.shap_explainers:
             raise ValueError(f"No explainer for target '{target}'")
-        
-        X = training_data[self.feature_names].fillna(0.0)
-        explainer = self.shap_explainers[target]
-        
+    
+        if target not in self.shap_values or self.X_train_for_shap is None:
+            raise ValueError(
+                f"SHAP values or X_train not cached for target '{target}'. "
+                f"Run train() or call compute_shap_values(training_data) after load()."
+            )
+    
+        X = self.X_train_for_shap
+        shap_values = self.shap_values[target]
+    
         # Compute SHAP values
-        self.logger.info(f"Computing SHAP values for {len(X)} samples...")
-        shap_values = explainer.shap_values(X)
-        
+        self.logger.info(f"Generating SHAP summary plot for {target} from cache...")
+    
         # Create summary plot
         plt.figure(figsize=(10, 8))
-        shap.summary_plot(shap_values, X, feature_names=self.feature_names, show=False)
-        plt.title(f'SHAP Feature Importance: {target}')
-        plt.tight_layout()
         
         if save_path:
             plt.savefig(save_path, dpi=150, bbox_inches='tight')
@@ -668,6 +723,12 @@ class SRPerformancePredictor:
                 self.logger.info(f"Loaded {target} model from {model_path}")
             else:
                 self.logger.warning(f"Model file not found: {model_path}")
+
+        # Clear any cached SHAP values from a previous instance
+        self.shap_values = {}
+        self.X_train_for_shap = None
+        self.logger.info(f"✅ Loaded models from {load_dir}")
+        self.logger.info("Run compute_shap_values(training_data) to cache SHAP values for loaded models.")
         
         self.logger.info(f"✅ Loaded models from {load_dir}")
     

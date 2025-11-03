@@ -100,8 +100,8 @@ def run_single_test(params, n_iterations=30):
     """Run a single HDP-HMM test with specified iterations"""
     alpha, kappa, gamma = params
     try:
-        cmd = ['python3', 'hdp_hmm_single_test.py', str(alpha), str(kappa), str(gamma), str(n_iterations)]
-        
+        # 🚀 OPTIMIZATION: Use the much faster Variational Bayes script
+        cmd = ['python3', 'hdp_hmm_single_test_fast_vb.py', str(alpha), str(kappa), str(gamma), str(n_iterations)]        
         test_start = datetime.now()
         result = subprocess.run(cmd, capture_output=True, text=True, cwd='.')
         test_elapsed = (datetime.now() - test_start).total_seconds()

@@ -564,15 +564,15 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     # For now, use transition-aware composite scorer
                     scoring = create_transition_aware_scorer(
                         alpha=self.temporal_smoothing_alpha,
-                        accuracy_weight=0.8,
-                        stability_weight=0.2
+                        accuracy_weight=0.9,
+                        stability_weight=0.1
                     )
                 else:
                     # Use transition-aware composite scorer (single objective)
                     scoring = create_transition_aware_scorer(
                         alpha=self.temporal_smoothing_alpha,
-                        accuracy_weight=0.8,
-                        stability_weight=0.2
+                        accuracy_weight=0.9,
+                        stability_weight=0.1
                     )
                 
                 search_space = self.hpo_optimizer._get_default_search_space('catboost_regime')

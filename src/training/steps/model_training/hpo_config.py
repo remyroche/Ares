@@ -82,11 +82,6 @@ def derive_dependent_parameters(params: Dict[str, Any], model_type: str) -> Dict
             params['colsample_bylevel'] = params['sampling_rate']
             logger.debug(f"Tied subsample=colsample_bylevel={params['sampling_rate']}")
     
-    # 3. TCN: Derive batch_size from num_filters
-    if 'tcn' in model_type_lower or 'temporal' in model_type_lower:
-        if 'num_filters' in params and 'batch_size' not in params:
-            params['batch_size'] = params['num_filters']
-            logger.debug(f"Derived batch_size={params['batch_size']} from num_filters")
     
     # 4. GRU/LSTM: Derive batch_size from hidden_units
     if 'gru' in model_type_lower or 'lstm' in model_type_lower:
@@ -213,6 +208,76 @@ class ModelParameterGroups:
                 priority=2,
                 depends_on=["architecture"],
                 description="Training parameters"
+            )
+        ]
+
+@staticmethod
+    def get_tcn_groups() -> List[ParameterGroup]:
+        """
+        [DEPRECATED] Get parameter groups for TCN (Temporal Convolutional Network) models.
+        
+        Groups:
+        1. Architecture (priority 1)
+        2. Training (priority 2)
+        
+        Note: batch_size is auto-derived as batch_size = num_filters (for training stability)
+        """
+        return [
+            ParameterGroup(
+                name="architecture",
+                params={
+                    "num_filters": {"type": "categorical", "choices": [32, 64, 128, 256]},
+                    "num_layers": {"type": "int", "low": 2, "high": 6},
+                    "kernel_size": {"type": "int", "low": 2, "high": 5},
+                    "dilation_base": {"type": "int", "low": 2, "high": 4}
+                },
+                priority=1,
+                description="TCN architecture parameters"
+            ),
+            ParameterGroup(
+                name="training",
+                params={
+                    "dropout": {"type": "float", "low": 0.1, "high": 0.5},
+                    "learning_rate": {"type": "float", "low": 0.0001, "high": 0.01, "log": True}
+                    # batch_size removed - auto-derived from num_filters
+                },
+                priority=2,
+                depends_on=["architecture"],
+                description="Training parameters"
+            )
+        ]
+
+    @staticmethod
+    def get_depthwise_cnn_groups() -> List[ParameterGroup]:
+        """
+        Get parameter groups for DepthwiseSeparableCNNRegressor.
+        
+        Groups:
+        1. Architecture (priority 1)
+        2. Training (priority 2)
+        
+        Note: batch_size is optimized directly.
+        """
+        return [
+            ParameterGroup(
+                name="architecture",
+                params={
+                    "filters": {"type": "categorical", "choices": [32, 64, 128]},
+                    "kernel_size": {"type": "categorical", "choices": [2, 3, 5]},
+                },
+                priority=1,
+                description="Depthwise CNN architecture parameters"
+            ),
+            ParameterGroup(
+                name="training_regularization",
+                params={
+                    "dropout": {"type": "float", "low": 0.1, "high": 0.5},
+                    "learning_rate": {"type": "float", "low": 0.0001, "high": 0.01, "log": True},
+                    "batch_size": {"type": "categorical", "choices": [32, 64, 128, 256]}
+                },
+                priority=2,
+                depends_on=["architecture"],
+                description="Training and regularization parameters"
             )
         ]
     
@@ -683,8 +748,9 @@ class HPOOrchestrator:
             return self.param_groups_factory.get_lgbm_groups()
         elif 'catboost' in model_type_lower:
             return self.param_groups_factory.get_catboost_groups()
-        elif 'tcn' in model_type_lower or 'temporal' in model_type_lower:
-            return self.param_groups_factory.get_tcn_groups()
+        elif 'depthwise_cnn' in model_type_lower or 'temporal' in model_type_lower:
+            logger.info("Using HPO groups for DepthwiseSeparableCNNRegressor.")
+            return self.param_groups_factory.get_depthwise_cnn_groups()
         elif 'gru' in model_type_lower or 'lstm' in model_type_lower:
             return self.param_groups_factory.get_gru_groups()
         elif 'extratrees' in model_type_lower or 'extra' in model_type_lower:

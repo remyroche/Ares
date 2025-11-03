@@ -138,8 +138,11 @@ class UnifiedModelsTrainingStep(BaseStep):
             
             # Calculate COMPREHENSIVE dynamic configuration based on data and hardware
             if training_data is not None:
-                tprint_info("🚀 Calculating comprehensive dynamic configuration...")
-                
+                non_feature_cols = [col for col in training_data.columns if 'timestamp' in col.lower() or 'datetime' in col.lower()]
+                if non_feature_cols:
+                    tprint_info(f"Dropping non-feature timestamp columns: {non_feature_cols}")
+                    training_data = training_data.drop(columns=non_feature_cols)   
+                    
                 calculator = DynamicConfigCalculator()
                 dynamic_config = calculator.calculate_all_parameters(
                     total_samples=len(training_data),
@@ -997,7 +1000,8 @@ class UnifiedModelsTrainingStep(BaseStep):
                                     tprint_warning(f"⚠️ Attempting to align by using labeled_data as both features and targets...")
                                     
                                     # Use labeled_data for features (drop target columns)
-                                    feature_cols = [col for col in labeled_data.columns if col not in target_cols]
+                                    all_non_feature_cols = target_cols + [col for col in labeled_data.columns if 'timestamp' in col.lower() or 'datetime' in col.lower()]
+                                    feature_cols = [col for col in labeled_data.columns if col not in all_non_feature_cols]
                                     training_data = labeled_data[feature_cols]
                                     analyst_targets = labeled_data[target_cols[0]]
                                     
@@ -1022,7 +1026,32 @@ class UnifiedModelsTrainingStep(BaseStep):
                 )
                 tprint_error(error_msg)
                 raise ValueError(error_msg)
-            
+
+            tprint_info("Aligning features and targets...")
+            if training_data is not None and analyst_targets is not None:
+                common_index = training_data.index.intersection(analyst_targets.index)
+                if len(common_index) == 0:
+                    raise ValueError("Data alignment failed: No common index between features and analyst targets.")
+                if len(common_index) < len(training_data) or len(common_index) < len(analyst_targets):
+                    tprint_warning(f"Index mismatch: Aligning {len(training_data)} features and {len(analyst_targets)} analyst targets to {len(common_index)} common rows.")
+                
+                training_data = training_data.loc[common_index]
+                analyst_targets = analyst_targets.loc[common_index]
+                tprint_success(f"✅ Aligned features and analyst targets. New shape: {training_data.shape}")
+
+            if training_data is not None and tactician_targets is not None:
+                common_index = training_data.index.intersection(tactician_targets.index)
+                if len(common_index) == 0:
+                    raise ValueError("Data alignment failed: No common index between features and tactician targets.")
+                if len(common_index) < len(training_data) or len(common_index) < len(tactician_targets):
+                    tprint_warning(f"Index mismatch: Aligning {len(training_data)} features and {len(tactician_targets)} tactician targets to {len(common_index)} common rows.")
+                
+                training_data = training_data.loc[common_index]
+                tactician_targets = tactician_targets.loc[common_index]
+                if analyst_targets is not None: # Re-align analyst targets if tactician targets caused a change
+                    analyst_targets = analyst_targets.loc[common_index]
+                tprint_success(f"✅ Aligned features and tactician targets. New shape: {training_data.shape}")
+                
             # Log summary
             tprint_info("📊 Training Data Summary:")
             tprint_info(f"   Features: {training_data.shape[0]} samples × {training_data.shape[1]} features")

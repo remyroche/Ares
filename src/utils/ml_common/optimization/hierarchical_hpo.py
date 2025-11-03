@@ -16,6 +16,7 @@ import time
 from datetime import datetime
 import json
 from pathlib import Path
+from .execution_mode_adapter import adjust_hpo_params_for_mode, get_execution_mode
 
 # HPO imports
 try:
@@ -117,17 +118,34 @@ class HierarchicalHPO:
         if not OPTUNA_AVAILABLE:
             raise ImportError("Optuna is required for HPO functionality")
 
-        # Initialize results
-        self.phase1_result: Optional[HPOPhaseResult] = None
-        self.phase2_result: Optional[HPOPhaseResult] = None
-        self.final_models: Dict[str, Any] = {}
+        self.execution_mode = get_execution_mode()
 
-        # Initialize validation integration
-        self._initialize_validation_integration()
+        # Adjust Phase 1
+        (
+            self.config.phase1_config.n_trials, 
+            self.config.phase1_config.cv_folds
+        ) = adjust_hpo_params_for_mode(
+            n_trials=self.config.phase1_config.n_trials,
+            cv_folds=self.config.phase1_config.cv_folds,
+            execution_mode=self.execution_mode
+        )
+        if self.execution_mode != 'full':
+            self.logger.info(f"⚡ Mode {self.execution_mode.upper()}: Phase 1 n_trials={self.config.phase1_config.n_trials}, cv_folds={self.config.phase1_config.cv_folds}")
 
-        # Create cache directory
-        if self.config.enable_caching:
-            Path(self.config.cache_dir).mkdir(parents=True, exist_ok=True)
+        # Adjust Phase 2
+        (
+            self.config.phase2_config.n_trials, 
+            self.config.phase2_config.cv_folds
+        ) = adjust_hpo_params_for_mode(
+            n_trials=self.config.phase2_config.n_trials,
+            cv_folds=self.config.phase2_config.cv_folds,
+            execution_mode=self.execution_mode
+        )
+        if self.execution_mode != 'full':
+                self.logger.info(f"⚡ Mode {self.execution_mode.upper()}: Phase 2 n_trials={self.config.phase2_config.n_trials}, cv_folds={self.config.phase2_config.cv_folds}")
+        # --- END ADDED CODE ---
+
+        self.logger.info("✅ Hierarchical HPO initialized")
 
     def _initialize_validation_integration(self):
         """Initialize universal validation integration for HPO."""
@@ -331,10 +349,11 @@ class HierarchicalHPO:
                 pruner=MedianPruner() if phase_config.enable_pruning else None
             )
 
-            # Use fewer trials since we're fine-tuning around good parameters
-            n_trials = min(phase_config.n_trials // 3, 30)
-            timeout = min(phase_config.timeout_seconds // 3, 120) if phase_config.timeout_seconds else None
+            # Use adjusted trials and timeout (n_trials is already adjusted from __init__)
+            n_trials = phase_config.n_trials
+            timeout = phase_config.timeout_seconds    
 
+            
             # Define objective function
             def objective(trial):
                 return self._objective_function(

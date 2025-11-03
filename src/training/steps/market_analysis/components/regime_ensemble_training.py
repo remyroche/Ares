@@ -843,8 +843,8 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             # Use transition-aware scorer for HPO
             scoring = create_transition_aware_scorer(
                 alpha=self.temporal_smoothing_alpha,
-                accuracy_weight=0.8,
-                stability_weight=0.2
+                accuracy_weight=0.9,
+                stability_weight=0.1
             )
             
             fit_params = {}

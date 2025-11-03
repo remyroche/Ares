@@ -619,6 +619,10 @@ class UnifiedModelsTrainingStep(BaseStep):
                                 import catboost as cb
                                 model_class = cb.CatBoostRegressor
                                 is_classification = False
+                            elif 'depthwise_cnn' in model_type.lower(): # ADD THIS BLOCK
+                                from src.models.tcn_regressor import DepthwiseSeparableCNNRegressor
+                                model_class = DepthwiseSeparableCNNRegressor
+                                is_classification = False
                             else:
                                 # Skip models we don't support yet (TCN, GRU, etc.)
                                 tprint_info(f"Skipping HPO for {model_name} ({model_type}) - not yet supported")
@@ -706,6 +710,110 @@ class UnifiedModelsTrainingStep(BaseStep):
     # Legacy method removed - search spaces now defined in YAML files
     # See hpo_config.py for parameter group definitions
     
+    def _apply_light_mode_nn_optimizations(self, yaml_config: Dict[str, Any]) -> None:
+        """Apply aggressive model optimizations for light mode execution (10x lighter)."""
+        execution_mode = yaml_config.get('execution_mode', 'light')
+        
+        # Check if analyst_config exists
+        if 'analyst_config' in yaml_config:
+            base_models = yaml_config['analyst_config'].get('base_models', {})
+            
+            # Optimize TCN (Legacy)
+            if 'tcn' in base_models:
+                tcn_config = base_models['tcn']
+                tprint_warning(f"⚡ Applying {execution_mode.upper()} mode TCN optimizations (10x lighter)")
+                
+                # Drastically reduce TCN parameters for light mode
+                tcn_params = tcn_config.get('params', {})
+                tcn_params['num_filters'] = 32  # Reduced from 64
+                tcn_params['num_layers'] = 2  # Reduced from 4
+                tcn_params['epochs'] = 10  # Reduced from 50 (10x lighter)
+                tcn_params['batch_size'] = 128  # Increased from 64 (fewer iterations)
+                tcn_params['early_stopping_patience'] = 3  # Reduced from 7
+                tcn_params['use_autoencoder'] = False  # Disabled to save 25 epochs
+                tcn_params['autoencoder_epochs'] = 5  # Reduced from 25 if autoencoder is re-enabled
+                
+                # Disable TCN HPO in light mode
+                if 'hpo' in tcn_config:
+                    tcn_config['hpo']['enabled'] = False
+                
+                tprint_info(f"  TCN epochs: 50 → 10 (10x lighter)")
+                tprint_info(f"  TCN autoencoder: DISABLED (saves 25 epochs)")
+                tprint_info(f"  TCN HPO: DISABLED")
+            
+            # Optimize CatBoost
+            if 'catboost' in base_models:
+                catboost_config = base_models['catboost']
+                tprint_warning(f"⚡ Applying {execution_mode.upper()} mode CatBoost optimizations (10x lighter)")
+                
+                # Reduce CatBoost iterations for light mode
+                catboost_params = catboost_config.get('params', {})
+                catboost_params['iterations'] = 50  # Reduced from 500 (10x lighter)
+                catboost_params['depth'] = 4  # Reduced from 6
+                catboost_params['early_stopping_rounds'] = 10  # Reduced from 50
+                
+                # Disable CatBoost HPO in light mode
+                if 'hpo' in catboost_config:
+                    catboost_config['hpo']['enabled'] = False
+                
+                tprint_info(f"  CatBoost iterations: 500 → 50 (10x lighter)")
+                tprint_info(f"  CatBoost depth: 6 → 4")
+                tprint_info(f"  CatBoost HPO: DISABLED")
+            
+            # Optimize LGBM
+            if 'lgbm' in base_models:
+                lgbm_config = base_models['lgbm']
+                tprint_warning(f"⚡ Applying {execution_mode.upper()} mode LGBM optimizations (10x lighter)")
+                
+                # Reduce LGBM estimators for light mode
+                lgbm_params = lgbm_config.get('params', {})
+                lgbm_params['n_estimators'] = 100  # Reduced from 1000 (10x lighter)
+                lgbm_params['max_depth'] = 6  # Reduced from 8
+                
+                # Disable LGBM HPO in light mode
+                if 'hpo' in lgbm_config:
+                    lgbm_config['hpo']['enabled'] = False
+                
+                tprint_info(f"  LGBM n_estimators: 1000 → 100 (10x lighter)")
+                tprint_info(f"  LGBM max_depth: 8 → 6")
+                tprint_info(f"  LGBM HPO: DISABLED")
+        
+        # Check if tactician_config has GRU or DepthwiseCNN models
+        if 'tactician_config' in yaml_config:
+            base_models = yaml_config['tactician_config'].get('base_models', [])
+            for model in base_models:
+                model_name = model.get('model_name', 'Unknown')
+                
+                if model_name == 'StandaloneGRU':
+                    tprint_warning(f"⚡ Applying {execution_mode.upper()} mode GRU optimizations (10x lighter)")
+                    params = model.get('params', {})
+                    if 'training_params' in params:
+                        params['training_params']['epochs'] = 10  # Reduce epochs
+                        params['training_params']['batch_size'] = 128 # Increase batch size
+                    else:
+                        params['epochs'] = 10
+                        params['batch_size'] = 128
+                        
+                    if 'hpo' in model:
+                        model['hpo']['enabled'] = False
+                    tprint_info(f"  GRU epochs: Reduced to 10")
+                    tprint_info(f"  GRU HPO: DISABLED")
+
+                elif model_name == 'DepthwiseCNN':
+                    tprint_warning(f"⚡ Applying {execution_mode.upper()} mode DepthwiseCNN optimizations (10x lighter)")
+                    params = model.get('params', {})
+                    params['epochs'] = 10  # Reduced from 50
+                    params['batch_size'] = 128 # Increased
+                    params['filters'] = 32 # Reduced from 64
+                    params['early_stopping_patience'] = 3 # Reduced from 10
+                    
+                    if 'hpo' in model:
+                        model['hpo']['enabled'] = False
+                    
+                    tprint_info(f"  DepthwiseCNN epochs: 50 → 10 (10x lighter)")
+                    tprint_info(f"  DepthwiseCNN filters: 64 → 32")
+                    tprint_info(f"  DepthwiseCNN HPO: DISABLED")
+
     def _apply_dynamic_config(
         self,
         yaml_config: Dict[str, Any],
@@ -761,26 +869,33 @@ class UnifiedModelsTrainingStep(BaseStep):
                                 model_params['params'] = {}
                             
                             # Update common parameters
-                            model_type = model_params.get('model_type', '').lower()
+                            # Use model_name for matching, as model_type is for HPO
+                            model_type_key = model_name.lower() # Use model_name for key
                             
                             # Neural network models
-                            if any(nn in model_type for nn in ['gru', 'lstm', 'tcn', 'transformer']):
-                                model_params['params'].update({
+                            if any(nn in model_type_key for nn in ['gru', 'lstm', 'tcn', 'transformer', 'depthwisecnn', 'cnn']):
+                                nn_params_to_update = {
                                     'batch_size': dynamic_config.batch_size,
                                     'epochs': dynamic_config.epochs if dynamic_config.epochs > 0 else 100,
                                     'learning_rate': dynamic_config.learning_rate,
                                     'early_stopping_patience': dynamic_config.early_stopping_patience
-                                })
+                                }
+                                
+                                # Handle GRU's nested training_params
+                                if 'gru' in model_type_key and 'training_params' in model_params['params']:
+                                     model_params['params']['training_params'].update(nn_params_to_update)
+                                else:
+                                     model_params['params'].update(nn_params_to_update)
                                 
                                 # Add sequence length for time series models
-                                if any(ts in model_type for ts in ['gru', 'lstm', 'tcn']):
+                                if any(ts in model_type_key for ts in ['gru', 'lstm', 'tcn', 'depthwisecnn', 'cnn']):
                                     model_params['params']['sequence_length'] = dynamic_config.sequence_length
                             
                             # Tree-based models
-                            elif any(tree in model_type for tree in ['lgbm', 'catboost', 'xgboost']):
-                                if 'lgbm' in model_type:
+                            elif any(tree in model_type_key for tree in ['lgbm', 'catboost', 'xgboost', 'extratrees']):
+                                if 'lgbm' in model_type_key:
                                     model_params['params']['n_estimators'] = dynamic_config.n_estimators
-                                elif 'catboost' in model_type:
+                                elif 'catboost' in model_type_key:
                                     tprint_info("Applying CatBoost GPU (Apple M1) configuration...")
                                     model_params['params']['task_type'] = 'GPU'
                                     model_params['params']['devices'] = '0' # Use '0' for Apple M1 GPU
@@ -800,10 +915,10 @@ class UnifiedModelsTrainingStep(BaseStep):
                                 model_params['params'] = {}
                             
                             # Update common parameters
-                            model_type = model_params.get('model_type', '').lower()
+                            model_type_key = model_name.lower() # Use model_name for key
                             
                             # Neural network models
-                            if any(nn in model_type for nn in ['gru', 'lstm', 'tcn', 'transformer']):
+                            if any(nn in model_type_key for nn in ['gru', 'lstm', 'tcn', 'transformer', 'depthwisecnn', 'cnn']):
                                 model_params['params'].update({
                                     'batch_size': dynamic_config.batch_size,
                                     'epochs': dynamic_config.epochs if dynamic_config.epochs > 0 else 100,
@@ -812,20 +927,20 @@ class UnifiedModelsTrainingStep(BaseStep):
                                 })
                                 
                                 # Add sequence length for time series models
-                                if any(ts in model_type for ts in ['gru', 'lstm', 'tcn']):
+                                if any(ts in model_type_key for ts in ['gru', 'lstm', 'tcn', 'depthwisecnn', 'cnn']):
                                     model_params['params']['sequence_length'] = dynamic_config.sequence_length
                             
                             # Tree-based models
-                            elif any(tree in model_type for tree in ['lgbm', 'catboost', 'xgboost']):
-                                if 'lgbm' in model_type:
+                            elif any(tree in model_type_key for tree in ['lgbm', 'catboost', 'xgboost', 'extratrees']):
+                                if 'lgbm' in model_type_key:
                                     model_params['params']['n_estimators'] = dynamic_config.n_estimators
-                                elif 'catboost' in model_type:
+                                elif 'catboost' in model_type_key:
                                     model_params['params']['iterations'] = dynamic_config.iterations
                                     tprint_info("Applying CatBoost GPU (Apple M1) configuration...")
                                     model_params['params']['task_type'] = 'GPU'
                                     model_params['params']['devices'] = '0' # Use '0' for Apple M1 GPU
                                     
-                                    # Remove subsample if it exists, as it's not supported for GPU training
+                                    # Remove subsample if it exists, as it's not supported by CatBoost GPU
                                     if 'subsample' in model_params['params']:
                                         del model_params['params']['subsample']
                                         tprint_info("Removed 'subsample' param, not supported by CatBoost GPU.")

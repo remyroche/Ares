@@ -181,11 +181,36 @@ class FastTargetSelector:
                     continue
                 
                 # CV evaluation
-                from sklearn.model_selection import TimeSeriesSplit
-                tscv = TimeSeriesSplit(n_splits=self.n_splits)
                 cv_scores = []
+
+                if self.use_purged_cv:
+                    # --- Purged Cross-Validation Implementation ---
+                    # This prevents leakage from labels that depend on future data.
+                    # NOTE: You may need to adjust purge_pct and embargo_pct
+                    # based on your specific label's lookahead period.
+                    self.logger.debug(f"Using Purged CV for {target_col}")
+                    
+                    # Create the configuration for purged CV
+                    config = PurgedSplitConfig(
+                        n_splits=self.n_splits, 
+                        purge_pct=0.01,  # Purge 1% of training data after split
+                        embargo_pct=0.01 # Embargo 1% of data post-validation set
+                    )
+                    
+                    # Generate purged CV splits using the valid data's index
+                    cv_iterator = purged_time_series_splits(
+                        dates=X_valid.index, 
+                        config=config
+                    )
+                else:
+                    # --- Standard TimeSeriesSplit (Original Behavior) ---
+                    from sklearn.model_selection import TimeSeriesSplit
+                    self.logger.debug(f"Using standard TimeSeriesSplit for {target_col}")
+                    tscv = TimeSeriesSplit(n_splits=self.n_splits)
+                    cv_iterator = tscv.split(X_valid)
                 
-                for train_idx, val_idx in tscv.split(X_valid):
+                # Use the selected CV iterator
+                for train_idx, val_idx in cv_iterator:
                     model = lgb.LGBMRegressor(
                         n_estimators=100,
                         random_state=42,

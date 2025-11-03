@@ -325,7 +325,19 @@ try:
     print(f"      ❌ Removed {removed_rows} zero-heavy rows")
     feature_df_normalized = clean_rows
     print(f"      ✅ {len(clean_rows)} samples remain")
+    print("\n   🔧 Step 4: Applying PCA and caching reduced features...")
+    from sklearn.decomposition import PCA
     
+    N_COMPONENTS = 15 # Match the component count from your HMM config
+    
+    pca = PCA(n_components=N_COMPONENTS, random_state=42)
+    
+    # Fit PCA on the normalized data
+    feature_array_pca = pca.fit_transform(feature_df_normalized.values)
+    
+    print(f"      ✅ Data reduced from {feature_df_normalized.shape[1]} to {N_COMPONENTS} components")
+    print(f"      Total variance explained: {np.sum(pca.explained_variance_ratio_)*100:.2f}%")
+
     # Quick PCA analysis for dimensionality check
     print("\n   📈 Feature dimensionality check...")
     from sklearn.decomposition import PCA
@@ -345,7 +357,7 @@ try:
     
     # Convert to float32
     print("\n   🔧 Converting to float32 (50% memory savings)...")
-    feature_array_f32 = feature_df_normalized.values.astype(np.float32)
+    feature_array_f32 = feature_array_pca.astype(np.float32) # <-- NEW
     
     print(f"      Float64: {feature_df_normalized.values.nbytes / 1024:.2f} KB")
     print(f"      Float32: {feature_array_f32.nbytes / 1024:.2f} KB")
@@ -354,8 +366,8 @@ try:
     # Save features to cache
     cache_file = "hdp_hmm_features_cache.pkl"
     print(f"\n💾 Saving to cache: {cache_file}")
-    feature_df_f32 = pd.DataFrame(feature_array_f32, columns=feature_df_normalized.columns)
-    with open(cache_file, 'wb') as f:
+    pca_cols = [f'pca_{i}' for i in range(N_COMPONENTS)]
+    feature_df_f32 = pd.DataFrame(feature_array_f32, columns=pca_cols) # <-- NEW    with open(cache_file, 'wb') as f:
         pickle.dump(feature_df_f32, f, protocol=pickle.HIGHEST_PROTOCOL)
     
     cache_file_npy = "hdp_hmm_features_cache.npy"

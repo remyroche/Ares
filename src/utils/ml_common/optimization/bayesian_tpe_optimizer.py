@@ -13,6 +13,7 @@ import logging
 import time
 import itertools
 from dataclasses import dataclass
+from .execution_mode_adapter import adjust_hpo_params_for_mode, get_execution_mode
 
 try:
     import optuna
@@ -158,22 +159,38 @@ class OptimizationConfig:
 
     def __post_init__(self):
         """Apply execution mode-based optimizations."""
-        if self.execution_mode == "blank":
-            self.n_trials = min(self.n_trials, 25)
-            self.coarse_grid_trials = min(self.coarse_grid_trials, 10)
-            self.fine_grid_trials = min(self.fine_grid_trials, 15)
-            self.tpe_trials = min(self.tpe_trials, 20)
-            self.coarse_grid_points = min(self.coarse_grid_points, 3)
-            self.fine_grid_points = min(self.fine_grid_points, 3)
-        elif self.execution_mode == "blank":
-            # Blank mode: moderate trials for 180 days data
-            self.n_trials = min(self.n_trials, 15)
-            self.coarse_grid_trials = min(self.coarse_grid_trials, 8)
-            self.fine_grid_trials = min(self.fine_grid_trials, 7)
-            self.tpe_trials = min(self.tpe_trials, 15)
-            self.coarse_grid_points = 3
-            self.fine_grid_points = 3
-        # Full mode: keep default values
+    
+        # Get the mode if it's not a standard one
+        if self.execution_mode not in ['light', 'blank', 'full']:
+            self.execution_mode = get_execution_mode()
+    
+        # Use coarse_grid_points as a proxy for cv_folds, default to 5 if 0
+        base_grid_points = self.coarse_grid_points if self.coarse_grid_points > 0 else 5
+    
+        adjusted_n_trials, adjusted_grid_points = adjust_hpo_params_for_mode(
+            n_trials=self.n_trials,
+            cv_folds=base_grid_points, 
+            execution_mode=self.execution_mode
+        )
+    
+        # Apply reduction proportionally to trial types
+        if self.n_trials > 0 and adjusted_n_trials != self.n_trials:
+            ratio = adjusted_n_trials / self.n_trials
+    
+            self.coarse_grid_trials = max(1, int(self.coarse_grid_trials * ratio))
+            self.fine_grid_trials = max(1, int(self.fine_grid_trials * ratio))
+    
+            # Recalculate tpe_trials to match the adjusted total
+            current_grid_trials = self.coarse_grid_trials + self.fine_grid_trials if self.enable_staged_optimization else 0
+            self.tpe_trials = max(1, adjusted_n_trials - current_grid_trials)
+    
+            # Update the main n_trials to the new total
+            self.n_trials = self.coarse_grid_trials + self.fine_grid_trials + self.tpe_trials
+    
+        # Apply adjusted folds to grid points
+        if self.execution_mode in ['light', 'blank']:
+            self.coarse_grid_points = adjusted_grid_points
+            self.fine_grid_points = adjusted_grid_points
 
     def validate(self) -> None:
         """Validate configuration parameters."""

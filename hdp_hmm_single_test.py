@@ -59,9 +59,9 @@ try:
         
         # FIXED: Keep float64 for HDP-HMM (log-likelihoods prone to underflow with float32)
         # Cache may be float32, but convert back to float64 before HMM
-        if feature_array.dtype == np.float32:
-            feature_array = feature_array.astype(np.float64)
-        
+        if feature_array.dtype == np.float64:
+             feature_array = feature_array.astype(np.float32)        
+            
         # ENHANCEMENT: Load price data for economic CV calculation
         price_cache_file = "hdp_hmm_price_cache.pkl"
         forward_returns = None

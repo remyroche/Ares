@@ -116,6 +116,8 @@ from .grid_utils import (
     build_fine_grid_around_best
 )
 
+from .execution_mode_adapter import adjust_hpo_params_for_mode, get_execution_mode
+
 # Import custom_balanced_score for default HPO scoring
 try:
     from .shared_utils.evaluation_metrics import calculate_custom_balanced_score_for_hpo
@@ -336,18 +338,21 @@ class HierarchicalParameterOptimizer:
         self.verbose = verbose
         self.use_custom_balanced_score = use_custom_balanced_score
         
-        # Log if custom_balanced_score is being used
-        if self.scoring_metric == 'custom_balanced_score' and self.use_custom_balanced_score:
-            if CUSTOM_BALANCED_SCORE_AVAILABLE:
-                logger.info("✅ Using custom_balanced_score for HPO (recommended for ML trading models)")
-                logger.info("   Balances: Financial (60%), Statistical (40%)")
-                logger.info("   Financial: Via pareto.py with non-linear scaling (log/sigmoid/power)")
-                logger.info("              - Profit factor (PnL), Sharpe ratio, Win rate, Max drawdown")
-                logger.info("   Statistical: F1 score (50%), Accuracy (25%), R² (25%)")
-                logger.info("   Optimization: Leverages pareto.py's scalarize_financial_goals()")
-            else:
-                logger.warning("⚠️  custom_balanced_score requested but not available, using default objective")
-                self.use_custom_balanced_score = False
+        self.execution_mode = get_execution_mode()
+
+        # Adjust cv_folds and final_refinement_trials
+        self.final_refinement_trials, self.cv_folds = adjust_hpo_params_for_mode(
+            n_trials=self.final_refinement_trials,
+            cv_folds=self.cv_folds,
+            execution_mode=self.execution_mode
+        )
+
+        if self.execution_mode != 'full':
+            logger.info(f"⚡ Mode {self.execution_mode.upper()}: cv_folds={self.cv_folds}, final_refinement_trials={self.final_refinement_trials}")
+
+        # Adjust the stage_configs
+        self.stage_configs = stage_configs or self._create_default_stage_configs()
+        self._adjust_stage_configs() # Call new method to adjust configs
         
         # Internal state
         self.optimized_params: Dict[str, Any] = {}  # Accumulated best parameters
@@ -472,7 +477,40 @@ class HierarchicalParameterOptimizer:
             if group.depends_on:
                 logger.info(f"     Depends on: {group.depends_on}")
         logger.info("=" * 80)
+
+
+    def _adjust_stage_configs(self):
+        """Adjust n_trials and grid_points in stage configs based on execution mode."""
+        if self.execution_mode == 'full':
+            return
     
+        logger.info(f"⚡ Mode {self.execution_mode.upper()}: Adjusting HPO stage configurations...")
+        for stage, config in self.stage_configs.items():
+    
+            # Use grid_points as a base for cv_folds adjustment
+            base_folds = config.grid_points if stage in [OptimizationStage.COARSE_GRID, OptimizationStage.FINE_GRID] else 5 
+    
+            adjusted_trials, adjusted_folds = adjust_hpo_params_for_mode(
+                n_trials=config.n_trials,
+                cv_folds=base_folds,
+                execution_mode=self.execution_mode
+            )
+    
+            if config.n_trials != adjusted_trials:
+                logger.info(f"   Stage {stage.value}: n_trials adjusted from {config.n_trials} -> {adjusted_trials}")
+                config.n_trials = adjusted_trials
+    
+            if stage in [OptimizationStage.COARSE_GRID, OptimizationStage.FINE_GRID]:
+                if config.grid_points != adjusted_folds:
+                    logger.info(f"   Stage {stage.value}: grid_points adjusted from {config.grid_points} -> {adjusted_folds}")
+                    config.grid_points = adjusted_folds
+    
+            # Adjust n_startup_trials proportionally
+            if hasattr(config, 'n_startup_trials') and config.n_trials > 0:
+                original_trials = self._create_default_stage_configs()[stage].n_trials
+                ratio = adjusted_trials / original_trials if original_trials > 0 else 0
+                config.n_startup_trials = max(1, int(config.n_startup_trials * ratio))
+  
     def optimize(
         self,
         X_train: np.ndarray,

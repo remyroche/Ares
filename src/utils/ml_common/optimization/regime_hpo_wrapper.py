@@ -27,6 +27,7 @@ from .hpo_utils import HyperparameterOptimization, optimize_hyperparameters
 from .hierarchical_hpo import HierarchicalHPO, HPOPhaseConfig, HPOPhaseResult
 from ..validation.unified_cv import perform_cross_validation
 from ..ensembles.oof_stacking_ensemble_manager import OOFStackingEnsembleManager
+from .execution_mode_adapter import adjust_hpo_params_for_mode, get_execution_mode
 
 # Import regime configurations
 import sys
@@ -134,7 +135,39 @@ class RegimeHPOWrapper:
         # Load configurations
         self.regime_base_config = self._load_regime_base_config(regime_base_config_path)
         self.regime_metamodel_config = self._load_regime_metamodel_config(regime_metamodel_config_path)
-        self.hpo_config = hpo_config or RegimeHPOConfig()
+        self.execution_mode = get_execution_mode()
+    
+        # Adjust HPO parameters
+        (
+            self.hpo_config.base_model_n_trials, 
+            self.hpo_config.base_model_cv_folds
+        ) = adjust_hpo_params_for_mode(
+            n_trials=self.hpo_config.base_model_n_trials,
+            cv_folds=self.hpo_config.base_model_cv_folds,
+            execution_mode=self.execution_mode
+        )
+    
+        (
+            self.hpo_config.meta_model_n_trials, 
+            self.hpo_config.meta_model_cv_folds
+        ) = adjust_hpo_params_for_mode(
+            n_trials=self.hpo_config.meta_model_n_trials,
+            cv_folds=self.hpo_config.meta_model_cv_folds,
+            execution_mode=self.execution_mode
+        )
+    
+        # Adjust meta_feature_n_trials (using n_trials logic)
+        self.hpo_config.meta_feature_n_trials, _ = adjust_hpo_params_for_mode(
+            n_trials=self.hpo_config.meta_feature_n_trials,
+            cv_folds=5, # Pass a placeholder
+            execution_mode=self.execution_mode
+        )
+    
+        if self.execution_mode != 'full':
+            self.logger.info(f"⚡ Mode {self.execution_mode.upper()}: HPO parameters adjusted.")
+            self.logger.info(f"   Base: n_trials={self.hpo_config.base_model_n_trials}, cv_folds={self.hpo_config.base_model_cv_folds}")
+            self.logger.info(f"   Meta: n_trials={self.hpo_config.meta_model_n_trials}, cv_folds={self.hpo_config.meta_model_cv_folds}")
+            self.logger.info(f"   MetaFeat: n_trials={self.hpo_config.meta_feature_n_trials}")
 
         # Initialize HPO infrastructure
         self.hpo_utils = HyperparameterOptimization(

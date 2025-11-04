@@ -2710,7 +2710,8 @@ class ClusterQualityAssessor:
     
     def generate_markdown_report(self, metrics: ClusterQualityMetrics, 
                                  symbol: str = "UNKNOWN", 
-                                 output_dir: str = "outcomes") -> Optional[str]:
+                                 output_dir: str = "outcomes",
+                                 method_specific_config: Optional[Dict[str, Any]] = None) -> Optional[str]: # <-- 1. ADDED
         """
         Generate a comprehensive markdown report of cluster quality metrics.
         
@@ -2718,6 +2719,7 @@ class ClusterQualityAssessor:
             metrics: ClusterQualityMetrics object
             symbol: Trading symbol or identifier
             output_dir: Output directory for the report (default: outcomes/)
+            method_specific_config: Optional dict of method-specific HPs to include in the report.
             
         Returns:
             Path to the generated report file, or None if failed
@@ -2735,7 +2737,7 @@ class ClusterQualityAssessor:
             tprint_info(f"📝 Generating markdown report: {report_path}")
             
             # Build markdown content
-            md_content = self._build_markdown_content(metrics, symbol)
+            md_content = self._build_markdown_content(metrics, symbol, method_specific_config)
             
             # Write to file
             with open(report_path, 'w', encoding='utf-8') as f:
@@ -2748,7 +2750,8 @@ class ClusterQualityAssessor:
             tprint_error(f"❌ Failed to generate markdown report: {e}")
             return None
     
-    def _build_markdown_content(self, metrics: ClusterQualityMetrics, symbol: str) -> str:
+    def _build_markdown_content(self, metrics: ClusterQualityMetrics, symbol: str,
+        method_specific_config: Optional[Dict[str, Any]] = None) -> str:
         """Build the markdown content for the report."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         # *** NEW: Get target return for report ***
@@ -2768,15 +2771,23 @@ This report provides a comprehensive assessment of cluster quality for {symbol}.
 
 ### Key Metrics
 
-| Metric | Value | Status |
-|--------|-------|--------|
-| **Number of Regimes** | {metrics.n_regimes} | {'✅' if metrics.n_regimes >= 2 else '⚠️'} |
-| **Noise Ratio** | {metrics.noise_ratio:.2%} | {'✅' if metrics.noise_ratio < QualityThresholds.MAX_NOISE_RATIO else '⚠️'} |
-| **Silhouette Score** | {metrics.silhouette_score:.4f if metrics.silhouette_score else 'N/A'} | {'✅' if metrics.silhouette_score and metrics.silhouette_score > QualityThresholds.MIN_SILHOUETTE else '⚠️'} |
-| **Davies-Bouldin Index** | {metrics.davies_bouldin_score:.4f if metrics.davies_bouldin_score else 'N/A'} | {'✅' if metrics.davies_bouldin_score and metrics.davies_bouldin_score < QualityThresholds.MAX_DBI else '⚠️'} |
-| **Calinski-Harabasz Index** | {metrics.calinski_harabasz_score:.2f if metrics.calinski_harabasz_score else 'N/A'} | {'✅' if metrics.calinski_harabasz_score and metrics.calinski_harabasz_score > QualityThresholds.MIN_CH else '⚠️'} |
-| **Balance Score** | {metrics.balance_score:.4f if metrics.balance_score else 'N/A'} | {'✅' if metrics.balance_score and metrics.balance_score > QualityThresholds.QUALITY_GOOD else '⚠️'} |
+# --- 5. START: NEW MODULAR SECTION ---
+        # Dynamically add the method-specific configuration table if provided
+        if method_specific_config:
+            md += "\n---\n\n## Clustering Method Configuration\n\n"
+            md += "| Parameter | Value |\n"
+            md += "|---|---|\n"
+            for key, value in method_specific_config.items():
+                # Format common values nicely
+                if isinstance(value, float):
+                    value_str = f"{value:.4f}"
+                else:
+                    value_str = str(value)
+                md += f"| {key} | {value_str} |\n"
+            md += "\n"
+        # --- END: NEW MODULAR SECTION ---
 
+        md += """
 ---
 
 ## Clustering Metrics

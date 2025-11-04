@@ -509,17 +509,17 @@ class StickyFiniteHMMClusterer:
         if self.config.enable_pca and data.shape[1] > self.config.pca_components:
             tprint_info(f"📊 Applying PCA: {data.shape[1]} → {self.config.pca_components}")
             
-            if self.config.pca_variance_threshold < 1.0:
+            if self.config.pca_components > 1.0:  # Prioritize integer component count
+                self.pca = PCA(
+                    n_components=int(self.config.pca_components),
+                    random_state=self.config.random_state
+                )
+            else:  # Fallback to variance threshold if pca_components is not set (or < 1)
                 self.pca = PCA(
                     n_components=self.config.pca_variance_threshold,
                     random_state=self.config.random_state
-                )
-            else:
-                self.pca = PCA(
-                    n_components=self.config.pca_components,
-                    random_state=self.config.random_state
-                )
-            
+                )      
+                
             data_processed = self.pca.fit_transform(data_scaled)
             feature_names = [f'pca_{i+1}' for i in range(data_processed.shape[1])]
             

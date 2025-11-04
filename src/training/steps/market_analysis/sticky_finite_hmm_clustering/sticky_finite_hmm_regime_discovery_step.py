@@ -803,7 +803,7 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
             # 4. Generate markdown report using quality assessor
             tprint_info("   Generating markdown report...")
             report_path = self._generate_markdown_report(
-                quality_assessment, symbol, outcomes_dir
+                results, quality_assessment, symbol, outcomes_dir
             )
             
             tprint_success(f"✅ All reports generated in: {outcomes_dir}")
@@ -1028,9 +1028,10 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
         
         df.to_csv(csv_path, index=False)
         tprint_success(f"✅ ELBO history saved: {csv_path.absolute()}")
-    
+        
     def _generate_markdown_report(
         self,
+        results: Dict[str, Any],  # <-- ADD 'results'
         quality_assessment: Dict[str, Any],
         symbol: str,
         output_dir: Path
@@ -1053,14 +1054,44 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
             )
             
             if report_path:
-                # Convert to Path if string
-                if isinstance(report_path, str):
-                    report_path = Path(report_path)
-                tprint_success(f"✅ Markdown report generated: {report_path.absolute()}")
-            else:
-                tprint_info("ℹ️  Markdown report not generated (metrics may be incomplete)")
+                # --- START: FULFILLS REQUEST #5 ---
+                try:
+                    # Extract PCA loadings from the results metadata
+                    pca_loadings = results.get('metadata', {}).get('pca_loadings')
+                    
+                    if pca_loadings:
+                        # Convert to Path if string
+                        if isinstance(report_path, str):
+                            report_path = Path(report_path)
+                        
+                        # Create markdown string for PCA loadings
+                        md_string = "\n\n---\n\n## PCA Component Analysis\n\n"
+                        md_string += "Top 5 features contributing to each Principal Component:\n\n"
+                        
+                        for component, features in pca_loadings.items():
+                            md_string += f"### {component.upper()}\n"
+                            md_string += "| Feature | Loading |\n"
+                            md_string += "|---|---|\n"
+                            for feature, loading in features.items():
+                                md_string += f"| `{feature}` | {loading:.4f} |\n"
+                            md_string += "\n"
+                        
+                        # Append this string to the generated report
+                        with open(report_path, "a", encoding="utf-8") as f:
+                            f.write(md_string)
+                        
+                        tprint_success(f"✅ Appended PCA loadings to markdown report: {report_path.absolute()}")
+                
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to append PCA loadings to report: {e}")
+                # --- END: FULFILLS REQUEST #5 ---
+
+            if report_path and not isinstance(report_path, Path):
+                report_path = Path(report_path)
+
+            tprint_success(f"✅ Markdown report generated: {report_path.absolute() if report_path else 'N/A'}")
             
-            return report_path
+            return str(report_path) if report_path else None
             
         except Exception as e:
             tprint_warning(f"⚠️ Markdown report generation failed: {e}")

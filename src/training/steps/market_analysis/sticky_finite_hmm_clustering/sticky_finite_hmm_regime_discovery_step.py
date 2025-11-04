@@ -41,6 +41,11 @@ from src.training.steps.market_analysis.clusters.cluster_quality_assessor import
     create_cluster_quality_assessor
 )
 
+from src.training.steps.market_analysis.clusters.clustering_optimization_goals import (
+    DEFAULT_CLUSTERING_GOALS,
+    DEFAULT_OPTIMIZATION_TARGETS
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -464,8 +469,8 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
                 tpe_trials,
                 timeout,
                 3,  # cv_folds
-                None,  # optimization_goals
-                None,  # optimization_targets
+                DEFAULT_CLUSTERING_GOALS,  # optimization_goals
+                DEFAULT_OPTIMIZATION_TARGETS,  # optimization_targets
                 42,  # random_state
                 cache_dir,
                 True  # verbose

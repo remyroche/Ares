@@ -807,6 +807,19 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
             
             # 4. Generate markdown report using quality assessor
             tprint_info("   Generating markdown report...")
+
+            config_params = results.get('metadata', {}).get('config', {})
+            hmm_params = {
+                "Method": "StickyFiniteHMM",
+                "K (States)": config_params.get('K', 'N/A'),
+                "kappa (Stickiness)": config_params.get('kappa', 'N/A'),
+                "base_alpha (Concentration)": config_params.get('base_alpha', 'N/A'),
+                "Learning Rate (lr)": config_params.get('lr', 'N/A'),
+                "Iterations": config_params.get('num_iters', 'N/A'),
+                "PCA Components": config_params.get('pca_components', 'N/A'),
+                "Final ELBO": results.get('final_elbo', 'N/A')
+            }
+            
             report_path = self._generate_markdown_report(
                 results, quality_assessment, symbol, outcomes_dir
             )
@@ -1039,7 +1052,8 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
         results: Dict[str, Any],  # <-- ADD 'results'
         quality_assessment: Dict[str, Any],
         symbol: str,
-        output_dir: Path
+        output_dir: Path,
+        hmm_params: Dict[str, Any]
     ) -> Optional[str]:
         """Generate comprehensive markdown report using quality assessor."""
         try:
@@ -1048,14 +1062,14 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
                 ClusterQualityMetrics
             )
             
-            # Create metrics object from dict
             metrics_obj = ClusterQualityMetrics(**quality_assessment)
             
             # Generate markdown report
             report_path = self.quality_assessor.generate_markdown_report(
                 metrics=metrics_obj,
                 symbol=f"{symbol}_StickyFiniteHMM",
-                output_dir=str(output_dir)
+                output_dir=str(output_dir),
+                method_specific_config=hmm_params  # <-- 3. PASS TO ASSESSOR
             )
             
             if report_path:

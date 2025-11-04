@@ -31,6 +31,7 @@ from sklearn.cluster import KMeans
 import logging
 import time
 import tracemalloc
+import hashlib
 
 from src.utils.tprint import (
     tprint_info, tprint_success, tprint_warning, tprint_error,
@@ -66,6 +67,8 @@ from src.training.steps.market_analysis.clusters.clustering_optimization_goals i
     ClusteringOptimizationGoals,
     OptimizationTargets
 )
+
+PCA_CACHE = {}
 
 
 @dataclass
@@ -227,6 +230,7 @@ class StickyFiniteHMMClusterer:
         # Preprocessing
         self.scaler = None
         self.pca = None
+        self.pca_loadings: Optional[Dict[str, Any]] = None
         
         # Training history
         self.elbo_history = []
@@ -386,6 +390,7 @@ class StickyFiniteHMMClusterer:
                 metadata={
                     'config': self.config.__dict__,
                     'convergence_info': self.convergence_info,
+                    'pca_loadings': self.pca_loadings,
                     'preprocessing': {
                         'scaled': True,
                         'pca_applied': self.pca is not None
@@ -505,31 +510,68 @@ class StickyFiniteHMMClusterer:
         self.scaler = StandardScaler()
         data_scaled = self.scaler.fit_transform(data)
         
-        # PCA
-        if self.config.enable_pca and data.shape[1] > self.config.pca_components:
-            tprint_info(f"📊 Applying PCA: {data.shape[1]} → {self.config.pca_components}")
+        if not self.config.enable_pca or data.shape[1] <= self.config.pca_components:
+            tprint_info("✅ Skipping PCA (disabled or not enough features)")
+            data_processed = data_scaled
+            processed_feature_names = original_feature_names
+            self.pca_loadings = None # Ensure pca_loadings is set
+        else:
+            # Create a stable hash of the scaled data to use as a cache key
+            data_hash = hashlib.sha256(data_scaled.tobytes()).hexdigest()
             
-            if self.config.pca_components > 1.0:  # Prioritize integer component count
+            # Check if we have computed PCA for this data hash
+            if data_hash not in PCA_CACHE:
+                tprint_info(f"📊 New data hash ({data_hash[:7]}...): Computing and caching PCA models [10, 15, 20]")
+                PCA_CACHE[data_hash] = {}
+                
+                # Define component numbers to cache
+                n_components_list = [10, 15, 20]
+                
+                for n in n_components_list:
+                    if data.shape[1] > n:
+                        try:
+                            pca_model = PCA(
+                                n_components=n,
+                                random_state=self.config.random_state
+                            )
+                            pca_model.fit(data_scaled)
+                            loadings = self._get_pca_loadings(pca_model, original_feature_names, n)
+                            PCA_CACHE[data_hash][n] = (pca_model, loadings)
+                        except Exception as e:
+                            tprint_error(f"❌ Failed to compute PCA for n={n}: {e}")
+                
+            # Now, select the correct PCA model from the cache
+            n_comps_to_use = int(self.config.pca_components)
+            
+            if n_comps_to_use not in PCA_CACHE[data_hash]:
+                # This happens if user requested a non-cached number (e.g., 12)
+                # We'll compute and use it, but not cache it permanently
+                tprint_warning(f"⚠️ PCA n={n_comps_to_use} not in cache. Computing ad-hoc.")
                 self.pca = PCA(
-                    n_components=int(self.config.pca_components),
+                    n_components=n_comps_to_use,
                     random_state=self.config.random_state
                 )
-            else:  # Fallback to variance threshold if pca_components is not set (or < 1)
-                self.pca = PCA(
-                    n_components=self.config.pca_variance_threshold,
-                    random_state=self.config.random_state
-                )      
-                
-            data_processed = self.pca.fit_transform(data_scaled)
-            feature_names = [f'pca_{i+1}' for i in range(data_processed.shape[1])]
+                data_processed = self.pca.fit_transform(data_scaled)
+                self.pca_loadings = self._get_pca_loadings(self.pca, original_feature_names, n_comps_to_use)
+            else:
+                # Use the cached model
+                tprint_info(f"✅ Using cached PCA model for n={n_comps_to_use}")
+                self.pca, self.pca_loadings = PCA_CACHE[data_hash][n_comps_to_use]
+                data_processed = self.pca.transform(data_scaled)
             
+            processed_feature_names = [f'pca_{i+1}' for i in range(data_processed.shape[1])]
             explained_var = np.sum(self.pca.explained_variance_ratio_)
-            tprint_info(f"✅ PCA: {explained_var:.2%} variance explained")
-        else:
-            data_processed = data_scaled
-        
+            
+            tprint_info(f"✅ PCA (n={n_comps_to_use}): {explained_var:.2%} variance explained")
+
+            # --- START: FULFILLS REQUEST #4 ---
+            tprint_info(f"🧬 PCA Component Loadings (Top 5 features for n={n_comps_to_use}):")
+            tprint_structured(self.pca_loadings, level="INFO")
+            # --- END: FULFILLS REQUEST #4 ---
+
         tprint_success(f"✅ Preprocessed shape: {data_processed.shape}")
-        return data_processed, feature_names
+        return data_processed, processed_feature_names
+
     
     def _init_from_kmeans(self, data: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -1038,7 +1080,28 @@ class StickyFiniteHMMClusterer:
             state_durations[k] = np.mean(durations) if durations else 0.0
         
         return state_durations
+
+    def _get_pca_loadings(self, pca_model: PCA, feature_names: List[str], n_components: int) -> Dict[str, Dict[str, float]]:
+    """Helper to create a human-readable dictionary of PCA component loadings."""
+        loadings = {}
+        try:
+            for i in range(n_components):
+                component_name = f'pca_{i+1}'
+                component_loadings = pca_model.components_[i]
+                
+                # Get top 5 features for this component
+                top_feature_indices = np.argsort(np.abs(component_loadings))[::-1][:5]
+                top_features = {
+                    feature_names[j]: float(f"{component_loadings[j]:.4f}") 
+                    for j in top_feature_indices
+                }
+                loadings[component_name] = top_features
+            return loadings
+        except Exception as e:
+            tprint_warning(f"⚠️ Could not generate PCA loadings: {e}")
+            return {"error": "Could not generate loadings."}
     
+
     def _calculate_metrics(
         self,
         data: np.ndarray,

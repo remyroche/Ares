@@ -10,7 +10,7 @@ Inherits from BaseStep for standardized artifact management and autonomous execu
 import asyncio
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
 try:
@@ -461,7 +461,7 @@ class HDPHMMRegimeDiscoveryStep(BaseStep):
         exchange: str,
         timeframe: str,
         config: Dict[str, Any]
-    ) -> None:
+    ) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
         """
         Save clustering results to artifacts.
         
@@ -471,6 +471,9 @@ class HDPHMMRegimeDiscoveryStep(BaseStep):
             exchange: Exchange name
             timeframe: Timeframe
             config: Configuration dictionary
+            
+        Returns:
+            Tuple of (labels_df, probabilities_df)
         """
         tprint("💾 Saving HDP-HMM results to artifacts...", "INFO")
         

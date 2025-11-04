@@ -2426,32 +2426,11 @@ class SRParameterOptimizationStep(BaseStep):
 
     def _detect_fractal_levels(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
                               volume: Optional[np.ndarray], params: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Detect fractal-based SR levels."""
-        sr_levels = []
-        fractal_period = params.get('fractal_period', 5)
-        
-        for i in range(fractal_period, len(high) - fractal_period):
-            # Check for fractal high (resistance)
-            if self._is_fractal_high(high, i, fractal_period):
-                level = self._analyze_sr_level(
-                    high, low, close, volume, i, 'resistance',
-                    params.get('min_touches', 2), params.get('strength_threshold', 0.5),
-                    params.get('distance_threshold', 0.01), 'fractal'
-                )
-                if level:
-                    sr_levels.append(level)
-            
-            # Check for fractal low (support)
-            if self._is_fractal_low(low, i, fractal_period):
-                level = self._analyze_sr_level(
-                    high, low, close, volume, i, 'support',
-                    params.get('min_touches', 2), params.get('strength_threshold', 0.5),
-                    params.get('distance_threshold', 0.01), 'fractal'
-                )
-                if level:
-                    sr_levels.append(level)
-        
-        return sr_levels
+        """
+        DEPRECATED: Fractal-based SR detection has been removed.
+        This method now returns an empty list for backward compatibility.
+        """
+        return []
 
     def _detect_consolidation_levels(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
                                    volume: Optional[np.ndarray], params: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -2723,29 +2702,9 @@ class SRParameterOptimizationStep(BaseStep):
         
         return local_min_idx
 
-    def _is_fractal_high(self, high: np.ndarray, idx: int, period: int) -> bool:
-        """Check if index is a fractal high."""
-        if idx < period or idx >= len(high) - period:
-            return False
-        
-        # Check if current high is higher than all highs in the period
-        for i in range(idx - period, idx + period + 1):
-            if i != idx and high[i] >= high[idx]:
-                return False
-        
-        return True
-
-    def _is_fractal_low(self, low: np.ndarray, idx: int, period: int) -> bool:
-        """Check if index is a fractal low."""
-        if idx < period or idx >= len(low) - period:
-            return False
-        
-        # Check if current low is lower than all lows in the period
-        for i in range(idx - period, idx + period + 1):
-            if i != idx and low[i] <= low[idx]:
-                return False
-        
-        return True
+    # NOTE: Fractal helper methods removed - fractals no longer used for SR detection
+    # def _is_fractal_high - REMOVED
+    # def _is_fractal_low - REMOVED
 
     def _analyze_sr_level(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, 
                          volume: Optional[np.ndarray], idx: int, level_type: str,

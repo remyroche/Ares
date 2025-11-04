@@ -98,6 +98,7 @@ class TrainingResult:
     training_time: float = 0.0
     validation_metrics: Dict[str, float] = field(default_factory=dict)
     feature_importance: Optional[Dict[str, float]] = None
+    predictions: Optional[np.ndarray] = None
     error_message: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 

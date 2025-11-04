@@ -62,21 +62,42 @@ class ShapVisualizer:
         """
         self.logger.info("🎨 Generating SHAP visualizations...")
         
+        # Validate inputs
+        if shap_values is None or len(shap_values) == 0:
+            self.logger.warning("⚠️ SHAP values are empty, skipping visualization")
+            return
+        
+        if X is None or len(X) == 0:
+            self.logger.warning("⚠️ Feature matrix is empty, skipping visualization")
+            return
+        
         # 1. Summary plot (global importance)
-        self.logger.info("   Creating summary plot...")
-        self.summary_plot(shap_values, X, feature_names, prefix)
+        try:
+            self.logger.info("   Creating summary plot...")
+            self.summary_plot(shap_values, X, feature_names, prefix)
+        except Exception as e:
+            self.logger.warning(f"   Failed to create summary plot: {e}")
         
         # 2. Bar plot (mean absolute SHAP)
-        self.logger.info("   Creating bar plot...")
-        self.bar_plot(shap_values, feature_names, prefix)
+        try:
+            self.logger.info("   Creating bar plot...")
+            self.bar_plot(shap_values, feature_names, prefix)
+        except Exception as e:
+            self.logger.warning(f"   Failed to create bar plot: {e}")
         
         # 3. Dependence plots for top features
-        self.logger.info("   Creating dependence plots...")
-        self.dependence_plots(shap_values, X, feature_names, prefix, top_n=10)
+        try:
+            self.logger.info("   Creating dependence plots...")
+            self.dependence_plots(shap_values, X, feature_names, prefix, top_n=10)
+        except Exception as e:
+            self.logger.warning(f"   Failed to create dependence plots: {e}")
         
         # 4. Force plots (sample of predictions)
-        self.logger.info("   Creating force plots...")
-        self.force_plots(explainer, X, prefix, n_samples=5)
+        try:
+            self.logger.info("   Creating force plots...")
+            self.force_plots(explainer, X, prefix, n_samples=5)
+        except Exception as e:
+            self.logger.warning(f"   Failed to create force plots: {e}")
         
         self.logger.info(f"✅ SHAP visualizations saved to {self.output_dir}")
     
@@ -89,6 +110,15 @@ class ShapVisualizer:
     ):
         """Generate SHAP summary plot."""
         try:
+            # Validate inputs
+            if shap_values is None or len(shap_values) == 0:
+                self.logger.warning("SHAP values are empty, skipping summary plot")
+                return
+            
+            if X is None or len(X) == 0:
+                self.logger.warning("Feature matrix is empty, skipping summary plot")
+                return
+            
             plt.figure(figsize=(12, 10))
             shap.summary_plot(
                 shap_values,

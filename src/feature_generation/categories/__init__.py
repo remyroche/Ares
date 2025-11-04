@@ -86,6 +86,15 @@ from .volatility import (
 from .trend import TrendFeatureGenerator
 from .oscillator import OscillatorFeatureGenerator
 from .support_resistance import SupportResistanceFeatureGenerator
+from .custom_support_resistance import (
+    SRStrengthGenerator,
+    SRDistanceGenerator,
+    SRTouchCountGenerator,
+    SRQualityGenerator,
+    VolumeWeightedSRGenerator,
+    DynamicSRGenerator,
+    create_default_custom_sr_generators
+)
 from .candlestick_pattern import CandlestickPatternFeatureGenerator
 
 # New consolidated categories
@@ -258,6 +267,14 @@ __all__ = [
     "TrendFeatureGenerator",
     "OscillatorFeatureGenerator",
     "SupportResistanceFeatureGenerator",
+    # Custom SR features (disabled by default)
+    "SRStrengthGenerator",
+    "SRDistanceGenerator",
+    "SRTouchCountGenerator",
+    "SRQualityGenerator",
+    "VolumeWeightedSRGenerator",
+    "DynamicSRGenerator",
+    "create_default_custom_sr_generators",
     "CandlestickPatternFeatureGenerator",
 
     # New consolidated categories

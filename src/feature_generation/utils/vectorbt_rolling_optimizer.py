@@ -1698,7 +1698,7 @@ class VectorBTRollingOptimizer:
             self._memory_pool['medium_array'] = np.empty(1000, dtype=np.float64)
             self._memory_pool['large_array'] = np.empty(10000, dtype=np.float64)
 
-            tprint_success("✅ VectorBT memory pool initialized")
+            tprint_debug("✅ VectorBT memory pool initialized")
 
         except Exception as e:
             tprint_warning(f"⚠️ Memory pool initialization failed: {e}")

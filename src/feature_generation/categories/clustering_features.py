@@ -71,7 +71,7 @@ except ImportError:
 # VectorBT optimization imports
 try:
     from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
-    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager
+    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, VectorizationConfig
     from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager as MLUnifiedVectorizationManager
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
@@ -79,6 +79,7 @@ except ImportError:
     get_vectorbt_rolling_optimizer = None
     VectorBTRollingOptimizer = None
     UnifiedVectorizationManager = None
+    VectorizationConfig = None
     MLUnifiedVectorizationManager = None
 
 try:
@@ -217,12 +218,12 @@ class ClusteringDistanceGenerator(VectorizedFeatureGenerator):
                 # vectorbt_rolling_optimizer inherited from base class
                 
                 # Initialize unified vectorization manager
-                unified_config = {
-                    "enable_vectorbt": True,
-                    "enable_matrix_ops": True,
-                    "enable_gpu": False,
-                    "optimization_level": "high"
-                }
+                unified_config = VectorizationConfig(
+                    enable_vectorbt=True,
+                    enable_gpu=False,
+                    enable_parallel=True,
+                    memory_efficient=True
+                )
                 self.unified_optimizer = UnifiedVectorizationManager(unified_config)
                 
                 print("✅ VectorBT optimizers and UnifiedVectorizationManager initialized for ClusteringDistanceGenerator")
@@ -510,12 +511,12 @@ class ClusteringSeparationGenerator(VectorizedFeatureGenerator):
                 # vectorbt_rolling_optimizer inherited from base class
                 
                 # Initialize unified vectorization manager
-                unified_config = {
-                    "enable_vectorbt": True,
-                    "enable_matrix_ops": True,
-                    "enable_gpu": False,
-                    "optimization_level": "high"
-                }
+                unified_config = VectorizationConfig(
+                    enable_vectorbt=True,
+                    enable_gpu=False,
+                    enable_parallel=True,
+                    memory_efficient=True
+                )
                 self.unified_optimizer = UnifiedVectorizationManager(unified_config)
                 
                 print("✅ VectorBT optimizers and UnifiedVectorizationManager initialized for ClusteringSeparationGenerator")
@@ -730,12 +731,12 @@ class ClusteringStabilityGenerator(VectorizedFeatureGenerator):
                 # vectorbt_rolling_optimizer inherited from base class
                 
                 # Initialize unified vectorization manager
-                unified_config = {
-                    "enable_vectorbt": True,
-                    "enable_matrix_ops": True,
-                    "enable_gpu": False,
-                    "optimization_level": "high"
-                }
+                unified_config = VectorizationConfig(
+                    enable_vectorbt=True,
+                    enable_gpu=False,
+                    enable_parallel=True,
+                    memory_efficient=True
+                )
                 self.unified_optimizer = UnifiedVectorizationManager(unified_config)
                 
                 print("✅ VectorBT optimizers and UnifiedVectorizationManager initialized for ClusteringStabilityGenerator")
@@ -967,12 +968,12 @@ class ClusteringIntegration(VectorizedFeatureGenerator):
                 # vectorbt_rolling_optimizer inherited from base class
                 
                 # Initialize unified vectorization manager
-                unified_config = {
-                    "enable_vectorbt": True,
-                    "enable_matrix_ops": True,
-                    "enable_gpu": False,
-                    "optimization_level": "high"
-                }
+                unified_config = VectorizationConfig(
+                    enable_vectorbt=True,
+                    enable_gpu=False,
+                    enable_parallel=True,
+                    memory_efficient=True
+                )
                 self.unified_optimizer = UnifiedVectorizationManager(unified_config)
                 
                 print("✅ VectorBT optimizers and UnifiedVectorizationManager initialized for ClusteringIntegration")

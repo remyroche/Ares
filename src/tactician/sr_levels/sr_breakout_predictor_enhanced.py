@@ -1089,108 +1089,12 @@ except ImportError:
             return []
 
     def _detect_fractal_levels(self, market_data: pd.DataFrame, level_type: str) -> List[Dict[str, Any]]:
-        """Detect levels using fractal method - optimized for large datasets."""
-        try:
-            levels = []
-            sample_data = market_data
-
-            window = 5  # Increased window for better fractal detection
-
-            if level_type == 'support':
-                # Use vectorized operations for better performance
-                lows = sample_data['low'].values
-                total_points = len(lows) - 2 * window
-
-                # Initialize enhanced progress logger
-                progress_logger = EnhancedProgressLogger(
-                    self.logger,
-                    total_items=total_points,
-                    operation_name=f"{level_type.capitalize()} fractal detection"
-                )
-                progress_logger.start()
-
-                for i in range(window, len(lows) - window):
-                    # Update progress with enhanced logging
-                    progress_logger.update(i - window)
-
-                    current_low = lows[i]
-                    # Check if current point is a local minimum
-                    if (current_low <= lows[i-window:i].min() and
-                        current_low <= lows[i+1:i+window+1].min()):
-
-                        # Simplified touch counting for performance
-                        touches = 1
-                        threshold = 0.002  # More sensitive threshold for better level detection
-
-                        # Optimized touch counting using vectorized operations
-                        start_idx = max(0, i - 500)
-                        end_idx = min(len(lows), i + 500)
-                        window_lows = lows[start_idx:end_idx]
-                        price_diffs = abs(window_lows - current_low) / current_low
-                        touches = np.sum(price_diffs < threshold)
-
-                        if touches >= 3:
-                            levels.append({
-                                'price': float(current_low),
-                                'strength': min(touches / 5, 1.0),  # Adjusted scaling
-                                'type': 'support',
-                                'method': 'fractal',
-                                'touch_count': touches,
-                                'timestamp': datetime.now().isoformat()
-                            })
-            else:  # resistance
-                # Use vectorized operations for better performance
-                highs = sample_data['high'].values
-                total_points = len(highs) - 2 * window
-
-                # Initialize enhanced progress logger
-                progress_logger = EnhancedProgressLogger(
-                    self.logger,
-                    total_items=total_points,
-                    operation_name=f"{level_type.capitalize()} fractal detection"
-                )
-                progress_logger.start()
-
-                for i in range(window, len(highs) - window):
-                    # Update progress with enhanced logging
-                    progress_logger.update(i - window)
-
-                    current_high = highs[i]
-                    # Check if current point is a local maximum
-                    if (current_high >= highs[i-window:i].max() and
-                        current_high >= highs[i+1:i+window+1].max()):
-
-                        # Simplified touch counting for performance
-                        touches = 1
-                        threshold = 0.002  # More sensitive threshold for better level detection
-
-                        # Optimized touch counting using vectorized operations
-                        start_idx = max(0, i - 500)
-                        end_idx = min(len(highs), i + 500)
-                        window_highs = highs[start_idx:end_idx]
-                        price_diffs = abs(window_highs - current_high) / current_high
-                        touches = np.sum(price_diffs < threshold)
-
-                        if touches >= 3:
-                            levels.append({
-                                'price': float(current_high),
-                                'strength': min(touches / 5, 1.0),  # Adjusted scaling
-                                'type': 'resistance',
-                                'method': 'fractal',
-                                'touch_count': touches,
-                                'timestamp': datetime.now().isoformat()
-                            })
-
-                # Complete progress logging
-                progress_logger.complete()
-
-            # Limit the number of levels returned for performance
-            levels = levels[:50]  # Return max 50 levels for better coverage
-            self.logger.info(f'✅ Fractal detection found {len(levels)} {level_type} levels')
-            return levels
-        except Exception as e:
-            self.logger.error(f'Error in fractal level detection: {e}')
-            return []
+        """
+        DEPRECATED: Fractal-based SR detection has been removed.
+        This method now returns an empty list for backward compatibility.
+        """
+        self.logger.info(f'ℹ️  Fractal detection disabled (fractals removed from SR detection) for {level_type}')
+        return []
 
     def _detect_volume_levels(self, market_data: pd.DataFrame, level_type: str) -> List[Dict[str, Any]]:
         """Detect levels using volume-based method - vectorized for performance."""

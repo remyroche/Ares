@@ -11,7 +11,7 @@ This module contains all optimization-related functionality including:
 
 from .hpo_utils import HyperparameterOptimization
 from .pareto import ParetoFront, ParetoFrontAnalyzer, ParetoOptimizer
-from .regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer
+# from .regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer  # File does not exist yet
 from .hierarchical_hpo import HierarchicalHPO, HierarchicalHPOConfig, HPOPhaseConfig
 from .grid_utils import build_coarse_grid_from_search_space, build_fine_grid_around_best
 from .hierarchical_parameter_optimizer import (
@@ -46,7 +46,7 @@ __all__ = [
     'ParetoFront', 'ParetoFrontAnalyzer', 'ParetoOptimizer',
 
     # Regime-specific Optimization
-    'RegimeSpecificTPSLOptimizer',
+    # 'RegimeSpecificTPSLOptimizer',  # Not yet available
 
     # Hierarchical HPO (for ensembles)
     'HierarchicalHPO', 'HierarchicalHPOConfig', 'HPOPhaseConfig',

@@ -190,100 +190,10 @@ This results in ~250-750x theoretical speedup while maintaining accuracy.
 warnings.filterwarnings('ignore')
 
 # Numba-optimized functions for SR detection
+# NOTE: Fractal detection for SR levels has been removed
+# Fractals are no longer used for support/resistance level detection
+
 if NUMBA_AVAILABLE:
-    @jit(nopython=True, parallel=True, cache=True)
-    def numba_fractal_detection_optimized(highs: np.ndarray, lows: np.ndarray, window: int) -> Tuple[np.ndarray, np.ndarray]:
-        """Ultra-optimized fractal detection using vectorized operations."""
-        n = len(highs)
-        if n < window * 2 + 1:
-            return np.empty((0, 2), dtype=np.float64), np.empty((0, 2), dtype=np.float64)
-
-        # Pre-allocate result arrays with estimated capacity
-        max_fractals = n // (window * 2)  # Conservative estimate
-        support_result = np.empty((max_fractals, 2), dtype=np.float64)
-        resistance_result = np.empty((max_fractals, 2), dtype=np.float64)
-
-        support_count = 0
-        resistance_count = 0
-
-        # Process in chunks for better cache locality
-        chunk_size = 1000
-        for chunk_start in range(window, n - window, chunk_size):
-            end_idx = min(chunk_start + chunk_size, n - window)
-
-            for i in range(chunk_start, end_idx):
-                # Vectorized comparison for support fractal
-                window_lows = lows[i - window:i + window + 1]
-                current_low = lows[i]
-                is_support = True
-
-                # Use vectorized min comparison (much faster than loop)
-                if np.min(window_lows) < current_low:
-                    is_support = False
-
-                if is_support and support_count < max_fractals:
-                    support_result[support_count, 0] = i
-                    support_result[support_count, 1] = current_low
-                    support_count += 1
-
-                # Vectorized comparison for resistance fractal
-                window_highs = highs[i - window:i + window + 1]
-                current_high = highs[i]
-                is_resistance = True
-
-                # Use vectorized max comparison (much faster than loop)
-                if np.max(window_highs) > current_high:
-                    is_resistance = False
-
-                if is_resistance and resistance_count < max_fractals:
-                    resistance_result[resistance_count, 0] = i
-                    resistance_result[resistance_count, 1] = current_high
-                    resistance_count += 1
-
-        # Trim arrays to actual size
-        support_final = support_result[:support_count] if support_count > 0 else np.empty((0, 2), dtype=np.float64)
-        resistance_final = resistance_result[:resistance_count] if resistance_count > 0 else np.empty((0, 2), dtype=np.float64)
-
-        return support_final, resistance_final
-
-    # Keep original for backward compatibility
-    @jit(nopython=True, parallel=True)
-    def numba_fractal_detection(highs: np.ndarray, lows: np.ndarray, window: int) -> Tuple[np.ndarray, np.ndarray]:
-        """Numba-optimized fractal detection for support and resistance levels."""
-        n = len(highs)
-        support_levels = []
-        resistance_levels = []
-
-        for i in prange(window, n - window):
-            # Check for support fractal
-            is_support = True
-            current_low = lows[i]
-
-            for j in prange(-window, window + 1):
-                if j != 0 and lows[i + j] < current_low:
-                    is_support = False
-                    break
-
-            if is_support:
-                support_levels.append((i, current_low))
-
-            # Check for resistance fractal
-            is_resistance = True
-            current_high = highs[i]
-
-            for j in prange(-window, window + 1):
-                if j != 0 and highs[i + j] > current_high:
-                    is_resistance = False
-                    break
-
-            if is_resistance:
-                resistance_levels.append((i, current_high))
-
-        # Convert to numpy arrays
-        support_array = np.array(support_levels, dtype=np.float64)
-        resistance_array = np.array(resistance_levels, dtype=np.float64)
-
-        return support_array, resistance_array
 
     @jit(nopython=True, parallel=True, cache=True)
     def numba_touch_counting_optimized(level_price: float, prices: np.ndarray, threshold_pct: float) -> int:
@@ -643,9 +553,8 @@ class EnhancedSRDetector:
             self.logger.warning("VectorBT optimization not available, using standard operations")
 
         # Performance optimization settings
-        self.use_optimized_fractals = config.get('use_optimized_fractals', True)
+        # NOTE: fractal optimization settings removed - fractals no longer used
         self.use_optimized_touch_counting = config.get('use_optimized_touch_counting', True)
-        self.enable_fractal_caching = config.get('enable_fractal_caching', True)
         self.enable_pivot_caching = config.get('enable_pivot_caching', True)
         self.chunk_size = config.get('chunk_size', 1000)  # For memory-efficient processing
 
@@ -654,13 +563,13 @@ class EnhancedSRDetector:
         self.touch_proximity_threshold = config.get('touch_proximity_threshold', 0.005)
         self.min_strength = config.get('min_strength', 0.15)
         self.volume_spike_threshold = config.get('volume_spike_threshold', 0.8)
-        self.fractal_period = config.get('fractal_period', 1)
+        # NOTE: fractal_period removed - fractals no longer used for SR detection
         self.pivot_period = config.get('pivot_period', 4)
         self.psychological_levels = config.get('psychological_levels', True)
         self.fibonacci_levels = config.get('fibonacci_levels', True)
 
         # Caching for performance
-        self._fractal_cache = {}
+        # NOTE: fractal_cache removed - fractals no longer used for SR detection
         self._pivot_cache = {}
         self._touch_cache = {}
         self._cache_hits = 0
@@ -681,7 +590,7 @@ class EnhancedSRDetector:
 
         # Level limits per detection method (keep original limits to avoid overload)
         self.max_levels_per_method = config.get('max_levels_per_method', 30)  # Keep original 30
-        self.max_fractal_levels = config.get('max_fractal_levels', 30)  # Keep original 30
+        # NOTE: max_fractal_levels removed - fractals no longer used for SR detection
         self.max_pivot_levels = config.get('max_pivot_levels', 30)  # Keep original 30
         self.max_volume_levels = config.get('max_volume_levels', 40)  # Keep original 30
         self.max_psychological_levels = config.get('max_psychological_levels', 20)  # Keep reasonable
@@ -2350,31 +2259,11 @@ class EnhancedSRDetector:
             tprint(f"✅ Cached ATR and price arrays for {len(market_data)} rows", "SUCCESS")
             self.logger.info(f"✅ Cached ATR and price arrays for {len(market_data)} rows")
             
-            # Detect fractal levels with multiple periods for more levels
-            tprint("🔍 Starting Fractal Level Detection...", "INFO")
-            tprint("   📊 Fractal detection identifies local highs and lows where price reverses direction", "INFO")
-            tprint("   📊 A fractal high is a point higher than N periods before and after it", "INFO")
-            tprint("   📊 A fractal low is a point lower than N periods before and after it", "INFO")
-            self.logger.info("🔍 Starting Fractal Level Detection...")
-            self.logger.info("   📊 Fractal detection identifies local highs and lows where price reverses direction")
-            self.logger.info("   📊 A fractal high is a point higher than N periods before and after it")
-            self.logger.info("   📊 A fractal low is a point lower than N periods before and after it")
+            # NOTE: Fractal-based SR detection has been removed
+            # Fractals are no longer used for support/resistance level identification
             fractal_levels = []
-            for period in [3, 5, 7]:  # Multiple periods instead of single
-                tprint(f"   🔍 Detecting fractals with period {period}...", "INFO")
-                self.logger.info(f"   📊 Detecting fractals with period {period}...")
-                temp_config = self.config.copy()
-                temp_config['fractal_period'] = period
-                temp_detector = EnhancedSRDetector(temp_config)
-                period_levels = temp_detector._detect_fractal_levels(market_data)
-                tprint(f"   ✅ Found {len(period_levels)} fractals for period {period}", "SUCCESS")
-                fractal_levels.extend(period_levels[:75])  # Increased limit per period for more levels
-                tprint(f"   ✅ Period {period}: Found {len(period_levels)} levels (kept {min(len(period_levels), 75)})")
-                self.logger.info(f"   ✅ Period {period}: Found {len(period_levels)} levels (kept {min(len(period_levels), 75)})")
-            # Remove duplicates based on price proximity
-            fractal_levels = self._deduplicate_levels(fractal_levels, tolerance=0.001)
-            tprint(f"📊 Fractal Detection Complete: {len(fractal_levels)} unique levels", "SUCCESS")
-            self.logger.info(f'📊 Fractal Detection Complete: {len(fractal_levels)} unique levels')
+            tprint("ℹ️  Fractal detection disabled (fractals removed from SR detection)", "INFO")
+            self.logger.info("ℹ️  Fractal detection disabled (fractals removed from SR detection)")
 
             # Detect pivot levels with multiple periods for more levels
             tprint("🔍 Starting Pivot Point Detection...", "INFO")
@@ -2629,170 +2518,17 @@ class EnhancedSRDetector:
             self.logger.error(f'Enhanced S/R detection failed: {e}')
             return []
 
-    @handles_sr_detection_errors(default_return=[], use_fallback=True) if ENHANCED_ERROR_HANDLING_AVAILABLE else handles_errors(exceptions=(Exception,), default_return=[], context='fractal detection')
-    @handles_sr_data_validation(required_columns=['high', 'low'], min_rows=10) if ENHANCED_ERROR_HANDLING_AVAILABLE else lambda x: x
-    @monitors_sr_performance(method_name='fractal', threshold_seconds=5.0) if ENHANCED_ERROR_HANDLING_AVAILABLE else lambda x: x
-    @validates_sr_output(expected_type=list, min_items=0, max_items=100) if ENHANCED_ERROR_HANDLING_AVAILABLE else lambda x: x
     def _detect_fractal_levels(self, data: pd.DataFrame) -> List[SRLevel]:
-        """Detect S/R levels using fractal analysis with advanced optimizations."""
-        start_time = time.time()
-        start_memory = 0
+        """
+        DEPRECATED: Fractal-based SR detection has been removed.
+        This method now returns an empty list for backward compatibility.
+        """
+        tprint("ℹ️  Fractal detection disabled (fractals removed from SR detection)", "INFO")
+        self.logger.info("ℹ️  Fractal detection disabled (fractals removed from SR detection)")
+        return []
 
-        if PSUTIL_AVAILABLE:
-            start_memory = psutil.Process().memory_info().rss / 1024 / 1024
-
-        try:
-            tprint(f"🔍 Detecting fractal levels with period {self.fractal_period}...", "INFO")
-            levels = []
-            high = data['high'].values
-            low = data['low'].values
-            close = data['close'].values
-
-            # OPTIMIZATION: Improved cache key using data length and timestamp range
-            cache_key = None
-            if self.enable_fractal_caching:
-                # More consistent cache key using data characteristics instead of raw bytes
-                data_hash = hashlib.md5(
-                    f"{len(data)}_{data.index[0]}_{data.index[-1]}_{self.fractal_period}_{self.max_fractal_levels}".encode()
-                ).hexdigest()[:16]
-                cache_key = f"fractal_{data_hash}_p{self.fractal_period}"
-
-                if cache_key in self._fractal_cache:
-                    self._cache_hits += 1
-                    cached_result = self._fractal_cache[cache_key]
-                    self.logger.info(f"⚡ Fractal cache HIT: {len(cached_result)} levels (saved ~{execution_time if 'execution_time' in locals() else 2:.1f}s)")
-                    return cached_result
-                self._cache_misses += 1
-                self.logger.debug(f"📊 Fractal cache MISS: Computing new result...")
-
-            # Choose detection method based on optimization settings
-            if self.use_optimized_fractals and NUMBA_AVAILABLE:
-                tprint("🚀 Using ultra-optimized fractal detection with vectorization", "INFO")
-                self.logger.info("🚀 Using ultra-optimized fractal detection with vectorization")
-                support_array, resistance_array = numba_fractal_detection_optimized(high, low, self.fractal_period)
-            elif NUMBA_AVAILABLE:
-                tprint("🔍 Using Numba-optimized fractal detection", "INFO")
-                self.logger.info("🔍 Using Numba-optimized fractal detection")
-                support_array, resistance_array = numba_fractal_detection(high, low, self.fractal_period)
-            else:
-                tprint("⚠️ Numba not available, using basic fractal detection", "WARNING")
-                self.logger.warning("⚠️ Numba not available, using basic fractal detection")
-                support_array, resistance_array = self._basic_fractal_detection(high, low, self.fractal_period)
-
-            # Convert to SRLevel objects
-            support_levels_found = 0
-            resistance_levels_found = 0
-            for idx, price in support_array:
-                i = int(idx)
-                if i < len(data):
-                    level = SRLevel(price=price, strength=0.7, type='support', touch_count=1,
-                                  first_touch_time=data.index[i], last_touch_time=data.index[i],
-                                  age_bars=0, avg_bounce_ratio=0.0, max_bounce_ratio=0.0,
-                                  volume_confirmation_score=0.0, consistency_score=0.0,
-                                  failure_count=0, confidence_score=0.7, confluence_score=0.0,
-                                  pivot_level=False, psychological_level=False,
-                                  metadata={'method': 'fractal', 'period': self.fractal_period})
-                    levels.append(level)
-                    support_levels_found += 1
-
-            for idx, price in resistance_array:
-                i = int(idx)
-                if i < len(data):
-                    level = SRLevel(price=price, strength=0.7, type='resistance', touch_count=1,
-                                  first_touch_time=data.index[i], last_touch_time=data.index[i],
-                                  age_bars=0, avg_bounce_ratio=0.0, max_bounce_ratio=0.0,
-                                  volume_confirmation_score=0.0, consistency_score=0.0,
-                                  failure_count=0, confidence_score=0.7, confluence_score=0.0,
-                                  pivot_level=False, psychological_level=False,
-                                  metadata={'method': 'fractal', 'period': self.fractal_period})
-                    levels.append(level)
-                    resistance_levels_found += 1
-
-            tprint(f"   ✅ Fractal Detection (period {self.fractal_period}): Found {support_levels_found} support, {resistance_levels_found} resistance levels", "SUCCESS")
-            self.logger.info(f"   🔍 Fractal Detection (period {self.fractal_period}): Found {support_levels_found} support, {resistance_levels_found} resistance levels")
-
-            # Limit to configurable number of levels by strength
-            levels = sorted(levels, key=lambda x: x.strength, reverse=True)[:self.max_fractal_levels]
-
-            # Cache the results if caching is enabled
-            if self.enable_fractal_caching and cache_key:
-                self._fractal_cache[cache_key] = levels.copy()
-                # Limit cache size to prevent memory issues
-                if len(self._fractal_cache) > 10:
-                    oldest_key = next(iter(self._fractal_cache))
-                    del self._fractal_cache[oldest_key]
-
-            # Performance monitoring
-            end_time = time.time()
-            execution_time = end_time - start_time
-
-            memory_info = ""
-            if PSUTIL_AVAILABLE:
-                end_memory = psutil.Process().memory_info().rss / 1024 / 1024
-                memory_delta = end_memory - start_memory
-                memory_info = f", memory delta: {memory_delta:+.1f}MB"
-
-            cache_info = ""
-            if self.enable_fractal_caching:
-                total_cache_ops = self._cache_hits + self._cache_misses
-                if total_cache_ops > 0:
-                    cache_hit_rate = self._cache_hits / total_cache_ops * 100
-                    cache_info = f", cache hit rate: {cache_hit_rate:.1f}%"
-
-            optimization_info = ""
-            if self.use_optimized_fractals and NUMBA_AVAILABLE:
-                optimization_info = " (ultra-optimized with vectorization)"
-            elif NUMBA_AVAILABLE:
-                optimization_info = " (Numba accelerated)"
-
-            tprint(f"✅ Fractal detection completed in {execution_time:.3f}s{memory_info}{cache_info}{optimization_info}", "SUCCESS")
-            self.logger.info(f"✅ Fractal detection completed in {execution_time:.3f}s{memory_info}{cache_info}{optimization_info}")
-
-            return levels
-        except Exception as e:
-            tprint(f"❌ Fractal detection failed: {e}", "ERROR")
-            self.logger.warning(f'Fractal detection failed: {e}')
-            return []
-
-    def _basic_fractal_detection(self, highs: np.ndarray, lows: np.ndarray, window: int) -> Tuple[np.ndarray, np.ndarray]:
-        """Basic fractal detection for when Numba is not available."""
-        tprint(f"🔍 Using basic fractal detection (window={window})", "INFO")
-        n = len(highs)
-        if n < window * 2 + 1:
-            return np.empty((0, 2), dtype=np.float64), np.empty((0, 2), dtype=np.float64)
-
-        support_levels = []
-        resistance_levels = []
-
-        for i in range(window, n - window):
-            # Check for support fractal
-            is_support = True
-            current_low = lows[i]
-
-            for j in range(-window, window + 1):
-                if j != 0 and lows[i + j] < current_low:
-                    is_support = False
-                    break
-
-            if is_support:
-                support_levels.append((i, current_low))
-
-            # Check for resistance fractal
-            is_resistance = True
-            current_high = highs[i]
-
-            for j in range(-window, window + 1):
-                if j != 0 and highs[i + j] > current_high:
-                    is_resistance = False
-                    break
-
-            if is_resistance:
-                resistance_levels.append((i, current_high))
-
-        support_array = np.array(support_levels, dtype=np.float64)
-        resistance_array = np.array(resistance_levels, dtype=np.float64)
-
-        return support_array, resistance_array
+    # NOTE: Original fractal detection implementation has been removed
+    # Both _detect_fractal_levels and _basic_fractal_detection are no longer used
 
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics for optimization monitoring."""
@@ -2805,21 +2541,19 @@ class EnhancedSRDetector:
             'cache_misses': self._cache_misses,
             'cache_hit_rate': cache_hit_rate,
             'cache_sizes': {
-                'fractal_cache': len(self._fractal_cache),
+                # NOTE: fractal_cache removed - fractals no longer used
                 'pivot_cache': len(self._pivot_cache),
                 'touch_cache': len(self._touch_cache)
             },
             'optimization_enabled': {
-                'optimized_fractals': self.use_optimized_fractals,
-                'optimized_pivots': self.use_optimized_fractals,  # Same setting for both
+                # NOTE: fractal optimization removed - fractals no longer used
                 'optimized_touch_counting': self.use_optimized_touch_counting,
-                'fractal_caching': self.enable_fractal_caching,
-                'pivot_caching': self.enable_fractal_caching  # Same setting for both
+                'pivot_caching': self.enable_pivot_caching
             },
             'numba_available': NUMBA_AVAILABLE
         }
         
-        tprint(f"📊 Performance stats: {cache_hit_rate:.1f}% cache hit rate, {len(self._fractal_cache)} fractal cache entries", "SUCCESS")
+        tprint(f"📊 Performance stats: {cache_hit_rate:.1f}% cache hit rate", "SUCCESS")
         return stats
 
     def _count_touches_optimized(self, level_price: float, prices: np.ndarray, threshold_pct: float) -> int:
@@ -2866,7 +2600,7 @@ class EnhancedSRDetector:
     def clear_caches(self) -> None:
         """Clear all performance caches to free memory."""
         tprint("🧹 Clearing performance caches...", "INFO")
-        self._fractal_cache.clear()
+        # NOTE: fractal_cache removed - fractals no longer used
         self._pivot_cache.clear()
         self._touch_cache.clear()
         self._cache_hits = 0

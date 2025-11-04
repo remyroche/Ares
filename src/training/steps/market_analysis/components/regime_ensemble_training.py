@@ -85,6 +85,18 @@ from .regime_artifact_schema import (
 )
 from .ensemble_meta_features import EnsembleMetaFeaturesGenerator, generate_ensemble_meta_features
 
+# Import centralized configuration system
+try:
+    from src.config.regime_ensemble_training import (
+        RegimeEnsembleTrainingConfig,
+        RegimeEnsembleTrainingConfigManager,
+        get_regime_ensemble_config_manager,
+        get_regime_ensemble_config
+    )
+    CONFIG_AVAILABLE = True
+except ImportError:
+    CONFIG_AVAILABLE = False
+
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
@@ -127,32 +139,53 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         self.logger = system_logger.getChild('RegimeEnsembleTrainingComponent')
         tprint("✅ [REGIME_ENSEMBLE] Logger initialized", color="green")
 
+        # Initialize centralized configuration management
+        if CONFIG_AVAILABLE:
+            self.config_manager = get_regime_ensemble_config_manager()
+            self.ensemble_config = self.config_manager.get_config()
+            tprint("🔧 [REGIME_ENSEMBLE] Centralized configuration loaded", color="green")
+        else:
+            self.config_manager = None
+            self.ensemble_config = {}  # Fallback pour backward compatibility
+            tprint("⚠️ [REGIME_ENSEMBLE] Centralized config not available, using fallback", color="yellow")
+
+        # Get hardware configuration from centralized config or use defaults
+        hardware_config_data = self.ensemble_config.hardware if hasattr(self.ensemble_config, 'hardware') else {}
+        cpu_level = getattr(hardware_config_data, 'cpu_optimization_level', 'aggressive').upper()
+        gpu_level = getattr(hardware_config_data, 'gpu_optimization_level', 'balanced').upper()
+        memory_level = getattr(hardware_config_data, 'memory_optimization_level', 'balanced').upper()
+        
+        cpu_opt_level = getattr(OptimizationLevel, cpu_level, OptimizationLevel.AGGRESSIVE)
+        gpu_opt_level = getattr(OptimizationLevel, gpu_level, OptimizationLevel.BALANCED)
+        memory_opt_level = getattr(OptimizationLevel, memory_level, OptimizationLevel.BALANCED)
+        
         # Initialize hardware manager for optimization
         self.hardware_manager = UnifiedHardwareManager(
             HardwareConfig(
-                cpu_optimization_level=OptimizationLevel.AGGRESSIVE,
-                gpu_optimization_level=OptimizationLevel.BALANCED,
-                memory_optimization_level=OptimizationLevel.BALANCED,
-                enable_adaptive_optimization=True,
-                enable_learning=True
+                cpu_optimization_level=cpu_opt_level,
+                gpu_optimization_level=gpu_opt_level,
+                memory_optimization_level=memory_opt_level,
+                enable_adaptive_optimization=hardware_config_data.get('enable_adaptive_optimization', True),
+                enable_learning=hardware_config_data.get('enable_learning', True)
             )
         )
-        tprint("🔧 [REGIME_ENSEMBLE] Hardware manager initialized", color="green")
+        tprint("🔧 [REGIME_ENSEMBLE] Hardware manager initialized with centralized config", color="green")
 
         # Initialize vectorization manager for feature generation
         self.vectorization_manager = UnifiedVectorizationManager()
         tprint("🔧 [REGIME_ENSEMBLE] Vectorization manager initialized", color="green")
 
-        # Initialize HPO optimizer
+        # Initialize HPO optimizer with centralized configuration
+        hpo_config_data = self.ensemble_config.hpo if hasattr(self.ensemble_config, 'hpo') else {}
         self.hpo_optimizer = HyperparameterOptimization(
             {
-                'max_trials': 50,
-                'timeout_seconds': 300,
-                'enable_early_stopping': True,
-                'enable_pruning': True
+                'max_trials': getattr(hpo_config_data, 'max_trials', 50),
+                'timeout_seconds': getattr(hpo_config_data, 'timeout_seconds', 300),
+                'enable_early_stopping': getattr(hpo_config_data, 'enable_early_stopping', True),
+                'enable_pruning': getattr(hpo_config_data, 'enable_pruning', True)
             }
         )
-        tprint("🔧 [REGIME_ENSEMBLE] HPO optimizer initialized", color="green")
+        tprint("🔧 [REGIME_ENSEMBLE] HPO optimizer initialized with centralized config", color="green")
         
         # Initialize Auto Tuner for intelligent HPO configuration
         self.auto_tuner = AutoTuner(
@@ -179,17 +212,18 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         tprint("✅ [REGIME_ENSEMBLE] Hierarchical HPO enabled for complex models", color="green")
         self.temporal_smoothing_alpha = 0.1
 
-        # Initialize temporal validator for data leakage prevention
+        # Initialize temporal validator with centralized configuration
+        temporal_config_data = self.ensemble_config.temporal_validation if hasattr(self.ensemble_config, 'temporal_validation') else {}
         self.temporal_validator = UniversalTemporalValidator(
             TemporalValidationConfig(
-                enable_temporal_checks=True,
-                strict_temporal_order=True,
-                initial_train_size=0.7,
-                test_size=0.3,
-                gap_size=1
+                enable_temporal_checks=getattr(temporal_config_data, 'enable_temporal_checks', True),
+                strict_temporal_order=getattr(temporal_config_data, 'strict_temporal_order', True),
+                initial_train_size=getattr(temporal_config_data, 'initial_train_size', 0.7),
+                test_size=getattr(temporal_config_data, 'test_size', 0.3),
+                gap_size=getattr(temporal_config_data, 'gap_size', 1)
             )
         )
-        tprint("🔧 [REGIME_ENSEMBLE] Temporal validator initialized", color="green")
+        tprint("🔧 [REGIME_ENSEMBLE] Temporal validator initialized with centralized config", color="green")
 
         # Initialize lookahead protection
         self.lookahead_protection = LookaheadProtection()
@@ -203,23 +237,33 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         self.temporal_metrics_calc = RegimeTemporalMetricsCalculator(min_episode_length=3)
         tprint("✅ [REGIME_ENSEMBLE] Temporal metrics calculator initialized", color="green")
         
-        # Enhanced training configuration
-        self.enable_temporal_smoothing = True
-        self.temporal_smoothing_alpha = 0.1  # Default smoothness penalty weight
-        self.enable_soft_labels = True
-        self.soft_label_smoothing = 0.1  # Label smoothing factor
-        self.enable_smoothed_features = True
-        self.smoothing_window_sizes = [3, 5, 7]
+        # Enhanced training configuration from centralized config
+        ensemble_config_data = self.ensemble_config.ensemble if hasattr(self.ensemble_config, 'ensemble') else {}
+        
+        self.enable_temporal_smoothing = getattr(ensemble_config_data, 'enable_temporal_smoothing', True)
+        self.temporal_smoothing_alpha = getattr(ensemble_config_data, 'temporal_smoothing_alpha', 0.1)
+        self.enable_soft_labels = getattr(ensemble_config_data, 'enable_soft_labels', True)
+        self.soft_label_smoothing = getattr(ensemble_config_data, 'soft_label_smoothing', 0.1)
+        self.enable_smoothed_features = getattr(ensemble_config_data, 'enable_smoothed_features', True)
+        self.smoothing_window_sizes = getattr(ensemble_config_data, 'smoothing_window_sizes', [3, 5, 7])
+        
+        # Meta-features configuration
+        self.enable_enhanced_meta_features = getattr(self.ensemble_config, 'enable_enhanced_meta_features', True)
+        self.enable_uncertainty_quantification = getattr(self.ensemble_config, 'enable_uncertainty_quantification', True)
+        self.enable_confidence_features = getattr(self.ensemble_config, 'enable_confidence_features', True)
+        self.enable_disagreement_analysis = getattr(self.ensemble_config, 'enable_disagreement_analysis', True)
+        self.enable_regime_transition_features = getattr(self.ensemble_config, 'enable_regime_transition_features', True)
 
-        # Initialize model validator
+        # Initialize model validator with centralized configuration
+        model_validation_config = self.ensemble_config.model_validation if hasattr(self.ensemble_config, 'model_validation') else {}
         self.model_validator = ModelValidator(
             ValidationConfig(
-                enable_purged_cv=True,
-                enable_data_leakage_detection=True,
-                enable_time_series_validation=True
+                enable_purged_cv=getattr(model_validation_config, 'enable_purged_cv', True),
+                enable_data_leakage_detection=getattr(model_validation_config, 'enable_data_leakage_detection', True),
+                enable_time_series_validation=getattr(model_validation_config, 'enable_time_series_validation', True)
             )
         )
-        tprint("🔧 [REGIME_ENSEMBLE] Model validator initialized", color="green")
+        tprint("🔧 [REGIME_ENSEMBLE] Model validator initialized with centralized config", color="green")
 
         # Initialize meta-features generator
         self.meta_features_generator = EnsembleMetaFeaturesGenerator(component_name="REGIME_ENSEMBLE")
@@ -229,16 +273,19 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         self.artifact_extractor = RegimeArtifactExtractor()
         tprint("🔧 [REGIME_ENSEMBLE] Artifact extractor initialized", color="green")
 
-        # Initialize ensemble training parameters
+        # Initialize ensemble training parameters from centralized config
+        ensemble_config_data = self.ensemble_config.ensemble if hasattr(self.ensemble_config, 'ensemble') else {}
         self.ensemble_config = {
-            'n_estimators': 100,
-            'max_depth': 6,
-            'learning_rate': 0.1,
-            'random_state': 42,
-            'n_jobs': -1,
-            'verbose': -1
+            'n_estimators': getattr(ensemble_config_data, 'n_estimators', 100),
+            'max_depth': getattr(ensemble_config_data, 'max_depth', 6),
+            'learning_rate': getattr(ensemble_config_data, 'learning_rate', 0.1),
+            'random_state': getattr(ensemble_config_data, 'random_state', 42),
+            'n_jobs': getattr(ensemble_config_data, 'n_jobs', -1),
+            'verbose': getattr(ensemble_config_data, 'verbose', -1),
+            'calibration_method': getattr(ensemble_config_data, 'calibration_method', 'isotonic'),
+            'cv_folds': getattr(ensemble_config_data, 'cv_folds', 3)
         }
-        tprint("⚙️ [REGIME_ENSEMBLE] Ensemble configuration set", color="yellow")
+        tprint("⚙️ [REGIME_ENSEMBLE] Ensemble configuration loaded from centralized config", color="yellow")
 
         # Initialize ensemble models
         self.stacker_lgbm_calibrated = None

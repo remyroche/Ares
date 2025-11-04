@@ -65,7 +65,7 @@ try:
     from .optimization import (
         # HyperparameterOptimization,
         ParetoOptimizer, ParetoFront, ParetoFrontAnalyzer,
-        RegimeSpecificTPSLOptimizer
+        # RegimeSpecificTPSLOptimizer  # Not yet available
     )
 
     # Data Processing (avoid heavy imports at module import time)
@@ -192,7 +192,7 @@ try:
         # Optimization
         # 'HyperparameterOptimization',
         'ParetoFront', 'ParetoFrontAnalyzer',
-        'RegimeSpecificTPSLOptimizer',
+        # 'RegimeSpecificTPSLOptimizer',  # Not yet available
 
         # Data Processing (expose getters rather than heavy objects)
         'EnhancedDataLabelerGetter', 'LabelingConfigGetter',

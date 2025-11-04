@@ -114,19 +114,40 @@ class RawFeatureGenerator:
         self, 
         level_price: float, 
         level_idx: int, 
-        ohlcv_data: pd.DataFrame
+        ohlcv_data: pd.DataFrame,
+        creation_timestamp: pd.Timestamp = None
     ) -> Dict[str, float]:
         """
         Generate ALL raw features for a level candidate.
         
+        TIMESTAMP CONTRACT:
+        - Only uses data at or BEFORE creation_timestamp (no future information)
+        - If creation_timestamp provided, validates all data used is <= creation_timestamp
+        - This prevents data leakage by ensuring features can't see future price action
+        
         Args:
             level_price: Price of the level
             level_idx: Index of level in ohlcv_data
-            ohlcv_data: Full OHLCV DataFrame
+            ohlcv_data: Full OHLCV DataFrame (indexed by datetime)
+            creation_timestamp: Timestamp when level was created (optional but recommended)
         
         Returns:
             Dictionary with 300-500 raw features
         """
+        # TIMESTAMP CONTRACT VALIDATION
+        if creation_timestamp is not None:
+            if level_idx >= len(ohlcv_data):
+                raise ValueError(f"level_idx {level_idx} exceeds data length {len(ohlcv_data)}")
+            
+            level_timestamp = ohlcv_data.index[level_idx]
+            if level_timestamp > creation_timestamp:
+                raise ValueError(
+                    f"TIMESTAMP CONTRACT VIOLATION: level_timestamp {level_timestamp} "
+                    f"is after creation_timestamp {creation_timestamp}"
+                )
+            
+            # Ensure we only use data up to creation_timestamp
+            ohlcv_data = ohlcv_data[ohlcv_data.index <= creation_timestamp]
         features = {}
         
         # 1. Distance features across all windows

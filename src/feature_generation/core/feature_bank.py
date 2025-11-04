@@ -260,12 +260,15 @@ class FeatureBank:
         tprint("🔧 Starting auto-registration of feature generators...")
         try:
             # List of categories to auto-register
+            # NOTE: CUSTOM_SUPPORT_RESISTANCE is intentionally excluded (disabled by default)
+            # Enable it manually by registering custom SR generators explicitly
             categories_to_register = [
                 FeatureCategory.MOMENTUM,
                 FeatureCategory.VOLATILITY,
                 FeatureCategory.TREND,
                 FeatureCategory.VOLUME,
-                FeatureCategory.SUPPORT_RESISTANCE,
+                FeatureCategory.SUPPORT_RESISTANCE,  # Pre-created SR levels only
+                # FeatureCategory.CUSTOM_SUPPORT_RESISTANCE,  # DISABLED by default - custom SR features
                 FeatureCategory.RETURNS,
                 FeatureCategory.OSCILLATOR,
                 FeatureCategory.CANDLESTICK_PATTERN,
@@ -346,6 +349,7 @@ class FeatureBank:
                 FeatureCategory.TREND: self._create_trend_generators,
                 FeatureCategory.VOLUME: self._create_volume_generators,
                 FeatureCategory.SUPPORT_RESISTANCE: self._create_sr_generators,
+                FeatureCategory.CUSTOM_SUPPORT_RESISTANCE: self._create_custom_sr_generators,
                 FeatureCategory.RETURNS: self._create_returns_generators,
                 FeatureCategory.OSCILLATOR: self._create_oscillator_generators,
                 FeatureCategory.CANDLESTICK_PATTERN: self._create_pattern_generators,
@@ -620,7 +624,7 @@ class FeatureBank:
         return generators
 
     def _create_sr_generators(self) -> List[FeatureGenerator]:
-        """Create support/resistance-specific feature generators."""
+        """Create support/resistance-specific feature generators (pre-created SR levels only)."""
         self.logger.debug("Creating support/resistance generators...")
         generators = []
         try:
@@ -631,6 +635,22 @@ class FeatureBank:
         except Exception as e:
             tprint(f"⚠️ Failed to create support/resistance generators: {e}")
             self.logger.warning(f"⚠️ Failed to create support/resistance generators: {e}")
+
+        return generators
+
+    def _create_custom_sr_generators(self) -> List[FeatureGenerator]:
+        """Create custom support/resistance feature generators (strength, distance, touches, etc.)."""
+        self.logger.debug("Creating custom SR generators...")
+        generators = []
+        try:
+            from ..categories.custom_support_resistance import create_default_custom_sr_generators
+            custom_generators = create_default_custom_sr_generators()
+            generators.extend(custom_generators)
+            self.logger.debug(f"Created {len(custom_generators)} custom SR generators")
+            tprint(f"✅ Created {len(custom_generators)} custom SR generators (strength, distance, touches, etc.)")
+        except Exception as e:
+            tprint(f"⚠️ Failed to create custom SR generators: {e}")
+            self.logger.warning(f"⚠️ Failed to create custom SR generators: {e}")
 
         return generators
 

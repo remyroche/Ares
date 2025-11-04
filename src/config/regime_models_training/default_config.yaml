@@ -1,0 +1,273 @@
+# Configuration par défaut pour le regime_models_training
+# Ce fichier contient tous les paramètres par défaut pour l'entraînement des modèles de détection de régime
+
+# Configuration générale
+general:
+  component_name: "regime_models_training"
+  version: "2.0.0"
+  description: "Configuration centralisée pour l'entraînement des modèles de détection de régime"
+  
+# Paramètres de validation des données
+data_validation:
+  min_samples: 10
+  min_features: 50
+  required_columns: ["close", "open", "high", "low", "volume"]
+  max_nan_ratio: 0.1
+  enable_data_quality_checks: true
+  
+# Paramètres d'extraction des régimes
+regime_extraction:
+  min_regimes: 2
+  max_regimes: 10
+  min_samples_per_regime: 5
+  extraction_method: "standardized"  # standardized, hdp_hmm, hdbscan
+  fallback_to_synthetic: true
+  
+# Paramètres de validation temporelle
+temporal_validation:
+  enabled: true
+  strict_temporal_order: true
+  initial_train_size: 0.6
+  step_size: 0.1
+  min_test_size: 0.1
+  enable_leakage_detection: true
+  n_splits: 5
+  test_size: 0.2
+  gap_size: 1
+  
+# Configuration des modèles
+models:
+  # Configuration des modèles de base
+  base_models:
+    catboost:
+      enabled: true
+      iterations: 100
+      depth: 6
+      learning_rate: 0.1
+      l2_leaf_reg: 3.0
+      subsample: 1.0
+      colsample_bylevel: 1.0
+      bootstrap_type: "Bayesian"
+      task_type: "CPU"
+      random_seed: 42
+      verbose: false
+      hpo:
+        enabled: true
+        n_trials: 75
+        timeout_seconds: 300
+        
+    xgboost:
+      enabled: true
+      n_estimators: 100
+      max_depth: 6
+      learning_rate: 0.1
+      subsample: 0.8
+      colsample_bytree: 0.8
+      reg_alpha: 0.1
+      reg_lambda: 0.1
+      gamma: 0
+      random_state: 42
+      n_jobs: -1
+      verbosity: 0
+      hpo:
+        enabled: true
+        n_trials: 75
+        timeout_seconds: 300
+        
+    random_forest:
+      enabled: true
+      n_estimators: 100
+      max_depth: null
+      min_samples_split: 2
+      min_samples_leaf: 1
+      max_features: "sqrt"
+      bootstrap: true
+      random_state: 42
+      n_jobs: -1
+      hpo:
+        enabled: true
+        n_trials: 75
+        timeout_seconds: 300
+        
+    extratrees:
+      enabled: true
+      n_estimators: 100
+      max_depth: null
+      min_samples_split: 5
+      min_samples_leaf: 5
+      max_features: "sqrt"
+      random_state: 42
+      n_jobs: -1
+      hpo:
+        enabled: true
+        n_trials: 75
+        timeout_seconds: 300
+        
+    lightgbm:
+      enabled: true
+      num_leaves: 31
+      max_depth: -1
+      learning_rate: 0.1
+      n_estimators: 100
+      subsample: 1.0
+      colsample_bytree: 1.0
+      reg_alpha: 0.0
+      reg_lambda: 0.0
+      random_state: 42
+      verbose: -1
+      hpo:
+        enabled: true
+        n_trials: 75
+        timeout_seconds: 300
+        
+  # Configuration du meta-learner
+  meta_learner:
+    enabled: true
+    name: "stacker_lgbm_calibrated"
+    num_leaves: 63
+    max_depth: 8
+    learning_rate: 0.05
+    n_estimators: 200
+    min_child_samples: 50
+    min_data_in_leaf: 50
+    subsample: 0.8
+    colsample_bytree: 0.8
+    reg_alpha: 0.1
+    reg_lambda: 0.1
+    class_weight: "balanced"
+    random_state: 42
+    verbose: -1
+    hpo:
+      enabled: true
+      n_trials: 50
+      timeout_seconds: 240
+
+# Configuration de l'optimisation des hyperparamètres
+hpo:
+  enabled: true
+  method: "bayesian"  # bayesian, grid, random
+  max_trials: 75
+  timeout_seconds: 300
+  early_stopping: true
+  enable_pruning: true
+  multi_objective: true
+  use_pareto_optimization: true
+  hierarchical_optimization: true
+  
+# Configuration de la validation des modèles
+model_validation:
+  enabled: true
+  cv_folds: 5
+  scoring_metrics: ["accuracy", "precision_weighted", "recall_weighted", "f1_weighted"]
+  temporal_smoothing: true
+  smoothing_alpha: 0.1
+  enable_soft_labels: true
+  soft_label_smoothing: 0.1
+  
+# Configuration des caractéristiques des données
+data_preparation:
+  enable_feature_scaling: true
+  scaling_method: "standard"  # standard, robust, minmax
+  handle_missing_values: "mean"  # mean, median, drop
+  remove_outliers: true
+  outlier_method: "iqr"
+  iqr_multiplier: 3.0
+  
+# Configuration des caractéristiques d'ingénierie
+feature_engineering:
+  enabled: true
+  use_feature_bank: true
+  categories:
+    - "REGIME"
+    - "MOMENTUM" 
+    - "VOLATILITY"
+    - "VOLUME"
+    - "TREND"
+    - "OSCILLATOR"
+    - "RETURNS"
+    - "MICROSTRUCTURE"
+  
+  # Configuration des caractéristiques avancées de régime
+  advanced_regime_features:
+    enabled: true
+    window_sizes: [3, 5, 7]
+    enable_smoothed_features: true
+    
+  # Sélection de caractéristiques
+  feature_selection:
+    enabled: true
+    method: "permutation_importance_rfe"
+    target_feature_count: 80
+    permutation_n_repeats: 3
+    tscv_splits: 3
+
+# Configuration de la protection contre les biais
+data_protection:
+  lookahead_protection:
+    enabled: true
+    automated_filtering: true
+    
+  memory_management:
+    enabled: true
+    auto_cleanup: true
+    cleanup_on_error: true
+    alert_threshold: 85.0
+    
+# Configuration de l'optimisation matérielle
+hardware_optimization:
+  enabled: true
+  cpu_optimization_level: "aggressive"
+  gpu_optimization_level: "balanced"
+  memory_optimization_level: "balanced"
+  enable_adaptive_optimization: true
+  enable_learning: true
+  
+# Configuration des ressources système
+system_resources:
+  n_jobs: -1  # Utiliser tous les CPU disponibles
+  memory_limit_gb: 8.0
+  timeout_seconds: 1800
+  
+# Configuration de l'évaluation
+evaluation:
+  enhanced_evaluation: true
+  temporal_metrics: true
+  regime_persistence_metrics: true
+  ensemble_evaluation: true
+  
+# Configuration des métriques
+metrics:
+  primary_metric: "accuracy"
+  secondary_metrics:
+    - "precision_weighted"
+    - "recall_weighted" 
+    - "f1_weighted"
+    - "balanced_accuracy"
+    
+# Configuration de la journalisation
+logging:
+  level: "INFO"
+  enable_performance_logging: true
+  enable_memory_monitoring: true
+  save_training_history: true
+  
+# Configuration de la sortie des résultats
+output:
+  save_artifacts: true
+  artifact_types:
+    - "trained_models"
+    - "model_metrics"
+    - "feature_importance"
+    - "training_history"
+    - "validation_report"
+    
+# Configuration de compatibilité
+compatibility:
+  ml_libraries_required:
+    - "scikit-learn"
+    - "lightgbm"
+    - "catboost"
+    - "xgboost"
+    - "imodels"
+  fallback_mode: true
+  simulate_missing_libraries: true

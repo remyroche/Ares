@@ -197,7 +197,9 @@ class OptimizationConfig:
         if self.n_trials <= 0:
             raise ValueError("n_trials must be positive")
         if self.n_startup_trials >= self.n_trials:
-            raise ValueError("n_startup_trials must be less than n_trials")
+            # Auto-adjust n_startup_trials to be valid instead of raising error
+            self.n_startup_trials = max(1, min(self.n_startup_trials, self.n_trials - 1))
+            logging.warning(f"⚠️ Adjusted n_startup_trials to {self.n_startup_trials} (must be < n_trials={self.n_trials})")
         if self.direction not in ['minimize', 'maximize']:
             raise ValueError("direction must be 'minimize' or 'maximize'")
         if self.coarse_grid_points <= 0:

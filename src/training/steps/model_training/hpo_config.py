@@ -75,12 +75,15 @@ def derive_dependent_parameters(params: Dict[str, Any], model_type: str) -> Dict
             params['colsample_bytree'] = params['sampling_rate']
             logger.debug(f"Tied subsample=colsample_bytree={params['sampling_rate']}")
     
-    # 2. CatBoost: Tie subsample and colsample_bylevel
+    # 2. CatBoost: Tie subsample and colsample_bylevel (only with appropriate bootstrap)
     if 'catboost' in model_type_lower:
         if 'sampling_rate' in params:
+            # CatBoost's Bayesian bootstrap doesn't support subsample
+            # Use Bernoulli bootstrap which does support subsample
+            params['bootstrap_type'] = 'Bernoulli'
             params['subsample'] = params['sampling_rate']
             params['colsample_bylevel'] = params['sampling_rate']
-            logger.debug(f"Tied subsample=colsample_bylevel={params['sampling_rate']}")
+            logger.debug(f"Set bootstrap_type=Bernoulli and tied subsample=colsample_bylevel={params['sampling_rate']}")
     
     
     # 4. GRU/LSTM: Derive batch_size from hidden_units
@@ -210,9 +213,9 @@ class ModelParameterGroups:
                 description="Training parameters"
             )
         ]
-
-@staticmethod
-    def get_tcn_groups() -> List[ParameterGroup]:
+    
+    @staticmethod
+    def get_tcn_groups_deprecated() -> List[ParameterGroup]:
         """
         [DEPRECATED] Get parameter groups for TCN (Temporal Convolutional Network) models.
         

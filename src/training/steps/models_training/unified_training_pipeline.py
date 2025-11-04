@@ -598,7 +598,7 @@ class UnifiedTrainingPipeline:
             tprint_info("📈 Performing post-training analysis...")
             
             # Model explainability analysis
-            if hasattr(result, 'models') and result.models:
+            if hasattr(result, 'models') and result.models is not None:
                 tprint_info("🔍 Generating model explanations...")
                 for model_name, model in result.models.items():
                     try:
@@ -693,7 +693,9 @@ class UnifiedTrainingPipeline:
             # Validate targets mathematically
             try:
                 targets_array = np.array(targets.values) if hasattr(targets, 'values') else np.array(targets)
-                if not validate_array_finite(targets_array):
+                try:
+                    validate_array_finite(targets_array)
+                except ValueError:
                     tprint_warning("Non-finite values in targets, cleaning...")
                     targets = targets.replace([np.inf, -np.inf], np.nan).fillna(targets.median())
             except Exception as e:
@@ -714,9 +716,9 @@ class UnifiedTrainingPipeline:
             with tprint_timer("Analyst Models Training"):
                 result = await self.execute_training_pipeline(data, analyst_config, targets)
             
-            if result.success and result.analyst_result:
+            if result.success and result.analyst_result is not None:
                 # Generate model explanations
-                if hasattr(result, 'analyst_models') and result.analyst_models:
+                if hasattr(result, 'analyst_models') and result.analyst_models is not None:
                     tprint_info("🔍 Generating analyst model explanations...")
                     for model_name, model in result.analyst_models.items():
                         try:
@@ -763,7 +765,9 @@ class UnifiedTrainingPipeline:
             tprint_info("⚔️ Starting tactician models training with enhanced utilities...")
             
             # Validate targets mathematically
-            if not validate_array_finite(targets.values):
+            try:
+                validate_array_finite(targets.values)
+            except ValueError:
                 tprint_warning("Non-finite values in tactician targets, cleaning...")
                 targets = targets.replace([np.inf, -np.inf], np.nan).fillna(targets.median())
             
@@ -807,9 +811,9 @@ class UnifiedTrainingPipeline:
             with tprint_timer("Tactician Models Training"):
                 result = await self.execute_training_pipeline(data, tactician_config, tactician_targets=targets)
             
-            if result.success and result.tactician_result:
+            if result.success and result.tactician_result is not None:
                 # Generate model explanations
-                if hasattr(result, 'tactician_models') and result.tactician_models:
+                if hasattr(result, 'tactician_models') and result.tactician_models is not None:
                     tprint_info("🔍 Generating tactician model explanations...")
                     for model_name, model in result.tactician_models.items():
                         try:
@@ -858,13 +862,18 @@ class UnifiedTrainingPipeline:
             tprint_info("🎯 Starting ensemble models training with enhanced utilities...")
             
             # Validate all targets mathematically
-            if not validate_array_finite(analyst_targets.values):
+            try:
+                validate_array_finite(analyst_targets.values)
+            except ValueError:
                 tprint_warning("Non-finite values in analyst targets, cleaning...")
                 analyst_targets = analyst_targets.replace([np.inf, -np.inf], np.nan).fillna(analyst_targets.median())
             
-            if tactician_targets is not None and not validate_array_finite(tactician_targets.values):
-                tprint_warning("Non-finite values in tactician targets, cleaning...")
-                tactician_targets = tactician_targets.replace([np.inf, -np.inf], np.nan).fillna(tactician_targets.median())
+            if tactician_targets is not None:
+                try:
+                    validate_array_finite(tactician_targets.values)
+                except ValueError:
+                    tprint_warning("Non-finite values in tactician targets, cleaning...")
+                    tactician_targets = tactician_targets.replace([np.inf, -np.inf], np.nan).fillna(tactician_targets.median())
             
             # Data quality assessment for all targets
             try:
@@ -904,13 +913,15 @@ class UnifiedTrainingPipeline:
                     tprint_warning("Target quality below threshold, applying corrections...")
             except Exception as e:
                 tprint_warning(f"Could not validate ensemble target quality: {e}, proceeding anyway")
-                analyst_targets = await self.data_utils.clean_data(pd.DataFrame({'target': analyst_targets}))['target']
+                # Simple cleaning without full validation
+                analyst_targets = analyst_targets.replace([np.inf, -np.inf], np.nan).fillna(analyst_targets.median())
                 if tactician_targets is not None:
-                    tactician_targets = await self.data_utils.clean_data(pd.DataFrame({'target': tactician_targets}))['target']
+                    tactician_targets = tactician_targets.replace([np.inf, -np.inf], np.nan).fillna(tactician_targets.median())
             
             # Create ensemble-only configuration with advanced features
+            # NOTE: enable_analyst must be True to trigger analyst ensemble training phase
             ensemble_config = {
-                'enable_analyst': False,
+                'enable_analyst': True,  # Required to trigger analyst ensemble phase
                 'enable_tactician': False,
                 'enable_ensemble': True,
                 'enable_hpo': True,
@@ -920,6 +931,7 @@ class UnifiedTrainingPipeline:
                 'enable_vectorbt_optimization': True,
                 'enable_data_leakage_detection': True,
                 'enable_lookahead_detection': True,
+                'skip_base_training': True,  # Skip base model training, use existing artifacts
                 **(config or {})
             }
             
@@ -929,9 +941,9 @@ class UnifiedTrainingPipeline:
                     data, ensemble_config, analyst_targets, tactician_targets
                 )
             
-            if result.success and result.ensemble_result:
+            if result.success and result.ensemble_result is not None:
                 # Generate ensemble model explanations
-                if hasattr(result, 'ensemble_models') and result.ensemble_models:
+                if hasattr(result, 'ensemble_models') and result.ensemble_models is not None:
                     tprint_info("🔍 Generating ensemble model explanations...")
                     for model_name, model in result.ensemble_models.items():
                         try:
@@ -1049,13 +1061,13 @@ class UnifiedTrainingPipeline:
             tprint_structured(performance_summary, "Training Performance Summary")
             
             # Model performance analysis
-            if hasattr(result, 'analyst_result') and result.analyst_result:
+            if hasattr(result, 'analyst_result') and result.analyst_result is not None:
                 tprint_structured(result.analyst_result, "Analyst Models Performance")
             
-            if hasattr(result, 'tactician_result') and result.tactician_result:
+            if hasattr(result, 'tactician_result') and result.tactician_result is not None:
                 tprint_structured(result.tactician_result, "Tactician Models Performance")
             
-            if hasattr(result, 'ensemble_result') and result.ensemble_result:
+            if hasattr(result, 'ensemble_result') and result.ensemble_result is not None:
                 tprint_structured(result.ensemble_result, "Ensemble Models Performance")
             
             # Data quality summary

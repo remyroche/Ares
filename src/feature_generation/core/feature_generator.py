@@ -86,6 +86,7 @@ class FeatureCategory(Enum):
     TREND = "trend"
     OSCILLATOR = "oscillator"
     SUPPORT_RESISTANCE = "support_resistance"
+    CUSTOM_SUPPORT_RESISTANCE = "custom_support_resistance"
     CANDLESTICK_PATTERN = "candlestick_pattern"
     # HMM_REGIME = "hmm_regime"  # DEPRECATED
     CROSS_TIMEFRAME = "cross_timeframe"

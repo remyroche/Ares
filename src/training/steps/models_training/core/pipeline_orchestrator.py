@@ -438,7 +438,8 @@ class TrainingPipelineOrchestrator:
             )
             
             # Phase 1: Analyst Base Models Training
-            if self.config.enable_analyst:
+            skip_base = self.config.custom_params.get('skip_base_training', False)
+            if self.config.enable_analyst and not skip_base:
                 tprint_info("🎯 Phase 1: Training Analyst base models...")
                 analyst_base_result = await self._execute_analyst_base_training(data, analyst_targets)
                 result.analyst_result = analyst_base_result
@@ -452,9 +453,25 @@ class TrainingPipelineOrchestrator:
                     result.phases_failed.append(PipelinePhase.ANALYST_TRAINING)
                     result.errors.append("Analyst base models training failed")
                     tprint_error("❌ Analyst base models training failed")
+            elif skip_base and self.config.enable_analyst:
+                tprint_info("⏭️ Skipping base training, loading existing artifacts for ensemble...")
+                # Load base models from artifacts for ensemble training
+                try:
+                    from src.utils.ml_common.artifact_manager import get_artifact_manager
+                    artifact_mgr = get_artifact_manager()
+                    # Try to load analyst base outputs (predictions from base models)
+                    base_outputs = artifact_mgr.load_artifact('analyst_base_outputs', artifact_type='data')
+                    if base_outputs is not None:
+                        artifacts['analyst_base_models'] = {'loaded_from_artifacts': True}  # Dummy models dict
+                        artifacts['analyst_predictions'] = base_outputs
+                        tprint_success(f"✅ Loaded base model outputs: {base_outputs.shape}")
+                    else:
+                        tprint_warning("⚠️ Could not load analyst_base_outputs, ensemble may not have base features")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to load base artifacts: {e}")
             
             # Phase 2: Analyst Ensemble Training (uses Analyst base models)
-            if self.config.enable_analyst and artifacts['analyst_base_models']:
+            if self.config.enable_analyst and self.config.enable_ensemble and artifacts['analyst_base_models'] is not None:
                 tprint_info("🎯 Phase 2: Training Analyst ensemble model...")
                 analyst_ensemble_result = await self._execute_analyst_ensemble_training(
                     data, analyst_targets, artifacts['analyst_base_models'], artifacts['analyst_predictions']
@@ -471,7 +488,7 @@ class TrainingPipelineOrchestrator:
                     tprint_error("❌ Analyst ensemble training failed")
             
             # Phase 3: Tactician Base Models Training (uses Analyst ensemble outputs)
-            if self.config.enable_tactician and artifacts['analyst_ensemble_model']:
+            if self.config.enable_tactician and artifacts['analyst_ensemble_model'] is not None:
                 tprint_info("🎯 Phase 3: Training Tactician base models...")
                 tactician_base_result = await self._execute_tactician_base_training(
                     data, tactician_targets, artifacts['analyst_predictions']
@@ -489,7 +506,7 @@ class TrainingPipelineOrchestrator:
                     tprint_error("❌ Tactician base models training failed")
             
             # Phase 4: Tactician Ensemble Training (uses Tactician base models)
-            if self.config.enable_ensemble and artifacts['tactician_base_models']:
+            if self.config.enable_ensemble and artifacts['tactician_base_models'] is not None:
                 tprint_info("🎯 Phase 4: Training Tactician ensemble model...")
                 tactician_ensemble_result = await self._execute_tactician_ensemble_training(
                     data, tactician_targets, artifacts['tactician_base_models'], artifacts['tactician_predictions']

@@ -23,6 +23,7 @@ seaborn = "^0.12.0"
 torch = "^2.0.0"
 torchvision = "^0.15.0"
 torchaudio = "^2.0.0"
+pyro-ppl = "^1.8.0"
 
 # Clustering
 hdbscan = "^0.8.29"
@@ -164,7 +165,8 @@ module = [
     "lime.*",
     "optuna.*",
     "pyhsmm.*",
-    "ssm.*"
+    "ssm.*",
+    "pyro.*"
 ]
 ignore_missing_imports = true
 

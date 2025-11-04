@@ -119,28 +119,22 @@ class SupportResistanceFeatureGenerator(VectorizedFeatureGenerator):
         return cls()
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate comprehensive support/resistance features using VectorBT optimization."""
+        """Generate pre-created support/resistance levels using VectorBT optimization."""
         # Optimize DataFrame for processing
         if self.optimization_manager:
             data = self.optimization_manager.optimize_dataframe(data)
         elif hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        # Generate comprehensive support/resistance features
+        # Generate pre-created support/resistance features
         features = {}
 
-        # Basic support/resistance levels
+        # Basic support/resistance levels (pre-created)
         if 'close' in data.columns:
             close = data['close']
             features['sr_level'] = self._calculate_sr_level(close)
-            features['sr_strength'] = self._calculate_sr_strength(close)
-            features['sr_distance'] = self._calculate_sr_distance(close)
 
-        # Volume-based support/resistance
-        if 'volume' in data.columns and 'close' in data.columns:
-            features['volume_sr'] = self._calculate_volume_sr(data['close'], data['volume'])
-
-        # Pivot-based features
+        # Pivot-based features (pre-created)
         if all(col in data.columns for col in ['high', 'low', 'close']):
             features['pivot_sr'] = self._calculate_pivot_sr(data['high'], data['low'], data['close'])
             features['fibonacci_sr'] = self._calculate_fibonacci_sr(data['high'], data['low'])
@@ -173,53 +167,6 @@ class SupportResistanceFeatureGenerator(VectorizedFeatureGenerator):
             rolling_mean = close.rolling(window=window).mean()
             return (rolling_min + rolling_max + rolling_mean) / 3
 
-    def _calculate_sr_strength(self, close: pd.Series) -> pd.Series:
-        """Calculate support/resistance strength using VectorBT optimization."""
-        if self.rolling_optimizer:
-            window = self.config.parameters.get('pivot_windows', [20])[0]
-            rolling_std = self.rolling_optimizer.rolling_std(close, window)
-            rolling_mean = self.rolling_optimizer.rolling_mean(close, window)
-
-            # Strength based on volatility and mean reversion
-            strength = 1 / (1 + rolling_std / rolling_mean)
-            return strength
-        else:
-            window = self.config.parameters.get('pivot_windows', [20])[0]
-            rolling_std = close.rolling(window=window).std()
-            rolling_mean = close.rolling(window=window).mean()
-            return 1 / (1 + rolling_std / rolling_mean)
-
-    def _calculate_sr_distance(self, close: pd.Series) -> pd.Series:
-        """Calculate distance to nearest support/resistance level."""
-        if self.rolling_optimizer:
-            window = self.config.parameters.get('pivot_windows', [20])[0]
-            rolling_min = self.rolling_optimizer.rolling_min(close, window)
-            rolling_max = self.rolling_optimizer.rolling_max(close, window)
-
-            # Distance to nearest SR level
-            distance_to_support = close - rolling_min
-            distance_to_resistance = rolling_max - close
-            distance = np.minimum(distance_to_support, distance_to_resistance)
-            return distance
-        else:
-            window = self.config.parameters.get('pivot_windows', [20])[0]
-            rolling_min = close.rolling(window=window).min()
-            rolling_max = close.rolling(window=window).max()
-            distance_to_support = close - rolling_min
-            distance_to_resistance = rolling_max - close
-            return np.minimum(distance_to_support, distance_to_resistance)
-
-    def _calculate_volume_sr(self, close: pd.Series, volume: pd.Series) -> pd.Series:
-        """Calculate volume-weighted support/resistance."""
-        if self.rolling_optimizer:
-            window = self.config.parameters.get('volume_profile_windows', [20])[0]
-            # Volume-weighted price
-            volume_weighted_price = self.rolling_optimizer.rolling_sum(close * volume, window) / self.rolling_optimizer.rolling_sum(volume, window)
-            return volume_weighted_price
-        else:
-            window = self.config.parameters.get('volume_profile_windows', [20])[0]
-            volume_weighted_price = (close * volume).rolling(window=window).sum() / volume.rolling(window=window).sum()
-            return volume_weighted_price
 
     def _calculate_pivot_sr(self, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
         """Calculate pivot-based support/resistance."""
@@ -725,51 +672,34 @@ class AdvancedSupportResistanceGenerator(VectorizedFeatureGenerator):
         )
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate advanced support/resistance features using VectorBT optimization."""
+        """Generate advanced pre-created support/resistance features using VectorBT optimization."""
         # Optimize DataFrame for processing
         if self.optimization_manager:
             data = self.optimization_manager.optimize_dataframe(data)
         elif hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        # Generate comprehensive SR features
+        # Generate pre-created SR features only
         features = {}
 
         if 'close' in data.columns:
             close = data['close']
 
-            # Multi-timeframe support/resistance
+            # Multi-timeframe support/resistance (pre-created levels)
             features['sr_multi_timeframe'] = self._calculate_multi_timeframe_sr(close)
 
-            # Dynamic support/resistance with adaptive windows
-            features['sr_dynamic'] = self._calculate_dynamic_sr(close)
-
-            # Support/resistance strength and quality
-            features['sr_quality'] = self._calculate_sr_quality(close)
-
-            # NOTE: Breakout detection is now handled by EnhancedSRBreakoutPredictor
-            # from src.tactician.sr_levels.sr_breakout_predictor_enhanced
-            # Use that class directly for ML-based breakout predictions
-
-            # Volume-weighted support/resistance
-            if 'volume' in data.columns:
-                features['sr_volume_weighted'] = self._calculate_volume_weighted_sr(close, data['volume'])
-
-            # Pivot-based features
+            # Advanced pivot-based features (pre-created)
             if all(col in data.columns for col in ['high', 'low', 'close']):
                 features['sr_pivot_advanced'] = self._calculate_advanced_pivot_sr(data['high'], data['low'], data['close'])
                 features['sr_fibonacci_advanced'] = self._calculate_advanced_fibonacci_sr(data['high'], data['low'])
 
         # Combine features into a single comprehensive score
         if features:
-            # Weighted combination of all features
-            # Note: sr_breakout removed - use EnhancedSRBreakoutPredictor instead
+            # Weighted combination of pre-created SR levels
             weights = {
-                'sr_multi_timeframe': 0.30,  # Increased from 0.25
-                'sr_dynamic': 0.30,  # Increased from 0.25
-                'sr_quality': 0.25,  # Increased from 0.20
-                'sr_volume_weighted': 0.10,  # Keep same
-                'sr_pivot_advanced': 0.05  # Keep same
+                'sr_multi_timeframe': 0.50,
+                'sr_pivot_advanced': 0.25,
+                'sr_fibonacci_advanced': 0.25
             }
 
             combined_sr = pd.Series(0.0, index=data.index)
@@ -800,60 +730,9 @@ class AdvancedSupportResistanceGenerator(VectorizedFeatureGenerator):
 
         return multi_sr / len(windows)
 
-    def _calculate_dynamic_sr(self, close: pd.Series) -> pd.Series:
-        """Calculate dynamic support/resistance with adaptive windows."""
-        if not self.rolling_optimizer:
-            return pd.Series(np.zeros(len(close)), index=close.index)
-
-        # Calculate volatility-based adaptive window
-        volatility = self.rolling_optimizer.rolling_std(close, window=20)
-        adaptive_window = (20 + (volatility / volatility.rolling(50).mean() * 10)).astype(int)
-        adaptive_window = adaptive_window.clip(5, 50)
-
-        # Dynamic SR calculation
-        dynamic_sr = pd.Series(0.0, index=close.index)
-        for i in range(len(close)):
-            window = adaptive_window.iloc[i]
-            if i >= window - 1:
-                start_idx = max(0, i - window + 1)
-                window_data = close.iloc[start_idx:i+1]
-                dynamic_sr.iloc[i] = (window_data.min() + window_data.max() + window_data.mean()) / 3
-
-        return dynamic_sr
-
-    def _calculate_sr_quality(self, close: pd.Series) -> pd.Series:
-        """Calculate support/resistance quality score."""
-        if not self.rolling_optimizer:
-            return pd.Series(np.zeros(len(close)), index=close.index)
-
-        window = 20
-        rolling_min = self.rolling_optimizer.rolling_min(close, window)
-        rolling_max = self.rolling_optimizer.rolling_max(close, window)
-        rolling_std = self.rolling_optimizer.rolling_std(close, window)
-
-        # Quality based on consistency and strength
-        range_size = rolling_max - rolling_min
-        quality = 1 / (1 + rolling_std / range_size)
-
-        return quality
-
-    # REMOVED: _calculate_breakout_detection method
-    # Breakout detection is now exclusively handled by EnhancedSRBreakoutPredictor
-    # from src.tactician.sr_levels.sr_breakout_predictor_enhanced
-    # This provides ML-based breakout predictions with superior accuracy
-
-    def _calculate_volume_weighted_sr(self, close: pd.Series, volume: pd.Series) -> pd.Series:
-        """Calculate volume-weighted support/resistance."""
-        if not self.rolling_optimizer:
-            return pd.Series(np.zeros(len(close)), index=close.index)
-
-        window = self.config.parameters.get('volume_windows', [20])[0]
-
-        # Volume-weighted price
-        volume_weighted_price = (self.rolling_optimizer.rolling_sum(close * volume, window) /
-                                self.rolling_optimizer.rolling_sum(volume, window))
-
-        return volume_weighted_price
+    # NOTE: Custom SR features (dynamic SR, quality, volume-weighted, etc.) 
+    # have been moved to custom_support_resistance.py
+    # This class now only handles pre-created SR levels
 
     def _calculate_advanced_pivot_sr(self, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
         """Calculate advanced pivot-based support/resistance."""

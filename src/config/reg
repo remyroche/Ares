@@ -1,0 +1,108 @@
+version: "2.0.0"
+component_name: "regime_ensemble_training"
+description: "Configuration centralisée pour l'entraînement d'ensemble de détection de régimes"
+created_at: "2025-11-03T21:42:02.417Z"
+last_updated: "2025-11-03T21:58:15.000Z"
+
+# Configuration matérielle pour optimisation performance
+hardware:
+  cpu_optimization_level: "aggressive"      # Performance maximale CPU
+  gpu_optimization_level: "balanced"        # Optimisation GPU équilibrée  
+  memory_optimization_level: "balanced"     # Gestion mémoire équilibrée
+  enable_adaptive_optimization: true       # Adaptation automatique
+  enable_learning: true                    # Apprentissage des patterns
+
+# Configuration HPO pour meta-learner et modèles de base
+hpo:
+  max_trials: 50                          # Nombre max d'essais
+  timeout_seconds: 300                    # Timeout HPO
+  enable_early_stopping: true             # Arrêt anticipé
+  enable_pruning: true                    # Élagage branches
+  n_trials: 75                           # Nombre d'essais étendu pour ensemble
+  cv_folds: 3                            # Cross-validation folds
+  enable_multi_objective_hpo: true       # Multi-objectif HPO
+  use_pareto_optimization: true          # Optimisation Pareto
+  use_hierarchical_hpo: true            # HPO hiérarchique
+
+# Paramètres spécifiques à l'entraînement d'ensemble (meta-learner)
+ensemble:
+  n_estimators: 100                      # Arbres LightGBM
+  max_depth: 6                          # Profondeur max
+  learning_rate: 0.1                    # Taux d'apprentissage
+  random_state: 42                      # Graine aléatoire
+  n_jobs: -1                            # Jobs parallèles
+  verbose: -1                          # Verbosity mode
+  calibration_method: "isotonic"        # Méthode calibration
+  cv_folds: 3                          # Cross-validation
+  enable_temporal_smoothing: true       # Lissage temporel
+  temporal_smoothing_alpha: 0.1        # Alpha lissage
+  enable_soft_labels: true              # Labels souples
+  soft_label_smoothing: 0.1            # Facteur lissage labels
+  enable_smoothed_features: true       # Features lissées
+  smoothing_window_sizes: [3, 5, 7]     # Fenêtres lissage
+
+# Configuration génération features via feature bank
+feature_generation:
+  min_features_required: 50              # Minimum features requises
+  categories:                            # Catégories de features
+    - "momentum"
+    - "volatility" 
+    - "volume"
+    - "trend"
+    - "oscillator"
+    - "returns"
+    - "microstructure"
+  memory_budget_mb: 2048.0              # Budget mémoire
+  time_budget_seconds: 300.0            # Budget temps
+  precision_requirement: "high"          # Requirement précision
+  enable_vectorization: true             # Vectorisation activée
+
+# Configuration validation post-entraînement
+model_validation:
+  enable_purged_cv: true                 # Cross-validation purgée
+  enable_data_leakage_detection: true   # Détection fuites données
+  enable_time_series_validation: true   # Validation séries temporelles
+  enable_shap_analysis: true            # Analyse SHAP
+  enable_lime_analysis: true            # Analyse LIME
+
+# Configuration validation anti-fuite temporelle
+temporal_validation:
+  enable_temporal_checks: true          # Vérifications temporelles
+  strict_temporal_order: true          # Ordre temporel strict
+  initial_train_size: 0.7              # Taille train initial
+  test_size: 0.3                      # Taille test
+  gap_size: 1                         # Gap entre train/test
+
+# Configuration modèles de base pour l'ensemble
+base_models:
+  catboost_iterations: 100             # Itérations CatBoost
+  catboost_depth: 6                   # Profondeur CatBoost
+  catboost_learning_rate: 0.1         # Learning rate CatBoost
+  rf_n_estimators: 100               # Arbres Random Forest
+  rf_max_depth: 10                   # Profondeur max RF
+  et_n_estimators: 100              # Arbres Extra Trees
+  et_max_depth: 10                  # Profondeur max ET
+  enable_catboost: true             # Activation CatBoost
+  enable_random_forest: true        # Activation Random Forest
+  enable_extra_trees: true          # Activation Extra Trees
+
+# Configuration méta-fonctionnalités
+enable_enhanced_meta_features: true          # Meta-features enrichis
+enable_uncertainty_quantification: true      # Quantification incertitude  
+enable_confidence_features: true             # Features confiance
+enable_disagreement_analysis: true           # Analyse désaccord
+enable_regime_transition_features: true      # Features transitions régimes
+
+# Configuration artifacts et sorties
+save_individual_artifacts: true              # Sauvegarde artifacts individuels
+create_timeframe_artifacts: true             # Création artifacts par timeframe
+tag_dataset_with_outputs: true              # Tagging dataset avec sorties
+generate_probability_reports: true          # Génération rapports probabilités
+enable_downstream_compatibility: true       # Compatibilité downstream
+
+# Configuration performance et monitoring
+enable_performance_monitoring: true          # Monitoring performance
+enable_hardware_optimization: true          # Optimisation hardware
+enable_lookahead_protection: true          # Protection lookahead
+memory_limit_mb: 8192.0                    # Limite mémoire
+timeout_seconds: 3600                      # Timeout execution

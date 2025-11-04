@@ -38,14 +38,11 @@ from sklearn.model_selection import cross_val_score
 # Import tprint utilities
 try:
     from src.utils.tprint import (
-        tprint,
         tprint_info,
         tprint_warning,
         tprint_error,
         tprint_success,
         tprint_debug,
-        tprint_data_preview,
-        tprint_data_format,
         tprint_timer,
         tprint_logged
     )
@@ -60,8 +57,6 @@ except ImportError:
     tprint_debug = logging.debug
     tprint_timer = lambda x: (lambda y: (lambda: y))(None) # No-op timer
     tprint_logged = lambda **kwargs: lambda f: f # No-op decorator
-    def tprint_data_preview(data, name, **kwargs): logging.info(f"Data Preview ({name}):\n{data}")
-    def tprint_data_format(data, name, **kwargs): logging.info(f"Data Format ({name}):\n{type(data)}")
 
 
 # Import hardware utilities
@@ -570,8 +565,8 @@ class ClusterQualityAssessor:
         """
         Ensure regime_labels, feature_data, and forward_returns are properly aligned.
         
-        This method validates lengths and handles index misalignment by converting
-        to positional indexing if indices don't match.
+        This method validates lengths and handles index misalignment by truncating
+        to the minimum length and converting to positional indexing.
         
         Args:
             regime_labels: Regime/cluster labels array
@@ -581,35 +576,31 @@ class ClusterQualityAssessor:
         Returns:
             Tuple of (aligned_regime_labels, aligned_feature_data, aligned_forward_returns)
         """
-        # Validate lengths
-        if len(regime_labels) != len(feature_data):
+        # Determine minimum length across all inputs
+        min_length = len(regime_labels)
+        lengths = [len(regime_labels), len(feature_data)]
+        
+        if forward_returns is not None:
+            lengths.append(len(forward_returns))
+        
+        min_length = min(lengths)
+        
+        # Warn if truncation is needed
+        if len(regime_labels) != min_length or len(feature_data) != min_length:
             self.logger.warning(
-                f"Length mismatch: regime_labels ({len(regime_labels)}) vs "
-                f"feature_data ({len(feature_data)}). Using positional indexing."
+                f"Length mismatch detected. Truncating to minimum length: {min_length}. "
+                f"(regime_labels: {len(regime_labels)}, feature_data: {len(feature_data)}"
+                f"{f', forward_returns: {len(forward_returns)}' if forward_returns is not None else ''})"
             )
-            # Reset indices to ensure positional alignment
-            feature_data = feature_data.reset_index(drop=True)
+        
+        # Truncate and reset indices for positional alignment
+        regime_labels = regime_labels[:min_length]
+        feature_data = feature_data.iloc[:min_length].reset_index(drop=True)
         
         # Handle forward_returns alignment
         aligned_forward_returns = None
         if forward_returns is not None:
-            if len(regime_labels) != len(forward_returns):
-                self.logger.warning(
-                    f"Length mismatch: regime_labels ({len(regime_labels)}) vs "
-                    f"forward_returns ({len(forward_returns)}). Using positional indexing."
-                )
-                forward_returns = forward_returns.reset_index(drop=True)
-            
-            # Check if indices match (if both have indices)
-            if hasattr(forward_returns, 'index') and hasattr(feature_data, 'index'):
-                if not forward_returns.index.equals(feature_data.index):
-                    self.logger.warning(
-                        "Index mismatch between forward_returns and feature_data. "
-                        "Resetting indices for alignment."
-                    )
-                    forward_returns = forward_returns.reset_index(drop=True)
-                    feature_data = feature_data.reset_index(drop=True)
-            
+            forward_returns = forward_returns.iloc[:min_length].reset_index(drop=True)
             aligned_forward_returns = forward_returns
         
         return regime_labels, feature_data, aligned_forward_returns
@@ -642,11 +633,6 @@ class ClusterQualityAssessor:
         """
         tprint_info("🔍 Starting comprehensive cluster quality assessment")
         
-        # Preview input data
-        tprint_data_preview(regime_labels, "Regime Labels", max_rows=10)
-        tprint_data_preview(feature_data, "Feature Data", max_rows=5, max_cols=5)
-        tprint_data_format(feature_data, "Feature Data", check_compatibility=True)
-        
         # Initialize metrics object
         metrics = ClusterQualityMetrics()
         
@@ -667,8 +653,6 @@ class ClusterQualityAssessor:
         if features_clean.empty:
             tprint_warning("⚠️ No numeric features available for quality assessment")
             return metrics
-        
-        tprint_data_preview(features_clean, "Clean Numeric Features", max_rows=5)
         
         # Calculate basic statistics
         metrics.n_regimes = len(set(regime_labels[non_noise_mask]))
@@ -1342,7 +1326,15 @@ class ClusterQualityAssessor:
         
         for label in non_noise_labels:
             regime_mask = (regime_labels == label)
-            regime_returns_ts = forward_returns[regime_mask].values
+            
+            # Ensure indices match between cluster_labels and forward_returns
+            if len(regime_mask) != len(forward_returns):
+                # Truncate regime_mask to match forward_returns length
+                regime_mask_aligned = regime_mask[:len(forward_returns)]
+                regime_returns_ts = forward_returns[regime_mask_aligned].values
+            else:
+                regime_returns_ts = forward_returns[regime_mask].values
+            
             within_cvs.append(self._calculate_cv(regime_returns_ts))
         
         avg_within_cv_fwd_return = np.nanmean(within_cvs) if within_cvs else np.nan
@@ -2665,7 +2657,7 @@ class ClusterQualityAssessor:
         
         try:
             metrics_dict = metrics.to_dict()
-            tprint_data_preview(metrics_dict, "Cluster Quality Metrics")
+            tprint_info(f"📊 Saving cluster quality metrics: {len(metrics_dict)} metrics")
             
             self.artifact_manager.save(
                 data=metrics_dict,
@@ -2700,7 +2692,7 @@ class ClusterQualityAssessor:
             if metrics_dict is None:
                 return None
             
-            tprint_data_preview(metrics_dict, "Loaded Cluster Quality Metrics")
+            tprint_info(f"📊 Loaded cluster quality metrics: {len(metrics_dict)} metrics")
             
             # Filter to only valid dataclass fields to prevent errors
             valid_fields = {f.name for f in fields(ClusterQualityMetrics)}
@@ -2766,7 +2758,7 @@ class ClusterQualityAssessor:
 
 **Symbol:** {symbol}  
 **Generated:** {timestamp}  
-**Quality Score:** {metrics.quality_score:.4f if metrics.quality_score else 'N/A'}
+**Quality Score:** {f'{metrics.quality_score:.4f}' if metrics.quality_score else 'N/A'}
 
 ---
 
@@ -3016,7 +3008,7 @@ This score indicates how well the current regime can predict future return direc
 
 ## Quality Assessment
 
-**Overall Quality Score:** {metrics.quality_score:.4f if metrics.quality_score else 'N/A'} / 1.0
+**Overall Quality Score:** {f'{metrics.quality_score:.4f}' if metrics.quality_score else 'N/A'} / 1.0
 
 """
         

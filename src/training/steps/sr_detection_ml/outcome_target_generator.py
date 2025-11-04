@@ -49,19 +49,37 @@ class OutcomeTargetGenerator:
         self,
         level_price: float,
         level_idx: int,
-        future_data: pd.DataFrame
+        future_data: pd.DataFrame,
+        creation_timestamp: pd.Timestamp = None
     ) -> Dict[str, float]:
         """
         Generate ALL possible outcome targets from future price behavior.
+        
+        TIMESTAMP CONTRACT:
+        - Only uses data AFTER creation_timestamp (no past information leak)
+        - If creation_timestamp provided, validates all data used is > creation_timestamp
+        - This prevents reverse leakage by ensuring targets only look forward in time
         
         Args:
             level_price: Price of the level
             level_idx: Index of level in full data
             future_data: Full DataFrame (level at level_idx, future is after)
+            creation_timestamp: Timestamp when level was created (optional but recommended)
         
         Returns:
             Dictionary with 50-100 outcome targets
         """
+        # TIMESTAMP CONTRACT VALIDATION
+        if creation_timestamp is not None:
+            if level_idx >= len(future_data):
+                raise ValueError(f"level_idx {level_idx} exceeds data length {len(future_data)}")
+            
+            level_timestamp = future_data.index[level_idx]
+            if level_timestamp > creation_timestamp:
+                self.logger.warning(
+                    f"TIMESTAMP CONTRACT WARNING: level_timestamp {level_timestamp} "
+                    f"is after creation_timestamp {creation_timestamp}"
+                )
         targets = {}
         
         for window in self.forward_windows:

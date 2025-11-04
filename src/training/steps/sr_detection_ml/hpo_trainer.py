@@ -206,24 +206,39 @@ class HPOTrainer:
             )
         ]
         
-        # Objective function
-        def objective_func(model, params, X, y):
+        # Objective function - signature must match HierarchicalParameterOptimizer expectations
+        # Expected: (params, X_train, y_train, X_val, y_val, model, cv_folds, scoring_metric, **kwargs)
+        def objective_func(
+            params: Dict[str, Any],
+            X_train_inner: np.ndarray,
+            y_train_inner: np.ndarray,
+            X_val_inner: Optional[np.ndarray] = None,
+            y_val_inner: Optional[np.ndarray] = None,
+            model: Optional[Any] = None,
+            cv_folds: int = 5,
+            scoring_metric: str = 'r2',
+            **kwargs
+        ) -> float:
             """Objective for hierarchical optimizer."""
-            model_params = {
-                'objective': 'regression',
-                'verbosity': -1,
-                'force_col_wise': True,
-                'n_estimators': 200,
-                'random_state': 42,
-                **params
-            }
-            
-            model = lgb.LGBMRegressor(**model_params)
-            model.fit(X, y)
-            
-            # Evaluate on validation set
-            score = model.score(X_val, y_val)
-            return score
+            try:
+                model_params = {
+                    'objective': 'regression',
+                    'verbosity': -1,
+                    'force_col_wise': True,
+                    'n_estimators': 200,
+                    'random_state': 42,
+                    **params
+                }
+                
+                model_instance = lgb.LGBMRegressor(**model_params)
+                model_instance.fit(X_train_inner, y_train_inner)
+                
+                # Evaluate on validation set (use outer scope validation data)
+                score = model_instance.score(X_val, y_val)
+                return score
+            except Exception as e:
+                self.logger.warning(f"Trial failed: {e}")
+                return -999.0  # Return very poor score on failure
         
         # Create hierarchical optimizer
         optimizer = HierarchicalParameterOptimizer(

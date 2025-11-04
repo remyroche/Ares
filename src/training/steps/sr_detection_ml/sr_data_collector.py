@@ -15,6 +15,7 @@ from datetime import datetime
 
 from src.training.steps.pre_training.utils.artifact_manager import artifact_context
 from src.training.steps.sr_detection_ml.candidate_level_generator import DataDrivenLevelGenerator
+from src.training.steps.sr_detection_ml.candidate_clustering import CandidateClustering
 from src.training.steps.sr_detection_ml.raw_feature_generator import RawFeatureGenerator
 from src.training.steps.sr_detection_ml.outcome_target_generator import OutcomeTargetGenerator
 
@@ -28,17 +29,23 @@ class SRDataCollector:
     Philosophy: Generate data from pure price behavior, no heuristics.
     """
     
-    def __init__(self, fast_mode: bool = True):
+    def __init__(self, fast_mode: bool = True, enable_clustering: bool = False):
         """
         Initialize data collector.
         
         Args:
             fast_mode: If True, uses faster target generation (40 targets vs 135)
+            enable_clustering: If True, clusters candidates into S/R zones (default: False)
         """
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Initialize generators
         self.level_generator = DataDrivenLevelGenerator(order=1)
+        self.clustering = CandidateClustering(
+            eps_ratio=0.0025,  # 0.25% of price
+            min_samples=3,
+            enable_clustering=enable_clustering
+        )
         self.feature_generator = RawFeatureGenerator()
         self.target_generator = OutcomeTargetGenerator(fast_mode=fast_mode)
     
@@ -101,21 +108,29 @@ class SRDataCollector:
                 if not candidates:
                     continue
                 
+                # OPTIONAL: Cluster candidates into S/R zones
+                candidates = self.clustering.cluster_candidates(candidates)
+                
                 # Process each candidate
                 for level in candidates:
                     try:
-                        # Extract exhaustive features
+                        # TIMESTAMP CONTRACT: Pass creation timestamp to enforce temporal boundaries
+                        creation_ts = level.get('timestamp', historical.index[-1])
+                        
+                        # Extract exhaustive features (only uses data <= creation_timestamp)
                         features = self.feature_generator.generate_exhaustive_features(
                             level['price'],
                             level['idx'],
-                            historical
+                            historical,
+                            creation_timestamp=creation_ts
                         )
                         
-                        # Generate all outcome targets
+                        # Generate all outcome targets (only uses data >= creation_timestamp)
                         targets = self.target_generator.generate_all_targets(
                             level['price'],
                             level['idx'],
-                            ohlcv_data  # Pass full data so it can access future
+                            ohlcv_data,  # Pass full data so it can access future
+                            creation_timestamp=creation_ts
                         )
                         
                         # Skip if no valid targets
@@ -157,14 +172,32 @@ class SRDataCollector:
         self.logger.info(f"   Unique dates: {df['date'].nunique()}")
         self.logger.info(f"   Date range: {df['date'].min()} to {df['date'].max()}")
         
-        # Count features and targets
-        feature_cols = [c for c in df.columns if any(c.startswith(p) for p in [
-            'dist_', 'crosses_', 'vol_', 'ret_', 'range_', 'atr_', 'time_at_', 'close_'
-        ])]
-        target_cols = [c for c in df.columns if any(c.startswith(p) for p in [
-            'max_', 'touch_', 'break_', 'reversal_', 'vol_change', 'volume_surge', 
-            'net_move', 'bars_to', 'vol_spike', 'volume_spike'
-        ])]
+        # Count features and targets with strict separation to prevent leakage
+        # Define target prefixes FIRST (more specific)
+        target_prefixes = [
+            'max_', 'touch_', 'break_', 'reversal_', 
+            'vol_change', 'vol_spike',  # SPECIFIC vol_ targets
+            'volume_surge', 'volume_spike',  # SPECIFIC volume_ targets
+            'net_move', 'bars_to'
+        ]
+        
+        # Feature prefixes (exclude targets)
+        feature_prefixes = [
+            'dist_', 'crosses_', 'ret_', 'range_', 
+            'atr_', 'time_at_', 'close_', 'cross_rate',
+            'vol_mean_', 'vol_std_', 'vol_median_', 'vol_min_', 'vol_max_',  # vol_ FEATURES only
+            'vol_near_', 'vol_skew_', 'vol_kurt_', 'vol_ratio_',  # More vol_ FEATURES
+            'volatility_ratio_', 'volatility_norm_'  # volatility features
+        ]
+        
+        # First identify targets
+        target_cols = [c for c in df.columns if any(c.startswith(p) for p in target_prefixes)]
+        
+        # Then identify features (excluding targets)
+        feature_cols = [
+            c for c in df.columns 
+            if any(c.startswith(p) for p in feature_prefixes) and c not in target_cols
+        ]
         
         self.logger.info(f"   Features: {len(feature_cols)}")
         self.logger.info(f"   Targets: {len(target_cols)}")

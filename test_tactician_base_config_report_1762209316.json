@@ -1,0 +1,59 @@
+{
+  "timestamp": "2025-11-03 23:35:16",
+  "total_tests": 7,
+  "passed": 5,
+  "failed": 2,
+  "success_rate": 71.42857142857143,
+  "total_execution_time": 36.78340220451355,
+  "test_results": [
+    {
+      "test_name": "test_1_config_loading",
+      "success": true,
+      "message": "Configuration chargée: tactician_base, 5 modèles",
+      "execution_time": 35.98868489265442,
+      "timestamp": 1762209315.8121731
+    },
+    {
+      "test_name": "test_2_config_manager",
+      "success": true,
+      "message": "Gestionnaire opérationnel: tactician_base",
+      "execution_time": 0.08015108108520508,
+      "timestamp": 1762209315.8924959
+    },
+    {
+      "test_name": "test_3_tactician_base_training_step_integration",
+      "success": false,
+      "message": "Erreur: name 'TacticianBaseTrainingConfig' is not defined",
+      "execution_time": 0.3850390911102295,
+      "timestamp": 1762209316.2776809
+    },
+    {
+      "test_name": "test_4_fallback_configuration",
+      "success": true,
+      "message": "Fallback opérationnel: tactician_base",
+      "execution_time": 0.060629844665527344,
+      "timestamp": 1762209316.33837
+    },
+    {
+      "test_name": "test_5_multi_format_support",
+      "success": false,
+      "message": "Erreur: argument of type 'TacticianBaseTrainingConfig' is not iterable",
+      "execution_time": 0.051782846450805664,
+      "timestamp": 1762209316.390311
+    },
+    {
+      "test_name": "test_6_config_sections_access",
+      "success": true,
+      "message": "Accès sections validé (5 sections)",
+      "execution_time": 0.19046592712402344,
+      "timestamp": 1762209316.580843
+    },
+    {
+      "test_name": "test_7_performance_loading",
+      "success": true,
+      "message": "Performance OK: chargement 0.026s, accès 0.000000s",
+      "execution_time": 0.025867938995361328,
+      "timestamp": 1762209316.606795
+    }
+  ]
+}

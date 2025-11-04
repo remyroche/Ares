@@ -1,0 +1,8 @@
+{
+  "artifact_name": "hdp_hmm_features_used",
+  "artifact_type": "metadata",
+  "file_path": "artifacts/market_analysis/ETHUSDT/binance/long/Analyst/sticky_finite_hmm_regime_discovery/regime_discovery_sticky_finite_hmm_regime_discovery_hdp_hmm_features_used_ETHUSDT_binance_long_Analyst_20251103_234649.parquet",
+  "file_size": 1757,
+  "timestamp": "2025-11-03T23:46:49.375530",
+  "compression": "auto"
+}

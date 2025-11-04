@@ -22,6 +22,7 @@ from src.training.steps.sr_detection_ml.hpo_trainer import HPOTrainer
 from src.training.steps.sr_detection_ml.utils.report_generator import SRMLReportGenerator
 from src.training.steps.sr_detection_ml.data_leakage_checker import DataLeakageChecker
 from src.training.steps.sr_detection_ml.validation_safeguards import ValidationSafeguards
+from src.training.steps.sr_detection_ml.multicollinearity_remover import MulticollinearityRemover
 
 # tprint for progress tracking
 try:
@@ -59,6 +60,7 @@ class FullyDataDrivenSRSystem:
         self.report_generator = SRMLReportGenerator()
         self.leakage_checker = DataLeakageChecker()
         self.validation_safeguards = ValidationSafeguards()
+        self.multicollinearity_remover = MulticollinearityRemover(perfect_threshold=0.999, high_threshold=0.95)
         
         # Storage for results
         self.results = {}
@@ -135,21 +137,35 @@ class FullyDataDrivenSRSystem:
                 f"Results may be unreliable!"
             )
         
-        # Step 3: Feature selection via LGBM+SHAP
-        tprint("\n⚡ STEP 3: FEATURE SELECTION (LGBM+SHAP)")
+        # Step 3: Remove multicollinear features
+        tprint("\n🧹 STEP 3: MULTICOLLINEARITY REMOVAL")
+        tprint("-" * 80)
+        
+        X_cleaned, mcol_report = self.multicollinearity_remover.detect_and_remove(
+            X_raw, remove_perfect_only=True  # Remove perfect correlations only
+        )
+        
+        if mcol_report['removed_count'] > 0:
+            tprint(f"⚠️ Removed {mcol_report['removed_count']} features with perfect correlation (r >= 0.999)")
+            tprint(f"   Perfect correlation pairs: {mcol_report['perfect_correlations']}")
+        else:
+            tprint("✅ No multicollinearity detected")
+        
+        # Step 4: Feature selection via LGBM+SHAP
+        tprint("\n⚡ STEP 4: FEATURE SELECTION (LGBM+SHAP)")
         tprint("-" * 80)
         
         # Use first target for initial feature selection
         initial_target = targets_df.iloc[:, 0].fillna(0)
         
         selected_features, shap_importance = self.feature_selector.select_features_by_shap_importance(
-            X_raw, initial_target, n_features=n_features
+            X_cleaned, initial_target, n_features=n_features
         )
         
-        X_selected = X_raw[selected_features]
+        X_selected = X_cleaned[selected_features]
         
-        # Step 4: Find best target via Fast ML-based selection
-        tprint("\n🎯 STEP 4: FAST TARGET SELECTION (ML-Based)")
+        # Step 5: Find best target via Fast ML-based selection
+        tprint("\n🎯 STEP 5: FAST TARGET SELECTION (ML-Based)")
         tprint("-" * 80)
         
         best_target, target_analysis = self.target_selector.find_best_target_fast(
@@ -158,8 +174,8 @@ class FullyDataDrivenSRSystem:
         
         y = targets_df[best_target].fillna(0)
         
-        # Step 5: Train/val split (time series)
-        tprint("\n✂️  STEP 5: TRAIN/VAL SPLIT")
+        # Step 6: Train/val split (time series)
+        tprint("\n✂️  STEP 6: TRAIN/VAL SPLIT")
         tprint("-" * 80)
         
         split_idx = int(len(X_selected) * 0.8)
@@ -172,16 +188,16 @@ class FullyDataDrivenSRSystem:
         tprint(f"✅ Train: {len(X_train):,} samples")
         tprint(f"✅ Val:   {len(X_val):,} samples")
         
-        # Step 6: HPO for optimal hyperparameters
-        tprint("\n🔧 STEP 6: HYPERPARAMETER OPTIMIZATION")
+        # Step 7: HPO for optimal hyperparameters
+        tprint("\n🔧 STEP 7: HYPERPARAMETER OPTIMIZATION")
         tprint("-" * 80)
         
         final_model, best_params = self.hpo_trainer.train_optimized_model(
             X_train, y_train, X_val, y_val
         )
         
-        # Step 7: SHAP analysis
-        tprint("\n🔬 STEP 7: SHAP INTERPRETABILITY ANALYSIS")
+        # Step 8: SHAP analysis
+        tprint("\n🔬 STEP 8: SHAP INTERPRETABILITY ANALYSIS")
         tprint("-" * 80)
         
         explainer = shap.TreeExplainer(final_model)
@@ -190,7 +206,7 @@ class FullyDataDrivenSRSystem:
         tprint(f"✅ SHAP analysis complete for {len(X_val)} validation samples")
         
         # CRITICAL: Run validation safeguards
-        tprint("\n🛡️ STEP 7.5: VALIDATION SAFEGUARDS")
+        tprint("\n🛡️ STEP 8.5: VALIDATION SAFEGUARDS")
         tprint("-" * 80)
         
         # Check for data leakage
@@ -243,8 +259,8 @@ class FullyDataDrivenSRSystem:
             importance = feature_importance[idx]
             self.logger.info(f"      {rank}. {feature}: {importance:.6f}")
         
-        # Step 8: Compile results
-        self.logger.info("\n📦 STEP 8: COMPILING RESULTS")
+        # Step 9: Compile results
+        self.logger.info("\n📦 STEP 9: COMPILING RESULTS")
         self.logger.info("-" * 80)
         
         results = {
@@ -266,6 +282,8 @@ class FullyDataDrivenSRSystem:
                 'n_samples_train': len(X_train),
                 'n_samples_val': len(X_val),
                 'n_features_raw': len(feature_cols),
+                'n_features_after_mcol_removal': len(X_cleaned.columns),
+                'n_features_removed_mcol': mcol_report['removed_count'],
                 'n_features_selected': len(selected_features),
                 'n_targets_evaluated': len(target_cols),
                 'best_target_name': best_target,
@@ -281,7 +299,7 @@ class FullyDataDrivenSRSystem:
         self._save_results(results, symbol, exchange, timeframe)
         
         # Generate comprehensive markdown report
-        tprint("\n📝 STEP 9: GENERATING COMPREHENSIVE REPORT")
+        tprint("\n📝 STEP 10: GENERATING COMPREHENSIVE REPORT")
         tprint("-" * 80)
         
         try:
@@ -307,7 +325,7 @@ class FullyDataDrivenSRSystem:
     
     def _identify_columns(self, df: pd.DataFrame) -> tuple:
         """
-        Identify feature and target columns.
+        Identify feature and target columns with strict separation to prevent leakage.
         
         Args:
             df: Training data DataFrame
@@ -315,26 +333,42 @@ class FullyDataDrivenSRSystem:
         Returns:
             Tuple of (feature_cols, target_cols)
         """
-        feature_prefixes = [
-            'dist_', 'crosses_', 'vol_', 'ret_', 'range_', 
-            'atr_', 'time_at_', 'close_', 'cross_rate'
-        ]
-        
+        # Define target prefixes FIRST (more specific)
         target_prefixes = [
             'max_', 'touch_', 'break_', 'reversal_', 
-            'vol_change', 'volume_surge', 'net_move', 
-            'bars_to', 'vol_spike', 'volume_spike'
+            'vol_change', 'vol_spike',  # SPECIFIC vol_ targets
+            'volume_surge', 'volume_spike',  # SPECIFIC volume_ targets
+            'net_move', 'bars_to'
         ]
         
-        feature_cols = [
-            c for c in df.columns 
-            if any(c.startswith(p) for p in feature_prefixes)
+        # Feature prefixes (more general, but exclude targets)
+        feature_prefixes = [
+            'dist_', 'crosses_', 'ret_', 'range_', 
+            'atr_', 'time_at_', 'close_', 'cross_rate',
+            'vol_mean_', 'vol_std_', 'vol_median_', 'vol_min_', 'vol_max_',  # vol_ FEATURES only
+            'vol_near_', 'vol_skew_', 'vol_kurt_', 'vol_ratio_',  # More vol_ FEATURES
+            'volatility_ratio_', 'volatility_norm_'  # volatility features
         ]
         
+        # First, identify ALL columns that match target prefixes
         target_cols = [
             c for c in df.columns 
             if any(c.startswith(p) for p in target_prefixes)
         ]
+        
+        # Then, identify feature columns EXCLUDING any that are targets
+        feature_cols = [
+            c for c in df.columns 
+            if any(c.startswith(p) for p in feature_prefixes) and c not in target_cols
+        ]
+        
+        # CRITICAL: Double-check no targets leaked into features
+        leaked_targets = set(feature_cols) & set(target_cols)
+        if leaked_targets:
+            self.logger.error(f"🚨 CRITICAL: Target leakage detected! {leaked_targets}")
+            raise ValueError(f"Target columns leaked into features: {leaked_targets}")
+        
+        self.logger.info(f"📊 Column identification: {len(feature_cols)} features, {len(target_cols)} targets")
         
         return feature_cols, target_cols
     

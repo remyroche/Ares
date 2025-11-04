@@ -22,9 +22,15 @@ print("HDP-HMM Data Preparation - Enhanced Feature Engineering")
 print("=" * 80)
 
 
-def generate_microstructure_features(df: pd.DataFrame) -> Dict[str, float]:
+def generate_structural_market_state_features(df: pd.DataFrame) -> Dict[str, float]:
     """
-    Generate order flow imbalance and microstructure features from klines.
+    Generate structural market state features from OHLCV data.
+    
+    Categories:
+    1. Liquidity/Microstructure: bid-ask spread proxy, volume imbalance, trade direction
+    2. Trend-Convexity: slope-of-slope of MA, second derivative features
+    3. Order flow persistence: buy volume bursts vs. sell volume bursts
+    4. Regime flags: volatility percentile rank, session time blocks
     
     Klines provide: open, high, low, close, volume, quote_volume, trades, 
     taker_buy_base_volume, taker_buy_quote_volume
@@ -35,6 +41,9 @@ def generate_microstructure_features(df: pd.DataFrame) -> Dict[str, float]:
         return features
     
     try:
+        # ===================================================================
+        # CATEGORY 1: LIQUIDITY / MICROSTRUCTURE (OHLCV only)
+        # ===================================================================
         # Order Flow Imbalance (from taker buy/sell volumes)
         if 'taker_buy_base_volume' in df.columns and 'volume' in df.columns:
             taker_buy = df['taker_buy_base_volume'].iloc[-1]
@@ -128,6 +137,159 @@ def generate_microstructure_features(df: pd.DataFrame) -> Dict[str, float]:
                     if total_ticks > 0:
                         features[f'tick_imbalance_{window}'] = (up_ticks - down_ticks) / total_ticks
         
+        # ===================================================================
+        # CATEGORY 2: TREND-CONVEXITY (second derivatives)
+        # ===================================================================
+        
+        # Slope-of-slope of MA (second derivative of moving average)
+        if 'close' in df.columns:
+            for window in [5, 10, 20]:
+                if len(df) >= window + 2:
+                    # Calculate MA
+                    ma = df['close'].rolling(window=window).mean()
+                    # Calculate first derivative (slope)
+                    ma_slope = ma.diff()
+                    # Calculate second derivative (slope-of-slope / acceleration)
+                    ma_acceleration = ma_slope.diff()
+                    if not ma_acceleration.empty and not pd.isna(ma_acceleration.iloc[-1]):
+                        # Normalize by price to make scale-invariant
+                        features[f'ma_acceleration_{window}'] = ma_acceleration.iloc[-1] / (df['close'].iloc[-1] + 1e-8)
+        
+        # Price second derivative (convexity measure)
+        if 'close' in df.columns and len(df) >= 3:
+            price_diff = df['close'].diff()
+            price_second_diff = price_diff.diff()
+            if not price_second_diff.empty and not pd.isna(price_second_diff.iloc[-1]):
+                # Normalize by price
+                features['price_convexity'] = price_second_diff.iloc[-1] / (df['close'].iloc[-1] + 1e-8)
+        
+        # Returns convexity (acceleration in returns)
+        if 'close' in df.columns and len(df) >= 4:
+            returns = df['close'].pct_change()
+            returns_diff = returns.diff()  # First derivative of returns
+            returns_accel = returns_diff.diff()  # Second derivative of returns
+            if not returns_accel.empty and not pd.isna(returns_accel.iloc[-1]):
+                features['returns_convexity'] = returns_accel.iloc[-1]
+        
+        # Volume convexity
+        if 'volume' in df.columns and len(df) >= 3:
+            vol_diff = df['volume'].diff()
+            vol_second_diff = vol_diff.diff()
+            if not vol_second_diff.empty and not pd.isna(vol_second_diff.iloc[-1]):
+                avg_vol = df['volume'].mean()
+                if avg_vol > 0:
+                    features['volume_convexity'] = vol_second_diff.iloc[-1] / (avg_vol + 1e-8)
+        
+        # ===================================================================
+        # CATEGORY 3: ORDER FLOW PERSISTENCE (OHLCV only - buy vs sell bursts)
+        # ===================================================================
+        
+        # Buy volume burst detection (using taker_buy_base_volume)
+        if 'taker_buy_base_volume' in df.columns and 'volume' in df.columns:
+            for window in [3, 5, 10]:
+                if len(df) >= window:
+                    # Calculate buy/sell volume separation
+                    taker_buy_vol = df['taker_buy_base_volume'].tail(window)
+                    total_vol = df['volume'].tail(window)
+                    taker_sell_vol = total_vol - taker_buy_vol
+                    
+                    # Buy volume burst: std dev of buy volume
+                    buy_burst_std = taker_buy_vol.std()
+                    if not pd.isna(buy_burst_std):
+                        features[f'buy_volume_burst_{window}'] = buy_burst_std
+                    
+                    # Sell volume burst: std dev of sell volume
+                    sell_burst_std = taker_sell_vol.std()
+                    if not pd.isna(sell_burst_std):
+                        features[f'sell_volume_burst_{window}'] = sell_burst_std
+                    
+                    # Buy/Sell burst ratio (which side is more volatile)
+                    if sell_burst_std > 1e-8:
+                        features[f'buy_sell_burst_ratio_{window}'] = buy_burst_std / sell_burst_std
+                    
+                    # Order flow persistence: autocorrelation of buy imbalance
+                    buy_imbalance = (taker_buy_vol / (total_vol + 1e-8)) - 0.5  # Center at 0
+                    if len(buy_imbalance) >= 2:
+                        # Calculate autocorrelation
+                        buy_imb_shifted = buy_imbalance.shift(1)
+                        correlation = buy_imbalance.corr(buy_imb_shifted)
+                        if not pd.isna(correlation):
+                            features[f'order_flow_persistence_{window}'] = correlation
+        
+        # Price-volume burst coordination (do price and volume burst together?)
+        if 'close' in df.columns and 'volume' in df.columns:
+            for window in [5, 10]:
+                if len(df) >= window:
+                    price_changes = df['close'].pct_change().tail(window)
+                    volume_changes = df['volume'].pct_change().tail(window)
+                    
+                    # Correlation between price moves and volume moves
+                    correlation = price_changes.corr(volume_changes)
+                    if not pd.isna(correlation):
+                        features[f'price_volume_burst_sync_{window}'] = correlation
+        
+        # ===================================================================
+        # CATEGORY 4: REGIME FLAGS
+        # ===================================================================
+        
+        # Volatility percentile rank (where is current vol vs historical?)
+        if 'close' in df.columns:
+            for lookback in [20, 50, 100]:
+                if len(df) >= lookback:
+                    returns = df['close'].pct_change().dropna()
+                    if len(returns) >= lookback:
+                        # Current volatility (5-bar rolling std)
+                        current_vol = returns.tail(5).std()
+                        # Historical volatility distribution
+                        historical_vols = returns.tail(lookback).rolling(5).std().dropna()
+                        if len(historical_vols) > 0 and not pd.isna(current_vol):
+                            # Percentile rank
+                            percentile = (historical_vols < current_vol).sum() / len(historical_vols)
+                            features[f'volatility_percentile_{lookback}'] = percentile
+        
+        # Session time blocks (intraday regime patterns)
+        # For crypto: use UTC hour as proxy for session
+        if hasattr(df.index, 'hour'):
+            # Use last timestamp
+            hour = df.index[-1].hour
+            
+            # Session blocks (4-hour blocks for crypto)
+            features['session_block_0_4'] = 1 if 0 <= hour < 4 else 0  # Asia late/US late
+            features['session_block_4_8'] = 1 if 4 <= hour < 8 else 0  # Asia morning
+            features['session_block_8_12'] = 1 if 8 <= hour < 12 else 0  # Europe morning
+            features['session_block_12_16'] = 1 if 12 <= hour < 16 else 0  # Europe afternoon/US morning
+            features['session_block_16_20'] = 1 if 16 <= hour < 20 else 0  # US afternoon
+            features['session_block_20_24'] = 1 if 20 <= hour < 24 else 0  # US evening/Asia early
+            
+            # Simplified: US vs non-US hours (higher liquidity proxy)
+            features['is_us_session'] = 1 if 13 <= hour < 21 else 0  # US market hours in UTC
+            features['is_asia_session'] = 1 if 0 <= hour < 9 else 0  # Asia market hours in UTC
+            features['is_europe_session'] = 1 if 7 <= hour < 16 else 0  # Europe market hours in UTC
+        
+        # Rolling regime stability (how stable is volatility regime?)
+        if 'close' in df.columns and len(df) >= 20:
+            returns = df['close'].pct_change().dropna()
+            if len(returns) >= 20:
+                # Calculate rolling 5-bar volatility
+                rolling_vol = returns.rolling(5).std()
+                # Stability = inverse of volatility-of-volatility
+                vol_of_vol = rolling_vol.tail(20).std()
+                avg_vol = rolling_vol.tail(20).mean()
+                if avg_vol > 1e-8 and not pd.isna(vol_of_vol):
+                    # Low vol-of-vol = stable regime
+                    features['regime_vol_stability'] = 1.0 - min(1.0, vol_of_vol / avg_vol)
+        
+        # Momentum regime flag (trending vs ranging)
+        if 'close' in df.columns:
+            for window in [10, 20]:
+                if len(df) >= window:
+                    returns = df['close'].pct_change().tail(window)
+                    # Trending = consistent direction (high % positive or high % negative)
+                    pct_positive = (returns > 0).sum() / len(returns)
+                    # Ranging = balanced (close to 50/50)
+                    trend_strength = abs(pct_positive - 0.5) * 2  # 0 = ranging, 1 = trending
+                    features[f'momentum_regime_{window}'] = trend_strength
+        
     except Exception as e:
         pass  # Silently skip on errors
     
@@ -220,9 +382,9 @@ try:
                 # Generate regime features
                 regime_features = regime_integrator._generate_regime_features(chunk)
                 
-                # Add microstructure features
-                microstructure_features = generate_microstructure_features(chunk)
-                regime_features.update(microstructure_features)
+                # Add structural market state features (liquidity, convexity, order flow, regime flags)
+                structural_features = generate_structural_market_state_features(chunk)
+                regime_features.update(structural_features)
                 
                 chunk_df = pd.DataFrame([regime_features]) if isinstance(regime_features, dict) else regime_features
                 feature_chunks.append(chunk_df)
@@ -325,25 +487,13 @@ try:
     print(f"      ❌ Removed {removed_rows} zero-heavy rows")
     feature_df_normalized = clean_rows
     print(f"      ✅ {len(clean_rows)} samples remain")
-    print("\n   🔧 Step 4: Applying PCA and caching reduced features...")
-    from sklearn.decomposition import PCA
     
-    N_COMPONENTS = 15 # Match the component count from your HMM config
-    
-    pca = PCA(n_components=N_COMPONENTS, random_state=42)
-    
-    # Fit PCA on the normalized data
-    feature_array_pca = pca.fit_transform(feature_df_normalized.values)
-    
-    print(f"      ✅ Data reduced from {feature_df_normalized.shape[1]} to {N_COMPONENTS} components")
-    print(f"      Total variance explained: {np.sum(pca.explained_variance_ratio_)*100:.2f}%")
-
-    # Quick PCA analysis for dimensionality check
+    # Quick dimensionality check before PCA
     print("\n   📈 Feature dimensionality check...")
     from sklearn.decomposition import PCA
-    pca = PCA()
-    pca.fit(feature_df_normalized.fillna(0))
-    cumsum = np.cumsum(pca.explained_variance_ratio_)
+    pca_check = PCA()
+    pca_check.fit(feature_df_normalized.fillna(0))
+    cumsum = np.cumsum(pca_check.explained_variance_ratio_)
     n_95 = np.argmax(cumsum >= 0.95) + 1
     print(f"      Components for 95% variance: {n_95}/{feature_df_normalized.shape[1]}")
     print(f"      Effective dimensionality: {100*n_95/feature_df_normalized.shape[1]:.1f}%")
@@ -353,35 +503,135 @@ try:
     else:
         print(f"      ⚠️  Warning: Features may still have some redundancy")
     
-    print(f"\n   ✅ Final shape: {feature_df_normalized.shape}")
+    N_COMPONENTS = 15  # Match the component count from your HMM config
     
-    # Convert to float32
-    print("\n   🔧 Converting to float32 (50% memory savings)...")
-    feature_array_f32 = feature_array_pca.astype(np.float32) # <-- NEW
+    # ENHANCEMENT: Categorize features before PCA for better regime detection
+    print("\n   🔧 Categorizing features by type...")
     
-    print(f"      Float64: {feature_df_normalized.values.nbytes / 1024:.2f} KB")
-    print(f"      Float32: {feature_array_f32.nbytes / 1024:.2f} KB")
-    print(f"      Savings: {(1 - feature_array_f32.nbytes/feature_df_normalized.values.nbytes)*100:.1f}%")
+    # Define feature categories based on economic significance
+    feature_categories = {
+        'structural': [],      # Liquidity, order flow, microstructure
+        'volatility': [],      # Price variance, ranges
+        'trend': [],           # Price direction, momentum  
+        'volume': [],          # Volume patterns
+        'momentum': [],        # Rate of change, acceleration
+        'temporal': []         # Time-based patterns
+    }
+    
+    # Categorize each feature by its name pattern
+    for col in feature_df_normalized.columns:
+        col_lower = col.lower()
+        # Structural features (liquidity, order flow, microstructure) - MOST IMPORTANT
+        if any(pattern in col_lower for pattern in [
+            'order_flow', 'imbalance', 'buy_sell', 'price_impact',
+            'trade_intensity', 'relative_spread', 'vw_price_range',
+            'liquidity', 'microstructure', 'tick_imbalance'
+        ]):
+            feature_categories['structural'].append(col)
+        # Volatility features
+        elif any(pattern in col_lower for pattern in [
+            'volatility', 'range', 'std', 'atr', 'variance'
+        ]):
+            feature_categories['volatility'].append(col)
+        # Trend features
+        elif any(pattern in col_lower for pattern in [
+            'trend', 'ma', 'ema', 'price_to', 'temporal_price'
+        ]):
+            feature_categories['trend'].append(col)
+        # Volume features
+        elif any(pattern in col_lower for pattern in [
+            'volume_ratio', 'volume_clustering', 'lagged_volume',
+            'volume_momentum', 'volume_roc'
+        ]):
+            feature_categories['volume'].append(col)
+        # Momentum features
+        elif any(pattern in col_lower for pattern in [
+            'momentum', 'roc', 'acceleration', 'velocity'
+        ]):
+            feature_categories['momentum'].append(col)
+        # Temporal features
+        elif any(pattern in col_lower for pattern in [
+            'regime_duration', 'lagged_', 'temporal'
+        ]):
+            feature_categories['temporal'].append(col)
+        else:
+            # Default to structural if unknown
+            feature_categories['structural'].append(col)
+    
+    print(f"      Structural: {len(feature_categories['structural'])} features")
+    print(f"      Volatility: {len(feature_categories['volatility'])} features")
+    print(f"      Trend: {len(feature_categories['trend'])} features")
+    print(f"      Volume: {len(feature_categories['volume'])} features")
+    print(f"      Momentum: {len(feature_categories['momentum'])} features")
+    print(f"      Temporal: {len(feature_categories['temporal'])} features")
+    
+    # Apply PCA separately to structural features for HMM training
+    structural_cols = feature_categories['structural']
+    if len(structural_cols) == 0:
+        print("      ⚠️ WARNING: No structural features found! Using all features as fallback.")
+        structural_features = feature_df_normalized
+    else:
+        structural_features = feature_df_normalized[structural_cols]
+    
+    print(f"\n   🔧 Applying PCA to structural features only (for HMM training)...")
+    print(f"      Input: {structural_features.shape[1]} structural features")
+    
+    # Fit PCA on structural features only
+    pca_structural = PCA(n_components=N_COMPONENTS, random_state=42)
+    structural_array_pca = pca_structural.fit_transform(structural_features.values)
+    
+    print(f"      ✅ Structural data reduced to {N_COMPONENTS} components")
+    print(f"      Total variance explained: {np.sum(pca_structural.explained_variance_ratio_)*100:.2f}%")
+    
+    # Also apply PCA to all features for comparison/evaluation
+    print(f"\n   🔧 Applying PCA to ALL features (for evaluation)...")
+    pca_all = PCA(n_components=N_COMPONENTS, random_state=42)
+    all_features_array_pca = pca_all.fit_transform(feature_df_normalized.values)
+    print(f"      ✅ All features reduced to {N_COMPONENTS} components")
+    print(f"      Total variance explained: {np.sum(pca_all.explained_variance_ratio_)*100:.2f}%")
     
     # Save features to cache
     cache_file = "hdp_hmm_features_cache.pkl"
     print(f"\n💾 Saving to cache: {cache_file}")
     pca_cols = [f'pca_{i}' for i in range(N_COMPONENTS)]
-    feature_df_f32 = pd.DataFrame(feature_array_f32, columns=pca_cols) # <-- NEW    with open(cache_file, 'wb') as f:
-        pickle.dump(feature_df_f32, f, protocol=pickle.HIGHEST_PROTOCOL)
+    
+    # Save structural features (for HMM training)
+    structural_df_f32 = pd.DataFrame(
+        structural_array_pca.astype(np.float32), 
+        columns=[f'structural_pca_{i}' for i in range(N_COMPONENTS)]
+    )
+    
+    # Save all features (for evaluation)
+    all_features_df_f32 = pd.DataFrame(
+        all_features_array_pca.astype(np.float32),
+        columns=[f'all_pca_{i}' for i in range(N_COMPONENTS)]
+    )
+    
+    # Combine into one dataframe with clear naming
+    cache_data = {
+        'structural_features': structural_df_f32,  # For HMM training
+        'all_features': all_features_df_f32,       # For evaluation
+        'feature_categories': feature_categories,   # Category mapping
+        'pca_structural': pca_structural,          # PCA transformer for structural
+        'pca_all': pca_all                         # PCA transformer for all
+    }
+    
+    with open(cache_file, 'wb') as f:
+        pickle.dump(cache_data, f, protocol=pickle.HIGHEST_PROTOCOL)
     
     cache_file_npy = "hdp_hmm_features_cache.npy"
-    print(f"💾 Saving to numpy cache: {cache_file_npy}")
-    np.save(cache_file_npy, feature_array_f32)
+    print(f"💾 Saving structural features to numpy cache: {cache_file_npy}")
+    np.save(cache_file_npy, structural_array_pca.astype(np.float32))
     
     # ENHANCEMENT: Save price data for economic CV calculation
     print(f"\n💾 Saving price data for forward returns calculation...")
     price_cache_file = "hdp_hmm_price_cache.pkl"
     # Extract corresponding close prices and timestamps from df
     # We generated features using rolling windows, so align prices with features
+    n_samples = len(structural_array_pca)
     price_data = {
-        'close': df['close'].iloc[len(df) - len(feature_array_f32):].values,
-        'timestamp': df.index[len(df) - len(feature_array_f32):].values if hasattr(df.index, 'values') else np.arange(len(feature_array_f32))
+        'close': df['close'].iloc[len(df) - n_samples:].values,
+        'timestamp': df.index[len(df) - n_samples:].values if hasattr(df.index, 'values') else np.arange(n_samples)
     }
     with open(price_cache_file, 'wb') as f:
         pickle.dump(price_data, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -390,22 +640,42 @@ try:
     print("\n" + "=" * 80)
     print("✅ DATA PREPARATION COMPLETE!")
     print("=" * 80)
-    print(f"   Final features: {feature_array_f32.shape[1]} columns")
-    print(f"   Samples: {feature_array_f32.shape[0]} rows")
-    print(f"   Effective dims: {n_95} ({100*n_95/feature_array_f32.shape[1]:.1f}%)")
+    print(f"   Structural features (HMM): {structural_array_pca.shape[1]} columns")
+    print(f"   All features (eval): {all_features_array_pca.shape[1]} columns")
+    print(f"   Samples: {structural_array_pca.shape[0]} rows")
+    print(f"   Effective dims: {n_95} ({100*n_95/feature_df_normalized.shape[1]:.1f}%)")
     print(f"   Data type: float32")
-    print(f"\n🚀 IMPROVEMENTS APPLIED:")
-    print(f"   ✓ Order flow imbalance features (klines-based)")
-    print(f"   ✓ Microstructure features (volume, spread, price impact)")
-    print(f"   ✓ Dual-scale normalization (8h short + 48h long)")
-    print(f"   ✓ Correlation pruning (removed {len(useful_features) - feature_df_normalized.shape[1]} redundant features)")
-    print(f"   ✓ 50% memory reduction (float32)")
-    print(f"   ✓ Price data cached for economic CV calculation")
+    print(f"\n🚀 STRUCTURAL MARKET STATE FEATURES APPLIED:")
+    print(f"   ✓ LIQUIDITY/MICROSTRUCTURE (OHLCV-based):")
+    print(f"      - Bid-ask spread proxies (relative_spread)")
+    print(f"      - Order flow imbalance (buy/sell pressure)")
+    print(f"      - Trade direction & volume imbalance")
+    print(f"   ✓ TREND-CONVEXITY (second derivatives):")
+    print(f"      - MA acceleration (slope-of-slope)")
+    print(f"      - Price/returns/volume convexity")
+    print(f"   ✓ ORDER FLOW PERSISTENCE (OHLCV-based):")
+    print(f"      - Buy vs sell volume burst measures")
+    print(f"      - Order flow autocorrelation")
+    print(f"      - Price-volume burst synchronization")
+    print(f"   ✓ REGIME FLAGS:")
+    print(f"      - Volatility percentile rank")
+    print(f"      - Session time blocks (US/Asia/Europe)")
+    print(f"      - Momentum regime indicators")
+    print(f"   ✓ DATA QUALITY:")
+    print(f"      - Dual-scale normalization (8h short + 48h long)")
+    print(f"      - Correlation pruning (removed {len(useful_features) - feature_df_normalized.shape[1]} redundant features)")
+    print(f"      - Feature categorization (structural vs volatility/trend/etc)")
+    print(f"      - Separate PCA for structural features (prevents HMM 'cheating')")
+    print(f"      - 50% memory reduction (float32)")
+    print(f"      - Price data cached for economic CV calculation")
     print(f"\n📁 Cache files:")
     print(f"   - {cache_file}")
     print(f"   - {cache_file_npy}")
     print(f"   - {price_cache_file}")
     print(f"\n▶️  Now run the tuning script - it will load from cache!")
+    print(f"\n🎯 KEY CHANGE: HMM will train on STRUCTURAL features only")
+    print(f"   This prevents finding trivial regimes (e.g., 'high vol' vs 'low vol')")
+    print(f"   All features still used for evaluation/analysis (CV ratios, etc.)")
     
 except Exception as e:
     print(f"   ❌ Failed: {e}")

@@ -612,20 +612,17 @@ class ModelTrainer(BaseTrainer):
             # Performance optimizations (NOT tuned by HPO)
             performance_params = {
                 'thread_count': n_threads,  # Use all available CPU threads
-                'bootstrap_type': 'Bayesian',  # Faster than default 'MVS'
+                'bootstrap_type': 'Bernoulli',  # Changed from 'Bayesian' to support subsample parameter
                 'verbose': False,
                 'random_seed': random_seed,
                 'allow_writing_files': False,  # Disable temp file writing
             }
             
-            # Add GPU acceleration if available
-            if gpu_available:
-                performance_params['task_type'] = 'GPU'
-                performance_params['devices'] = '0'
-                tprint_info("🚀 CatBoost using GPU acceleration (Metal)")
-            else:
-                performance_params['task_type'] = 'CPU'
-                tprint_info(f"🔧 CatBoost using CPU with {n_threads} threads")
+            # CatBoost GPU support: Disable for now as it's not properly configured on M1/M2/M3 Macs
+            # Can be enabled later when CatBoost properly supports Metal GPU
+            performance_params['task_type'] = 'CPU'
+            gpu_available = False  # Force CPU to enable colsample_bylevel
+            tprint_info(f"🔧 CatBoost using CPU with {n_threads} threads")
             
             # Hyperparameters (tuned by HPO)
             hyperparameters = {
@@ -634,10 +631,13 @@ class ModelTrainer(BaseTrainer):
                 'depth': depth,
                 'l2_leaf_reg': l2_leaf_reg,
                 'subsample': subsample,
-                'colsample_bylevel': colsample_bylevel,
                 'border_count': border_count,
                 'max_ctr_complexity': max_ctr_complexity,
             }
+            
+            # Only add colsample_bylevel if not using GPU (GPU doesn't support RSM in non-pairwise modes)
+            if not gpu_available:
+                hyperparameters['colsample_bylevel'] = colsample_bylevel
             
             # Combine all parameters
             all_params = {**performance_params, **hyperparameters}

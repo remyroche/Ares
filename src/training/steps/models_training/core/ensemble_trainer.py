@@ -176,9 +176,18 @@ class EnsembleTrainer(BaseTrainer):
             self._training_state['training_started'] = True
             self._update_performance_metrics('training', training_time)
             
+            # Generate final predictions using meta-learner
+            final_predictions = None
+            if self._meta_learner is not None and oof_predictions is not None:
+                try:
+                    final_predictions = self._meta_learner.predict(oof_predictions)
+                except Exception as e:
+                    self.logger.warning(f"Could not generate final predictions: {e}")
+            
             result = TrainingResult(
                 success=True,
                 model=self._meta_learner,
+                predictions=final_predictions,
                 metrics=ensemble_metrics,
                 training_time=training_time,
                 metadata={
@@ -380,7 +389,7 @@ class EnsembleTrainer(BaseTrainer):
                 # Performance optimizations
                 performance_params = {
                     'thread_count': n_threads,
-                    'bootstrap_type': 'Bayesian',  # Faster than default
+                    'bootstrap_type': 'Bernoulli',  # Changed from 'Bayesian' to support subsample parameter
                     'verbose': False,
                     'allow_writing_files': False,
                 }
@@ -406,6 +415,15 @@ class EnsembleTrainer(BaseTrainer):
             
             else:
                 raise ValueError(f"Unsupported meta-learner type: {self.meta_learner_type}")
+            
+            # Align targets to match oof_predictions shape
+            if len(targets) != len(oof_predictions):
+                tprint_warning(f"⚠️ Aligning targets from {len(targets)} to {len(oof_predictions)} samples for meta-learner")
+                # Get the index from oof_predictions if it's a DataFrame, otherwise use first N samples
+                if isinstance(oof_predictions, pd.DataFrame):
+                    targets = targets.loc[oof_predictions.index]
+                else:
+                    targets = targets.iloc[:len(oof_predictions)]
             
             # Train meta-learner
             meta_model.fit(oof_predictions, targets)

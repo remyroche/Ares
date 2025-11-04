@@ -75,6 +75,15 @@ from ..categories.clustering_features import (
     ClusteringStabilityGenerator, ClusteringIntegration
 )
 
+# Import microstructure features
+from ..categories.microstructure_features import (
+    MicrostructureFeatureGenerator, BidAskSpreadGenerator,
+    OrderFlowImbalanceGenerator, TradeSizeImbalanceGenerator,
+    PriceImpactGenerator, VolumeWeightedPriceGenerator,
+    TradeIntensityGenerator, LiquidityProxyGenerator,
+    MarketDepthGenerator
+)
+
 # Import task integration
 from .feature_task_integration import MLTask, FeatureTaskIntegrator
 
@@ -90,6 +99,7 @@ class FeatureBankCategory(Enum):
     TREND = "trend"
     VOLATILITY = "volatility"
     MOMENTUM = "momentum"
+    MICROSTRUCTURE = "microstructure"
     REGIME = "regime"
     CLUSTERING = "clustering"
 
@@ -122,38 +132,42 @@ class FeatureBankConfig:
         """Set default weights for each task."""
         if self.hdbscan_weights is None:
             self.hdbscan_weights = {
-                FeatureBankCategory.CLUSTERING: 0.4,
+                FeatureBankCategory.CLUSTERING: 0.35,
                 FeatureBankCategory.VOLUME: 0.2,
                 FeatureBankCategory.TREND: 0.15,
                 FeatureBankCategory.VOLATILITY: 0.15,
-                FeatureBankCategory.MOMENTUM: 0.1
+                FeatureBankCategory.MOMENTUM: 0.1,
+                FeatureBankCategory.MICROSTRUCTURE: 0.05
             }
         
         if self.regime_clustering_weights is None:
             self.regime_clustering_weights = {
-                FeatureBankCategory.REGIME: 0.4,
+                FeatureBankCategory.REGIME: 0.35,
                 FeatureBankCategory.VOLUME: 0.2,
                 FeatureBankCategory.TREND: 0.2,
                 FeatureBankCategory.VOLATILITY: 0.15,
-                FeatureBankCategory.MOMENTUM: 0.05
+                FeatureBankCategory.MOMENTUM: 0.05,
+                FeatureBankCategory.MICROSTRUCTURE: 0.05
             }
         
         if self.models_training_weights is None:
             self.models_training_weights = {
-                FeatureBankCategory.REGIME: 0.3,
-                FeatureBankCategory.VOLUME: 0.2,
-                FeatureBankCategory.TREND: 0.2,
-                FeatureBankCategory.VOLATILITY: 0.2,
-                FeatureBankCategory.MOMENTUM: 0.1
-            }
-        
-        if self.ensemble_training_weights is None:
-            self.ensemble_training_weights = {
                 FeatureBankCategory.REGIME: 0.25,
                 FeatureBankCategory.VOLUME: 0.2,
                 FeatureBankCategory.TREND: 0.2,
                 FeatureBankCategory.VOLATILITY: 0.2,
-                FeatureBankCategory.MOMENTUM: 0.15
+                FeatureBankCategory.MOMENTUM: 0.1,
+                FeatureBankCategory.MICROSTRUCTURE: 0.05
+            }
+        
+        if self.ensemble_training_weights is None:
+            self.ensemble_training_weights = {
+                FeatureBankCategory.REGIME: 0.2,
+                FeatureBankCategory.VOLUME: 0.2,
+                FeatureBankCategory.TREND: 0.2,
+                FeatureBankCategory.VOLATILITY: 0.2,
+                FeatureBankCategory.MOMENTUM: 0.15,
+                FeatureBankCategory.MICROSTRUCTURE: 0.05
             }
 
 
@@ -223,6 +237,17 @@ class FeatureBankIntegrator:
             StochasticGenerator(),
             WilliamsRGenerator(),
             MomentumOscillatorGenerator()
+        ]
+        
+        # Microstructure generators (OHLCV-based only, no orderbook dependency)
+        generators[FeatureBankCategory.MICROSTRUCTURE] = [
+            MicrostructureFeatureGenerator(),
+            OrderFlowImbalanceGenerator(),
+            TradeSizeImbalanceGenerator(),
+            PriceImpactGenerator(),
+            VolumeWeightedPriceGenerator(),
+            TradeIntensityGenerator(),
+            LiquidityProxyGenerator()
         ]
         
         # Regime generators

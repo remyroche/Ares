@@ -17,11 +17,14 @@ import numpy as np
 import pandas as pd
 import logging
 import time
-from typing import Dict, Any, Optional, List, Tuple, Union
+from typing import Dict, Any, Optional, List, Tuple, Union, TYPE_CHECKING
 from dataclasses import dataclass, field
 from pathlib import Path
 
 # Import ML Common optimization tools
+if TYPE_CHECKING:
+    from src.utils.ml_common.optimization.auto_tuner import DatasetCharacteristics
+
 try:
     from src.utils.ml_common.optimization.auto_tuner import AutoTuner, DatasetCharacteristics
     from src.utils.ml_common.optimization.hpo_diagnostics_and_fixes import HPODiagnostics
@@ -39,6 +42,15 @@ try:
 except ImportError as e:
     ML_COMMON_AVAILABLE = False
     logging.warning(f"ML Common optimization tools not available: {e}")
+    # Define a fallback for DatasetCharacteristics when ML Common is not available
+    @dataclass
+    class DatasetCharacteristics:
+        """Fallback DatasetCharacteristics when ML Common is not available."""
+        n_samples: int
+        n_features: int
+        complexity_score: float = 0.0
+        noise_estimate: float = 0.0
+        sparsity: float = 0.0
 
 # Import HDBSCAN
 try:

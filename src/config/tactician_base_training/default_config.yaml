@@ -1,0 +1,441 @@
+# Tactician Base Training Configuration - Centralized Version
+# Configuration pour l'entraînement des modèles tactician de base (timeframe 15m, exécute toutes les 3m)
+# Rôle: Quand l'Analyst donne le feu vert, décide QUAND trader basé sur timing de changement prix de 0.5%
+# Entraîné sur tous les régimes simultanément
+# Utilise des modèles GRU et LGBM séparés (pas GRU comme embeddings pour LGBM)
+
+version: "1.0.0"
+component_name: "tactician_base_training"
+description: "Configuration centralisée pour l'entraînement des modèles tactician de base"
+created_at: "2025-11-03T22:27:00.000Z"
+updated_at: "2025-11-03T22:27:00.000Z"
+
+tactician_config:
+  model_name: "tactician_base"
+  model_type: "separate_models"  # GRU et LGBM comme modèles indépendants
+  target: "entry_timing"  # Timing pour changement prix de 0.5%
+  base_timeframe: "15m"  # Timeframe de base pour features cross-timeframe & lookback optimisé
+  execution_timeframe: "15m"  # Quand exécuter le modèle
+  execution_frequency: "3m"  # Exécuter toutes les 3 minutes
+  price_change_target: 0.005  # Target de changement prix 0.5%
+  
+  # Configuration des modèles de base - maintenant séparés et indépendants
+  base_models:
+  - model_name: "StandaloneGRU"
+    # Modèle GRU standalone pour prédictions indépendantes
+    class_name: "src.models.standalone_gru_generator.StandaloneGRUGenerator"
+    # Le modèle fait des prédictions indépendantes (pas utilisé comme générateur de features)
+    is_feature_generator: false
+    params:
+      sequence_length: 12       # Longueur séquence GRU (3 heures au timeframe 15m)
+      num_features: 100         # Placeholder: doit correspondre au nombre de features d'entrée pour GRU
+      hidden_units: 64
+      num_layers: 2
+      dropout: 0.2
+      learning_rate: 0.001
+      # Paramètres d'entraînement pour GRU
+      training_params:
+        epochs: 40  # Réduit de 50 pour entraînement plus rapide
+        batch_size: 256  # Augmenté de 128 pour entraînement plus rapide
+        verbose: 1
+        # Ajout d'early stopping pour GRU
+        callbacks:
+          - class: "tensorflow.keras.callbacks.EarlyStopping"
+            params:
+              monitor: "val_loss"
+              patience: 5
+              restore_best_weights: true
+    # Gammes de recherche HPO (paramètres optimaux seront sauvegardés ici après HPO)
+    hpo:
+      enabled: true
+      n_rounds: 2
+      enable_final_refinement: true
+      final_refinement_trials: 50
+      search_space:
+        hidden_units:
+          type: "categorical"
+          choices: [32, 64, 128, 256]
+        num_layers:
+          type: "int"
+          low: 1
+          high: 4
+        dropout:
+          type: "float"
+          low: 0.1
+          high: 0.5
+        learning_rate:
+          type: "float"
+          low: 0.0001
+          high: 0.01
+          log: true
+        batch_size:
+          type: "categorical"
+          choices: [64, 128, 256, 512]
+        sequence_length:
+          type: "int"
+          low: 6
+          high: 24
+      # Paramètres optimaux trouvés par HPO (sera mis à jour automatiquement)
+      optimal_params: {}
+
+  - model_name: "LGBM"
+    # Modèle LGBM standalone pour prédictions indépendantes
+    class_name: "lightgbm.LGBMRegressor"
+    # Le modèle fait des prédictions indépendantes
+    is_feature_generator: false
+    params:
+      n_estimators: 1000
+      learning_rate: 0.05
+      num_leaves: 31
+      objective: "regression"
+      metric: "rmse"
+      boosting_type: "gbdt"
+      n_jobs: -1
+      verbose: -1
+      # Paramètres d'entraînement spécifiques LGBM
+      training_params:
+        callbacks:
+          - "lightgbm.early_stopping(100, verbose=false)"
+        eval_metric: "rmse"
+    # Gammes de recherche HPO
+    hpo:
+      enabled: true
+      n_rounds: 2
+      enable_final_refinement: true
+      final_refinement_trials: 50
+      search_space:
+        max_depth:
+          type: "int"
+          low: 3
+          high: 10
+        learning_rate:
+          type: "float"
+          low: 0.01
+          high: 0.2
+          log: true
+        num_leaves:
+          type: "int"
+          low: 20
+          high: 200
+        reg_alpha:
+          type: "float"
+          low: 0.0
+          high: 5.0
+        reg_lambda:
+          type: "float"
+          low: 0.0
+          high: 5.0
+        subsample:
+          type: "float"
+          low: 0.6
+          high: 1.0
+        colsample_bytree:
+          type: "float"
+          low: 0.6
+          high: 1.0
+        min_child_samples:
+          type: "int"
+          low: 10
+          high: 100
+        min_gain_to_split:
+          type: "float"
+          low: 0.1
+          high: 1.0
+      optimal_params: {}
+
+  - model_name: "CatBoost"
+    # Modèle CatBoost standalone pour prédictions indépendantes
+    class_name: "catboost.CatBoostRegressor"
+    is_feature_generator: false
+    params:
+      iterations: 500  # Réduit de 1500 pour entraînement plus rapide
+      learning_rate: 0.1  # Augmenté de 0.08 pour compenser moins d'itérations
+      depth: 6  # Réduit de 8 pour entraînement plus rapide
+      l2_leaf_reg: 3.0
+      subsample: 0.8
+      colsample_bylevel: 0.8
+      border_count: 128  # Réduit de 254 par défaut pour entraînement plus rapide
+      max_ctr_complexity: 2  # Limiter combinaisons features catégorielles pour vitesse
+      random_seed: 42
+      verbose: false
+      early_stopping_rounds: 50  # Arrêter si pas d'amélioration
+      # Paramètres de performance (bootstrap_type, thread_count, task_type) définis par hardware manager dans le code
+    hpo:
+      enabled: true
+      n_rounds: 2
+      enable_final_refinement: true
+      final_refinement_trials: 50
+      search_space:
+        iterations:
+          type: "int"
+          low: 300
+          high: 1500
+        learning_rate:
+          type: "float"
+          low: 0.01
+          high: 0.3
+          log: true
+        depth:
+          type: "int"
+          low: 4
+          high: 10
+        l2_leaf_reg:
+          type: "float"
+          low: 1.0
+          high: 10.0
+        subsample:
+          type: "float"
+          low: 0.6
+          high: 1.0
+        colsample_bylevel:
+          type: "float"
+          low: 0.6
+          high: 1.0
+        border_count:
+          type: "int"
+          low: 64
+          high: 254
+        max_ctr_complexity:
+          type: "int"
+          low: 1
+          high: 4
+      optimal_params: {}
+
+  - model_name: "ExtraTrees"
+    # Extra Trees Classifier pour prédictions indépendantes
+    class_name: "sklearn.ensemble.ExtraTreesClassifier"
+    is_feature_generator: false
+    params:
+      n_estimators: 500
+      max_depth: 10
+      min_samples_split: 5
+      min_samples_leaf: 2
+      max_features: "sqrt"
+      bootstrap: true
+      n_jobs: -1
+      random_state: 42
+      verbose: 0
+    hpo:
+      enabled: true
+      n_rounds: 2
+      enable_final_refinement: true
+      final_refinement_trials: 50
+      search_space:
+        n_estimators:
+          type: "int"
+          low: 200
+          high: 1000
+        max_depth:
+          type: "int"
+          low: 5
+          high: 20
+        min_samples_split:
+          type: "int"
+          low: 2
+          high: 20
+        min_samples_leaf:
+          type: "int"
+          low: 1
+          high: 10
+        max_features:
+          type: "categorical"
+          choices: ["sqrt", "log2", 0.5, 0.7, 0.9]
+      optimal_params: {}
+
+  - model_name: "DepthwiseCNN"
+    # Chemin vers le nouveau modèle
+    class_name: "src.models.tcn_regressor.DepthwiseSeparableCNNRegressor"
+    is_feature_generator: false
+    params:
+      filters: 64
+      kernel_size: 3
+      dropout: 0.2
+      epochs: 50
+      batch_size: 32
+      learning_rate: 0.001
+      validation_split: 0.2
+      early_stopping_patience: 10
+      reduce_lr_patience: 5
+      use_batch_norm: false
+      verbose: 0
+    # Gammes de recherche HPO
+    hpo:
+      enabled: true
+      n_rounds: 2
+      enable_final_refinement: true
+      final_refinement_trials: 50
+      # search_space maintenant défini dans hpo_config.py
+      # paramètres optimaux seront sauvegardés ici
+      optimal_params: {}
+
+# Configuration d'entraînement
+# NOTE: Les nombres absolus d'échantillons ci-dessous sont maintenant REDÉFINIS par des allocations basées sur pourcentages
+# calculées dans unified_models_training_step.py. Pourcentages par défaut sont:
+# - Entraînement: 70% des échantillons totaux
+# - Validation: 15% des échantillons totaux
+# - Test: 15% des échantillons totaux
+# Vous pouvez redéfinir ces pourcentages en définissant train_percentage, validation_percentage, 
+# et test_percentage dans la config runtime
+training:
+  enable_cross_validation: true
+  cv_folds: 3  # Réduit de 5 pour entraînement plus rapide
+  enable_early_stopping: true
+  early_stopping_patience: 10
+  validation_split: 0.2
+  test_split: 0.1
+  # Deprecated - calculés maintenant en pourcentage
+  training_samples: null
+  validation_samples: null
+  test_samples: null
+
+# Configuration de performance
+performance:
+  expected_accuracy: 0.82
+  expected_sharpe_ratio: 1.45
+  training_time_limit: 200  # secondes
+  memory_limit_mb: 2048
+
+# Configuration de sortie
+output:
+  save_models: true
+  save_predictions: true
+  generate_reports: true
+  output_dir: "./tactician_base_models"
+
+# Configuration d'ingénierie des features
+feature_engineering:
+  # Source de features primaire
+  primary_features:
+    source: "feature_generation_final_feature_selection_step"
+    artifact_name: "tactician_features"  # Sera déterminé par direction, exchange, asset, token
+    initial_count: 300  # 300+ features avant sélection
+    target_count: 100   # Down à 100 après sélection
+  
+  # Features cross-timeframe
+  cross_timeframe:
+    enable: true
+    base_timeframe: "15m"
+    target_timeframes: ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
+    feature_types: ["technical_indicators", "price_action", "volume_profile", "volatility"]
+    optimized_lookback: true
+  
+  # Features de régimes (probabilités pour chaque régime)
+  regime_features:
+    enable: true
+    source: "regime_ml_models"
+    feature_names: ["regime_prob_0", "regime_prob_1", "regime_prob_2", "regime_prob_3"]
+    include_regime_outputs: true
+  
+  # Sorties analyst ensemble comme features
+  analyst_ensemble_outputs:
+    enable: true
+    source: "analyst_ensemble_models"
+    features:
+      - "analyst_ensemble_predictions"
+      - "analyst_ensemble_confidence"
+      - "analyst_ensemble_meta_learner_output"
+  
+  # Sélection de features
+  feature_selection:
+    method: "lasso"
+    alpha: 0.005
+    max_features: 100
+    enable_recursive_elimination: true
+    enable_feature_importance: true
+  
+  # Mise à l'échelle des features
+  scaling:
+    method: "robust"
+    enable_outlier_handling: true
+    outlier_threshold: 2.5
+
+# Configuration de préparation des données
+data_preparation:
+  # Spécifique aux séries temporelles
+  time_series:
+    enable_temporal_features: true
+    lookback_window: 100
+    forecast_horizon: 1
+  
+  # Génération de cible pour optimisation de stratégie
+  target_generation:
+    method: "momentum_based"
+    lookback_periods: [5, 10, 20]
+    momentum_threshold: 0.01
+    enable_risk_adjustment: true
+    risk_free_rate: 0.02
+
+# Configuration d'évaluation des modèles
+evaluation:
+  metrics:
+    regression: ["mse", "mae", "r2", "mape"]
+    classification: ["accuracy", "precision", "recall", "f1"]
+    trading: ["sharpe_ratio", "max_drawdown", "calmar_ratio", "sortino_ratio"]
+  
+  # Cross-validation
+  cross_validation:
+    method: "time_series_split"
+    n_splits: 5
+    test_size: 0.2
+  
+  # Comparaison de modèles
+  comparison:
+    enable_model_ranking: true
+    ranking_metric: "sharpe_ratio"
+    enable_feature_importance: true
+    enable_trading_metrics: true
+
+# Configuration de gestion des risques
+risk_management:
+  enable_position_sizing: true
+  max_position_size: 0.1
+  enable_stop_loss: true
+  enable_take_profit: true
+  enable_portfolio_limits: true
+  
+  # Limites de risque
+  limits:
+    max_drawdown: 0.05
+    max_daily_loss: 0.02
+    max_position_concentration: 0.3
+  
+  # Monitoring de risque
+  monitoring:
+    enable_real_time_monitoring: true
+    alert_thresholds:
+      drawdown: 0.03
+      daily_loss: 0.01
+      position_size: 0.08
+
+# Optimisation hardware
+hardware:
+  enable_gpu_acceleration: false  # ExtraTrees n'utilise pas GPU
+  enable_memory_optimization: true
+  enable_parallel_processing: true
+  memory_limit_gb: 2.0
+  max_workers: null
+
+# Configuration de logging
+logging:
+  level: "INFO"
+  enable_detailed_logging: true
+  log_predictions: true
+  log_performance_metrics: true
+  log_feature_importance: true
+  log_risk_metrics: true
+  
+  # Intervalles de logging
+  intervals:
+    training_progress: 100  # logger toutes les 100 itérations
+    prediction_summary: 1000  # logger toutes les 1000 prédictions
+    performance_update: 5000  # logger tous les 5000 échantillons
+    risk_monitoring: 100  # logger tous les 100 échantillons
+
+# Métadonnées de configuration centralisée
+_metadata:
+  loaded_at: "2025-11-03T22:27:00.000Z"
+  manager_version: "1.0.0"
+  format: "yaml"
+  component_version: "1.0.0"
+  validation_level: "strict"
+  cache_enabled: true

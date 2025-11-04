@@ -10,15 +10,21 @@ Total: 1125 tests (data-driven exploration with focused parameter ranges)
 Time savings: Smart allocation - fewer iterations in Stage 1, more in Stages 2-3
 
 Systematically explores parameter space to find optimal trade-off:
-α ∈ [1.5, 2.5]  - REFINED: Focus on α=1.5-2.0 sweet spot (α=1.5 dominated results)
+α ∈ [1.5, 7.0]  - REFINED: Focus on α=1.5-2.0 sweet spot (α=1.5 dominated results)
 κ ∈ [25, 60]    - Controls regime persistence (focused on high-persistence zone)
-γ ∈ [5, 9]      - REFINED: Focus on γ=6-9 sweet spot (10.0 underperformed)
+γ ∈ [5, 17]     - REFINED: Focus on γ=6-9 sweet spot (10.0 underperformed)
 
 Composite Score Weighting (OPTIMIZED):
 - Temporal Smoothness: 45% (reduced from 50% to allow higher-alpha exploration)
 - CV Ratio: 30-35% (increased to better reward regime separation)
 - Silhouette: 10%
 - Balance: 10%
+
+FEATURE CATEGORIZATION (Prevents HMM "Cheating"):
+- HMM training uses ONLY structural features (liquidity, order flow, microstructure)
+- This prevents finding trivial regimes like "high volatility" vs "low volatility"
+- All features still used for evaluation (CV ratios, economic metrics)
+- Run hdp_hmm_prepare_data.py to regenerate cache with categorized features
 
 Usage:
     python3 hdp_hmm_isolated_tuning.py              # Use cached features
@@ -80,10 +86,10 @@ tprint("Stage 3: Top-3 × 5×5×5 = 375 tests @ 200 iters (final precision)")
 tprint("Total: 1125 tests (data-driven exploration!)")
 tprint("")
 tprint("Refinements (based on previous results):")
-tprint("  • α ∈ [1.5, 2.5] (α=1.5 dominated top 13 configs)")
+tprint("  • α ∈ [1.5, 7.0] (α=1.5 dominated top 13 configs)")
 tprint("  • κ ∈ [25, 60] (all values performing well)")
-tprint("  • γ ∈ [5, 9] (γ=6-9 sweet spot, 10 underperformed)")
-tprint("  • Temporal: 45%, CV: 30-35% (balanced weighting)")
+tprint("  • γ ∈ [5, 17] (γ=6-9 sweet spot, 10 underperformed)")
+tprint("  • Temporal: 45%, CV: 35% (balanced weighting)")
 tprint("")
 
 # Create outcomes directory
@@ -124,8 +130,9 @@ def run_single_test(params, n_iterations=30):
                     except:
                         return 0.0
                 
-                # FIXED: Parse new format with convergence information, cv_ratio, and per-category CVs
-                # Format: SUCCESS|α|κ|γ|clusters|silhouette|temporal|balance|between_cv|within_cv|cv_ratio|economic_cv|elapsed|converged|conv_iter|order_flow_cv|microstructure_cv|momentum_cv|volatility_cv|volume_cv|trend_cv|temporal_cv
+                # FIXED: Parse format (handles both simple and extended formats)
+                # Simple format: SUCCESS|α|κ|γ|clusters|silhouette|temporal|balance|between_cv|within_cv|economic_cv|elapsed|sharpe_per_regime|sharpe_diffs_valid
+                # Extended format: SUCCESS|α|κ|γ|clusters|silhouette|temporal|balance|between_cv|within_cv|cv_ratio|economic_cv|elapsed|converged|conv_iter|order_flow_cv|...
                 result_dict = {
                     'alpha': safe_float(parts[1]),
                     'kappa': safe_float(parts[2]),
@@ -141,7 +148,7 @@ def run_single_test(params, n_iterations=30):
                     'runtime': safe_float(parts[12]) if len(parts) > 12 else 0.0,
                     'converged': bool(int(safe_float(parts[13]))) if len(parts) > 13 else False,
                     'convergence_iteration': int(safe_float(parts[14])) if len(parts) > 14 else None,
-                    # Per-category CV ratios (7 categories)
+                    # Per-category CV ratios (7 categories) - may not be present in simple format
                     'cv_order_flow': safe_float(parts[15]) if len(parts) > 15 else 0.0,
                     'cv_microstructure': safe_float(parts[16]) if len(parts) > 16 else 0.0,
                     'cv_momentum': safe_float(parts[17]) if len(parts) > 17 else 0.0,
@@ -149,9 +156,23 @@ def run_single_test(params, n_iterations=30):
                     'cv_volume': safe_float(parts[19]) if len(parts) > 19 else 0.0,
                     'cv_trend': safe_float(parts[20]) if len(parts) > 20 else 0.0,
                     'cv_temporal': safe_float(parts[21]) if len(parts) > 21 else 0.0,
-                    'success': True,
-                    'error': None
+                    # Regime-conditioned P&L metrics - appended at the end for simple format
+                    # For simple format: position 12 (after elapsed)
+                    # For extended format: last two positions
+                    'sharpe_per_regime': "",
+                    'sharpe_diffs_valid': False
                 }
+                
+                # Parse regime P&L from output (simple format: positions 12 and 13)
+                # Simple format has sharpe_per_regime at position 12, sharpe_diffs_valid at 13
+                if len(parts) > 12 and parts[12] and ':' in parts[12]:
+                    # This is the sharpe_per_regime field (format: "0:1.23,1:0.45")
+                    result_dict['sharpe_per_regime'] = parts[12]
+                    if len(parts) > 13:
+                        result_dict['sharpe_diffs_valid'] = bool(int(safe_float(parts[13])))
+                
+                result_dict['success'] = True
+                result_dict['error'] = None
                 
                 # Calculate composite score with BALANCED weighting
                 # Use the cv_ratio from the output (already calculated)
@@ -182,11 +203,11 @@ def run_single_test(params, n_iterations=30):
                     cv_ratio_capped = min(cv_ratio, 100.0)
                     # Use log-scaled tanh to prevent CV ratio from dominating the score
                     # tanh(log(1 + cv_ratio)) spreads values more evenly across the range
-                    cv_contribution = np.tanh(np.log1p(cv_ratio_capped)) * 0.30  # 30% weight (increased from 25%)
+                    cv_contribution = np.tanh(np.log1p(cv_ratio_capped)) * 0.35  # 35% weight (increased from 30%)
                     composite = (result_dict['silhouette_score'] * 0.10 +      # Cluster quality (10%)
                                result_dict['balance_score'] * 0.10 +          # Cluster balance (10%)
                                temp_contribution +                             # Temporal stability (45%, reduced)
-                               cv_contribution)                                 # CV ratio contribution (30%, increased)
+                               cv_contribution)                                 # CV ratio contribution (35%, increased)
                 result_dict['composite_score'] = composite
                 
                 return result_dict, test_elapsed, True
@@ -241,9 +262,9 @@ def run_local_search_around_configs(stage_num, base_configs, search_radius_pct=0
     start_time_stage = datetime.now()
     
     # Parameter ranges from Stage 1 (REFINED to match new search space)
-    alpha_full_range = 2.5 - 1.5  # 1.0
+    alpha_full_range = 7.0 - 1.5  # 5.5
     kappa_full_range = 60.0 - 25.0  # 35.0
-    gamma_full_range = 9.0 - 5.0  # 4.0
+    gamma_full_range = 17.0 - 5.0  # 12.0
     
     test_counter = 0
     
@@ -281,14 +302,14 @@ def run_local_search_around_configs(stage_num, base_configs, search_radius_pct=0
             
             return actual_min, actual_max
         
-        alpha_min, alpha_max = create_symmetric_range(alpha_base, alpha_width, 1.5, 2.5)
+        alpha_min, alpha_max = create_symmetric_range(alpha_base, alpha_width, 1.5, 7.0)
         kappa_min, kappa_max = create_symmetric_range(kappa_base, kappa_width, 25.0, 60.0)
-        gamma_min, gamma_max = create_symmetric_range(gamma_base, gamma_width, 5.0, 9.0)
+        gamma_min, gamma_max = create_symmetric_range(gamma_base, gamma_width, 5.0, 17.0)
         
         # Warn if base is very close to boundary (asymmetric search unavoidable)
-        alpha_near_edge = (alpha_base - 1.5) < alpha_width or (2.5 - alpha_base) < alpha_width
+        alpha_near_edge = (alpha_base - 1.5) < alpha_width or (7.0 - alpha_base) < alpha_width
         kappa_near_edge = (kappa_base - 25.0) < kappa_width or (60.0 - kappa_base) < kappa_width
-        gamma_near_edge = (gamma_base - 5.0) < gamma_width or (9.0 - gamma_base) < gamma_width
+        gamma_near_edge = (gamma_base - 5.0) < gamma_width or (17.0 - gamma_base) < gamma_width
         
         if alpha_near_edge or kappa_near_edge or gamma_near_edge:
             tprint(f"   ⚠️ Base near boundary - search window adjusted for symmetry")
@@ -320,10 +341,25 @@ def run_local_search_around_configs(stage_num, base_configs, search_radius_pct=0
                 cv_ratio_raw = min(result_dict['between_regime_cv'] / within_cv, 100.0)  # Cap at 100x
                 cv_ratio_scaled = np.tanh(np.log1p(cv_ratio_raw))  # Same scaling as in composite score
                 
+                # Parse and display regime P&L information
+                regime_pnl_info = ""
+                if result_dict.get('sharpe_per_regime'):
+                    sharpe_str = result_dict['sharpe_per_regime']
+                    if sharpe_str:
+                        # Parse regime:sharpe pairs
+                        sharpe_pairs = sharpe_str.split(',')
+                        sharpe_list = [f"R{k.split(':')[0]}:{float(k.split(':')[1]):.2f}" for k in sharpe_pairs if ':' in k]
+                        if sharpe_list:
+                            regime_pnl_info = f", Sharpe: {', '.join(sharpe_list)}"
+                            
+                            # Add warning if Sharpe differences are not meaningful
+                            if not result_dict.get('sharpe_diffs_valid', True):
+                                regime_pnl_info += " ⚠️ Low Sharpe diff (<0.3)"
+                
                 tprint(f"[{current_time}] ✅ Test {test_counter}/{total_tests} | "
                       f"α={alpha:.2f}, κ={kappa:.1f}, γ={gamma:.1f} | "
                       f"Clusters={result_dict['n_clusters']}, Score={composite:.3f} "
-                      f"(Temp={temporal:.2f}, Bal={balance:.2f}, CV={cv_ratio_scaled:.2f})")
+                      f"(Temp={temporal:.2f}, Bal={balance:.2f}, CV={cv_ratio_scaled:.2f}){regime_pnl_info}")
             else:
                 results.append(result_dict)
                 failed_tests += 1
@@ -423,11 +459,26 @@ def run_grid_stage(stage_num, alpha_range, kappa_range, gamma_range, n_iteration
             cv_ratio_raw = result_dict['between_regime_cv'] / (result_dict['within_regime_cv'] + 1e-9)
             cv_ratio_scaled = np.tanh(np.log1p(cv_ratio_raw))  # Same scaling as in composite score
             
+            # Parse and display regime P&L information
+            regime_pnl_info = ""
+            if result_dict.get('sharpe_per_regime'):
+                sharpe_str = result_dict['sharpe_per_regime']
+                if sharpe_str:
+                    # Parse regime:sharpe pairs
+                    sharpe_pairs = sharpe_str.split(',')
+                    sharpe_list = [f"R{k.split(':')[0]}:{float(k.split(':')[1]):.2f}" for k in sharpe_pairs if ':' in k]
+                    if sharpe_list:
+                        regime_pnl_info = f", Sharpe: {', '.join(sharpe_list)}"
+                        
+                        # Add warning if Sharpe differences are not meaningful
+                        if not result_dict.get('sharpe_diffs_valid', True):
+                            regime_pnl_info += " ⚠️ Low Sharpe diff (<0.3)"
+            
             # Enhanced feedback with key metrics
             tprint(f"[{current_time}] ✅ Test {i}/{total_tests} | "
                   f"α={alpha:.2f}, κ={kappa:.1f}, γ={gamma:.1f} | "
                   f"Clusters={result_dict['n_clusters']}, Score={composite:.3f} "
-                  f"(Temp={temporal:.2f}, Bal={balance:.2f}, CV={cv_ratio_scaled:.2f})")
+                  f"(Temp={temporal:.2f}, Bal={balance:.2f}, CV={cv_ratio_scaled:.2f}){regime_pnl_info}")
         else:
             results.append(result_dict)
             failed_tests += 1
@@ -488,9 +539,9 @@ def run_grid_stage(stage_num, alpha_range, kappa_range, gamma_range, n_iteration
 # ============================================================================
 # STAGE 1: REFINED Exploration (Based on α=1.5 dominance in results)
 # ============================================================================
-alpha_range_1 = (1.5, 2.5)   # REFINED: Focus on optimal α zone (1.5 was best)
+alpha_range_1 = (1.5, 7.0)   # REFINED: Focus on optimal α zone (1.5 was best)
 kappa_range_1 = (25.0, 60.0) # OPTIMIZED: Focus on high-persistence zone
-gamma_range_1 = (5.0, 9.0)   # REFINED: Focus on γ sweet spot (6-9 performed best)
+gamma_range_1 = (5.0, 17.0)  # REFINED: Focus on γ sweet spot (6-9 performed best)
 
 results_stage1, success_1, fail_1 = run_grid_stage(
     1, alpha_range_1, kappa_range_1, gamma_range_1,
@@ -511,6 +562,8 @@ column_order = [
     'composite_score', 'alpha', 'kappa', 'gamma', 'n_clusters',
     'silhouette_score', 'temporal_smoothness', 'balance_score',
     'between_regime_cv', 'within_regime_cv', 'cv_ratio', 'economic_cv_ratio',
+    # Regime-conditioned economic metrics (Sharpe ratios per regime)
+    'sharpe_per_regime', 'sharpe_diffs_valid',
     # Per-category CV ratios (shows which feature types contribute to regime separation)
     'cv_order_flow', 'cv_microstructure', 'cv_momentum', 'cv_volatility', 
     'cv_volume', 'cv_trend', 'cv_temporal',
@@ -703,6 +756,21 @@ tprint(f"   Within-Regime CV: {best_overall.get('within_regime_cv', 0.0):.4f}")
 tprint(f"   CV Ratio (Feature): {best_overall.get('between_regime_cv', 0.0) / (best_overall.get('within_regime_cv', 1.0) + 1e-9):.4f}")
 tprint(f"   Economic CV Ratio: {best_overall.get('economic_cv_ratio', 0.0):.4f}")
 tprint(f"   Runtime: {best_overall.get('runtime', 0.0):.1f}s")
+tprint(f"\nRegime-Conditioned P&L:")
+sharpe_str = best_overall.get('sharpe_per_regime', '')
+if sharpe_str:
+    sharpe_pairs = sharpe_str.split(',')
+    for pair in sharpe_pairs:
+        if ':' in pair:
+            regime_id, sharpe_val = pair.split(':')
+            tprint(f"   Regime {regime_id}: Sharpe = {float(sharpe_val):.4f}")
+    sharpe_diffs_valid = best_overall.get('sharpe_diffs_valid', True)
+    if not sharpe_diffs_valid:
+        tprint(f"   ⚠️  WARNING: Sharpe differences < 0.3 - segmentation may not be economically meaningful!")
+    else:
+        tprint(f"   ✅ Sharpe differences >= 0.3 - economically meaningful segmentation")
+else:
+    tprint(f"   (Regime P&L data not available)")
 
 tprint(f"\n{'='*80}")
 tprint("✅ All results saved to outcomes/ directory")

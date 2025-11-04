@@ -290,10 +290,16 @@ The model automatically discovered these important feature types:
         
         for rank, (target, metrics) in enumerate(sorted_targets, 1):
             marker = " 🏆" if target == best_target else ""
+            # Safe access with defaults
+            mean_r2 = metrics.get('mean_r2', 0.0)
+            std_r2 = metrics.get('std_r2', 0.0)
+            mean_rmse = metrics.get('mean_rmse', 0.0)
+            coverage = metrics.get('coverage', 0.0)
+            
             target_table += (
-                f"| {rank}{marker} | `{target}` | {metrics['mean_r2']:.4f} | "
-                f"{metrics['std_r2']:.4f} | {metrics['mean_rmse']:.6f} | "
-                f"{metrics['coverage']:.1%} |\n"
+                f"| {rank}{marker} | `{target}` | {mean_r2:.4f} | "
+                f"{std_r2:.4f} | {mean_rmse:.6f} | "
+                f"{coverage:.1%} |\n"
             )
         
         return f"""## Target Selection Results (AutoML)
@@ -310,12 +316,12 @@ The model automatically discovered these important feature types:
 ### Best Target Selected: `{best_target}`
 
 **Performance**:
-- Mean R²: {target_analysis[best_target]['mean_r2']:.4f}
-- Std R²: {target_analysis[best_target]['std_r2']:.4f}
-- RMSE: {target_analysis[best_target]['mean_rmse']:.6f}
-- MAE: {target_analysis[best_target]['mean_mae']:.6f}
-- Coverage: {target_analysis[best_target]['coverage']:.1%}
-- Samples: {target_analysis[best_target]['n_samples']:,}
+- Mean R²: {target_analysis[best_target].get('mean_r2', 0.0):.4f}
+- Std R²: {target_analysis[best_target].get('std_r2', 0.0):.4f}
+- RMSE: {target_analysis[best_target].get('mean_rmse', 0.0):.6f}
+- MAE: {target_analysis[best_target].get('mean_mae', 0.0):.6f}
+- Coverage: {target_analysis[best_target].get('coverage', 0.0):.1%}
+- Samples: {target_analysis[best_target].get('n_samples', 0):,}
 
 ### Top 10 Targets by Predictive Performance
 

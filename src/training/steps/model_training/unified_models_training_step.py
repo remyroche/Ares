@@ -137,6 +137,16 @@ class UnifiedModelsTrainingStep(BaseStep):
             # Apply light mode filtering if needed
             training_data = self._apply_light_mode_filter(training_data, config, timeframe)
             
+            # Align targets to match filtered training data
+            if training_data is not None and analyst_targets is not None:
+                if len(analyst_targets) != len(training_data):
+                    tprint_warning(f"⚠️ Aligning analyst targets from {len(analyst_targets)} to {len(training_data)} samples")
+                    analyst_targets = analyst_targets.loc[training_data.index]
+            if training_data is not None and tactician_targets is not None:
+                if len(tactician_targets) != len(training_data):
+                    tprint_warning(f"⚠️ Aligning tactician targets from {len(tactician_targets)} to {len(training_data)} samples")
+                    tactician_targets = tactician_targets.loc[training_data.index]
+            
             # Calculate COMPREHENSIVE dynamic configuration based on data and hardware
             if training_data is not None:
                 non_feature_cols = [col for col in training_data.columns if 'timestamp' in col.lower() or 'datetime' in col.lower()]
@@ -1221,100 +1231,100 @@ class UnifiedModelsTrainingStep(BaseStep):
             self.logger.error(f"Error retrieving regime features: {e}")
             return None
 
-async def _get_additional_model_outputs(self, training_type: str, config: Dict[str, Any], training_data: pd.DataFrame) -> Optional[pd.DataFrame]:
-    """Get additional model outputs based on training type."""
-    try:
-        additional_features_list = []
-        base_outputs_for_stats = None # Store the specific DataFrame to calculate stats on
-
-        # --- START OF FIX 5: Load and Resample Regime Features ---
+    async def _get_additional_model_outputs(self, training_type: str, config: Dict[str, Any], training_data: pd.DataFrame) -> Optional[pd.DataFrame]:
+        """Get additional model outputs based on training type."""
         try:
-            # Attempt to load regime probabilities (likely from 1h timeframe)
-            regime_features = self._get_artifact('regime_probabilities', 'data')
-            if regime_features is not None:
-                tprint_info(f"Retrieved regime features: {regime_features.shape}")
-                # Resample regime features (e.g., 1h) to match training data (e.g., 15m)
-                if not regime_features.index.equals(training_data.index):
-                    tprint_warning(f"Regime features index mismatch. Resampling {len(regime_features)} rows to match {len(training_data)} rows.")
-                    # Use ffill to apply the 1h regime to all 15m candles within that hour
-                    # Use bfill to handle any NaNs at the very beginning
-                    regime_features_resampled = regime_features.reindex(training_data.index, method='ffill').fillna(method='bfill')
-                    additional_features_list.append(regime_features_resampled)
-                    tprint_success("✅ Resampled and added regime features.")
+            additional_features_list = []
+            base_outputs_for_stats = None # Store the specific DataFrame to calculate stats on
+
+            # --- START OF FIX 5: Load and Resample Regime Features ---
+            try:
+                # Attempt to load regime probabilities (likely from 1h timeframe)
+                regime_features = self._get_artifact('regime_probabilities', 'data')
+                if regime_features is not None:
+                    tprint_info(f"Retrieved regime features: {regime_features.shape}")
+                    # Resample regime features (e.g., 1h) to match training data (e.g., 15m)
+                    if not regime_features.index.equals(training_data.index):
+                        tprint_warning(f"Regime features index mismatch. Resampling {len(regime_features)} rows to match {len(training_data)} rows.")
+                        # Use ffill to apply the 1h regime to all 15m candles within that hour
+                        # Use bfill to handle any NaNs at the very beginning
+                        regime_features_resampled = regime_features.reindex(training_data.index, method='ffill').fillna(method='bfill')
+                        additional_features_list.append(regime_features_resampled)
+                        tprint_success("✅ Resampled and added regime features.")
+                    else:
+                        additional_features_list.append(regime_features)
                 else:
-                    additional_features_list.append(regime_features)
+                    tprint_warning("⚠️ Regime features artifact ('regime_probabilities') not found.")
+            except Exception as e:
+                tprint_warning(f"⚠️ Could not load regime features: {e}")
+            # --- END OF FIX 5 ---
+
+
+            if training_type == 'analyst_ensemble':
+                # Base models for analyst_ensemble are the analyst_base outputs
+                base_outputs = self._get_artifact('analyst_base_outputs', 'data') # Changed to sync
+                if base_outputs is not None:
+                    # --- FIX 5: Resample/Reindex ---
+                    if not base_outputs.index.equals(training_data.index):
+                        tprint_warning(f"Aligning 'analyst_base_outputs' index to training data.")
+                        base_outputs = base_outputs.reindex(training_data.index, method='ffill').fillna(method='bfill')
+                    additional_features_list.append(base_outputs)
+                    base_outputs_for_stats = base_outputs # Calculate stats on these
+
+            elif training_type == 'tactician_base':
+                # Base model for tactician_base is the analyst_ensemble output
+                analyst_outputs = self._get_artifact('analyst_ensemble_outputs', 'data') # Changed to sync
+                if analyst_outputs is not None:
+                    # --- FIX 5: Resample/Reindex ---
+                    if not analyst_outputs.index.equals(training_data.index):
+                        tprint_warning(f"Aligning 'analyst_ensemble_outputs' index to training data.")
+                        analyst_outputs = analyst_outputs.reindex(training_data.index, method='ffill').fillna(method='bfill')
+                    additional_features_list.append(analyst_outputs)
+                # No stats needed here, this is for a base model
+
+            elif training_type == 'tactician_ensemble':
+                # Base models for tactician_ensemble are the tactician_base outputs
+                # Analyst_ensemble outputs are also included as features.
+                analyst_outputs = self._get_artifact('analyst_ensemble_outputs', 'data') # Changed to sync
+                tactician_base_outputs = self._get_artifact('tactician_base_outputs', 'data') # Changed to sync
+
+                if analyst_outputs is not None:
+                    # --- FIX 5: Resample/Reindex ---
+                    if not analyst_outputs.index.equals(training_data.index):
+                        tprint_warning(f"Aligning 'analyst_ensemble_outputs' index to training data.")
+                        analyst_outputs = analyst_outputs.reindex(training_data.index, method='ffill').fillna(method='bfill')
+                    additional_features_list.append(analyst_outputs)
+
+                if tactician_base_outputs is not None:
+                    # --- FIX 5: Resample/Reindex ---
+                    if not tactician_base_outputs.index.equals(training_data.index):
+                        tprint_warning(f"Aligning 'tactician_base_outputs' index to training data.")
+                        tactician_base_outputs = tactician_base_outputs.reindex(training_data.index, method='ffill').fillna(method='bfill')
+                    additional_features_list.append(tactician_base_outputs)
+                    base_outputs_for_stats = tactician_base_outputs # Calculate stats on these
+
+            # --- NEW: Calculate ensemble meta-features ---
+            if base_outputs_for_stats is not None and not base_outputs_for_stats.empty:
+                # Calculate meta-features from base model outputs
+                meta_features = pd.DataFrame(index=base_outputs_for_stats.index)
+                # Add these new features to the list
+                additional_features_list.append(meta_features)
+                tprint_success(f"✅ Added {len(meta_features.columns)} statistical meta-features for ensemble.")
+
+            if additional_features_list:
+                # Concatenate all features (base outputs + meta-features)
+                # Use inner join to ensure all loaded features align perfectly
+                final_additional_features = pd.concat(additional_features_list, axis=1, join='inner')
+                if final_additional_features.empty and any(not df.empty for df in additional_features_list):
+                    tprint_error("❌ Concatenation of additional features resulted in an empty DataFrame. Check for severe index mismatches.")
+                    return None
+                return final_additional_features
             else:
-                tprint_warning("⚠️ Regime features artifact ('regime_probabilities') not found.")
-        except Exception as e:
-            tprint_warning(f"⚠️ Could not load regime features: {e}")
-        # --- END OF FIX 5 ---
-
-
-        if training_type == 'analyst_ensemble':
-            # Base models for analyst_ensemble are the analyst_base outputs
-            base_outputs = self._get_artifact('analyst_base_outputs', 'data') # Changed to sync
-            if base_outputs is not None:
-                # --- FIX 5: Resample/Reindex ---
-                if not base_outputs.index.equals(training_data.index):
-                    tprint_warning(f"Aligning 'analyst_base_outputs' index to training data.")
-                    base_outputs = base_outputs.reindex(training_data.index, method='ffill').fillna(method='bfill')
-                additional_features_list.append(base_outputs)
-                base_outputs_for_stats = base_outputs # Calculate stats on these
-
-        elif training_type == 'tactician_base':
-            # Base model for tactician_base is the analyst_ensemble output
-            analyst_outputs = self._get_artifact('analyst_ensemble_outputs', 'data') # Changed to sync
-            if analyst_outputs is not None:
-                # --- FIX 5: Resample/Reindex ---
-                if not analyst_outputs.index.equals(training_data.index):
-                    tprint_warning(f"Aligning 'analyst_ensemble_outputs' index to training data.")
-                    analyst_outputs = analyst_outputs.reindex(training_data.index, method='ffill').fillna(method='bfill')
-                additional_features_list.append(analyst_outputs)
-            # No stats needed here, this is for a base model
-
-        elif training_type == 'tactician_ensemble':
-            # Base models for tactician_ensemble are the tactician_base outputs
-            # Analyst_ensemble outputs are also included as features.
-            analyst_outputs = self._get_artifact('analyst_ensemble_outputs', 'data') # Changed to sync
-            tactician_base_outputs = self._get_artifact('tactician_base_outputs', 'data') # Changed to sync
-
-            if analyst_outputs is not None:
-                # --- FIX 5: Resample/Reindex ---
-                if not analyst_outputs.index.equals(training_data.index):
-                    tprint_warning(f"Aligning 'analyst_ensemble_outputs' index to training data.")
-                    analyst_outputs = analyst_outputs.reindex(training_data.index, method='ffill').fillna(method='bfill')
-                additional_features_list.append(analyst_outputs)
-
-            if tactician_base_outputs is not None:
-                # --- FIX 5: Resample/Reindex ---
-                if not tactician_base_outputs.index.equals(training_data.index):
-                    tprint_warning(f"Aligning 'tactician_base_outputs' index to training data.")
-                    tactician_base_outputs = tactician_base_outputs.reindex(training_data.index, method='ffill').fillna(method='bfill')
-                additional_features_list.append(tactician_base_outputs)
-                base_outputs_for_stats = tactician_base_outputs # Calculate stats on these
-
-        # --- NEW: Calculate ensemble meta-features ---
-        if base_outputs_for_stats is not None and not base_outputs_for_stats.empty:
-            # ... (existing code for meta-features) ...
-
-            # Add these new features to the list
-            additional_features_list.append(meta_features)
-            tprint_success(f"✅ Added {len(meta_features.columns)} statistical meta-features for ensemble.")
-
-        if additional_features_list:
-            # Concatenate all features (base outputs + meta-features)
-            # Use inner join to ensure all loaded features align perfectly
-            final_additional_features = pd.concat(additional_features_list, axis=1, join='inner')
-            if final_additional_features.empty and any(not df.empty for df in additional_features_list):
-                tprint_error("❌ Concatenation of additional features resulted in an empty DataFrame. Check for severe index mismatches.")
                 return None
-            return final_additional_features
-        else:
-            return None
 
-    except Exception as e:
-        self.logger.error(f"Error retrieving additional model outputs: {e}")
-        return None
+        except Exception as e:
+            self.logger.error(f"Error retrieving additional model outputs: {e}")
+            return None
 
     async def _execute_training_by_type(
         self, 

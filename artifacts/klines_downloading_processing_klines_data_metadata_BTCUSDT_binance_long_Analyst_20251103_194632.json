@@ -1,0 +1,8 @@
+{
+  "artifact_name": "klines_data",
+  "artifact_type": "data",
+  "file_path": "artifacts/data_collection/BTCUSDT/binance/long/Analyst/klines_downloading_processing/klines_downloading_processing_klines_data_BTCUSDT_binance_long_Analyst_20251103_194632.parquet",
+  "file_size": 59228,
+  "timestamp": "2025-11-03T20:46:33.728664",
+  "compression": "auto"
+}

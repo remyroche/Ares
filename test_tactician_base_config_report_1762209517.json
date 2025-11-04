@@ -1,0 +1,59 @@
+{
+  "timestamp": "2025-11-03 23:38:37",
+  "total_tests": 7,
+  "passed": 6,
+  "failed": 1,
+  "success_rate": 85.71428571428571,
+  "total_execution_time": 15.804666996002197,
+  "test_results": [
+    {
+      "test_name": "test_1_config_loading",
+      "success": true,
+      "message": "Configuration chargée: tactician_base, 5 modèles",
+      "execution_time": 14.676682949066162,
+      "timestamp": 1762209516.101048
+    },
+    {
+      "test_name": "test_2_config_manager",
+      "success": true,
+      "message": "Gestionnaire opérationnel: tactician_base",
+      "execution_time": 0.08421206474304199,
+      "timestamp": 1762209516.185311
+    },
+    {
+      "test_name": "test_3_tactician_base_training_step_integration",
+      "success": true,
+      "message": "Intégration réussie: centralized, target=unknown, accuracy=0.82",
+      "execution_time": 0.7378339767456055,
+      "timestamp": 1762209516.9232051
+    },
+    {
+      "test_name": "test_4_fallback_configuration",
+      "success": true,
+      "message": "Fallback opérationnel: tactician_base",
+      "execution_time": 0.031913042068481445,
+      "timestamp": 1762209516.9551842
+    },
+    {
+      "test_name": "test_5_multi_format_support",
+      "success": false,
+      "message": "Erreur: Type de configuration non supporté: <class 'tactician_base_config.TacticianBaseTrainingConfig'>",
+      "execution_time": 0.13310003280639648,
+      "timestamp": 1762209517.088346
+    },
+    {
+      "test_name": "test_6_config_sections_access",
+      "success": true,
+      "message": "Accès sections validé (5 sections)",
+      "execution_time": 0.12186694145202637,
+      "timestamp": 1762209517.21027
+    },
+    {
+      "test_name": "test_7_performance_loading",
+      "success": true,
+      "message": "Performance OK: chargement 0.019s, accès 0.000000s",
+      "execution_time": 0.01864314079284668,
+      "timestamp": 1762209517.228958
+    }
+  ]
+}

@@ -53,15 +53,41 @@ try:
     # OPTIMIZED: Load pre-computed features from cache (MUCH faster!)
     # Run hdp_hmm_prepare_data.py once to create the cache file
     cache_file_npy = "hdp_hmm_features_cache.npy"
+    cache_file_pkl = "hdp_hmm_features_cache.pkl"
+    
+    # Variables to hold both structural (for training) and all features (for evaluation)
+    structural_features_array = None
+    all_features_array = None
     
     if os.path.exists(cache_file_npy):
-        # Load silently - no output during processing
-        feature_array = np.load(cache_file_npy)
+        # Try to load new format (with categorization) first
+        if os.path.exists(cache_file_pkl):
+            try:
+                import pickle
+                with open(cache_file_pkl, 'rb') as f:
+                    cache_data = pickle.load(f)
+                
+                # Check if this is the new format (dictionary with categorized features)
+                if isinstance(cache_data, dict) and 'structural_features' in cache_data:
+                    # NEW FORMAT: Load structural features for HMM training
+                    structural_features_array = cache_data['structural_features'].values.astype(np.float32)
+                    # Load all features for evaluation
+                    all_features_array = cache_data['all_features'].values.astype(np.float32)
+                else:
+                    # OLD FORMAT: Fallback to using all features for both
+                    structural_features_array = np.load(cache_file_npy).astype(np.float32)
+                    all_features_array = structural_features_array
+            except Exception:
+                # Fallback to numpy file if pickle fails
+                structural_features_array = np.load(cache_file_npy).astype(np.float32)
+                all_features_array = structural_features_array
+        else:
+            # Only numpy file exists (old format)
+            structural_features_array = np.load(cache_file_npy).astype(np.float32)
+            all_features_array = structural_features_array
         
-        # FIXED: Keep float64 for HDP-HMM (log-likelihoods prone to underflow with float32)
-        # Cache may be float32, but convert back to float64 before HMM
-        if feature_array.dtype == np.float64:
-             feature_array = feature_array.astype(np.float32)        
+        # Use structural features for HMM training
+        feature_array = structural_features_array        
             
         # ENHANCEMENT: Load price data for economic CV calculation
         price_cache_file = "hdp_hmm_price_cache.pkl"
@@ -207,8 +233,9 @@ try:
     # ENHANCEMENT: Recalculate quality metrics with forward returns if available
     if forward_returns is not None and hasattr(clusterer, 'quality_assessor'):
         try:
-            # Convert feature_array to DataFrame for quality assessor
-            feature_df = pd.DataFrame(feature_array)
+            # Use all_features_array for evaluation (not structural-only features)
+            eval_features = all_features_array if all_features_array is not None else feature_array
+            feature_df = pd.DataFrame(eval_features)
             
             # Recalculate quality assessment with economic data
             enhanced_quality = clusterer.quality_assessor.assess_hmm_regime_quality(
@@ -401,10 +428,14 @@ try:
         # Calculate CV ratio (between / within)
         cv_ratio = between_cv / (within_cv + 1e-9) if within_cv > 0 else 0.0
         
-        # Calculate per-category CV ratios
+        # Calculate per-category CV ratios using ALL features for evaluation
+        # NOTE: HMM was trained on structural features only, but we evaluate on all features
+        # This shows if the structural regimes also separate well in other feature spaces
         cluster_labels = getattr(result, 'cluster_labels', None)
         if cluster_labels is not None:
-            category_cvs = calculate_category_cv_ratios(cluster_labels, None, feature_array)
+            # Use all_features_array for evaluation (not the structural-only features used for training)
+            eval_features = all_features_array if all_features_array is not None else feature_array
+            category_cvs = calculate_category_cv_ratios(cluster_labels, None, eval_features)
         else:
             category_cvs = {cat: 0.0 for cat in ['order_flow', 'microstructure', 'momentum', 
                                                   'volatility', 'volume', 'trend', 'temporal']}

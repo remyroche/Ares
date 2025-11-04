@@ -1,26 +1,28 @@
 """
-Analyst Ensemble Training - ModularComponent Implementation
+Analyst Ensemble Training - ModularComponent Implementation avec Configuration Centralisée
 
-This module provides a ModularComponent implementation of the Analyst Ensemble Training
-that handles training of Analyst ensemble models that combine:
-- Base models (LightGBM, LightGBM+PatchTST, CatBoost, Stacker LGBM Calibrated)
-- HMM regime features and probabilities
-- Meta-learner ensemble for enhanced trading signal generation
-- Multi-timeframe features and cross-timeframe analysis
-- Technical indicators and market data
-- Outputs from base Analyst models
+Ce module fournit une implémentation ModulaComponent de l'entraînement d'ensemble des modèles analyst
+qui utilise la configuration centralisée YAML/JSON pour une gestion unifiée et flexible des paramètres.
 
-The ensemble operates on the dedicated 15m timeframe and combines all inputs to
-deliver the Analyst's final green-signal decisions that gate downstream
-Tactician processing.
+Le composant gère l'entraînement des modèles d'ensemble analyst qui combinent :
+- Modèles de base (LightGBM, LightGBM+PatchTST, CatBoost, Stacker LGBM Calibrated)
+- Features et probabilités de régimes HMM
+- Meta-learner ensemble pour la génération de signaux de trading améliorés
+- Features multi-timeframes et analyse cross-timeframe
+- Indicateurs techniques et données de marché
+- Sorties des modèles analyst de base
 
-ENHANCED FEATURES:
-- ModularComponent architecture with comprehensive state management
-- ML-specific performance monitoring and checkpointing
-- Enhanced error handling and logging
-- Configuration management and validation
-- Training progress tracking and health monitoring
-- Ensemble-specific optimization and validation
+L'ensemble opère sur le timeframe dédié 15m et combine toutes les entrées pour
+livrer les décisions finales green-signal de l'Analyst qui contrôlent le
+traitement downstream du Tactician.
+
+FONCTIONNALITÉS ENHANCED :
+- Architecture ModulaComponent avec gestion d'état complète
+- Monitoring et checkpointing ML spécifiques
+- Gestion d'erreurs et logging amélioré
+- Configuration centralisée YAML/JSON avec validation
+- Tracking des progrès d'entraînement et health monitoring
+- Optimisation et validation spécifiques aux ensembles
 """
 
 import numpy as np
@@ -31,6 +33,18 @@ import time
 import traceback
 from dataclasses import dataclass
 from enum import Enum
+
+# Import de la configuration centralisée
+try:
+    from src.config.analyst_ensemble_training import (
+        get_analyst_ensemble_config,
+        get_analyst_ensemble_config_manager,
+        AnalystEnsembleTrainingConfig
+    )
+    CENTRALIZED_CONFIG_AVAILABLE = True
+except ImportError as e:
+    CENTRALIZED_CONFIG_AVAILABLE = False
+    print(f"⚠️ Configuration centralisée non disponible : {e}")
 
 from .base_component import BaseModelsTrainingComponent
 from ..unified_data_driven_pipeline.core.modular_architecture import (
@@ -84,18 +98,35 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
         self,
         name: str = "analyst_ensemble_training",
         config: Optional[Dict[str, Any]] = None,
-        logger: Optional[logging.Logger] = None
+        logger: Optional[logging.Logger] = None,
+        use_centralized_config: bool = True
     ):
         """
-        Initialize the Analyst Ensemble Training component.
+        Initialiser le composant Analyst Ensemble Training avec configuration centralisée.
         
         Args:
-            name: Component name
-            config: Configuration dictionary
-            logger: Logger instance
+            name: Nom du composant
+            config: Dictionnaire de configuration personnalisée (optionnel)
+            logger: Instance de logger (optionnel)
+            use_centralized_config: Utiliser la configuration centralisée (par défaut: True)
         """
-        # Set default configuration
-        default_config = {
+        # Initialiser le gestionnaire de configuration centralisée
+        self.config_manager = None
+        self._centralized_config = None
+        self._use_centralized_config = use_centralized_config and CENTRALIZED_CONFIG_AVAILABLE
+        
+        if self._use_centralized_config:
+            try:
+                self.config_manager = get_analyst_ensemble_config_manager()
+                self._centralized_config = get_analyst_ensemble_config()
+                self.logger = logger or logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+                self.logger.info("✅ Configuration centralisée activée")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Échec du chargement de la configuration centralisée : {e}")
+                self._use_centralized_config = False
+        
+        # Configuration par défaut en cas d'échec de la configuration centralisée
+        fallback_config = {
             'model': {
                 'type': 'ensemble',
                 'base_models': ['lightgbm', 'lightgbm_patchtst', 'catboost', 'stacker_lgbm_calibrated'],
@@ -123,11 +154,67 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
         }
         
         if config:
-            default_config.update(config)
+            fallback_config.update(config)
         
-        super().__init__(name, default_config, logger)
+        super().__init__(name, fallback_config, logger)
         
-        # Ensemble-specific configuration
+        # Configuration de l'ensemble avec fallback intelligent
+        if self._use_centralized_config:
+            self._setup_centralized_config()
+        else:
+            self._setup_fallback_config()
+        
+        # État d'entraînement
+        self._ensemble_model = None
+        self._base_model_outputs = {}
+        self._hmm_model = None
+        self._training_results = {}
+        self._regime_performance = {}
+        
+        self.logger.info(f"Initialized AnalystEnsembleTrainingModular: {name}")
+    
+    def _setup_centralized_config(self) -> None:
+        """Configurer l'utilisation de la configuration centralisée."""
+        try:
+            # Configuration de l'ensemble depuis la configuration centralisée
+            base_models_config = self._centralized_config.base_models
+            ensemble_config = self._centralized_config.analyst_config
+            meta_learner_config = self._centralized_config.meta_learner
+            
+            # Mapper les modèles de base
+            enabled_base_models = []
+            for model_name, model_config in base_models_config.items():
+                if model_config.get('enabled', False):
+                    enabled_base_models.append(model_name)
+            
+            if not enabled_base_models:
+                enabled_base_models = ['lightgbm', 'catboost', 'tcn']
+            
+            # Configuration de l'ensemble
+            self.ensemble_config = AnalystEnsembleTrainingConfig(
+                base_models=enabled_base_models,
+                ensemble_method=EnsembleMethod(ensemble_config.get('model_type', 'meta_ensemble')),
+                ensemble_params=meta_learner_config.get('params', {}),
+                hmm_config=self._centralized_config.feature_engineering.get('regime_features', {}),
+                regime_aware=self._centralized_config.feature_engineering.get('regime_features', {}).get('enable', True),
+                timeframe=ensemble_config.get('base_timeframe', '15m'),
+                auto_save=self._centralized_config.output.get('save_models', True)
+            )
+            
+            # Configuration de la performance et hardware
+            self.hardware_config = self._centralized_config.hardware
+            self.training_config = self._centralized_config.training
+            self.feature_engineering_config = self._centralized_config.feature_engineering
+            
+            self.logger.info(f"✅ Configuration centralisée chargée : {len(enabled_base_models)} modèles de base")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Échec de la configuration centralisée : {e}")
+            self._setup_fallback_config()
+    
+    def _setup_fallback_config(self) -> None:
+        """Configurer avec la configuration fallback."""
+        # Ensemble-specific configuration (fallback)
         self.ensemble_config = AnalystEnsembleTrainingConfig(
             base_models=self.model_config.get('base_models', []),
             ensemble_method=EnsembleMethod(self.model_config.get('ensemble_method', 'voting')),
@@ -138,14 +225,50 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
             auto_save=self.get_config('auto_save', True)
         )
         
-        # Training state
-        self._ensemble_model = None
-        self._base_model_outputs = {}
-        self._hmm_model = None
-        self._training_results = {}
-        self._regime_performance = {}
+        # Configuration par défaut pour les paramètres centralisés
+        self.hardware_config = {
+            'enable_gpu_acceleration': False,
+            'memory_limit_gb': 4.0,
+            'max_workers': -1
+        }
         
-        self.logger.info(f"Initialized AnalystEnsembleTrainingModular: {name}")
+        self.training_config = {
+            'epochs': 100,
+            'batch_size': 32,
+            'early_stopping_patience': 10
+        }
+        
+        self.feature_engineering_config = {
+            'regime_features': {'enable': True},
+            'cross_timeframe': {'enable': True}
+        }
+        
+        self.logger.info("⚠️ Configuration fallback activée")
+    
+    def get_config(self, config_path: Optional[List[str]] = None) -> Any:
+        """
+        Obtenir la configuration avec support de la configuration centralisée.
+        
+        Args:
+            config_path: Liste de clés pour accéder à une section spécifique
+            
+        Returns:
+            Configuration demandée
+        """
+        if self._use_centralized_config and config_path:
+            try:
+                return get_analyst_ensemble_config(config_path)
+            except Exception as e:
+                self.logger.warning(f"⚠️ Échec d'accès à la configuration centralisée : {e}")
+        
+        # Fallback vers la configuration locale
+        return super().get_config(config_path)
+    
+    def get_centralized_config(self) -> Optional[AnalystEnsembleTrainingConfig]:
+        """Obtenir la configuration centralisée complète."""
+        if self._use_centralized_config:
+            return self._centralized_config
+        return None
     
     def _initialize_resources(self) -> bool:
         """Initialize component-specific resources."""
@@ -194,15 +317,103 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
             self.logger.error(f"Resource cleanup failed: {e}")
     
     def _initialize_ensemble_configs(self) -> None:
-        """Initialize ensemble configurations."""
-        ensemble_configs = {
-            'ensemble_method': self.ensemble_config.ensemble_method.value,
-            'ensemble_params': self.ensemble_config.ensemble_params,
-            'base_models': self.ensemble_config.base_models,
-            'hmm_config': self.ensemble_config.hmm_config,
-        }
+        """Initialiser les configurations de l'ensemble avec support centralisé."""
+        try:
+            # Configuration de base
+            ensemble_configs = {
+                'ensemble_method': self.ensemble_config.ensemble_method.value,
+                'ensemble_params': self.ensemble_config.ensemble_params,
+                'base_models': self.ensemble_config.base_models,
+                'hmm_config': self.ensemble_config.hmm_config,
+            }
+            
+            # Ajouter la configuration centralisée si disponible
+            if self._use_centralized_config and self._centralized_config:
+                central_config = {
+                    'meta_learner_type': self._centralized_config.meta_learner.get('model_type'),
+                    'calibration_method': self._centralized_config.meta_learner.get('calibration', {}).get('method'),
+                    'hpo_enabled': self._centralized_config.meta_learner.get('hpo', {}).get('enabled'),
+                    'hardware_config': self.hardware_config,
+                    'training_config': self.training_config,
+                    'feature_engineering_config': self.feature_engineering_config,
+                    'expected_accuracy': self._centralized_config.performance.get('expected_accuracy'),
+                    'output_config': self._centralized_config.output
+                }
+                ensemble_configs.update(central_config)
+                self.logger.info("✅ Configuration centralisée intégrée")
+            
+            self.set_ml_state('ensemble_configs', ensemble_configs)
+            self.logger.info(f"Ensemble configuration initialized: {self.ensemble_config.ensemble_method.value}")
+            
+        except Exception as e:
+            self.logger.error(f"Erreur lors de l'initialisation de la configuration d'ensemble: {e}")
+            # Configuration minimale en cas d'erreur
+            basic_config = {
+                'ensemble_method': self.ensemble_config.ensemble_method.value,
+                'base_models': self.ensemble_config.base_models
+            }
+            self.set_ml_state('ensemble_configs', basic_config)
+    
+    def create_custom_config(self, overrides: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Créer une configuration personnalisée en utilisant la configuration centralisée.
         
-        self.set_ml_state('ensemble_configs', ensemble_configs)
+        Args:
+            overrides: Paramètres à surcharger
+            
+        Returns:
+            Configuration personnalisée
+        """
+        try:
+            if self._use_centralized_config:
+                # Utiliser la configuration centralisée comme base
+                base_config = self._centralized_config.to_dict()
+                base_config.update(overrides)
+                return base_config
+            else:
+                # Fallback vers la configuration locale
+                custom_config = self.model_config.copy()
+                custom_config.update(overrides)
+                return custom_config
+                
+        except Exception as e:
+            self.logger.warning(f"Échec de création de configuration personnalisée: {e}")
+            return self.model_config.copy()
+    
+    def get_parameter_with_fallback(self, config_path: str, default_value: Any = None) -> Any:
+        """
+        Obtenir un paramètre avec fallback intelligent.
+        
+        Args:
+            config_path: Chemin vers le paramètre (ex: 'training.epochs')
+            default_value: Valeur par défaut si paramètre non trouvé
+            
+        Returns:
+            Valeur du paramètre ou valeur par défaut
+        """
+        # Essayer d'abord la configuration centralisée
+        if self._use_centralized_config:
+            try:
+                path_parts = config_path.split('.')
+                config = get_analyst_ensemble_config(path_parts[:-1])
+                param_name = path_parts[-1]
+                if hasattr(config, param_name):
+                    return getattr(config, param_name)
+                elif isinstance(config, dict) and param_name in config:
+                    return config[param_name]
+            except Exception:
+                pass
+        
+        # Fallback vers la configuration locale
+        path_parts = config_path.split('.')
+        current = self.model_config
+        for part in path_parts:
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                return default_value
+        
+        return current if current != self.model_config else default_value
     
     def _process_data(self, data: Any, **kwargs) -> Any:
         """Process data with analyst ensemble training logic."""
@@ -568,10 +779,10 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
         return {'errors': errors, 'warnings': warnings, 'metadata': metadata}
     
     def get_training_summary(self) -> Dict[str, Any]:
-        """Get comprehensive training summary."""
+        """Obtenir un résumé complet de l'entraînement avec configuration centralisée."""
         summary = super().get_training_summary()
         
-        # Add ensemble-specific information
+        # Ajouter les informations spécifiques à l'ensemble
         summary.update({
             'ensemble_config': {
                 'base_models': self.ensemble_config.base_models,
@@ -585,25 +796,171 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
             'regime_performance': self._regime_performance
         })
         
+        # Ajouter les informations de configuration centralisée
+        if self._use_centralized_config:
+            summary.update({
+                'centralized_config': {
+                    'enabled': True,
+                    'version': getattr(self._centralized_config, 'version', 'unknown'),
+                    'component_name': self._centralized_config.component_name if self._centralized_config else None,
+                    'hardware_config': self.hardware_config,
+                    'training_config': self.training_config,
+                    'feature_engineering_config': self.feature_engineering_config,
+                    'meta_learner_type': self._centralized_config.meta_learner.get('model_type') if self._centralized_config else None
+                }
+            })
+        else:
+            summary.update({
+                'centralized_config': {
+                    'enabled': False,
+                    'fallback_active': True
+                }
+            })
+        
         return summary
+    
+    def update_ensemble_params(self, new_params: Dict[str, Any]) -> bool:
+        """
+        Mettre à jour dynamiquement les paramètres de l'ensemble.
+        
+        Args:
+            new_params: Nouveaux paramètres à appliquer
+            
+        Returns:
+            True si la mise à jour a réussi
+        """
+        try:
+            # Mettre à jour dans la configuration centralisée si disponible
+            if self._use_centralized_config:
+                # Pour les paramètres sensibles, utiliser des méthodes sécurisées
+                safe_params = {}
+                if 'ensemble_params' in new_params:
+                    safe_params['ensemble_params'] = new_params['ensemble_params']
+                if 'base_models' in new_params:
+                    safe_params['base_models'] = new_params['base_models']
+                
+                self.ensemble_config.ensemble_params.update(safe_params)
+                self.logger.info(f"✅ Paramètres d'ensemble mis à jour via configuration centralisée")
+            
+            # Mettre à jour dans la configuration fallback
+            self.model_config.update(new_params)
+            self.logger.info(f"✅ Paramètres d'ensemble mis à jour dans la configuration fallback")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Échec de la mise à jour des paramètres: {e}")
+            return False
+    
+    def get_ensemble_performance_target(self) -> Optional[float]:
+        """
+        Obtenir la cible de performance de l'ensemble depuis la configuration centralisée.
+        
+        Returns:
+            Cible de précision attendue ou None si non disponible
+        """
+        if self._use_centralized_config and self._centralized_config:
+            return self._centralized_config.performance.get('expected_accuracy')
+        return 0.85  # Valeur par défaut
+    
+    def get_hardware_limits(self) -> Dict[str, Any]:
+        """
+        Obtenir les limites hardware depuis la configuration centralisée.
+        
+        Returns:
+            Configuration hardware
+        """
+        return self.hardware_config
+    
+    def is_regime_aware_enabled(self) -> bool:
+        """
+        Vérifier si la détection de régimes est activée.
+        
+        Returns:
+            True si la détection de régimes est activée
+        """
+        return self.ensemble_config.regime_aware
+    
+    def get_feature_engineering_config(self) -> Dict[str, Any]:
+        """
+        Obtenir la configuration d'ingénierie des features.
+        
+        Returns:
+            Configuration d'ingénierie des features
+        """
+        return self.feature_engineering_config
 
 
 def create_analyst_ensemble_training(
     config: Optional[Dict[str, Any]] = None,
-    logger: Optional[logging.Logger] = None
+    logger: Optional[logging.Logger] = None,
+    use_centralized_config: bool = True
 ) -> AnalystEnsembleTrainingModular:
     """
-    Factory function to create Analyst Ensemble Training component.
+    Fonction factory pour créer un composant Analyst Ensemble Training avec support de configuration centralisée.
     
     Args:
-        config: Configuration dictionary
-        logger: Logger instance
+        config: Dictionnaire de configuration personnalisée (optionnel)
+        logger: Instance de logger (optionnel)
+        use_centralized_config: Utiliser la configuration centralisée (par défaut: True)
         
     Returns:
-        Initialized AnalystEnsembleTrainingModular instance
+        Instance initialisée d'AnalystEnsembleTrainingModular avec configuration centralisée
     """
     return AnalystEnsembleTrainingModular(
         name="analyst_ensemble_training",
         config=config,
-        logger=logger
+        logger=logger,
+        use_centralized_config=use_centralized_config
+    )
+
+
+def create_with_custom_config(
+    custom_config_path: str,
+    config_overrides: Optional[Dict[str, Any]] = None,
+    logger: Optional[logging.Logger] = None
+) -> AnalystEnsembleTrainingModular:
+    """
+    Créer un composant avec une configuration personnalisée spécifique.
+    
+    Args:
+        custom_config_path: Chemin vers le fichier de configuration personnalisé
+        config_overrides: Paramètres à surcharger (optionnel)
+        logger: Instance de logger (optionnel)
+        
+    Returns:
+        Instance configurée avec la configuration personnalisée
+    """
+    # Configurer le chemin de configuration personnalisée
+    from src.config.analyst_ensemble_training import set_custom_config_path
+    set_custom_config_path(custom_config_path)
+    
+    # Créer le composant avec la configuration personnalisée
+    return create_analyst_ensemble_training(
+        config=config_overrides,
+        logger=logger,
+        use_centralized_config=True
+    )
+
+
+# Fonction de compatibilité pour l'ancienne API
+def create_analyst_ensemble_training_legacy(
+    config: Optional[Dict[str, Any]] = None,
+    logger: Optional[logging.Logger] = None
+) -> AnalystEnsembleTrainingModular:
+    """
+    Fonction de compatibilité (legacy) - utilise uniquement la configuration fallback.
+    
+    Args:
+        config: Dictionnaire de configuration
+        logger: Instance de logger
+        
+    Returns:
+        Instance avec configuration fallback uniquement
+    """
+    return AnalystEnsembleTrainingModular(
+        name="analyst_ensemble_training",
+        config=config,
+        logger=logger,
+        use_centralized_config=False
     )

@@ -12,7 +12,7 @@ analyst_config:
         n_estimators: 1000
         learning_rate: 0.01
         max_depth: 3
-        num_leaves: 6
+        num_leaves: 10
         subsample: 0.6
         colsample_bytree: 0.6
         random_state: 42
@@ -70,14 +70,14 @@ analyst_config:
           reg_lambda: 0.0
           sampling_rate: 0.6
           min_child_samples: 10
-          num_leaves: 6
+          num_leaves: 10
           subsample: 0.6
           colsample_bytree: 0.6
         last_optimization:
-          timestamp: '2025-11-02T23:57:54.709956'
+          timestamp: '2025-11-03T23:50:36.515432'
           best_score: 0.0
-          total_trials: 36
-          total_time_seconds: 0.01664900779724121
+          total_trials: 12
+          total_time_seconds: 0.009772062301635742
           n_rounds: 2
     tcn:
       model_type: CausalDilatedTCN
@@ -153,6 +153,7 @@ analyst_config:
         verbose: false
         early_stopping_rounds: 50
         sampling_rate: 0.6
+        bootstrap_type: Bernoulli
       hpo:
         enabled: true
         n_rounds: 2
@@ -198,13 +199,14 @@ analyst_config:
           iterations: 300
           l2_leaf_reg: 1.0
           sampling_rate: 0.6
+          bootstrap_type: Bernoulli
           subsample: 0.6
           colsample_bylevel: 0.6
         last_optimization:
-          timestamp: '2025-11-02T23:57:54.744236'
+          timestamp: '2025-11-03T23:50:36.552549'
           best_score: 0.0
-          total_trials: 36
-          total_time_seconds: 0.01047515869140625
+          total_trials: 12
+          total_time_seconds: 0.00586390495300293
           n_rounds: 2
   training:
     training_samples: 50000

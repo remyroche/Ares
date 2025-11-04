@@ -1,0 +1,110 @@
+{
+  "_comment": "Configuration par défaut pour regime_ensemble_training - Version 2.0.0",
+  "_description": "Configuration centralisée pour l'entraînement d'ensemble de détection de régimes",
+  "_generated_at": "2025-11-03T21:42:02.417Z",
+  
+  "version": "2.0.0",
+  "component_name": "regime_ensemble_training", 
+  "created_at": "2025-11-03T21:42:02.417Z",
+  "last_updated": "2025-11-03T21:42:02.417Z",
+
+  "hardware": {
+    "_comment": "Paramètres d'optimisation matérielle pour entraînement intensif",
+    "cpu_optimization_level": "aggressive",
+    "gpu_optimization_level": "balanced", 
+    "memory_optimization_level": "balanced",
+    "enable_adaptive_optimization": true,
+    "enable_learning": true
+  },
+
+  "hpo": {
+    "_comment": "Configuration HPO pour meta-learner et modèles de base",
+    "max_trials": 50,
+    "timeout_seconds": 300,
+    "enable_early_stopping": true,
+    "enable_pruning": true,
+    "n_trials": 75,
+    "cv_folds": 3,
+    "enable_multi_objective_hpo": true,
+    "use_pareto_optimization": true,
+    "use_hierarchical_hpo": true
+  },
+
+  "ensemble": {
+    "_comment": "Paramètres spécifiques à l'entraînement d'ensemble (meta-learner)",
+    "n_estimators": 100,
+    "max_depth": 6,
+    "learning_rate": 0.1,
+    "random_state": 42,
+    "n_jobs": -1,
+    "verbose": -1,
+    "calibration_method": "isotonic",
+    "cv_folds": 3,
+    "enable_temporal_smoothing": true,
+    "temporal_smoothing_alpha": 0.1,
+    "enable_soft_labels": true,
+    "soft_label_smoothing": 0.1,
+    "enable_smoothed_features": true,
+    "smoothing_window_sizes": [3, 5, 7]
+  },
+
+  "feature_generation": {
+    "_comment": "Configuration génération features via feature bank",
+    "min_features_required": 50,
+    "categories": ["momentum", "volatility", "volume", "trend", "oscillator", "returns", "microstructure"],
+    "memory_budget_mb": 2048.0,
+    "time_budget_seconds": 300.0,
+    "precision_requirement": "high",
+    "enable_vectorization": true
+  },
+
+  "model_validation": {
+    "_comment": "Configuration validation post-entraînement",
+    "enable_purged_cv": true,
+    "enable_data_leakage_detection": true,
+    "enable_time_series_validation": true,
+    "enable_shap_analysis": true,
+    "enable_lime_analysis": true
+  },
+
+  "temporal_validation": {
+    "_comment": "Configuration validation anti-fuite temporelle",
+    "enable_temporal_checks": true,
+    "strict_temporal_order": true,
+    "initial_train_size": 0.7,
+    "test_size": 0.3,
+    "gap_size": 1
+  },
+
+  "base_models": {
+    "_comment": "Configuration modèles de base pour l'ensemble",
+    "catboost_iterations": 100,
+    "catboost_depth": 6,
+    "catboost_learning_rate": 0.1,
+    "rf_n_estimators": 100,
+    "rf_max_depth": 10,
+    "et_n_estimators": 100,
+    "et_max_depth": 10,
+    "enable_catboost": true,
+    "enable_random_forest": true,
+    "enable_extra_trees": true
+  },
+
+  "enable_enhanced_meta_features": true,
+  "enable_uncertainty_quantification": true,
+  "enable_confidence_features": true,
+  "enable_disagreement_analysis": true,
+  "enable_regime_transition_features": true,
+
+  "save_individual_artifacts": true,
+  "create_timeframe_artifacts": true,
+  "tag_dataset_with_outputs": true,
+  "generate_probability_reports": true,
+  "enable_downstream_compatibility": true,
+
+  "enable_performance_monitoring": true,
+  "enable_hardware_optimization": true,
+  "enable_lookahead_protection": true,
+  "memory_limit_mb": 8192.0,
+  "timeout_seconds": 3600
+}

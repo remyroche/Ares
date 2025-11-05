@@ -160,7 +160,6 @@ from .entropy import (
     MACDEntropyGenerator,
     BollingerBandsEntropyGenerator,
     CrossAssetEntropyGenerator,
-    RegimeEntropyGenerator,
     # NEW FEATURES - Advanced Entropy Analysis
     ShannonEntropyGenerator,
     PermutationEntropyGenerator,
@@ -328,7 +327,6 @@ __all__ = [
     "MACDEntropyGenerator",
     "BollingerBandsEntropyGenerator",
     "CrossAssetEntropyGenerator",
-    "RegimeEntropyGenerator",
     # NEW FEATURES - Advanced Entropy Analysis
     "ShannonEntropyGenerator",
     "PermutationEntropyGenerator",

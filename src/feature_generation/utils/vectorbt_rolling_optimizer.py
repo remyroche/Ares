@@ -390,7 +390,7 @@ class VectorBTRollingOptimizer:
 
     def rolling_corr(self, data: Union[pd.Series, pd.DataFrame], other: Union[pd.Series, pd.DataFrame],
                     window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
-        """Optimized rolling correlation calculation using VectorBT."""
+        """Optimized rolling correlation calculation with NumPy fallback for better performance."""
         try:
             # Use VectorBT's optimized rolling correlation if available
             if VECTORBT_AVAILABLE and self._should_use_vectorbt(data):
@@ -406,11 +406,11 @@ class VectorBTRollingOptimizer:
                     self.logger.warning(f"VectorBT rolling_corr failed: {e}, using pandas fallback")
                     return data.rolling(window=window, **kwargs).corr(other)
             else:
-                # Fallback to pandas
-                return data.rolling(window=window, **kwargs).corr(other)
+                # Use optimized NumPy-based correlation for better performance
+                return self._numpy_rolling_corr(data, other, window, **kwargs)
         except Exception as e:
-            self.logger.warning(f"VectorBT correlation failed: {e}, using pandas fallback")
-            return data.rolling(window=window, **kwargs).corr(other)
+            self.logger.warning(f"VectorBT correlation failed: {e}, using NumPy fallback")
+            return self._numpy_rolling_corr(data, other, window, **kwargs)
 
     def rolling_cov(self, data: Union[pd.Series, pd.DataFrame], other: Union[pd.Series, pd.DataFrame],
                    window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
@@ -989,25 +989,37 @@ class VectorBTRollingOptimizer:
         return data_size > 10000
 
     def _vectorbt_rolling_operation(self, data: Union[pd.Series, pd.DataFrame], operation: str,
-                                   window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+                                    window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """Perform rolling operation using VectorBT (via pandas rolling interface)."""
         try:
             # VectorBT 0.28+ uses pandas rolling interface
             # Remove parameters that pandas rolling doesn't accept
             rolling_kwargs = kwargs.copy()
-            if operation == 'quantile':
-                rolling_kwargs.pop('q', None)
+
             # Remove parameters not accepted by pandas rolling
             rolling_kwargs.pop('func', None)
-            rolling_kwargs.pop('other', None)  # Remove 'other' parameter that pandas rolling doesn't accept
-            
+            rolling_kwargs.pop('q', None)
+            rolling_kwargs.pop('other', None)
+            rolling_kwargs.pop('data2', None)
+
+            # Handle correlation/covariance operations
             if operation in {'corr', 'cov'}:
-                data2 = rolling_kwargs.pop('data2', kwargs.get('data2'))
+                data2 = kwargs.get('data2')
                 if data2 is None:
-                    data2 = kwargs.get('other')  # Fallback to 'other' parameter
+                    data2 = kwargs.get('other')
+                if data2 is None:
+                    # If no other series provided, calculate autocorrelation/autocovariance
+                    if operation == 'corr':
+                        return data.rolling(window=window, **rolling_kwargs).apply(
+                            lambda x: x.corr(x) if len(x) > 1 else np.nan
+                        )
+                    else:  # cov
+                        return data.rolling(window=window, **rolling_kwargs).apply(
+                            lambda x: x.cov(x) if len(x) > 1 else np.nan
+                        )
             else:
                 data2 = None
-            
+
             rolling_obj = data.rolling(window=window, **rolling_kwargs)
 
             if operation == 'mean':
@@ -1030,12 +1042,10 @@ class VectorBTRollingOptimizer:
             elif operation == 'kurt':
                 return rolling_obj.kurt()
             elif operation == 'apply':
-                func = kwargs.pop('func', None)
-                if func is not None:
-                    return rolling_obj.apply(func, **kwargs)
-                else:
-                    # Handle case where func is not provided
-                    return rolling_obj
+                func = kwargs.get('func')
+                if func is None:
+                    raise ValueError("func parameter is required for rolling apply operation")
+                return rolling_obj.apply(func, **{k: v for k, v in kwargs.items() if k != 'func'})
             elif operation == 'corr':
                 return rolling_obj.corr(data2)
             elif operation == 'cov':
@@ -1053,13 +1063,17 @@ class VectorBTRollingOptimizer:
         return self._pandas_rolling_operation(data, operation, window, **kwargs)
 
     def _pandas_rolling_operation(self, data: Union[pd.Series, pd.DataFrame], operation: str,
-                                 window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+                                  window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """Perform rolling operation using pandas."""
-        # Remove quantile-specific parameters from kwargs before passing to rolling
+        # Remove operation-specific parameters from kwargs before passing to rolling
         rolling_kwargs = kwargs.copy()
-        if operation == 'quantile':
-            rolling_kwargs.pop('q', None)
-        
+
+        # Remove parameters that pandas rolling doesn't accept
+        rolling_kwargs.pop('func', None)  # Remove func parameter
+        rolling_kwargs.pop('q', None)     # Remove quantile parameter
+        rolling_kwargs.pop('other', None) # Remove other parameter
+        rolling_kwargs.pop('data2', None) # Remove data2 parameter
+
         rolling_obj = data.rolling(window=window, **rolling_kwargs)
 
         if operation == 'mean':
@@ -1083,21 +1097,76 @@ class VectorBTRollingOptimizer:
             return rolling_obj.kurt()
         elif operation == 'apply':
             func = kwargs.get('func')
-            return rolling_obj.apply(func, **kwargs)
+            if func is None:
+                raise ValueError("func parameter is required for rolling apply operation")
+            return rolling_obj.apply(func, **{k: v for k, v in kwargs.items() if k not in ['func']})
         elif operation == 'corr':
-            other = kwargs.get('other') or kwargs.get('data2')
+            other = kwargs.get('other') if kwargs.get('other') is not None else kwargs.get('data2')
             if other is None:
-                # If no other series provided, calculate autocorrelation
+                # Calculate autocorrelation
                 return rolling_obj.apply(lambda x: x.corr(x) if len(x) > 1 else np.nan)
-            return rolling_obj.corr(other)
+            else:
+                return rolling_obj.corr(other)
         elif operation == 'cov':
-            other = kwargs.get('other') or kwargs.get('data2')
+            other = kwargs.get('other') if kwargs.get('other') is not None else kwargs.get('data2')
             if other is None:
                 # If no other series provided, calculate autocovariance
                 return rolling_obj.apply(lambda x: x.cov(x) if len(x) > 1 else np.nan)
-            return rolling_obj.cov(other)
+            else:
+                return rolling_obj.cov(other)
         else:
             raise ValueError(f"Unsupported pandas operation: {operation}")
+
+    def _numpy_rolling_corr(self, data: Union[pd.Series, pd.DataFrame], other: Union[pd.Series, pd.DataFrame],
+                           window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """NumPy-based rolling correlation calculation for better performance."""
+        try:
+            # Convert to numpy arrays
+            if isinstance(data, pd.Series):
+                data_values = data.values
+                other_values = other.values if isinstance(other, pd.Series) else other.iloc[:, 0].values
+                result = self._numpy_rolling_corr_series(data_values, other_values, window)
+                return pd.Series(result, index=data.index, name=f"{data.name}_corr")
+            else:
+                # DataFrame case - compute correlation for each column
+                results = {}
+                for col in data.columns:
+                    data_values = data[col].values
+                    other_values = other[col].values if col in other.columns else other.iloc[:, 0].values
+                    results[col] = self._numpy_rolling_corr_series(data_values, other_values, window)
+                return pd.DataFrame(results, index=data.index)
+        except Exception as e:
+            # Final fallback to pandas
+            return data.rolling(window=window, **kwargs).corr(other)
+
+    def _numpy_rolling_corr_series(self, data_values: np.ndarray, other_values: np.ndarray,
+                                  window: int) -> np.ndarray:
+        """NumPy rolling correlation for Series data."""
+        n = len(data_values)
+        result = np.full(n, np.nan)
+
+        # Use vectorized approach for better performance
+        for i in range(window - 1, n):
+            start_idx = i - window + 1
+            end_idx = i + 1
+
+            # Extract window data
+            x = data_values[start_idx:end_idx]
+            y = other_values[start_idx:end_idx]
+
+            # Compute correlation using numpy
+            if len(x) == window and len(y) == window:
+                # Avoid division by zero and handle edge cases
+                x_mean = np.mean(x)
+                y_mean = np.mean(y)
+                x_std = np.std(x, ddof=1)
+                y_std = np.std(y, ddof=1)
+
+                if x_std > 0 and y_std > 0:
+                    covariance = np.mean((x - x_mean) * (y - y_mean))
+                    result[i] = covariance / (x_std * y_std)
+
+        return result
 
     def _numpy_rolling_operation(self, data: Union[pd.Series, pd.DataFrame], operation: str,
                                 window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:

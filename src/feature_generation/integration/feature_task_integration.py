@@ -48,7 +48,7 @@ from ..categories.regime_features import (
     RegimeMemoryStrengthGenerator,
     RegimeCrossAssetGenerator,
     RegimeTransitionProbabilityGenerator,
-    RegimeFeatureIntegration
+    RegimeStatisticalFeatureGenerator
 )
 
 from ..categories.clustering_features import (
@@ -350,7 +350,7 @@ class FeatureTaskIntegrator:
         features = {}
         
         # Use regime feature integration generator
-        regime_generator = RegimeFeatureIntegration()
+        regime_generator = RegimeStatisticalFeatureGenerator()
         regime_features = regime_generator.generate_features(data)
         features.update(regime_features)
         
@@ -361,7 +361,7 @@ class FeatureTaskIntegrator:
         features = {}
         
         # Use regime feature integration generator (training-safe features)
-        regime_generator = RegimeFeatureIntegration()
+        regime_generator = RegimeStatisticalFeatureGenerator()
         regime_features = regime_generator.generate_features(data)
         features.update(regime_features)
         
@@ -372,7 +372,7 @@ class FeatureTaskIntegrator:
         features = {}
         
         # Use regime feature integration generator
-        regime_generator = RegimeFeatureIntegration()
+        regime_generator = RegimeStatisticalFeatureGenerator()
         regime_features = regime_generator.generate_features(data)
         features.update(regime_features)
         

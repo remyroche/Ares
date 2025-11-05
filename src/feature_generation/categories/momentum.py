@@ -346,7 +346,7 @@ class AnalystMomentum5mGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=lookback,
             min_lookback=5,
-            max_lookback=100,
+            max_lookback=72,
             parameters={"lookback": lookback}
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
@@ -384,7 +384,7 @@ class AnalystMomentum15mGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=lookback,
             min_lookback=5,
-            max_lookback=100,
+            max_lookback=72,
             parameters={"lookback": lookback}
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
@@ -422,7 +422,7 @@ class AnalystMomentum1hGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=lookback,
             min_lookback=5,
-            max_lookback=100,
+            max_lookback=72,
             parameters={"lookback": lookback}
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
@@ -449,7 +449,7 @@ class AnalystMomentumAlignmentGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=lookback,
             min_lookback=5,
-            max_lookback=100,
+            max_lookback=72,
             parameters={"lookback": lookback}
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)

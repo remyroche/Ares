@@ -28,6 +28,7 @@ from .regime_features import (
     RegimeStatisticalFeatureGenerator,
     RegimeStructuralTrendFeatureGenerator,
     RegimeVolatilityFeatureGenerator,
+    RegimeIntermediateVolatilityFeatureGenerator,
     RegimeVolumeFeatureGenerator,
     RegimeEntropyGenerator,
     RegimeComplexityGenerator,
@@ -35,8 +36,7 @@ from .regime_features import (
     RegimeHurstExponentGenerator,
     RegimeMemoryStrengthGenerator,
     RegimeCrossAssetGenerator,
-    RegimeTransitionProbabilityGenerator,
-    RegimeFeatureIntegration
+    RegimeTransitionProbabilityGenerator
 )
 
 from .clustering_features import (
@@ -110,12 +110,19 @@ class RegimeFeatureCategorizer:
             generators=[
                 RegimeStatisticalFeatureGenerator(),
                 RegimeVolatilityFeatureGenerator(),
+                RegimeIntermediateVolatilityFeatureGenerator(),
                 RegimeVolumeFeatureGenerator()
             ],
             feature_names=[
                 "regime_persistence", "vol_regime_strength", "vol_clustering",
                 "vol_regime_change", "volume_regime_strength", "volume_clustering",
                 "statistical_persistence", "distribution_stability",
+                # Intermediate volatility features (12, 26, 72 windows)
+                "volatility_12", "volatility_26", "volatility_72",
+                "vol_regime_strength_12", "vol_regime_strength_26", "vol_regime_strength_72",
+                "vol_zscore_12", "vol_zscore_26", "vol_zscore_72",
+                "vol_persistence_12", "vol_persistence_26", "vol_persistence_72",
+                "vol_consistency_12", "vol_consistency_26", "vol_consistency_72",
                 # Lagged features (windowed features for past 3-5 bars)
                 "lagged_ma_3", "lagged_ma_4", "lagged_ma_5",
                 "lagged_volatility_3", "lagged_volatility_4", "lagged_volatility_5",

@@ -83,6 +83,13 @@ from .feature_bank_integration import (
     FeatureBankIntegrator, FeatureBankConfig, FeatureBankCategory
 )
 
+# Define availability constants first to avoid redefinition warnings
+REGIME_FEATURES_AVAILABLE = False
+REGIME_CATEGORIZATION_AVAILABLE = False
+REGIME_INTEGRATION_AVAILABLE = False
+HPO_AVAILABLE = False
+VECTORIZATION_AVAILABLE = False
+
 # Import regime-specific features and categorization
 try:
     from src.feature_generation.categories.regime_features import (
@@ -91,7 +98,6 @@ try:
     REGIME_FEATURES_AVAILABLE = True
     tprint_debug("✅ Regime-specific features available")
 except ImportError:
-    REGIME_FEATURES_AVAILABLE = False
     tprint_debug("⚠️ Regime-specific features not available")
 
 # Import regime feature categorization system
@@ -105,7 +111,6 @@ try:
     REGIME_CATEGORIZATION_AVAILABLE = True
     tprint_debug("✅ Regime feature categorization available")
 except ImportError:
-    REGIME_CATEGORIZATION_AVAILABLE = False
     tprint_debug("⚠️ Regime feature categorization not available")
 
 # Import regime feature integration
@@ -119,7 +124,6 @@ try:
     REGIME_INTEGRATION_AVAILABLE = True
     tprint_debug("✅ Regime feature integration available")
 except ImportError:
-    REGIME_INTEGRATION_AVAILABLE = False
     tprint_debug("⚠️ Regime feature integration not available")
 
 # Import optimization utilities (from code review)
@@ -127,14 +131,12 @@ try:
     from src.utils.ml_common.optimization.hpo_utils import get_hpo_optimizer
     HPO_AVAILABLE = True
 except ImportError:
-    HPO_AVAILABLE = False
     tprint_debug("⚠️ HPO utilities not available")
 
 try:
     from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager
     VECTORIZATION_AVAILABLE = True
 except ImportError:
-    VECTORIZATION_AVAILABLE = False
     tprint_debug("⚠️ Unified vectorization not available")
 
 # Import MS-DR clusterer
@@ -274,7 +276,8 @@ class EnhancedMSDRClusteringIntegration:
         # Initialize vectorization manager if available (from code review)
         if VECTORIZATION_AVAILABLE:
             try:
-                self.vectorization_manager = UnifiedVectorizationManager()
+                from src.utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager
+                self.vectorization_manager = get_unified_vectorization_manager()
                 tprint_success("✅ Vectorization manager initialized")
             except (ImportError, AttributeError, TypeError) as e:
                 tprint_warning(f"⚠️ Failed to initialize vectorization: {e}")

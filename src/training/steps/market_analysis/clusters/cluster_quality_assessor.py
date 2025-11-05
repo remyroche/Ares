@@ -17,6 +17,7 @@ quality metrics including:
 """
 
 import logging
+import csv
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Optional, List, Tuple, Union
@@ -662,52 +663,52 @@ class ClusterQualityAssessor:
         
         # 1. Silhouette scores
         try:
-            with tprint_timer("Silhouette Score Calculation"):
-                metrics.silhouette_score, metrics.silhouette_per_cluster = self._calculate_silhouette_scores(
-                    regime_labels, features_clean, non_noise_mask
-                )
+            tprint_timer("Silhouette Score Calculation")
+            metrics.silhouette_score, metrics.silhouette_per_cluster = self._calculate_silhouette_scores(
+            regime_labels, features_clean, non_noise_mask
+            )
             tprint_success(f"✅ Silhouette score: {metrics.silhouette_score:.4f}")
         except Exception as e:
             tprint_error(f"❌ Failed to calculate silhouette scores: {e}")
         
         # 2. Davies-Bouldin Index
         try:
-            with tprint_timer("Davies-Bouldin Index Calculation"):
-                metrics.davies_bouldin_score = self._calculate_dbi(
-                    regime_labels, features_clean, non_noise_mask
-                )
+            tprint_timer("Davies-Bouldin Index Calculation")
+            metrics.davies_bouldin_score = self._calculate_dbi(
+                regime_labels, features_clean, non_noise_mask
+            )
             tprint_success(f"✅ Davies-Bouldin Index: {metrics.davies_bouldin_score:.4f}")
         except Exception as e:
             tprint_error(f"❌ Failed to calculate DBI: {e}")
         
         # 3. Calinski-Harabasz Index
         try:
-            with tprint_timer("Calinski-Harabasz Index Calculation"):
-                metrics.calinski_harabasz_score = self._calculate_ch(
-                    regime_labels, features_clean, non_noise_mask
-                )
+            tprint_timer("Calinski-Harabasz Index Calculation")
+            metrics.calinski_harabasz_score = self._calculate_ch(
+                regime_labels, features_clean, non_noise_mask
+            )
             tprint_success(f"✅ Calinski-Harabasz Index: {metrics.calinski_harabasz_score:.4f}")
         except Exception as e:
             tprint_error(f"❌ Failed to calculate CH score: {e}")
         
         # 4. *** REVERTED: Kept original function call ***
         try:
-            with tprint_timer("CV Metrics Calculation"):
-                (metrics.within_regime_cv, metrics.within_regime_cv_std,
-                 metrics.between_regime_cv, metrics.between_regime_cv_std,
-                 metrics.per_regime_cv) = self._calculate_cv_metrics(
-                     regime_labels, features_clean, non_noise_mask
-                 )
+            tprint_timer("CV Metrics Calculation")
+            (metrics.within_regime_cv, metrics.within_regime_cv_std,
+                metrics.between_regime_cv, metrics.between_regime_cv_std,
+                metrics.per_regime_cv) = self._calculate_cv_metrics(
+                regime_labels, features_clean, non_noise_mask
+            )
             tprint_success(f"✅ Within CV: {metrics.within_regime_cv:.4f}, Between CV: {metrics.between_regime_cv:.4f}")
         except Exception as e:
             tprint_error(f"❌ Failed to calculate CV metrics: {e}")
         
         # 5. Balance metrics
         try:
-            with tprint_timer("Balance Metrics Calculation"):
-                (metrics.balance_score, metrics.min_cluster_size_pct,
-                 metrics.max_cluster_size_pct, metrics.cluster_size_std,
-                 metrics.cluster_size_distribution) = self._calculate_balance_metrics(regime_labels)
+            tprint_timer("Balance Metrics Calculation")
+            (metrics.balance_score, metrics.min_cluster_size_pct,
+                metrics.max_cluster_size_pct, metrics.cluster_size_std,
+                metrics.cluster_size_distribution) = self._calculate_balance_metrics(regime_labels)
             tprint_success(f"✅ Balance score: {metrics.balance_score:.4f}")
         except Exception as e:
             tprint_error(f"❌ Failed to calculate balance metrics: {e}")
@@ -715,46 +716,46 @@ class ClusterQualityAssessor:
         # 6. Temporal smoothness and persistence (with flip-flop penalty)
         if timestamps is not None:
             try:
-                with tprint_timer("Temporal Metrics Calculation"):
-                    (metrics.temporal_smoothness,
-                     metrics.temporal_smoothness_raw,
-                     metrics.flip_flop_ratio) = self._calculate_temporal_smoothness(
-                        regime_labels, timestamps, sensitivity_mode=temporal_sensitivity_mode
-                    )
-                    metrics.regime_persistence = self._calculate_regime_persistence(regime_labels)
+                tprint_timer("Temporal Metrics Calculation")
+                (metrics.temporal_smoothness,
+                    metrics.temporal_smoothness_raw,
+                    metrics.flip_flop_ratio) = self._calculate_temporal_smoothness(
+                    regime_labels, timestamps, sensitivity_mode=temporal_sensitivity_mode
+                )
+                metrics.regime_persistence = self._calculate_regime_persistence(regime_labels)
 
-                    # Enhanced temporal metrics
-                    metrics.regime_duration_distribution = self._calculate_regime_duration_distribution(regime_labels)
-                    metrics.transition_probability_matrix = self._calculate_transition_probability_matrix(regime_labels)
+                # Enhanced temporal metrics
+                metrics.regime_duration_distribution = self._calculate_regime_duration_distribution(regime_labels)
+                metrics.transition_probability_matrix = self._calculate_transition_probability_matrix(regime_labels)
 
                 tprint_success(f"✅ Temporal smoothness: {metrics.temporal_smoothness:.4f} (raw: {metrics.temporal_smoothness_raw:.4f}, flip-flop: {metrics.flip_flop_ratio:.3f}), Persistence: {metrics.regime_persistence:.2f}")
-                tprint_success(f"✅ Enhanced temporal: Duration stability={metrics.regime_duration_distribution.get('duration_stability_score', 0):.3f}, Transition stability={metrics.transition_probability_matrix.get('transition_stability_score', 0):.3f}")
+                tprint_success(f"✅ Enhanced temporal: Duration stability={metrics.regime_duration_distribution.get('duration_stability_score', 0) if isinstance(metrics.regime_duration_distribution, dict) else 0:.3f}, Transition stability={metrics.transition_probability_matrix.get('transition_stability_score', 0) if isinstance(metrics.transition_probability_matrix, dict) else 0:.3f}")
             except Exception as e:
                 tprint_error(f"❌ Failed to calculate temporal metrics: {e}")
         
         # 6b. Per-category CV metrics
         try:
-            with tprint_timer("Per-Category CV Metrics Calculation"):
-                metrics.feature_category_cv_metrics = self._calculate_cv_metrics_by_category(
-                    regime_labels, features_clean, non_noise_mask
-                )
-                num_categories = len(metrics.feature_category_cv_metrics)
-                tprint_success(f"✅ Calculated CV metrics for {num_categories} feature categories")
+            tprint_timer("Per-Category CV Metrics Calculation")
+            metrics.feature_category_cv_metrics = self._calculate_cv_metrics_by_category(
+                regime_labels, features_clean, non_noise_mask
+            )
+            num_categories = len(metrics.feature_category_cv_metrics)
+            tprint_success(f"✅ Calculated CV metrics for {num_categories} feature categories")
         except Exception as e:
             tprint_error(f"❌ Failed to calculate per-category CV metrics: {e}")
         
         # 7. Per-regime metrics (includes regime type detection and NEW economic targets)
         try:
-            with tprint_timer("Per-Regime Metrics Calculation"):
-                metrics.per_regime_metrics = self._calculate_per_regime_metrics(
-                    regime_labels, features_clean, forward_returns
-                )
-                
-                # Extract regime types from per-regime metrics
-                metrics.regime_type_per_cluster = {
-                    regime_id: regime_data.get('regime_type', RegimeType.UNKNOWN.value)
-                    for regime_id, regime_data in metrics.per_regime_metrics.items()
-                }
+            tprint_timer("Per-Regime Metrics Calculation")
+            metrics.per_regime_metrics = self._calculate_per_regime_metrics(
+                regime_labels, features_clean, forward_returns
+            )
+            
+            # Extract regime types from per-regime metrics
+            metrics.regime_type_per_cluster = {
+                regime_id: regime_data.get('regime_type', RegimeType.UNKNOWN.value)
+                for regime_id, regime_data in metrics.per_regime_metrics.items()
+            }
             tprint_success(f"✅ Calculated metrics for {len(metrics.per_regime_metrics)} regimes")
         except Exception as e:
             tprint_error(f"❌ Failed to calculate per-regime metrics: {e}")
@@ -762,10 +763,10 @@ class ClusterQualityAssessor:
         # *** NEW: 7b. Economic Coefficient of Variation ***
         if forward_returns is not None:
             try:
-                with tprint_timer("Economic CV Metrics Calculation"):
-                    metrics.economic_cv_metrics = self._calculate_economic_cv_metrics(
-                        metrics.per_regime_metrics, forward_returns, regime_labels
-                    )
+                tprint_timer("Economic CV Metrics Calculation")
+                metrics.economic_cv_metrics = self._calculate_economic_cv_metrics(
+                    metrics.per_regime_metrics, forward_returns, regime_labels
+                )
                 tprint_success("✅ Economic CV metrics complete")
             except Exception as e:
                 tprint_error(f"❌ Failed to calculate economic CV metrics: {e}")
@@ -776,33 +777,33 @@ class ClusterQualityAssessor:
                 metrics.economic_validation = metrics.per_regime_metrics
                 tprint_success("✅ Economic validation populated from per-regime metrics")
             except Exception as e:
-                tprint_error(f"❌ Failed to validate regime quality: {e}")
+                tprint_error(f"❌ Failed to populate economic validation: {e}")
         
-        # 8b. Economic interpretation (data-driven insights)
-        try:
-            with tprint_timer("Economic Interpretation"):
-                metrics.economic_interpretation = self._generate_economic_interpretation(
-                    metrics.per_regime_metrics, metrics.regime_type_per_cluster
+        # *** NEW: 7b. Economic Coefficient of Variation ***
+        if forward_returns is not None:
+            try:
+                tprint_timer("Economic CV Metrics Calculation")
+                metrics.economic_cv_metrics = self._calculate_economic_cv_metrics(
+                    metrics.per_regime_metrics, forward_returns, regime_labels
                 )
-            tprint_success("✅ Economic interpretation generated")
-        except Exception as e:
-            tprint_error(f"❌ Failed to generate economic interpretation: {e}")
+                tprint_success("✅ Economic CV metrics complete")
+            except Exception as e:
+                tprint_error(f"❌ Failed to calculate economic CV metrics: {e}")
         
         # 9. Predictive power
         if forward_returns is not None and len(forward_returns) > 0:
             try:
-                with tprint_timer("Predictive Power Calculation"):
-                    metrics.predictive_power = self._calculate_predictive_power(
-                        regime_labels, forward_returns
-                    )
+                tprint_timer("Predictive Power Calculation")
+                metrics.predictive_power = self._calculate_predictive_power(
+                    regime_labels, forward_returns
+                )
                 tprint_success(f"✅ Predictive power: {metrics.predictive_power:.4f}")
             except Exception as e:
                 tprint_error(f"❌ Failed to calculate predictive power: {e}")
         
         # 10. Calculate overall quality score
         try:
-            with tprint_timer("Quality Score Calculation"):
-                metrics.quality_score = self._calculate_quality_score(metrics)
+            metrics.quality_score = self._calculate_quality_score(metrics)
             tprint_success(f"✅ Overall quality score: {metrics.quality_score:.4f}")
         except Exception as e:
             tprint_error(f"❌ Failed to calculate quality score: {e}")
@@ -969,7 +970,7 @@ class ClusterQualityAssessor:
                 metrics.baseline_comparison = {
                     'mean_delta_ll': predictive_results.get('mean_delta_ll'),
                     'positive_ratio': predictive_results.get('positive_ratio')
-                }
+                    }
                 # DIAGNOSTIC: Median & IQR
                 metrics.predictive_ll_median = predictive_results.get('predictive_ll_median')
                 metrics.predictive_ll_iqr = predictive_results.get('predictive_ll_iqr')
@@ -1190,22 +1191,22 @@ class ClusterQualityAssessor:
             feature_lower = str(feature).lower()
             
             # Momentum indicators
-            if any(keyword in feature_lower for keyword in ['rsi', 'macd', 'momentum', 'cci', 'stoch', 'roc', 'trix', 'adx']):
+            if any(keyword in feature_lower for keyword in ['rsi', 'macd', 'momentum', 'cci', 'stoch', 'roc', 'trix', 'adx', 'price_momentum', 'momentum_']):
                 categories['momentum'].append(feature)
             # Volume indicators
-            elif any(keyword in feature_lower for keyword in ['volume', 'obv', 'vwap', 'mfi', 'cmf', 'vpt']):
+            elif any(keyword in feature_lower for keyword in ['volume', 'obv', 'vwap', 'mfi', 'cmf', 'vpt', 'volume_ratio', 'volume_momentum', 'volume_volatility', 'volume_trend', 'volume_price_corr']):
                 categories['volume'].append(feature)
             # Volatility indicators
-            elif any(keyword in feature_lower for keyword in ['volatility', 'atr', 'bb', 'bollinger', 'keltner', 'std', 'variance']):
+            elif any(keyword in feature_lower for keyword in ['volatility', 'atr', 'bb', 'bollinger', 'keltner', 'std', 'variance', 'bb_upper', 'bb_lower', 'bb_width']):
                 categories['volatility'].append(feature)
             # Spread/book indicators
-            elif any(keyword in feature_lower for keyword in ['spread', 'bid', 'ask', 'depth', 'book']):
+            elif any(keyword in feature_lower for keyword in ['spread', 'bid', 'ask', 'depth', 'book', 'hl_ratio', 'high_low', 'high_close', 'low_close', 'open_close', 'high_open', 'low_open', 'body_ratio', 'upper_shadow', 'lower_shadow']):
                 categories['spread'].append(feature)
             # Microstructure
             elif any(keyword in feature_lower for keyword in ['tick', 'trades', 'order', 'imbalance', 'flow']):
                 categories['microstructure'].append(feature)
             # Price-based
-            elif any(keyword in feature_lower for keyword in ['price', 'close', 'open', 'high', 'low', 'ema', 'sma', 'ma_']):
+            elif any(keyword in feature_lower for keyword in ['price', 'close', 'open', 'high', 'low', 'ema', 'sma', 'ma_', 'returns', 'log_returns', 'price_sma', 'price_above', 'sma_crossover', 'trend_strength']):
                 categories['price'].append(feature)
             else:
                 categories['other'].append(feature)
@@ -1329,13 +1330,17 @@ class ClusterQualityAssessor:
             
             # Ensure indices match between cluster_labels and forward_returns
             if len(regime_mask) != len(forward_returns):
-                # Truncate regime_mask to match forward_returns length
-                regime_mask_aligned = regime_mask[:len(forward_returns)]
-                regime_returns_ts = forward_returns[regime_mask_aligned].values
+                # Align the lengths by taking the minimum length
+                min_length = min(len(regime_mask), len(forward_returns))
+                regime_mask_aligned = regime_mask[:min_length]
+                forward_returns_aligned = forward_returns[:min_length]
+                regime_returns_ts = forward_returns_aligned[regime_mask_aligned].values
             else:
                 regime_returns_ts = forward_returns[regime_mask].values
             
-            within_cvs.append(self._calculate_cv(regime_returns_ts))
+            # Only calculate CV if we have enough data points
+            if len(regime_returns_ts) > 1:
+                within_cvs.append(self._calculate_cv(regime_returns_ts))
         
         avg_within_cv_fwd_return = np.nanmean(within_cvs) if within_cvs else np.nan
         metrics_data['economic_avg_within_cv_fwd_return'] = avg_within_cv_fwd_return
@@ -2750,24 +2755,381 @@ class ClusterQualityAssessor:
             tprint_error(f"❌ Failed to generate markdown report: {e}")
             return None
     
+    def generate_comprehensive_csv_report(self, 
+                                         metrics: ClusterQualityMetrics,
+                                         all_trials: Optional[List[Dict[str, Any]]] = None,
+                                         symbol: str = "UNKNOWN", 
+                                         output_dir: str = "outcomes",
+                                         method_specific_config: Optional[Dict[str, Any]] = None) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Generate comprehensive CSV reports with detailed metrics for all trials.
+        
+        Args:
+            metrics: ClusterQualityMetrics object for best trial
+            all_trials: List of all trial results with metrics
+            symbol: Trading symbol or identifier
+            output_dir: Output directory for the reports (default: outcomes/)
+            method_specific_config: Optional dict of method-specific HPs
+            
+        Returns:
+            Tuple of (quality_metrics_csv_path, trials_csv_path) or (None, None) if failed
+        """
+        try:
+            # Create output directory if it doesn't exist
+            output_path = Path(output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # Generate 1. Quality Metrics CSV (for best trial)
+            quality_csv_path = self._generate_quality_metrics_csv(metrics, symbol, output_path, timestamp, method_specific_config)
+            
+            # Generate 2. All Trials CSV (if available)
+            trials_csv_path = None
+            if all_trials:
+                trials_csv_path = self._generate_all_trials_csv(all_trials, symbol, output_path, timestamp)
+            
+            if quality_csv_path:
+                tprint_success(f"✅ Comprehensive CSV reports generated:")
+                tprint_success(f"   📊 Quality Metrics: {quality_csv_path}")
+                if trials_csv_path:
+                    tprint_success(f"   📋 All Trials: {trials_csv_path}")
+                return quality_csv_path, trials_csv_path
+            else:
+                return None, None
+                
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate comprehensive CSV reports: {e}")
+            return None, None
+    
+    def _generate_quality_metrics_csv(self, metrics: ClusterQualityMetrics, symbol: str, 
+                                     output_path: Path, timestamp: str,
+                                     method_specific_config: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """Generate detailed quality metrics CSV for the best trial."""
+        
+        try:
+            csv_filename = f"cluster_quality_metrics_{symbol}_{timestamp}.csv"
+            csv_path = output_path / csv_filename
+            
+            tprint_info(f"📊 Generating detailed quality metrics CSV: {csv_path}")
+            
+            # Prepare comprehensive CSV data
+            csv_data = []
+            
+            # Header
+            csv_data.append(['Metric Category', 'Metric Name', 'Value', 'Description', 'Interpretation'])
+            
+            # Core Quality Metrics
+            csv_data.append(['Core Quality', 'Composite Quality Score', f"{metrics.quality_score:.6f}", 'Overall clustering quality (0-1, higher is better)', 'Excellent >0.8, Good >0.6, Fair >0.4, Poor <0.4'])
+            csv_data.append(['Core Quality', 'Silhouette Score', f"{metrics.silhouette_score:.6f}", 'Cluster separation and cohesion (-1 to 1)', 'Good >0.5, Moderate >0.25, Poor <0.25'])
+            csv_data.append(['Core Quality', 'Davies-Bouldin Index', f"{metrics.davies_bouldin_score:.6f}", 'Cluster similarity (lower is better)', 'Excellent <0.5, Good <1.0, Fair <2.0, Poor >2.0'])
+            csv_data.append(['Core Quality', 'Calinski-Harabasz Index', f"{metrics.calinski_harabasz_score:.2f}", 'Between-cluster dispersion (higher is better)', 'Context dependent'])
+            
+            # Enhanced CV Metrics
+            csv_data.append(['Feature Distribution', 'Within-Cluster CV', f"{metrics.within_regime_cv:.6f}" if metrics.within_regime_cv is not None else "N/A", 'Average coefficient of variation within clusters', 'Lower values indicate tighter clusters'])
+            csv_data.append(['Feature Distribution', 'Between-Cluster CV', f"{metrics.between_regime_cv:.6f}" if metrics.between_regime_cv is not None else "N/A", 'Average coefficient of variation between clusters', 'Higher values indicate better separation'])
+            csv_data.append(['Feature Distribution', 'Within-Cluster CV Std', f"{metrics.within_regime_cv_std:.6f}" if metrics.within_regime_cv_std is not None else "N/A", 'Standard deviation of within-cluster CV', 'Lower values indicate more consistent clusters'])
+            csv_data.append(['Feature Distribution', 'Between-Cluster CV Std', f"{metrics.between_regime_cv_std:.6f}" if metrics.between_regime_cv_std is not None else "N/A", 'Standard deviation of between-cluster CV', 'Lower values indicate more consistent separation'])
+            
+            # Per-Regime CV Values
+            if metrics.per_regime_cv:
+                csv_data.append(['Feature Distribution', 'Per-Regime CV Values', str(metrics.per_regime_cv), 'CV values for each individual regime', 'Shows variation across different regimes'])
+            
+            # Per-Category CV Metrics
+            if metrics.feature_category_cv_metrics:
+                csv_data.append(['Feature Distribution', 'Feature Category CV Metrics', str(metrics.feature_category_cv_metrics), 'CV metrics broken down by feature category', 'Reveals which feature categories separate regimes best'])
+            
+            # Economic CV Metrics
+            if metrics.economic_cv_metrics:
+                csv_data.append(['Economic Distribution', 'Economic CV Metrics', str(metrics.economic_cv_metrics), 'Coefficient of variation for economic outcomes', 'Shows economic separation between regimes'])
+            
+            # Cluster Structure Metrics
+            csv_data.append(['Cluster Structure', 'Number of Regimes', f"{metrics.n_regimes}", 'Total number of regimes discovered', 'Optimal range depends on data complexity'])
+            csv_data.append(['Cluster Structure', 'Noise Ratio', f"{metrics.noise_ratio:.4f}", 'Ratio of noise points (-1 labels)', 'Lower values indicate cleaner clustering'])
+            
+            # Balance Metrics
+            if metrics.balance_score is not None:
+                csv_data.append(['Cluster Structure', 'Balance Score', f"{metrics.balance_score:.4f}", 'Cluster size balance (0-1, higher is better)', 'Values >0.8 indicate well-balanced clusters'])
+                csv_data.append(['Cluster Structure', 'Smallest Cluster %', f"{metrics.min_cluster_size_pct:.2f}%" if metrics.min_cluster_size_pct is not None else "N/A", 'Smallest cluster as percentage of total', 'Values <5% may indicate noise clusters'])
+                csv_data.append(['Cluster Structure', 'Largest Cluster %', f"{metrics.max_cluster_size_pct:.2f}%" if metrics.max_cluster_size_pct is not None else "N/A", 'Largest cluster as percentage of total', 'Values >80% indicate dominance'])
+                csv_data.append(['Cluster Structure', 'Cluster Size Std Dev', f"{metrics.cluster_size_std:.4f}" if metrics.cluster_size_std is not None else "N/A", 'Standard deviation of cluster sizes', 'Lower values indicate more balanced clusters'])
+            
+            # Cluster Size Distribution
+            if metrics.cluster_size_distribution:
+                csv_data.append(['Cluster Structure', 'Cluster Size Distribution', str(metrics.cluster_size_distribution), 'Size of each cluster as percentage', 'Detailed distribution across all clusters'])
+            
+            # Temporal Metrics
+            csv_data.append(['Temporal Analysis', 'Temporal Smoothness', f"{metrics.temporal_smoothness:.6f}" if metrics.temporal_smoothness is not None else "N/A", 'Regime persistence over time (0-1)', 'High >0.8, Medium >0.6, Low <0.6'])
+            if metrics.temporal_smoothness_raw is not None:
+                csv_data.append(['Temporal Analysis', 'Temporal Smoothness (Raw)', f"{metrics.temporal_smoothness_raw:.6f}", 'Temporal smoothness without flip-flop penalty', 'Raw measure of regime persistence'])
+            if metrics.flip_flop_ratio is not None:
+                csv_data.append(['Temporal Analysis', 'Flip-Flop Ratio', f"{metrics.flip_flop_ratio:.4f}", 'Ratio of rapid back-and-forth transitions', 'Lower values indicate more stable regimes'])
+            csv_data.append(['Temporal Analysis', 'Regime Persistence', f"{metrics.regime_persistence:.2f}" if metrics.regime_persistence is not None else "N/A", 'Average regime duration in time periods', 'Longer durations indicate more stable regimes'])
+            
+            # Enhanced Temporal Metrics
+            if metrics.regime_duration_distribution:
+                csv_data.append(['Temporal Analysis', 'Regime Duration Distribution', str(metrics.regime_duration_distribution), 'Statistical distribution of regime durations', 'Shows stability and predictability of regimes'])
+            if metrics.transition_probability_matrix:
+                csv_data.append(['Temporal Analysis', 'Transition Probability Matrix', str(metrics.transition_probability_matrix), 'Transition probabilities between regimes', 'Reveals regime switching patterns'])
+            
+            # Economic Metrics
+            if metrics.economic_validation:
+                econ_val = metrics.economic_validation
+                csv_data.append(['Economic Validation', 'Economic Validation Results', str(econ_val), 'Complete economic validation metrics', 'Includes returns, Sharpe, drawdown, hit rate'])
+                
+                # Extract individual economic metrics if available
+                if isinstance(econ_val, dict):
+                    for regime_id, regime_data in econ_val.items():
+                        if isinstance(regime_data, dict):
+                            regime_metrics = []
+                            for key, value in regime_data.items():
+                                if key in ['mean_return', 'volatility', 'sharpe', 'max_drawdown', 'hit_rate']:
+                                    regime_metrics.append(f"{key}:{value:.4f}")
+                            if regime_metrics:
+                                csv_data.append(['Economic Validation', f'Regime {regime_id} Metrics', '; '.join(regime_metrics), f'Economic metrics for regime {regime_id}', 'Performance characteristics by regime'])
+            
+            # Predictive Power
+            if metrics.predictive_power is not None:
+                csv_data.append(['Predictive Power', 'Predictive Power Score', f"{metrics.predictive_power:.4f}", 'Cross-validation prediction accuracy (0-1)', 'Higher values indicate better predictive capability'])
+            
+            # Model-Specific Metrics
+            if metrics.log_likelihood is not None:
+                csv_data.append(['Model Metrics', 'Log Likelihood', f"{metrics.log_likelihood:.2f}", 'Model log-likelihood (higher is better)', 'Measures model fit to data'])
+            
+            # Enhanced HMM Metrics (if available)
+            if metrics.rolling_predictive_ll:
+                csv_data.append(['HMM Validation', 'Rolling Predictive LL', str(metrics.rolling_predictive_ll), 'Rolling log-likelihood validation results', 'Assesses model generalization'])
+            if metrics.refit_stability_ari is not None:
+                csv_data.append(['HMM Validation', 'Refit Stability ARI', f"{metrics.refit_stability_ari:.4f}", 'Adjusted Rand Index across refits', 'Higher values indicate more stable clustering'])
+            if metrics.state_occupancy:
+                csv_data.append(['HMM Validation', 'State Occupancy', str(metrics.state_occupancy), 'Fraction of time in each state', 'Shows regime dominance patterns'])
+            if metrics.expected_state_durations:
+                csv_data.append(['HMM Validation', 'Expected State Durations', str(metrics.expected_state_durations), 'Expected duration for each state', 'Predictive regime persistence measure'])
+            
+            # Method-Specific Configuration
+            if method_specific_config:
+                csv_data.append(['Configuration', 'Symbol', symbol, 'Trading symbol or identifier', ''])
+                csv_data.append(['Configuration', 'Analysis Timestamp', datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'When the analysis was performed', ''])
+                for param, value in method_specific_config.items():
+                    csv_data.append(['Configuration', param, str(value), 'Method-specific hyperparameter', ''])
+            
+            # Write CSV
+            with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerows(csv_data)
+            
+            tprint_success(f"✅ Quality metrics CSV generated: {csv_path}")
+            return str(csv_path)
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate quality metrics CSV: {e}")
+            return None
+    
+    def _generate_all_trials_csv(self, all_trials: List[Dict[str, Any]], symbol: str, 
+                                output_path: Path, timestamp: str) -> Optional[str]:
+        """Generate comprehensive CSV with all trial results."""
+        
+        try:
+            csv_filename = f"all_trials_results_{symbol}_{timestamp}.csv"
+            csv_path = output_path / csv_filename
+            
+            tprint_info(f"📋 Generating all trials CSV: {csv_path}")
+            
+            # Prepare comprehensive CSV data for all trials
+            csv_data = []
+            
+            # Header
+            header = ['Trial', 'Rank', 'K', 'Base_Alpha', 'Kappa', 'N_Mixtures', 'PCA_Components', 
+                     'Learning_Rate', 'SVI_Iterations', 'ELBO', 'Quality_Score', 'Silhouette_Score', 
+                     'Davies_Bouldin_Index', 'Calinski_Harabasz_Index', 'Within_CV', 'Between_CV', 
+                     'Within_CV_Std', 'Between_CV_Std', 'Temporal_Smoothness', 'Regime_Persistence', 
+                     'Balance_Score', 'N_Regimes', 'Noise_Ratio', 'Predictive_Power']
+            
+            # Add economic metrics if available
+            economic_headers = ['Mean_Return', 'Volatility', 'Sharpe_Ratio', 'Max_Drawdown', 'Hit_Rate']
+            if all_trials and any('economic_validation' in trial.get('quality_metrics', {}) for trial in all_trials):
+                header.extend(economic_headers)
+            
+            # Add HMM validation metrics if available
+            hmm_headers = ['Log_Likelihood', 'Refit_Stability_ARI', 'State_Occupancy_Entropy']
+            if all_trials and any(any(key in trial.get('quality_metrics', {}) for key in ['log_likelihood', 'refit_stability_ari', 'occupancy_entropy']) for trial in all_trials):
+                header.extend(hmm_headers)
+            
+            # Add per-regime metrics summary if available
+            regime_headers = ['Min_Regime_Size', 'Max_Regime_Size', 'Regime_Size_Std']
+            if all_trials and any('cluster_size_distribution' in trial.get('quality_metrics', {}) for trial in all_trials):
+                header.extend(regime_headers)
+            
+            csv_data.append(header)
+            
+            # Sort trials by quality score (descending) for ranking
+            sorted_trials = sorted(all_trials, 
+                                 key=lambda x: x.get('quality_metrics', {}).get('quality_score', 0), 
+                                 reverse=True)
+            
+            # Add trial data
+            for rank, trial in enumerate(sorted_trials, 1):
+                params = trial.get('params', {})
+                metrics = trial.get('quality_metrics', {})
+                
+                # Extract economic summary if available
+                econ_summary = self._extract_economic_summary(metrics.get('economic_validation', {}))
+                
+                row = [
+                    trial.get('trial_number', rank),
+                    rank,
+                    params.get('K', 'N/A'),
+                    params.get('base_alpha', 'N/A'),
+                    params.get('kappa', 'N/A'),
+                    params.get('n_mixtures', 'N/A'),
+                    params.get('pca_components', 'N/A'),
+                    params.get('learning_rate', 'N/A'),
+                    params.get('svi_iterations', 'N/A'),
+                    trial.get('final_elbo', 'N/A'),
+                    metrics.get('quality_score', 'N/A'),
+                    metrics.get('silhouette_score', 'N/A'),
+                    metrics.get('davies_bouldin_score', 'N/A'),
+                    metrics.get('calinski_harabasz_score', 'N/A'),
+                    metrics.get('within_regime_cv', 'N/A'),
+                    metrics.get('between_regime_cv', 'N/A'),
+                    metrics.get('within_regime_cv_std', 'N/A'),
+                    metrics.get('between_regime_cv_std', 'N/A'),
+                    metrics.get('temporal_smoothness', 'N/A'),
+                    metrics.get('regime_persistence', 'N/A'),
+                    metrics.get('balance_score', 'N/A'),
+                    metrics.get('n_regimes', 'N/A'),
+                    metrics.get('noise_ratio', 'N/A'),
+                    metrics.get('predictive_power', 'N/A')
+                ]
+                
+                # Add economic metrics if available
+                if 'economic_validation' in metrics:
+                    row.extend([
+                        econ_summary.get('mean_return', 'N/A'),
+                        econ_summary.get('volatility', 'N/A'),
+                        econ_summary.get('sharpe', 'N/A'),
+                        econ_summary.get('max_drawdown', 'N/A'),
+                        econ_summary.get('hit_rate', 'N/A')
+                    ])
+                else:
+                    row.extend(['N/A'] * len(economic_headers))
+                
+                # Add HMM validation metrics if available
+                row.extend([
+                    metrics.get('log_likelihood', 'N/A'),
+                    metrics.get('refit_stability_ari', 'N/A'),
+                    metrics.get('occupancy_entropy', 'N/A')
+                ])
+                
+                # Add regime size metrics if available
+                if metrics.get('cluster_size_distribution'):
+                    cluster_sizes = metrics['cluster_size_distribution']
+                    row.extend([
+                        min(cluster_sizes) if cluster_sizes else 'N/A',
+                        max(cluster_sizes) if cluster_sizes else 'N/A',
+                        float(np.std(cluster_sizes)) if cluster_sizes else 'N/A'
+                    ])
+                else:
+                    row.extend(['N/A'] * len(regime_headers))
+                
+                csv_data.append(row)
+            
+            # Write CSV
+            with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerows(csv_data)
+            
+            tprint_success(f"✅ All trials CSV generated: {csv_path}")
+            return str(csv_path)
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate all trials CSV: {e}")
+            return None
+    
+    def _extract_economic_summary(self, economic_validation: Dict[str, Any]) -> Dict[str, float]:
+        """
+        Extract summary economic metrics from validation results.
+        
+        Args:
+            economic_validation: Economic validation results dictionary
+            
+        Returns:
+            Dictionary with summary economic metrics
+        """
+        summary = {
+            'mean_return': 0.0,
+            'volatility': 0.0,
+            'sharpe': 0.0,
+            'max_drawdown': 0.0,
+            'hit_rate': 0.0
+        }
+        
+        try:
+            if not economic_validation:
+                return summary
+            
+            # Calculate weighted averages across all regimes
+            total_weight = 0.0
+            weighted_metrics = {key: 0.0 for key in summary.keys()}
+            
+            for regime_id, regime_data in economic_validation.items():
+                if isinstance(regime_data, dict):
+                    weight = regime_data.get('size', 1.0)  # Use regime size as weight
+                    total_weight += weight
+                    
+                    for metric in weighted_metrics.keys():
+                        value = regime_data.get(metric, 0.0)
+                        weighted_metrics[metric] += value * weight
+            
+            # Calculate averages
+            if total_weight > 0:
+                for metric in summary.keys():
+                    summary[metric] = weighted_metrics[metric] / total_weight
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to extract economic summary: {e}")
+        
+        return summary
+    
+    def _get_category_description(self, category: str) -> str:
+        """
+        Get description for feature category.
+        
+        Args:
+            category: Feature category name
+            
+        Returns:
+            Description of the feature category
+        """
+        descriptions = {
+            'price': 'Price-based features including OHLCV data',
+            'volume': 'Volume and flow-based indicators',
+            'volatility': 'Volatility measures and risk indicators',
+            'momentum': 'Momentum and trend indicators',
+            'mean_reversion': 'Mean reversion and oscillation indicators',
+            'microstructure': 'Market microstructure features',
+            'technical': 'Technical analysis indicators',
+            'statistical': 'Statistical and mathematical features',
+            'economic': 'Economic and fundamental indicators',
+            'sentiment': 'Sentiment and alternative data features'
+        }
+        return descriptions.get(category, 'Feature category for regime analysis')
+    
     def _build_markdown_content(self, metrics: ClusterQualityMetrics, symbol: str,
         method_specific_config: Optional[Dict[str, Any]] = None) -> str:
         """Build the markdown content for the report."""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         # *** NEW: Get target return for report ***
         target_pct = QualityThresholds.ECONOMIC_TARGET_RETURN * 100
         
-        md = f"""# Cluster Quality Assessment Report
+        md = """# Cluster Quality Assessment Report
 
-**Symbol:** {symbol}  
-**Generated:** {timestamp}  
-**Quality Score:** {f'{metrics.quality_score:.4f}' if metrics.quality_score else 'N/A'}
+**Symbol:** """ + str(symbol) + """  
+**Generated:** """ + str(metrics.timestamp) + """
+**Data Points:** """ + str(getattr(metrics, 'n_samples', 'N/A')) + """
+**Number of Regimes:** """ + str(metrics.n_regimes) + """
+**Report Version:** 1.3 (Enhanced with Financial Analysis)
 
----
-
-## Executive Summary
-
-This report provides a comprehensive assessment of cluster quality for {symbol}.
+This report provides a comprehensive assessment of cluster quality for """ + str(symbol) + """.
 
 ### Key Metrics
 
@@ -2780,13 +3142,184 @@ This report provides a comprehensive assessment of cluster quality for {symbol}.
             for key, value in method_specific_config.items():
                 # Format common values nicely
                 if isinstance(value, float):
-                    value_str = f"{value:.4f}"
+                    value_str = "{:.4f}".format(value)
                 else:
                     value_str = str(value)
-                md += f"| {key} | {value_str} |\n"
+                md += "| {} | {} |\n".format(key, value_str)
             md += "\n"
         # --- END: NEW MODULAR SECTION ---
 
+        md += """
+
+## PCA Feature Analysis
+
+        
+        # Add PCA feature information if available from method-specific config
+        if method_specific_config and 'pca_components' in method_specific_config:
+            pca_components = method_specific_config['pca_components']
+            md += """
+### Principal Component Analysis Configuration
+
+**Number of PCA Components:** {}
+
+""".format(pca_components)
+            
+            # Add feature categories if available
+            if 'feature_categories' in method_specific_config:
+                feature_categories = method_specific_config['feature_categories']
+                md += """
+### Feature Categories Used in PCA
+
+| Category | Features | Description |
+|----------|----------|-------------|
+"""
+                
+                for category, features in feature_categories.items():
+                    if isinstance(features, list):
+                        feature_list = ', '.join(features[:5])  # Show first 5 features
+                        if len(features) > 5:
+                            feature_list += " (and {} more)".format(len(features)-5)
+                        description = self._get_category_description(category)
+                        md += "| {} | {} | {} |\n".format(category, feature_list, description)
+                
+                md += "\n"
+            
+            # Add PCA variance explanation if available
+            if 'pca_variance_ratio' in method_specific_config:
+                variance_ratio = method_specific_config['pca_variance_ratio']
+                if isinstance(variance_ratio, list):
+                    md += """
+### PCA Variance Explained
+
+| Component | Variance Explained | Cumulative Variance |
+|-----------|-------------------|-------------------|
+"""
+                    cumulative = 0.0
+                    for i, variance in enumerate(variance_ratio[:10]):  # Show top 10 components
+                        cumulative += variance
+                        md += "| PC{} | {:.4f} ({:.2f}%) | {:.4f} ({:.2f}%) |\n".format(
+                            i+1, variance, variance*100, cumulative, cumulative*100
+                        )
+                    md += "\n"
+            
+            # Add feature loadings if available
+            if 'pca_feature_loadings' in method_specific_config:
+                loadings = method_specific_config['pca_feature_loadings']
+                md += """
+### Top Feature Loadings by Principal Component
+
+"""
+                for pc_idx, component_loadings in enumerate(loadings[:5]):  # Show top 5 components
+                    if isinstance(component_loadings, dict):
+                        # Sort features by absolute loading
+                        sorted_features = sorted(component_loadings.items(), 
+                                               key=lambda x: abs(x[1]), reverse=True)[:5]
+                        md += "**PC{} Top Features:**\n\n".format(pc_idx+1)
+                        for feature, loading in sorted_features:
+                            md += "- {}: {:.4f}\n".format(feature, loading)
+                        md += "\n"
+        
+        md += "\n"
+        
+        # Top Configurations Analysis
+        if method_specific_config:
+            md += """
+---
+
+## Top Configuration Analysis
+
+### Clustering Configuration Parameters
+
+"""
+            
+            # Add clustering parameters if available
+            if 'n_regimes' in method_specific_config:
+                n_regimes = method_specific_config['n_regimes']
+                md += "- **Number of Regimes (K):** {}\n".format(n_regimes)
+            
+            if 'stickiness' in method_specific_config:
+                stickiness = method_specific_config['stickiness']
+                md += "- **HMM Stickiness Parameter:** {:.4f}\n".format(stickiness)
+            
+            if 'learning_rate' in method_specific_config:
+                lr = method_specific_config['learning_rate']
+                md += "- **Learning Rate:** {:.6f}\n".format(lr)
+            
+            if 'convergence_threshold' in method_specific_config:
+                conv_thresh = method_specific_config['convergence_threshold']
+                md += "- **Convergence Threshold:** {:.8f}\n".format(conv_thresh)
+            
+            if 'max_iterations' in method_specific_config:
+                max_iter = method_specific_config['max_iterations']
+                md += "- **Maximum Iterations:** {}\n".format(max_iter)
+            
+            # Feature selection parameters
+            if 'feature_selection' in method_specific_config:
+                feat_sel = method_specific_config['feature_selection']
+                md += "\n### Feature Selection Configuration\n\n"
+                
+                if 'n_features' in feat_sel:
+                    md += "- **Selected Features:** {}\n".format(feat_sel['n_features'])
+                
+                if 'selection_method' in feat_sel:
+                    method = feat_sel['selection_method']
+                    md += "- **Selection Method:** {}\n".format(method)
+                
+                if 'feature_importance_threshold' in feat_sel:
+                    threshold = feat_sel['feature_importance_threshold']
+                    md += "- **Importance Threshold:** {:.6f}\n".format(threshold)
+                
+                if 'top_features' in feat_sel:
+                    top_features = feat_sel['top_features']
+                    md += "\n**Top {} Selected Features:**\n\n".format(len(top_features))
+                    for i, (feature, importance) in enumerate(top_features[:10], 1):
+                        md += "{:2d}. {}: {:.6f}\n".format(i, feature, importance)
+                    if len(top_features) > 10:
+                        md += "... and {} more features\n".format(len(top_features) - 10)
+                    md += "\n"
+            
+            # Auto-tuning results if available
+            if 'auto_tuning' in method_specific_config:
+                auto_tune = method_specific_config['auto_tuning']
+                md += "\n### Auto-Tuning Results\n\n"
+                
+                if 'best_score' in auto_tune:
+                    best_score = auto_tune['best_score']
+                    md += f"- **Best Optimization Score:** {best_score:.6f}\n"
+                
+                if 'total_trials' in auto_tune:
+                    total_trials = auto_tune['total_trials']
+                    md += f"- **Total Trials Run:** {total_trials}\n"
+                
+                if 'optimization_time' in auto_tune:
+                    opt_time = auto_tune['optimization_time']
+                    md += f"- **Optimization Time:** {opt_time:.2f} seconds\n"
+                
+                if 'parameter_space' in auto_tune:
+                    param_space = auto_tune['parameter_space']
+                    md += "\n**Optimized Parameter Space:**\n\n"
+                    for param, values in param_space.items():
+                        if isinstance(values, dict):
+                            md += f"- {param}: {values.get('type', 'unknown')} range [{values.get('min', 'N/A')}, {values.get('max', 'N/A')}]\n"
+                        else:
+                            md += f"- {param}: {values}\n"
+                    md += "\n"
+                
+                if 'top_trials' in auto_tune:
+                    top_trials = auto_tune['top_trials']
+                    md += "\n**Top 5 Configuration Trials:**\n\n"
+                    md += "| Rank | Score | N_Regimes | Stickiness | Learning Rate | PCA Components |\n"
+                    md += "|------|-------|------------|------------|---------------|----------------|\n"
+                    
+                    for i, trial in enumerate(top_trials[:5], 1):
+                        score = trial.get('score', 0.0)
+                        n_reg = trial.get('n_regimes', 'N/A')
+                        stick = trial.get('stickiness', 'N/A')
+                        lr = trial.get('learning_rate', 'N/A')
+                        pca_comp = trial.get('pca_components', 'N/A')
+                        md += f"| {i} | {score:.6f} | {n_reg} | {stick:.4f} | {lr:.6f} | {pca_comp} |\n"
+                    md += "\n"
+        
         md += """
 ---
 
@@ -2796,7 +3329,7 @@ This report provides a comprehensive assessment of cluster quality for {symbol}.
 """
         
         if metrics.silhouette_score is not None:
-            md += f"\n**Global Silhouette Score:** {metrics.silhouette_score:.4f}\n\n"
+            md += "\n**Global Silhouette Score:** {:.4f}\n\n".format(metrics.silhouette_score)
             
             if metrics.silhouette_per_cluster:
                 md += "#### Per-Cluster Silhouette Scores\n\n"
@@ -2804,20 +3337,32 @@ This report provides a comprehensive assessment of cluster quality for {symbol}.
                 md += "|---------|------|-----|-----|-----|\n"
                 
                 for cluster_id, scores in sorted(metrics.silhouette_per_cluster.items()):
-                    md += f"| {cluster_id} | {scores['mean']:.4f} | {scores['std']:.4f} | {scores['min']:.4f} | {scores['max']:.4f} |\n"
+                    md += "| {} | {:.4f} | {:.4f} | {:.4f} | {:.4f} |\n".format(
+                        cluster_id, scores['mean'], scores['std'], scores['min'], scores['max']
+                    )
                 md += "\n"
         
-        md += f"""
+        # Format Davies-Bouldin Index safely
+        dbi_value = "{:.4f}".format(metrics.davies_bouldin_score) if metrics.davies_bouldin_score is not None else 'N/A'
+        ch_value = "{:.2f}".format(metrics.calinski_harabasz_score) if metrics.calinski_harabasz_score is not None else 'N/A'
+
+        # Format CV values safely
+        within_cv_value = "{:.4f}".format(metrics.within_regime_cv) if metrics.within_regime_cv is not None else 'N/A'
+        within_cv_std_value = "{:.4f}".format(metrics.within_regime_cv_std) if metrics.within_regime_cv_std is not None else 'N/A'
+        between_cv_value = "{:.4f}".format(metrics.between_regime_cv) if metrics.between_regime_cv is not None else 'N/A'
+        between_cv_std_value = "{:.4f}".format(metrics.between_regime_cv_std) if metrics.between_regime_cv_std is not None else 'N/A'
+
+        md += """
 ### Separation Metrics
 
-- **Davies-Bouldin Index:** {metrics.davies_bouldin_score:.4f if metrics.davies_bouldin_score else 'N/A'} (lower is better)
-- **Calinski-Harabasz Index:** {metrics.calinski_harabasz_score:.2f if metrics.calinski_harabasz_score else 'N/A'} (higher is better)
+- **Davies-Bouldin Index:** """ + str(dbi_value) + """ (lower is better)
+- **Calinski-Harabasz Index:** """ + str(ch_value) + """ (higher is better)
 
 <!-- *** REVERTED: Kept original section name *** -->
 ### Coefficient of Variation
 
-- **Within-Regime CV:** {metrics.within_regime_cv:.4f if metrics.within_regime_cv else 'N/A'} ± {metrics.within_regime_cv_std:.4f if metrics.within_regime_cv_std else 'N/A'}
-- **Between-Regime CV:** {metrics.between_regime_cv:.4f if metrics.between_regime_cv else 'N/A'} ± {metrics.between_regime_cv_std:.4f if metrics.between_regime_cv_std else 'N/A'}
+- **Within-Regime CV:** """ + str(within_cv_value) + """ +/- """ + str(within_cv_std_value) + """
+- **Between-Regime CV:** """ + str(between_cv_value) + """ +/- """ + str(between_cv_std_value) + """
 """
         
         # Add per-regime feature CV if available
@@ -2826,29 +3371,28 @@ This report provides a comprehensive assessment of cluster quality for {symbol}.
             md += "| Regime | CV |\n"
             md += "|--------|----|\n"
             for regime_id, cv in sorted(metrics.per_regime_cv.items()):
-                md += f"| {regime_id} | {cv:.4f} |\n"
+                md += "| {} | {:.4f} |\n".format(regime_id, cv)
             md += "\n"
 
         # *** NEW: Section for Economic CV ***
         if metrics.economic_cv_metrics:
+            avg_within = metrics.economic_cv_metrics.get('economic_avg_within_cv_fwd_return', 0.0)
+            between_mean = metrics.economic_cv_metrics.get('economic_between_cv_mean_return', 0.0)
+            cv_ratio = metrics.economic_cv_metrics.get('economic_cv_ratio_mean_return', 0.0)
+
             md += """
 ### Economic Coefficient of Variation
 
-- **Avg. Within-Regime CV (fwd_return):** {0:.4f}
-- **Between-Regime CV (mean_return):** {1:.4f}
-- **CV Ratio (mean_return):** {2:.4f}
+- **Average Within-Regime CV (Forward Returns):** """ + "{:.4f}".format(avg_within) + """
+- **Between-Regime CV (Mean Return):** """ + "{:.4f}".format(between_mean) + """
+- **CV Ratio (Between/Within):** """ + "{:.4f}".format(cv_ratio) + """
 
-""".format(
-    metrics.economic_cv_metrics.get('economic_avg_within_cv_fwd_return', 0.0),
-    metrics.economic_cv_metrics.get('economic_between_cv_mean_return', 0.0),
-    metrics.economic_cv_metrics.get('economic_cv_ratio_mean_return', 0.0)
-)
-            md += "| Economic Metric | Between-Regime CV |\n"
-            md += "|---|---|\n"
+"""
+            
             for key, val in sorted(metrics.economic_cv_metrics.items()):
                 if key.startswith('economic_between_cv_'):
                     metric_name = key.replace('economic_between_cv_', '')
-                    md += f"| {metric_name} | {val:.4f} |\n"
+                    md += "| {} | {:.4f} |\n".format(metric_name, val)
             md += "\n"
 
         # *** NEW: Section for Per-Category CV ***
@@ -2856,8 +3400,6 @@ This report provides a comprehensive assessment of cluster quality for {symbol}.
             md += """
 ### Per-Category Coefficient of Variation
 
-This shows how different feature types (momentum, volume, volatility, etc.) 
-contribute to regime discrimination.
 
 """
             md += "| Category | Within CV | Between CV | Ratio | # Features |\n"
@@ -2911,6 +3453,98 @@ contribute to regime discrimination.
                 md += f"- **Regime Persistence:** {metrics.regime_persistence:.2f} bars (average duration)\n"
             md += "\n"
         
+        # Transition Matrix Analysis
+        if hasattr(metrics, 'transition_probability_matrix') and metrics.transition_probability_matrix:
+            md += """
+### Transition Probability Matrix
+
+This matrix shows the probability of transitioning from one regime to another:
+
+"""
+            # Create transition matrix table
+            transition_matrix = metrics.transition_probability_matrix
+            if transition_matrix and 'matrix' in transition_matrix:
+                matrix = transition_matrix['matrix']
+                regimes = sorted(matrix.keys())
+                
+                # Header row
+                md += "| From \\ To |"
+                for regime in regimes:
+                    md += f" Regime {regime} |"
+                md += "\n|------------|"
+                for _ in regimes:
+                    md += "-------------|"
+                md += "\n"
+                
+                # Matrix rows
+                for from_regime in regimes:
+                    md += f"| Regime {from_regime} |"
+                    for to_regime in regimes:
+                        prob = matrix[from_regime].get(to_regime, 0.0)
+                        md += f" {prob:.3f} ({prob*100:.1f}%) |"
+                    md += "\n"
+                
+                md += "\n**Transition Analysis:**\n\n"
+                
+                # Add transition stability score if available
+                if 'transition_stability_score' in transition_matrix:
+                    stability = transition_matrix['transition_stability_score']
+                    md += f"- **Transition Stability Score:** {stability:.3f} (higher = more stable transitions)\n"
+                
+                # Find most stable regimes (highest diagonal probabilities)
+                diagonal_probs = []
+                for regime in regimes:
+                    diag_prob = matrix[regime].get(regime, 0.0)
+                    diagonal_probs.append((regime, diag_prob))
+                
+                diagonal_probs.sort(key=lambda x: x[1], reverse=True)
+                md += "- **Most Persistent Regimes:**\n"
+                for regime, prob in diagonal_probs[:3]:
+                    md += f"  - Regime {regime}: {prob:.3f} ({prob*100:.1f}% self-transition)\n"
+                
+                # Find most common transitions
+                all_transitions = []
+                for from_regime in regimes:
+                    for to_regime in regimes:
+                        if from_regime != to_regime:
+                            prob = matrix[from_regime].get(to_regime, 0.0)
+                            if prob > 0.05:  # Only show transitions > 5%
+                                all_transitions.append((from_regime, to_regime, prob))
+                
+                all_transitions.sort(key=lambda x: x[2], reverse=True)
+                if all_transitions:
+                    md += "\n- **Most Common Transitions:**\n"
+                    for from_reg, to_reg, prob in all_transitions[:5]:
+                        md += f"  - Regime {from_reg} → Regime {to_reg}: {prob:.3f} ({prob*100:.1f}%)\n"
+                
+                md += "\n"
+        
+        # Regime Duration Analysis
+        if hasattr(metrics, 'regime_duration_distribution') and metrics.regime_duration_distribution:
+            duration_dist = metrics.regime_duration_distribution
+            md += """
+### Regime Duration Analysis
+
+"""
+            if 'mean_durations' in duration_dist:
+                mean_durations = duration_dist['mean_durations']
+                md += "**Average Regime Durations:**\n\n"
+                md += "| Regime | Mean Duration | Std Duration | Min Duration | Max Duration |\n"
+                md += "|--------|---------------|--------------|--------------|--------------|\n"
+                
+                for regime_id in sorted(mean_durations.keys()):
+                    stats = mean_durations[regime_id]
+                    md += f"| {regime_id} | {stats.get('mean', 0):.1f} | {stats.get('std', 0):.1f} | "
+                    md += f"{stats.get('min', 0):.0f} | {stats.get('max', 0):.0f} |\n"
+                
+                md += "\n"
+            
+            if 'duration_stability_score' in duration_dist:
+                stability = duration_dist['duration_stability_score']
+                md += f"- **Duration Stability Score:** {stability:.3f} (higher = more consistent durations)\n"
+            
+            md += "\n"
+        
         # Per-regime metrics
         if metrics.per_regime_metrics:
             md += """
@@ -2919,41 +3553,40 @@ contribute to regime discrimination.
 ## Per-Regime Analysis
 
 """
+            # Define target percentage for analysis (default 1%)
+            target_pct = method_specific_config.get('target_pct', 1.0) if method_specific_config else 1.0
+            
             for regime_id, regime_data in sorted(metrics.per_regime_metrics.items()):
                 regime_type = regime_data.get('regime_type', 'unknown')
-                md += f"""
-### Regime {regime_id} ({regime_type})
-
-**Size:** {regime_data.get('size', 'N/A')} samples ({regime_data.get('percentage', 0):.2f}%)
-
-"""
+                size_pct = float(regime_data.get('percentage', 0.0))
+                regime_size = regime_data.get('size', 'N/A')
+                
+                md += "### Regime {} ({})\n\n".format(regime_id, regime_type)
+                md += "**Size:** {} samples ({:.2f}%)\n\n".format(regime_size, size_pct)
                 
                 if 'mean_return' in regime_data:
-                    md += f"""
-**Performance Metrics:**
-- Mean Return: {regime_data['mean_return']:.5f}
-- Volatility: {regime_data['volatility']:.5f}
-- Sharpe Ratio: {regime_data['sharpe']:.4f}
-- Skewness: {regime_data.get('skewness', 0.0):.4f}
-- Max Drawdown: {regime_data.get('max_drawdown', 0.0):.4f}
-
-**Target-Based Metrics:**
-- Pct > {target_pct:.1f}% (Longs): {regime_data.get('pct_above_target', 0.0):.2%}
-- Pct < -{target_pct:.1f}% (Shorts): {regime_data.get('pct_below_neg_target', 0.0):.2%}
-- Pct Target Hits: {regime_data.get('pct_target_hits', 0.0):.2%}
-
-**Risk-Adjusted Metrics:**
-- Risk-Adj Target Hits: {regime_data.get('risk_adj_target_hits', 0.0):.4f}
-- Win Rate (Long Bias): {regime_data.get('win_rate', 0.0):.2%}
-- Return per Vol: {regime_data.get('return_per_vol', 0.0):.4f}
-- Profit Factor: {regime_data.get('profit_factor', 0.0):.4f}
-
-"""
+                    md += "**Performance Metrics:**\n"
+                    md += "- Mean Return: " + str(regime_data['mean_return']) + "\n"
+                    md += "- Volatility: " + str(regime_data['volatility']) + "\n"
+                    md += "- Sharpe Ratio: " + str(regime_data['sharpe']) + "\n"
+                    md += "- Skewness: " + str(regime_data.get('skewness', 0.0)) + "\n"
+                    md += "- Max Drawdown: " + str(regime_data.get('max_drawdown', 0.0)) + "\n\n"
+                    
+                    md += "**Target-Based Metrics:**\n"
+                    md += "- Pct > " + str(target_pct) + "% (Longs): " + str(regime_data.get('pct_above_target', 0.0)) + "\n"
+                    md += "- Pct < -" + str(target_pct) + "% (Shorts): " + str(regime_data.get('pct_below_neg_target', 0.0)) + "\n"
+                    md += "- Pct Target Hits: " + str(regime_data.get('pct_target_hits', 0.0)) + "\n\n"
+                    
+                    md += "**Risk-Adjusted Metrics:**\n"
+                    md += "- Risk-Adj Target Hits: " + str(regime_data.get('risk_adj_target_hits', 0.0)) + "\n"
+                    md += "- Win Rate (Long Bias): " + str(regime_data.get('win_rate', 0.0)) + "\n"
+                    md += "- Return per Vol: " + str(regime_data.get('return_per_vol', 0.0)) + "\n"
+                    md += "- Profit Factor: " + str(regime_data.get('profit_factor', 0.0)) + "\n\n"
                 
                 if 'regime_specific_metrics' in regime_data and regime_data['regime_specific_metrics']:
                     md += "**Regime-Specific Characteristics:**\n\n"
                     for key, value in regime_data['regime_specific_metrics'].items():
-                        md += f"- {key}: {value}\n"
+                        md += "- {}: {}\n".format(key, value)
                     md += "\n"
         
         # Economic interpretation
@@ -2968,17 +3601,13 @@ contribute to regime discrimination.
             
             if 'regime_summary' in interp:
                 summary = interp['regime_summary']
-                md += f"""
-### Regime Summary
-
-- **Total Regimes:** {summary.get('total_regimes', 'N/A')}
-- **Dominant Regime:** {summary.get('dominant_regime', 'N/A')}
-
-"""
+                md += "### Regime Summary\n\n"
+                md += "- **Total Regimes:** " + str(summary.get('total_regimes', 'N/A')) + "\n"
+                md += "- **Dominant Regime:** " + str(summary.get('dominant_regime', 'N/A')) + "\n\n"
                 if 'regime_type_distribution' in summary:
                     md += "**Regime Type Distribution:**\n\n"
                     for regime_type, count in summary['regime_type_distribution'].items():
-                        md += f"- {regime_type}: {count}\n"
+                        md += "- " + str(regime_type) + ": " + str(count) + "\n"
                     md += "\n"
             
             if 'trading_implications' in interp:
@@ -2987,40 +3616,39 @@ contribute to regime discrimination.
                 
                 if 'most_profitable_regime' in implications:
                     best = implications['most_profitable_regime']
-                    md += f"""
-**Most Profitable Regime:** {best.get('regime_id', 'N/A')} ({best.get('regime_type', 'N/A')})
-- Sharpe Ratio: {best.get('sharpe_ratio', 'N/A')}
-- Mean Return: {best.get('mean_return', 'N/A')}
-- Volatility: {best.get('volatility', 'N/A')}
-
-"""
+                    md += "**Most Profitable Regime:** " + str(best.get('regime_id', 'N/A')) + " (" + str(best.get('regime_type', 'N/A')) + ")\n"
+                    md += "- Sharpe Ratio: " + str(best.get('sharpe_ratio', 'N/A')) + "\n"
+                    md += "- Mean Return: " + str(best.get('mean_return', 'N/A')) + "\n"
+                    md += "- Volatility: " + str(best.get('volatility', 'N/A')) + "\n\n"
                 
                 if 'strategy_recommendations' in implications:
                     md += "**Strategy Recommendations:**\n\n"
                     for rec in implications['strategy_recommendations']:
-                        md += f"- {rec.get('strategy', 'N/A')}: Target Regime {rec.get('target_regime', 'N/A')}\n"
+                        md += "- {}: Target Regime {}\n".format(
+                            rec.get('strategy', 'N/A'), 
+                            rec.get('target_regime', 'N/A')
+                        )
                     md += "\n"
         
         # Predictive power
         if metrics.predictive_power is not None:
-            md += f"""
+            md += """
 ---
 
 ## Predictive Power
 
-**Cross-Validation Score:** {metrics.predictive_power:.4f}
+**Cross-Validation Accuracy:** """ + str(metrics.predictive_power) + """
 
-This score indicates how well the current regime can predict future return direction.
+This metric indicates how well the clustering can predict regime assignments on unseen data.
 """
         
         # Quality assessment
-        md += f"""
+        md += """
 ---
 
 ## Quality Assessment
 
-**Overall Quality Score:** {f'{metrics.quality_score:.4f}' if metrics.quality_score else 'N/A'} / 1.0
-
+**Overall Quality Score:** """ + (f'{metrics.quality_score:.4f}' if metrics.quality_score else 'N/A') + """ / 1.0
 """
         
         # Determine quality level
@@ -3036,25 +3664,10 @@ This score indicates how well the current regime can predict future return direc
                 recommendation = "The clustering shows moderate quality. Consider parameter tuning."
             else:
                 quality_level = "Poor ❌"
-                recommendation = "The clustering shows poor quality. Parameter adjustment recommended."
+                recommendation = "The clustering shows poor quality. Re-evaluate approach."
             
-            md += f"""
-**Quality Level:** {quality_level}
-
-**Recommendation:** {recommendation}
-
-"""
-        
-        md += f"""
----
-
-## Report Metadata
-
-- **Generated by:** ClusterQualityAssessor
-- **Timestamp:** {metrics.timestamp}
-- **Report Version:** 1.2 (Backward Compatible)
-
-"""
+            md += "**Quality Level:** " + quality_level + "\n"
+            md += "**Recommendation:** " + recommendation + "\n\n"
         
         return md
 
@@ -3062,17 +3675,7 @@ This score indicates how well the current regime can predict future return direc
 def create_cluster_quality_assessor(artifact_manager=None, 
                                     enable_hardware_optimization=True,
                                     enable_vectorization=True) -> ClusterQualityAssessor:
-    """
-    Factory function to create a cluster quality assessor.
-    
-    Args:
-        artifact_manager: Optional artifact manager from BaseStep
-        enable_hardware_optimization: Enable hardware optimizations
-        enable_vectorization: Enable vectorized computations
-        
-    Returns:
-        ClusterQualityAssessor instance
-    """
+    """Factory function to create a cluster quality assessor."""
     return ClusterQualityAssessor(
         artifact_manager=artifact_manager,
         enable_hardware_optimization=enable_hardware_optimization,

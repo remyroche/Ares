@@ -9,6 +9,7 @@ Backwards Compatibility: Yes (maintains API compatibility with v1.x)
 """
 
 import logging
+import threading
 from typing import Any, Dict, List, Optional, Tuple, Union
 import sys
 import platform
@@ -60,7 +61,22 @@ def deprecated(reason: str, version: str = "2.0.0"):
 class M1GPUManager:
     """Manager for M1 GPU operations with enhanced backwards compatibility."""
 
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls, version_check: bool = True):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
     def __init__(self, version_check: bool = True):
+        # Prevent multiple initialization
+        if hasattr(self, '_initialized') and self._initialized:
+            return
+
         self.logger = logger.getChild('M1GPUManager')
         self.version_check = version_check
         self.is_m1 = self._detect_m1()
@@ -72,8 +88,9 @@ class M1GPUManager:
         self._legacy_mode = False
         self._fallback_enabled = True
 
+        self._initialized = True
         self.logger.info(f"M1 GPU Manager initialized - M1: {self.is_m1}, "
-                        f"Generation: {self.m1_generation}, MPS: {self.mps_available}")
+                         f"Generation: {self.m1_generation}, MPS: {self.mps_available}")
 
     def _detect_m1(self) -> bool:
         """Detect if running on Apple Silicon (M1/M2/M3/M4)."""

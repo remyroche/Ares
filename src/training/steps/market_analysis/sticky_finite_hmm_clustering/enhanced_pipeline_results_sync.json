@@ -1,0 +1,55 @@
+{
+  "pipeline_start": 1762296551.98466,
+  "symbol": "ETHUSDT",
+  "timeframe": "1d",
+  "years": 2,
+  "stages_completed": [
+    "data_loading",
+    "enhanced_clustering"
+  ],
+  "stage_results": {
+    "data_loading": {
+      "success": true,
+      "data_points": 731,
+      "feature_matrix_shape": [
+        731,
+        6
+      ],
+      "num_features": 6,
+      "feature_names": [
+        "open_normalized",
+        "high_normalized",
+        "low_normalized",
+        "close_normalized",
+        "daily_returns",
+        "volume_change"
+      ],
+      "data_type": "mock"
+    },
+    "enhanced_clustering": {
+      "success": true,
+      "n_regimes": 5,
+      "final_elbo": -1250.5,
+      "quality_metrics": {
+        "composite_score": 0.75,
+        "silhouette_score": 0.65
+      },
+      "state_durations": [
+        45.2,
+        23.1,
+        67.8,
+        12.3,
+        89.4
+      ],
+      "optimizations_enabled": {
+        "svi_gradient": true,
+        "rao_blackwellization": true,
+        "vectorized_jit": true
+      }
+    }
+  },
+  "errors": [],
+  "pipeline_end": 1762296552.8350909,
+  "total_time": 0.850430965423584,
+  "stages_completed_count": 2
+}

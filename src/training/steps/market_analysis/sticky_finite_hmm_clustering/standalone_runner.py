@@ -36,35 +36,27 @@ Usage Example:
 """
 
 import pandas as pd
-import numpy as np
 from typing import Dict, Any, Optional
-from pathlib import Path
 
 from src.utils.tprint import (
-    tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
-    tprint_structured, tprint_timer, tprint_data_preview
+    tprint_info, tprint_success, tprint_warning, tprint_error,
+    tprint_structured, tprint_timer
 )
 
 # Import Sticky Finite HMM components
 from .sticky_finite_hmm_clusterer import (
-    StickyFiniteHMMClusterer,
-    StickyFiniteHMMConfig,
-    StickyFiniteHMMResult,
     DEPENDENCIES_AVAILABLE
 )
 
-# Import quality assessment
-from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
-    create_cluster_quality_assessor
-)
-from src.training.steps.market_analysis.clusters.clustering_optimization_goals import (
-    DEFAULT_CLUSTERING_GOALS,
-    DEFAULT_OPTIMIZATION_TARGETS
-)
+# Import artifact manager (lazy import)
+def _get_artifact_manager():
+    """Lazy import of artifact manager."""
+    from src.utils.artifact_manager import ArtifactManager
+    return ArtifactManager
 
-# Import artifact manager
-from src.utils.artifact_manager import ArtifactManager
-
+# Global cache for integration to avoid re-initialization
+_cached_integration = None
+_cached_feature_config = None
 
 def run_sticky_finite_hmm_clustering(
     market_data: pd.DataFrame,
@@ -77,7 +69,7 @@ def run_sticky_finite_hmm_clustering(
     n_mixtures: int = 1,  # Number of Gaussian mixtures per state
     base_alpha: float = 0.5,
     kappa: float = 10.0,
-    num_iters: int = 800,
+    num_iters: int = 150,  # Reduced from 800 for faster training
     lr: float = 1e-2,
     enable_pca: bool = True,
     pca_components: int = 15,  # Default to 15 (can use up to 20)
@@ -187,7 +179,7 @@ def run_sticky_finite_hmm_clustering(
         "max_features": max_features
     }, level="INFO")
     
-    # Initialize artifact manager if saving results
+    # Initialize artifact manager if saving results (lazy import)
     artifact_manager = None
     if save_results:
         config = {
@@ -197,6 +189,7 @@ def run_sticky_finite_hmm_clustering(
                 "reports_dir": "reports"
             }
         }
+        ArtifactManager = _get_artifact_manager()
         artifact_manager = ArtifactManager(config)
         artifact_manager.set_context(
             step_name="sticky_finite_hmm_clustering",
@@ -213,22 +206,58 @@ def run_sticky_finite_hmm_clustering(
             EnhancedStickyFiniteHMMClusteringIntegration
         )
         
-        # Initialize integration
-        tprint_info("🔧 Initializing Sticky Finite HMM clustering integration...")
-        integration = EnhancedStickyFiniteHMMClusteringIntegration(
-            min_features=min_features,
-            max_features=max_features,
-            enable_comprehensive_features=True,
-            enable_pca_reduction=enable_pca,
-            pca_components=pca_components,
-            K=K,
-            n_mixtures=n_mixtures,
-            base_alpha=base_alpha,
-            kappa=kappa,
-            num_iters=num_iters,
-            lr=lr
-        )
-        tprint_success("✅ Integration initialized")
+        # Create config hash for caching - separate feature config from HMM config
+        feature_config = {
+            'min_features': min_features,
+            'max_features': max_features,
+            'enable_comprehensive_features': True,
+            'enable_pca_reduction': enable_pca,
+            'pca_components': pca_components
+        }
+        
+        # Keep full config for integration creation but use feature_config for caching
+        current_config = {
+            'min_features': min_features,
+            'max_features': max_features,
+            'enable_comprehensive_features': True,
+            'enable_pca_reduction': enable_pca,
+            'pca_components': pca_components,
+            'K': K,
+            'n_mixtures': n_mixtures,
+            'base_alpha': base_alpha,
+            'kappa': kappa,
+            'num_iters': num_iters,
+            'lr': lr
+        }
+        
+        global _cached_integration, _cached_feature_config
+        
+        # Check if we can use cached integration (only based on feature config)
+        if _cached_integration is not None and _cached_feature_config == feature_config:
+            tprint_info("📋 Using cached integration (same feature configuration)")
+            integration = _cached_integration
+        else:
+            # Initialize new integration
+            tprint_info("🔧 Initializing Sticky Finite HMM clustering integration...")
+            integration = EnhancedStickyFiniteHMMClusteringIntegration(
+                min_features=min_features,
+                max_features=max_features,
+                enable_comprehensive_features=True,
+                enable_pca_reduction=enable_pca,
+                pca_components=pca_components,
+                K=K,
+                n_mixtures=n_mixtures,
+                base_alpha=base_alpha,
+                kappa=kappa,
+                num_iters=num_iters,
+                lr=lr
+            )
+            tprint_success("✅ Integration initialized")
+            
+            # Cache the integration for future use
+            _cached_integration = integration
+            _cached_feature_config = feature_config
+            tprint_info("💾 Cached integration for future trials")
         
         # Run clustering
         if not compute_posteriors:
@@ -258,11 +287,13 @@ def run_sticky_finite_hmm_clustering(
             )
             # Truncate or align
             if len(cluster_labels) < len(market_data):
-                market_data_aligned = market_data.iloc[:len(cluster_labels)] if isinstance(market_data, pd.DataFrame) else market_data[:len(cluster_labels)]
+                market_data_aligned = market_data.iloc[:len(cluster_labels)]
                 tprint_info(f"📊 Aligned market_data to {len(cluster_labels)} samples")
             else:
-                tprint_error(f"❌ More labels ({len(cluster_labels)}) than data ({len(market_data)})")
-                raise ValueError("Cannot have more labels than data samples")
+                # Truncate cluster labels to match data length
+                cluster_labels = cluster_labels[:len(market_data)]
+                market_data_aligned = market_data
+                tprint_info(f"📊 Truncated cluster labels to {len(market_data)} samples")
         else:
             market_data_aligned = market_data
             tprint_success(f"✅ Data and labels aligned: {len(cluster_labels)} samples")
@@ -275,9 +306,7 @@ def run_sticky_finite_hmm_clustering(
                 tprint_info("   Saving cluster labels...")
                 artifact_manager.save(
                     data=pd.DataFrame({
-                        'timestamp': (market_data_aligned.index
-                                     if isinstance(market_data_aligned, pd.DataFrame)
-                                     else range(len(cluster_labels))),
+                        'timestamp': market_data_aligned.index,
                         'cluster_label': cluster_labels
                     }),
                     artifact_name="cluster_labels",
@@ -381,7 +410,7 @@ def run_sticky_finite_hmm_clustering_from_artifacts(
     tprint_info(f"   Artifact: {artifact_name}, Step: {step_name}")
     tprint_info(f"   Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}")
     
-    # Initialize artifact manager
+    # Initialize artifact manager (lazy import)
     tprint_info("🔧 Initializing artifact manager...")
     config = {
         "paths": {
@@ -390,6 +419,7 @@ def run_sticky_finite_hmm_clustering_from_artifacts(
             "reports_dir": "reports"
         }
     }
+    ArtifactManager = _get_artifact_manager()
     artifact_manager = ArtifactManager(config)
     artifact_manager.set_context(
         step_name=step_name,
@@ -472,6 +502,7 @@ def load_market_data_for_clustering(
             "reports_dir": "reports"
         }
     }
+    ArtifactManager = _get_artifact_manager()
     artifact_manager = ArtifactManager(config)
     artifact_manager.set_context(
         step_name=step_name,

@@ -16,6 +16,7 @@ and divergence across implementations.
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
 
 import logging
 import numpy as np
@@ -40,6 +41,38 @@ except Exception:  # pragma: no cover - environment without sklearn
     SKLEARN_AVAILABLE = False
 
 _logger = logging.getLogger("UnifiedEvaluator")
+
+@dataclass
+class EvaluationConfig:
+    """Configuration for model evaluation."""
+
+    # Evaluation settings
+    enable_pre_hpo_evaluation: bool = True
+    enable_post_hpo_evaluation: bool = True
+    enable_cross_validation: bool = True
+    cv_folds: int = 5
+
+    # Metrics to calculate
+    calculate_classification_metrics: bool = True
+    calculate_regression_metrics: bool = True
+    calculate_trading_metrics: bool = True
+
+    # Trading-specific metrics
+    enable_sharpe_ratio: bool = True
+    enable_max_drawdown: bool = True
+    enable_win_rate: bool = True
+    enable_profit_factor: bool = True
+
+    # Performance thresholds
+    min_accuracy_threshold: float = 0.5
+    min_f1_threshold: float = 0.5
+    min_r2_threshold: float = 0.0
+    min_sharpe_threshold: float = 0.0
+
+    # Output settings
+    save_evaluation_results: bool = True
+    generate_evaluation_report: bool = True
+    evaluation_report_path: Optional[str] = None
 
 def _is_classification_task(y_true: np.ndarray, y_pred: np.ndarray) -> bool:
     try:
@@ -416,4 +449,5 @@ __all__ = [
     "evaluate_multiple_datasets",
     "compute_sharpe_ratio",
     "UnifiedEvaluator",
+    "EvaluationConfig",
 ]

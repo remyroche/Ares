@@ -209,9 +209,10 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
             'memory_usage_mb': 0.0
         }
 
-        # Initialize Unified Vectorization Manager
+        # Initialize Unified Vectorization Manager (singleton pattern)
         if UNIFIED_MANAGER_AVAILABLE:
-            self.unified_manager = UnifiedVectorizationManager()
+            from src.utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager
+            self.unified_manager = get_unified_vectorization_manager()
         else:
             self.unified_manager = None
 
@@ -1612,7 +1613,7 @@ class OptimizedGARCHFeatureGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=252,
             min_lookback=100,
-            max_lookback=1000,
+            max_lookback=72,
             parameters={
                 'p': p,
                 'q': q,
@@ -1758,7 +1759,7 @@ class AdvancedVolatilityFeatures(VectorBTFeatureGenerator):
             required_columns=["close"],
             default_lookback=50,
             min_lookback=20,
-            max_lookback=200,
+            max_lookback=72,
             parameters=config.__dict__,
             matrix_optimized=True,
             gpu_accelerated=False

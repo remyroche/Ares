@@ -77,11 +77,11 @@ class HardwareConfig:
     performance_monitoring_enabled: bool = True
 
     # Monitoring Configuration
-    monitoring_interval: float = 5.0
+    monitoring_interval: float = 30.0  # Increased from 5.0 to reduce overhead
     metrics_retention_hours: int = 24
     alert_thresholds: Dict[str, float] = field(default_factory=lambda: {
-        'cpu_usage': 85.0,
-        'memory_usage': 90.0,
+        'cpu_usage': 95.0,  # Increased from 85.0
+        'memory_usage': 90.0,  # Already at 90.0
         'gpu_usage': 80.0,
         'temperature': 85.0
     })
@@ -444,13 +444,21 @@ class UnifiedHardwareManager:
     """Unified hardware management system."""
 
     _instance = None
-    _init_done = False
+    _lock = threading.Lock()
+
+    def __new__(cls, config: Optional[HardwareConfig] = None):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
 
     def __init__(self, config: Optional[HardwareConfig] = None):
         # Prevent multiple initialization
-        if hasattr(self, '_initialized'):
+        if hasattr(self, '_initialized') and self._initialized:
             return
-            
+
         self.config = config or HardwareConfig()
         self.logger = logger.getChild('UnifiedHardwareManager')
 
@@ -470,7 +478,7 @@ class UnifiedHardwareManager:
         self.current_workload_type: Optional[WorkloadType] = None
         self.optimization_contexts: Dict[str, Any] = {}
         self._initialized = True
-        
+
         # Circuit breaker for optimization failures
         self._optimization_failures = 0
         self._max_optimization_failures = 3
@@ -541,7 +549,7 @@ class UnifiedHardwareManager:
             self.logger.error(f"Error during shutdown: {e}")
 
     def optimize_for_workload(self, workload_type: WorkloadType,
-                            optimization_level: OptimizationLevel = None) -> bool:
+                            optimization_level: OptimizationLevel = OptimizationLevel.BALANCED) -> bool:
         """Optimize hardware for specific workload type."""
         if not self.is_initialized:
             self.logger.warning("Hardware manager not initialized")
@@ -768,7 +776,7 @@ class UnifiedHardwareManager:
 
     @contextmanager
     def optimization_context(self, workload_type: WorkloadType,
-                           optimization_level: OptimizationLevel = None):
+                           optimization_level: OptimizationLevel = OptimizationLevel.BALANCED):
         """Context manager for workload-specific optimization."""
         optimization_level = optimization_level or self.config.cpu_optimization_level
 
@@ -887,10 +895,10 @@ def get_unified_hardware_manager(config: Optional[HardwareConfig] = None, conser
                 enable_adaptive_optimization=False,
                 monitoring_interval=30.0,
                 alert_thresholds={
-                    'cpu_usage': 70.0,
-                    'memory_usage': 80.0,
-                    'gpu_usage': 60.0,
-                    'temperature': 70.0
+                    'cpu_usage': 85.0,      # Raised to reduce false alerts
+                    'memory_usage': 90.0,   # Raised to reduce frequent cleanup
+                    'gpu_usage': 80.0,      # Raised for M1 GPU
+                    'temperature': 75.0     # Slightly raised
                 }
             )
 
@@ -900,7 +908,7 @@ def get_unified_hardware_manager(config: Optional[HardwareConfig] = None, conser
     return _unified_hardware_manager
 
 def optimize_for_workload(workload_type: WorkloadType,
-                         optimization_level: OptimizationLevel = None) -> bool:
+                         optimization_level: OptimizationLevel = OptimizationLevel.BALANCED) -> bool:
     """Convenience function to optimize for a specific workload."""
     manager = get_unified_hardware_manager()
     return manager.optimize_for_workload(workload_type, optimization_level)

@@ -112,7 +112,7 @@ class KlinesDataProcessingPipeline(BaseStep):
                 process_klines_data_enhanced
             )
             ENHANCED_PIPELINE_AVAILABLE = True
-            self.enhanced_pipeline = EnhancedKlinesProcessingPipeline(data_dir, exchange)
+            self.enhanced_pipeline = EnhancedKlinesProcessingPipeline()
             self.logger.info("Enhanced pipeline available")
         except ImportError as e:
             ENHANCED_PIPELINE_AVAILABLE = False

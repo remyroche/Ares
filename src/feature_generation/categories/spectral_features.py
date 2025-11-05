@@ -246,7 +246,7 @@ class BandLimitedVolatilityGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=16,
-            max_lookback=128,
+            max_lookback=72,
             parameters={"window": window, "low_freq": low_freq, "high_freq": high_freq}
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
@@ -446,7 +446,7 @@ class FractalDimensionGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=16,
-            max_lookback=128,
+            max_lookback=72,
             parameters={"window": window}
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
@@ -1007,7 +1007,7 @@ def create_default_spectral_generators() -> List[FeatureGenerator]:
     """Create default spectral feature generators."""
     generators = []
 
-    for window in [32, 64, 128]:
+    for window in [32, 64, 72]:
         generators.append(WaveletEnergyGenerator(window))
         generators.append(BandLimitedVolatilityGenerator(window))
         generators.append(CycleLengthGenerator(window))
@@ -1021,7 +1021,7 @@ def create_default_wavelet_generators() -> List[FeatureGenerator]:
     """Create default wavelet feature generators."""
     generators = []
 
-    for window in [32, 64, 128]:
+    for window in [32, 64, 72]:
         generators.append(WaveletEnergyGenerator(window))
         generators.append(WaveletFeatureGenerator(window))
 
@@ -1031,7 +1031,7 @@ def create_default_fractal_generators() -> List[FeatureGenerator]:
     """Create default fractal dimension generators."""
     generators = []
 
-    for window in [32, 64, 128]:
+    for window in [32, 64, 72]:
         generators.append(FractalDimensionGenerator(window))
 
     return generators
@@ -1040,7 +1040,7 @@ def create_default_dfa_generators() -> List[FeatureGenerator]:
     """Create default DFA generators."""
     generators = []
 
-    for window in [32, 64, 128]:
+    for window in [32, 64, 72]:
         generators.append(DFASlopesGenerator(window))
         generators.append(DetrendedFluctuationAnalysisGenerator(window))
 

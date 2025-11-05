@@ -213,9 +213,10 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
         else:
             self.vectorbt_rolling_optimizer = None
 
-        # Initialize Unified Vectorization Manager
+        # Initialize Unified Vectorization Manager (singleton pattern)
         if self.use_unified_manager:
-            self.unified_manager = UnifiedVectorizationManager()
+            from src.utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager
+            self.unified_manager = get_unified_vectorization_manager()
         else:
             self.unified_manager = None
 
@@ -686,9 +687,10 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         else:
             self.vectorbt_rolling_optimizer = None
 
-        # Initialize Unified Vectorization Manager
+        # Initialize Unified Vectorization Manager (singleton pattern)
         if self.use_unified_manager:
-            self.unified_manager = UnifiedVectorizationManager()
+            from src.utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager
+            self.unified_manager = get_unified_vectorization_manager()
         else:
             self.unified_manager = None
 

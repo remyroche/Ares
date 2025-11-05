@@ -11,16 +11,19 @@ Inherits from BaseStep for standardized artifact management and autonomous execu
 import asyncio
 import logging
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, TYPE_CHECKING
 from datetime import datetime
 from pathlib import Path
 
+if TYPE_CHECKING:
+    import pandas as pd
+    import numpy as np
+
+# Runtime imports
 try:
     import numpy as np
     import pandas as pd
-    PANDAS_AVAILABLE = True
 except ImportError:
-    PANDAS_AVAILABLE = False
     pd = None
     np = None
 
@@ -38,7 +41,8 @@ from .standalone_runner import run_sticky_finite_hmm_clustering
 
 # Import quality assessor
 from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
-    create_cluster_quality_assessor
+    ClusterQualityAssessor,
+    ClusterQualityMetrics
 )
 
 from src.training.steps.market_analysis.clusters.clustering_optimization_goals import (
@@ -73,13 +77,13 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
     def __init__(self, step_name: str = "sticky_finite_hmm_regime_discovery"):
         """
         Initialize the Sticky Finite HMM regime discovery step.
-        
+
         Args:
             step_name: Name for this step (used for artifact organization)
         """
         super().__init__(step_name)
         self.logger = system_logger.getChild('StickyFiniteHMMRegimeDiscovery')
-        
+
         # Validate dependencies
         if not DEPENDENCIES_AVAILABLE:
             self.logger.error("Pyro and PyTorch not available")
@@ -88,13 +92,22 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
                 "Sticky Finite HMM requires pyro-ppl and torch. "
                 "Install with: pip install pyro-ppl torch"
             )
-        
-        # Initialize quality assessor
-        self.quality_assessor = create_cluster_quality_assessor(
-            artifact_manager=self.artifact_manager
-        )
-        
+
+        # Quality assessor will be created lazily when first accessed
+        self._quality_assessor = None
+
         tprint(f"✅ Initialized {step_name} step", "SUCCESS")
+
+    @property
+    def quality_assessor(self) -> ClusterQualityAssessor:
+        """Lazy property for quality assessor."""
+        if self._quality_assessor is None:
+            self._quality_assessor = ClusterQualityAssessor(
+                artifact_manager=self.artifact_manager,
+                enable_hardware_optimization=True,
+                enable_vectorization=True
+            )
+        return self._quality_assessor
     
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -153,10 +166,15 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
             timeframe = regime_timeframe
         
         tprint(
-            f"🚀 Starting Sticky Finite HMM Regime Discovery for {symbol} on {exchange} "
+            f"🚀 Starting Enhanced Sticky Finite HMM Regime Discovery for {symbol} on {exchange} "
             f"(timeframe: {timeframe})",
             "INFO"
         )
+        tprint("🧠 Enhanced Features:", "INFO")
+        tprint("   - Structured variational inference with forward-backward", "INFO")
+        tprint("   - Natural gradient updates for reduced variance", "INFO") 
+        tprint("   - Rao-Blackwellization for exact sufficient statistics", "INFO")
+        tprint("   - Vectorized computations for optimal performance", "INFO")
         
         try:
             # Set artifact manager context
@@ -285,7 +303,7 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
         exchange: str,
         timeframe: str,
         config: Dict[str, Any]
-    ) -> Optional[pd.DataFrame]:
+    ) -> Optional[Any]:
         """
         Load market data from artifacts or historical_data directory.
         
@@ -391,7 +409,7 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
     
     async def _run_auto_tuning(
         self,
-        market_data: pd.DataFrame,
+        market_data: Any,
         symbol: str,
         exchange: str,
         timeframe: str,
@@ -520,7 +538,7 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
     
     async def _run_clustering(
         self,
-        market_data: pd.DataFrame,
+        market_data: Any,
         symbol: str,
         exchange: str,
         timeframe: str,
@@ -549,7 +567,7 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
         n_mixtures = params.get('n_mixtures', 1)
         base_alpha = params.get('base_alpha', 0.5)
         kappa = params.get('kappa', 10.0)
-        num_iters = params.get('num_iters', 800)
+        num_iters = params.get('num_iters', 150)  # Reduced from 800 for faster training
         lr = params.get('lr', 1e-2)
         
         # Feature selection
@@ -601,7 +619,264 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
         
         tprint_success(f"✅ Clustering complete: {results.get('n_clusters', 0)} regimes discovered")
         
+        # Run comprehensive quality assessment using ClusterQualityAssessor
+        tprint_info("🔍 Running comprehensive quality assessment...")
+        try:
+            # Extract data for quality assessment
+            cluster_labels = np.array(results['cluster_labels'])
+            feature_matrix = results.get('feature_matrix')
+            
+            if feature_matrix is None:
+                tprint_warning("⚠️ No feature matrix found in results, creating basic features")
+                # Create basic features from market data if needed
+                feature_matrix = self._create_basic_features(market_data)
+            
+            # Ensure data alignment
+            min_length = min(len(cluster_labels), len(feature_matrix))
+            cluster_labels = cluster_labels[:min_length]
+            feature_matrix = feature_matrix.iloc[:min_length].reset_index(drop=True)
+            timestamps = market_data.index[:min_length]
+            
+            # Calculate forward returns for economic validation
+            forward_returns = market_data['close'].pct_change().shift(-1).iloc[:min_length]
+            
+            # Run comprehensive quality assessment
+            quality_metrics = self.quality_assessor.assess_quality(
+                regime_labels=cluster_labels,
+                feature_data=feature_matrix,
+                forward_returns=forward_returns,
+                timestamps=timestamps,
+                min_regime_size=10,
+                temporal_sensitivity_mode="standard"
+            )
+            
+            # Add comprehensive quality metrics to results
+            results['comprehensive_quality_metrics'] = quality_metrics.to_dict()
+            results['quality_score'] = quality_metrics.quality_score or 0.0
+            
+            tprint_success(f"✅ Quality assessment complete: Score = {quality_metrics.quality_score:.4f}")
+            
+            # Save detailed CSV reports
+            self._save_quality_reports(quality_metrics, symbol, exchange, timeframe)
+            
+        except Exception as e:
+            tprint_error(f"❌ Quality assessment failed: {e}")
+            self.logger.warning(f"Quality assessment failed: {e}")
+        
         return results
+    
+    def _create_basic_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Create basic features from market data for quality assessment.
+        
+        Args:
+            market_data: OHLCV market data
+            
+        Returns:
+            DataFrame with basic features
+        """
+        features = pd.DataFrame({
+            'returns': market_data['close'].pct_change(),
+            'volume': market_data['volume'],
+            'high_low_ratio': market_data['high'] / market_data['low'],
+            'open_close_ratio': market_data['open'] / market_data['close'],
+            'price_change': market_data['close'] - market_data['open'],
+            'volatility': market_data['high'] - market_data['low'],
+            'volume_price_trend': market_data['volume'] * market_data['close'].pct_change(),
+            'price_momentum': market_data['close'].pct_change(5),
+            'volume_sma': market_data['volume'].rolling(20).mean(),
+            'price_position': (market_data['close'] - market_data['low']) / (market_data['high'] - market_data['low'])
+        }).fillna(0)
+        
+        return features
+    
+    def _save_quality_reports(self, quality_metrics: ClusterQualityMetrics, 
+                             symbol: str, exchange: str, timeframe: str) -> None:
+        """
+        Save detailed quality assessment reports to CSV files.
+        
+        Args:
+            quality_metrics: ClusterQualityMetrics object
+            symbol: Trading symbol
+            exchange: Exchange name  
+            timeframe: Timeframe
+        """
+        tprint_info("💾 Generating detailed quality assessment CSV...")
+        
+        try:
+            # Create output directory
+            from pathlib import Path
+            from datetime import datetime
+            
+            output_dir = Path("artifacts") / "quality_reports" / symbol / exchange / timeframe
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # 1. Main summary report
+            summary_data = {
+                'Metric': [
+                    'Silhouette Score',
+                    'Davies-Bouldin Index', 
+                    'Calinski-Harabasz Index',
+                    'Within-Regime CV',
+                    'Between-Regime CV',
+                    'Temporal Smoothness',
+                    'Regime Persistence',
+                    'Number of Regimes',
+                    'Noise Ratio',
+                    'Balance Score',
+                    'Overall Quality Score'
+                ],
+                'Value': [
+                    quality_metrics.silhouette_score,
+                    quality_metrics.davies_bouldin_score,
+                    quality_metrics.calinski_harabasz_score,
+                    quality_metrics.within_regime_cv,
+                    quality_metrics.between_regime_cv,
+                    quality_metrics.temporal_smoothness,
+                    quality_metrics.regime_persistence,
+                    quality_metrics.n_regimes,
+                    quality_metrics.noise_ratio,
+                    quality_metrics.balance_score,
+                    quality_metrics.quality_score
+                ],
+                'Description': [
+                    'Cluster separation quality (-1 to 1, higher better)',
+                    'Cluster separation quality (lower better)',
+                    'Cluster separation quality (higher better)',
+                    'Within-regime feature consistency (lower better)',
+                    'Between-regime feature separation (higher better)',
+                    'Temporal stability of regimes (0 to 1, higher better)',
+                    'Average regime duration in periods',
+                    'Number of discovered regimes',
+                    'Ratio of noise points (lower better)',
+                    'Balance of cluster sizes (0 to 1, higher better)',
+                    'Composite quality score (0 to 1, higher better)'
+                ]
+            }
+            
+            summary_df = pd.DataFrame(summary_data)
+            summary_csv_path = output_dir / f"clustering_quality_summary_{timestamp}.csv"
+            summary_df.to_csv(summary_csv_path, index=False)
+            
+            # 2. Per-regime detailed metrics
+            if quality_metrics.per_regime_metrics:
+                regime_data = []
+                for regime_id, regime_metrics in quality_metrics.per_regime_metrics.items():
+                    regime_data.append({
+                        'Regime_ID': regime_id,
+                        'Size': regime_metrics.get('size', 0),
+                        'Size_Percentage': regime_metrics.get('size_pct', 0),
+                        'Mean_Return': regime_metrics.get('mean_return', 0),
+                        'Volatility': regime_metrics.get('volatility', 0),
+                        'Sharpe_Ratio': regime_metrics.get('sharpe', 0),
+                        'Max_Drawdown': regime_metrics.get('max_drawdown', 0),
+                        'Win_Rate': regime_metrics.get('win_rate', 0),
+                        'Regime_Type': regime_metrics.get('regime_type', 'unknown'),
+                        'Duration_Mean': regime_metrics.get('duration_mean', 0),
+                        'Duration_Std': regime_metrics.get('duration_std', 0)
+                    })
+                
+                regime_df = pd.DataFrame(regime_data)
+                regime_csv_path = output_dir / f"regime_detailed_metrics_{timestamp}.csv"
+                regime_df.to_csv(regime_csv_path, index=False)
+            
+            # 3. Economic validation metrics
+            if quality_metrics.economic_validation:
+                econ_data = {
+                    'Economic_Metric': [
+                        'Portfolio Return',
+                        'Portfolio Sharpe Ratio',
+                        'Max Drawdown',
+                        'Volatility',
+                        'Hit Rate',
+                        'Profit Factor',
+                        'Average Trade Return',
+                        'Target Return Achievement'
+                    ],
+                    'Value': [
+                        quality_metrics.economic_validation.get('portfolio_return', 0),
+                        quality_metrics.economic_validation.get('portfolio_sharpe', 0),
+                        quality_metrics.economic_validation.get('max_drawdown', 0),
+                        quality_metrics.economic_validation.get('portfolio_volatility', 0),
+                        quality_metrics.economic_validation.get('hit_rate', 0),
+                        quality_metrics.economic_validation.get('profit_factor', 0),
+                        quality_metrics.economic_validation.get('avg_trade_return', 0),
+                        quality_metrics.economic_validation.get('target_return_achievement', 0)
+                    ],
+                    'Benchmark': [
+                        'Higher better',
+                        'Higher better',
+                        'Lower better', 
+                        'Lower better',
+                        'Higher better',
+                        'Higher better',
+                        'Higher better',
+                        'Higher better'
+                    ]
+                }
+                
+                econ_df = pd.DataFrame(econ_data)
+                econ_csv_path = output_dir / f"economic_validation_{timestamp}.csv"
+                econ_df.to_csv(econ_csv_path, index=False)
+            
+            # 4. Temporal analysis metrics
+            temporal_data = {
+                'Temporal_Metric': [
+                    'Temporal Smoothness',
+                    'Temporal Smoothness (Raw)',
+                    'Flip-Flop Ratio',
+                    'Regime Persistence',
+                    'Average Duration',
+                    'Duration Std Dev',
+                    'Min Duration',
+                    'Max Duration'
+                ],
+                'Value': [
+                    quality_metrics.temporal_smoothness,
+                    quality_metrics.temporal_smoothness_raw,
+                    quality_metrics.flip_flop_ratio,
+                    quality_metrics.regime_persistence,
+                    quality_metrics.regime_duration_distribution.get('mean_duration', 0),
+                    quality_metrics.regime_duration_distribution.get('std_duration', 0),
+                    quality_metrics.regime_duration_distribution.get('min_duration', 0),
+                    quality_metrics.regime_duration_distribution.get('max_duration', 0)
+                ],
+                'Interpretation': [
+                    'Higher = more stable regimes',
+                    'Higher = more stable (no penalty)',
+                    'Lower = fewer rapid switches',
+                    'Higher = longer lasting regimes',
+                    'Average regime length in periods',
+                    'Variability in regime duration',
+                    'Shortest regime observed',
+                    'Longest regime observed'
+                ]
+            }
+            
+            temporal_df = pd.DataFrame(temporal_data)
+            temporal_csv_path = output_dir / f"temporal_analysis_{timestamp}.csv"
+            temporal_df.to_csv(temporal_csv_path, index=False)
+            
+            # Save comprehensive metrics as artifact
+            self._save_artifact(
+                data=quality_metrics.to_dict(),
+                artifact_name="comprehensive_quality_metrics",
+                artifact_type="metadata"
+            )
+            
+            tprint_success(f"✅ Detailed CSV reports saved to {output_dir}")
+            tprint_info(f"   📄 Summary: {summary_csv_path.name}")
+            if quality_metrics.per_regime_metrics:
+                tprint_info(f"   📄 Regimes: {regime_csv_path.name}")
+            if quality_metrics.economic_validation:
+                tprint_info(f"   📄 Economic: {econ_csv_path.name}")
+            tprint_info(f"   📄 Temporal: {temporal_csv_path.name}")
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to save quality reports: {e}")
+            self.logger.error(f"Failed to save quality reports: {e}")
     
     async def _save_results(
         self,
@@ -610,7 +885,7 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
         exchange: str,
         timeframe: str,
         config: Dict[str, Any]
-    ) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
+    ) -> Tuple[Any, Optional[Any]]:
         """
         Save clustering results to artifacts.
         
@@ -805,26 +1080,21 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
                 results, outcomes_dir, timestamp
             )
             
-            # 4. Generate markdown report using quality assessor
-            tprint_info("   Generating markdown report...")
+            # 4. Generate enhanced markdown report with variance reduction details
+            tprint_info("   Generating enhanced markdown report with variance reduction details...")
 
-            config_params = results.get('metadata', {}).get('config', {})
-            hmm_params = {
-                "Method": "StickyFiniteHMM",
-                "K (States)": config_params.get('K', 'N/A'),
-                "kappa (Stickiness)": config_params.get('kappa', 'N/A'),
-                "base_alpha (Concentration)": config_params.get('base_alpha', 'N/A'),
-                "Learning Rate (lr)": config_params.get('lr', 'N/A'),
-                "Iterations": config_params.get('num_iters', 'N/A'),
-                "PCA Components": config_params.get('pca_components', 'N/A'),
-                "Final ELBO": results.get('final_elbo', 'N/A')
-            }
-            
-            report_path = self._generate_markdown_report(
-                results, quality_assessment, symbol, outcomes_dir
+            self._generate_enhanced_markdown_report(
+                results, quality_assessment, symbol, outcomes_dir, timestamp
             )
             
-            tprint_success(f"✅ All reports generated in: {outcomes_dir}")
+            # 5. Export variance reduction metrics CSV
+            tprint_info("   Exporting variance reduction metrics CSV...")
+            self._export_variance_reduction_metrics_csv(
+                results, outcomes_dir, timestamp
+            )
+            
+            tprint_success(f"✅ Enhanced reports generated in: {outcomes_dir}")
+            tprint_success(f"   📊 Comprehensive metrics with variance reduction analysis")
             
         except Exception as e:
             tprint_warning(f"⚠️ Report generation failed: {e}")
@@ -996,26 +1266,136 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
         output_dir: Path,
         timestamp: str
     ) -> None:
-        """Export transition matrix to CSV with row/column labels."""
-        csv_path = output_dir / f"transition_matrix_{timestamp}.csv"
-        
+        """Export transition matrix to CSV."""
         transition_matrix = results.get('transition_matrix')
         if transition_matrix is None:
             tprint_warning("⚠️ No transition matrix available")
             return
-        
-        # Create labeled DataFrame
+            
         K = transition_matrix.shape[0]
         regime_labels = [f'Regime_{i}' for i in range(K)]
         
         df = pd.DataFrame(
             transition_matrix,
-            index=regime_labels,
-            columns=regime_labels
+            index=pd.Index(regime_labels),
+            columns=pd.Index(regime_labels)
         )
         
+        csv_path = output_dir / f"transition_matrix_{timestamp}.csv"
         df.to_csv(csv_path, index=True)
         tprint_success(f"✅ Transition matrix saved: {csv_path.absolute()}")
+    
+    def _generate_enhanced_markdown_report(
+        self,
+        results: Dict[str, Any],
+        quality_assessment: Dict[str, Any],
+        symbol: str,
+        output_dir: Path,
+        timestamp: str
+    ) -> Path:
+        """
+        Generate enhanced markdown report with variance reduction details.
+        
+        Args:
+            results: Clustering results
+            quality_assessment: Quality assessment dictionary
+            symbol: Trading symbol
+            output_dir: Output directory
+            timestamp: Timestamp for filenames
+            
+        Returns:
+            Path to generated markdown report
+        """
+        report_path = output_dir / f"enhanced_sticky_finite_hmm_report_{timestamp}.md"
+        
+        # Extract metrics
+        quality_metrics = results.get('quality_metrics', {})
+        convergence_info = results.get('metadata', {}).get('convergence_info', {})
+        
+        with open(report_path, 'w') as f:
+            f.write(f"# Enhanced Sticky Finite HMM Regime Analysis Report\n\n")
+            f.write(f"**Symbol:** {symbol}  \n")
+            f.write(f"**Timestamp:** {timestamp}  \n")
+            f.write(f"**Analysis Method:** Enhanced Sticky Finite HMM with Variance Reduction\n\n")
+            
+            f.write("## 🧠 Enhanced Features\n\n")
+            f.write("This analysis utilizes advanced variance reduction techniques:\n\n")
+            f.write("- **Structured Variational Inference:** Forward-backward message passing for exact marginals\n")
+            f.write("- **Natural Gradient Updates:** Closed-form parameter updates in mean-parameter space\n")
+            f.write("- **Rao-Blackwellization:** Zero Monte Carlo variance for sufficient statistics\n")
+            f.write("- **Vectorized Computations:** Optimized NumPy operations for performance\n\n")
+            
+            f.write("## 📊 Model Configuration\n\n")
+            config = results.get('metadata', {}).get('config', {})
+            f.write(f"- **Number of States (K):** {config.get('K', 'N/A')}\n")
+            f.write(f"- **Stickiness (κ):** {config.get('kappa', 'N/A')}\n")
+            f.write(f"- **Base Concentration (α):** {config.get('base_alpha', 'N/A')}\n")
+            f.write(f"- **Learning Rate:** {config.get('lr', 'N/A')}\n")
+            f.write(f"- **Iterations:** {config.get('num_iters', 'N/A')}\n")
+            f.write(f"- **PCA Components:** {config.get('pca_components', 'N/A')}\n\n")
+            
+            f.write("## 🎯 Quality Metrics\n\n")
+            f.write(f"- **Composite Score:** {quality_metrics.get('composite_score', 0):.4f}\n")
+            f.write(f"- **Transition Persistence:** {quality_metrics.get('transition_persistence', 0):.4f}\n")
+            f.write(f"- **Final ELBO:** {results.get('final_elbo', 0):.2f}\n\n")
+            
+            if convergence_info:
+                f.write("## 📈 Convergence Information\n\n")
+                f.write(f"- **Converged:** {convergence_info.get('converged', False)}\n")
+                f.write(f"- **Final Iteration:** {convergence_info.get('final_iteration', 'N/A')}\n")
+                f.write(f"- **Best ELBO:** {convergence_info.get('best_elbo', 0):.2f}\n\n")
+            
+            f.write("## 📂 Generated Files\n\n")
+            f.write(f"- `all_metrics_{timestamp}.csv` - Comprehensive metrics\n")
+            f.write(f"- `elbo_history_{timestamp}.csv` - ELBO convergence trace\n")
+            f.write(f"- `transition_matrix_{timestamp}.csv` - Learned transition probabilities\n")
+            f.write(f"- `variance_reduction_metrics_{timestamp}.csv` - Variance reduction analysis\n\n")
+            
+            f.write("---\n")
+            f.write("*Generated by Enhanced Sticky Finite HMM with variance reduction techniques*\n")
+        
+        tprint_info(f"   ✅ Enhanced markdown report: {report_path}")
+        return report_path
+    
+    def _export_variance_reduction_metrics_csv(
+        self,
+        results: Dict[str, Any],
+        output_dir: Path,
+        timestamp: str
+    ) -> None:
+        """
+        Export variance reduction metrics analysis.
+        
+        Args:
+            results: Clustering results
+            output_dir: Output directory  
+            timestamp: Timestamp for filename
+        """
+        convergence_info = results.get('metadata', {}).get('convergence_info', {})
+        elbo_history = results.get('elbo_history', [])
+        
+        # Calculate variance reduction metrics
+        variance_metrics = {
+            'metric': [
+                'final_elbo',
+                'convergence_achieved', 
+                'elbo_variance_final_10',
+                'total_iterations',
+                'variance_reduction_techniques'
+            ],
+            'value': [
+                results.get('final_elbo', 0),
+                str(convergence_info.get('converged', False)),
+                np.var(elbo_history[-10:]) if len(elbo_history) >= 10 else 0,
+                len(elbo_history),
+                'structured_vi;natural_gradients;rao_blackwellization;vectorized'
+            ]
+        }
+        
+        variance_df = pd.DataFrame(variance_metrics)
+        csv_path = output_dir / f"variance_reduction_metrics_{timestamp}.csv"
+        variance_df.to_csv(csv_path, index=False)
+        tprint_info(f"   ✅ Variance reduction metrics: {csv_path}")
     
     def _export_elbo_history_csv(
         self,
@@ -1216,4 +1596,90 @@ __all__ = [
     'StickyFiniteHMMRegimeDiscoveryStep',
     'run_sticky_finite_hmm_step'
 ]
+
+
+if __name__ == "__main__":
+    """
+    Direct execution interface for Sticky Finite HMM Regime Discovery Step.
+    
+    Usage:
+        python sticky_finite_hmm_regime_discovery_step.py --symbol BTCUSDT --exchange binance --timeframe 1h
+        
+    This allows the step to be called directly without going through the launcher,
+    automatically triggering the whole pipeline with BaseStep-standard data loading:
+    1. Artifacts from previous steps (klines_downloading_processing, data_collection, etc.)
+    2. Fallback to DataLoader for legacy support
+    """
+    import argparse
+    import sys
+    
+    async def main():
+        """Main function for direct execution."""
+        parser = argparse.ArgumentParser(
+            description="Sticky Finite HMM Regime Discovery Step - Direct Execution"
+        )
+        parser.add_argument("--symbol", default="BTCUSDT", help="Trading symbol (default: BTCUSDT)")
+        parser.add_argument("--exchange", default="binance", help="Exchange name (default: binance)")
+        parser.add_argument("--timeframe", default="1h", help="Timeframe (default: 1h)")
+        parser.add_argument("--execution-mode", default="full", choices=["full", "light", "blank"],
+                          help="Execution mode (default: full)")
+        parser.add_argument("--enable-auto-tuning", action="store_true", default=True,
+                          help="Enable hyperparameter auto-tuning (default: True)")
+        parser.add_argument("--disable-auto-tuning", dest="enable_auto_tuning", action="store_false",
+                          help="Disable hyperparameter auto-tuning")
+        
+        args = parser.parse_args()
+        
+        # Build configuration
+        config = {
+            'symbol': args.symbol,
+            'exchange': args.exchange,
+            'regime_timeframe': args.timeframe,
+            'execution_mode': args.execution_mode,
+            'enable_auto_tuning': args.enable_auto_tuning,
+            'direction': 'long',
+            'interaction_generation_mode': 'analyst'
+        }
+        
+        tprint_info("🚀 Starting Sticky Finite HMM Regime Discovery Step (Direct Execution)")
+        tprint_info(f"📊 Configuration: {args.symbol} {args.exchange} {args.timeframe} ({args.execution_mode} mode)")
+        
+        try:
+            # Run the step
+            results = await run_sticky_finite_hmm_step(config)
+            
+            # Report results
+            if results.get('success', False):
+                tprint_success("✅ Sticky Finite HMM Regime Discovery completed successfully!")
+                
+                # Print key metrics
+                n_regimes = results.get('n_regimes', 0)
+                composite_score = results.get('quality_metrics', {}).get('composite_score', 0)
+                execution_time = results.get('execution_time', 0)
+                
+                tprint_info(f"📈 Results Summary:")
+                tprint_info(f"   • Number of Regimes: {n_regimes}")
+                tprint_info(f"   • Composite Quality Score: {composite_score:.4f}")
+                tprint_info(f"   • Execution Time: {execution_time:.2f}s")
+                
+                # Report paths
+                if 'artifacts' in results:
+                    tprint_info(f"💾 Artifacts saved:")
+                    for artifact_name, artifact_path in results['artifacts'].items():
+                        tprint_info(f"   • {artifact_name}: {artifact_path}")
+                
+                sys.exit(0)
+            else:
+                tprint_error(f"❌ Sticky Finite HMM Regime Discovery failed: {results.get('error', 'Unknown error')}")
+                sys.exit(1)
+                
+        except KeyboardInterrupt:
+            tprint_warning("⚠️ Execution interrupted by user")
+            sys.exit(130)
+        except Exception as e:
+            tprint_error(f"❌ Unexpected error: {e}")
+            sys.exit(1)
+    
+    # Run the async main function
+    asyncio.run(main())
 

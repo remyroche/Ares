@@ -1,0 +1,14 @@
+{
+  "pipeline_start": 1762296620.7878861,
+  "symbol": "ETHUSDT",
+  "timeframe": "1d",
+  "years": 2,
+  "stages_completed": [],
+  "stage_results": {},
+  "errors": [
+    "Real data pipeline failed: Cannot import data loading. Please check src.utils.kline_parquet is available"
+  ],
+  "data_source": "real_historical",
+  "pipeline_end": 1762296620.7881012,
+  "total_time": 0.00021505355834960938
+}

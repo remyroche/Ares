@@ -29,24 +29,51 @@ class BaseStep(ABC):
     
     def __init__(self, step_name: str):
         """
-        Initialize the base step.
-        
+        Initialize the base step with lazy loading to reduce startup overhead.
+
         Args:
             step_name: Unique name for this step (used for artifact paths and outcomes)
         """
         self.step_name = step_name
         self.logger = logging.getLogger(f"ares.step.{step_name}")
-        self.artifact_manager = ArtifactManager(config={})
-        
-        # Set up artifact manager context with step-category organization
-        self.artifact_manager.set_context(
-            step_name=step_name,
-            datetime=datetime.now()
-        )
-        
+
+        # Defer heavy initialization until needed (lazy loading)
+        self._artifact_manager = None
+        self._quality_assessor = None
+
+        # Store context for lazy initialization
+        self._current_context = {
+            'step_name': step_name,
+            'datetime': datetime.now()
+        }
+
         # Mode detection for differentiated execution
         self.execution_mode = None  # Will be set by _detect_execution_mode
-    
+
+    @property
+    def artifact_manager(self):
+        """Lazy initialization of artifact manager."""
+        if self._artifact_manager is None:
+            self._artifact_manager = ArtifactManager(config={})
+            # Apply deferred context
+            self._artifact_manager.set_context(**self._current_context)
+        return self._artifact_manager
+
+    @property
+    def quality_assessor(self):
+        """Lazy initialization of quality assessor."""
+        if self._quality_assessor is None:
+            self._quality_assessor = create_cluster_quality_assessor(
+                artifact_manager=self.artifact_manager
+            )
+        return self._quality_assessor
+
+    def set_context(self, **kwargs):
+        """Set context for lazy initialization."""
+        self._current_context.update(kwargs)
+        if self._artifact_manager is not None:
+            self._artifact_manager.set_context(**self._current_context)
+
     def _detect_execution_mode(self, config: Dict[str, Any]) -> str:
         """
         Detect execution mode based on launcher arguments and step context.

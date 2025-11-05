@@ -1,0 +1,20 @@
+{
+  "symbol": "BTCUSDT",
+  "timestamp": "20251105_200340",
+  "n_regimes": 3,
+  "log_likelihood": -530.4439800571901,
+  "aic": 1084.8879601143801,
+  "bic": 1144.3321706448266,
+  "processing_time": 0.0,
+  "feature_names": [
+    "returns",
+    "log_returns",
+    "volume_ratio",
+    "volatility",
+    "volatility_ratio",
+    "sma_5",
+    "sma_20",
+    "sma_ratio"
+  ],
+  "success": true
+}

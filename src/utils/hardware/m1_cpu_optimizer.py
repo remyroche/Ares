@@ -53,7 +53,22 @@ def deprecated(reason: str, version: str = "2.0.0"):
 class M1CPUOptimizer:
     """CPU optimizer for M1/M2/M3/M4 performance and efficiency cores with enhanced backwards compatibility."""
 
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls, compatibility_mode: str = "auto"):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
     def __init__(self, compatibility_mode: str = "auto"):
+        # Prevent multiple initialization
+        if hasattr(self, '_initialized') and self._initialized:
+            return
+
         self.logger = logger.getChild('M1CPUOptimizer')
         self.version = __version__
         self.compatibility_mode = compatibility_mode
@@ -77,6 +92,8 @@ class M1CPUOptimizer:
 
         # Initialize M1-specific features
         self._initialize_m1_cpu_features()
+
+        self._initialized = True
 
     def _detect_m1(self) -> bool:
         """Detect if running on Apple Silicon M1/M2/M3/M4."""

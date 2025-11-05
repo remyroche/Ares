@@ -75,10 +75,10 @@ class M1MemoryOptimizer:
 
         # Memory thresholds for different optimization levels
         self.thresholds = {
-            'low': 0.6,      # 60% memory usage
-            'medium': 0.75,  # 75% memory usage
-            'high': 0.85,    # 85% memory usage
-            'critical': 0.95 # 95% memory usage
+            'low': 0.7,      # 70% memory usage (higher for M1 unified memory)
+            'medium': 0.8,   # 80% memory usage
+            'high': 0.9,     # 90% memory usage (higher threshold for M1)
+            'critical': 0.95  # 95% memory usage
         }
 
         # Track objects to prevent premature garbage collection
@@ -148,17 +148,17 @@ class M1MemoryOptimizer:
             if self._m1_generation in ["m3", "m4"]:
                 # Newer M1 chips have better memory management
                 self.thresholds.update({
-                    'low': 0.65,     # Slightly higher thresholds for newer chips
-                    'medium': 0.80,
-                    'high': 0.90,
+                    'low': 0.75,     # Higher thresholds for newer M3/M4 chips
+                    'medium': 0.85,
+                    'high': 0.92,
                     'critical': 0.95
                 })
             elif self._m1_generation in ["m1", "m2"]:
-                # Original M1/M2 chips - more conservative thresholds
+                # Original M1/M2 chips - adjusted thresholds for unified memory
                 self.thresholds.update({
-                    'low': 0.55,
-                    'medium': 0.70,
-                    'high': 0.80,
+                    'low': 0.65,     # Moderate thresholds for M1/M2
+                    'medium': 0.75,
+                    'high': 0.88,    # Higher threshold to reduce false warnings (83% -> 88%)
                     'critical': 0.90
                 })
 

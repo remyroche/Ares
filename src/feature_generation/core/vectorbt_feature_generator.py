@@ -143,10 +143,10 @@ class VectorBTFeatureGenerator(FeatureGenerator):
         except ImportError:
             self.unified_manager = None
         
-        # Initialize VectorBT rolling optimizer if available
+        # Initialize VectorBT rolling optimizer if available (singleton pattern)
         try:
-            from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
-            self.rolling_optimizer = VectorBTRollingOptimizer()
+            from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer()
         except ImportError:
             self.rolling_optimizer = None
 

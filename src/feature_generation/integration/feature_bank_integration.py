@@ -66,7 +66,7 @@ from ..categories.regime_features import (
     RegimeEntropyGenerator, RegimeComplexityGenerator,
     RegimeFractalDimensionGenerator, RegimeHurstExponentGenerator,
     RegimeMemoryStrengthGenerator, RegimeCrossAssetGenerator,
-    RegimeTransitionProbabilityGenerator, RegimeFeatureIntegration
+    RegimeTransitionProbabilityGenerator
 )
 
 # Import clustering features

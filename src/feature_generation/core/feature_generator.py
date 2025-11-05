@@ -946,7 +946,28 @@ class VectorizedFeatureGenerator(FeatureGenerator):
             else:
                 # Use UnifiedVectorizationManager for other operations
                 if self.unified_vectorization_manager is not None:
-                    return self.unified_vectorization_manager.optimize_operation(operation, data, **kwargs)
+                    try:
+                        # Import OperationType to use with optimize_operation
+                        from src.utils.ml_common.unified_vectorization_manager import OperationType, OperationConfig
+                        
+                        # Create a default config for the operation
+                        config = OperationConfig(
+                            operation_type=OperationType.TECHNICAL_INDICATORS,
+                            data_size=len(data) if hasattr(data, '__len__') else 1,
+                            data_dimensions=data.shape if hasattr(data, 'shape') else (len(data) if hasattr(data, '__len__') else 1,)
+                        )
+                        
+                        # Call optimize_operation with proper parameters
+                        result = self.unified_vectorization_manager.optimize_operation(
+                            OperationType.TECHNICAL_INDICATORS, 
+                            data, 
+                            config, 
+                            **kwargs
+                        )
+                        return result.data if hasattr(result, 'data') else result
+                    except Exception as ume_error:
+                        self.logger.warning(f"UnifiedVectorizationManager failed: {ume_error}")
+                        return self._numpy_fallback(operation, data, **kwargs)
                 else:
                     return self._numpy_fallback(operation, data, **kwargs)
         except Exception as e:

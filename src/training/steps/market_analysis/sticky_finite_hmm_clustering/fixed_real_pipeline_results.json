@@ -1,0 +1,14 @@
+{
+  "pipeline_start": 1762296633.2491982,
+  "symbol": "ETHUSDT",
+  "timeframe": "1d",
+  "years": 2,
+  "stages_completed": [],
+  "stage_results": {},
+  "errors": [
+    "Fixed real pipeline failed: cannot access local variable 'StorageConfig' where it is not associated with a value"
+  ],
+  "data_source": "real_historical",
+  "pipeline_end": 1762296634.127569,
+  "total_time": 0.8783717155456543
+}

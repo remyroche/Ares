@@ -1,0 +1,8 @@
+{
+  "artifact_name": "transition_matrix",
+  "artifact_type": "data",
+  "file_path": "artifacts/pre_training/ETHUSDT/binance/long/Analyst/sticky_finite_hmm_clustering/regime_discovery_sticky_finite_hmm_clustering_transition_matrix_ETHUSDT_binance_long_Analyst_20251105_145858.parquet",
+  "file_size": 2932,
+  "timestamp": "2025-11-05T16:09:13.853966",
+  "compression": "auto"
+}

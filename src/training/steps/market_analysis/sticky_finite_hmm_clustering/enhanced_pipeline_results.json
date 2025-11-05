@@ -1,0 +1,11 @@
+{
+  "pipeline_start": 1762296541.365843,
+  "symbol": "ETHUSDT",
+  "timeframe": "1d",
+  "years": 2,
+  "stages_completed": [],
+  "stage_results": {},
+  "errors": [
+    "Data loading failed: No module named 'src'"
+  ]
+}

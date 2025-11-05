@@ -349,7 +349,7 @@ class HistoricalDataDownloader:
 
     async def _download_batch(
         self,
-        exchange: BinanceExchange,
+        exchange,
         symbol: str,
         interval: str,
         start_date: datetime,
@@ -502,7 +502,7 @@ class HistoricalDataDownloader:
 
     async def _download_month_data(
         self,
-        exchange: BinanceExchange,
+        exchange,
         symbol: str,
         interval: str,
         start_date: datetime,

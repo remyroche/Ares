@@ -82,13 +82,25 @@ try:
     )
     UNIFIED_MANAGER_AVAILABLE = True
 except ImportError:
-    UNIFIED_MANAGER_AVAILABLE = False
-    get_unified_vectorization_manager = None
-    UnifiedVectorizationManager = None
-    OperationType = None
-    OptimizationStrategy = None
-    OperationConfig = None
-    OptimizationResult = None
+    try:
+        # Fallback to local import
+        from .unified_vectorization_manager import (
+            get_unified_vectorization_manager,
+            UnifiedVectorizationManager,
+            OperationType,
+            OptimizationStrategy,
+            OperationConfig,
+            OptimizationResult
+        )
+        UNIFIED_MANAGER_AVAILABLE = True
+    except ImportError:
+        UNIFIED_MANAGER_AVAILABLE = False
+        get_unified_vectorization_manager = None
+        UnifiedVectorizationManager = None
+        OperationType = None
+        OptimizationStrategy = None
+        OperationConfig = None
+        OptimizationResult = None
 
 logger = logging.getLogger(__name__)
 
@@ -456,11 +468,34 @@ class StatisticalCalculationsOptimizer:
             if config.other_series is None:
                 raise ValueError("other_series must be specified for correlation operation")
             other_values = config.other_series.values if hasattr(config.other_series, 'values') else config.other_series
+            
+            # Ensure arrays have same length for correlation
+            if len(values) != len(other_values):
+                min_len = min(len(values), len(other_values))
+                values = values[:min_len]
+                other_values = other_values[:min_len]
+                
             result = np.corrcoef(values, other_values)[0, 1]
         elif config.operation == StatisticalOperationType.AUTOCORRELATION:
             if len(values.shape) > 1:
                 raise ValueError("Autocorrelation only supported for 1D arrays")
-            result = np.corrcoef(values[:-config.lag], values[config.lag:])[0, 1] if len(values) > config.lag else np.nan
+            # Fix broadcasting error by ensuring arrays have same length
+            if len(values) > config.lag:
+                values1 = values[:-config.lag]
+                values2 = values[config.lag:]
+                # Ensure both arrays have same length and convert to numpy arrays
+                min_len = min(len(values1), len(values2))
+                if min_len > 0:
+                    values1_clean = np.asarray(values1[:min_len])
+                    values2_clean = np.asarray(values2[:min_len])
+                    if values1_clean.size > 1 and values2_clean.size > 1:
+                        result = np.corrcoef(values1_clean, values2_clean)[0, 1]
+                    else:
+                        result = np.nan
+                else:
+                    result = np.nan
+            else:
+                result = np.nan
         elif config.operation == StatisticalOperationType.CUSTOM:
             if config.custom_func is None:
                 raise ValueError("custom_func must be specified for custom operation")
@@ -492,22 +527,27 @@ class StatisticalCalculationsOptimizer:
                 results[operation_name] = result
             return results
 
-        # Create operation config
-        op_config = OperationConfig(
-            operation_type=OperationType.STATISTICAL_COMPUTATION,
-            data_size=len(data),
-            data_dimensions=data.shape if hasattr(data, 'shape') else (len(data),),
-            memory_budget_mb=1024.0,
-            parallel_workers=None
-        )
+        # Create operation config - handle case where OperationType might not be available
+        if OperationType is not None and OperationConfig is not None:
+            op_config = OperationConfig(
+                operation_type=OperationType.STATISTICAL_COMPUTATION,
+                data_size=len(data),
+                data_dimensions=data.shape if hasattr(data, 'shape') else (len(data),),
+                memory_budget_mb=1024.0,
+                parallel_workers=None
+            )
 
-        # Execute through unified manager
-        result = self.unified_manager.optimize_operation(
-            operation_type=OperationType.STATISTICAL_COMPUTATION,
-            data=data,
-            operation_func=lambda x: batch_statistical_func(x, configs),
-            config=op_config
-        )
+            # Execute through unified manager
+            result = self.unified_manager.optimize_operation(
+                lambda: batch_statistical_func(data, configs),
+                op_config
+            )
+        else:
+            # Fallback: execute directly without unified manager
+            result = type('OptimizationResult', (), {
+                'result': batch_statistical_func(data, configs),
+                'strategy_used': 'fallback'
+            })()
 
         return result.result
 

@@ -56,6 +56,9 @@ except ImportError:
 class VectorBTOptimizationMixin:
     """Mixin class that provides VectorBT optimization capabilities."""
 
+    # Class variable to track if caching has been configured and logged
+    _caching_logged = False
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -93,13 +96,17 @@ class VectorBTOptimizationMixin:
         if not VECTORBT_AVAILABLE or not self.enable_caching:
             return
 
+        # Only log once per class to reduce verbosity
+        if VectorBTOptimizationMixin._caching_logged:
+            return
+
         try:
             # Check if settings attribute exists first
             if not hasattr(vbt, 'settings'):
                 self.logger.debug("⚠️ VectorBT settings not available in this version")
                 self.enable_caching = False
                 return
-            
+
             # Configure advanced caching using newer API
             if hasattr(vbt.settings, 'caching') and 'enabled' in vbt.settings['caching']:
                 vbt.settings['caching']['enabled'] = True
@@ -113,6 +120,7 @@ class VectorBTOptimizationMixin:
                 vbt.settings['caching']['cache_compression'] = True
 
             self.logger.info(f"✅ VectorBT advanced caching enabled: {self.cache_size}MB, TTL: {self.cache_ttl}s")
+            VectorBTOptimizationMixin._caching_logged = True
 
         except Exception as e:
             self.logger.warning(f"⚠️ VectorBT caching configuration failed: {e}")

@@ -100,15 +100,24 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple, Union, Callable
-from dataclasses import dataclass, field
-from enum import Enum
-import logging
 import time
-from datetime import datetime
+import logging
+from typing import Dict, Any, Optional, List, Tuple, Union
+from dataclasses import dataclass, field
 from pathlib import Path
-import json
-from copy import deepcopy
+from enum import Enum
+
+# Import tprint for consistent output
+try:
+    from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+    _tprint_available = True
+except ImportError:
+    _tprint_available = False
+    def tprint(msg, level="INFO"): print(msg)
+    def tprint_info(msg): print(f"ℹ️ {msg}")
+    def tprint_success(msg): print(f"✅ {msg}")
+    def tprint_warning(msg): print(f"⚠️ {msg}")
+    def tprint_error(msg): print(f"❌ {msg}")
 
 from src.utils.logger import system_logger
 from .grid_utils import (
@@ -359,14 +368,15 @@ class HierarchicalParameterOptimizer:
         self.group_results: List[OptimizationResult] = []
         self.round_results: List[Dict[str, Any]] = []  # Results for each round
         
+        # Initialize logger BEFORE validation
+        self.logger = logger.getChild('Optimizer')
+        
         # Validate
         self._validate_configuration()
         
         # Setup
         if cache_dir:
             Path(cache_dir).mkdir(parents=True, exist_ok=True)
-        
-        self.logger = logger.getChild('Optimizer')
         
         if verbose:
             self._print_configuration()
@@ -555,6 +565,22 @@ class HierarchicalParameterOptimizer:
             logger.info("█" * 80)
             logger.info(f"🔄 ROUND {round_num}/{self.n_rounds}")
             logger.info("█" * 80)
+            
+            # Print parameters being tested this round
+            if _tprint_available:
+                tprint_info(f"🎯 ROUND {round_num}/{self.n_rounds} - PARAMETER SEARCH SPACE")
+                tprint("─" * 80, "INFO")
+                for group in self.param_groups:
+                    mode = "Refinement" if round_num > 1 else "Exploration"
+                    tprint_info(f"📊 {group.name} ({mode} mode):")
+                    for param_name, param_config in group.params.items():
+                        if hasattr(param_config, 'low') and hasattr(param_config, 'high'):
+                            tprint(f"   • {param_name}: [{param_config.low}, {param_config.high}]", "INFO")
+                        elif hasattr(param_config, 'choices'):
+                            tprint(f"   • {param_name}: {param_config.choices}", "INFO")
+                        else:
+                            tprint(f"   • {param_name}: {param_config}", "INFO")
+                tprint("─" * 80, "INFO")
             
             round_start_time = time.time()
             round_group_results = []

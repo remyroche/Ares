@@ -19,6 +19,7 @@ from scipy import stats
 from scipy.spatial.distance import cdist
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 import warnings
+import logging
 
 from src.utils.tprint import tprint_info, tprint_warning, tprint_debug, tprint_success
 
@@ -39,6 +40,7 @@ class HMMRegimeValidator:
         """
         self.timeframe = timeframe
         self.samples_per_day = self._get_samples_per_day(timeframe)
+        self.logger = logging.getLogger(self.__class__.__name__)
     
     def _get_samples_per_day(self, timeframe: str) -> int:
         """Get number of samples per day for timeframe."""
@@ -752,6 +754,13 @@ class HMMRegimeValidator:
             return {}
         
         # Simple regime-aware strategy: go long in positive-return regimes
+        # Ensure labels and returns have the same length
+        min_length = min(len(labels), len(returns))
+        if len(labels) != len(returns):
+            self.logger.warning(f"Length mismatch between labels ({len(labels)}) and returns ({len(returns)}), truncating to {min_length}")
+            labels = labels[:min_length]
+            returns = returns[:min_length]
+        
         unique_states = np.unique(labels)
         
         # Calculate average return per regime
@@ -789,10 +798,20 @@ class HMMRegimeValidator:
         
         strategy_returns = np.array(strategy_returns)
         
+        # Remove NaN values and check if we have valid returns
+        strategy_returns = strategy_returns[~np.isnan(strategy_returns)]
+        if len(strategy_returns) == 0:
+            tprint_warning("   ⚠️ No valid strategy returns (all NaN), cannot calculate Sharpe")
+            return {}
+        
         # Calculate Sharpe ratio (annualized)
         mean_return = np.mean(strategy_returns)
         std_return = np.std(strategy_returns)
-        sharpe = (mean_return / (std_return + 1e-10)) * np.sqrt(252 * self.samples_per_day)
+        if std_return < 1e-10:
+            tprint_warning("   ⚠️ Strategy returns have zero variance, Sharpe undefined")
+            sharpe = 0.0
+        else:
+            sharpe = (mean_return / std_return) * np.sqrt(252 * self.samples_per_day)
         
         # Calculate max drawdown
         cumulative = np.cumprod(1 + strategy_returns)
@@ -808,15 +827,32 @@ class HMMRegimeValidator:
         for _ in range(min(n_bootstrap, 100)):  # Limit to 100 for speed
             sample_idx = np.random.choice(len(strategy_returns), len(strategy_returns), replace=True)
             sample_returns = strategy_returns[sample_idx]
-            sample_sharpe = (np.mean(sample_returns) / (np.std(sample_returns) + 1e-10)) * np.sqrt(252 * self.samples_per_day)
-            bootstrap_sharpes.append(sample_sharpe)
+            sample_std = np.std(sample_returns)
+            if sample_std >= 1e-10:
+                sample_sharpe = (np.mean(sample_returns) / sample_std) * np.sqrt(252 * self.samples_per_day)
+                bootstrap_sharpes.append(sample_sharpe)
         
-        sharpe_ci_lower = np.percentile(bootstrap_sharpes, 5)
-        sharpe_ci_upper = np.percentile(bootstrap_sharpes, 95)
-        sharpe_significant = sharpe_ci_lower > 0  # 90% CI above zero
+        if len(bootstrap_sharpes) == 0:
+            tprint_warning("   ⚠️ No valid bootstrap samples, using default CI")
+            sharpe_ci_lower = 0.0
+            sharpe_ci_upper = 0.0
+            sharpe_significant = False
+        else:
+            sharpe_ci_lower = np.percentile(bootstrap_sharpes, 5)
+            sharpe_ci_upper = np.percentile(bootstrap_sharpes, 95)
+            sharpe_significant = sharpe_ci_lower > 0  # 90% CI above zero
         
         # Baseline: buy-and-hold
-        baseline_sharpe = (np.mean(returns) / (np.std(returns) + 1e-10)) * np.sqrt(252 * self.samples_per_day)
+        clean_returns = returns.dropna()
+        if len(clean_returns) == 0:
+            tprint_warning("   ⚠️ No valid baseline returns, using baseline Sharpe = 0")
+            baseline_sharpe = 0.0
+        else:
+            baseline_std = np.std(clean_returns)
+            if baseline_std < 1e-10:
+                baseline_sharpe = 0.0
+            else:
+                baseline_sharpe = (np.mean(clean_returns) / baseline_std) * np.sqrt(252 * self.samples_per_day)
         sharpe_uplift = sharpe - baseline_sharpe
         
         result = {
@@ -875,11 +911,18 @@ class HMMRegimeValidator:
                 
                 if len(fold_strategy_returns) > 0:
                     fold_strategy_returns = np.array(fold_strategy_returns)
-                    fold_sharpe = (np.mean(fold_strategy_returns) / (np.std(fold_strategy_returns) + 1e-10)) * np.sqrt(252 * self.samples_per_day)
-                    fold_turnover = fold_transitions / len(fold_labels)
-                    
-                    sharpe_folds.append(fold_sharpe)
-                    turnover_folds.append(fold_turnover)
+                    # Remove NaN values
+                    fold_strategy_returns = fold_strategy_returns[~np.isnan(fold_strategy_returns)]
+                    if len(fold_strategy_returns) > 0:
+                        fold_std = np.std(fold_strategy_returns)
+                        if fold_std >= 1e-10:
+                            fold_sharpe = (np.mean(fold_strategy_returns) / fold_std) * np.sqrt(252 * self.samples_per_day)
+                        else:
+                            fold_sharpe = 0.0
+                        fold_turnover = fold_transitions / len(fold_labels)
+                        
+                        sharpe_folds.append(fold_sharpe)
+                        turnover_folds.append(fold_turnover)
         
         # Calculate median & IQR for Sharpe and turnover
         if len(sharpe_folds) > 0:

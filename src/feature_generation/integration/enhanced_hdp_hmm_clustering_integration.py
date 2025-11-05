@@ -25,6 +25,13 @@ from .feature_bank_integration import (
     FeatureBankIntegrator, FeatureBankConfig, FeatureBankCategory
 )
 
+# Define availability constants first to avoid redefinition warnings
+REGIME_FEATURES_AVAILABLE = False
+REGIME_CATEGORIZATION_AVAILABLE = False
+REGIME_INTEGRATION_AVAILABLE = False
+HPO_AVAILABLE = False
+VECTORIZATION_AVAILABLE = False
+
 # Import regime-specific features
 # NOTE: RegimeFeatureGenerator is an optional enhancement
 # The system works fine without it using base feature bank features
@@ -35,7 +42,6 @@ try:
     REGIME_FEATURES_AVAILABLE = True
     tprint_debug("✅ Regime-specific features available")
 except ImportError as e:
-    REGIME_FEATURES_AVAILABLE = False
     tprint_debug(
         f"ℹ️ Regime-specific features not available (optional): {e}. "
         "Using base feature bank features only."
@@ -53,7 +59,6 @@ try:
     REGIME_CATEGORIZATION_AVAILABLE = True
     tprint_debug("✅ Regime feature categorization available")
 except ImportError as e:
-    REGIME_CATEGORIZATION_AVAILABLE = False
     tprint_debug(f"ℹ️ Regime feature categorization not available: {e}")
 
 # Import regime feature integration for regime-aware features
@@ -66,7 +71,6 @@ try:
     REGIME_INTEGRATION_AVAILABLE = True
     tprint_debug("✅ Regime feature integration available")
 except ImportError as e:
-    REGIME_INTEGRATION_AVAILABLE = False
     tprint_debug(f"ℹ️ Regime feature integration not available: {e}")
 
 # Import optimization utilities (from code review)
@@ -74,14 +78,12 @@ try:
     from src.utils.ml_common.optimization.hpo_utils import get_hpo_optimizer
     HPO_AVAILABLE = True
 except ImportError:
-    HPO_AVAILABLE = False
     tprint_debug("⚠️ HPO utilities not available")
 
 try:
     from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager
     VECTORIZATION_AVAILABLE = True
 except ImportError:
-    VECTORIZATION_AVAILABLE = False
     tprint_debug("⚠️ Unified vectorization not available")
 
 # Import HDP-HMM clusterer
@@ -228,7 +230,8 @@ class EnhancedHDPHMMClusteringIntegration:
         # Initialize vectorization manager if available (from code review)
         if VECTORIZATION_AVAILABLE:
             try:
-                self.vectorization_manager = UnifiedVectorizationManager()
+                from src.utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager
+                self.vectorization_manager = get_unified_vectorization_manager()
                 tprint_success("✅ Vectorization manager initialized")
             except Exception as e:
                 tprint_warning(f"⚠️ Failed to initialize vectorization: {e}")

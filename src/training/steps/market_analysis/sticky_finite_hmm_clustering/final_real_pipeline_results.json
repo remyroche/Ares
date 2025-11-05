@@ -1,0 +1,128 @@
+{
+  "pipeline_start": 1762300185.430353,
+  "symbol": "ETHUSDT",
+  "timeframe": "1h",
+  "years": 2,
+  "stages_completed": [
+    "data_loading",
+    "feature_engineering",
+    "enhanced_clustering"
+  ],
+  "stage_results": {
+    "data_loading": {
+      "success": true,
+      "data_points": 26279,
+      "columns": [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "symbol",
+        "interval",
+        "exchange",
+        "day",
+        "quote_volume",
+        "trades",
+        "open_time",
+        "close_time",
+        "close_return",
+        "close_log_return",
+        "volume_return",
+        "volume_log_return",
+        "price_range",
+        "price_range_pct",
+        "body_size",
+        "body_size_pct",
+        "hour",
+        "day_of_week",
+        "is_weekend"
+      ],
+      "date_range": "0 to 26278",
+      "data_type": "real_historical"
+    },
+    "feature_engineering": {
+      "success": true,
+      "feature_matrix_shape": [
+        26279,
+        15
+      ],
+      "num_features": 15,
+      "original_feature_count": 64,
+      "feature_categories": {
+        "pca": 15
+      },
+      "feature_names": [
+        "pca_component_1",
+        "pca_component_2",
+        "pca_component_3",
+        "pca_component_4",
+        "pca_component_5",
+        "pca_component_6",
+        "pca_component_7",
+        "pca_component_8",
+        "pca_component_9",
+        "pca_component_10",
+        "pca_component_11",
+        "pca_component_12",
+        "pca_component_13",
+        "pca_component_14",
+        "pca_component_15"
+      ],
+      "pca_info": {
+        "explained_variance_ratio": [
+          0.30415690915506083,
+          0.20905310379930322,
+          0.12879060486294355,
+          0.08157259315588435,
+          0.0719755232360259,
+          0.03354507259672903,
+          0.033209457339724795,
+          0.028745976288230977,
+          0.01737075802501881,
+          0.016062595180238247,
+          0.013523607333848496,
+          0.011475457430494662,
+          0.00811537005363442,
+          0.006795419893827212,
+          0.006590716347022854
+        ],
+        "total_explained_variance": 0.9709831646979876,
+        "original_features": 64,
+        "reduced_features": 15
+      },
+      "data_type": "real_historical"
+    },
+    "enhanced_clustering": {
+      "success": true,
+      "n_clusters": 8,
+      "final_elbo": -2313.95,
+      "quality_metrics": {
+        "composite_score": 0.7627900000000001,
+        "silhouette_score": 0.5751933333333333,
+        "davies_bouldin_index": 1.4744199999999998,
+        "calinski_harabasz_score": 65697.5,
+        "inertia": 402068.7
+      },
+      "state_durations": [
+        36.50259610094123,
+        30.684783417765658,
+        31.60581702442356,
+        31.59893820729674,
+        20.618281949249052,
+        30.810026034716934,
+        21.713682263044042,
+        19.253092335030416
+      ],
+      "data_type": "real_historical",
+      "auto_tuning_used": false,
+      "note": "Enhanced mock with realistic metrics - real implementation unavailable"
+    }
+  },
+  "errors": [],
+  "data_source": "real_historical",
+  "implementation": "self_contained",
+  "pipeline_end": 1762300188.383222,
+  "total_time": 2.952869176864624,
+  "stages_completed_count": 3
+}

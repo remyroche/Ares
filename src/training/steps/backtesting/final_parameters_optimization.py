@@ -255,6 +255,11 @@ class FinalParametersOptimizer(BaseStep):
 
         tprint("🚀 Initializing Enhanced Final Parameters Optimizer", "header")
 
+        # Core pipeline dependencies populated lazily during execute
+        self.calibration_results: Dict[str, Any] = {}
+        self.previous_results: Optional[Dict[str, Any]] = None
+        self.direction_mode: str = "both"
+
         # Non-linear optimization configuration
         self.nonlinear_config = nonlinear_config or NonLinearConfig()
         self.parameter_sampler = NonLinearParameterSampler(self.nonlinear_config)
@@ -458,6 +463,7 @@ class FinalParametersOptimizer(BaseStep):
             exchange = config.get('exchange', 'binance')
             timeframe = config.get('timeframe', '15m')
             direction = config.get('direction', 'long')
+            self.direction_mode = config.get('direction_mode', 'both').lower()
             
             # Detect execution mode using BaseStep method
             self.execution_mode = self._detect_execution_mode(config)
@@ -481,9 +487,33 @@ class FinalParametersOptimizer(BaseStep):
                 model='FinalParameters'
             )
             
+            # Load supporting data (calibration + previous optimization)
+            self.calibration_results = await self._load_calibration_results(config)
+            self.previous_results = await self._load_previous_results(symbol, exchange, config)
+
+            # Fast fail if calibration data missing
+            if not self._has_valid_calibration(self.calibration_results):
+                warning_msg = "⚠️ Calibration results missing or invalid - returning neutral result"
+                self.logger.warning(warning_msg)
+                tprint(warning_msg, "warning")
+                neutral_result = self._build_neutral_result(symbol, timeframe, direction, execution_mode)
+                artifact_path = self._save_artifact(neutral_result, 'final_parameters_optimization_result', 'data')
+                return {
+                    'success': False,
+                    'artifacts': [artifact_path],
+                    'metrics': {
+                        'parameters_optimized': 0,
+                        'optimization_score': 0.0,
+                        'execution_mode': execution_mode,
+                        'calibration_missing': True
+                    },
+                    'optimization_result': neutral_result,
+                    'error': 'Missing calibration results'
+                }
+
             # Perform final parameters optimization
             optimization_result = await self._perform_final_parameters_optimization(
-                symbol, timeframe, direction, execution_mode, config
+                symbol, exchange, timeframe, direction, execution_mode, config
             )
 
             # Save optimization result as artifact (will auto-generate CSV if < 2000 rows)
@@ -518,55 +548,45 @@ class FinalParametersOptimizer(BaseStep):
                 'error': str(e)
             }
 
-    async def _perform_final_parameters_optimization(self, symbol: str, timeframe: str, 
-                                                   direction: str, execution_mode: str,
+    async def _perform_final_parameters_optimization(self, symbol: str, exchange: str,
+                                                   timeframe: str, direction: str,
+                                                   execution_mode: str,
                                                    config: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Perform final parameters optimization with essential logic.
-        
-        Args:
-            symbol: Trading symbol
-            timeframe: Timeframe for analysis
-            direction: Trading direction
-            execution_mode: Execution mode (light/full)
-            config: Full configuration
-            
-        Returns:
-            Optimization result dictionary
-        """
+        """Run either hierarchical or category-based optimization based on configuration."""
         try:
-            # This would contain the actual optimization logic from the existing methods
-            # For now, return a placeholder with essential structure
-            
-            sample_parameters = {
-                'confidence_threshold': 0.75,
-                'position_sizing_factor': 0.02,
-                'leverage_multiplier': 1.5,
-                'stop_loss_pct': 0.03,
-                'take_profit_pct': 0.06,
-                'ensemble_weight_analyst': 0.6,
-                'ensemble_weight_tactician': 0.4
+            start_time = time.time()
+
+            if self.config.get('use_hierarchical_optimization', True):
+                result = await self._run_hierarchical_pipeline(symbol, exchange, timeframe, direction)
+            else:
+                result = await self._run_category_pipeline(symbol, exchange, timeframe, direction)
+
+            result['metadata'] = {
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframe': timeframe,
+                'direction': direction,
+                'execution_mode': execution_mode,
+                'direction_mode': self.direction_mode,
+                'duration_seconds': time.time() - start_time
             }
-            
-            return {
-                'parameters_optimized': len(sample_parameters),
-                'optimization_score': 0.85,
-                'optimized_parameters': sample_parameters,
-                'metadata': {
-                    'symbol': symbol,
-                    'timeframe': timeframe,
-                    'direction': direction,
-                    'execution_mode': execution_mode
-                }
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Final parameters optimization failed: {e}")
+            return result
+
+        except Exception as e:  # pragma: no cover - defensive
+            self.logger.exception(f"Final parameters optimization failed: {e}")
             return {
                 'parameters_optimized': 0,
                 'optimization_score': 0.0,
                 'optimized_parameters': {},
-                'error': str(e)
+                'error': str(e),
+                'metadata': {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'execution_mode': execution_mode,
+                    'direction_mode': self.direction_mode
+                }
             }
 
     def _init_tpe_optimizers(self):
@@ -1072,13 +1092,8 @@ class FinalParametersOptimizer(BaseStep):
             returns = calibration_results.get('returns', np.array([]))
             
             # Ensure we have data
-            if len(analyst_conf) == 0 or len(tactician_conf) == 0:
-                self.logger.warning("No confidence data in calibration results, using dummy data")
-                # Return dummy data
-                n_samples = 100
-                features = np.random.rand(n_samples, 2)
-                targets = np.random.rand(n_samples)
-                return features, targets
+            if len(analyst_conf) == 0 or len(tactician_conf) == 0 or len(returns) == 0:
+                raise ValueError("calibration_results must contain analyst_confidence, tactician_confidence, and returns arrays")
             
             # Combine confidence scores as features
             min_len = min(len(analyst_conf), len(tactician_conf))
@@ -1088,22 +1103,13 @@ class FinalParametersOptimizer(BaseStep):
             ])
             
             # Use returns as targets if available
-            if len(returns) > 0:
-                targets = returns[:min_len]
-            else:
-                # Generate synthetic targets based on confidence
-                targets = (analyst_conf[:min_len] + tactician_conf[:min_len]) / 2.0
+            targets = returns[:min_len]
             
             self.logger.info(f"   Prepared data: {features.shape[0]} samples, {features.shape[1]} features")
             return features, targets
             
         except Exception as e:
-            self.logger.error(f"Error preparing data for hierarchical optimization: {e}")
-            # Return dummy data on error
-            n_samples = 100
-            features = np.random.rand(n_samples, 2)
-            targets = np.random.rand(n_samples)
-            return features, targets
+            raise ValueError(f"Failed to prepare hierarchical data: {e}")
     
     def _run_backtest_for_hierarchical_optimization(
         self,
@@ -1127,41 +1133,30 @@ class FinalParametersOptimizer(BaseStep):
             Dict with predictions, targets, returns, regime_labels
         """
         try:
-            # For now, use a simplified backtest simulation
-            # In production, this would run a full backtest with the parameters
-            
             # Extract confidence data
-            analyst_conf = calibration_results.get('analyst_confidence', X_train[:, 0] if X_train.shape[1] > 0 else np.array([]))
-            tactician_conf = calibration_results.get('tactician_confidence', X_train[:, 1] if X_train.shape[1] > 1 else np.array([]))
-            returns = calibration_results.get('returns', y_train)
-            
-            # Apply confidence threshold to generate signals
+            analyst_conf = calibration_results['analyst_confidence']
+            tactician_conf = calibration_results['tactician_confidence']
+            returns = calibration_results['returns']
+
+            min_len = min(len(analyst_conf), len(tactician_conf), len(returns))
+            tactician_conf = tactician_conf[:min_len]
+            returns = returns[:min_len]
+
             conf_threshold = params.get('tactician_confidence_threshold', 0.75)
             signals = (tactician_conf >= conf_threshold).astype(int)
-            
-            # Simulate trading returns
+
             simulated_returns = signals * returns
-            
-            # Generate predictions based on signals
             predictions = signals.astype(float)
-            
+
             return {
                 'predictions': predictions,
-                'targets': (returns > 0).astype(int),  # Binary targets
+                'targets': (returns > 0).astype(int),
                 'returns': simulated_returns,
-                'regime_labels': calibration_results.get('regime_labels', None)
+                'regime_labels': calibration_results.get('regime_labels')
             }
-            
+
         except Exception as e:
-            self.logger.error(f"Error running backtest for hierarchical optimization: {e}")
-            # Return dummy results on error
-            n_samples = len(y_train)
-            return {
-                'predictions': np.random.rand(n_samples),
-                'targets': np.random.randint(0, 2, n_samples),
-                'returns': np.random.randn(n_samples) * 0.01,
-                'regime_labels': None
-            }
+            raise RuntimeError(f"Hierarchical backtest failed: {e}")
     
     def _convert_hierarchical_to_category_format(
         self,

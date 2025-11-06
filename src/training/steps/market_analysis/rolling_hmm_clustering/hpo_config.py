@@ -26,23 +26,20 @@ from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
 )
 from src.training.steps.market_analysis.clusters.clustering_optimization_goals import (
     DEFAULT_CLUSTERING_GOALS,
-    DEFAULT_OPTIMIZATION_TARGETS,
-    calculate_rolling_predictive_ll,
-    calculate_temporal_smoothness,
-    calculate_regime_persistence,
-    calculate_comprehensive_temporal_score,
-    evaluate_clustering_objective
+    DEFAULT_OPTIMIZATION_TARGETS
 )
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_debug
 
 logger = logging.getLogger(__name__)
+
+CV_RATIO_EPS = 1e-9
 
 
 @dataclass
 class HPOConfig:
     """Configuration for hyperparameter optimization."""
     # Optimization stages
-    stages: List[OptimizationStage] = None
+    stages: Optional[List[OptimizationStage]] = None
     n_rounds: int = 2
     enable_final_refinement: bool = True
     final_refinement_trials: int = 50
@@ -62,6 +59,7 @@ class HPOConfig:
     verbose: bool = True
 
     def __post_init__(self):
+        tprint_debug("Initializing HPOConfig dataclass")
         if self.stages is None:
             self.stages = [
                 OptimizationStage.COARSE_GRID,
@@ -72,6 +70,9 @@ class HPOConfig:
         # Validate weights sum to 1
         total_weight = self.weight_predictive_ll + self.weight_temporal + self.weight_economic
         if not np.isclose(total_weight, 1.0):
+            tprint_error(
+                f"⚠️  Invalid objective weights detected (sum={total_weight:.4f}); expected 1.0"
+            )
             raise ValueError(f"Objective weights must sum to 1.0, got {total_weight}")
 
 
@@ -95,6 +96,8 @@ class RollingHMMOptimizer:
         self.config = config
         self.logger = logging.getLogger(__name__)
 
+        tprint_info("🧠 Initializing RollingHMMOptimizer")
+
         # Define parameter groups
         self.param_groups = self._create_parameter_groups()
 
@@ -107,6 +110,7 @@ class RollingHMMOptimizer:
 
     def _create_parameter_groups(self) -> List[ParameterGroup]:
         """Create hierarchical parameter groups for optimization."""
+        tprint_debug("Configuring hierarchical parameter groups for Rolling HMM optimization")
         groups = []
 
         # Group 1: Feature Engineering (highest priority)
@@ -194,12 +198,14 @@ class RollingHMMOptimizer:
         Returns:
             Objective function callable
         """
+        tprint_debug("Creating objective function for hierarchical optimization")
+
         def objective(params: Dict[str, Any]) -> float:
             """
             Objective function for HPO.
 
             Evaluates HMM clustering quality based on:
-            - Predictive log-likelihood (33%)
+            - Statistical cohesion (CV ratio + silhouette)
             - Temporal smoothness (33%)
             - Economic utility (34%)
 
@@ -280,28 +286,32 @@ class RollingHMMOptimizer:
                     temporal_sensitivity_mode="standard"
                 )
 
-                # Calculate objective score
-                # Component 1: Predictive log-likelihood (normalized)
-                score_predictive = metrics.quality_score * self.config.weight_predictive_ll
+                # Calculate objective score using available metrics
+                between_cv = getattr(metrics, 'between_regime_cv', 0.0)
+                within_cv = getattr(metrics, 'within_regime_cv', 0.0)
+                cv_ratio = between_cv / (within_cv + CV_RATIO_EPS) if within_cv is not None else 0.0
+                normalized_cv_ratio = cv_ratio / (cv_ratio + 1.0) if cv_ratio > 0 else 0.0
 
-                # Component 2: Temporal smoothness
+                silhouette_raw = getattr(metrics, 'silhouette_score', 0.0)
+                silhouette_norm = float(np.clip((silhouette_raw + 1.0) / 2.0, 0.0, 1.0))
+
+                stat_score = float(np.clip((normalized_cv_ratio + silhouette_norm) / 2.0, 0.0, 1.0))
+                score_statistical = stat_score * self.config.weight_predictive_ll
+
+                temporal_smoothness = getattr(metrics, 'temporal_smoothness', 0.0)
+                temporal_score = getattr(metrics, 'comprehensive_temporal_score', temporal_smoothness)
                 score_temporal = (
-                    metrics.temporal_smoothness * 0.5 +
-                    metrics.comprehensive_temporal_score * 0.5
+                    temporal_smoothness * 0.5 + temporal_score * 0.5
                 ) * self.config.weight_temporal
 
-                # Component 3: Economic utility
-                score_economic = 0.0
-                if metrics.out_of_sample_sharpe is not None:
-                    # Normalize Sharpe to 0-1 range (assuming Sharpe in [-2, 4])
-                    normalized_sharpe = np.clip((metrics.out_of_sample_sharpe + 2) / 6, 0, 1)
+                sharpe = getattr(metrics, 'out_of_sample_sharpe', None)
+                if sharpe is not None:
+                    normalized_sharpe = np.clip((sharpe + 2) / 6, 0, 1)
                     score_economic = normalized_sharpe * self.config.weight_economic
                 else:
-                    # Fallback: use quality score
-                    score_economic = metrics.quality_score * self.config.weight_economic
+                    score_economic = getattr(metrics, 'quality_score', 0.0) * self.config.weight_economic
 
-                # Total objective
-                objective_score = score_predictive + score_temporal + score_economic
+                objective_score = score_statistical + score_temporal + score_economic
 
                 # Log trial details (similar to statsmodel_clustering pattern)
                 self._log_trial_details(
@@ -352,6 +362,7 @@ class RollingHMMOptimizer:
         # Extract key metrics (matching statsmodel_clustering pattern)
         within_cv = metrics.within_regime_cv if hasattr(metrics, 'within_regime_cv') else 0.0
         between_cv = metrics.between_regime_cv if hasattr(metrics, 'between_regime_cv') else 0.0
+        cv_ratio = between_cv / (within_cv + CV_RATIO_EPS) if within_cv is not None else 0.0
         temporal_smoothness = metrics.temporal_smoothness if hasattr(metrics, 'temporal_smoothness') else 0.0
         quality_score = metrics.quality_score if hasattr(metrics, 'quality_score') else 0.0
         silhouette = metrics.silhouette_score if hasattr(metrics, 'silhouette_score') else 0.0
@@ -379,6 +390,7 @@ class RollingHMMOptimizer:
         tprint(f"Quality Metrics:")
         tprint(f"  • Within-Cluster CV:  {within_cv:8.4f}  (lower = tighter clusters)")
         tprint(f"  • Between-Cluster CV: {between_cv:8.4f}  (higher = better separation)")
+        tprint(f"  • CV Ratio (B/W):     {cv_ratio:8.4f}  (higher = better separation)")
         tprint(f"  • Temporal Smoothness: {temporal_smoothness:8.4f}  (higher = more persistent)")
         tprint(f"  • Silhouette Score:    {silhouette:8.4f}  (higher = better separation)")
         tprint(f"  • Quality Score:       {quality_score:8.4f}  (composite 0-1 score)")
@@ -461,8 +473,6 @@ class RollingHMMOptimizer:
         Returns:
             Optimization result dictionary
         """
-        import itertools
-
         tprint_info("Running custom hierarchical optimization")
 
         # Stage 1: Coarse grid search
@@ -484,15 +494,15 @@ class RollingHMMOptimizer:
         coarse_results = []
 
         # Sample from coarse grid (not exhaustive due to computational cost)
-        n_coarse_samples = min(50, np.prod([len(v) for v in coarse_grid.values()]))
-        self.stage_trials_total = n_coarse_samples
+        n_coarse_samples = min(50, int(np.prod([len(v) for v in coarse_grid.values()])))
+        self.stage_trials_total = int(n_coarse_samples)
         self.stage_trials_completed = 0
 
         tprint(f"Running {n_coarse_samples} coarse grid trials")
 
         for i in range(n_coarse_samples):
             self.current_trial += 1
-            self.stage_trials_completed = i + 1
+            self.stage_trials_completed = int(i + 1)
 
             params = {
                 k: np.random.choice(v) for k, v in coarse_grid.items()
@@ -515,7 +525,7 @@ class RollingHMMOptimizer:
 
         fine_grid = self._create_fine_grid(best_params)
         fine_results = []
-        self.stage_trials_total = len(fine_grid)
+        self.stage_trials_total = int(len(fine_grid))
         self.stage_trials_completed = 0
 
         tprint(f"Running {len(fine_grid)} fine grid trials around best region")
@@ -535,22 +545,26 @@ class RollingHMMOptimizer:
         tprint("")
 
         # Stage 3: Final refinement with random search
+        refinement_results = []
+
         if self.config.enable_final_refinement:
             self.current_stage = "Random Refinement"
             tprint(f"🔍 Stage 3/3: {self.current_stage}")
             tprint(f"{'=' * 90}")
 
-            self.stage_trials_total = self.config.final_refinement_trials
+            self.stage_trials_total = int(self.config.final_refinement_trials)
             self.stage_trials_completed = 0
 
             tprint(f"Running {self.config.final_refinement_trials} refinement trials")
 
             for i in range(self.config.final_refinement_trials):
                 self.current_trial += 1
-                self.stage_trials_completed = i + 1
+                self.stage_trials_completed = int(i + 1)
 
                 params = self._sample_around_best(best_params)
                 score = objective_func(params)
+
+                refinement_results.append((params.copy(), score))
 
                 if score > best_score:
                     best_score = score
@@ -559,16 +573,37 @@ class RollingHMMOptimizer:
             tprint(f"✅ Refinement complete - Best score: {best_score:.4f}")
             tprint("")
 
+        all_round_one_results = coarse_results + fine_results + refinement_results
+
+        second_round_results = []
+        if self.config.n_rounds > 1:
+            best_score, best_params, second_round_results = self._run_second_round(
+                all_round_one_results,
+                objective_func,
+                best_score,
+                best_params
+            )
+
+        total_trials = (
+            len(coarse_results)
+            + len(fine_results)
+            + len(refinement_results)
+            + len(second_round_results)
+        )
+
         return {
             'best_score': best_score,
             'best_params': best_params,
             'coarse_results': coarse_results,
             'fine_results': fine_results,
-            'n_trials': len(coarse_results) + len(fine_results) + self.config.final_refinement_trials
+            'refinement_results': refinement_results,
+            'second_round_results': second_round_results,
+            'n_trials': total_trials
         }
 
     def _create_fine_grid(self, best_params: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Create fine grid around best parameters."""
+        tprint_debug("Generating fine grid candidates around best HPO parameters")
         fine_grid = []
 
         # EWMA config: try adjacent configs
@@ -640,6 +675,7 @@ class RollingHMMOptimizer:
 
     def _sample_around_best(self, best_params: Dict[str, Any]) -> Dict[str, Any]:
         """Sample parameters around best values for refinement."""
+        tprint_debug("Sampling parameters around current best configuration for refinement")
         params = best_params.copy()
 
         # Randomly perturb one or two parameters
@@ -663,6 +699,129 @@ class RollingHMMOptimizer:
                 params[key] = float(np.clip(params[key] + np.random.uniform(-5, 5), 1.0, 50.0))
 
         return params
+
+    SECOND_ROUND_TOP_K = 5
+    SECOND_ROUND_MAX_COMBOS_PER_BASE = 60
+
+    def _run_second_round(
+        self,
+        round_one_results: List[Tuple[Dict[str, Any], float]],
+        objective_func,
+        current_best_score: float,
+        current_best_params: Dict[str, Any]
+    ) -> Tuple[float, Dict[str, Any], List[Tuple[Dict[str, Any], float]]]:
+        """Perform focused second-round search around top performers."""
+
+        if not round_one_results:
+            return current_best_score, current_best_params, []
+
+        sorted_results = sorted(round_one_results, key=lambda x: x[1], reverse=True)
+        top_candidates = sorted_results[: self.SECOND_ROUND_TOP_K]
+
+        candidate_params = self._build_second_round_candidates(top_candidates)
+
+        if not candidate_params:
+            tprint_warning("⚠️  No candidate parameters generated for second-round optimization")
+            return current_best_score, current_best_params, []
+
+        self.current_stage = "Second Round Focused Search"
+        tprint(f"🔁 Initiating {self.current_stage}")
+        tprint(f"{'=' * 90}")
+
+        self.stage_trials_total = int(len(candidate_params))
+        self.stage_trials_completed = 0
+
+        second_round_results: List[Tuple[Dict[str, Any], float]] = []
+
+        for i, params in enumerate(candidate_params):
+            self.current_trial += 1
+            self.stage_trials_completed = i + 1
+
+            score = objective_func(params)
+            second_round_results.append((params.copy(), score))
+
+            if score > current_best_score:
+                current_best_score = score
+                current_best_params = params.copy()
+
+        tprint(f"✅ Second round complete - Best score: {current_best_score:.4f}")
+        tprint("")
+
+        return current_best_score, current_best_params, second_round_results
+
+    def _build_second_round_candidates(
+        self,
+        top_candidates: List[Tuple[Dict[str, Any], float]]
+    ) -> List[Dict[str, Any]]:
+        """Generate parameter combinations around top-performing configurations."""
+
+        candidate_list: List[Dict[str, Any]] = []
+        seen = set()
+
+        for params, _ in top_candidates:
+            expanded = self._generate_second_round_grid(params)
+            for candidate in expanded:
+                key = tuple(sorted(candidate.items()))
+                if key not in seen:
+                    seen.add(key)
+                    candidate_list.append(candidate)
+
+        return candidate_list
+
+    def _generate_second_round_grid(self, base_params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Create bounded grid around a base parameter configuration."""
+
+        ewma_idx = int(base_params.get('ewma_config_idx', 0))
+        n_comp = int(base_params.get('n_components', 5))
+        pca_comp = int(base_params.get('pca_components', 4))
+        min_covar = float(base_params.get('min_covar', 1e-3))
+        kappa = float(base_params.get('kappa', 10.0))
+
+        ewma_candidates = list(range(max(0, ewma_idx - 2), min(5, ewma_idx + 2) + 1))
+        n_comp_candidates = list(range(max(4, n_comp - 2), min(6, n_comp + 2) + 1))
+        pca_comp_candidates = list(range(max(3, pca_comp - 2), min(5, pca_comp + 2) + 1))
+
+        min_covar_multipliers = [0.25, 0.5, 1.0, 2.0, 4.0]
+        min_covar_candidates = sorted({
+            float(np.clip(min_covar * mult, 1e-5, 1e-2))
+            for mult in min_covar_multipliers
+        })
+
+        kappa_offsets = [-10.0, -5.0, 0.0, 5.0, 10.0]
+        kappa_candidates = sorted({
+            float(np.clip(kappa + offset, 1.0, 50.0))
+            for offset in kappa_offsets
+        })
+
+        import itertools
+
+        all_combinations = list(itertools.product(
+            ewma_candidates,
+            n_comp_candidates,
+            pca_comp_candidates,
+            min_covar_candidates,
+            kappa_candidates
+        ))
+
+        max_combos = min(self.SECOND_ROUND_MAX_COMBOS_PER_BASE, len(all_combinations))
+
+        if len(all_combinations) > max_combos:
+            selected_indices = np.random.choice(len(all_combinations), max_combos, replace=False)
+            selected_combos = [all_combinations[idx] for idx in selected_indices]
+        else:
+            selected_combos = all_combinations
+
+        candidate_params = []
+        for combo in selected_combos:
+            candidate_params.append({
+                'ewma_config_idx': int(combo[0]),
+                'n_components': int(combo[1]),
+                'pca_components': int(combo[2]),
+                'min_covar': float(combo[3]),
+                'kappa': float(combo[4])
+            })
+
+        return candidate_params
 
 
 # Default HPO configuration

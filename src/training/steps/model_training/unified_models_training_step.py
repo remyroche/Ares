@@ -6,31 +6,19 @@ into a single unified script that calls UnifiedTrainingPipeline.
 """
 
 import asyncio
-import logging
 import yaml
 import os
 import pandas as pd
 import numpy as np
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from datetime import datetime
-from pathlib import Path
 
-# --- HPO IMPORTS ---
-import optuna
+# HPO imports (only those actually used)
 import lightgbm as lgb
-from sklearn.metrics import mean_squared_error
-from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
-    HierarchicalParameterOptimizer,
-    ParameterGroup,
-    OptimizationStage
-)
 from src.training.steps.model_training.hpo_config import (
     HPOOrchestrator,
-    ModelParameterGroups,
-    YAMLConfigUpdater,
-    CustomBalancedScoreObjective
+    ModelParameterGroups
 )
-# --- END HPO IMPORTS ---
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
@@ -44,9 +32,9 @@ from src.training.steps.model_training.dynamic_config_calculator import (
 # Try to import unified training pipeline if it exists, otherwise use placeholder
 try:
     from src.training.steps.models_training.unified_training_pipeline import UnifiedTrainingPipeline
-    UNIFIED_PIPELINE_AVAILABLE = True
+    unified_pipeline_available = True
 except ImportError:
-    UNIFIED_PIPELINE_AVAILABLE = False
+    unified_pipeline_available = False
     tprint_info("UnifiedTrainingPipeline not available, using placeholder")
 
 
@@ -95,7 +83,7 @@ class UnifiedModelsTrainingStep(BaseStep):
 
         try:
             # Check if unified pipeline is available
-            if not UNIFIED_PIPELINE_AVAILABLE:
+            if not unified_pipeline_available:
                 tprint_error("UnifiedTrainingPipeline not available - cannot train models")
                 return {
                     'success': False,
@@ -112,22 +100,38 @@ class UnifiedModelsTrainingStep(BaseStep):
             yaml_config = await self._load_training_config(training_type, config)
             
             # Retrieve training data and targets from artifacts
-            training_data, analyst_targets, tactician_targets = await self._retrieve_training_data(config)
+            training_data, analyst_targets, tactician_targets = await self._retrieve_training_data(config, yaml_config)
             
             # --- MODIFIED: Retrieve and merge additional features for ensemble/tactician models ---
             if training_type.endswith('ensemble') or training_type == 'tactician_base':
                 tprint_info(f"Retrieving additional model outputs for {training_type}...")
                 # --- FIX 5: Pass training_data for index alignment ---
                 additional_outputs = await self._get_additional_model_outputs(training_type, config, training_data)
-    
+
                 if additional_outputs is not None:
                     # Align indices before concatenating
                     # This alignment is still necessary AFTER resampling, just in case.
+                    tprint_info(
+                        "🔄 Aligning primary training data with additional outputs before concatenation"
+                    )
+                    tprint_info(
+                        f"   ↪ training_data shape={training_data.shape}, columns={len(training_data.columns)}"
+                    )
+                    tprint_info(
+                        f"   ↪ additional_outputs shape={additional_outputs.shape}, columns={len(additional_outputs.columns)}"
+                    )
                     aligned_training_data, aligned_additional_outputs = training_data.align(additional_outputs, join='inner', axis=0)                    
+                    tprint_info(
+                        f"   ↪ aligned_training_data shape={aligned_training_data.shape}, aligned_additional_outputs shape={aligned_additional_outputs.shape}"
+                    )
                     if aligned_training_data.empty:
                         tprint_warning("Data alignment resulted in empty DataFrame. Check for index mismatches.")
                         # Fallback to original data if alignment fails
                     else:
+                        merged_columns = len(aligned_training_data.columns) + len(aligned_additional_outputs.columns)
+                        tprint_info(
+                            f"   ↪ Concatenating columns -> expected merged column count ≈ {merged_columns}"
+                        )
                         training_data = pd.concat([aligned_training_data, aligned_additional_outputs], axis=1)
                         tprint_success(f"✅ Merged additional features. New training data shape: {training_data.shape}")
                 else:
@@ -629,10 +633,6 @@ class UnifiedModelsTrainingStep(BaseStep):
                                 import catboost as cb
                                 model_class = cb.CatBoostRegressor
                                 is_classification = False
-                            elif 'depthwise_cnn' in model_type.lower(): # ADD THIS BLOCK
-                                from src.models.tcn_regressor import DepthwiseSeparableCNNRegressor
-                                model_class = DepthwiseSeparableCNNRegressor
-                                is_classification = False
                             else:
                                 # Skip models we don't support yet (TCN, GRU, etc.)
                                 tprint_info(f"Skipping HPO for {model_name} ({model_type}) - not yet supported")
@@ -809,20 +809,6 @@ class UnifiedModelsTrainingStep(BaseStep):
                     tprint_info(f"  GRU epochs: Reduced to 10")
                     tprint_info(f"  GRU HPO: DISABLED")
 
-                elif model_name == 'DepthwiseCNN':
-                    tprint_warning(f"⚡ Applying {execution_mode.upper()} mode DepthwiseCNN optimizations (10x lighter)")
-                    params = model.get('params', {})
-                    params['epochs'] = 10  # Reduced from 50
-                    params['batch_size'] = 128 # Increased
-                    params['filters'] = 32 # Reduced from 64
-                    params['early_stopping_patience'] = 3 # Reduced from 10
-                    
-                    if 'hpo' in model:
-                        model['hpo']['enabled'] = False
-                    
-                    tprint_info(f"  DepthwiseCNN epochs: 50 → 10 (10x lighter)")
-                    tprint_info(f"  DepthwiseCNN filters: 64 → 32")
-                    tprint_info(f"  DepthwiseCNN HPO: DISABLED")
 
     def _apply_dynamic_config(
         self,
@@ -1007,7 +993,7 @@ class UnifiedModelsTrainingStep(BaseStep):
             self.logger.warning(f"Error applying light mode filter: {e}")
             return training_data
     
-    async def _retrieve_training_data(self, config: Dict[str, Any]) -> tuple:
+    async def _retrieve_training_data(self, config: Dict[str, Any], yaml_config: Dict[str, Any]) -> tuple:
         """Retrieve training data and targets from artifacts with fast-fail on missing data."""
         try:
             tprint_info("🔍 Retrieving training data from feature generation artifacts...")
@@ -1023,16 +1009,23 @@ class UnifiedModelsTrainingStep(BaseStep):
             feature_artifact_names = [
                 f'selected_feature_dataframe_{feature_set_size}',  # Specific size
                 f'selected_features_{feature_set_size}',           # Alternative name
+                f'final_dataset_{feature_set_size}',               # Validation step generic alias
+                f'final_analyst_dataset_{feature_set_size}',       # Analyst-specific validation alias
                 'selected_feature_dataframe_50',                   # Fallback to 50
                 'selected_feature_dataframe_60',                   # Fallback to 60
                 'selected_feature_dataframe_40',                   # Fallback to 40
             ]
+
+            tprint_info(f"🔎 Attempting to load training features from artifacts: {feature_artifact_names}")
+            feature_source_name = None
             
             for artifact_name in feature_artifact_names:
                 try:
+                    tprint_info(f"   ↪ Trying '{artifact_name}'")
                     training_data = self._get_artifact(artifact_name, 'data')
                     if training_data is not None:
-                        tprint_success(f"✅ Retrieved training features from '{artifact_name}': {training_data.shape}")
+                        feature_source_name = artifact_name
+                        tprint_success(f"✅ Retrieved training features from '{artifact_name}': {training_data.shape if hasattr(training_data, 'shape') else type(training_data)}")
                         break
                 except Exception as e:
                     self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
@@ -1048,9 +1041,11 @@ class UnifiedModelsTrainingStep(BaseStep):
                 
                 for artifact_name in alternative_names:
                     try:
+                        tprint_info(f"   ↪ Trying alternative '{artifact_name}'")
                         training_data = self._get_artifact(artifact_name, 'data')
                         if training_data is not None:
-                            tprint_success(f"✅ Retrieved training data from '{artifact_name}': {training_data.shape}")
+                            feature_source_name = artifact_name
+                            tprint_success(f"✅ Retrieved training data from '{artifact_name}': {training_data.shape if hasattr(training_data, 'shape') else type(training_data)}")
                             break
                     except Exception as e:
                         self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
@@ -1071,13 +1066,69 @@ class UnifiedModelsTrainingStep(BaseStep):
                 tprint_error(error_msg)
                 raise ValueError(error_msg)
             
+            # Normalize training_data to DataFrame for downstream processing
+            if training_data is not None and not isinstance(training_data, pd.DataFrame):
+                try:
+                    training_data = pd.DataFrame(training_data)
+                    tprint_warning(f"⚠️ Converted training data from type '{type(training_data)}' to DataFrame")
+                except Exception as e:
+                    tprint_error(f"❌ Failed to convert training data to DataFrame: {e}")
+                    raise
+
+            if training_data is not None and isinstance(training_data, pd.DataFrame):
+                self._log_feature_snapshot(training_data, feature_source_name or 'unknown_source', prefix='📥 Raw load ')
+                tprint_info(
+                    f"🧪 Raw feature frame -> shape={training_data.shape}, columns={len(training_data.columns)}, "
+                    f"dtypes={training_data.dtypes.value_counts().to_dict()}"
+                )
+
+                # Drop duplicate columns to avoid shape mismatches later
+                if training_data.columns.duplicated().any():
+                    duplicate_cols = training_data.columns[training_data.columns.duplicated()].unique().tolist()
+                    tprint_warning(f"🧹 Dropping duplicate columns ({len(duplicate_cols)}): {duplicate_cols}")
+                    training_data = training_data.loc[:, ~training_data.columns.duplicated()].copy()
+
+                # Remove non-numeric columns (they break model training/HPO)
+                non_numeric_cols = training_data.select_dtypes(exclude=[np.number, 'bool']).columns.tolist()
+                if non_numeric_cols:
+                    preview = non_numeric_cols[:10]
+                    suffix = '...' if len(non_numeric_cols) > 10 else ''
+                    tprint_warning(f"⚠️ Dropping {len(non_numeric_cols)} non-numeric columns: {preview}{suffix}")
+                    training_data = training_data.drop(columns=non_numeric_cols)
+                else:
+                    tprint_info("✅ No non-numeric columns detected during cleaning")
+
+                # Convert boolean columns to numeric floats for model compatibility
+                bool_cols = training_data.select_dtypes(include=['bool']).columns.tolist()
+                if bool_cols:
+                    training_data[bool_cols] = training_data[bool_cols].astype(np.float32)
+                    tprint_info(f"ℹ️ Converted boolean columns to float: {bool_cols}")
+                else:
+                    tprint_info("✅ No boolean columns required conversion")
+
+                # Remove obvious target columns that might have slipped into the feature frame
+                potential_target_cols = [
+                    col for col in training_data.columns
+                    if col.lower() in {'target', 'label'}
+                    or col.lower().endswith('_target')
+                    or col.lower().endswith('_label')
+                ]
+                if potential_target_cols:
+                    tprint_warning(f"⚠️ Dropping target-like columns from features: {potential_target_cols}")
+                    training_data = training_data.drop(columns=potential_target_cols)
+                else:
+                    tprint_info("✅ No target-like columns detected in feature frame")
+
+                if training_data.empty:
+                    raise ValueError("All feature columns were removed during cleaning; check upstream artifacts.")
+
+                self._log_feature_snapshot(training_data, feature_source_name or 'unknown_source', prefix='🧹 Cleaned ')
+                tprint_info(
+                    f"🧼 Post-cleaning feature frame -> shape={training_data.shape}, columns={len(training_data.columns)}, "
+                    f"dtypes={training_data.dtypes.value_counts().to_dict()}"
+                )
+
             # Get targets from labeling integration step
-            target_artifact_names = [
-                'analyst_targets',             # Specific analyst targets
-                'tactician_targets',           # Specific tactician targets
-                'targets',                     # Generic targets
-                'labeling_metadata',           # From labeling step
-            ]
             
             # Try to get analyst targets
             for artifact_name in ['analyst_targets', 'targets']:
@@ -1125,8 +1176,30 @@ class UnifiedModelsTrainingStep(BaseStep):
                                     tprint_warning(f"⚠️ Shape mismatch detected! Features: {len(training_data)}, Targets: {len(analyst_targets)}")
                                     tprint_warning(f"⚠️ Attempting to align by using labeled_data as both features and targets...")
                                     
-                                    # Use labeled_data for features (drop target columns)
+                                    # Use labeled_data for features (drop target columns and raw OHLCV)
                                     all_non_feature_cols = target_cols + [col for col in labeled_data.columns if 'timestamp' in col.lower() or 'datetime' in col.lower()]
+                                    
+                                    # Also exclude raw OHLCV features using configuration
+                                    ohlcv_config = yaml_config.get('feature_engineering', {}).get('exclude_raw_ohlcv', {})
+                                    if ohlcv_config.get('enabled', True):
+                                        ohlcv_patterns = ohlcv_config.get('excluded_patterns', ['volume', 'close', 'high', 'open', 'low'])
+                                        technical_terms = ohlcv_config.get('technical_indicators', ['rsi', 'sma', 'ema', 'bb_', 'macd', 'atr', 'roc', 'mom', 
+                                                                                                 'return', 'pct', 'ratio', 'std', 'volatility', 'trend',
+                                                                                                 'momentum', 'oscillator', 'signal', 'cross', 'divergence'])
+                                    else:
+                                        # Fallback to hardcoded values if config is disabled
+                                        ohlcv_patterns = ['volume', 'close', 'high', 'open', 'low']
+                                        technical_terms = ['rsi', 'sma', 'ema', 'bb_', 'macd', 'atr', 'roc', 'mom', 
+                                                         'return', 'pct', 'ratio', 'std', 'volatility', 'trend',
+                                                         'momentum', 'oscillator', 'signal', 'cross', 'divergence']
+                                    
+                                    for col in labeled_data.columns:
+                                        col_lower = col.lower()
+                                        if any(pattern in col_lower for pattern in ohlcv_patterns):
+                                            is_raw_ohlcv = not any(term in col_lower for term in technical_terms)
+                                            if is_raw_ohlcv and col not in all_non_feature_cols:
+                                                all_non_feature_cols.append(col)
+                                    
                                     feature_cols = [col for col in labeled_data.columns if col not in all_non_feature_cols]
                                     training_data = labeled_data[feature_cols]
                                     analyst_targets = labeled_data[target_cols[0]]
@@ -1178,6 +1251,40 @@ class UnifiedModelsTrainingStep(BaseStep):
                     analyst_targets = analyst_targets.loc[common_index]
                 tprint_success(f"✅ Aligned features and tactician targets. New shape: {training_data.shape}")
                 
+            # Exclude raw OHLCV features from training data as requested
+            if training_data is not None:
+                excluded_ohlcv_features = []
+                
+                # Get OHLCV exclusion configuration from YAML config
+                ohlcv_config = yaml_config.get('feature_engineering', {}).get('exclude_raw_ohlcv', {})
+                if ohlcv_config.get('enabled', True):
+                    ohlcv_patterns = ohlcv_config.get('excluded_patterns', ['volume', 'close', 'high', 'open', 'low'])
+                    technical_terms = ohlcv_config.get('technical_indicators', ['rsi', 'sma', 'ema', 'bb_', 'macd', 'atr', 'roc', 'mom', 
+                                                                             'return', 'pct', 'ratio', 'std', 'volatility', 'trend',
+                                                                             'momentum', 'oscillator', 'signal', 'cross', 'divergence'])
+                else:
+                    # Fallback to hardcoded values if config is disabled
+                    ohlcv_patterns = ['volume', 'close', 'high', 'open', 'low']
+                    technical_terms = ['rsi', 'sma', 'ema', 'bb_', 'macd', 'atr', 'roc', 'mom', 
+                                     'return', 'pct', 'ratio', 'std', 'volatility', 'trend',
+                                     'momentum', 'oscillator', 'signal', 'cross', 'divergence']
+                
+                for col in training_data.columns:
+                    col_lower = col.lower()
+                    if any(pattern in col_lower for pattern in ohlcv_patterns):
+                        # Only exclude if it's a raw OHLCV column, not derived features
+                        # Raw OHLCV columns are typically named exactly with these patterns
+                        # and don't contain additional technical indicator terms
+                        is_raw_ohlcv = not any(term in col_lower for term in technical_terms)
+                        
+                        if is_raw_ohlcv:
+                            excluded_ohlcv_features.append(col)
+                
+                if excluded_ohlcv_features:
+                    tprint_warning(f"🚨 Excluding raw OHLCV features from training: {excluded_ohlcv_features}")
+                    training_data = training_data.drop(columns=excluded_ohlcv_features)
+                    tprint_success(f"✅ Removed {len(excluded_ohlcv_features)} raw OHLCV features. New shape: {training_data.shape}")
+            
             # Log summary
             tprint_info("📊 Training Data Summary:")
             tprint_info(f"   Features: {training_data.shape[0]} samples × {training_data.shape[1]} features")
@@ -1242,6 +1349,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                 # Attempt to load regime probabilities (likely from 1h timeframe)
                 regime_features = self._get_artifact('regime_probabilities', 'data')
                 if regime_features is not None:
+                    tprint_info(f"   ↪ Retrieved regime features: shape={regime_features.shape}, columns={len(regime_features.columns)}")
                     tprint_info(f"Retrieved regime features: {regime_features.shape}")
                     # Resample regime features (e.g., 1h) to match training data (e.g., 15m)
                     if not regime_features.index.equals(training_data.index):
@@ -1249,9 +1357,13 @@ class UnifiedModelsTrainingStep(BaseStep):
                         # Use ffill to apply the 1h regime to all 15m candles within that hour
                         # Use bfill to handle any NaNs at the very beginning
                         regime_features_resampled = regime_features.reindex(training_data.index, method='ffill').fillna(method='bfill')
+                        tprint_info(
+                            f"   ↪ Resampled regime features -> shape={regime_features_resampled.shape}, columns={len(regime_features_resampled.columns)}"
+                        )
                         additional_features_list.append(regime_features_resampled)
                         tprint_success("✅ Resampled and added regime features.")
                     else:
+                        tprint_info("   ↪ Regime features already aligned with training index")
                         additional_features_list.append(regime_features)
                 else:
                     tprint_warning("⚠️ Regime features artifact ('regime_probabilities') not found.")
@@ -1268,8 +1380,14 @@ class UnifiedModelsTrainingStep(BaseStep):
                     if not base_outputs.index.equals(training_data.index):
                         tprint_warning(f"Aligning 'analyst_base_outputs' index to training data.")
                         base_outputs = base_outputs.reindex(training_data.index, method='ffill').fillna(method='bfill')
+                        tprint_info(
+                            f"   ↪ Resampled analyst_base_outputs -> shape={base_outputs.shape}, columns={len(base_outputs.columns)}"
+                        )
                     additional_features_list.append(base_outputs)
                     base_outputs_for_stats = base_outputs # Calculate stats on these
+                    tprint_info(
+                        f"   ↪ Added analyst_base_outputs features, cumulative={sum(df.shape[1] for df in additional_features_list)} columns"
+                    )
 
             elif training_type == 'tactician_base':
                 # Base model for tactician_base is the analyst_ensemble output
@@ -1279,7 +1397,13 @@ class UnifiedModelsTrainingStep(BaseStep):
                     if not analyst_outputs.index.equals(training_data.index):
                         tprint_warning(f"Aligning 'analyst_ensemble_outputs' index to training data.")
                         analyst_outputs = analyst_outputs.reindex(training_data.index, method='ffill').fillna(method='bfill')
+                        tprint_info(
+                            f"   ↪ Resampled analyst_ensemble_outputs -> shape={analyst_outputs.shape}, columns={len(analyst_outputs.columns)}"
+                        )
                     additional_features_list.append(analyst_outputs)
+                    tprint_info(
+                        f"   ↪ Added analyst_ensemble_outputs features, cumulative={sum(df.shape[1] for df in additional_features_list)} columns"
+                    )
                 # No stats needed here, this is for a base model
 
             elif training_type == 'tactician_ensemble':
@@ -1293,14 +1417,26 @@ class UnifiedModelsTrainingStep(BaseStep):
                     if not analyst_outputs.index.equals(training_data.index):
                         tprint_warning(f"Aligning 'analyst_ensemble_outputs' index to training data.")
                         analyst_outputs = analyst_outputs.reindex(training_data.index, method='ffill').fillna(method='bfill')
+                        tprint_info(
+                            f"   ↪ Resampled analyst_ensemble_outputs -> shape={analyst_outputs.shape}, columns={len(analyst_outputs.columns)}"
+                        )
                     additional_features_list.append(analyst_outputs)
+                    tprint_info(
+                        f"   ↪ Added analyst_ensemble_outputs features, cumulative={sum(df.shape[1] for df in additional_features_list)} columns"
+                    )
 
                 if tactician_base_outputs is not None:
                     # --- FIX 5: Resample/Reindex ---
                     if not tactician_base_outputs.index.equals(training_data.index):
                         tprint_warning(f"Aligning 'tactician_base_outputs' index to training data.")
                         tactician_base_outputs = tactician_base_outputs.reindex(training_data.index, method='ffill').fillna(method='bfill')
+                        tprint_info(
+                            f"   ↪ Resampled tactician_base_outputs -> shape={tactician_base_outputs.shape}, columns={len(tactician_base_outputs.columns)}"
+                        )
                     additional_features_list.append(tactician_base_outputs)
+                    tprint_info(
+                        f"   ↪ Added tactician_base_outputs features, cumulative={sum(df.shape[1] for df in additional_features_list)} columns"
+                    )
                     base_outputs_for_stats = tactician_base_outputs # Calculate stats on these
 
             # --- NEW: Calculate ensemble meta-features ---
@@ -1325,6 +1461,17 @@ class UnifiedModelsTrainingStep(BaseStep):
         except Exception as e:
             self.logger.error(f"Error retrieving additional model outputs: {e}")
             return None
+
+    def _log_feature_snapshot(self, df: pd.DataFrame, source_name: str, prefix: str = "") -> None:
+        """Log concise diagnostics about the feature dataframe."""
+        try:
+            n_samples, n_features = df.shape
+            dtypes_summary = df.dtypes.value_counts().to_dict()
+            sample_columns = df.columns[:10].tolist()
+            tprint_info(f"{prefix}source={source_name}, samples={n_samples}, features={n_features}, dtypes={dtypes_summary}")
+            tprint_info(f"{prefix}sample columns: {sample_columns}{'...' if n_features > len(sample_columns) else ''}")
+        except Exception as exc:
+            self.logger.debug(f"Failed to log feature snapshot for {source_name}: {exc}")
 
     async def _execute_training_by_type(
         self, 

@@ -9,7 +9,7 @@ import os
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -30,15 +30,24 @@ class KlinesParquetManager:
         """
         self.data_dir = Path(data_dir)
         self.exchange = exchange.lower()
-        self.raw_data_dir = self.data_dir / self.exchange
-        self.processed_data_dir = self.data_dir / self.exchange
+        self.exchange_dir = self.data_dir / self.exchange
         self.logger = logging.getLogger("KlinesParquetManager")
         self.parquet_utils = ParquetUtils()
         self.data_processor = DataProcessor()
 
         # Create directories
-        self.raw_data_dir.mkdir(parents=True, exist_ok=True)
-        self.processed_data_dir.mkdir(parents=True, exist_ok=True)
+        self.exchange_dir.mkdir(parents=True, exist_ok=True)
+
+    def _get_symbol_data_dir(self, symbol: str, data_type: str) -> Path:
+        """Resolve the directory for a given symbol and data type."""
+        symbol_dir = self.exchange_dir / symbol.lower()
+        subdir = "raw" if data_type == "raw" else "processed"
+        return symbol_dir / subdir
+
+    def _ensure_symbol_dirs(self, symbol: str) -> None:
+        """Ensure raw and processed subdirectories exist for the symbol."""
+        for subdir in ("raw", "processed"):
+            (self.exchange_dir / symbol.lower() / subdir).mkdir(parents=True, exist_ok=True)
 
     def _get_last_x_days_fallback(self, df: pd.DataFrame, x_days: int = 20) -> Optional[pd.DataFrame]:
         """Get the last x days of available data as a fallback.
@@ -207,10 +216,8 @@ class KlinesParquetManager:
             Dictionary with data information
         """
         try:
-            if data_type == "raw":
-                data_dir = self.raw_data_dir / symbol.lower() / "raw"
-            else:
-                data_dir = self.processed_data_dir / symbol.lower() / "processed"
+            self._ensure_symbol_dirs(symbol)
+            data_dir = self._get_symbol_data_dir(symbol, data_type)
 
             if not data_dir.exists():
                 return {
@@ -388,12 +395,8 @@ class KlinesParquetManager:
                 self.logger.info(f"🔄 Auto-switching to processed data for {interval} timeframe")
                 data_type = "processed"
 
-            if data_type == "raw":
-                data_dir = self.raw_data_dir / symbol.lower() / "raw"
-                pattern = f"{symbol.lower()}_{interval}_*.parquet"
-            else:
-                data_dir = self.processed_data_dir / symbol.lower() / "processed"
-                pattern = f"{symbol.lower()}_{interval}"
+            data_dir = self._get_symbol_data_dir(symbol, data_type)
+            pattern = f"{symbol.lower()}_{interval}_*.parquet" if data_type == "raw" else f"{symbol.lower()}_{interval}"
 
             if not data_dir.exists():
                 self.logger.warning(f"No data directory found for {symbol} {interval}")
@@ -1067,12 +1070,8 @@ class KlinesParquetManager:
                 self.logger.warning("Cannot write empty DataFrame")
                 return False
 
-            if data_type == "raw":
-                data_dir = self.raw_data_dir / symbol.lower() / "raw"
-            else:
-                data_dir = self.processed_data_dir / symbol.lower() / "processed"
-
-            data_dir.mkdir(parents=True, exist_ok=True)
+            self._ensure_symbol_dirs(symbol)
+            data_dir = self._get_symbol_data_dir(symbol, data_type)
 
             # Add metadata if not present
             if 'symbol' not in df.columns:
@@ -1243,11 +1242,13 @@ class KlinesParquetManager:
             True if successful, False otherwise
         """
         try:
+            self._ensure_symbol_dirs(symbol)
+
             if data_type == "raw":
-                data_dir = self.raw_data_dir / symbol.lower() / "raw"
+                data_dir = self._get_symbol_data_dir(symbol, "raw")
                 pattern = f"{symbol.lower()}_{interval}_*.parquet"
             else:
-                data_dir = self.processed_data_dir / symbol.lower() / "processed"
+                data_dir = self._get_symbol_data_dir(symbol, "processed")
                 pattern = f"{symbol.lower()}_{interval}"
 
             if not data_dir.exists():
@@ -1317,7 +1318,7 @@ class KlinesParquetManager:
             available_data = {}
 
             # Check raw data
-            for symbol_dir in self.raw_data_dir.iterdir():
+            for symbol_dir in self.exchange_dir.iterdir():
                 if symbol_dir.is_dir():
                     symbol = symbol_dir.name.upper()
                     raw_dir = symbol_dir / "raw"
@@ -1334,7 +1335,7 @@ class KlinesParquetManager:
                             available_data[symbol] = list(intervals)
 
             # Check processed data
-            for symbol_dir in self.processed_data_dir.iterdir():
+            for symbol_dir in self.exchange_dir.iterdir():
                 if symbol_dir.is_dir():
                     symbol = symbol_dir.name.upper()
                     processed_dir = symbol_dir / "processed"

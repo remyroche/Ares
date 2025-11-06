@@ -140,8 +140,8 @@ class QualityThresholds:
     ECONOMIC_TARGET_RETURN = 0.007 
     
     # Quality score weights
-    WEIGHT_TEMPORAL_SMOOTHNESS = 0.30
-    WEIGHT_CV_RATIO = 0.30
+    WEIGHT_TEMPORAL_SMOOTHNESS = 0.25
+    WEIGHT_CV_RATIO = 0.35
     WEIGHT_SILHOUETTE = 0.20
     WEIGHT_BALANCE = 0.10
     WEIGHT_NOISE_RATIO = 0.10
@@ -780,7 +780,11 @@ class ClusterQualityAssessor:
                 regime_labels, features_clean, non_noise_mask
             )
             num_categories = len(metrics.feature_category_cv_metrics)
-            tprint_success(f"✅ Calculated CV metrics for {num_categories} feature categories")
+            category_names = ", ".join(metrics.feature_category_cv_metrics.keys()) or "<none>"
+            tprint_success(
+                f"✅ Calculated CV metrics for {num_categories} feature categories"
+                + (f" ({category_names})" if num_categories else "")
+            )
         except Exception as e:
             tprint_error(f"❌ Failed to calculate per-category CV metrics: {e}")
         
@@ -1466,13 +1470,13 @@ class ClusterQualityAssessor:
                 f"regime_labels length ({len(regime_labels)}). Using simple smoothness calculation."
             )
         
-        # Count regime transitions
+        # Count regime transitions and their magnitude
         regime_changes = np.sum(regime_labels[1:] != regime_labels[:-1])
         max_possible_changes = len(regime_labels) - 1
-        
+
         if max_possible_changes == 0:
             return 1.0, 1.0, 0.0
-        
+
         # Raw smoothness score: fewer changes = higher smoothness
         if sensitivity_mode == "standard":
             smoothness_raw = 1.0 - (regime_changes / max_possible_changes)
@@ -1498,13 +1502,14 @@ class ClusterQualityAssessor:
             smoothness_raw = 1.0 - (regime_changes / max_possible_changes)
         
         # Detect flip-flop patterns (A→B→A): regime at t-2 equals regime at t, but differs from t-1
-        flip_flops = 0.0
-        if len(regime_labels) >= 3:
-            flip_flops = np.sum(
-                (regime_labels[:-2] == regime_labels[2:]) & 
+        if len(regime_labels) < 3:
+            flip_flops = 0.0
+        else:
+            flip_flops = float(np.sum(
+                (regime_labels[:-2] == regime_labels[2:]) &
                 (regime_labels[:-2] != regime_labels[1:-1])
-            )
-        
+            ))
+
         # Calculate flip-flop ratio
         flip_flop_ratio = flip_flops / max_possible_changes if max_possible_changes > 0 else 0.0
         
@@ -1539,9 +1544,15 @@ class ClusterQualityAssessor:
         # Final smoothness with ALL penalties AND bonuses
         # Penalties subtract from raw score, bonuses add to it
         total_penalties = flip_flop_penalty + short_lived_penalty + autocorr_penalty
-        total_bonuses = regime_duration_bonus + low_transition_bonus
-        smoothness_final = max(0.0, min(1.0, smoothness_raw - total_penalties + total_bonuses))
-        
+        base_adjusted = np.clip(smoothness_raw - total_penalties, 0.0, 1.0)
+
+        # Apply bonuses as proportional uplift without saturating at 1.0
+        total_bonuses = max(0.0, regime_duration_bonus + low_transition_bonus)
+        bonus_factor = np.clip(total_bonuses, 0.0, 1.0)
+        max_lift = max(0.0, smoothness_raw - base_adjusted)
+        smoothness_final = float(base_adjusted + max_lift * bonus_factor)
+        smoothness_final = float(min(smoothness_final, smoothness_raw))
+
         return float(smoothness_final), float(smoothness_raw), float(flip_flop_ratio)
 
     def _calculate_transition_weights(self, regime_labels: np.ndarray) -> np.ndarray:
@@ -2829,8 +2840,9 @@ class ClusterQualityAssessor:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"cluster_quality_report_{symbol}_{timestamp}.md"
             report_path = output_path / filename
-            
-            tprint_info(f"📝 Generating markdown report: {report_path}")
+            absolute_report_path = report_path.resolve()
+
+            tprint_info(f"📝 Generating markdown report: {absolute_report_path}")
             
             # Build markdown content
             md_content = self._build_markdown_content(metrics, symbol, method_specific_config)
@@ -2839,8 +2851,8 @@ class ClusterQualityAssessor:
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(md_content)
             
-            tprint_success(f"✅ Report generated successfully: {report_path}")
-            return str(report_path)
+            tprint_success(f"✅ Report generated successfully: {absolute_report_path}")
+            return str(absolute_report_path)
             
         except Exception as e:
             tprint_error(f"❌ Failed to generate markdown report: {e}")
@@ -2902,7 +2914,9 @@ class ClusterQualityAssessor:
             csv_filename = f"cluster_quality_metrics_{symbol}_{timestamp}.csv"
             csv_path = output_path / csv_filename
             
-            tprint_info(f"📊 Generating detailed quality metrics CSV: {csv_path}")
+            absolute_csv_path = csv_path.resolve()
+
+            tprint_info(f"📊 Generating detailed quality metrics CSV: {absolute_csv_path}")
             
             # Prepare comprehensive CSV data
             csv_data = []
@@ -3009,8 +3023,8 @@ class ClusterQualityAssessor:
                 writer = csv.writer(f)
                 writer.writerows(csv_data)
             
-            tprint_success(f"✅ Quality metrics CSV generated: {csv_path}")
-            return str(csv_path)
+            tprint_success(f"✅ Quality metrics CSV generated: {absolute_csv_path}")
+            return str(absolute_csv_path)
             
         except Exception as e:
             tprint_error(f"❌ Failed to generate quality metrics CSV: {e}")
@@ -3024,7 +3038,9 @@ class ClusterQualityAssessor:
             csv_filename = f"all_trials_results_{symbol}_{timestamp}.csv"
             csv_path = output_path / csv_filename
             
-            tprint_info(f"📋 Generating all trials CSV: {csv_path}")
+            absolute_csv_path = csv_path.resolve()
+
+            tprint_info(f"📋 Generating all trials CSV: {absolute_csv_path}")
             
             # Prepare comprehensive CSV data for all trials
             csv_data = []
@@ -3130,8 +3146,8 @@ class ClusterQualityAssessor:
                 writer = csv.writer(f)
                 writer.writerows(csv_data)
             
-            tprint_success(f"✅ All trials CSV generated: {csv_path}")
-            return str(csv_path)
+            tprint_success(f"✅ All trials CSV generated: {absolute_csv_path}")
+            return str(absolute_csv_path)
             
         except Exception as e:
             tprint_error(f"❌ Failed to generate all trials CSV: {e}")

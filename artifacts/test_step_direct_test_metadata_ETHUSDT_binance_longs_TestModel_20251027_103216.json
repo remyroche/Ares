@@ -1,9 +1,0 @@
-{
-  "test": true,
-  "artifact_name": "direct_test",
-  "artifact_type": "data",
-  "file_path": "artifacts/pre_training/ETHUSDT/binance/longs/TestModel/test_step/test_step_direct_test_ETHUSDT_binance_longs_TestModel_20251027_103216.parquet",
-  "file_size": 1683,
-  "timestamp": "2025-10-27T10:32:16.160630",
-  "compression": "auto"
-}

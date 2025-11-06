@@ -494,8 +494,19 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 tprint("🔧 [REGIME_ENSEMBLE] Using fallback split method", color="yellow")
                 # Fallback to random split if temporal validation fails
                 from sklearn.model_selection import train_test_split
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X_processed, y_processed, test_size=0.3, random_state=42, stratify=y_processed
+                (
+                    X_train,
+                    X_test,
+                    y_train,
+                    y_test,
+                    train_indices,
+                    test_indices,
+                ) = self._perform_random_split_with_indices(
+                    X_processed,
+                    y_processed,
+                    test_size=0.3,
+                    random_state=42,
+                    stratify=y_processed,
                 )
             else:
                 tprint("✅ [REGIME_ENSEMBLE] Temporal validation passed - no data leakage detected", color="green")
@@ -685,6 +696,36 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
 
         tprint(f"✅ [REGIME_ENSEMBLE] Data prepared - X: {X.shape}, y: {y.shape}, regime_labels: {regime_labels.shape if regime_labels is not None else 'None'}", color="green")
         return X, y, regime_labels
+
+    def _perform_random_split_with_indices(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        test_size: float = 0.3,
+        random_state: int = 42,
+        stratify: Optional[np.ndarray] = None,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Perform a random train/test split while preserving original indices."""
+        from sklearn.model_selection import train_test_split
+
+        indices = np.arange(len(X))
+        stratify_labels = stratify if stratify is not None else None
+
+        train_indices, test_indices = train_test_split(
+            indices,
+            test_size=test_size,
+            random_state=random_state,
+            stratify=stratify_labels,
+        )
+
+        return (
+            X[train_indices],
+            X[test_indices],
+            y[train_indices],
+            y[test_indices],
+            train_indices,
+            test_indices,
+        )
 
     def _create_enhanced_meta_features(self, meta_features: np.ndarray, y: np.ndarray, base_model_predictions: Optional[np.ndarray] = None) -> np.ndarray:
         """
@@ -949,10 +990,10 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             try:
                 calibrated_meta_learner = CalibratedClassifierCV(
                     meta_learner,
-                    method='isotonic',
-                    cv=3
+                    method=self.ensemble_config.get('calibration_method', 'isotonic'),
+                    cv=self.ensemble_config.get('cv_folds', 3)
                 )
-                calibrated_meta_learner.fit(meta_features, y, sample_weight=sample_weight) 
+                calibrated_meta_learner.fit(enhanced_meta_features, y, sample_weight=sample_weight) 
                 tprint("✅ [REGIME_ENSEMBLE] Probability calibration applied successfully", color="green")
 
                 # Create feature contract for the ensemble

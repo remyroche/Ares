@@ -11,7 +11,11 @@ import logging
 from src.training.common.component_result import ComponentError, ComponentResult
 from src.training.common.artifact_persistence import SaveReport
 from src.utils.logger import system_logger
-from .artifact_manager import ArtifactManager
+
+try:
+    from .artifact_manager import ArtifactManager
+except ModuleNotFoundError:
+    from src.utils.artifact_manager import ArtifactManager
 
 # Import ModularComponent for enhanced functionality - REMOVED
 MODULAR_COMPONENT_AVAILABLE = False

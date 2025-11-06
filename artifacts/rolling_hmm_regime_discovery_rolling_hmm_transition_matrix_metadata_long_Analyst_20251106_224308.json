@@ -1,0 +1,11 @@
+{
+  "symbol": "ETHUSDT",
+  "exchange": "binance",
+  "timeframe": "1h",
+  "artifact_name": "rolling_hmm_transition_matrix",
+  "artifact_type": "data",
+  "file_path": "artifacts/market_analysis/long/Analyst/rolling_hmm_regime_discovery/rolling_hmm_regime_discovery_rolling_hmm_transition_matrix_long_Analyst_20251106_224308.parquet",
+  "file_size": 5206,
+  "timestamp": "2025-11-06T22:45:58.258188",
+  "compression": "auto"
+}

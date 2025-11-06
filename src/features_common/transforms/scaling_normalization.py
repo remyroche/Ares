@@ -24,15 +24,107 @@ except ImportError:
     VECTORBT_AVAILABLE = False
 
 try:
-    from src.utils.tprint import tprint, tprint_error, tprint_warning, tprint_success, tprint_debug
+    from src.utils.tprint import tprint, tprint_info, tprint_error, tprint_warning, tprint_success, tprint_debug
     TPRINT_AVAILABLE = True
 except ImportError:
     TPRINT_AVAILABLE = False
     def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
     def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+
+# Functional helpers are re-exported for legacy consumers that expect
+# lightweight normalization utilities without instantiating the full
+# ScalingNormalizer class.
+__all__ = [
+    "ScalingNormalizer",
+    "zscore_normalize",
+    "robust_normalize",
+    "rank_normalize",
+]
+
+
+def _normalize_input(data: Union[pd.DataFrame, pd.Series]) -> Tuple[pd.DataFrame, bool]:
+    """Convert input to DataFrame and track whether it was originally a Series."""
+    if isinstance(data, pd.Series):
+        return data.to_frame(), True
+    if not isinstance(data, pd.DataFrame):
+        raise TypeError("Input must be a pandas Series or DataFrame")
+    return data, False
+
+
+def _restore_output(result: pd.DataFrame, was_series: bool, original: Union[pd.DataFrame, pd.Series]) -> Union[pd.DataFrame, pd.Series]:
+    """Convert back to Series if input was Series, preserving name/index."""
+    if was_series:
+        series = result.iloc[:, 0]
+        series.name = getattr(original, "name", None)
+        return series
+    return result
+
+
+def zscore_normalize(
+    data: Union[pd.DataFrame, pd.Series],
+    ddof: int = 0,
+) -> Union[pd.DataFrame, pd.Series]:
+    """Apply z-score normalization column-wise."""
+    df, was_series = _normalize_input(data)
+
+    means = df.mean(axis=0)
+    stds = df.std(axis=0, ddof=ddof)
+    stds_replaced = stds.replace(0, np.nan)
+    normalized = (df - means) / stds_replaced
+    normalized = normalized.fillna(0.0)
+
+    return _restore_output(normalized.astype(float), was_series, data)
+
+
+def robust_normalize(
+    data: Union[pd.DataFrame, pd.Series],
+    center: str = "median",
+    scale: str = "mad",
+    epsilon: float = 1e-9,
+) -> Union[pd.DataFrame, pd.Series]:
+    """Apply robust normalization using median/IQR style scaling."""
+    df, was_series = _normalize_input(data)
+
+    if center == "median":
+        centers = df.median(axis=0)
+    elif center == "mean":
+        centers = df.mean(axis=0)
+    else:
+        raise ValueError("center must be 'median' or 'mean'")
+
+    if scale == "mad":
+        scales = (df - centers).abs().median(axis=0)
+    elif scale == "iqr":
+        q75 = df.quantile(0.75, axis=0)
+        q25 = df.quantile(0.25, axis=0)
+        scales = q75 - q25
+    else:
+        raise ValueError("scale must be 'mad' or 'iqr'")
+
+    scales = scales.replace(0, np.nan)
+    normalized = (df - centers) / (scales + epsilon)
+    normalized = normalized.fillna(0.0)
+
+    return _restore_output(normalized.astype(float), was_series, data)
+
+
+def rank_normalize(
+    data: Union[pd.DataFrame, pd.Series],
+    method: str = "average",
+    ascending: bool = True,
+) -> Union[pd.DataFrame, pd.Series]:
+    """Apply percentile rank normalization column-wise."""
+    df, was_series = _normalize_input(data)
+
+    normalized = df.rank(method=method, ascending=ascending, pct=True)
+    normalized = normalized.fillna(0.5)
+
+    return _restore_output(normalized.astype(float), was_series, data)
+
 
 class ScalingNormalizer:
     """
@@ -256,6 +348,9 @@ class ScalingNormalizer:
                 else:
                     selected_strategy = strategy or self.default_strategy
 
+                # Normalize naming differences (e.g. zscore -> standard)
+                selected_strategy = self._normalize_strategy_name(selected_strategy)
+
                 # Apply scaling
                 scaled_feature = self._apply_scaling(
                     data[feature], feature, selected_strategy, fit=True
@@ -271,6 +366,18 @@ class ScalingNormalizer:
 
         tprint_success(f"✅ Scaling completed: {len(feature_list)} features processed")
         return scaled_data
+
+    @staticmethod
+    def _normalize_strategy_name(name: Optional[str]) -> Optional[str]:
+        if name is None:
+            return None
+        aliases = {
+            'zscore': 'standard',
+            'standardize': 'standard',
+            'robust_zscore': 'robust',
+        }
+        lowered = name.lower()
+        return aliases.get(lowered, lowered)
 
     def _vectorbt_fit_transform(self, data: pd.DataFrame,
                                feature_list: List[str],

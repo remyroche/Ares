@@ -74,53 +74,43 @@ analyst_config:
           subsample: 0.6
           colsample_bytree: 0.6
         last_optimization:
-          timestamp: '2025-11-03T23:50:36.515432'
+          timestamp: '2025-11-06T23:48:00.266367'
           best_score: 0.0
           total_trials: 12
-          total_time_seconds: 0.009772062301635742
+          total_time_seconds: 0.014279842376708984
           n_rounds: 2
-    tcn:
-      model_type: CausalDilatedTCN
+    depthwise_cnn:
+      model_type: DepthwiseSeparableCNNRegressor
       params:
-        num_filters: 64
-        num_layers: 4
+        filters: 64
         kernel_size: 3
-        dilation_base: 2
         dropout: 0.2
         learning_rate: 0.001
         batch_size: 64
         epochs: 50
+        validation_split: 0.2
         early_stopping_patience: 7
-        use_autoencoder: true
-        autoencoder_path: models/analyst_autoencoder_encoder.pth
-        latent_dim: 16
-        train_autoencoder_if_missing: true
-        autoencoder_epochs: 25
+        reduce_lr_patience: 5
+        verbose: 0
+        use_batch_norm: false
       hpo:
         enabled: true
         n_rounds: 2
         enable_final_refinement: true
         final_refinement_trials: 50
         search_space:
-          num_filters:
+          filters:
             type: categorical
             choices:
             - 32
             - 64
             - 128
-            - 256
-          num_layers:
-            type: int
-            low: 2
-            high: 6
           kernel_size:
-            type: int
-            low: 2
-            high: 5
-          dilation_base:
-            type: int
-            low: 2
-            high: 4
+            type: categorical
+            choices:
+            - 2
+            - 3
+            - 5
           dropout:
             type: float
             low: 0.1
@@ -137,6 +127,11 @@ analyst_config:
             - 64
             - 128
             - 256
+          use_batch_norm:
+            type: categorical
+            choices:
+            - false
+            - true
         optimal_params: {}
     catboost:
       model_type: CatBoostRegressor
@@ -198,15 +193,14 @@ analyst_config:
           learning_rate: 0.01
           iterations: 300
           l2_leaf_reg: 1.0
-          sampling_rate: 0.6
           bootstrap_type: Bernoulli
           subsample: 0.6
           colsample_bylevel: 0.6
         last_optimization:
-          timestamp: '2025-11-03T23:50:36.552549'
+          timestamp: '2025-11-06T23:48:00.347114'
           best_score: 0.0
           total_trials: 12
-          total_time_seconds: 0.00586390495300293
+          total_time_seconds: 0.025444746017456055
           n_rounds: 2
   training:
     training_samples: 50000
@@ -229,6 +223,34 @@ analyst_config:
     generate_reports: true
     output_dir: ./analyst_base_models
 feature_engineering:
+  exclude_raw_ohlcv:
+    enabled: true
+    excluded_patterns:
+    - volume
+    - close
+    - high
+    - open
+    - low
+    technical_indicators:
+    - rsi
+    - sma
+    - ema
+    - bb_
+    - macd
+    - atr
+    - roc
+    - mom
+    - return
+    - pct
+    - ratio
+    - std
+    - volatility
+    - trend
+    - momentum
+    - oscillator
+    - signal
+    - cross
+    - divergence
   primary_features:
     source: feature_generation_final_feature_selection_step
     artifact_name: analyst_features

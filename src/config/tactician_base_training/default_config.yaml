@@ -242,32 +242,6 @@ tactician_config:
           choices: ["sqrt", "log2", 0.5, 0.7, 0.9]
       optimal_params: {}
 
-  - model_name: "DepthwiseCNN"
-    # Chemin vers le nouveau modèle
-    class_name: "src.models.tcn_regressor.DepthwiseSeparableCNNRegressor"
-    is_feature_generator: false
-    params:
-      filters: 64
-      kernel_size: 3
-      dropout: 0.2
-      epochs: 50
-      batch_size: 32
-      learning_rate: 0.001
-      validation_split: 0.2
-      early_stopping_patience: 10
-      reduce_lr_patience: 5
-      use_batch_norm: false
-      verbose: 0
-    # Gammes de recherche HPO
-    hpo:
-      enabled: true
-      n_rounds: 2
-      enable_final_refinement: true
-      final_refinement_trials: 50
-      # search_space maintenant défini dans hpo_config.py
-      # paramètres optimaux seront sauvegardés ici
-      optimal_params: {}
-
 # Configuration d'entraînement
 # NOTE: Les nombres absolus d'échantillons ci-dessous sont maintenant REDÉFINIS par des allocations basées sur pourcentages
 # calculées dans unified_models_training_step.py. Pourcentages par défaut sont:

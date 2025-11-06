@@ -4,7 +4,6 @@
   "description": "Configuration centralisée pour l'entraînement des modèles tactician de base",
   "created_at": "2025-11-03T22:28:00.000Z",
   "updated_at": "2025-11-03T22:28:00.000Z",
-  
   "tactician_config": {
     "model_name": "tactician_base",
     "model_type": "separate_models",
@@ -13,7 +12,6 @@
     "execution_timeframe": "15m",
     "execution_frequency": "3m",
     "price_change_target": 0.005,
-    
     "base_models": [
       {
         "model_name": "StandaloneGRU",
@@ -271,35 +269,9 @@
           },
           "optimal_params": {}
         }
-      },
-      {
-        "model_name": "DepthwiseCNN",
-        "class_name": "src.models.tcn_regressor.DepthwiseSeparableCNNRegressor",
-        "is_feature_generator": false,
-        "params": {
-          "filters": 64,
-          "kernel_size": 3,
-          "dropout": 0.2,
-          "epochs": 50,
-          "batch_size": 32,
-          "learning_rate": 0.001,
-          "validation_split": 0.2,
-          "early_stopping_patience": 10,
-          "reduce_lr_patience": 5,
-          "use_batch_norm": false,
-          "verbose": 0
-        },
-        "hpo": {
-          "enabled": true,
-          "n_rounds": 2,
-          "enable_final_refinement": true,
-          "final_refinement_trials": 50,
-          "optimal_params": {}
-        }
       }
     ]
   },
-
   "training": {
     "enable_cross_validation": true,
     "cv_folds": 3,
@@ -311,21 +283,18 @@
     "validation_samples": null,
     "test_samples": null
   },
-
   "performance": {
     "expected_accuracy": 0.82,
     "expected_sharpe_ratio": 1.45,
     "training_time_limit": 200,
     "memory_limit_mb": 2048
   },
-
   "output": {
     "save_models": true,
     "save_predictions": true,
     "generate_reports": true,
     "output_dir": "./tactician_base_models"
   },
-
   "feature_engineering": {
     "primary_features": {
       "source": "feature_generation_final_feature_selection_step",
@@ -368,7 +337,6 @@
       "outlier_threshold": 2.5
     }
   },
-
   "data_preparation": {
     "time_series": {
       "enable_temporal_features": true,
@@ -383,7 +351,6 @@
       "risk_free_rate": 0.02
     }
   },
-
   "evaluation": {
     "metrics": {
       "regression": ["mse", "mae", "r2", "mape"],
@@ -402,7 +369,6 @@
       "enable_trading_metrics": true
     }
   },
-
   "risk_management": {
     "enable_position_sizing": true,
     "max_position_size": 0.1,
@@ -423,7 +389,6 @@
       }
     }
   },
-
   "hardware": {
     "enable_gpu_acceleration": false,
     "enable_memory_optimization": true,
@@ -431,7 +396,6 @@
     "memory_limit_gb": 2.0,
     "max_workers": null
   },
-
   "logging": {
     "level": "INFO",
     "enable_detailed_logging": true,
@@ -446,7 +410,6 @@
       "risk_monitoring": 100
     }
   },
-
   "_metadata": {
     "loaded_at": "2025-11-03T22:28:00.000Z",
     "manager_version": "1.0.0",

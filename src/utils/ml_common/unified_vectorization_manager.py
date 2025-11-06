@@ -126,7 +126,11 @@ class UnifiedVectorizationManager:
         # Use singleton hardware manager (no repeated detection)
         from .hardware_singleton import get_hardware_capabilities_dict
         self.hardware_caps = get_hardware_capabilities_dict()
-        
+
+        # Ensure capability flags exist even if initialization exits early
+        self.technical_indicators = getattr(self, "technical_indicators", None)
+        self.technical_indicators_available = getattr(self, "technical_indicators_available", False)
+
         if UnifiedVectorizationManager._init_done:
             # Ensure strategy_config is available
             if not hasattr(self, 'strategy_config') or self.strategy_config is None:

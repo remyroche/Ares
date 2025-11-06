@@ -9,8 +9,7 @@ This module provides:
 """
 
 import yaml
-import json
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, cast
 from pathlib import Path
 from datetime import datetime
 import numpy as np
@@ -78,12 +77,17 @@ def derive_dependent_parameters(params: Dict[str, Any], model_type: str) -> Dict
     # 2. CatBoost: Tie subsample and colsample_bylevel (only with appropriate bootstrap)
     if 'catboost' in model_type_lower:
         if 'sampling_rate' in params:
+            sampling_rate = params.pop('sampling_rate')
             # CatBoost's Bayesian bootstrap doesn't support subsample
             # Use Bernoulli bootstrap which does support subsample
-            params['bootstrap_type'] = 'Bernoulli'
-            params['subsample'] = params['sampling_rate']
-            params['colsample_bylevel'] = params['sampling_rate']
-            logger.debug(f"Set bootstrap_type=Bernoulli and tied subsample=colsample_bylevel={params['sampling_rate']}")
+            params.setdefault('bootstrap_type', 'Bernoulli')
+            params['subsample'] = sampling_rate
+            params['colsample_bylevel'] = sampling_rate
+            logger.debug(
+                "Set bootstrap_type=%s and tied subsample=colsample_bylevel=%s",
+                params['bootstrap_type'],
+                sampling_rate,
+            )
     
     
     # 4. GRU/LSTM: Derive batch_size from hidden_units
@@ -501,11 +505,18 @@ class CustomBalancedScoreObjective:
             
             # Statistical metrics
             if self.is_classification:
-                f1 = f1_score(y_val, y_pred, average='weighted', zero_division=0.0)
+                zero_division_safe = cast(Any, 0)
+                f1 = f1_score(
+                    y_val,
+                    y_pred,
+                    average='weighted',
+                    zero_division=zero_division_safe,
+                )
                 acc = accuracy_score(y_val, y_pred)
                 r2 = 0.5  # Not applicable for classification
             else:
-                r2 = float(max(0.0, r2_score(y_val, y_pred)))
+                r2_raw = float(r2_score(y_val, y_pred))
+                r2 = max(0.0, r2_raw)
                 # For regression, create pseudo-classification metrics
                 f1 = float(max(0.0, 1.0 - min(mae, 1.0)))
                 acc = float(max(0.0, 1.0 - min(mse, 1.0)))

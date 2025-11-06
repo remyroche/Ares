@@ -138,6 +138,13 @@ tactician_config:
 
 # Feature engineering configuration
 feature_engineering:
+  # Raw OHLCV exclusion
+  exclude_raw_ohlcv:
+    enabled: true
+    excluded_patterns: ['volume', 'close', 'high', 'open', 'low']
+    technical_indicators: ['rsi', 'sma', 'ema', 'bb_', 'macd', 'atr', 'roc', 'mom', 
+                          'return', 'pct', 'ratio', 'std', 'volatility', 'trend',
+                          'momentum', 'oscillator', 'signal', 'cross', 'divergence']
   # Primary feature source
   primary_features:
     source: "feature_generation_final_feature_selection_step"

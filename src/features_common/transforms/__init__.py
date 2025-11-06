@@ -9,7 +9,12 @@ from ..utils import (
 
 from .base_scaler import BaseScaler, create_optimized_scaler, create_optimized_batch_scaler
 from .vectorbt_scaler import VectorBTScaler, VectorBTBatchScaler
-from .scaling_normalization import ScalingNormalizer
+from .scaling_normalization import (
+    ScalingNormalizer,
+    zscore_normalize,
+    robust_normalize,
+    rank_normalize,
+)
 from .categorical_encoding import CategoricalEncoder
 
 __all__ = [
@@ -19,6 +24,9 @@ __all__ = [
     'create_optimized_scaler',
     'create_optimized_batch_scaler',
     'ScalingNormalizer',
+    'zscore_normalize',
+    'robust_normalize',
+    'rank_normalize',
     'CategoricalEncoder',
 ]
 

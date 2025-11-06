@@ -422,24 +422,8 @@ class EnhancedKlinesProcessingPipeline:
         self.data_standardizer = UnifiedOHLCVStandardizer()
         self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer()
 
-        # Initialize KlinesParquetManager with optimized configuration
-        if self.config.storage_config:
-            self.klines_manager = KlinesParquetManager(self.config.data_dir)
-        else:
-            # Create optimized storage config
-            storage_config = StorageConfig(
-                base_dir=str(self.data_dir),
-                compression="zstd",  # Better compression than snappy
-                compression_level=3,  # ZSTD compression level
-                index=False,  # Don't store index as separate column
-                row_group_size=50000,  # Optimized row group size
-                use_dictionary_encoding=True,  # Enable dictionary encoding
-                enable_schema_optimization=True,  # Enable schema optimization
-                enable_compression_analysis=True,  # Enable compression analysis
-                enable_metadata=True,
-                enable_validation=True
-            )
-            self.klines_manager = KlinesParquetManager(self.config.data_dir)
+        # Initialize parquet manager
+        self.klines_manager = KlinesParquetManager(self.config.data_dir)
 
         # Processing state
         self.current_symbol: Optional[str] = None
@@ -460,6 +444,80 @@ class EnhancedKlinesProcessingPipeline:
             tprint_info(f"   🔧 Gap filling: {'enabled' if self.config.enable_gap_filling else 'disabled'}")
             tprint_info(f"   📊 Resampling: {'enabled' if self.config.enable_resampling else 'disabled'}")
             tprint_info(f"   🔄 Batch compatible: {'enabled' if self.config.batch_compatible else 'disabled'}")
+
+    @staticmethod
+    def _ensure_naive_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
+        """Ensure DataFrame index contains timezone-naive timestamps."""
+        if df.empty:
+            return df
+
+        converted = pd.to_datetime(df.index, errors='coerce')
+        if isinstance(converted, pd.DatetimeIndex) and getattr(converted, "tz", None) is not None:
+            converted = converted.tz_localize(None)
+
+        df.index = converted
+        return df
+
+    @staticmethod
+    def _ensure_utc_timestamp(timestamp: Any) -> Optional[pd.Timestamp]:
+        """Convert a timestamp-like value to a UTC aware pandas Timestamp."""
+        if timestamp is None:
+            return None
+
+        ts = pd.Timestamp(timestamp)
+        if ts.tzinfo is None:
+            return ts.tz_localize('UTC')
+        return ts.tz_convert('UTC')
+
+    def _ensure_utc_index(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Return copy of DataFrame with UTC tz-aware DatetimeIndex."""
+        if df.empty:
+            return df
+
+        converted = pd.to_datetime(df.index, utc=True, errors='coerce')
+        converted.name = df.index.name
+
+        df_with_utc = df.copy()
+        df_with_utc.index = converted
+        return df_with_utc
+
+    def _ensure_timestamp_column(
+        self,
+        df: pd.DataFrame,
+        column_name: str = 'timestamp'
+    ) -> pd.DataFrame:
+        """Ensure DataFrame includes a timezone-naive timestamp column."""
+        if df.empty:
+            return df
+
+        df_with_ts = df if column_name in df.columns else df.copy()
+
+        if column_name not in df_with_ts.columns:
+            if isinstance(df_with_ts.index, pd.DatetimeIndex):
+                df_with_ts[column_name] = df_with_ts.index
+            else:
+                df_with_ts[column_name] = pd.to_datetime(df_with_ts.index, errors='coerce')
+
+        timestamp_series = pd.to_datetime(
+            df_with_ts[column_name], utc=True, errors='coerce'
+        )
+
+        valid_mask = timestamp_series.notna()
+        if not valid_mask.all():
+            df_with_ts = df_with_ts.loc[valid_mask].copy()
+            timestamp_series = timestamp_series.loc[valid_mask]
+            if self.enable_logging:
+                dropped = (~valid_mask).sum()
+                tprint_warning(f"⚠️ Dropped {dropped} rows with invalid timestamps during timestamp normalization")
+
+        # Drop timezone information after normalizing to UTC for downstream consumers
+        df_with_ts[column_name] = timestamp_series.dt.tz_localize(None)
+
+        timestamp_ns = timestamp_series.view('int64')
+        timestamp_ms = (timestamp_ns // 10**6).astype('int64')
+        df_with_ts[f"{column_name}_ms"] = pd.Series(timestamp_ms, index=df_with_ts.index, dtype='int64')
+
+        return df_with_ts
 
     async def get_comprehensive_score(
         self,
@@ -1040,10 +1098,11 @@ class EnhancedKlinesProcessingPipeline:
         }
         
         from src.trading.execution.exchange_interface import ExchangeInterface
-        print(f"DEBUG: Creating ExchangeInterface with config: {exchange_config}")
-        print(f"DEBUG: enable_logging = {self.enable_logging}")
+        if self.enable_logging:
+            tprint_info(f"🔌 Creating ExchangeInterface with config: {exchange_config}")
         exchange_interface = ExchangeInterface(exchange_config)
-        print(f"DEBUG: ExchangeInterface created: {exchange_interface}")
+        if self.enable_logging:
+            tprint_info(f"🔌 ExchangeInterface created: {exchange_interface}")
         
         try:
             # Connect to exchange (authentication skipped if no credentials provided)
@@ -1065,19 +1124,20 @@ class EnhancedKlinesProcessingPipeline:
                             tprint_warning(f"⚠️ Authentication skipped for public data: {e}")
             else:
                 # For BingX, connect but don't require authentication for public data
-                print(f"DEBUG: Connecting to BingX (public data)")
+                if self.enable_logging:
+                    tprint_info("🔌 Connecting to BingX (public data)")
                 try:
                     result = await exchange_interface.connect()
-                    print(f"DEBUG: BingX connection result: {result}")
+                    if self.enable_logging:
+                        tprint_info(f"🔌 BingX connection result: {result}")
                 except Exception as e:
-                    print(f"DEBUG: BingX connection failed: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    if self.enable_logging:
+                        tprint_warning(f"⚠️ BingX connection failed: {e}")
                     # Continue anyway as BingX might work without connection
             
             # Process klines data
-            print(f"DEBUG: About to call process_klines_data")
-            print(f"DEBUG: symbol={symbol}, interval={interval}, years={years}")
+            if self.enable_logging:
+                tprint_info(f"🚀 Processing klines data (symbol={symbol}, interval={interval}, years={years})")
             results = await self.process_klines_data(
                 symbol=symbol,
                 interval=interval,
@@ -1086,7 +1146,8 @@ class EnhancedKlinesProcessingPipeline:
                 resampling_config=resampling_config,
                 batch_id=batch_id
             )
-            print(f"DEBUG: process_klines_data completed")
+            if self.enable_logging:
+                tprint_success("✅ process_klines_data completed")
             
             return results
             
@@ -1151,6 +1212,7 @@ class EnhancedKlinesProcessingPipeline:
                 for file_path in sorted(parquet_files):
                     try:
                         df = pd.read_parquet(file_path)
+                        df = self._ensure_naive_datetime_index(df)
                         if not df.empty:
                             all_data.append(df)
                             # Show date range of loaded file
@@ -1168,6 +1230,7 @@ class EnhancedKlinesProcessingPipeline:
                 if all_data:
                     # Concatenate but DON'T ignore the index - it's our timestamp!
                     klines_data = pd.concat(all_data, ignore_index=False)
+                    klines_data = self._ensure_naive_datetime_index(klines_data)
                     klines_data = klines_data.sort_index().drop_duplicates()
                     
                     if self.enable_logging:
@@ -1266,6 +1329,7 @@ class EnhancedKlinesProcessingPipeline:
                                     if not gap_df.empty:
                                         # Merge with existing data
                                         klines_data = pd.concat([klines_data, gap_df], ignore_index=False)
+                                        klines_data = self._ensure_naive_datetime_index(klines_data)
                                         klines_data = klines_data.sort_index().drop_duplicates()
                                         
                                         if self.enable_logging:
@@ -1360,18 +1424,19 @@ class EnhancedKlinesProcessingPipeline:
                 for batch in all_batches:
                     klines_data.extend(batch)
                 
-                print(f"DEBUG: Total klines collected: {len(klines_data)}")
-                print(f"DEBUG: klines_data type: {type(klines_data)}")
+                if self.enable_logging:
+                    tprint_info(f"🔍 Total klines collected: {len(klines_data)}")
+                    tprint_info(f"🔍 klines_data type: {type(klines_data)}")
                 
                 # Convert KlineData objects to DataFrame format if not already a DataFrame
                 # Convert KlineData objects to list format
                 raw_data = []
                 for i, kline in enumerate(klines_data):
                     # Debug first kline
-                    if i == 0:
-                        print(f"DEBUG: First kline type: {type(kline)}")
-                        print(f"DEBUG: First kline timestamp: {kline.timestamp}")
-                        print(f"DEBUG: First kline timestamp type: {type(kline.timestamp)}")
+                    if i == 0 and self.enable_logging:
+                        tprint_info(f"🔍 First kline type: {type(kline)}")
+                        tprint_info(f"🔍 First kline timestamp: {kline.timestamp}")
+                        tprint_info(f"🔍 First kline timestamp type: {type(kline.timestamp)}")
                     
                     # Handle both datetime and int timestamps
                     if isinstance(kline.timestamp, datetime):
@@ -1432,29 +1497,35 @@ class EnhancedKlinesProcessingPipeline:
                 
                 # Debug the timestamp values
                 sample_timestamp = klines_data['timestamp'].iloc[0] if len(klines_data) > 0 else 0
-                print(f"DEBUG: Sample timestamp value: {sample_timestamp}")
-                print(f"DEBUG: Sample timestamp type: {type(sample_timestamp)}")
-                print(f"DEBUG: Sample timestamp > 1e12? {sample_timestamp > 1e12}")
-                print(f"DEBUG: Sample timestamp > 1e9? {sample_timestamp > 1e9}")
+                if self.enable_logging:
+                    tprint_info(f"🔍 Sample timestamp value: {sample_timestamp}")
+                    tprint_info(f"🔍 Sample timestamp type: {type(sample_timestamp)}")
+                    tprint_info(f"🔍 Sample timestamp > 1e12? {sample_timestamp > 1e12}")
+                    tprint_info(f"🔍 Sample timestamp > 1e9? {sample_timestamp > 1e9}")
                 
                 # Convert timestamp to datetime - handle both milliseconds and microseconds
                 # Microseconds: > 1e15 (16+ digits, e.g., 1730269140000000 for 2025)
                 # Milliseconds: 1e12 - 1e15 (13-15 digits, e.g., 1730269140000 for 2025)
                 # Seconds: < 1e12 (< 13 digits, e.g., 1730269140 for 2025)
                 if sample_timestamp > 1e15:  # Microseconds (16+ digits)
-                    print(f"DEBUG: Converting as microseconds (value: {sample_timestamp})")
+                    if self.enable_logging:
+                        tprint_info(f"🔁 Converting as microseconds (value: {sample_timestamp})")
                     klines_data['timestamp'] = pd.to_datetime(klines_data['timestamp'], unit='us')
                 elif sample_timestamp > 1e12:  # Milliseconds (13-15 digits)
-                    print(f"DEBUG: Converting as milliseconds (value: {sample_timestamp})")
+                    if self.enable_logging:
+                        tprint_info(f"🔁 Converting as milliseconds (value: {sample_timestamp})")
                     klines_data['timestamp'] = pd.to_datetime(klines_data['timestamp'], unit='ms')
                 elif sample_timestamp > 1e9:  # Seconds with decimal precision (10-12 digits)
-                    print(f"DEBUG: Converting as seconds (value: {sample_timestamp})")
+                    if self.enable_logging:
+                        tprint_info(f"🔁 Converting as seconds (value: {sample_timestamp})")
                     klines_data['timestamp'] = pd.to_datetime(klines_data['timestamp'], unit='s')
                 else:
-                    print(f"DEBUG: Timestamp too small, treating as seconds anyway (value: {sample_timestamp})")
+                    if self.enable_logging:
+                        tprint_info(f"🔁 Timestamp too small, treating as seconds anyway (value: {sample_timestamp})")
                     klines_data['timestamp'] = pd.to_datetime(klines_data['timestamp'], unit='s')
-                
-                print(f"DEBUG: After conversion, first timestamp: {klines_data['timestamp'].iloc[0]}")
+
+                if self.enable_logging and len(klines_data) > 0:
+                    tprint_info(f"🔍 After conversion, first timestamp: {klines_data['timestamp'].iloc[0]}")
                 
                 klines_data.set_index('timestamp', inplace=True)
                 
@@ -1587,6 +1658,7 @@ class EnhancedKlinesProcessingPipeline:
                     tprint_info(f"🔍 DEBUG: First row: {df.iloc[0].to_dict()}")
             
             df.set_index('timestamp', inplace=True)
+            df = self._ensure_naive_datetime_index(df)
             df.sort_index(inplace=True)
 
             return df
@@ -1626,7 +1698,12 @@ class EnhancedKlinesProcessingPipeline:
             standardized_df = self.data_standardizer.standardize(
                 df, exchange=self.exchange
             )
-            
+
+            # Ensure timestamp index is timezone-naive and available as a column for validators
+            standardized_df = self._ensure_naive_datetime_index(standardized_df)
+            if 'timestamp' not in standardized_df.columns:
+                standardized_df['timestamp'] = standardized_df.index
+
             # Add metadata columns if missing
             if 'symbol' not in standardized_df.columns:
                 standardized_df['symbol'] = symbol
@@ -1674,6 +1751,8 @@ class EnhancedKlinesProcessingPipeline:
             if self.enable_logging:
                 tprint_info(f"🔍 Validating data quality for {symbol} {interval} using comprehensive framework")
 
+            df = self._ensure_timestamp_column(df)
+
             # Check required columns
             missing_columns = [col for col in self.required_ohlcv_columns if col not in df.columns]
             if missing_columns:
@@ -1681,10 +1760,11 @@ class EnhancedKlinesProcessingPipeline:
 
             if not QUALITY_UTILITIES_AVAILABLE:
                 # Use basic validation without quality utilities
-                quality_result = QualityResult(
-                    quality_score=50.0,
+                quality_result = FallbackQualityResult(
+                    passed=True,
                     issues=["Quality utilities not available"],
-                    warnings=["Basic validation only"]
+                    warnings=["Basic validation only"],
+                    quality_score=50.0
                 )
                 quality_assessment = QualityAssessment(
                     overall_score=50.0,
@@ -1706,6 +1786,7 @@ class EnhancedKlinesProcessingPipeline:
                     data_shape=df.shape
                 )
                 distribution_validation = {}
+                duplicate_analysis = _ANALYZE_DUPLICATES_COMPREHENSIVE(df) if callable(_ANALYZE_DUPLICATES_COMPREHENSIVE) else None
             else:
                 # Import quality utilities locally to ensure they're available
                 from src.utils.data.quality.data_quality import QualityThresholds
@@ -1714,7 +1795,6 @@ class EnhancedKlinesProcessingPipeline:
                 quality_framework = DataQualityFramework()
                 scorer = ComprehensiveQualityScorer()
                 advanced_metrics = AdvancedQualityMetrics()
-                data_cleaner = DataCleaner()
                 statistical_validator = StatisticalValidator()
 
                 # Set up quality thresholds for klines data
@@ -1742,43 +1822,7 @@ class EnhancedKlinesProcessingPipeline:
                         distribution_validation[col] = {
                             'results': [{'status': r.status.value, 'message': r.message} for r in validation_results]
                         }
-            # Import quality utilities locally to ensure they're available
-            from src.utils.data.quality.data_quality import QualityThresholds
-            
-            # Initialize comprehensive quality framework
-            quality_framework = DataQualityFramework()
-            scorer = ComprehensiveQualityScorer()
-            advanced_metrics = AdvancedQualityMetrics()
-            data_cleaner = DataCleaner()
-            statistical_validator = StatisticalValidator()
-
-            # Set up quality thresholds for klines data
-            thresholds = QualityThresholds(
-                max_nan_ratio=0.05,  # 5% max NaN ratio
-                max_infinite_count=0,
-                min_unique_values=2,
-                max_constant_ratio=0.95,
-                max_gap_hours=48,
-                price_tolerance=0.001,
-                volume_tolerance=0.001,
-                max_correlation_threshold=0.95,
-                min_feature_count=40
-            )
-
-            # Perform comprehensive data quality validation
-            quality_result = quality_framework.validate_dataframe_quality(df, f"{symbol}_{interval}")
-
-            # Get advanced quality assessment
-            quality_assessment = advanced_metrics.comprehensive_quality_assessment(df)
-
-            # Get comprehensive quality score
-            score = scorer.assess_data_quality(df, symbol, interval)
-
-            # Perform statistical distribution validation
-            distribution_validation = statistical_validator.run_comprehensive_validation(df.values)
-
-            # Check for duplicates using comprehensive analyzer
-            duplicate_analysis = _ANALYZE_DUPLICATES_COMPREHENSIVE(df)
+                duplicate_analysis = _ANALYZE_DUPLICATES_COMPREHENSIVE(df) if callable(_ANALYZE_DUPLICATES_COMPREHENSIVE) else None
 
             # Determine quality level based on comprehensive assessment
             if score.overall_score >= 90:
@@ -1793,12 +1837,12 @@ class EnhancedKlinesProcessingPipeline:
                 result.quality_level = DataQualityLevel.FAILED
 
             # Collect all issues and warnings
-            all_issues = quality_result.issues + score.issues + quality_assessment.metrics
-            all_warnings = quality_result.warnings + score.warnings
+            all_issues = list(getattr(quality_result, 'issues', [])) + list(getattr(score, 'issues', [])) + list(getattr(quality_assessment, 'metrics', []))
+            all_warnings = list(getattr(quality_result, 'warnings', [])) + list(getattr(score, 'warnings', []))
 
             # Add duplicate analysis warnings
-            if duplicate_analysis.total_duplicates > 0:
-                all_warnings.append(f"Found {duplicate_analysis.total_duplicates} duplicate records")
+            if duplicate_analysis and getattr(duplicate_analysis, 'total_duplicates', 0) > 0:
+                all_warnings.append(f"Found {getattr(duplicate_analysis, 'total_duplicates', 0)} duplicate records")
 
             result.success = True
             result.data = df
@@ -1813,10 +1857,10 @@ class EnhancedKlinesProcessingPipeline:
                     "critical_issues": quality_assessment.critical_issues
                 },
                 "duplicate_analysis": {
-                    "total_duplicates": duplicate_analysis.total_duplicates,
-                    "true_duplicate_groups": duplicate_analysis.true_duplicate_groups,
-                    "false_duplicate_groups": duplicate_analysis.false_duplicate_groups,
-                    "mixed_duplicate_groups": duplicate_analysis.mixed_duplicate_groups
+                    "total_duplicates": getattr(duplicate_analysis, 'total_duplicates', 0),
+                    "true_duplicate_groups": getattr(duplicate_analysis, 'true_duplicate_groups', 0),
+                    "false_duplicate_groups": getattr(duplicate_analysis, 'false_duplicate_groups', 0),
+                    "mixed_duplicate_groups": getattr(duplicate_analysis, 'mixed_duplicate_groups', 0)
                 },
                 "distribution_validation": distribution_validation,
                 "data_shape": score.data_shape,
@@ -1859,8 +1903,10 @@ class EnhancedKlinesProcessingPipeline:
             if self.enable_logging:
                 tprint_info(f"🔍 Detecting gaps in {symbol} {interval} data")
 
+            df_with_timestamp = self._ensure_timestamp_column(df)
+
             # Detect gaps
-            gaps = self._detect_gaps(df, interval, max_gap_minutes)
+            gaps = self._detect_gaps(df_with_timestamp, interval, max_gap_minutes)
 
             if not gaps:
                 result.success = True
@@ -1886,7 +1932,7 @@ class EnhancedKlinesProcessingPipeline:
                         tprint_info(f"     Gap {i}: {g.duration_minutes:.0f} min ({g.start_time} to {g.end_time})")
 
             # Fill gaps by re-downloading data
-            filled_data = await self._fill_gaps(df, gaps, symbol, interval, exchange_interface)
+            filled_data = await self._fill_gaps(df_with_timestamp, gaps, symbol, interval, exchange_interface)
 
             result.success = True
             result.data = filled_data
@@ -1928,10 +1974,19 @@ class EnhancedKlinesProcessingPipeline:
         if interval_minutes is None:
             return gaps
 
-        # Sort by timestamp
-        df_sorted = df.sort_index()
+        # Normalize index to UTC tz-aware for reliable comparisons
+        df_normalized = self._ensure_utc_index(df)
+        if self.enable_logging and isinstance(df_normalized.index, pd.DatetimeIndex):
+            tz_obj = df_normalized.index.tz
+            tz_info = getattr(tz_obj, "zone", str(tz_obj))
+            tprint_info(f"🕒 Gap detection using timezone: {tz_info}")
 
-        # Check for gaps
+        df_sorted = df_normalized.sort_index()
+
+        # Check for gaps; large windows may be split into multiple segments to avoid overwhelming gap fill
+        safety_max_hours = 24 * 7  # 1 week segments for large historical gaps
+        safety_max_minutes = safety_max_hours * 60
+
         for i in range(len(df_sorted) - 1):
             current_time = df_sorted.index[i]
             next_time = df_sorted.index[i + 1]
@@ -1940,15 +1995,24 @@ class EnhancedKlinesProcessingPipeline:
             actual_gap_minutes = (next_time - expected_next_time).total_seconds() / 60
 
             if actual_gap_minutes > max_gap_minutes:
-                gap = GapInfo(
-                    start_time=expected_next_time,
-                    end_time=next_time,
-                    duration_minutes=int(actual_gap_minutes),
-                    symbol=df_sorted.iloc[i].get('symbol', ''),
-                    interval=interval,
-                    priority=1 if actual_gap_minutes > interval_minutes * 10 else 2
-                )
-                gaps.append(gap)
+                remaining_start = expected_next_time
+                remaining_end = next_time
+
+                while remaining_start < remaining_end:
+                    segment_end = min(remaining_start + timedelta(minutes=safety_max_minutes), remaining_end)
+                    segment_duration_minutes = int((segment_end - remaining_start).total_seconds() / 60)
+
+                    gap = GapInfo(
+                        start_time=remaining_start,
+                        end_time=segment_end,
+                        duration_minutes=segment_duration_minutes,
+                        symbol=df_sorted.iloc[i].get('symbol', ''),
+                        interval=interval,
+                        priority=1 if segment_duration_minutes > interval_minutes * 10 else 2
+                    )
+                    gaps.append(gap)
+
+                    remaining_start = segment_end
 
         return gaps
 
@@ -1970,16 +2034,30 @@ class EnhancedKlinesProcessingPipeline:
         exchange_interface: ExchangeInterface
     ) -> pd.DataFrame:
         """Fill gaps by re-downloading data in batches."""
-        filled_data = df.copy()
+        filled_data = self._ensure_utc_index(df)
+
+        if self.enable_logging and isinstance(filled_data.index, pd.DatetimeIndex):
+            tz_obj = filled_data.index.tz
+            tz_info = getattr(tz_obj, "zone", str(tz_obj))
+            tprint_info(f"🕒 Gap filling using timezone: {tz_info}")
 
         for gap_idx, gap in enumerate(gaps):
             if gap.priority > 1:  # Skip low priority gaps
                 continue
 
             try:
+                gap_start_utc = self._ensure_utc_timestamp(gap.start_time)
+                gap_end_utc = self._ensure_utc_timestamp(gap.end_time)
+                if gap_start_utc is None or gap_end_utc is None or gap_start_utc >= gap_end_utc:
+                    if self.enable_logging:
+                        tprint_warning(f"⚠️ Skipping gap {gap_idx+1} due to invalid timestamps")
+                    continue
+
                 if self.enable_logging:
-                    tprint_info(f"📥 Re-downloading data for gap {gap_idx+1}/{len(gaps)}: {gap.start_time} to {gap.end_time}")
-                    tprint_info(f"   Gap size: {gap.duration_minutes:.0f} minutes ({gap.duration_minutes/60:.1f} hours, {gap.duration_minutes/1440:.1f} days)")
+                    tprint_info(f"📥 Re-downloading data for gap {gap_idx+1}/{len(gaps)}: {gap_start_utc} to {gap_end_utc}")
+                    tprint_info(
+                        f"   Gap size: {gap.duration_minutes:.0f} minutes ({gap.duration_minutes/60:.1f} hours, {gap.duration_minutes/1440:.1f} days)"
+                    )
 
                 # For large gaps (> 1000 minutes), download in batches
                 interval_minutes = self._interval_to_minutes(interval) or 1
@@ -1987,11 +2065,11 @@ class EnhancedKlinesProcessingPipeline:
                 batch_duration = timedelta(minutes=batch_size * interval_minutes)
                 
                 gap_batches = []
-                current_start = gap.start_time
+                current_start = gap_start_utc
                 batch_num = 1
                 
-                while current_start < gap.end_time:
-                    batch_end = min(current_start + batch_duration, gap.end_time)
+                while current_start < gap_end_utc:
+                    batch_end = min(current_start + batch_duration, gap_end_utc)
                     
                     if self.enable_logging and (batch_num == 1 or batch_num % 20 == 0):
                         tprint_info(f"   Batch {batch_num}: {current_start.strftime('%Y-%m-%d %H:%M')}")
@@ -2005,11 +2083,10 @@ class EnhancedKlinesProcessingPipeline:
                             limit=batch_size
                         )
                         
-                        if batch_klines and len(batch_klines) > 0:
+                        if batch_klines:
                             gap_batches.extend(batch_klines)
-                        else:
-                            if self.enable_logging:
-                                tprint_warning(f"   No data returned for batch {batch_num}, stopping")
+                        elif self.enable_logging:
+                            tprint_warning(f"   ⚠️ No klines returned for batch {batch_num} ({current_start} → {batch_end}), treating gap as exhausted")
                             break
                         
                         current_start = batch_end
@@ -2027,13 +2104,15 @@ class EnhancedKlinesProcessingPipeline:
                 if gap_batches:
                     if self.enable_logging:
                         tprint_success(f"   ✅ Downloaded {len(gap_batches)} candles in {batch_num-1} batches")
-                    
+
                     gap_df = self._klines_to_dataframe(gap_batches, symbol, interval)
                     if not gap_df.empty:
                         # Standardize the gap data
                         standardized_gap_df = self.data_standardizer.standardize(
                             gap_df, exchange=self.exchange
                         )
+                        standardized_gap_df = self._ensure_utc_index(standardized_gap_df)
+                        standardized_gap_df = self._ensure_timestamp_column(standardized_gap_df)
 
                         # Merge with existing data
                         filled_data = pd.concat([filled_data, standardized_gap_df], ignore_index=False)
@@ -2042,12 +2121,17 @@ class EnhancedKlinesProcessingPipeline:
 
                         if self.enable_logging:
                             tprint_success(f"✅ Filled gap with {len(standardized_gap_df)} records (total now: {len(filled_data):,})")
+                    elif self.enable_logging:
+                        tprint_warning(f"⚠️ Gap {gap_idx+1} returned no usable candles after standardization")
+                else:
+                    if self.enable_logging:
+                        tprint_warning(f"⚠️ Gap {gap_idx+1} produced no candle data; Binance may have no coverage for this period")
 
             except Exception as e:
                 if self.enable_logging:
-                    tprint_warning(f"⚠️ Failed to fill gap {gap.start_time}: {e}")
+                    tprint_warning(f"⚠️ Failed to fill gap {gap_start_utc}: {e}")
 
-        return filled_data
+        return self._ensure_naive_datetime_index(filled_data)
 
     async def _handle_duplicates(
         self,
@@ -2068,8 +2152,10 @@ class EnhancedKlinesProcessingPipeline:
             if self.enable_logging:
                 tprint_info(f"🔍 Analyzing duplicates in {symbol} {interval} data")
 
+            df_with_timestamp = self._ensure_timestamp_column(df)
+
             # Analyze duplicates
-            analysis_result = self.duplicate_analyzer.analyze_duplicates(df)
+            analysis_result = self.duplicate_analyzer.analyze_duplicates(df_with_timestamp, timestamp_column='timestamp_ms')
 
             # Handle true duplicates (remove them)
             cleaned_df = df.copy()
@@ -2203,6 +2289,9 @@ class EnhancedKlinesProcessingPipeline:
             if self.enable_logging:
                 tprint_info(f"✅ Running comprehensive final quality check for {symbol} {interval}")
 
+            # Ensure timestamp columns for downstream quality utilities
+            df = self._ensure_timestamp_column(df)
+
             # Check data completeness
             if df.empty:
                 raise RuntimeError("Final data is empty")
@@ -2211,6 +2300,8 @@ class EnhancedKlinesProcessingPipeline:
             missing_columns = [col for col in self.required_ohlcv_columns if col not in df.columns]
             if missing_columns:
                 raise RuntimeError(f"Missing required columns in final data: {missing_columns}")
+
+            quality_alert_system = None
 
             if not QUALITY_UTILITIES_AVAILABLE:
                 # Use basic final quality check without quality utilities
@@ -2282,15 +2373,21 @@ class EnhancedKlinesProcessingPipeline:
                 null_issues.append(f"Final data contains null values: {null_counts.to_dict()}")
 
             # Perform final duplicate check
-            final_duplicate_analysis = _ANALYZE_DUPLICATES_COMPREHENSIVE(df)
+            duplicate_timestamp_column = 'timestamp_ms' if 'timestamp_ms' in df.columns else 'timestamp'
+            final_duplicate_analysis = (
+                _ANALYZE_DUPLICATES_COMPREHENSIVE(df, timestamp_column=duplicate_timestamp_column)
+                if callable(_ANALYZE_DUPLICATES_COMPREHENSIVE)
+                else None
+            )
 
             # Check quality alerts
-            try:
-                quality_alerts = quality_alert_system.check_alerts(final_score)
-            except Exception as e:
-                if self.enable_logging:
-                    tprint_warning(f"⚠️ Quality alert system failed: {e}")
-                quality_alerts = []
+            if quality_alert_system is not None:
+                try:
+                    quality_alerts = quality_alert_system.check_alerts(final_score)
+                except Exception as e:
+                    if self.enable_logging:
+                        tprint_warning(f"⚠️ Quality alert system failed: {e}")
+                    quality_alerts = []
 
             # Determine final quality level based on comprehensive assessment
             if final_score.overall_score >= 95 and not temporal_issues and not null_issues:
@@ -2310,8 +2407,8 @@ class EnhancedKlinesProcessingPipeline:
                           null_issues +
                           quality_alerts)
 
-            if final_duplicate_analysis.total_duplicates > 0:
-                all_warnings.append(f"Final data contains {final_duplicate_analysis.total_duplicates} duplicate records")
+            if final_duplicate_analysis and getattr(final_duplicate_analysis, 'total_duplicates', 0) > 0:
+                all_warnings.append(f"Final data contains {getattr(final_duplicate_analysis, 'total_duplicates', 0)} duplicate records")
 
             result.success = True
             result.data = df
@@ -2327,10 +2424,10 @@ class EnhancedKlinesProcessingPipeline:
                 },
                 "final_distribution_validation": final_distribution_validation,
                 "final_duplicate_analysis": {
-                    "total_duplicates": final_duplicate_analysis.total_duplicates,
-                    "true_duplicate_groups": final_duplicate_analysis.true_duplicate_groups,
-                    "false_duplicate_groups": final_duplicate_analysis.false_duplicate_groups,
-                    "mixed_duplicate_groups": final_duplicate_analysis.mixed_duplicate_groups
+                    "total_duplicates": getattr(final_duplicate_analysis, 'total_duplicates', 0),
+                    "true_duplicate_groups": getattr(final_duplicate_analysis, 'true_duplicate_groups', 0),
+                    "false_duplicate_groups": getattr(final_duplicate_analysis, 'false_duplicate_groups', 0),
+                    "mixed_duplicate_groups": getattr(final_duplicate_analysis, 'mixed_duplicate_groups', 0)
                 },
                 "final_records": len(df),
                 "final_columns": len(df.columns),

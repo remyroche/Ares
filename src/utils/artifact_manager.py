@@ -257,6 +257,7 @@ class ArtifactManager:
 		self._cache_dir = Path(paths.get("cache_dir", "data_cache"))
 		self._optimization_dir = Path(paths.get("optimization_dir", self._data_dir / "optimization"))
 		self._tmp_dir = Path(paths.get("tmp_dir", "tmp"))
+		self._historical_data_root = Path(paths.get("historical_data_dir", "historical_data"))
 		
 		# Enhanced artifacts directory with step categories
 		self._artifacts_dir = Path("artifacts")
@@ -324,11 +325,14 @@ class ArtifactManager:
 		# Enhanced file naming and path management
 		self._current_symbol: Optional[str] = None
 		self._current_exchange: Optional[str] = None
+		self._current_timeframe: Optional[str] = None
 		self._current_datetime: Optional[datetime] = None
 		self._current_information: Optional[str] = None
 		self._current_direction: str = "long"  # Default direction
 		self._current_model: str = "Analyst"  # Default model
 		self._current_step_name: Optional[str] = None
+		self._historical_data_cache: Dict[str, Any] = {}
+		self._klines_managers: Dict[Tuple[str, str], Any] = {}
 		
 		# Initialize KlinesParquetManager for large dataframes
 		try:
@@ -375,20 +379,39 @@ class ArtifactManager:
 	# Enhanced Context Management for Step-Category Organization
 	# ------------------------------------------------------------------
 	
-	def set_context(self, step_name: str, symbol: Optional[str] = None, exchange: Optional[str] = None, 
-	               datetime: Optional[datetime] = None, information: Optional[str] = None,
-	               direction: str = "long", model: str = "Analyst") -> None:
+	def set_context(
+		self,
+		step_name: str,
+		symbol: Optional[str] = None,
+		exchange: Optional[str] = None,
+		timeframe: Optional[str] = None,
+		datetime: Optional[datetime] = None,
+		information: Optional[str] = None,
+		direction: str = "long",
+		model: str = "Analyst",
+	) -> None:
 		"""Set the current context for file naming and path management."""
 		self._current_step_name = step_name
 		self._current_symbol = symbol
 		self._current_exchange = exchange
+		self._current_timeframe = timeframe
 		from datetime import datetime as dt
 		self._current_datetime = datetime or dt.utcnow()
 		self._current_information = information
 		self._current_direction = direction
 		self._current_model = model
 		
-		self.logger.info(f"📁 Context set: step={step_name}, symbol={symbol}, exchange={exchange}, datetime={self._current_datetime}, information={information}, direction={direction}, model={model}")
+		self.logger.info(
+			"📁 Context set: step=%s, symbol=%s, exchange=%s, timeframe=%s, datetime=%s, information=%s, direction=%s, model=%s",
+			step_name,
+			symbol,
+			exchange,
+			timeframe,
+			self._current_datetime,
+			information,
+			direction,
+			model,
+		)
 
 	def _generate_enhanced_filename(self, key: str, step_name: str, file_extension: str = "parquet") -> str:
 		"""Generate enhanced filename with information + symbol + exchange + datetime + direction + model."""
@@ -747,8 +770,12 @@ class ArtifactManager:
 		else:
 			return data
 	
-	def get_artifact(self, artifact_name: str, 
-	                artifact_type: str = "data") -> Any:
+	def get_artifact(
+		self,
+		artifact_name: str,
+		artifact_type: str = "data",
+		return_path: bool = False,
+	) -> Any:
 		"""
 		Retrieve an artifact using the artifact manager.
 		
@@ -760,17 +787,19 @@ class ArtifactManager:
 		Args:
 			artifact_name: Name of the artifact to retrieve
 			artifact_type: Type of artifact to retrieve
-			
+		
 		Returns:
-			Retrieved data
+			Retrieved data or tuple of (data, path) when return_path is True
 		"""
 		try:
+			resolved_path: Optional[Path] = None
 			# Step 1: Try exact path construction (mirrors _get_enhanced_path logic)
 			exact_path = self._get_artifact_exact_path(artifact_name, artifact_type)
 			if exact_path and exact_path.exists():
+				resolved_path = exact_path
 				data = self._load_artifact_from_path(exact_path)
 				self._log_file_operation("Retrieved artifact from exact path", exact_path, success=True)
-				return data
+				return (data, str(resolved_path)) if return_path else data
 			
 			# Step 2: Fallback to recursive search in step category
 			step_category = get_step_category(self._current_step_name)
@@ -779,24 +808,181 @@ class ArtifactManager:
 			)
 			
 			if artifact_path and artifact_path.exists():
+				resolved_path = artifact_path
 				data = self._load_artifact_from_path(artifact_path)
 				self._log_file_operation("Retrieved artifact from category search", artifact_path, success=True)
-				return data
+				return (data, str(resolved_path)) if return_path else data
 			
 			# Step 3: Final fallback to general artifacts directory search
 			fallback_path = self._find_artifact_in_fallback(artifact_name, artifact_type)
 			if fallback_path and fallback_path.exists():
+				resolved_path = fallback_path
 				data = self._load_artifact_from_path(fallback_path)
 				self._log_file_operation("Retrieved artifact from fallback search", fallback_path, success=True)
-				return data
+				return (data, str(resolved_path)) if return_path else data
+
+			# Step 4: Load from historical data directory if no artifact was found
+			if artifact_type == "data" and artifact_name in {"klines_data", "market_data", "ohlcv_data"}:
+				historical_data = self._load_historical_market_data()
+				if historical_data is not None:
+					return (historical_data, None) if return_path else historical_data
 			
 			self.logger.warning(f"Artifact not found: {artifact_name}")
-			return None
+			return (None, None) if return_path else None
 			
 		except Exception as e:
 			self.logger.error(f"Failed to retrieve artifact {artifact_name}: {e}")
 			raise
 	
+	def _get_klines_manager(self, exchange: Optional[str]) -> Optional[Any]:
+		"""Get or create cached klines parquet manager for the given exchange."""
+		try:
+			from src.utils.data.klines_parquet import get_klines_manager  # type: ignore
+		except Exception as import_error:  # pragma: no cover - optional dependency
+			self.logger.debug("Klines manager unavailable: %s", import_error)
+			return None
+
+		exchange_key = (exchange or "binance").lower()
+		data_dir_str = str(self._historical_data_root)
+		manager_key = (data_dir_str, exchange_key)
+
+		if manager_key in self._klines_managers:
+			return self._klines_managers[manager_key]
+
+		try:
+			manager = get_klines_manager(data_dir=data_dir_str, exchange=exchange_key)
+			self._klines_managers[manager_key] = manager
+			return manager
+		except Exception as manager_error:
+			self.logger.warning(
+				"Failed to initialize klines manager for exchange '%s' (data_dir=%s): %s",
+				exchange_key,
+				data_dir_str,
+				manager_error,
+			)
+			return None
+
+	def _normalize_market_data(self, data: pd.DataFrame) -> pd.DataFrame:
+		"""Ensure market data has a DatetimeIndex and expected columns."""
+		if data is None or data.empty:
+			return data
+
+		result = data.copy()
+
+		if not isinstance(result.index, pd.DatetimeIndex):
+			timestamp_series = None
+			if "timestamp" in result.columns:
+				timestamp_series = result["timestamp"]
+			elif "open_time" in result.columns:
+				timestamp_series = result["open_time"]
+
+			if timestamp_series is not None:
+				converted = pd.to_datetime(timestamp_series, errors="coerce", unit="ms", utc=True)
+				if converted.isna().all():
+					converted = pd.to_datetime(timestamp_series, errors="coerce", unit="s", utc=True)
+
+				if not converted.isna().all():
+					valid_mask = ~converted.isna()
+					result = result.loc[valid_mask].copy()
+					converted = converted.loc[valid_mask].tz_convert(None)
+					result.index = converted
+					result = result.drop(columns=["timestamp"], errors="ignore")
+					result = result.drop(columns=["open_time"], errors="ignore")
+
+		return result
+
+	def _load_historical_market_data(
+		self,
+		symbol: Optional[str] = None,
+		exchange: Optional[str] = None,
+		timeframe: Optional[str] = None,
+		data_type: Optional[str] = None,
+		start_date: Optional[Any] = None,
+		end_date: Optional[Any] = None,
+	) -> Optional[pd.DataFrame]:
+		"""Load market data directly from the historical data directory."""
+		symbol = symbol or self._current_symbol
+		if not symbol:
+			self.logger.debug("Historical data fallback skipped: symbol not provided")
+			return None
+
+		timeframe = timeframe or self._current_timeframe
+		if not timeframe:
+			self.logger.debug("Historical data fallback skipped: timeframe not provided")
+			return None
+
+		exchange = exchange or self._current_exchange or "binance"
+		manager = self._get_klines_manager(exchange)
+		if manager is None:
+			return None
+
+		cache_key = "|".join([
+			exchange.lower(),
+			symbol.upper(),
+			timeframe.lower(),
+			(data_type or "processed"),
+			str(start_date) if start_date is not None else "",
+			str(end_date) if end_date is not None else "",
+		])
+
+		if cache_key in self._historical_data_cache:
+			return self._historical_data_cache[cache_key]
+
+		candidate_timeframes = [timeframe]
+		if timeframe.lower() == "1h":
+			candidate_timeframes.append("60m")
+		elif timeframe.lower() == "4h":
+			candidate_timeframes.append("240m")
+
+		selected_data: Optional[pd.DataFrame] = None
+		error_messages: List[str] = []
+
+		for tf in dict.fromkeys(candidate_timeframes):
+			try:
+				read_kwargs = {
+					"symbol": symbol,
+					"interval": tf,
+					"start_date": start_date,
+					"end_date": end_date,
+					"data_type": (data_type or "processed"),
+				}
+				data = manager.read_data(**read_kwargs)
+				if data is not None and not data.empty:
+					selected_data = self._normalize_market_data(data)
+					break
+			except Exception as load_error:
+				error_messages.append(f"{tf}: {load_error}")
+
+		if selected_data is None or selected_data.empty:
+			if error_messages:
+				self.logger.warning(
+					"Historical data fallback failed for %s/%s timeframe %s: %s",
+					symbol,
+					exchange,
+					timeframe,
+					"; ".join(error_messages),
+				)
+			else:
+				self.logger.warning(
+					"No historical data available for %s/%s timeframe %s (tried %s)",
+					symbol,
+					exchange,
+					timeframe,
+					", ".join(candidate_timeframes),
+				)
+			return None
+
+		self._historical_data_cache[cache_key] = selected_data
+		self.logger.info(
+			"✅ Loaded historical market data for %s/%s timeframe %s (%d rows)",
+			symbol,
+			exchange,
+			timeframe,
+			len(selected_data),
+		)
+		return selected_data
+
+
 	def _get_artifact_exact_path(self, artifact_name: str, artifact_type: str) -> Optional[Path]:
 		"""
 		Get exact artifact path using the unified path creation method.

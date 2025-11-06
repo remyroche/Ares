@@ -26,11 +26,25 @@ except ImportError as e:
     create_optimized_scaler = None
 
 try:
-    from src.utils.tprint import tprint
+    from src.utils.tprint import tprint, tprint_info, tprint_error, tprint_warning, tprint_success, tprint_debug
     TPRINT_AVAILABLE = True
 except ImportError:
     TPRINT_AVAILABLE = False
     def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+
+# Some environments may not expose tprint_info; provide a graceful fallback.
+if 'tprint_info' not in globals():
+    def tprint_info(*args, **kwargs):
+        # Reuse tprint if available, otherwise default to stdout
+        if 'tprint' in globals():
+            tprint(*args, **kwargs)
+        else:
+            print("INFO:", *args)
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +106,7 @@ class NormalizationFeatureGenerator(FeatureGenerator):
             if TPRINT_AVAILABLE:
                 tprint("⚠️ features_common not available, using basic normalization")
 
-    def generate(self, data: pd.DataFrame, **kwargs) -> FeatureResult:
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> FeatureResult:
         """
         Generate normalization features using features_common infrastructure.
 
@@ -154,6 +168,10 @@ class NormalizationFeatureGenerator(FeatureGenerator):
                 error_message=str(e)
             )
 
+    # Legacy API compatibility: expose generate so existing callers keep working
+    def generate(self, data: pd.DataFrame, **kwargs) -> FeatureResult:
+        return self._generate_feature(data, **kwargs)
+
     def _apply_features_common_normalization(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """
         Apply normalization using features_common ScalingNormalizer.
@@ -193,12 +211,14 @@ class NormalizationFeatureGenerator(FeatureGenerator):
             result = normalized_df[primary_column]
 
             if TPRINT_AVAILABLE:
-                tprint(f"✅ Applied {self.normalization_config.method} normalization using features_common")
+                tprint_info(f"✅ Applied {self.normalization_config.method} normalization using features_common")
 
             return result
 
         except Exception as e:
             logger.warning(f"features_common normalization failed: {e}, using fallback")
+            if TPRINT_AVAILABLE:
+                tprint_warning(f"⚠️ features_common normalization failed ({e}); using fallback")
             return self._apply_basic_normalization(data, **kwargs)
 
     def _apply_basic_normalization(self, data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -306,6 +326,27 @@ class RollingZScoreGenerator(NormalizationFeatureGenerator):
         )
 
         super().__init__(config)
+
+class RollingRobustGenerator(NormalizationFeatureGenerator):
+    """Rolling robust normalization feature generator using median/MAD scaling."""
+
+    def __init__(self, rolling_window: int = 20, **kwargs):
+        config = NormalizationConfig(
+            name="rolling_robust",
+            category=FeatureCategory.ADVANCED_STATISTICAL,
+            description=f"Rolling robust normalization (window={rolling_window}) using features_common",
+            required_columns=["close"],
+            default_lookback=rolling_window,
+            method="robust",
+            rolling_window=rolling_window,
+            use_features_common=True,
+            exclude_outliers=kwargs.get("exclude_outliers", True),
+            outlier_threshold=kwargs.get("outlier_threshold", 3.0),
+            min_periods=kwargs.get("min_periods", 10),
+        )
+
+        super().__init__(config)
+
 
 class VolatilityScalingGenerator(NormalizationFeatureGenerator):
     """
@@ -474,6 +515,8 @@ def create_data_normalizer(method: str = "zscore",
     """
     if method == "zscore":
         return RollingZScoreGenerator(rolling_window=rolling_window, **kwargs)
+    if method == "robust":
+        return RollingRobustGenerator(rolling_window=rolling_window, **kwargs)
     elif method == "volatility_scaling":
         return VolatilityScalingGenerator(rolling_window=rolling_window, **kwargs)
     elif method == "cross_sectional":
@@ -529,6 +572,7 @@ def create_default_normalization_generators() -> List[NormalizationFeatureGenera
 __all__ = [
     'NormalizationFeatureGenerator',
     'RollingZScoreGenerator',
+    'RollingRobustGenerator',
     'VolatilityScalingGenerator',
     'CrossSectionalNormalizer',
     'create_data_normalizer',

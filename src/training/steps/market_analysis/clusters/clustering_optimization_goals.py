@@ -158,6 +158,8 @@ try:
 except ImportError:
     HARDWARE_AVAILABLE = False
 
+from src.utils.tprint import tprint_debug
+
 logger = logging.getLogger(__name__)
 
 
@@ -534,6 +536,7 @@ class GoalConfig:
     enable_normalization: bool = True  # Whether to normalize this metric
     normalization_method: NormalizationMethod = NormalizationMethod.RANK
     stability_threshold: float = 0.4  # std/mean < threshold for stable metric
+    sub_weights: Optional[Dict[str, float]] = None  # Optional sub-component weights
 
 
 @dataclass
@@ -1510,6 +1513,70 @@ def calculate_cv_ratio(
     return float(cv_ratio)
 
 
+def _compute_episode_duration_stats(labels: np.ndarray) -> Tuple[np.ndarray, Dict[str, float]]:
+    """Helper to derive per-regime episode durations and summary stats."""
+
+    episode_lengths = []
+    if len(labels) == 0:
+        return np.array([]), {
+            'mean': 0.0,
+            'median': 0.0,
+            'pct_short': 0.0,
+            'pct_actionable': 0.0,
+            'pct_in_target': 0.0
+        }
+
+    current_label = labels[0]
+    current_length = 1
+
+    for label in labels[1:]:
+        if label == current_label:
+            current_length += 1
+        else:
+            episode_lengths.append(current_length)
+            current_label = label
+            current_length = 1
+
+    episode_lengths.append(current_length)
+
+    durations = np.array(episode_lengths, dtype=np.float64)
+
+    if NUMBA_AVAILABLE:
+        stats_tuple = _calculate_episode_duration_stats_jit(durations)
+        mean_duration, median_duration, _, pct_short, pct_actionable, pct_in_target = stats_tuple
+    else:
+        if len(durations) == 0:
+            mean_duration = median_duration = pct_short = pct_actionable = pct_in_target = 0.0
+        else:
+            mean_duration = float(np.mean(durations))
+            median_duration = float(np.median(durations))
+            pct_short = float(np.mean(durations < 7))
+            pct_actionable = float(np.mean(durations >= 20))
+            pct_in_target = float(np.mean((durations >= 5) & (durations <= 20)))
+
+    stats = {
+        'mean': float(mean_duration),
+        'median': float(median_duration),
+        'pct_short': float(pct_short),
+        'pct_actionable': float(pct_actionable),
+        'pct_in_target': float(pct_in_target)
+    }
+
+    tprint_debug(
+        "📊 Episode duration stats",
+        extra={
+            'mean': stats['mean'],
+            'median': stats['median'],
+            'pct_short': stats['pct_short'],
+            'pct_actionable': stats['pct_actionable'],
+            'pct_in_target': stats['pct_in_target'],
+            'episodes': len(durations)
+        }
+    )
+
+    return durations, stats
+
+
 def calculate_temporal_smoothness(labels: np.ndarray, use_jit: bool = True) -> float:
     """
     Calculate temporal smoothness of regime assignments.
@@ -1529,18 +1596,54 @@ def calculate_temporal_smoothness(labels: np.ndarray, use_jit: bool = True) -> f
 
     # Use JIT-compiled version if available
     if use_jit and NUMBA_AVAILABLE:
-        return _calculate_temporal_smoothness_jit(labels)
+        base_smoothness = _calculate_temporal_smoothness_jit(labels)
     else:
-        # Fallback implementation
         n_transitions = 0
         for i in range(1, len(labels)):
             if labels[i] != labels[i-1]:
                 n_transitions += 1
 
         max_transitions = len(labels) - 1
-        smoothness = 1.0 - (n_transitions / max_transitions)
+        base_smoothness = 1.0 - (n_transitions / max_transitions)
 
-        return float(smoothness)
+    base_smoothness = float(np.clip(base_smoothness, 0.0, 1.0))
+
+    # Episode-duration aware adjustment
+    _, duration_stats = _compute_episode_duration_stats(labels)
+    short_penalty = duration_stats['pct_short']
+    target_bonus = duration_stats['pct_in_target'] * 0.2  # modest reward for desirable durations
+
+    # Flip-flop detection: count rapid back-and-forth transitions (A->B->A within 3 steps)
+    flip_flops = 0
+    for i in range(2, len(labels)):
+        if labels[i] == labels[i-2] and labels[i] != labels[i-1]:
+            flip_flops += 1
+
+    max_flip_flops = max(1, len(labels) - 2)
+    flip_flop_ratio = flip_flops / max_flip_flops
+
+    flip_flop_penalty = flip_flop_ratio * 0.5  # weight flip-flop effect
+
+    adjusted = base_smoothness
+    adjusted -= short_penalty * 0.3  # penalize high short-episode share
+    adjusted -= flip_flop_penalty
+    adjusted += target_bonus
+
+    final_score = float(np.clip(adjusted, 0.0, 1.0))
+
+    tprint_debug(
+        "🧭 Temporal smoothness calculation",
+        extra={
+            'base_smoothness': base_smoothness,
+            'short_penalty': short_penalty,
+            'target_bonus': target_bonus,
+            'flip_flop_ratio': flip_flop_ratio,
+            'flip_flop_penalty': flip_flop_penalty,
+            'final_score': final_score
+        }
+    )
+
+    return final_score
 
 
 # ===== ENHANCED TEMPORAL METRICS =====

@@ -548,9 +548,7 @@ class DynamicConfigCalculator:
         try:
             if self.cpu_optimizer:
                 # Use CPU optimizer to get optimal worker count
-                optimal_workers = self.cpu_optimizer.get_optimal_worker_count(
-                    workload_type='ml_training'
-                )
+                optimal_workers = self.cpu_optimizer.get_optimal_worker_count()
                 return min(optimal_workers, 8)  # Cap at 8 for efficiency
             else:
                 # Fallback calculation

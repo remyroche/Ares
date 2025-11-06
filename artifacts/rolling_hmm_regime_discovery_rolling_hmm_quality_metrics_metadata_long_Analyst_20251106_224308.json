@@ -1,0 +1,11 @@
+{
+  "symbol": "ETHUSDT",
+  "exchange": "binance",
+  "timeframe": "1h",
+  "artifact_name": "rolling_hmm_quality_metrics",
+  "artifact_type": "metadata",
+  "file_path": "artifacts/market_analysis/long/Analyst/rolling_hmm_regime_discovery/rolling_hmm_regime_discovery_rolling_hmm_quality_metrics_long_Analyst_20251106_224308.parquet",
+  "file_size": 414051,
+  "timestamp": "2025-11-06T22:45:58.302831",
+  "compression": "auto"
+}

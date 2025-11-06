@@ -241,33 +241,6 @@ tactician_config:
       # Optimal parameters found by HPO (will be updated automatically)
       optimal_params: {}
 
-  - model_name: "DepthwiseCNN"
-      # model_type is used by HPOOrchestrator
-      model_type: "depthwise_cnn" 
-      # Class path to the new model
-      class_name: "src.models.tcn_regressor.DepthwiseSeparableCNNRegressor"
-      is_feature_generator: False
-      params:
-        filters: 64
-        kernel_size: 3
-        dropout: 0.2
-        epochs: 50
-        batch_size: 32
-        learning_rate: 0.001
-        validation_split: 0.2
-        early_stopping_patience: 10
-        reduce_lr_patience: 5
-        use_batch_norm: false
-        verbose: 0
-      # HPO search ranges
-      hpo:
-        enabled: true
-        n_rounds: 2
-        enable_final_refinement: true
-        final_refinement_trials: 50
-        # search_space is now defined in hpo_config.py
-        # optimal parameters will be saved here
-        optimal_params: {}
         
   # Training configuration
   # NOTE: The absolute sample numbers below are now OVERRIDDEN by percentage-based allocations
@@ -304,6 +277,13 @@ tactician_config:
 
 # Feature engineering configuration
 feature_engineering:
+  # Raw OHLCV exclusion
+  exclude_raw_ohlcv:
+    enabled: true
+    excluded_patterns: ['volume', 'close', 'high', 'open', 'low']
+    technical_indicators: ['rsi', 'sma', 'ema', 'bb_', 'macd', 'atr', 'roc', 'mom', 
+                          'return', 'pct', 'ratio', 'std', 'volatility', 'trend',
+                          'momentum', 'oscillator', 'signal', 'cross', 'divergence']
   # Primary feature source
   primary_features:
     source: "feature_generation_final_feature_selection_step"

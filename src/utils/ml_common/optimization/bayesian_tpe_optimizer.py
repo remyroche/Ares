@@ -192,6 +192,10 @@ class OptimizationConfig:
             self.coarse_grid_points = adjusted_grid_points
             self.fine_grid_points = adjusted_grid_points
 
+        # Ensure startup trials remain valid after adjustments
+        if self.n_trials > 1 and self.n_startup_trials >= self.n_trials:
+            self.n_startup_trials = max(1, self.n_trials - 1)
+
     def validate(self) -> None:
         """Validate configuration parameters."""
         if self.n_trials <= 0:

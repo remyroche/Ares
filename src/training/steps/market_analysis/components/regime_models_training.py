@@ -18,6 +18,7 @@ import time
 import warnings
 import psutil
 import gc
+import copy
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
@@ -251,6 +252,9 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
         # Initialize centralized configuration system
         self._initialize_centralized_config()
+
+        # Validate configuration before initializing dependent components
+        self._validate_and_setup_config()
 
         # Initialize improved components
         self._initialize_improved_components()
@@ -666,23 +670,52 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         """Validate and setup configuration with fast fail behavior."""
         tprint("🔧 [REGIME_MODELS] Validating configuration", color="cyan")
         
-        # Get default configuration
+        # Start from default configuration and apply overrides cautiously
         default_config = create_default_regime_training_config()
-        
-        # Merge with provided config
-        if self.config:
-            config_dict = {
-                'test_size': getattr(self.config, 'test_size', default_config['test_size']),
-                'validation_size': getattr(self.config, 'validation_size', default_config['validation_size']),
-                'cv_folds': getattr(self.config, 'cv_folds', default_config['cv_folds']),
-                'random_state': getattr(self.config, 'random_state', default_config['random_state']),
-                'gap_size': getattr(self.config, 'gap_size', default_config['gap_size']),
-                'min_regime_samples': getattr(self.config, 'min_regime_samples', default_config['min_regime_samples']),
-                'regime_aware': getattr(self.config, 'regime_aware', True)
-            }
-        else:
-            config_dict = default_config
-        
+        config_dict = copy.deepcopy(default_config)
+
+        component_cfg = getattr(self, 'config', None)
+        custom_params = getattr(component_cfg, 'custom_params', {}) if component_cfg else {}
+
+        # Allow overriding key temporal split parameters when available
+        test_size_override = custom_params.get('test_size', getattr(component_cfg, 'test_size', None) if component_cfg else None)
+        if test_size_override is not None:
+            config_dict['temporal_validation']['test_size'] = float(test_size_override)
+
+        gap_size_override = custom_params.get('gap_size', getattr(component_cfg, 'gap_size', None) if component_cfg else None)
+        if gap_size_override is not None:
+            config_dict['temporal_validation']['gap_size'] = int(gap_size_override)
+
+        cv_folds_override = custom_params.get('cv_folds', getattr(component_cfg, 'cv_folds', None) if component_cfg else None)
+        if cv_folds_override is not None:
+            config_dict['model_validation']['cv_folds'] = int(cv_folds_override)
+
+        min_features_override = custom_params.get('min_features')
+        if min_features_override is not None:
+            config_dict['data_validation']['min_features'] = max(1, int(min_features_override))
+
+        min_samples_override = custom_params.get('min_samples')
+        if min_samples_override is not None:
+            config_dict['data_validation']['min_samples'] = max(1, int(min_samples_override))
+
+        min_regime_samples = custom_params.get('min_regime_samples', getattr(component_cfg, 'min_regime_samples', None) if component_cfg else None)
+        if min_regime_samples is None:
+            min_regime_samples = config_dict.get('min_regime_samples', config_dict['data_validation'].get('min_samples', 10))
+        config_dict['min_regime_samples'] = max(1, int(min_regime_samples))
+
+        # Ensure regime extraction settings respect overrides when provided
+        regime_min_samples_override = custom_params.get('min_samples_per_regime')
+        if regime_min_samples_override is not None:
+            config_dict['regime_extraction']['min_samples_per_regime'] = max(1, int(regime_min_samples_override))
+
+        regime_min_override = custom_params.get('min_regimes')
+        if regime_min_override is not None:
+            config_dict['regime_extraction']['min_regimes'] = max(1, int(regime_min_override))
+
+        regime_max_override = custom_params.get('max_regimes')
+        if regime_max_override is not None:
+            config_dict['regime_extraction']['max_regimes'] = max(config_dict['regime_extraction']['min_regimes'], int(regime_max_override))
+
         # Validate configuration with fast fail
         try:
             self.validated_config = validate_regime_training_config(config_dict, strict=True)
@@ -755,11 +788,46 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             except RegimeLabelExtractionError as e:
                 tprint(f"⚠️ [REGIME_MODELS] Regime label extraction failed: {e}", color="yellow")
                 tprint("⚠️ [REGIME_MODELS] Creating synthetic labels for testing", color="yellow")
-                # Create synthetic regime labels for testing when no real labels are available
+
+                # Create configuration-aware synthetic regime labels when real labels are unavailable
                 n_samples = len(protected_data)
-                n_regimes = 3  # Typical number of regimes
-                regime_labels = np.random.randint(0, n_regimes, n_samples)
-                tprint(f"✅ [REGIME_MODELS] Created synthetic regime labels: {n_samples} samples, {n_regimes} regimes", color="green")
+                if n_samples == 0:
+                    raise ValueError("Cannot generate synthetic regime labels with no data samples")
+
+                regime_config = (self.validated_config or {}).get('regime_extraction', {})
+                min_regimes_cfg = max(1, int(regime_config.get('min_regimes', 2)))
+                max_regimes_cfg = max(min_regimes_cfg, int(regime_config.get('max_regimes', min_regimes_cfg)))
+                min_samples_per_regime_cfg = max(1, int(regime_config.get('min_samples_per_regime', 5)))
+                min_regime_samples_cfg = max(1, int((self.validated_config or {}).get('min_regime_samples', min_samples_per_regime_cfg)))
+
+                min_samples_required_per_regime = max(min_samples_per_regime_cfg, min_regime_samples_cfg)
+                max_regimes_by_samples = max(1, n_samples // max(1, min_samples_required_per_regime))
+
+                n_regimes = min(max_regimes_cfg, max_regimes_by_samples)
+                if n_regimes < min_regimes_cfg:
+                    n_regimes = min_regimes_cfg if n_samples >= min_regimes_cfg else 1
+                n_regimes = max(1, min(n_regimes, n_samples))
+
+                samples_per_regime = np.full(n_regimes, n_samples // n_regimes, dtype=int)
+                samples_per_regime[: n_samples % n_regimes] += 1
+
+                # Ensure minimum samples per regime; merge regimes if necessary
+                if any(count < min_samples_required_per_regime for count in samples_per_regime) and n_regimes > 1:
+                    n_regimes = max(1, min(n_samples // min_samples_required_per_regime, max_regimes_cfg))
+                    n_regimes = max(1, min(n_regimes, n_samples))
+                    samples_per_regime = np.full(n_regimes, n_samples // n_regimes, dtype=int)
+                    samples_per_regime[: n_samples % n_regimes] += 1
+
+                regime_sequence = np.concatenate([
+                    np.full(count, regime_id, dtype=int)
+                    for regime_id, count in enumerate(samples_per_regime)
+                ])
+
+                regime_labels = regime_sequence[:n_samples]
+                tprint(
+                    f"✅ [REGIME_MODELS] Created synthetic regime labels: {n_samples} samples, {n_regimes} regimes",
+                    color="green"
+                )
 
             # Prepare training data with existing feature bank
             tprint("🔧 [REGIME_MODELS] Preparing training data with existing feature bank", color="cyan")
@@ -959,11 +1027,36 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     n_trials=75  # Increased from 15 for better exploration
                 )
                 
-                if hpo_result.success:
-                    trained_models['catboost'] = hpo_result.best_model
-                    tprint(f"✅ [REGIME_MODELS] CatBoost HPO completed - Best score: {hpo_result.best_score:.4f}", color="green")
+                if hpo_result and not hpo_result.get('error'):
+                    best_params = hpo_result.get('best_params', {})
+                    best_score = hpo_result.get('best_score')
+
+                    tuned_model = create_catboost_model(**best_params)
+                    tuned_model.fit(X_train, y_train)
+                    trained_models['catboost'] = tuned_model
+
+                    score_msg = (
+                        f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
+                    )
+                    tprint(
+                        f"✅ [REGIME_MODELS] CatBoost HPO completed - Best score: {score_msg}",
+                        color="green"
+                    )
+                    self.training_history.append(
+                        {
+                            'model': 'catboost',
+                            'best_params': best_params,
+                            'best_score': best_score,
+                            'n_trials': hpo_result.get('n_trials')
+                        }
+                    )
                 else:
-                    # Fallback to default parameters
+                    # Fallback to default parameters when HPO fails or returns an error
+                    if hpo_result and hpo_result.get('error'):
+                        tprint(
+                            f"⚠️ [REGIME_MODELS] CatBoost HPO returned error: {hpo_result.get('error')}",
+                            color="yellow"
+                        )
                     catboost_model = cb.CatBoostClassifier(
                         iterations=100,
                         depth=6,
@@ -973,7 +1066,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     )
                     catboost_model.fit(X_train, y_train)
                     trained_models['catboost'] = catboost_model
-                    tprint("⚠️ [REGIME_MODELS] CatBoost HPO failed, using default parameters", color="yellow")
+                    tprint("⚠️ [REGIME_MODELS] CatBoost HPO unavailable, using default parameters", color="yellow")
                     
             except Exception as e:
                 tprint(f"❌ [REGIME_MODELS] CatBoost training failed: {e}", color="red")
@@ -1032,8 +1125,11 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint("🔧 [REGIME_MODELS] Generating features using existing feature bank", color="cyan")
             X, feature_names = self._generate_features_with_bank(data)
             
-            if X is None or X.shape[1] < 50:
-                raise ValueError(f"Insufficient features generated: {X.shape[1] if X is not None else 0} < 50 required")
+            min_features_required = ((self.validated_config or {}).get('data_validation', {}) or {}).get('min_features', 50)
+            if X is None or X.shape[1] < min_features_required:
+                raise ValueError(
+                    f"Insufficient features generated: {X.shape[1] if X is not None else 0} < {min_features_required} required"
+                )
             
             tprint(f"✅ [REGIME_MODELS] Features generated: {X.shape[1]} features", color="green")
             
@@ -1070,9 +1166,12 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             else:
                 tprint("✅ [REGIME_MODELS] NaN values handled successfully", color="green")
 
+            data_validation_cfg = (self.validated_config or {}).get('data_validation', {})
+            min_samples_required = data_validation_cfg.get('min_samples', 10)
+
             # Validate data
-            if len(X) < 10:
-                raise ValueError(f"Insufficient samples after alignment: {len(X)}")
+            if len(X) < min_samples_required:
+                raise ValueError(f"Insufficient samples after alignment: {len(X)} < {min_samples_required}")
             
             if len(np.unique(y)) < 2:
                 raise ValueError(f"Insufficient regimes: {len(np.unique(y))}")

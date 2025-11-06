@@ -75,8 +75,10 @@ from src.training.steps.market_analysis.clusters.clustering_optimization_goals i
 # Utilities
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
-from src.features_common.transforms.rank_normalization import RankNormalizer
-from src.features_common.transforms.scaling_normalization import (
+from src.training.steps.market_analysis.statsmodel_clustering.feature_engineering.rank_normalization import (
+    RankNormalizer,
+)
+from src.features_common.transforms import (
     zscore_normalize,
     robust_normalize
 )

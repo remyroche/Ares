@@ -26,7 +26,7 @@ import pandas as pd
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error, tprint_warning
+from src.utils.tprint import tprint, tprint_info, tprint_error, tprint_warning, tprint_debug
 
 # Import Rolling HMM components
 from .feature_engineering import (
@@ -105,7 +105,9 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
     @property
     def quality_assessor(self) -> ClusterQualityAssessor:
         """Lazy property for quality assessor."""
+        tprint_debug("🔍 Accessing quality assessor instance")
         if self._quality_assessor is None:
+            tprint_info("  → Initializing ClusterQualityAssessor")
             self._quality_assessor = ClusterQualityAssessor(
                 artifact_manager=self.artifact_manager,
                 enable_hardware_optimization=True,
@@ -116,7 +118,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute Rolling HMM regime discovery with optional HPO.
-
+        
         Args:
             config: Configuration dictionary containing:
                 - symbol: Trading symbol (e.g., 'BTCUSDT')
@@ -128,32 +130,33 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 - enable_auto_tuning: Whether to run HPO (default: True)
                 - hpo_config: Optional HPO configuration override
                 - feature_config: Optional feature engineering configuration
-
+        
         Returns:
             Dict containing:
-            - 'success': bool indicating if step completed successfully
-            - 'artifacts': dict of created artifacts
-            - 'metrics': dict of performance metrics
-            - 'error': error message if step failed (optional)
-            - 'execution_time': float seconds taken to execute
-            - 'hpo_results': dict of HPO results if enabled (optional)
+                - 'success': bool indicating if step completed successfully
+                - 'artifacts': dict of created artifacts
+                - 'metrics': dict of performance metrics
+                - 'error': error message if step failed (optional)
+                - 'execution_time': float seconds taken to execute
+                - 'hpo_results': dict of HPO results if enabled (optional)
         """
         start_time = time.time()
-
+        
         # Validate configuration
         try:
             self._validate_config(config)
         except Exception as e:
-            return self._handle_execution_error(e, config)
-
+            execution_time = time.time() - start_time
+            return self._handle_execution_error(e, config, execution_time)
+        
         # Extract configuration
         symbol = config.get('symbol', 'BTCUSDT')
         exchange = config.get('exchange', 'binance')
-
+        
         # Use regime_timeframe for regime detection
         regime_timeframe = config.get('regime_timeframe', '1h')
         timeframe = config.get('timeframe', regime_timeframe)
-
+        
         # Override to regime_timeframe
         if timeframe != regime_timeframe:
             tprint(
@@ -162,7 +165,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 "INFO"
             )
             timeframe = regime_timeframe
-
+        
         tprint(
             f"🚀 Starting Rolling HMM Regime Discovery for {symbol} on {exchange} "
             f"(timeframe: {timeframe})",
@@ -174,11 +177,11 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
         tprint("   - PCA dimensionality reduction (3-5 components)", "INFO")
         tprint("   - Sticky HMM with diagonal covariance and regularization", "INFO")
         tprint("   - VectorBT and hardware optimization for M1", "INFO")
-
+        
         try:
             # Initialize hardware optimization
             self._initialize_hardware_optimization()
-
+            
             # Set artifact manager context
             self.artifact_manager.set_context(
                 step_name=self.step_name,
@@ -189,34 +192,32 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 direction="long",
                 model="Analyst"
             )
-
+            
             # Load market data
             tprint("📥 Loading market data...", "INFO")
-
-            if 'market_data' in config and config['market_data'] is not None:
-                market_data = config['market_data']
-                tprint(f"✅ Using market data from config ({len(market_data)} samples)", "SUCCESS")
-            else:
-                market_data = self._load_market_data(symbol, exchange, timeframe, config)
-
-                if market_data is None or market_data.empty:
-                    tprint_error(f"❌ No market data available for {symbol} on {timeframe}")
-                    raise ValueError(f"No market data available for {symbol} on {timeframe}")
-
-                tprint(f"✅ Loaded {len(market_data)} samples of market data", "SUCCESS")
-
+            
+            market_data = self._load_market_data(symbol, exchange, timeframe, config)
+            
+            if market_data is None or market_data.empty:
+                tprint_error(f"❌ No market data available for {symbol} on {timeframe}")
+                raise ValueError(f"No market data available for {symbol} on {timeframe}")
+            
+            tprint(f"✅ Loaded {len(market_data)} samples of market data", "SUCCESS")
+            
             # Check execution mode and if HPO is enabled
             execution_mode = config.get('execution_mode', 'full')
             enable_auto_tuning = config.get('enable_auto_tuning', True)
-
-            # Apply execution mode data limits (blank=20d, light=180d, full=all)
+            hpo_results: Optional[Dict[str, Any]] = None
+            best_params: Optional[Dict[str, Any]] = None
+            
+            # Apply execution mode data limits (blank=20d, light=20d, full=all)
             market_data = self._apply_execution_mode_filter(market_data, execution_mode, timeframe)
             tprint(f"   → After execution mode filter ({execution_mode}): {len(market_data)} samples")
-
+            
             # Initialize feature engineer
             feature_config = self._get_feature_config(config)
             feature_engineer = RollingHMMFeatureEngineer(feature_config)
-
+            
             # Pre-compute ALL features for ALL EWMA windows ONCE (cached for HPO)
             if enable_auto_tuning:
                 tprint("")
@@ -224,24 +225,23 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 all_cached_features = feature_engineer.precompute_all_features(market_data)
                 tprint(f"✅ Cached features for {len(all_cached_features)} EWMA configurations")
                 tprint("")
-            hpo_results = None
-
+            
             # Only skip if user provided manual params
             if 'rolling_hmm_params' in config and config['rolling_hmm_params']:
                 if 'enable_auto_tuning' not in config:
                     enable_auto_tuning = False
                     tprint_info("ℹ️  Manual params provided, skipping HPO (set enable_auto_tuning=True to override)")
-
+            
             # Show execution mode info
             if enable_auto_tuning and execution_mode in ['light', 'blank']:
                 tprint_info(f"ℹ️  HPO enabled in '{execution_mode}' mode (will use reduced trials for speed)")
-
+            
             if enable_auto_tuning:
                 tprint("", "INFO")
                 tprint("🎯 HPO Enabled - Finding Optimal Hyperparameters", "INFO")
                 tprint("=" * 80, "INFO")
 
-                # Run HPO
+                # Run HPO synchronously
                 hpo_results, best_params = await self._run_hpo(
                     market_data, feature_engineer, symbol, exchange, timeframe, config
                 )
@@ -256,10 +256,10 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                     config['rolling_hmm_params'].update(best_params)
                 else:
                     tprint_warning("⚠️  HPO did not complete, using default parameters")
-
+                
                 tprint("=" * 80, "INFO")
                 tprint("", "INFO")
-
+            
             # Run clustering
             tprint("🔍 Running Rolling HMM clustering...", "INFO")
             result = await self._run_clustering(
@@ -267,21 +267,19 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             )
 
             # Save results
-            tprint("💾 Saving clustering results...", "INFO")
             labels_df, probs_df = await self._save_results(result, symbol, exchange, timeframe, config)
 
             # Generate reports
-            tprint("📊 Generating quality assessment reports...", "INFO")
             await self._generate_reports(result, symbol, exchange, timeframe, config)
-
+            
             # Calculate execution time
             execution_time = time.time() - start_time
-
+            
             tprint("", "SUCCESS")
             tprint(f"✅ Rolling HMM Regime Discovery completed in {execution_time:.2f}s", "SUCCESS")
             tprint(f"   - Identified {result.get('n_regimes', 0)} regimes", "SUCCESS")
             tprint(f"   - Quality score: {result.get('quality_metrics', {}).get('quality_score', 0):.4f}", "SUCCESS")
-
+            
             # Return standardized result
             return_dict = {
                 'success': True,
@@ -295,14 +293,74 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 'execution_time': execution_time,
                 'n_regimes': result.get('n_regimes', 0)
             }
-
+            
             if hpo_results:
                 return_dict['hpo_results'] = hpo_results
-
+            
             return return_dict
-
+            
         except Exception as e:
-            return self._handle_execution_error(e, config)
+            execution_time = time.time() - start_time
+            return self._handle_execution_error(e, config, execution_time)
+
+    def _load_market_data(
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        config: Dict[str, Any],
+    ) -> Optional[pd.DataFrame]:
+        """Load market data from config or artifacts, restoring step context afterwards."""
+        if 'market_data' in config and config['market_data'] is not None:
+            external_data = config['market_data']
+            tprint(f"✅ Using market data from config ({len(external_data)} samples)", "SUCCESS")
+            return external_data
+
+        artifact_sources = [
+            ('klines_downloading_processing', 'klines_data'),
+            ('data_collection', 'market_data'),
+            ('data_reading', 'ohlcv_data'),
+        ]
+
+        original_context = self._current_context.copy()
+
+        try:
+            for step_name, artifact_name in artifact_sources:
+                try:
+                    self.artifact_manager.set_context(
+                        step_name=step_name,
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                    )
+
+                    market_data = self._get_artifact(
+                        artifact_name=artifact_name,
+                        artifact_type='data',
+                    )
+
+                    if market_data is not None and not market_data.empty:
+                        tprint(
+                            f"✅ Loaded market data from {step_name}/{artifact_name}",
+                            "SUCCESS",
+                        )
+                        return market_data
+                except Exception as load_error:
+                    self.logger.debug(
+                        f"Could not load market data from {step_name}/{artifact_name}: {load_error}"
+                    )
+        finally:
+            self.artifact_manager.set_context(**original_context)
+
+        tprint(
+            f"⚠️ Could not load market data for {symbol} on {timeframe} from artifacts",
+            "WARNING",
+        )
+
+        raise ValueError(
+            "Market data not available via artifact manager. "
+            "Run the data collection or klines processing steps before rolling HMM discovery."
+        )
 
     def _initialize_hardware_optimization(self):
         """Initialize hardware optimization for M1."""
@@ -316,6 +374,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
 
     def _get_feature_config(self, config: Dict[str, Any]) -> FeatureEngineeringConfig:
         """Get feature engineering configuration."""
+        tprint_debug("Fetching feature engineering configuration")
         feature_config = config.get('feature_config', {})
 
         return FeatureEngineeringConfig(
@@ -334,6 +393,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
 
     def _get_hpo_config(self, config: Dict[str, Any]) -> HPOConfig:
         """Get HPO configuration."""
+        tprint_debug("Fetching HPO configuration with execution mode adjustments")
         hpo_config = config.get('hpo_config', {})
         execution_mode = config.get('execution_mode', 'full')
 
@@ -621,15 +681,71 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             tprint(f"  - Temporal Smoothness: {metrics.get('temporal_smoothness', 0):.4f}", "INFO")
             tprint(f"  - Regime Persistence: {metrics.get('regime_persistence', 0):.2f} bars", "INFO")
             tprint("", "INFO")
+
+            # Winning configuration details
+            winning_params = config.get('rolling_hmm_params', {})
+            hmm_model = result.get('hmm_model')
+            hmm_config = getattr(hmm_model, 'config', None)
+            tprint("Winning Configuration:", "INFO")
+            if hmm_config is not None:
+                tprint(f"  - Rolling HMM n_components: {hmm_config.n_components}", "INFO")
+                tprint(f"  - Rolling HMM kappa: {hmm_config.kappa}", "INFO")
+                tprint(f"  - Rolling HMM min_covar: {hmm_config.min_covar}", "INFO")
+                tprint(f"  - Rolling HMM n_iter: {hmm_config.n_iter}", "INFO")
+                tprint(f"  - Rolling HMM tol: {hmm_config.tol}", "INFO")
+            if winning_params:
+                for key, value in winning_params.items():
+                    if key in {'n_components', 'kappa', 'min_covar', 'n_iter', 'tol'}:
+                        continue  # already covered above
+                    tprint(f"  - {key}: {value}", "INFO")
+            else:
+                tprint("  - No HPO overrides applied (using default configuration)", "INFO")
+            tprint("", "INFO")
+
             tprint("Expected Durations per Regime:", "INFO")
-            for i, duration in enumerate(result['expected_durations']):
-                tprint(f"  - Regime {i}: {duration:.2f} bars", "INFO")
+            expected_durations = result.get('expected_durations', [])
+            expected_total = float(np.sum(expected_durations)) if len(expected_durations) else 0.0
+            for i, duration in enumerate(expected_durations):
+                pct = (duration / expected_total * 100.0) if expected_total > 0 else 0.0
+                tprint(f"  - Regime {i}: {duration:.2f} bars ({pct:.1f}%)", "INFO")
             tprint("=" * 80, "INFO")
+
+            # Persist detailed reports via quality assessor
+            metrics_obj = ClusterQualityMetrics(**metrics) if isinstance(metrics, dict) else metrics
+            method_config = {
+                'rolling_hmm_params': config.get('rolling_hmm_params', {}),
+                'ewma_config': getattr(hmm_model, 'config', None)
+            }
+            self.quality_assessor.generate_markdown_report(
+                metrics_obj,
+                symbol=symbol,
+                method_specific_config=method_config
+            )
+
+            all_trials = None
+            hpo_results = result.get('hpo_results') or config.get('hpo_results')
+            if not hpo_results:
+                hpo_results = config.get('hpo_summary')
+            if hpo_results:
+                trial_keys = ['coarse_results', 'fine_results', 'refinement_results']
+                all_trials = []
+                for key in trial_keys:
+                    trials = hpo_results.get(key)
+                    if isinstance(trials, list):
+                        all_trials.extend(trials)
+
+            self.quality_assessor.generate_comprehensive_csv_report(
+                metrics_obj,
+                all_trials=all_trials,
+                symbol=symbol,
+                method_specific_config=method_config
+            )
 
         except Exception as e:
             tprint_warning(f"⚠️  Failed to generate reports: {e}")
             self.logger.warning(f"Failed to generate reports: {e}", exc_info=True)
 
+# ... (rest of the code remains the same)
     def _log_best_params(self, best_params: Dict[str, Any]):
         """Log best parameters from HPO."""
         tprint("Best Parameters:", "INFO")
@@ -639,6 +755,28 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 tprint(f"  - EWMA Config: {ewma_config.name} (idx={value})", "INFO")
             else:
                 tprint(f"  - {key}: {value}", "INFO")
+
+    def _handle_execution_error(
+        self,
+        error: Exception,
+        config: Dict[str, Any],
+        execution_time: float,
+    ) -> Dict[str, Any]:
+        """Handle execution errors consistently with logging and structured result."""
+        error_msg = str(error)
+        self.logger.error(
+            f"Rolling HMM execution failed: {error_msg}",
+            exc_info=True,
+        )
+        tprint(f"❌ Rolling HMM Regime Discovery failed: {error_msg}", "ERROR")
+
+        return {
+            'success': False,
+            'error': error_msg,
+            'artifacts': {},
+            'metrics': {},
+            'execution_time': execution_time,
+        }
 
     def _apply_execution_mode_filter(
         self,
@@ -693,6 +831,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
 
     def _validate_config(self, config: Dict[str, Any]):
         """Validate configuration."""
+        tprint_debug("Validating Rolling HMM configuration input")
         required_keys = ['symbol', 'exchange']
         for key in required_keys:
             if key not in config:

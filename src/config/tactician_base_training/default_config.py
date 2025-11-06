@@ -423,35 +423,8 @@ class TacticianBaseTrainingConfig:
             }
         )
         
-        # DepthwiseCNN
-        cnn_model = BaseModelConfig(
-            model_name="DepthwiseCNN",
-            class_name="src.models.tcn_regressor.DepthwiseSeparableCNNRegressor",
-            is_feature_generator=False,
-            params={
-                'filters': 64,
-                'kernel_size': 3,
-                'dropout': 0.2,
-                'epochs': 50,
-                'batch_size': 32,
-                'learning_rate': 0.001,
-                'validation_split': 0.2,
-                'early_stopping_patience': 10,
-                'reduce_lr_patience': 5,
-                'use_batch_norm': False,
-                'verbose': 0
-            },
-            hpo={
-                'enabled': True,
-                'n_rounds': 2,
-                'enable_final_refinement': True,
-                'final_refinement_trials': 50,
-                'optimal_params': {}
-            }
-        )
-        
         self.tactician_config.base_models = [
-            gru_model, lgbm_model, catboost_model, extratrees_model, cnn_model
+            gru_model, lgbm_model, catboost_model, extratrees_model
         ]
     
     def validate(self) -> bool:

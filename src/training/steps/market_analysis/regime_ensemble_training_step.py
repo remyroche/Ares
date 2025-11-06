@@ -5,25 +5,10 @@ This step trains ensemble models for regime classification using the comprehensi
 RegimeEnsembleTrainingComponent implementation.
 """
 
-import asyncio
 import logging
-from typing import Any, Dict, List, Optional
-from datetime import datetime
+from typing import Any, Dict
 
-# Handle optional dependencies gracefully
-try:
-    import numpy as np
-    NUMPY_AVAILABLE = True
-except ImportError:
-    NUMPY_AVAILABLE = False
-    np = None
-
-try:
-    import pandas as pd
-    PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
-    pd = None
+import pandas as pd
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
@@ -91,11 +76,19 @@ class RegimeEnsembleTrainingStep(BaseStep):
 
             # Get pipeline state from config (should contain artifacts from previous steps)
             pipeline_state = config.get('pipeline_state', {})
-            
+
+            market_data = pipeline_state.get('market_data') or config.get('market_data')
             if market_data is None:
-                tprint("⚠️ No market data found in pipeline state", "WARNING")
-                return
-            
+                error_msg = "No market data available for regime ensemble training"
+                tprint(f"❌ {error_msg}", "ERROR")
+                self.logger.error(error_msg)
+                return {
+                    'success': False,
+                    'artifacts': {},
+                    'metrics': {},
+                    'error': error_msg
+                }
+
             # Convert market data to DataFrame if it's not already
             if not isinstance(market_data, pd.DataFrame):
                 tprint("⚠️ Market data is not a DataFrame, attempting conversion", "WARNING")

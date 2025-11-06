@@ -298,9 +298,9 @@ class DataQualityFramework:
         # Define optional columns that CAN have NaN values
         optional_columns = {
             'quote_volume', 'quote_asset_volume',
-            'trades_count', 'number_of_trades',
-            'taker_buy_base_volume', 'taker_buy_base_asset_volume',
-            'taker_buy_quote_volume', 'taker_buy_quote_asset_volume'
+            'trades', 'trades_count', 'number_of_trades',
+            'taker_buy_base', 'taker_buy_base_volume', 'taker_buy_base_asset_volume',
+            'taker_buy_quote', 'taker_buy_quote_volume', 'taker_buy_quote_asset_volume'
         }
         
         # Define calculated features that can legitimately have NaN values due to rolling calculations

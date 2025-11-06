@@ -13,6 +13,7 @@ from datetime import datetime
 import traceback
 
 from src.utils.artifact_manager import ArtifactManager
+from src.utils.tprint import tprint
 
 
 class BaseStep(ABC):
@@ -36,6 +37,7 @@ class BaseStep(ABC):
         """
         self.step_name = step_name
         self.logger = logging.getLogger(f"ares.step.{step_name}")
+        tprint(f"🛠️ Initialized BaseStep for '{self.step_name}'")
 
         # Defer heavy initialization until needed (lazy loading)
         self._artifact_manager = None
@@ -70,9 +72,15 @@ class BaseStep(ABC):
 
     def set_context(self, **kwargs):
         """Set context for lazy initialization."""
+        tprint(
+            f"🧭 Updating context for '{self.step_name}' with {list(kwargs.keys())}"
+        )
         self._current_context.update(kwargs)
         if self._artifact_manager is not None:
             self._artifact_manager.set_context(**self._current_context)
+            tprint(
+                f"🔄 Applied new context to ArtifactManager for '{self.step_name}'"
+            )
 
     def _detect_execution_mode(self, config: Dict[str, Any]) -> str:
         """
@@ -111,6 +119,7 @@ class BaseStep(ABC):
             mode = 'analyst'  # Uses CMI-based selection
         
         self.logger.info(f"Execution mode detected: {mode}")
+        tprint(f"🎯 Execution mode for '{self.step_name}': {mode}")
         return mode
         
     @abstractmethod
@@ -150,6 +159,9 @@ class BaseStep(ABC):
             Path where artifact was saved
         """
         try:
+            tprint(
+                f"💾 Saving artifact '{artifact_name}' (type: {artifact_type}) for '{self.step_name}'"
+            )
             artifact_path = self.artifact_manager.save(
                 data=data,
                 artifact_name=artifact_name,
@@ -158,9 +170,13 @@ class BaseStep(ABC):
                 metadata=metadata
             )
             self.logger.info(f"Saved artifact: {artifact_name} -> {artifact_path}")
+            tprint(f"✅ Saved artifact '{artifact_name}' to {artifact_path}")
             return artifact_path
         except Exception as e:
             self.logger.error(f"Failed to save artifact {artifact_name}: {e}")
+            tprint(
+                f"❌ Failed to save artifact '{artifact_name}' for '{self.step_name}': {e}"
+            )
             raise
     
     def _get_artifact(self, artifact_name: str, 
@@ -176,14 +192,34 @@ class BaseStep(ABC):
             Retrieved data
         """
         try:
-            data = self.artifact_manager.get_artifact(
-                artifact_name=artifact_name,
-                artifact_type=artifact_type
+            tprint(
+                f"📂 Retrieving artifact '{artifact_name}' (type: {artifact_type}) for '{self.step_name}'"
             )
-            self.logger.info(f"Retrieved artifact: {artifact_name}")
-            return data
+            data, resolved_path = self.artifact_manager.get_artifact(
+                artifact_name=artifact_name,
+                artifact_type=artifact_type,
+                return_path=True
+            )
+            if data is not None:
+                if resolved_path:
+                    tprint(
+                        f"✅ Retrieved artifact '{artifact_name}' from {resolved_path}"
+                    )
+                else:
+                    tprint(
+                        f"✅ Retrieved artifact '{artifact_name}' via fallback (no direct file path)"
+                    )
+                self.logger.info(f"Retrieved artifact: {artifact_name}")
+                return data
+            else:
+                tprint(f"⚠️ Artifact '{artifact_name}' not found for '{self.step_name}'")
+                self.logger.warning(f"Artifact not found: {artifact_name}")
+                return None
         except Exception as e:
             self.logger.error(f"Failed to retrieve artifact {artifact_name}: {e}")
+            tprint(
+                f"❌ Failed to retrieve artifact '{artifact_name}' for '{self.step_name}': {e}"
+            )
             raise
     
     def _apply_light_mode_filter(self, data: Any, config: Dict[str, Any], timeframe: str = "15m") -> Any:
@@ -204,6 +240,9 @@ class BaseStep(ABC):
             execution_mode = config.get('execution_mode', 'light')
             
             if execution_mode.lower() != 'light':
+                tprint(
+                    f"💡 Light mode disabled for '{self.step_name}' (mode: {execution_mode})"
+                )
                 return data
             
             # Calculate samples per day for different timeframes
@@ -221,6 +260,9 @@ class BaseStep(ABC):
             samples_per_day = samples_per_day_map.get(timeframe, 96)  # Default to 15m
             days_limit = 20
             light_limit = days_limit * samples_per_day
+            tprint(
+                f"💡 Applying light mode filter ({timeframe}, {days_limit} days) for '{self.step_name}'"
+            )
             
             # Check if data has length attribute and tail method
             if hasattr(data, '__len__') and hasattr(data, 'tail'):
@@ -228,6 +270,9 @@ class BaseStep(ABC):
                 if data_len > light_limit:
                     filtered = data.tail(light_limit).copy()
                     self.logger.info(f"BaseStep light mode filtering: reduced data from {data_len:,} to {len(filtered):,} samples ({days_limit} days of {timeframe} data)")
+                    tprint(
+                        f"✂️ Light mode reduced dataset from {data_len:,} to {len(filtered):,} rows"
+                    )
                     return filtered
             
             return data
@@ -317,6 +362,9 @@ class BaseStep(ABC):
             )
             
             self.logger.info(f"Saved ML scored data: {artifact_name} -> {artifact_path}")
+            tprint(
+                f"📊 Saved ML scored data '{artifact_name}' to {artifact_path}"
+            )
             return artifact_path
             
         except Exception as e:
@@ -350,9 +398,15 @@ class BaseStep(ABC):
                 )
                 if sr_levels_dict:
                     self.logger.info(f"Retrieved SR levels from artifacts: {len(sr_levels_dict.get('levels', []))} levels")
+                    tprint(
+                        f"📈 Loaded SR levels dictionary with {len(sr_levels_dict.get('levels', []))} levels from artifacts"
+                    )
                     return sr_levels_dict
             except Exception as e:
                 self.logger.debug(f"SR levels not found in artifacts: {e}")
+                tprint(
+                    f"ℹ️ SR levels artifact not available for '{self.step_name}', trying feature bank"
+                )
             
             # Fallback to feature bank
             try:
@@ -366,12 +420,21 @@ class BaseStep(ABC):
                 )
                 if sr_levels_dict and not sr_levels_dict.get('error'):
                     self.logger.info(f"Retrieved SR levels from feature bank: {len(sr_levels_dict.get('levels', []))} levels")
+                    tprint(
+                        f"🏦 Retrieved SR levels from feature bank ({len(sr_levels_dict.get('levels', []))} levels)"
+                    )
                     return sr_levels_dict
             except Exception as e:
                 self.logger.debug(f"SR levels not available from feature bank: {e}")
+                tprint(
+                    f"⚠️ Feature bank SR levels unavailable for '{self.step_name}': {e}"
+                )
             
             # Return empty result if not found
             self.logger.warning("SR levels dictionary not found in artifacts or feature bank")
+            tprint(
+                f"⚠️ SR levels dictionary missing for '{self.step_name}'"
+            )
             return {
                 'levels': [],
                 'summary': {'total_levels': 0, 'total_clusters': 0},
@@ -380,6 +443,9 @@ class BaseStep(ABC):
             
         except Exception as e:
             self.logger.error(f"Failed to get SR levels: {e}")
+            tprint(
+                f"❌ Failed to load SR levels for '{self.step_name}': {e}"
+            )
             return {
                 'levels': [],
                 'summary': {'total_levels': 0, 'total_clusters': 0},
@@ -400,12 +466,16 @@ class BaseStep(ABC):
             Execution result with outcome report path
         """
         start_time = datetime.now()
+        tprint(f"🚀 Starting execution of step '{self.step_name}'")
         
         try:
             self.logger.info(f"Starting execution of {self.step_name}")
             
             # Detect execution mode
             self.execution_mode = self._detect_execution_mode(config)
+            tprint(
+                f"🔧 Running '{self.step_name}' in {self.execution_mode} mode"
+            )
             
             # Execute the step (async)
             execution_result = await self.execute(config)
@@ -417,8 +487,28 @@ class BaseStep(ABC):
             # Log completion
             if execution_result.get('success', False):
                 self.logger.info(f"Successfully completed {self.step_name} in {execution_time:.2f}s")
+                tprint(
+                    f"✅ Step '{self.step_name}' completed successfully in {execution_time:.2f}s"
+                )
             else:
                 self.logger.error(f"Failed to complete {self.step_name} after {execution_time:.2f}s")
+                tprint(
+                    f"❌ Step '{self.step_name}' reported failure after {execution_time:.2f}s"
+                )
+            artifacts = execution_result.get('artifacts')
+            if artifacts:
+                try:
+                    artifact_count = len(artifacts)
+                except TypeError:
+                    artifact_count = 1
+                tprint(
+                    f"📦 Step '{self.step_name}' produced {artifact_count} artifact(s)"
+                )
+            outcome_path = execution_result.get('outcome_report_path')
+            if outcome_path:
+                tprint(
+                    f"📝 Outcome report saved to {outcome_path}"
+                )
             
             return execution_result
             
@@ -427,6 +517,9 @@ class BaseStep(ABC):
             error_msg = f"Step {self.step_name} failed: {str(e)}\n{traceback.format_exc()}"
             
             self.logger.error(error_msg)
+            tprint(
+                f"❌ Step '{self.step_name}' crashed after {execution_time:.2f}s: {e}"
+            )
             
             # Create failure result
             failure_result = {
@@ -437,7 +530,9 @@ class BaseStep(ABC):
                 'metrics': {}
             }
             
-            
+            tprint(
+                f"🛑 Returning failure result for '{self.step_name}'"
+            )
             return failure_result
 
 

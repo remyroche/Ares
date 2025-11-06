@@ -6,14 +6,25 @@ including returns, volatility, trend, and volume features. Optimized for Mac M1 
 VectorBT and hardware acceleration.
 """
 
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Tuple, Optional, Union, Literal
 from dataclasses import dataclass
 import logging
+from enum import Enum
 from numba import jit
+import numpy.typing as npt
 
-from src.utils.tprint import tprint, tprint_info, tprint_warning
+# Type aliases
+ArrayLike = Union[npt.NDArray[np.float64], pd.Series, pd.DataFrame]
+Numeric = Union[int, float, np.number]
+WindowType = Union[int, str, pd.api.indexers.BaseIndexer]
+NormalizeMethod = Literal['zscore', 'robust']
+
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_debug, tprint_error
+from src.feature_generation.core.feature_generator import FeatureResult
 from src.feature_generation.utils.consolidated_rolling_optimizer import (
     ConsolidatedRollingOptimizer,
     BatchRollingConfig,
@@ -39,32 +50,56 @@ from src.utils.hardware.unified_hardware_manager import (
 logger = logging.getLogger(__name__)
 
 
-@dataclass
 class EWMAConfig:
     """Configuration for EWMA feature generation."""
-    short_window: int  # e.g., 8, 12
-    long_window: int   # e.g., 16, 20, 24
-    name: str          # e.g., "8+16", "12+24"
-
-    def __post_init__(self):
+    
+    def __init__(
+        self,
+        short_window: int,
+        long_window: int,
+        name: str
+    ) -> None:
+        self.short_window = short_window  # e.g., 8, 12
+        self.long_window = long_window    # e.g., 16, 20, 24
+        self.name = name                 # e.g., "8+16", "12+24"
+        self.__post_init__()
+        
+    def __post_init__(self) -> None:
         if self.short_window >= self.long_window:
+            tprint_error(
+                f"⚠️  Invalid EWMAConfig: short_window={self.short_window} must be < long_window={self.long_window}"
+            )
             raise ValueError(f"short_window ({self.short_window}) must be < long_window ({self.long_window})")
 
 
-@dataclass
 class FeatureEngineeringConfig:
     """Configuration for feature engineering pipeline."""
-    ewma_configs: List[EWMAConfig]
-    use_log_returns: bool = True
-    use_volatility_features: bool = True
-    use_trend_features: bool = True
-    use_volume_features: bool = True
-    pca_components: int = 4  # 3-5 for 80-90% variance
-    normalize_method: str = 'zscore'  # 'zscore', 'robust'
-    rolling_normalize_window: int = 100
-    enable_vectorbt_optimization: bool = True
-    enable_hardware_optimization: bool = True
-    enable_numba_jit: bool = True
+    
+    def __init__(
+        self,
+        ewma_configs: List[EWMAConfig],
+        use_log_returns: bool = True,
+        use_volatility_features: bool = True,
+        use_trend_features: bool = True,
+        use_volume_features: bool = True,
+        pca_components: int = 4,  # 3-5 for 80-90% variance
+        normalize_method: NormalizeMethod = 'zscore',
+        rolling_normalize_window: int = 100,
+        enable_vectorbt_optimization: bool = True,
+        enable_hardware_optimization: bool = True,
+        enable_numba_jit: bool = True
+    ) -> None:
+        self.ewma_configs = ewma_configs
+        self.use_log_returns = use_log_returns
+        self.use_volatility_features = use_volatility_features
+        self.use_trend_features = use_trend_features
+        self.use_volume_features = use_volume_features
+        self.pca_components = pca_components
+        self.normalize_method = normalize_method
+        self.rolling_normalize_window = rolling_normalize_window
+        self.enable_vectorbt_optimization = enable_vectorbt_optimization
+        self.enable_hardware_optimization = enable_hardware_optimization
+        self.enable_numba_jit = enable_numba_jit
 
 
 class RollingHMMFeatureEngineer:
@@ -76,7 +111,7 @@ class RollingHMMFeatureEngineer:
     and hardware acceleration for Mac M1.
     """
 
-    def __init__(self, config: FeatureEngineeringConfig):
+    def __init__(self, config: FeatureEngineeringConfig) -> None:
         """
         Initialize feature engineer.
 
@@ -90,6 +125,11 @@ class RollingHMMFeatureEngineer:
         self._feature_cache: Dict[str, pd.DataFrame] = {}
         self._normalized_feature_cache: Dict[str, pd.DataFrame] = {}
         self._pca_cache: Dict[Tuple[str, int], Tuple[pd.DataFrame, Any, float]] = {}
+        
+        # Initialize optimizers with proper type hints
+        self.rolling_optimizer: Optional[ConsolidatedRollingOptimizer] = None
+        self.stat_optimizer: Optional[StatisticalCalculationsOptimizer] = None
+        self.hardware_manager = get_unified_hardware_manager() if config.enable_hardware_optimization else None
 
         # Initialize optimizers
         if config.enable_vectorbt_optimization:
@@ -139,6 +179,53 @@ class RollingHMMFeatureEngineer:
 
         self.feature_names = []
 
+    @staticmethod
+    def _ensure_series(value: Any, index: pd.Index, name: str) -> pd.Series:
+        """Convert batch results into a pandas Series aligned with the target index."""
+        if value is None:
+            series = pd.Series(np.nan, index=index, name=name)
+        elif isinstance(value, pd.Series):
+            series = value.copy()
+        elif isinstance(value, pd.DataFrame):
+            series = value.iloc[:, 0].copy()
+        else:
+            series = pd.Series(value, index=index, name=name)
+
+        if not series.index.equals(index):
+            series = series.reindex(index)
+
+        series.name = name
+        return series
+
+    @staticmethod
+    def _extract_batch_results(raw_results: Any, configs: List[RollingOperationConfig]) -> List[Any]:
+        """Normalize batch operation outputs into a simple list."""
+        result_list: List[Any]
+
+        if isinstance(raw_results, dict):
+            result_list = []
+            values_iter = iter(raw_results.values())
+            for idx, cfg in enumerate(configs):
+                key = f"{cfg.operation.value}_{cfg.window}_{idx}"
+                if key in raw_results:
+                    result_list.append(raw_results[key])
+                else:
+                    try:
+                        result_list.append(next(values_iter))
+                    except StopIteration:
+                        result_list.append(None)
+        elif isinstance(raw_results, (list, tuple)):
+            result_list = list(raw_results)
+        else:
+            result_list = [raw_results]
+
+        if len(result_list) < len(configs):
+            result_list.extend([None] * (len(configs) - len(result_list)))
+        elif len(result_list) > len(configs):
+            result_list = result_list[:len(configs)]
+
+        return result_list
+
     def precompute_all_features(self, market_data: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         """
         Pre-compute features for ALL EWMA windows ONCE at the beginning.
@@ -161,8 +248,37 @@ class RollingHMMFeatureEngineer:
             # Generate features for this EWMA config
             features = self._generate_features_internal(market_data, ewma_config)
 
+            empty_columns = [col for col in features.columns if features[col].isna().all()]
+            if empty_columns:
+                display_cols = ", ".join(empty_columns[:10])
+                suffix = " …" if len(empty_columns) > 10 else ""
+                tprint_warning(
+                    f"      ⚠️  EWMA {ewma_config.name}: Dropping {len(empty_columns)} all-NaN columns: {display_cols}{suffix}"
+                )
+                features = features.drop(columns=empty_columns)
+
+            if features.empty:
+                tprint_error(
+                    f"      ❌ EWMA {ewma_config.name}: No features remaining after removing all-NaN columns; skipping"
+                )
+                continue
+
             # Normalize features
             features_normalized = self._normalize_features(features)
+
+            total_rows = len(features_normalized)
+            nan_mask = features_normalized.isna().any(axis=1)
+            nan_rows = int(np.count_nonzero(nan_mask.to_numpy()))
+            if nan_rows > 0:
+                tprint_warning(
+                    f"      ⚠️  EWMA {ewma_config.name}: Found {nan_rows} NaN rows out of {total_rows}; filling with column means"
+                )
+                features_normalized = features_normalized.fillna(features_normalized.mean())
+                features_normalized = features_normalized.fillna(0)
+            else:
+                tprint_info(
+                    f"      ✅ EWMA {ewma_config.name}: No NaNs detected across {total_rows} rows"
+                )
 
             # Cache both raw and normalized features
             self._feature_cache[ewma_config.name] = features
@@ -176,7 +292,18 @@ class RollingHMMFeatureEngineer:
 
     def get_cached_features(self, ewma_config: EWMAConfig) -> Optional[pd.DataFrame]:
         """Get pre-computed features from cache."""
-        return self._normalized_feature_cache.get(ewma_config.name)
+        if ewma_config is None:
+            tprint_warning("⚠️  Requested cached features without providing an EWMA configuration")
+            return None
+
+        cached = self._normalized_feature_cache.get(ewma_config.name)
+
+        if cached is None:
+            tprint_debug(f"📦 Cache miss for EWMA {ewma_config.name}")
+        else:
+            tprint_debug(f"📦 Cache hit for EWMA {ewma_config.name} ({len(cached)} samples)")
+
+        return cached
 
     def generate_features(
         self,
@@ -209,6 +336,17 @@ class RollingHMMFeatureEngineer:
         # Generate features internally
         features = self._generate_features_internal(market_data, ewma_config)
 
+        empty_columns = [col for col in features.columns if features[col].isna().all()]
+        if empty_columns:
+            tprint_warning(
+                f"  ⚠️  Dropping {len(empty_columns)} feature columns with only NaNs: {', '.join(empty_columns[:10])}" +
+                (" …" if len(empty_columns) > 10 else "")
+            )
+            features = features.drop(columns=empty_columns)
+
+        if features.empty:
+            raise ValueError("No features remaining after removing all-NaN columns")
+
         # Store feature names before normalization
         self.feature_names = list(features.columns)
 
@@ -216,13 +354,18 @@ class RollingHMMFeatureEngineer:
         tprint_info(f"  → Normalizing features ({self.config.normalize_method})")
         features_normalized = self._normalize_features(features)
 
-        # Drop NaN rows
-        initial_rows = len(features_normalized)
-        features_normalized = features_normalized.dropna()
-        dropped_rows = initial_rows - len(features_normalized)
-
-        if dropped_rows > 0:
-            tprint_warning(f"  ⚠️  Dropped {dropped_rows} rows with NaN values")
+        # Report NaN statistics before dropping
+        total_rows = len(features_normalized)
+        nan_mask = features_normalized.isna().any(axis=1)
+        nan_rows = int(np.count_nonzero(nan_mask.to_numpy()))
+        if nan_rows > 0:
+            tprint_warning(
+                f"  ⚠️  Found {nan_rows} rows with NaNs out of {total_rows}; filling with column means"
+            )
+            features_normalized = features_normalized.fillna(features_normalized.mean())
+            features_normalized = features_normalized.fillna(0)
+        else:
+            tprint_info(f"  ✅ No NaNs detected across {total_rows} rows before drop")
 
         tprint(f"✅ Generated {len(features_normalized.columns)} features, {len(features_normalized)} samples")
 
@@ -283,6 +426,7 @@ class RollingHMMFeatureEngineer:
         ewma_config: EWMAConfig
     ) -> Dict[str, pd.Series]:
         """Generate returns-based features."""
+        tprint_debug(f"    Generating returns features for EWMA {ewma_config.name}")
         features = {}
 
         close = market_data['close']
@@ -324,6 +468,7 @@ class RollingHMMFeatureEngineer:
         ewma_config: EWMAConfig
     ) -> Dict[str, pd.Series]:
         """Generate volatility-based features."""
+        tprint_debug(f"    Generating volatility features for EWMA {ewma_config.name}")
         features = {}
 
         close = market_data['close']
@@ -333,12 +478,9 @@ class RollingHMMFeatureEngineer:
         # Calculate returns for volatility
         if self.config.use_log_returns:
             returns = np.log(close / close.shift(1))
-        else:
-            returns = close.pct_change()
 
         # Rolling standard deviation
         if self.rolling_optimizer:
-            # Use VectorBT for batch operations
             configs = [
                 RollingOperationConfig(
                     operation=RollingOperationType.STD,
@@ -351,9 +493,10 @@ class RollingHMMFeatureEngineer:
                     min_periods=max(2, ewma_config.long_window // 2)
                 )
             ]
-            results = self.rolling_optimizer.batch_rolling_operations(returns, configs)
-            vol_short = results[0]
-            vol_long = results[1]
+            raw_results = self.rolling_optimizer.batch_rolling_operations(returns, configs)
+            result_list = self._extract_batch_results(raw_results, configs)
+            vol_short = self._ensure_series(result_list[0], returns.index, f"rolling_std_{ewma_config.short_window}")
+            vol_long = self._ensure_series(result_list[1], returns.index, f"rolling_std_{ewma_config.long_window}")
         else:
             vol_short = returns.rolling(
                 ewma_config.short_window,
@@ -392,6 +535,7 @@ class RollingHMMFeatureEngineer:
         ewma_config: EWMAConfig
     ) -> Dict[str, pd.Series]:
         """Generate trend-based features."""
+        tprint_debug(f"    Generating trend features for EWMA {ewma_config.name}")
         features = {}
 
         close = market_data['close']
@@ -416,9 +560,10 @@ class RollingHMMFeatureEngineer:
                     min_periods=max(1, ewma_config.long_window // 2)
                 )
             ]
-            results = self.rolling_optimizer.batch_rolling_operations(close, configs)
-            sma_short = results[0]
-            sma_long = results[1]
+            raw_results = self.rolling_optimizer.batch_rolling_operations(close, configs)
+            result_list = self._extract_batch_results(raw_results, configs)
+            sma_short = self._ensure_series(result_list[0], close.index, f"sma_{ewma_config.short_window}")
+            sma_long = self._ensure_series(result_list[1], close.index, f"sma_{ewma_config.long_window}")
         else:
             sma_short = close.rolling(
                 ewma_config.short_window,
@@ -470,6 +615,7 @@ class RollingHMMFeatureEngineer:
         ewma_config: EWMAConfig
     ) -> Dict[str, pd.Series]:
         """Generate volume-based features."""
+        tprint_debug(f"    Generating volume features for EWMA {ewma_config.name}")
         features = {}
 
         volume = market_data['volume']
@@ -493,9 +639,10 @@ class RollingHMMFeatureEngineer:
                     min_periods=max(1, ewma_config.long_window // 2)
                 )
             ]
-            results = self.rolling_optimizer.batch_rolling_operations(volume, configs)
-            avg_vol_short = results[0]
-            avg_vol_long = results[1]
+            raw_results = self.rolling_optimizer.batch_rolling_operations(volume, configs)
+            result_list = self._extract_batch_results(raw_results, configs)
+            avg_vol_short = self._ensure_series(result_list[0], volume.index, f"avg_volume_{ewma_config.short_window}")
+            avg_vol_long = self._ensure_series(result_list[1], volume.index, f"avg_volume_{ewma_config.long_window}")
         else:
             avg_vol_short = volume.rolling(
                 ewma_config.short_window,
@@ -566,6 +713,11 @@ class RollingHMMFeatureEngineer:
     def _calculate_obv(self, close: pd.Series, volume: pd.Series) -> pd.Series:
         """Calculate On-Balance Volume."""
         if self.config.enable_numba_jit:
+            tprint_debug("    Calculating OBV using Numba acceleration")
+        else:
+            tprint_debug("    Calculating OBV using pandas fallback")
+
+        if self.config.enable_numba_jit:
             obv_values = self._calculate_obv_numba(close.values, volume.values)
             return pd.Series(obv_values, index=close.index)
         else:
@@ -596,23 +748,57 @@ class RollingHMMFeatureEngineer:
         for col in feature_df.columns:
             feature_data = feature_df[[col]]
 
-            # Generate normalized features
-            normalized = self.normalizer.generate(feature_data)
+            normalized_result = self.normalizer.generate(feature_data)
 
-            if normalized is not None and len(normalized) > 0:
-                # Take the normalized column
-                if f"{col}_normalized" in normalized.columns:
-                    normalized_features[col] = normalized[f"{col}_normalized"]
-                elif f"{col}_zscore" in normalized.columns:
-                    normalized_features[col] = normalized[f"{col}_zscore"]
-                elif f"{col}_robust" in normalized.columns:
-                    normalized_features[col] = normalized[f"{col}_robust"]
+            normalized_series: Optional[pd.Series] = None
+
+            if isinstance(normalized_result, FeatureResult):
+                if normalized_result.success and normalized_result.data is not None:
+                    data = normalized_result.data
+                    if isinstance(data, pd.Series):
+                        normalized_series = data
+                    elif isinstance(data, pd.DataFrame):
+                        if col in data.columns:
+                            normalized_series = data[col]
+                        elif data.shape[1] == 1:
+                            normalized_series = data.iloc[:, 0]
+                        else:
+                            normalized_series = None
                 else:
-                    # Fallback: use the feature as-is
-                    normalized_features[col] = feature_df[col]
+                    error_msg = normalized_result.error_message or "unknown error"
+                    tprint_warning(
+                        f"    ⚠️  Normalization for {col} failed ({error_msg}); using raw feature"
+                    )
+            elif isinstance(normalized_result, pd.Series):
+                normalized_series = normalized_result
+            elif isinstance(normalized_result, pd.DataFrame):
+                candidate_names = [
+                    col,
+                    f"{col}_normalized",
+                    f"{col}_zscore",
+                    f"{col}_robust"
+                ]
+                for candidate in candidate_names:
+                    if candidate in normalized_result.columns:
+                        normalized_series = normalized_result[candidate]
+                        break
+                if normalized_series is None and normalized_result.shape[1] == 1:
+                    normalized_series = normalized_result.iloc[:, 0]
+
+            if isinstance(normalized_series, pd.DataFrame):
+                if col in normalized_series.columns:
+                    normalized_series = normalized_series[col]
+                elif normalized_series.shape[1] == 1:
+                    normalized_series = normalized_series.iloc[:, 0]
+                else:
+                    normalized_series = None
+
+            if normalized_series is None or not isinstance(normalized_series, pd.Series):
+                normalized_series = feature_df[col]
             else:
-                # Fallback: use the feature as-is
-                normalized_features[col] = feature_df[col]
+                normalized_series = normalized_series.reindex(feature_df.index)
+
+            normalized_features[col] = normalized_series.rename(col)
 
         return pd.DataFrame(normalized_features, index=feature_df.index)
 
@@ -655,6 +841,22 @@ class RollingHMMFeatureEngineer:
             return self._pca_cache[pca_cache_key]
 
         tprint_info(f"  → Applying PCA (n_components={n_components})")
+
+        # Ensure PCA input has no NaNs
+        total_rows = len(features)
+        nan_mask = features.isna().any(axis=1)
+        nan_rows = int(np.count_nonzero(nan_mask.to_numpy()))
+        if nan_rows > 0:
+            tprint_warning(
+                f"  ⚠️  PCA input contains {nan_rows} NaN rows out of {total_rows}; filling with column means"
+            )
+            features = features.fillna(features.mean())
+            features = features.fillna(0)
+        else:
+            tprint_info(f"  ✅ PCA input has no NaNs across {total_rows} rows")
+
+        if features.empty:
+            raise ValueError("No data remaining after preprocessing for PCA")
 
         # Fit PCA
         pca = PCA(n_components=n_components)

@@ -53,6 +53,23 @@ except ImportError:
     SKLEARN_METRICS_AVAILABLE = False
     adjusted_rand_score = None
 
+# Numba imports for JIT compilation
+try:
+    from numba import njit, prange
+    import numba
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
+    # Create dummy decorators
+    def njit(*args, **kwargs):
+        def decorator(func):
+            return func
+        if len(args) == 1 and callable(args[0]):
+            return args[0]
+        return decorator
+    prange = range
+    numba = None
+
 # VectorBT imports for efficient computations
 # NOTE: Currently unused in calculations but kept for potential future use
 try:
@@ -112,6 +129,207 @@ except ImportError:
     HARDWARE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+
+# ===== NUMBA-OPTIMIZED HELPER FUNCTIONS =====
+
+@njit(cache=True)
+def _calculate_within_cluster_variance_jit(data: np.ndarray, labels: np.ndarray, n_clusters: int) -> float:
+    """
+    JIT-compiled within-cluster variance calculation.
+
+    Args:
+        data: Feature matrix (N, D)
+        labels: Cluster labels (N,)
+        n_clusters: Number of clusters
+
+    Returns:
+        Within-cluster variance
+    """
+    n_samples, n_features = data.shape
+    within_var = 0.0
+
+    for k in range(n_clusters):
+        # Get cluster mask
+        cluster_mask = labels == k
+        cluster_size = np.sum(cluster_mask)
+
+        if cluster_size == 0:
+            continue
+
+        # Calculate cluster centroid
+        centroid = np.zeros(n_features)
+        for i in range(n_samples):
+            if cluster_mask[i]:
+                for j in range(n_features):
+                    centroid[j] += data[i, j]
+        centroid /= cluster_size
+
+        # Calculate variance
+        for i in range(n_samples):
+            if cluster_mask[i]:
+                for j in range(n_features):
+                    diff = data[i, j] - centroid[j]
+                    within_var += diff * diff
+
+    return within_var / n_samples
+
+
+@njit(cache=True)
+def _calculate_between_cluster_variance_jit(data: np.ndarray, labels: np.ndarray, n_clusters: int) -> float:
+    """
+    JIT-compiled between-cluster variance calculation.
+
+    Args:
+        data: Feature matrix (N, D)
+        labels: Cluster labels (N,)
+        n_clusters: Number of clusters
+
+    Returns:
+        Between-cluster variance
+    """
+    n_samples, n_features = data.shape
+
+    # Global centroid
+    global_centroid = np.zeros(n_features)
+    for i in range(n_samples):
+        for j in range(n_features):
+            global_centroid[j] += data[i, j]
+    global_centroid /= n_samples
+
+    # Between-cluster variance
+    between_var = 0.0
+
+    for k in range(n_clusters):
+        # Get cluster mask and size
+        cluster_mask = labels == k
+        cluster_size = np.sum(cluster_mask)
+
+        if cluster_size == 0:
+            continue
+
+        # Calculate cluster centroid
+        centroid = np.zeros(n_features)
+        for i in range(n_samples):
+            if cluster_mask[i]:
+                for j in range(n_features):
+                    centroid[j] += data[i, j]
+        centroid /= cluster_size
+
+        # Add contribution
+        for j in range(n_features):
+            diff = centroid[j] - global_centroid[j]
+            between_var += cluster_size * diff * diff
+
+    return between_var / n_samples
+
+
+@njit(cache=True)
+def _calculate_temporal_smoothness_jit(labels: np.ndarray) -> float:
+    """
+    JIT-compiled temporal smoothness calculation.
+
+    Measures stability of regime assignments over time.
+    High smoothness = few transitions.
+
+    Args:
+        labels: Regime labels (T,)
+
+    Returns:
+        Smoothness score [0, 1], higher is better
+    """
+    n_samples = len(labels)
+    if n_samples <= 1:
+        return 1.0
+
+    # Count transitions
+    n_transitions = 0
+    for i in range(1, n_samples):
+        if labels[i] != labels[i-1]:
+            n_transitions += 1
+
+    # Normalize: 0 transitions = 1.0, all transitions = 0.0
+    max_transitions = n_samples - 1
+    smoothness = 1.0 - (n_transitions / max_transitions)
+
+    return smoothness
+
+
+@njit(cache=True)
+def _calculate_episode_durations_jit(labels: np.ndarray) -> np.ndarray:
+    """
+    JIT-compiled episode duration calculation.
+
+    Args:
+        labels: Regime labels (T,)
+
+    Returns:
+        Array of episode durations
+    """
+    n_samples = len(labels)
+    if n_samples == 0:
+        return np.zeros(0, dtype=np.int64)
+
+    # Pre-allocate (worst case: all different)
+    durations_temp = np.zeros(n_samples, dtype=np.int64)
+    n_episodes = 0
+
+    current_label = labels[0]
+    current_duration = 1
+
+    for i in range(1, n_samples):
+        if labels[i] == current_label:
+            current_duration += 1
+        else:
+            durations_temp[n_episodes] = current_duration
+            n_episodes += 1
+            current_label = labels[i]
+            current_duration = 1
+
+    # Add final episode
+    durations_temp[n_episodes] = current_duration
+    n_episodes += 1
+
+    # Return only filled portion
+    return durations_temp[:n_episodes]
+
+
+@njit(cache=True, parallel=True)
+def _calculate_sharpe_ratio_jit(returns: np.ndarray, periods_per_year: int = 252) -> float:
+    """
+    JIT-compiled Sharpe ratio calculation.
+
+    Args:
+        returns: Return series (T,)
+        periods_per_year: Number of periods per year
+
+    Returns:
+        Annualized Sharpe ratio
+    """
+    n = len(returns)
+    if n == 0:
+        return 0.0
+
+    # Calculate mean
+    mean_return = 0.0
+    for i in prange(n):
+        mean_return += returns[i]
+    mean_return /= n
+
+    # Calculate std
+    variance = 0.0
+    for i in prange(n):
+        diff = returns[i] - mean_return
+        variance += diff * diff
+    variance /= n
+    std_return = np.sqrt(variance)
+
+    if std_return == 0.0:
+        return 0.0
+
+    sharpe = (mean_return / std_return) * np.sqrt(float(periods_per_year))
+
+    return sharpe
 
 
 # ===== CONSTANTS =====
@@ -1038,32 +1256,40 @@ def calculate_composite_score(
 def calculate_episode_durations(regime_labels: np.ndarray) -> List[int]:
     """
     Calculate duration of each episode (consecutive same label).
-    
+
+    Uses JIT-compiled implementation for performance.
+
     Args:
         regime_labels: Regime assignments (T,)
-        
+
     Returns:
         List of episode durations in bars
     """
     if len(regime_labels) == 0:
         return []
-    
-    durations = []
-    current_label = regime_labels[0]
-    current_duration = 1
-    
-    for i in range(1, len(regime_labels)):
-        if regime_labels[i] == current_label:
-            current_duration += 1
-        else:
-            durations.append(current_duration)
-            current_label = regime_labels[i]
-            current_duration = 1
-    
-    # Add final episode
-    durations.append(current_duration)
-    
-    return durations
+
+    # Use JIT-compiled version if available
+    if NUMBA_AVAILABLE:
+        durations_array = _calculate_episode_durations_jit(regime_labels)
+        return durations_array.tolist()
+    else:
+        # Fallback to original implementation
+        durations = []
+        current_label = regime_labels[0]
+        current_duration = 1
+
+        for i in range(1, len(regime_labels)):
+            if regime_labels[i] == current_label:
+                current_duration += 1
+            else:
+                durations.append(current_duration)
+                current_label = regime_labels[i]
+                current_duration = 1
+
+        # Add final episode
+        durations.append(current_duration)
+
+        return durations
 
 
 def calculate_gradual_duration_penalty(

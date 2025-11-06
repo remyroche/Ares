@@ -31,6 +31,9 @@ from .statsmodel_clustering_pipeline_step import StatsmodelClusteringPipelineSte
 # Import Sticky Finite HMM regime discovery step
 from .sticky_finite_hmm_clustering.sticky_finite_hmm_regime_discovery_step import StickyFiniteHMMRegimeDiscoveryStep
 
+# Import Rolling HMM regime discovery step
+from .rolling_hmm_clustering.rolling_hmm_regime_discovery_step import RollingHMMRegimeDiscoveryStep
+
 # Note: EconomicRegimeFeatureSelector removed - it had circular dependency issues
 # and lacked unsupervised mode. Use EnhancedRegimeFeatureSelector instead.
 
@@ -47,3 +50,4 @@ step_registry.register("hdbscan_regime_discovery", HDBSCANRegimeDiscoveryStep)
 step_registry.register("regime_feature_selection", EnhancedRegimeFeatureSelector)
 step_registry.register("statsmodel_clustering_pipeline", StatsmodelClusteringPipelineStep)
 step_registry.register("sticky_finite_hmm_regime_discovery", StickyFiniteHMMRegimeDiscoveryStep)
+step_registry.register("rolling_hmm_regime_discovery", RollingHMMRegimeDiscoveryStep)

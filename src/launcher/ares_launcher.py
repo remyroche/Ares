@@ -173,6 +173,7 @@ class SimplifiedAresLauncher:
                 'gmm_regime_discovery',  # GMM-based regime discovery with correlation reduction
                 'statsmodel_clustering_pipeline',  # Statsmodel Markov-switching clustering
                 'sticky_finite_hmm_regime_discovery',  # Sticky Finite HMM regime discovery (K=5, VB inference)
+                'rolling_hmm_regime_discovery',  # Rolling HMM regime discovery with EWMA features and HPO
                 'regime_feature_selection',  # Enhanced regime feature selection
                 'regime_models_training', 'regime_ensemble_training'
             ],
@@ -255,7 +256,12 @@ Examples:
   python ares_launcher.py --run-tactician-interaction --symbol ETHUSDT --timeframe 15m
   python ares_launcher.py --run-analyst-interaction --symbol ETHUSDT --timeframe 15m
   python ares_launcher.py --run-both-interaction-modes --symbol ETHUSDT --timeframe 15m
-  
+
+  # REGIME DISCOVERY (various algorithms)
+  python ares_launcher.py --rolling-hmm-regime-discovery --symbol BTCUSDT --execution-mode full
+  python ares_launcher.py --hdbscan-regime-discovery --symbol ETHUSDT --execution-mode light
+  python ares_launcher.py --gmm-regime-discovery --symbol BTCUSDT --execution-mode light
+
   # Legacy compatibility
   python ares_launcher.py --mode sequential --sub_pipeline feature_generation_data_validation_step --symbol ETHUSDT
         """
@@ -286,6 +292,7 @@ Examples:
     regime_group = parser.add_mutually_exclusive_group()
     regime_group.add_argument('--hdbscan-regime-discovery', action='store_true', help='Run HDBSCAN regime discovery (replaces NAS/TAS)')
     regime_group.add_argument('--gmm-regime-discovery', action='store_true', help='Run GMM regime discovery with correlation-based feature reduction')
+    regime_group.add_argument('--rolling-hmm-regime-discovery', action='store_true', help='Run Rolling HMM regime discovery with EWMA features and HPO')
     regime_group.add_argument('--legacy-nas-tas', action='store_true', help='Run legacy NAS/TAS regime discovery (deprecated)')
     
     # Common parameters
@@ -444,10 +451,10 @@ async def main():
     # Check if any execution mode is specified
     has_execution_mode = any([
         args.step, args.steps, args.stage, args.mode, args.sub_pipeline,
-        args.train_analyst_base, args.train_analyst_ensemble, 
+        args.train_analyst_base, args.train_analyst_ensemble,
         args.train_tactician_base, args.train_tactician_ensemble,
         args.run_tactician_interaction, args.run_analyst_interaction, args.run_both_interaction_modes,
-        args.hdbscan_regime_discovery, args.gmm_regime_discovery, args.legacy_nas_tas
+        args.hdbscan_regime_discovery, args.gmm_regime_discovery, args.rolling_hmm_regime_discovery, args.legacy_nas_tas
     ])
     
     if not has_execution_mode:
@@ -547,7 +554,13 @@ async def main():
             logger.info("Running GMM regime discovery with correlation-based feature reduction")
             result = await launcher.run_step('gmm_regime_discovery', config)
             print(f"GMM regime discovery completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
-            
+
+        elif args.rolling_hmm_regime_discovery:
+            # Rolling HMM regime discovery execution
+            logger.info("Running Rolling HMM regime discovery with EWMA features and HPO")
+            result = await launcher.run_step('rolling_hmm_regime_discovery', config)
+            print(f"Rolling HMM regime discovery completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
+
         elif args.legacy_nas_tas:
             # Legacy NAS/TAS regime discovery execution (deprecated)
             logger.warning("Running legacy NAS/TAS regime discovery (deprecated - use --hdbscan-regime-discovery instead)")

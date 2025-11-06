@@ -86,6 +86,11 @@ class RollingHMMFeatureEngineer:
         self.config = config
         self.logger = logging.getLogger(__name__)
 
+        # Feature cache for all EWMA windows (pre-computed once, reused in HPO)
+        self._feature_cache: Dict[str, pd.DataFrame] = {}
+        self._normalized_feature_cache: Dict[str, pd.DataFrame] = {}
+        self._pca_cache: Dict[Tuple[str, int], Tuple[pd.DataFrame, Any, float]] = {}
+
         # Initialize optimizers
         if config.enable_vectorbt_optimization:
             tprint_info("🚀 Initializing VectorBT optimizers")
@@ -134,26 +139,114 @@ class RollingHMMFeatureEngineer:
 
         self.feature_names = []
 
+    def precompute_all_features(self, market_data: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+        """
+        Pre-compute features for ALL EWMA windows ONCE at the beginning.
+        This cache is then reused throughout all HPO trials for efficiency.
+
+        Args:
+            market_data: DataFrame with columns ['open', 'high', 'low', 'close', 'volume']
+
+        Returns:
+            Dictionary mapping EWMA config names to normalized feature DataFrames
+        """
+        tprint("🔄 Pre-computing features for ALL EWMA windows (will be cached for HPO)")
+        tprint(f"   → Computing {len(self.config.ewma_configs)} EWMA configurations")
+
+        all_features = {}
+
+        for i, ewma_config in enumerate(self.config.ewma_configs, 1):
+            tprint_info(f"   [{i}/{len(self.config.ewma_configs)}] Computing features for EWMA {ewma_config.name}")
+
+            # Generate features for this EWMA config
+            features = self._generate_features_internal(market_data, ewma_config)
+
+            # Normalize features
+            features_normalized = self._normalize_features(features)
+
+            # Cache both raw and normalized features
+            self._feature_cache[ewma_config.name] = features
+            self._normalized_feature_cache[ewma_config.name] = features_normalized
+            all_features[ewma_config.name] = features_normalized
+
+            tprint_info(f"      ✓ Cached {len(features_normalized.columns)} features, {len(features_normalized)} samples")
+
+        tprint(f"✅ Pre-computed and cached features for {len(all_features)} EWMA windows")
+        return all_features
+
+    def get_cached_features(self, ewma_config: EWMAConfig) -> Optional[pd.DataFrame]:
+        """Get pre-computed features from cache."""
+        return self._normalized_feature_cache.get(ewma_config.name)
+
     def generate_features(
         self,
         market_data: pd.DataFrame,
-        ewma_config: Optional[EWMAConfig] = None
+        ewma_config: Optional[EWMAConfig] = None,
+        use_cache: bool = True
     ) -> pd.DataFrame:
         """
         Generate comprehensive features for HMM clustering.
+        If features are already cached, return from cache instead of recomputing.
 
         Args:
             market_data: DataFrame with columns ['open', 'high', 'low', 'close', 'volume']
             ewma_config: EWMA configuration (if None, uses first config from self.config)
+            use_cache: If True and features are cached, return from cache
 
         Returns:
             DataFrame with engineered features
         """
-        tprint(f"📊 Generating features for HMM clustering")
-
         if ewma_config is None:
             ewma_config = self.config.ewma_configs[0]
 
+        # Check cache first
+        if use_cache and ewma_config.name in self._normalized_feature_cache:
+            tprint_info(f"📦 Using cached features for EWMA {ewma_config.name}")
+            return self._normalized_feature_cache[ewma_config.name]
+
+        tprint(f"📊 Generating features for HMM clustering (EWMA: {ewma_config.name})")
+
+        # Generate features internally
+        features = self._generate_features_internal(market_data, ewma_config)
+
+        # Store feature names before normalization
+        self.feature_names = list(features.columns)
+
+        # Normalize features
+        tprint_info(f"  → Normalizing features ({self.config.normalize_method})")
+        features_normalized = self._normalize_features(features)
+
+        # Drop NaN rows
+        initial_rows = len(features_normalized)
+        features_normalized = features_normalized.dropna()
+        dropped_rows = initial_rows - len(features_normalized)
+
+        if dropped_rows > 0:
+            tprint_warning(f"  ⚠️  Dropped {dropped_rows} rows with NaN values")
+
+        tprint(f"✅ Generated {len(features_normalized.columns)} features, {len(features_normalized)} samples")
+
+        # Cache for future use
+        self._normalized_feature_cache[ewma_config.name] = features_normalized
+        self._feature_cache[ewma_config.name] = features
+
+        return features_normalized
+
+    def _generate_features_internal(
+        self,
+        market_data: pd.DataFrame,
+        ewma_config: EWMAConfig
+    ) -> pd.DataFrame:
+        """
+        Internal method to generate features (called by both generate_features and precompute_all_features).
+
+        Args:
+            market_data: DataFrame with columns ['open', 'high', 'low', 'close', 'volume']
+            ewma_config: EWMA configuration
+
+        Returns:
+            DataFrame with raw (unnormalized) features
+        """
         features = {}
 
         # 1. Returns features
@@ -182,24 +275,7 @@ class RollingHMMFeatureEngineer:
         # Combine all features
         feature_df = pd.DataFrame(features, index=market_data.index)
 
-        # Store feature names before normalization
-        self.feature_names = list(feature_df.columns)
-
-        # Normalize features
-        tprint_info(f"  → Normalizing features ({self.config.normalize_method})")
-        feature_df_normalized = self._normalize_features(feature_df)
-
-        # Drop NaN rows
-        initial_rows = len(feature_df_normalized)
-        feature_df_normalized = feature_df_normalized.dropna()
-        dropped_rows = initial_rows - len(feature_df_normalized)
-
-        if dropped_rows > 0:
-            tprint_warning(f"  ⚠️  Dropped {dropped_rows} rows with NaN values")
-
-        tprint(f"✅ Generated {len(feature_df_normalized.columns)} features, {len(feature_df_normalized)} samples")
-
-        return feature_df_normalized
+        return feature_df
 
     def _generate_returns_features(
         self,
@@ -544,15 +620,20 @@ class RollingHMMFeatureEngineer:
         self,
         features: pd.DataFrame,
         n_components: Optional[int] = None,
-        explained_variance_target: float = 0.85
+        explained_variance_target: float = 0.85,
+        use_cache: bool = True,
+        cache_key: Optional[str] = None
     ) -> Tuple[pd.DataFrame, Any, float]:
         """
         Apply PCA for dimensionality reduction.
+        Results are cached to avoid recomputation during HPO trials.
 
         Args:
             features: Feature DataFrame
             n_components: Number of components (if None, uses config.pca_components)
             explained_variance_target: Target explained variance (0.80-0.90)
+            use_cache: If True, use cached PCA if available
+            cache_key: Key for caching (if None, uses features index hash)
 
         Returns:
             Tuple of (transformed features, pca model, explained variance ratio)
@@ -561,6 +642,17 @@ class RollingHMMFeatureEngineer:
 
         if n_components is None:
             n_components = self.config.pca_components
+
+        # Generate cache key
+        if cache_key is None:
+            cache_key = str(hash(tuple(features.index)))
+
+        pca_cache_key = (cache_key, n_components)
+
+        # Check cache
+        if use_cache and pca_cache_key in self._pca_cache:
+            tprint_info(f"  📦 Using cached PCA (n_components={n_components})")
+            return self._pca_cache[pca_cache_key]
 
         tprint_info(f"  → Applying PCA (n_components={n_components})")
 
@@ -586,6 +678,10 @@ class RollingHMMFeatureEngineer:
                 f"    ⚠️  Explained variance ({explained_variance:.2%}) < "
                 f"target ({explained_variance_target:.2%})"
             )
+
+        # Cache result
+        result = (features_pca_df, pca, explained_variance)
+        self._pca_cache[pca_cache_key] = result
 
         return features_pca_df, pca, explained_variance
 

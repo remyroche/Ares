@@ -33,7 +33,7 @@ from src.training.steps.market_analysis.clusters.clustering_optimization_goals i
     calculate_comprehensive_temporal_score,
     evaluate_clustering_objective
 )
-from src.utils.tprint import tprint, tprint_info, tprint_warning
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +97,13 @@ class RollingHMMOptimizer:
 
         # Define parameter groups
         self.param_groups = self._create_parameter_groups()
+
+        # Trial tracking for logging
+        self.current_trial = 0
+        self.total_trials_estimate = 0
+        self.current_stage = ""
+        self.stage_trials_completed = 0
+        self.stage_trials_total = 0
 
     def _create_parameter_groups(self) -> List[ParameterGroup]:
         """Create hierarchical parameter groups for optimization."""
@@ -296,13 +303,88 @@ class RollingHMMOptimizer:
                 # Total objective
                 objective_score = score_predictive + score_temporal + score_economic
 
+                # Log trial details (similar to statsmodel_clustering pattern)
+                self._log_trial_details(
+                    trial_num=self.current_trial,
+                    stage=self.current_stage,
+                    stage_progress=(self.stage_trials_completed, self.stage_trials_total),
+                    params=params,
+                    ewma_config=ewma_config,
+                    metrics=metrics,
+                    objective_score=objective_score
+                )
+
                 return objective_score
 
             except Exception as e:
                 self.logger.warning(f"Objective function failed: {e}")
+                tprint_warning(f"  ⚠️  Trial {self.current_trial} failed: {str(e)[:80]}")
                 return -1e6
 
         return objective
+
+    def _log_trial_details(
+        self,
+        trial_num: int,
+        stage: str,
+        stage_progress: Tuple[int, int],
+        params: Dict[str, Any],
+        ewma_config,
+        metrics,
+        objective_score: float
+    ):
+        """
+        Log detailed information about each HPO trial.
+
+        Similar to statsmodel_clustering, logs:
+        - Trial number and stage progress
+        - Parameters used
+        - Within/cross-cluster CV metrics
+        - Temporal smoothness
+        - Average score
+        """
+        from src.utils.tprint import tprint
+
+        # Format stage progress
+        stage_completed, stage_total = stage_progress
+        progress_pct = (stage_completed / stage_total * 100) if stage_total > 0 else 0
+
+        # Extract key metrics (matching statsmodel_clustering pattern)
+        within_cv = metrics.within_regime_cv if hasattr(metrics, 'within_regime_cv') else 0.0
+        between_cv = metrics.between_regime_cv if hasattr(metrics, 'between_regime_cv') else 0.0
+        temporal_smoothness = metrics.temporal_smoothness if hasattr(metrics, 'temporal_smoothness') else 0.0
+        quality_score = metrics.quality_score if hasattr(metrics, 'quality_score') else 0.0
+        silhouette = metrics.silhouette_score if hasattr(metrics, 'silhouette_score') else 0.0
+
+        # Format parameters
+        param_str = (
+            f"EWMA={ewma_config.name}, "
+            f"n_states={params.get('n_components', 5)}, "
+            f"pca={params.get('pca_components', 4)}, "
+            f"kappa={params.get('kappa', 10.0):.1f}, "
+            f"min_cov={params.get('min_covar', 1e-3):.1e}"
+        )
+
+        # Log trial header
+        tprint("")
+        tprint(f"{'=' * 90}")
+        tprint(f"HPO Trial {trial_num} | Stage: {stage} | Progress: {stage_completed}/{stage_total} ({progress_pct:.1f}%)")
+        tprint(f"{'=' * 90}")
+
+        # Log parameters
+        tprint(f"Parameters: {param_str}")
+
+        # Log metrics (statsmodel_clustering style)
+        tprint("")
+        tprint(f"Quality Metrics:")
+        tprint(f"  • Within-Cluster CV:  {within_cv:8.4f}  (lower = tighter clusters)")
+        tprint(f"  • Between-Cluster CV: {between_cv:8.4f}  (higher = better separation)")
+        tprint(f"  • Temporal Smoothness: {temporal_smoothness:8.4f}  (higher = more persistent)")
+        tprint(f"  • Silhouette Score:    {silhouette:8.4f}  (higher = better separation)")
+        tprint(f"  • Quality Score:       {quality_score:8.4f}  (composite 0-1 score)")
+        tprint(f"  • Objective Score:     {objective_score:8.4f}  (weighted avg)")
+        tprint(f"{'=' * 90}")
+        tprint("")
 
     def optimize(
         self,
@@ -384,7 +466,10 @@ class RollingHMMOptimizer:
         tprint_info("Running custom hierarchical optimization")
 
         # Stage 1: Coarse grid search
-        tprint_info("  Stage 1: Coarse grid search")
+        self.current_stage = "Coarse Grid Search"
+        tprint("")
+        tprint(f"🔍 Stage 1/3: {self.current_stage}")
+        tprint(f"{'=' * 90}")
 
         coarse_grid = {
             'ewma_config_idx': [0, 2, 4],  # 3 EWMA configs
@@ -400,8 +485,15 @@ class RollingHMMOptimizer:
 
         # Sample from coarse grid (not exhaustive due to computational cost)
         n_coarse_samples = min(50, np.prod([len(v) for v in coarse_grid.values()]))
+        self.stage_trials_total = n_coarse_samples
+        self.stage_trials_completed = 0
 
-        for _ in range(n_coarse_samples):
+        tprint(f"Running {n_coarse_samples} coarse grid trials")
+
+        for i in range(n_coarse_samples):
+            self.current_trial += 1
+            self.stage_trials_completed = i + 1
+
             params = {
                 k: np.random.choice(v) for k, v in coarse_grid.items()
             }
@@ -413,17 +505,25 @@ class RollingHMMOptimizer:
                 best_score = score
                 best_params = params.copy()
 
-            tprint_info(f"    Trial score: {score:.4f} (best: {best_score:.4f})")
-
-        tprint_info(f"  Coarse grid best score: {best_score:.4f}")
+        tprint(f"✅ Coarse grid complete - Best score: {best_score:.4f}")
+        tprint("")
 
         # Stage 2: Fine grid search around best region
-        tprint_info("  Stage 2: Fine grid search")
+        self.current_stage = "Fine Grid Search"
+        tprint(f"🔍 Stage 2/3: {self.current_stage}")
+        tprint(f"{'=' * 90}")
 
         fine_grid = self._create_fine_grid(best_params)
         fine_results = []
+        self.stage_trials_total = len(fine_grid)
+        self.stage_trials_completed = 0
 
-        for params in fine_grid:
+        tprint(f"Running {len(fine_grid)} fine grid trials around best region")
+
+        for i, params in enumerate(fine_grid):
+            self.current_trial += 1
+            self.stage_trials_completed = i + 1
+
             score = objective_func(params)
             fine_results.append((params.copy(), score))
 
@@ -431,22 +531,33 @@ class RollingHMMOptimizer:
                 best_score = score
                 best_params = params.copy()
 
-            tprint_info(f"    Trial score: {score:.4f} (best: {best_score:.4f})")
-
-        tprint_info(f"  Fine grid best score: {best_score:.4f}")
+        tprint(f"✅ Fine grid complete - Best score: {best_score:.4f}")
+        tprint("")
 
         # Stage 3: Final refinement with random search
         if self.config.enable_final_refinement:
-            tprint_info(f"  Stage 3: Final refinement ({self.config.final_refinement_trials} trials)")
+            self.current_stage = "Random Refinement"
+            tprint(f"🔍 Stage 3/3: {self.current_stage}")
+            tprint(f"{'=' * 90}")
 
-            for _ in range(self.config.final_refinement_trials):
+            self.stage_trials_total = self.config.final_refinement_trials
+            self.stage_trials_completed = 0
+
+            tprint(f"Running {self.config.final_refinement_trials} refinement trials")
+
+            for i in range(self.config.final_refinement_trials):
+                self.current_trial += 1
+                self.stage_trials_completed = i + 1
+
                 params = self._sample_around_best(best_params)
                 score = objective_func(params)
 
                 if score > best_score:
                     best_score = score
                     best_params = params.copy()
-                    tprint_info(f"    New best score: {best_score:.4f}")
+
+            tprint(f"✅ Refinement complete - Best score: {best_score:.4f}")
+            tprint("")
 
         return {
             'best_score': best_score,

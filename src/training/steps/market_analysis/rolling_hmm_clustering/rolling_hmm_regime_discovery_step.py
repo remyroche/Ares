@@ -205,12 +205,25 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
 
                 tprint(f"✅ Loaded {len(market_data)} samples of market data", "SUCCESS")
 
+            # Check execution mode and if HPO is enabled
+            execution_mode = config.get('execution_mode', 'full')
+            enable_auto_tuning = config.get('enable_auto_tuning', True)
+
+            # Apply execution mode data limits (blank=20d, light=180d, full=all)
+            market_data = self._apply_execution_mode_filter(market_data, execution_mode, timeframe)
+            tprint(f"   → After execution mode filter ({execution_mode}): {len(market_data)} samples")
+
             # Initialize feature engineer
             feature_config = self._get_feature_config(config)
             feature_engineer = RollingHMMFeatureEngineer(feature_config)
 
-            # Check if HPO is enabled
-            enable_auto_tuning = config.get('enable_auto_tuning', True)
+            # Pre-compute ALL features for ALL EWMA windows ONCE (cached for HPO)
+            if enable_auto_tuning:
+                tprint("")
+                tprint("🔄 Pre-computing features for HPO efficiency")
+                all_cached_features = feature_engineer.precompute_all_features(market_data)
+                tprint(f"✅ Cached features for {len(all_cached_features)} EWMA configurations")
+                tprint("")
             hpo_results = None
 
             # Only skip if user provided manual params
@@ -220,7 +233,6 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                     tprint_info("ℹ️  Manual params provided, skipping HPO (set enable_auto_tuning=True to override)")
 
             # Show execution mode info
-            execution_mode = config.get('execution_mode', 'full')
             if enable_auto_tuning and execution_mode in ['light', 'blank']:
                 tprint_info(f"ℹ️  HPO enabled in '{execution_mode}' mode (will use reduced trials for speed)")
 
@@ -627,6 +639,57 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 tprint(f"  - EWMA Config: {ewma_config.name} (idx={value})", "INFO")
             else:
                 tprint(f"  - {key}: {value}", "INFO")
+
+    def _apply_execution_mode_filter(
+        self,
+        data: pd.DataFrame,
+        execution_mode: str,
+        timeframe: str
+    ) -> pd.DataFrame:
+        """
+        Apply execution mode data filtering (matching statsmodel_clustering pattern).
+
+        Args:
+            data: Market data DataFrame
+            execution_mode: Execution mode ('blank', 'light', 'full')
+            timeframe: Timeframe string (e.g., '1h', '15m')
+
+        Returns:
+            Filtered DataFrame
+        """
+        # Samples per day mapping
+        samples_per_day_map = {
+            '1m': 1440,   # 60 * 24
+            '3m': 480,    # 20 * 24
+            '5m': 288,    # 12 * 24
+            '15m': 96,    # 4 * 24
+            '30m': 48,    # 2 * 24
+            '1h': 24,     # 1 * 24
+            '4h': 6,      # 24 / 4
+            '1d': 1
+        }
+
+        # Determine days limit based on execution mode
+        if execution_mode == 'blank':
+            days_limit = 20  # 20 days for blank mode
+        elif execution_mode == 'light':
+            days_limit = 180  # 180 days (6 months) for light mode
+        else:  # 'full'
+            tprint_info("  → Full mode: Using all available data (no filtering)")
+            return data  # No filtering for full mode
+
+        # Calculate sample limit
+        samples_per_day = samples_per_day_map.get(timeframe, 24)
+        limit = days_limit * samples_per_day
+
+        # Apply filter
+        if len(data) > limit:
+            filtered = data.tail(limit).copy()  # Keep most recent data
+            tprint_info(f"  → {execution_mode.capitalize()} mode: Filtered to {days_limit} days ({limit} samples)")
+            return filtered
+
+        tprint_info(f"  → {execution_mode.capitalize()} mode: Data size ({len(data)}) within limit ({limit} samples)")
+        return data
 
     def _validate_config(self, config: Dict[str, Any]):
         """Validate configuration."""

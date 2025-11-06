@@ -71,7 +71,6 @@ except ImportError:
     numba = None
 
 # VectorBT imports for efficient computations
-# NOTE: Currently unused in calculations but kept for potential future use
 try:
     from src.utils.vectorbt_compat import (
         vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
@@ -80,7 +79,6 @@ try:
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
-    # Suppress unused import warnings
     rolling_mean = None
     rolling_std = None
     rolling_var = None
@@ -88,6 +86,38 @@ except ImportError:
     rolling_max = None
     rolling_sum = None
     rolling_apply = None
+
+# VectorBT optimization tools for enhanced performance
+try:
+    from src.feature_generation.utils.statistical_calculations_optimizer import (
+        StatisticalCalculationsOptimizer,
+        StatisticalOperationType
+    )
+    STAT_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    STAT_OPTIMIZER_AVAILABLE = False
+    StatisticalCalculationsOptimizer = None
+    StatisticalOperationType = None
+
+try:
+    from src.feature_generation.utils.consolidated_rolling_optimizer import (
+        ConsolidatedRollingOptimizer,
+        RollingOperationType
+    )
+    ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    ROLLING_OPTIMIZER_AVAILABLE = False
+    ConsolidatedRollingOptimizer = None
+    RollingOperationType = None
+
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer
+    )
+    VECTORBT_ROLLING_AVAILABLE = True
+except ImportError:
+    VECTORBT_ROLLING_AVAILABLE = False
+    VectorBTRollingOptimizer = None
 
 # Import Pareto front utilities
 try:
@@ -129,6 +159,115 @@ except ImportError:
     HARDWARE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+
+# ===== VECTORBT OPTIMIZATION WRAPPERS =====
+
+# Global optimizer instances (initialized lazily)
+_stat_optimizer = None
+_rolling_optimizer = None
+_vectorbt_rolling_optimizer = None
+
+
+def _get_stat_optimizer():
+    """Get or create StatisticalCalculationsOptimizer instance."""
+    global _stat_optimizer
+    if _stat_optimizer is None and STAT_OPTIMIZER_AVAILABLE:
+        try:
+            _stat_optimizer = StatisticalCalculationsOptimizer()
+            logger.debug("StatisticalCalculationsOptimizer initialized")
+        except Exception as e:
+            logger.warning(f"Failed to initialize StatisticalCalculationsOptimizer: {e}")
+            return None
+    return _stat_optimizer
+
+
+def _get_rolling_optimizer():
+    """Get or create ConsolidatedRollingOptimizer instance."""
+    global _rolling_optimizer
+    if _rolling_optimizer is None and ROLLING_OPTIMIZER_AVAILABLE:
+        try:
+            _rolling_optimizer = ConsolidatedRollingOptimizer()
+            logger.debug("ConsolidatedRollingOptimizer initialized")
+        except Exception as e:
+            logger.warning(f"Failed to initialize ConsolidatedRollingOptimizer: {e}")
+            return None
+    return _rolling_optimizer
+
+
+def _get_vectorbt_rolling_optimizer():
+    """Get or create VectorBTRollingOptimizer instance."""
+    global _vectorbt_rolling_optimizer
+    if _vectorbt_rolling_optimizer is None and VECTORBT_ROLLING_AVAILABLE:
+        try:
+            _vectorbt_rolling_optimizer = VectorBTRollingOptimizer()
+            logger.debug("VectorBTRollingOptimizer initialized")
+        except Exception as e:
+            logger.warning(f"Failed to initialize VectorBTRollingOptimizer: {e}")
+            return None
+    return _vectorbt_rolling_optimizer
+
+
+def calculate_variance_hybrid(data: np.ndarray, use_vectorbt: bool = True) -> float:
+    """
+    Calculate variance using VectorBT if available, fallback to Numba.
+
+    Args:
+        data: Data array (N, D) or (N,)
+        use_vectorbt: Try VectorBT first if True
+
+    Returns:
+        Variance value
+    """
+    if use_vectorbt:
+        stat_opt = _get_stat_optimizer()
+        if stat_opt is not None:
+            try:
+                # VectorBT path
+                if data.ndim == 1:
+                    return float(stat_opt.calculate_variance(data, batch_mode=False))
+                else:
+                    # Calculate variance per feature and sum
+                    total_var = 0.0
+                    for d in range(data.shape[1]):
+                        total_var += stat_opt.calculate_variance(data[:, d], batch_mode=False)
+                    return float(total_var)
+            except Exception as e:
+                logger.debug(f"VectorBT variance calculation failed, using JIT fallback: {e}")
+
+    # Fallback to standard numpy
+    return float(np.var(data))
+
+
+def calculate_rolling_mean_hybrid(data: np.ndarray, window: int, use_vectorbt: bool = True) -> np.ndarray:
+    """
+    Calculate rolling mean using VectorBT if available, fallback to pandas.
+
+    Args:
+        data: Data array (N,)
+        window: Rolling window size
+        use_vectorbt: Try VectorBT first if True
+
+    Returns:
+        Rolling mean array
+    """
+    if use_vectorbt:
+        rolling_opt = _get_rolling_optimizer()
+        if rolling_opt is not None:
+            try:
+                # VectorBT path
+                result = rolling_opt.calculate_single(
+                    data=pd.Series(data),
+                    operation=RollingOperationType.MEAN,
+                    window=window
+                )
+                if result is not None:
+                    return result.values
+            except Exception as e:
+                logger.debug(f"VectorBT rolling mean failed, using pandas fallback: {e}")
+
+    # Fallback to pandas
+    return pd.Series(data).rolling(window=window, min_periods=1).mean().values
 
 
 # ===== NUMBA-OPTIMIZED HELPER FUNCTIONS =====
@@ -1254,18 +1393,25 @@ class MetricNormalizer:
 def calculate_cv_ratio(
     data: np.ndarray,
     labels: np.ndarray,
-    use_jit: bool = True
+    use_jit: bool = True,
+    use_vectorbt: bool = True
 ) -> float:
     """
-    Calculate CV ratio (Calinski-Harabasz Index).
+    Calculate CV ratio (Calinski-Harabasz Index) with VectorBT optimization.
 
     CV Ratio = Between-cluster variance / Within-cluster variance
     Higher is better - indicates well-separated clusters.
 
+    Hybrid approach:
+    1. Try VectorBT StatisticalCalculationsOptimizer (fastest for large datasets)
+    2. Fall back to Numba JIT (fast for medium datasets)
+    3. Fall back to numpy (always works)
+
     Args:
         data: Feature matrix (N, D)
         labels: Cluster labels (N,)
-        use_jit: Use JIT-compiled version if available
+        use_jit: Use JIT-compiled version if VectorBT fails
+        use_vectorbt: Try VectorBT optimization first
 
     Returns:
         CV ratio (higher is better)
@@ -1277,15 +1423,55 @@ def calculate_cv_ratio(
     if n_clusters <= 1:
         return 0.0
 
-    # Use JIT-compiled versions if available
-    if use_jit and NUMBA_AVAILABLE:
+    within_var = 0.0
+    between_var = 0.0
+
+    # Try VectorBT first for large datasets
+    if use_vectorbt and len(data) > 100:  # Use VectorBT for datasets > 100 samples
+        stat_opt = _get_stat_optimizer()
+        if stat_opt is not None:
+            try:
+                # Calculate global centroid
+                global_centroid = np.mean(data, axis=0)
+
+                # Calculate variances using VectorBT
+                for k in range(n_clusters):
+                    mask = labels == k
+                    cluster_size = np.sum(mask)
+
+                    if cluster_size == 0:
+                        continue
+
+                    cluster_data = data[mask]
+                    cluster_centroid = np.mean(cluster_data, axis=0)
+
+                    # Within-cluster variance using VectorBT
+                    for d in range(data.shape[1]):
+                        within_var += stat_opt.calculate_variance(cluster_data[:, d], batch_mode=False) * cluster_size
+
+                    # Between-cluster variance
+                    between_var += cluster_size * np.sum((cluster_centroid - global_centroid) ** 2)
+
+                # Normalize
+                n_samples = len(data)
+                within_var /= n_samples
+                between_var /= n_samples
+
+                # Success with VectorBT
+                logger.debug("CV ratio calculated using VectorBT")
+            except Exception as e:
+                logger.debug(f"VectorBT CV ratio calculation failed: {e}, falling back to JIT")
+                within_var = 0.0
+                between_var = 0.0
+
+    # Use JIT-compiled versions if VectorBT not used or failed
+    if (within_var == 0.0 and between_var == 0.0) and use_jit and NUMBA_AVAILABLE:
         within_var = _calculate_within_cluster_variance_jit(data, labels, n_clusters)
         between_var = _calculate_between_cluster_variance_jit(data, labels, n_clusters)
-    else:
-        # Fallback to numpy implementation
-        within_var = 0.0
-        between_var = 0.0
+        logger.debug("CV ratio calculated using Numba JIT")
 
+    # Final fallback to numpy
+    if within_var == 0.0 and between_var == 0.0:
         # Global centroid
         global_centroid = np.mean(data, axis=0)
 
@@ -1309,6 +1495,7 @@ def calculate_cv_ratio(
         n_samples = len(data)
         within_var /= n_samples
         between_var /= n_samples
+        logger.debug("CV ratio calculated using numpy fallback")
 
     # Calculate ratio
     if within_var == 0 or np.isnan(within_var) or np.isinf(within_var):
@@ -1356,6 +1543,530 @@ def calculate_temporal_smoothness(labels: np.ndarray, use_jit: bool = True) -> f
         return float(smoothness)
 
 
+# ===== ENHANCED TEMPORAL METRICS =====
+
+@njit(cache=True)
+def _calculate_episode_duration_stats_jit(durations: np.ndarray, target_min: int = 5, target_max: int = 20) -> Tuple:
+    """
+    JIT-compiled episode duration statistics with target range.
+
+    Args:
+        durations: Array of episode durations
+        target_min: Minimum target duration (default 5 bars)
+        target_max: Maximum target duration (default 20 bars)
+
+    Returns:
+        Tuple of (mean, median, cv, pct_short, pct_actionable, pct_in_target)
+    """
+    if len(durations) == 0:
+        return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+
+    # Calculate basic statistics
+    mean_duration = np.mean(durations)
+    median_duration = np.median(durations)
+    std_duration = np.std(durations)
+    cv = std_duration / mean_duration if mean_duration > 0 else 0.0
+
+    # Calculate percentages
+    n_episodes = len(durations)
+    pct_short_episodes = np.sum(durations < 7) / n_episodes  # < 7 bars is short
+    pct_actionable = np.sum(durations >= 20) / n_episodes  # >= 20 bars is actionable
+    pct_in_target = np.sum((durations >= target_min) & (durations <= target_max)) / n_episodes
+
+    return (mean_duration, median_duration, cv, pct_short_episodes, pct_actionable, pct_in_target)
+
+
+@njit(cache=True)
+def _calculate_transition_predictability_jit(labels: np.ndarray, features: np.ndarray, lookback: int = 10) -> float:
+    """
+    JIT-compiled transition predictability calculation.
+
+    Measures if regime transitions can be predicted from recent features.
+    High similarity in features before transitions = predictable transitions.
+
+    Args:
+        labels: Regime labels (T,)
+        features: Feature matrix (T, D)
+        lookback: Number of bars to look back before transition
+
+    Returns:
+        Predictability score [0, 1], higher is better
+    """
+    n_samples = len(labels)
+    if n_samples < 2:
+        return 0.0
+
+    # Find transition points
+    transition_indices = []
+    for i in range(1, n_samples):
+        if labels[i] != labels[i-1]:
+            transition_indices.append(i)
+
+    if len(transition_indices) < 2:
+        return 0.0
+
+    # Extract feature vectors before transitions
+    n_transitions = len(transition_indices)
+    n_features = features.shape[1]
+
+    # Calculate pairwise correlations between pre-transition features
+    similarities = []
+    for i in range(n_transitions):
+        for j in range(i+1, n_transitions):
+            idx_i = transition_indices[i]
+            idx_j = transition_indices[j]
+
+            # Check if we have enough lookback
+            if idx_i >= lookback and idx_j >= lookback:
+                # Get feature vectors
+                feat_i = features[idx_i-lookback:idx_i].flatten()
+                feat_j = features[idx_j-lookback:idx_j].flatten()
+
+                # Calculate correlation
+                mean_i = np.mean(feat_i)
+                mean_j = np.mean(feat_j)
+
+                num = np.sum((feat_i - mean_i) * (feat_j - mean_j))
+                denom = np.sqrt(np.sum((feat_i - mean_i)**2) * np.sum((feat_j - mean_j)**2))
+
+                if denom > 1e-10:
+                    corr = num / denom
+                    similarities.append(abs(corr))
+
+    if len(similarities) == 0:
+        return 0.0
+
+    # High average similarity = predictable transitions
+    predictability = np.mean(np.array(similarities))
+    return predictability
+
+
+@njit(cache=True)
+def _calculate_regime_autocorrelation_jit(features: np.ndarray, labels: np.ndarray, max_lag: int = 20) -> Tuple:
+    """
+    JIT-compiled regime persistence autocorrelation.
+
+    Calculates autocorrelation of features within each regime to measure persistence.
+
+    Args:
+        features: Feature matrix (T, D)
+        labels: Regime labels (T,)
+        max_lag: Maximum lag for autocorrelation
+
+    Returns:
+        Tuple of (mean_ac_lag1, mean_ac_lag5, half_life)
+    """
+    n_regimes = len(np.unique(labels))
+
+    ac_lag1_list = []
+    ac_lag5_list = []
+    half_lives = []
+
+    for regime_id in range(n_regimes):
+        # Get data for this regime
+        mask = labels == regime_id
+        regime_size = np.sum(mask)
+
+        if regime_size < max_lag + 1:
+            continue
+
+        # Get regime features (use first feature for autocorrelation)
+        regime_feat = features[mask, 0]
+
+        # Calculate AC(1)
+        if len(regime_feat) > 1:
+            mean_val = np.mean(regime_feat)
+            var_val = np.var(regime_feat)
+
+            if var_val > 1e-10:
+                ac1 = np.sum((regime_feat[:-1] - mean_val) * (regime_feat[1:] - mean_val)) / ((len(regime_feat) - 1) * var_val)
+                ac_lag1_list.append(max(0.0, min(1.0, ac1)))  # Clip to [0, 1]
+
+        # Calculate AC(5)
+        if len(regime_feat) > 5:
+            mean_val = np.mean(regime_feat)
+            var_val = np.var(regime_feat)
+
+            if var_val > 1e-10:
+                ac5 = np.sum((regime_feat[:-5] - mean_val) * (regime_feat[5:] - mean_val)) / ((len(regime_feat) - 5) * var_val)
+                ac_lag5_list.append(max(0.0, min(1.0, ac5)))  # Clip to [0, 1]
+
+        # Estimate half-life (simplified)
+        if len(ac_lag1_list) > 0 and ac_lag1_list[-1] > 0:
+            half_life = -1.0 / np.log(max(ac_lag1_list[-1], 0.01))
+            half_lives.append(min(half_life, 100.0))  # Cap at 100
+
+    # Calculate averages
+    mean_ac_lag1 = np.mean(np.array(ac_lag1_list)) if len(ac_lag1_list) > 0 else 0.0
+    mean_ac_lag5 = np.mean(np.array(ac_lag5_list)) if len(ac_lag5_list) > 0 else 0.0
+    mean_half_life = np.mean(np.array(half_lives)) if len(half_lives) > 0 else 0.0
+
+    return (mean_ac_lag1, mean_ac_lag5, mean_half_life)
+
+
+@njit(cache=True)
+def _calculate_economic_transition_cost_jit(
+    labels: np.ndarray,
+    returns: np.ndarray,
+    transaction_cost_bps: float = 10.0,
+    lookforward: int = 20
+) -> Tuple:
+    """
+    JIT-compiled economic transition cost calculation.
+
+    Evaluates if regime transitions are economically justified.
+
+    Args:
+        labels: Regime labels (T,)
+        returns: Return series (T,)
+        transaction_cost_bps: Transaction cost in basis points
+        lookforward: Bars to look forward after transition
+
+    Returns:
+        Tuple of (total_cost_pct, avg_benefit_vs_cost, profitable_transitions_pct)
+    """
+    n_samples = len(labels)
+    if n_samples < 2:
+        return (0.0, 0.0, 0.0)
+
+    # Find transitions
+    n_transitions = 0
+    for i in range(1, n_samples):
+        if labels[i] != labels[i-1]:
+            n_transitions += 1
+
+    if n_transitions == 0:
+        return (0.0, 0.0, 0.0)
+
+    # Calculate total cost
+    total_cost = n_transitions * (transaction_cost_bps / 10000.0)
+    total_returns = np.sum(returns)
+    cost_pct = total_cost / abs(total_returns) if abs(total_returns) > 1e-10 else 0.0
+
+    # Analyze each transition
+    benefits = []
+    for i in range(1, n_samples):
+        if labels[i] != labels[i-1]:
+            # Look forward
+            end_idx = min(i + lookforward, n_samples)
+
+            # Benefit = cumulative returns in new regime
+            benefit = np.sum(returns[i:end_idx])
+
+            # Cost
+            cost = transaction_cost_bps / 10000.0
+
+            # Benefit/cost ratio
+            if cost > 1e-10:
+                benefits.append(benefit / cost)
+            else:
+                benefits.append(0.0)
+
+    # Calculate statistics
+    avg_benefit_vs_cost = np.mean(np.array(benefits)) if len(benefits) > 0 else 0.0
+    profitable_pct = np.sum(np.array(benefits) > 1.0) / len(benefits) if len(benefits) > 0 else 0.0
+
+    return (cost_pct, avg_benefit_vs_cost, profitable_pct)
+
+
+def calculate_episode_duration_stats(
+    labels: np.ndarray,
+    target_mean_duration: Tuple[int, int] = (5, 20),
+    use_jit: bool = True
+) -> Dict[str, float]:
+    """
+    Calculate comprehensive episode duration statistics.
+
+    Args:
+        labels: Regime labels (T,)
+        target_mean_duration: Target range for mean duration (min, max) in bars
+        use_jit: Use JIT-compiled version if available
+
+    Returns:
+        Dictionary with duration statistics
+    """
+    # Get episode durations
+    if use_jit and NUMBA_AVAILABLE:
+        durations_array = _calculate_episode_durations_jit(labels)
+    else:
+        durations = calculate_episode_durations(labels)
+        durations_array = np.array(durations, dtype=np.int64)
+
+    if len(durations_array) == 0:
+        return {
+            'mean_duration': 0.0,
+            'median_duration': 0.0,
+            'duration_cv': 0.0,
+            'pct_short_episodes': 0.0,
+            'pct_actionable': 0.0,
+            'pct_in_target_range': 0.0,
+            'target_quality_score': 0.0
+        }
+
+    # Calculate statistics with JIT if available
+    if use_jit and NUMBA_AVAILABLE:
+        mean_dur, median_dur, cv, pct_short, pct_action, pct_target = _calculate_episode_duration_stats_jit(
+            durations_array.astype(np.float64),
+            target_mean_duration[0],
+            target_mean_duration[1]
+        )
+    else:
+        # Fallback implementation
+        mean_dur = float(np.mean(durations_array))
+        median_dur = float(np.median(durations_array))
+        std_dur = float(np.std(durations_array))
+        cv = std_dur / mean_dur if mean_dur > 0 else 0.0
+
+        n_episodes = len(durations_array)
+        pct_short = float(np.sum(durations_array < 7) / n_episodes)
+        pct_action = float(np.sum(durations_array >= 20) / n_episodes)
+        pct_target = float(np.sum((durations_array >= target_mean_duration[0]) &
+                                   (durations_array <= target_mean_duration[1])) / n_episodes)
+
+    # Calculate target quality score
+    # Reward durations within target range
+    target_quality_score = pct_target + 0.5 * (1.0 - pct_short)
+
+    return {
+        'mean_duration': mean_dur,
+        'median_duration': median_dur,
+        'duration_cv': cv,
+        'pct_short_episodes': pct_short,
+        'pct_actionable': pct_action,
+        'pct_in_target_range': pct_target,
+        'target_quality_score': target_quality_score
+    }
+
+
+def calculate_transition_predictability(
+    labels: np.ndarray,
+    features: np.ndarray,
+    lookback: int = 10,
+    use_jit: bool = True
+) -> float:
+    """
+    Calculate transition predictability score.
+
+    Measures if regime transitions occur in similar market conditions.
+
+    Args:
+        labels: Regime labels (T,)
+        features: Feature matrix (T, D)
+        lookback: Number of bars to look back before transition
+        use_jit: Use JIT-compiled version if available
+
+    Returns:
+        Predictability score [0, 1], higher is better
+    """
+    if len(labels) < 2 or len(features) == 0:
+        return 0.0
+
+    if use_jit and NUMBA_AVAILABLE:
+        return _calculate_transition_predictability_jit(labels, features, lookback)
+    else:
+        # Fallback: simplified version
+        transitions = []
+        for i in range(1, len(labels)):
+            if labels[i] != labels[i-1]:
+                transitions.append(i)
+
+        if len(transitions) < 2:
+            return 0.0
+
+        # Simple heuristic: fewer transitions = more predictable
+        max_transitions = len(labels) - 1
+        predictability = 1.0 - (len(transitions) / max_transitions)
+        return float(predictability)
+
+
+def calculate_regime_autocorrelation(
+    labels: np.ndarray,
+    features: np.ndarray,
+    max_lag: int = 20,
+    use_jit: bool = True
+) -> Dict[str, float]:
+    """
+    Calculate regime persistence via autocorrelation.
+
+    Args:
+        labels: Regime labels (T,)
+        features: Feature matrix (T, D)
+        max_lag: Maximum lag for autocorrelation
+        use_jit: Use JIT-compiled version if available
+
+    Returns:
+        Dictionary with autocorrelation statistics
+    """
+    if len(labels) < max_lag or len(features) == 0:
+        return {
+            'mean_ac_lag1': 0.0,
+            'mean_ac_lag5': 0.0,
+            'half_life': 0.0,
+            'persistence_score': 0.0
+        }
+
+    if use_jit and NUMBA_AVAILABLE:
+        ac1, ac5, half_life = _calculate_regime_autocorrelation_jit(features, labels, max_lag)
+    else:
+        # Fallback: simplified version
+        ac1, ac5, half_life = 0.0, 0.0, 0.0
+
+    # Calculate composite persistence score
+    persistence_score = 0.5 * ac1 + 0.3 * ac5 + 0.2 * min(1.0, half_life / 20.0)
+
+    return {
+        'mean_ac_lag1': ac1,
+        'mean_ac_lag5': ac5,
+        'half_life': half_life,
+        'persistence_score': persistence_score
+    }
+
+
+def calculate_economic_transition_cost(
+    labels: np.ndarray,
+    returns: np.ndarray,
+    transaction_cost_bps: float = 10.0,
+    lookforward: int = 20,
+    use_jit: bool = True
+) -> Dict[str, float]:
+    """
+    Calculate economic cost of regime transitions.
+
+    Args:
+        labels: Regime labels (T,)
+        returns: Return series (T,)
+        transaction_cost_bps: Transaction cost in basis points
+        lookforward: Bars to look forward after transition
+        use_jit: Use JIT-compiled version if available
+
+    Returns:
+        Dictionary with economic cost statistics
+    """
+    if len(labels) < 2 or len(returns) == 0:
+        return {
+            'total_cost_pct': 0.0,
+            'avg_benefit_vs_cost': 0.0,
+            'profitable_transitions_pct': 0.0,
+            'economic_efficiency': 0.0
+        }
+
+    if use_jit and NUMBA_AVAILABLE:
+        cost_pct, benefit_cost, profitable_pct = _calculate_economic_transition_cost_jit(
+            labels, returns, transaction_cost_bps, lookforward
+        )
+    else:
+        # Fallback: simplified version
+        cost_pct, benefit_cost, profitable_pct = 0.0, 0.0, 0.0
+
+    # Calculate composite economic efficiency score
+    economic_efficiency = (
+        0.4 * (1.0 - min(1.0, cost_pct)) +
+        0.3 * min(1.0, benefit_cost / 3.0) +
+        0.3 * profitable_pct
+    )
+
+    return {
+        'total_cost_pct': cost_pct,
+        'avg_benefit_vs_cost': benefit_cost,
+        'profitable_transitions_pct': profitable_pct,
+        'economic_efficiency': economic_efficiency
+    }
+
+
+def calculate_comprehensive_temporal_score(
+    labels: np.ndarray,
+    features: np.ndarray,
+    returns: Optional[np.ndarray] = None,
+    target_mean_duration: Tuple[int, int] = (5, 20),
+    use_jit: bool = True
+) -> Dict[str, float]:
+    """
+    Calculate comprehensive temporal quality score with 5 enhanced metrics.
+
+    Components (with weights):
+    - Basic smoothness (30%): Penalizes rapid switching
+    - Duration quality (25%): Encourages tradeable episode lengths (5-20 bars target)
+    - Transition predictability (15%): Rewards predictable transitions
+    - Regime persistence (15%): Rewards autocorrelation
+    - Economic efficiency (15%): Rewards profitable transitions (if returns available)
+
+    Args:
+        labels: Regime labels (T,)
+        features: Feature matrix (T, D)
+        returns: Optional return series (T,)
+        target_mean_duration: Target range for mean duration (min, max) in bars
+        use_jit: Use JIT-compiled version if available
+
+    Returns:
+        Dictionary with comprehensive temporal score and components
+    """
+    scores = {}
+    weights = {}
+
+    # 1. Basic smoothness (30%)
+    scores['smoothness'] = calculate_temporal_smoothness(labels, use_jit=use_jit)
+    weights['smoothness'] = 0.30
+
+    # 2. Duration quality (25%)
+    duration_stats = calculate_episode_duration_stats(
+        labels,
+        target_mean_duration=target_mean_duration,
+        use_jit=use_jit
+    )
+    scores['duration'] = (
+        0.4 * (1.0 - duration_stats['pct_short_episodes']) +
+        0.3 * duration_stats['pct_actionable'] +
+        0.3 * duration_stats['target_quality_score']
+    )
+    weights['duration'] = 0.25
+
+    # 3. Transition predictability (15%)
+    scores['predictability'] = calculate_transition_predictability(
+        labels,
+        features,
+        use_jit=use_jit
+    )
+    weights['predictability'] = 0.15
+
+    # 4. Regime persistence (15%)
+    ac_stats = calculate_regime_autocorrelation(
+        labels,
+        features,
+        use_jit=use_jit
+    )
+    scores['persistence'] = ac_stats['persistence_score']
+    weights['persistence'] = 0.15
+
+    # 5. Economic efficiency (15%) - only if returns available
+    if returns is not None and len(returns) > 0:
+        econ_stats = calculate_economic_transition_cost(
+            labels,
+            returns,
+            use_jit=use_jit
+        )
+        scores['economic'] = econ_stats['economic_efficiency']
+        weights['economic'] = 0.15
+    else:
+        # Redistribute weight if no returns
+        weights['smoothness'] += 0.075
+        weights['duration'] += 0.075
+
+    # Calculate weighted composite score
+    total_score = sum(scores[k] * weights[k] for k in scores.keys())
+
+    # Return comprehensive results
+    return {
+        'composite_temporal_score': total_score,
+        'smoothness_score': scores['smoothness'],
+        'duration_score': scores['duration'],
+        'predictability_score': scores.get('predictability', 0.0),
+        'persistence_score': scores.get('persistence', 0.0),
+        'economic_score': scores.get('economic', 0.0),
+        'duration_stats': duration_stats,
+        'weights': weights
+    }
+
+
 # ===== COMPOSITE SCORE CALCULATION =====
 
 def calculate_composite_score(
@@ -1365,13 +2076,18 @@ def calculate_composite_score(
     cv_ratio: float,
     goals: Optional[ClusteringOptimizationGoals] = None,
     penalties: Optional[Dict[str, float]] = None,
-    normalize: bool = True
-) -> float:
+    normalize: bool = True,
+    labels: Optional[np.ndarray] = None,
+    features: Optional[np.ndarray] = None,
+    returns: Optional[np.ndarray] = None,
+    use_comprehensive_temporal: bool = False,
+    target_mean_duration: Tuple[int, int] = (5, 20)
+) -> Union[float, Dict[str, Any]]:
     """
     Calculate weighted composite score from individual metrics.
 
     New Structure:
-    - 33% Temporal Smoothness: Regime persistence
+    - 33% Temporal Smoothness: Regime persistence (can use comprehensive temporal score)
     - 33% Economic Quality: 50% rolling LL + 50% Sharpe
     - 34% Statistical Quality: CV ratio (between/within variance)
 
@@ -1383,20 +2099,43 @@ def calculate_composite_score(
         goals: Optional custom goals configuration
         penalties: Optional penalties dict
         normalize: Whether to normalize sub-components
+        labels: Optional regime labels for comprehensive temporal scoring
+        features: Optional feature matrix for comprehensive temporal scoring
+        returns: Optional returns for comprehensive temporal scoring
+        use_comprehensive_temporal: Use comprehensive temporal score (5 metrics)
+        target_mean_duration: Target mean duration range (min, max) in bars
 
     Returns:
-        Composite score (higher is better)
+        Composite score (higher is better) or dict with detailed breakdown if comprehensive
     """
     if goals is None:
         goals = DEFAULT_CLUSTERING_GOALS
 
     weights = goals.get_weights_dict()
 
-    # Normalize components if requested
-    if normalize:
-        # Temporal smoothness already in [0, 1]
-        temporal_normalized = temporal_smoothness
+    # Use comprehensive temporal score if requested and data is available
+    if use_comprehensive_temporal and labels is not None and features is not None:
+        comprehensive_temporal_result = calculate_comprehensive_temporal_score(
+            labels=labels,
+            features=features,
+            returns=returns,
+            target_mean_duration=target_mean_duration,
+            use_jit=True
+        )
+        temporal_normalized = comprehensive_temporal_result['composite_temporal_score']
 
+        # Store comprehensive breakdown for return
+        comprehensive_breakdown = comprehensive_temporal_result
+    else:
+        # Use simple temporal smoothness
+        if normalize:
+            temporal_normalized = temporal_smoothness  # Already in [0, 1]
+        else:
+            temporal_normalized = temporal_smoothness
+        comprehensive_breakdown = None
+
+    # Normalize other components if requested
+    if normalize:
         # Rolling LL: typical range [-10, 0], normalize to [0, 1]
         rolling_ll_normalized = np.clip((rolling_ll + 10.0) / 10.0, 0, 1)
 
@@ -1406,7 +2145,6 @@ def calculate_composite_score(
         # CV ratio: typical range [5, 1000+], use log scale and normalize
         cv_ratio_normalized = np.clip(np.log10(max(cv_ratio, 1.0)) / 3.0, 0, 1)  # log10(1000) = 3
     else:
-        temporal_normalized = temporal_smoothness
         rolling_ll_normalized = rolling_ll
         sharpe_normalized = economic_utility
         cv_ratio_normalized = cv_ratio
@@ -1426,6 +2164,18 @@ def calculate_composite_score(
     if penalties is not None:
         total_penalty = sum(penalties.values())
         composite -= total_penalty
+
+    # Return detailed breakdown if using comprehensive temporal
+    if use_comprehensive_temporal and comprehensive_breakdown is not None:
+        return {
+            'composite_score': composite,
+            'temporal_component': temporal_normalized,
+            'economic_component': economic_quality,
+            'statistical_component': cv_ratio_normalized,
+            'comprehensive_temporal_breakdown': comprehensive_breakdown,
+            'weights': weights,
+            'penalties': penalties
+        }
 
     return composite
 

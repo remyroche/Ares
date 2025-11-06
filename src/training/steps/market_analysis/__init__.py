@@ -25,6 +25,9 @@ from .regime_ensemble_training_step import RegimeEnsembleTrainingStep
 # Import regime feature selector (EnhancedRegimeFeatureSelector with unsupervised mode)
 from .regime_feature_selector import EnhancedRegimeFeatureSelector
 
+# Import statsmodel clustering pipeline step
+from .statsmodel_clustering_pipeline_step import StatsmodelClusteringPipelineStep
+
 # Note: EconomicRegimeFeatureSelector removed - it had circular dependency issues
 # and lacked unsupervised mode. Use EnhancedRegimeFeatureSelector instead.
 
@@ -39,3 +42,4 @@ step_registry.register("hdbscan_regime_discovery", HDBSCANRegimeDiscoveryStep)
 # step_registry.register("gmm_regime_discovery", GMMRegimeDiscoveryStep)  # Module not available
 # Use EnhancedRegimeFeatureSelector which has proper unsupervised mode for pre-clustering selection
 step_registry.register("regime_feature_selection", EnhancedRegimeFeatureSelector)
+step_registry.register("statsmodel_clustering_pipeline", StatsmodelClusteringPipelineStep)

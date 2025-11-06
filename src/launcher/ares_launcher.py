@@ -171,6 +171,7 @@ class SimplifiedAresLauncher:
                 'sr_detection', 'sr_clustering', 'sr_parameter_optimization',  # Fixed order: detection -> clustering -> optimization
                 'hdbscan_regime_discovery',  # HDBSCAN-based regime discovery
                 'gmm_regime_discovery',  # GMM-based regime discovery with correlation reduction
+                'statsmodel_clustering_pipeline',  # Statsmodel Markov-switching clustering
                 'sticky_finite_hmm_regime_discovery',  # Sticky Finite HMM regime discovery (K=5, VB inference)
                 'regime_feature_selection',  # Enhanced regime feature selection
                 'regime_models_training', 'regime_ensemble_training'

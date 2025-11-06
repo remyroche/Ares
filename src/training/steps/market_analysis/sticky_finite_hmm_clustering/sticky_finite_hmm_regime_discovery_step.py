@@ -297,6 +297,73 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
         except Exception as e:
             return self._handle_execution_error(e, config)
     
+    def _apply_mode_filter(
+        self,
+        data: Any,
+        config: Dict[str, Any],
+        timeframe: str = "15m"
+    ) -> Any:
+        """
+        Apply execution mode filtering to data (light=20 days, blank=180 days, full=no filter).
+
+        Args:
+            data: Data to filter (should have a tail() method like pandas DataFrame/Series)
+            config: Configuration dict containing 'execution_mode'
+            timeframe: Timeframe string (e.g., '15m', '1h', '1d')
+
+        Returns:
+            Filtered data based on execution mode
+        """
+        try:
+            execution_mode = config.get('execution_mode', 'full')
+
+            # Full mode - no filtering
+            if execution_mode.lower() == 'full':
+                return data
+
+            # Calculate samples per day for different timeframes
+            samples_per_day_map = {
+                '1m': 1440,   # 60 * 24
+                '3m': 480,    # 20 * 24
+                '5m': 288,    # 12 * 24
+                '15m': 96,    # 4 * 24
+                '30m': 48,    # 2 * 24
+                '1h': 24,     # 1 * 24
+                '4h': 6,      # 24 / 4
+                '1d': 1
+            }
+
+            samples_per_day = samples_per_day_map.get(timeframe, 96)  # Default to 15m
+
+            # Determine days limit based on mode
+            if execution_mode.lower() == 'light':
+                days_limit = 20
+            elif execution_mode.lower() == 'blank':
+                days_limit = 180
+            else:
+                # Unknown mode, default to full
+                self.logger.warning(f"Unknown execution mode '{execution_mode}', using full mode")
+                return data
+
+            mode_limit = days_limit * samples_per_day
+
+            # Check if data has length attribute and tail method
+            if hasattr(data, '__len__') and hasattr(data, 'tail'):
+                data_len = len(data)
+                if data_len > mode_limit:
+                    filtered = data.tail(mode_limit).copy()
+                    tprint(
+                        f"📊 {execution_mode.upper()} mode filtering: reduced data from {data_len:,} to {len(filtered):,} samples ({days_limit} days of {timeframe} data)",
+                        "INFO"
+                    )
+                    return filtered
+
+            return data
+
+        except Exception as e:
+            self.logger.warning(f"Failed to apply mode filter: {e}")
+            return data
+
     def _load_market_data(
         self,
         symbol: str,
@@ -306,19 +373,19 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
     ) -> Optional[Any]:
         """
         Load market data from artifacts or historical_data directory.
-        
+
         Looks for market data in the following order:
         1. Current step's artifacts
         2. data_collection step artifacts
         3. klines_downloading_processing step artifacts
         4. historical_data directory (via DataLoader)
-        
+
         Args:
             symbol: Trading symbol
             exchange: Exchange name
             timeframe: Timeframe for data
             config: Configuration dictionary
-            
+
         Returns:
             DataFrame with market data or None if not found
         """
@@ -328,7 +395,7 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
             ('data_collection', 'market_data'),
             ('data_reading', 'ohlcv_data'),
         ]
-        
+
         for step_name, artifact_name in artifact_sources:
             try:
                 # Set context to look for data
@@ -338,68 +405,68 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
                     exchange=exchange,
                     timeframe=timeframe
                 )
-                
+
                 # Try to load market data
                 market_data = self._get_artifact(
                     artifact_name=artifact_name,
                     artifact_type="data"
                 )
-                
+
                 if market_data is not None and not market_data.empty:
                     tprint(
                         f"✅ Loaded market data from {step_name}/{artifact_name}",
                         "SUCCESS"
                     )
-                    
-                    # Apply light mode filter if needed
-                    market_data = self._apply_light_mode_filter(
+
+                    # Apply mode-specific filter (light=20 days, blank=180 days, full=no filter)
+                    market_data = self._apply_mode_filter(
                         market_data, config, timeframe
                     )
-                    
+
                     return market_data
-                    
+
             except Exception as e:
                 self.logger.debug(
                     f"Could not load from {step_name}/{artifact_name}: {e}"
                 )
                 continue
-        
+
         # Fallback: Try to load from historical_data directory
         tprint(
             f"⚠️ Could not load from artifacts, trying historical_data directory...",
             "WARNING"
         )
-        
+
         try:
             from src.utils.data_loader import DataLoader
-            
+
             data_loader = DataLoader()
-            
+
             # Currently supports ETHUSDT 1h data
             if symbol.upper() == 'ETHUSDT' and timeframe == '1h':
                 market_data = data_loader.load_ethusdt_1h_data()
-                
+
                 if market_data is not None and not market_data.empty:
                     tprint(
                         f"✅ Loaded {symbol} {timeframe} data from historical_data ({len(market_data)} rows)",
                         "SUCCESS"
                     )
-                    
-                    # Apply light mode filter if needed
-                    market_data = self._apply_light_mode_filter(
+
+                    # Apply mode-specific filter (light=20 days, blank=180 days, full=no filter)
+                    market_data = self._apply_mode_filter(
                         market_data, config, timeframe
                     )
-                    
+
                     return market_data
             else:
                 tprint(
                     f"⚠️ DataLoader currently only supports ETHUSDT 1h data (requested: {symbol} {timeframe})",
                     "WARNING"
                 )
-        
+
         except Exception as e:
             self.logger.warning(f"Could not load from historical_data: {e}")
-        
+
         # No data found anywhere
         tprint(
             f"⚠️ Could not load market data for {symbol} from any source",

@@ -10,6 +10,7 @@ High-Impact Parameters Added:
 1. pca_components: [6, 9, 12, 15] - dimensionality affects model quality significantly
 2. maxiter: [50, 100, 200] - convergence quality vs computational cost
 3. init_method: ['kmeans++', 'gmm', 'spectral', 'random'] - initialization strategy
+4. sticky_kappa: [5.0, 10.0, 20.0, 35.0, 50.0] - regime persistence strength
 
 Expected Impact:
 - 20-40% improvement in final model quality
@@ -64,6 +65,9 @@ class EnhancedHPOConfig:
 
     enable_init_method_search: bool = True
     init_method_options: List[str] = field(default_factory=lambda: ['kmeans++', 'gmm', 'spectral', 'random'])
+
+    enable_sticky_kappa_search: bool = True
+    sticky_kappa_options: List[float] = field(default_factory=lambda: [5.0, 10.0, 20.0, 35.0, 50.0])
 
     # Early stopping
     early_stopping: EarlyStoppingConfig = field(default_factory=EarlyStoppingConfig)
@@ -206,6 +210,21 @@ class EnhancedHPOManager:
                 description="Initialization strategy"
             )
             param_groups.append(init_group)
+
+        # Group 6: NEW - Sticky kappa for regime persistence (PRIORITY 2)
+        if self.config.enable_sticky_kappa_search:
+            sticky_group = create_param_group(
+                name="sticky_kappa",
+                params={
+                    "sticky_kappa": {
+                        "type": "categorical",
+                        "choices": self.config.sticky_kappa_options
+                    }
+                },
+                priority=2,
+                description="Regime persistence strength (kappa parameter)"
+            )
+            param_groups.append(sticky_group)
 
         tprint_info(f"📊 Created {len(param_groups)} parameter groups")
         for group in param_groups:

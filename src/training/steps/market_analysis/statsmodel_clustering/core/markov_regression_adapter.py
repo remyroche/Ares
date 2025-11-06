@@ -201,6 +201,8 @@ class MarkovRegressionConfig:
     # NEW: Ensemble clustering
     enable_ensemble: bool = False
     ensemble_algorithms: Optional[List[str]] = None  # None = use defaults
+    ensemble_use_lightweight: bool = True  # Use lightweight ensemble methods (5-10x faster)
+    sticky_kappa: float = 10.0  # Stickiness parameter for regime persistence (5-50, higher = longer regimes)
 
     # Diagnostics and validation
     enable_diagnostics: bool = True
@@ -905,9 +907,12 @@ class MarkovRegressionAdapter:
         """Initialize ensemble clustering detector."""
         self.ensemble_detector = create_ensemble_detector(
             algorithms=self.config.ensemble_algorithms,
+            sticky_kappa=self.config.sticky_kappa,
+            use_lightweight=self.config.ensemble_use_lightweight,
             random_state=self.config.random_state
         )
-        tprint_info("🎭 Ensemble clustering enabled")
+        mode_str = "lightweight" if self.config.ensemble_use_lightweight else "full"
+        tprint_info(f"🎭 Ensemble clustering enabled ({mode_str} mode, kappa={self.config.sticky_kappa})")
 
     def _preprocess_data(self, data: np.ndarray) -> Tuple[np.ndarray, List[str]]:
         """

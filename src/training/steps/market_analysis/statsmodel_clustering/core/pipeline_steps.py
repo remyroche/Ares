@@ -59,6 +59,24 @@ except ImportError:
     MarkovRegressionAdapter = None
     MarkovRegressionConfig = None
 
+# Import clustering optimization goals for HPO objective function
+try:
+    from src.training.steps.market_analysis.clusters.clustering_optimization_goals import (
+        calculate_composite_score,
+        calculate_temporal_smoothness,
+        calculate_cv_ratio,
+        MetricCalculator,
+        DEFAULT_CLUSTERING_GOALS
+    )
+    CLUSTERING_GOALS_AVAILABLE = True
+except ImportError:
+    CLUSTERING_GOALS_AVAILABLE = False
+    calculate_composite_score = None
+    calculate_temporal_smoothness = None
+    calculate_cv_ratio = None
+    MetricCalculator = None
+    DEFAULT_CLUSTERING_GOALS = None
+
 # Import utilities
 try:
     from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
@@ -534,24 +552,37 @@ class FeatureGenerationStep(BaseStep):
 
 class ClusteringStep(BaseStep):
     """
-    Step for performing clustering using MarkovRegressionAdapter.
-    
+    Step for performing clustering using MarkovRegressionAdapter with HPO.
+
     This step handles the configuration and execution of clustering
-    using Markov Regression for regime detection.
+    using Markov Regression for regime detection with hyperparameter optimization.
+
+    Key Features:
+    - Trials for 4-7 regimes with automatic selection
+    - Hierarchical HPO (coarse -> fine -> TPE)
+    - Comprehensive optimization goals assessment
+    - VectorBT/Numba/JIT optimized computations
     """
-    
+
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize ClusteringStep.
-        
+
         Args:
             config: Configuration dictionary with clustering parameters
         """
         super().__init__(config)
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+
+        # HPO configuration
+        self.enable_hpo = config.get('enable_hpo', False)
+        self.hpo_regime_range = config.get('hpo_regime_range', (4, 7))  # Test 4-7 regimes
+        self.hpo_n_trials_coarse = config.get('hpo_n_trials_coarse', 30)
+        self.hpo_n_trials_fine = config.get('hpo_n_trials_fine', 20)
+        self.hpo_n_trials_tpe = config.get('hpo_n_trials_tpe', 50)
+
         # Extract configuration
-        self.k_regimes = config.get('k_regimes', 2)
+        self.k_regimes = config.get('k_regimes', 4)
         self.trend = config.get('trend', 'c')
         self.order = config.get('order', 0)
         self.switching_variance = config.get('switching_variance', True)
@@ -560,20 +591,20 @@ class ClusteringStep(BaseStep):
         self.tolerance = config.get('tolerance', 1e-6)
         self.method = config.get('method', 'bfgs')
         self.random_state = config.get('random_state', 42)
-        
+
         # Data preprocessing
         self.enable_pca = config.get('enable_pca', True)
         self.pca_components = config.get('pca_components', 12)
         self.enable_scaling = config.get('enable_scaling', True)
-        
+
         # Advanced options
         self.enable_diagnostics = config.get('enable_diagnostics', True)
         self.enable_hardware_optimization = config.get('enable_hardware_optimization', True)
-        
+
         # Initialize clustering adapter
         self.clustering_adapter = None
         self._initialize_clustering_adapter()
-        
+
         # Statistics
         self.clustering_stats = {
             'start_time': None,
@@ -585,7 +616,9 @@ class ClusteringStep(BaseStep):
             'aic': 0.0,
             'bic': 0.0,
             'converged': False,
-            'error_message': None
+            'error_message': None,
+            'hpo_enabled': self.enable_hpo,
+            'hpo_results': None
         }
     
     def _initialize_clustering_adapter(self):
@@ -625,34 +658,39 @@ class ClusteringStep(BaseStep):
     
     async def execute(self, data: Any) -> Dict[str, Any]:
         """
-        Execute the clustering step.
-        
+        Execute the clustering step with optional HPO.
+
         Args:
             data: Input data (DataFrame with features)
-            
+
         Returns:
             Dictionary with clustering results and metadata
         """
         self.clustering_stats['start_time'] = time.time()
-        
+
         try:
-            tprint_info(f"🔄 Starting clustering with {self.k_regimes} regimes")
-            
-            if self.clustering_adapter is None:
-                raise ValueError("Clustering adapter not initialized")
-            
             if data is None or not isinstance(data, pd.DataFrame):
                 raise ValueError("Invalid input data: expected pandas DataFrame")
-            
+
             # Store input shape
             self.clustering_stats['input_shape'] = data.shape
-            
-            # Fit clustering model
-            result = self.clustering_adapter.fit(data)
-            
-            if not result.success:
-                raise ValueError(f"Clustering failed: {result.error_message}")
-            
+
+            # Run with HPO if enabled
+            if self.enable_hpo:
+                tprint_info(f"🔍 Starting clustering with HPO (testing {self.hpo_regime_range[0]}-{self.hpo_regime_range[1]} regimes)")
+                result = await self._execute_with_hpo(data)
+            else:
+                tprint_info(f"🔄 Starting clustering with {self.k_regimes} regimes")
+
+                if self.clustering_adapter is None:
+                    raise ValueError("Clustering adapter not initialized")
+
+                # Fit clustering model
+                result = self.clustering_adapter.fit(data)
+
+                if not result.success:
+                    raise ValueError(f"Clustering failed: {result.error_message}")
+
             # Update statistics
             self.clustering_stats.update({
                 'end_time': time.time(),
@@ -662,9 +700,9 @@ class ClusteringStep(BaseStep):
                 'bic': result.bic,
                 'converged': result.diagnostics.get('model_fit', {}).get('converged', False) if result.diagnostics else False
             })
-            
-            tprint_success(f"✅ Clustering completed: {self.k_regimes} regimes, AIC={result.aic:.2f}")
-            
+
+            tprint_success(f"✅ Clustering completed: {result.cluster_labels.max() + 1} regimes, AIC={result.aic:.2f}")
+
             # Prepare results
             clustering_results = {
                 'labels': result.cluster_labels,
@@ -674,24 +712,24 @@ class ClusteringStep(BaseStep):
                 'model_summary': result.model_summary,
                 'diagnostics': result.diagnostics
             }
-            
+
             return {
                 'success': True,
                 'data': clustering_results,
                 'error': None,
                 'stats': self.clustering_stats,
                 'metadata': {
-                    'k_regimes': self.k_regimes,
+                    'k_regimes': result.cluster_labels.max() + 1 if hasattr(result, 'cluster_labels') else self.k_regimes,
                     'trend': self.trend,
                     'order': self.order,
                     'switching_variance': self.switching_variance,
                     'switching_trend': self.switching_trend,
-                    'processing_time': result.processing_time,
-                    'optimization_time': result.optimization_time,
-                    'feature_names': result.feature_names
+                    'processing_time': result.processing_time if hasattr(result, 'processing_time') else 0.0,
+                    'optimization_time': result.optimization_time if hasattr(result, 'optimization_time') else 0.0,
+                    'feature_names': result.feature_names if hasattr(result, 'feature_names') else []
                 }
             }
-            
+
         except Exception as e:
             error_msg = f"Clustering execution failed: {str(e)}"
             self.clustering_stats.update({
@@ -701,13 +739,216 @@ class ClusteringStep(BaseStep):
             })
             tprint_error(f"❌ {error_msg}")
             self.logger.error(error_msg, exc_info=True)
-            
+
             return {
                 'success': False,
                 'data': None,
                 'error': error_msg,
                 'stats': self.clustering_stats
             }
+
+    async def _execute_with_hpo(self, data: pd.DataFrame) -> Any:
+        """
+        Execute clustering with hyperparameter optimization.
+
+        Tests different numbers of regimes (4-7) and parameters using
+        hierarchical optimization (coarse -> fine -> TPE).
+
+        Args:
+            data: Input features DataFrame
+
+        Returns:
+            Best clustering result
+        """
+        try:
+            from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
+                HierarchicalParameterOptimizer,
+                ParameterGroup,
+                OptimizationStage,
+                create_param_group
+            )
+            from src.training.steps.market_analysis.clusters.clustering_optimization_goals import (
+                DEFAULT_CLUSTERING_GOALS,
+                calculate_composite_score,
+                MetricCalculator
+            )
+        except ImportError as e:
+            tprint_warning(f"⚠️ HPO dependencies not available: {e}, running without HPO")
+            self.enable_hpo = False
+            return self.clustering_adapter.fit(data)
+
+        tprint_info("🔧 Setting up hyperparameter optimization")
+
+        # Define parameter search space
+        param_groups = [
+            create_param_group(
+                name="regime_structure",
+                params={
+                    "k_regimes": {
+                        "type": "int",
+                        "low": self.hpo_regime_range[0],
+                        "high": self.hpo_regime_range[1]
+                    },
+                    "trend": {
+                        "type": "categorical",
+                        "choices": ["c", "t", "ct"]
+                    },
+                    "order": {
+                        "type": "int",
+                        "low": 0,
+                        "high": 2
+                    }
+                },
+                priority=1,
+                description="Core regime structure parameters"
+            ),
+            create_param_group(
+                name="switching_params",
+                params={
+                    "switching_variance": {
+                        "type": "categorical",
+                        "choices": [True, False]
+                    },
+                    "switching_trend": {
+                        "type": "categorical",
+                        "choices": [True, False]
+                    }
+                },
+                priority=2,
+                depends_on=["regime_structure"],
+                description="Switching behavior parameters"
+            )
+        ]
+
+        # Define objective function
+        metric_calculator = MetricCalculator()
+
+        def objective_function(params, X_train, y_train=None, X_val=None, y_val=None,
+                              model=None, cv_folds=5, scoring_metric='composite'):
+            """Objective function for HPO using clustering optimization goals."""
+            try:
+                # Create and fit clustering model with these parameters
+                from .markov_regression_adapter import MarkovRegressionAdapter, MarkovRegressionConfig
+
+                config = MarkovRegressionConfig(
+                    k_regimes=params['k_regimes'],
+                    trend=params['trend'],
+                    order=params['order'],
+                    switching_variance=params.get('switching_variance', True),
+                    switching_trend=params.get('switching_trend', True),
+                    maxiter=self.maxiter,
+                    tolerance=self.tolerance,
+                    method=self.method,
+                    random_state=self.random_state,
+                    enable_pca=self.enable_pca,
+                    pca_components=self.pca_components,
+                    enable_scaling=self.enable_scaling
+                )
+
+                adapter = MarkovRegressionAdapter(config)
+                result = adapter.fit(X_train)
+
+                if not result.success:
+                    return -np.inf
+
+                # Calculate comprehensive score using new composite framework
+                # Components: Temporal smoothness + Economic + CV ratio
+
+                # 1. Temporal smoothness
+                temporal_smoothness = calculate_temporal_smoothness(result.cluster_labels)
+
+                # 2. Economic metrics
+                # Rolling LL (proxy from AIC/BIC)
+                rolling_ll = -result.aic / 1000.0  # Normalized
+
+                # Economic utility (Sharpe) - placeholder, would need actual returns
+                # For HPO without returns, use model fit quality as proxy
+                economic_utility = max(0, -result.bic / 5000.0)  # Normalized BIC as proxy
+
+                # 3. Statistical quality (CV ratio)
+                # Calculate on the original or preprocessed data
+                cv_ratio = calculate_cv_ratio(
+                    data=X_train.values if isinstance(X_train, pd.DataFrame) else X_train,
+                    labels=result.cluster_labels
+                )
+
+                # Calculate composite score
+                score = calculate_composite_score(
+                    temporal_smoothness=temporal_smoothness,
+                    rolling_ll=rolling_ll,
+                    economic_utility=economic_utility,
+                    cv_ratio=cv_ratio,
+                    goals=metric_calculator.goals if hasattr(metric_calculator, 'goals') else None,
+                    normalize=True
+                )
+
+                return score
+
+            except Exception as e:
+                tprint_warning(f"⚠️ Evaluation failed for params {params}: {e}")
+                return -np.inf
+
+        # Create optimizer
+        optimizer = HierarchicalParameterOptimizer(
+            param_groups=param_groups,
+            objective_func=objective_function,
+            stages=[
+                OptimizationStage.COARSE_GRID,
+                OptimizationStage.FINE_GRID,
+                OptimizationStage.TPE
+            ],
+            cv_folds=1,  # No CV for time series clustering
+            scoring_metric='composite',
+            direction='maximize',
+            enable_final_refinement=True,
+            final_refinement_trials=20,
+            random_state=self.random_state,
+            verbose=True
+        )
+
+        tprint_info("🚀 Running hierarchical parameter optimization")
+
+        # Run optimization
+        result = optimizer.optimize(
+            X_train=data,
+            y_train=np.zeros(len(data)),  # Dummy for API compatibility
+            X_val=None,
+            y_val=None,
+            model=None
+        )
+
+        self.clustering_stats['hpo_results'] = {
+            'best_params': result.best_params,
+            'best_score': result.best_score,
+            'total_trials': result.total_trials,
+            'total_time': result.total_time
+        }
+
+        tprint_success(f"✅ HPO completed: best score={result.best_score:.6f}, trials={result.total_trials}")
+        tprint_info(f"📊 Best parameters: {result.best_params}")
+
+        # Fit final model with best parameters
+        from .markov_regression_adapter import MarkovRegressionAdapter, MarkovRegressionConfig
+
+        final_config = MarkovRegressionConfig(
+            k_regimes=result.best_params['k_regimes'],
+            trend=result.best_params['trend'],
+            order=result.best_params['order'],
+            switching_variance=result.best_params.get('switching_variance', True),
+            switching_trend=result.best_params.get('switching_trend', True),
+            maxiter=self.maxiter,
+            tolerance=self.tolerance,
+            method=self.method,
+            random_state=self.random_state,
+            enable_pca=self.enable_pca,
+            pca_components=self.pca_components,
+            enable_scaling=self.enable_scaling
+        )
+
+        final_adapter = MarkovRegressionAdapter(final_config)
+        final_result = final_adapter.fit(data)
+
+        return final_result
     
     def validate_config(self) -> None:
         """

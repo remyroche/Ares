@@ -106,6 +106,39 @@ except ImportError:
     PCA = None
     ParameterGrid = None
 
+# Import NEW optimization modules
+try:
+    from ..optimization.robust_initialization import (
+        RobustMarkovInitializer,
+        InitializationResult,
+        create_robust_initializer
+    )
+    ROBUST_INIT_AVAILABLE = True
+except ImportError:
+    ROBUST_INIT_AVAILABLE = False
+    RobustMarkovInitializer = None
+    InitializationResult = None
+
+try:
+    from ..optimization.vectorbt_preprocessing import (
+        VectorBTPreprocessor,
+        create_vectorbt_preprocessor
+    )
+    VECTORBT_PREPROCESSING_AVAILABLE = True
+except ImportError:
+    VECTORBT_PREPROCESSING_AVAILABLE = False
+    VectorBTPreprocessor = None
+
+try:
+    from ..clustering.ensemble_clustering import (
+        EnsembleRegimeDetector,
+        create_ensemble_detector
+    )
+    ENSEMBLE_CLUSTERING_AVAILABLE = True
+except ImportError:
+    ENSEMBLE_CLUSTERING_AVAILABLE = False
+    EnsembleRegimeDetector = None
+
 
 @dataclass
 class MarkovRegressionConfig:
@@ -154,12 +187,28 @@ class MarkovRegressionConfig:
     # VectorBT integration
     enable_vectorbt_integration: bool = False
     vectorbt_config: Optional[Dict[str, Any]] = None
-    
+
+    # NEW: Robust initialization
+    enable_robust_initialization: bool = True
+    robust_init_method: str = 'kmeans++'  # 'kmeans++', 'gmm', 'spectral', 'random'
+    enable_multi_start: bool = True
+    n_multi_start: int = 5
+    multi_start_n_jobs: int = -1
+
+    # NEW: VectorBT preprocessing optimization
+    enable_vectorbt_preprocessing: bool = True
+
+    # NEW: Ensemble clustering
+    enable_ensemble: bool = False
+    ensemble_algorithms: Optional[List[str]] = None  # None = use defaults
+    ensemble_use_lightweight: bool = True  # Use lightweight ensemble methods (5-10x faster)
+    sticky_kappa: float = 10.0  # Stickiness parameter for regime persistence (5-50, higher = longer regimes)
+
     # Diagnostics and validation
     enable_diagnostics: bool = True
     validation_split: float = 0.2
     cross_validation_folds: int = 5
-    
+
     # Advanced options
     missing: str = 'drop'
     verbose: bool = True
@@ -205,7 +254,15 @@ class MarkovRegressionResult:
     
     # VectorBT integration
     vectorbt_results: Optional[Dict[str, Any]] = None
-    
+
+    # NEW: Robust initialization results
+    initialization_method: Optional[str] = None
+    initialization_score: Optional[float] = None
+    multi_start_results: Optional[List[Dict[str, Any]]] = None
+
+    # NEW: Ensemble clustering results
+    ensemble_results: Optional[Dict[str, Any]] = None
+
     # Additional metadata
     metadata: Optional[Dict[str, Any]] = None
 
@@ -763,7 +820,25 @@ class MarkovRegressionAdapter:
         # Initialize VectorBT integration
         if self.config.enable_vectorbt_integration and VECTORBT_AVAILABLE:
             self._initialize_vectorbt_integration()
-        
+
+        # NEW: Initialize robust initialization
+        self.robust_initializer = None
+        if self.config.enable_robust_initialization and ROBUST_INIT_AVAILABLE:
+            self._initialize_robust_initialization()
+
+        # NEW: Initialize VectorBT preprocessor
+        self.vectorbt_preprocessor = None
+        if self.config.enable_vectorbt_preprocessing and VECTORBT_PREPROCESSING_AVAILABLE:
+            self._initialize_vectorbt_preprocessing()
+
+        # NEW: Initialize ensemble detector
+        self.ensemble_detector = None
+        if self.config.enable_ensemble and ENSEMBLE_CLUSTERING_AVAILABLE:
+            self._initialize_ensemble_detector()
+
+        # State for optimization time tracking
+        self.optimization_time = 0.0
+
         tprint_info(f"🚀 Initialized Enhanced MarkovRegressionAdapter (k_regimes={self.config.k_regimes})")
     
     def _initialize_hardware_optimization(self):
@@ -811,29 +886,89 @@ class MarkovRegressionAdapter:
             'config': self.config.vectorbt_config or {}
         }
         tprint_info("🔧 VectorBT integration enabled")
-    
+
+    def _initialize_robust_initialization(self):
+        """Initialize robust initialization module."""
+        self.robust_initializer = create_robust_initializer(
+            random_state=self.config.random_state,
+            n_jobs=self.config.multi_start_n_jobs
+        )
+        tprint_info(f"🎯 Robust initialization enabled (method={self.config.robust_init_method})")
+
+    def _initialize_vectorbt_preprocessing(self):
+        """Initialize VectorBT preprocessor."""
+        self.vectorbt_preprocessor = create_vectorbt_preprocessor(
+            enable_vectorbt=True,
+            verbose=self.config.verbose
+        )
+        tprint_info("🚀 VectorBT preprocessing enabled")
+
+    def _initialize_ensemble_detector(self):
+        """Initialize ensemble clustering detector."""
+        self.ensemble_detector = create_ensemble_detector(
+            algorithms=self.config.ensemble_algorithms,
+            sticky_kappa=self.config.sticky_kappa,
+            use_lightweight=self.config.ensemble_use_lightweight,
+            random_state=self.config.random_state
+        )
+        mode_str = "lightweight" if self.config.ensemble_use_lightweight else "full"
+        tprint_info(f"🎭 Ensemble clustering enabled ({mode_str} mode, kappa={self.config.sticky_kappa})")
+
     def _preprocess_data(self, data: np.ndarray) -> Tuple[np.ndarray, List[str]]:
         """
         Preprocess data with scaling and optional PCA.
-        
+
+        NEW: Uses VectorBT-optimized preprocessing when available.
+
         Args:
             data: Input data (n_samples, n_features)
-            
+
         Returns:
             Tuple of (processed_data, feature_names)
         """
+        # Store original shape
+        n_samples, n_features = data.shape
+
+        # Use more efficient data types
+        if data.dtype == np.float64:
+            if self.config.verbose:
+                tprint_info("🔧 Converting data to float32 for memory efficiency")
+            data = data.astype(np.float32)
+
+        # NEW: Use VectorBT preprocessing if available
+        if self.vectorbt_preprocessor is not None:
+            if self.config.verbose:
+                tprint_info("🚀 Using VectorBT-optimized preprocessing")
+
+            processed_data, preprocessing_info = self.vectorbt_preprocessor.preprocess_pipeline(
+                data=data,
+                enable_scaling=self.config.enable_scaling,
+                enable_pca=self.config.enable_pca,
+                n_components=self.config.pca_components,
+                pca_variance_threshold=self.config.pca_variance_threshold
+            )
+
+            # Extract PCA loadings if available
+            if 'pca' in preprocessing_info and preprocessing_info['pca']['method'] != 'none':
+                pca_info = preprocessing_info['pca']
+                self.pca_loadings = pca_info.get('components', None)
+
+                # Generate feature names
+                if 'n_components' in pca_info:
+                    n_components = pca_info['n_components']
+                    feature_names = [f'pc_{i}' for i in range(n_components)]
+                else:
+                    feature_names = [f'feature_{i}' for i in range(processed_data.shape[1])]
+            else:
+                feature_names = [f'feature_{i}' for i in range(processed_data.shape[1])]
+
+            return processed_data, feature_names
+
+        # Fallback to standard preprocessing
         if not SKLEARN_AVAILABLE:
             tprint_warning("⚠️ sklearn not available, skipping preprocessing")
             return data, [f'feature_{i}' for i in range(data.shape[1])]
-        
-        # Store original shape
-        n_samples, n_features = data.shape
-        
-        # Use more efficient data types
-        if data.dtype == np.float64:
-            tprint_info("🔧 Converting data to float32 for memory efficiency")
-            data = data.astype(np.float32)
-        
+
         # Apply scaling if enabled
         if self.config.enable_scaling:
             self.scaler = StandardScaler()

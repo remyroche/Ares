@@ -36,6 +36,18 @@ from sklearn.metrics import (
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score
 
+# Import comprehensive temporal score from clustering optimization goals
+try:
+    from src.training.steps.market_analysis.clusters.clustering_optimization_goals import (
+        calculate_comprehensive_temporal_score,
+        calculate_temporal_smoothness,
+        calculate_cv_ratio
+    )
+    COMPREHENSIVE_TEMPORAL_AVAILABLE = True
+except ImportError:
+    COMPREHENSIVE_TEMPORAL_AVAILABLE = False
+    logger.warning("Comprehensive temporal score functions not available")
+
 # Import tprint utilities
 try:
     from src.utils.tprint import (
@@ -197,7 +209,11 @@ class ClusterQualityMetrics:
     # Enhanced temporal metrics
     regime_duration_distribution: Dict[str, Any] = field(default_factory=dict)
     transition_probability_matrix: Dict[str, Any] = field(default_factory=dict)
-    
+
+    # NEW: Comprehensive temporal metrics (5-component score)
+    comprehensive_temporal_score: Optional[float] = None
+    comprehensive_temporal_breakdown: Dict[str, Any] = field(default_factory=dict)
+
     # Cluster composition
     n_regimes: int = 0
     noise_ratio: float = 0.0
@@ -727,6 +743,30 @@ class ClusterQualityAssessor:
                 # Enhanced temporal metrics
                 metrics.regime_duration_distribution = self._calculate_regime_duration_distribution(regime_labels)
                 metrics.transition_probability_matrix = self._calculate_transition_probability_matrix(regime_labels)
+
+                # NEW: Comprehensive temporal score with 5 enhanced metrics
+                try:
+                    comprehensive_temporal = self._calculate_comprehensive_temporal_metrics(
+                        regime_labels,
+                        features_clean.values,
+                        forward_returns.values if forward_returns is not None else None,
+                        target_mean_duration=(5, 20)
+                    )
+                    # Store comprehensive temporal results
+                    if comprehensive_temporal:
+                        metrics.comprehensive_temporal_score = comprehensive_temporal.get('composite_temporal_score', 0.0)
+                        metrics.comprehensive_temporal_breakdown = comprehensive_temporal
+                        tprint_success(
+                            f"✅ Comprehensive temporal score: {metrics.comprehensive_temporal_score:.4f} "
+                            f"(smoothness: {comprehensive_temporal.get('smoothness_score', 0):.3f}, "
+                            f"duration: {comprehensive_temporal.get('duration_score', 0):.3f}, "
+                            f"predictability: {comprehensive_temporal.get('predictability_score', 0):.3f}, "
+                            f"persistence: {comprehensive_temporal.get('persistence_score', 0):.3f}, "
+                            f"economic: {comprehensive_temporal.get('economic_score', 0):.3f})"
+                        )
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to calculate comprehensive temporal score: {e}")
+                    logger.debug(f"Comprehensive temporal error details: {e}", exc_info=True)
 
                 tprint_success(f"✅ Temporal smoothness: {metrics.temporal_smoothness:.4f} (raw: {metrics.temporal_smoothness_raw:.4f}, flip-flop: {metrics.flip_flop_ratio:.3f}), Persistence: {metrics.regime_persistence:.2f}")
                 tprint_success(f"✅ Enhanced temporal: Duration stability={metrics.regime_duration_distribution.get('duration_stability_score', 0) if isinstance(metrics.regime_duration_distribution, dict) else 0:.3f}, Transition stability={metrics.transition_probability_matrix.get('transition_stability_score', 0) if isinstance(metrics.transition_probability_matrix, dict) else 0:.3f}")
@@ -1939,20 +1979,71 @@ class ClusterQualityAssessor:
     def _calculate_regime_persistence(self, regime_labels: np.ndarray) -> float:
         """
         Calculate average regime persistence (how long regimes typically last).
-        
+
         Returns:
             Average number of bars a regime persists
         """
         if len(regime_labels) < 2:
             return float(len(regime_labels))
-        
+
         regime_changes = (regime_labels[1:] != regime_labels[:-1]).astype(int)
-        
+
         # Calculate average duration between changes
         avg_regime_duration = 1.0 / (np.mean(regime_changes) + QualityThresholds.DBI_EPSILON)
-        
+
         return avg_regime_duration
-    
+
+    def _calculate_comprehensive_temporal_metrics(
+        self,
+        regime_labels: np.ndarray,
+        features: np.ndarray,
+        returns: Optional[np.ndarray] = None,
+        target_mean_duration: Tuple[int, int] = (5, 20)
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Calculate comprehensive temporal quality score with 5 enhanced metrics.
+
+        Uses the comprehensive temporal score from clustering_optimization_goals.py
+        which includes:
+        - Basic smoothness (30%): Penalizes rapid switching
+        - Duration quality (25%): Encourages tradeable episode lengths (5-20 bars target)
+        - Transition predictability (15%): Rewards predictable transitions
+        - Regime persistence (15%): Rewards autocorrelation
+        - Economic efficiency (15%): Rewards profitable transitions (if returns available)
+
+        Args:
+            regime_labels: Regime labels (T,)
+            features: Feature matrix (T, D)
+            returns: Optional return series (T,)
+            target_mean_duration: Target range for mean duration (min, max) in bars
+
+        Returns:
+            Dictionary with comprehensive temporal score and components, or None if unavailable
+        """
+        if not COMPREHENSIVE_TEMPORAL_AVAILABLE:
+            self.logger.warning("Comprehensive temporal score functions not available")
+            return None
+
+        if len(regime_labels) < 2 or len(features) == 0:
+            return None
+
+        try:
+            # Call the comprehensive temporal score function from clustering_optimization_goals
+            comprehensive_result = calculate_comprehensive_temporal_score(
+                labels=regime_labels,
+                features=features,
+                returns=returns,
+                target_mean_duration=target_mean_duration,
+                use_jit=True
+            )
+
+            return comprehensive_result
+
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate comprehensive temporal metrics: {e}")
+            self.logger.debug(f"Comprehensive temporal error details: {e}", exc_info=True)
+            return None
+
     def _calculate_balance_metrics(self,
                                      regime_labels: np.ndarray) -> Tuple[float, float, float, float, List[float]]:
         """

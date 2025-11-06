@@ -230,14 +230,35 @@ class StatsmodelClusteringPipelineStep(BaseStep):
 
             # Step 5: Assess cluster quality
             tprint("📊 Step 5: Assessing cluster quality...", "INFO")
+
+            # Add regime probabilities to config for quality assessment
+            quality_config = config.copy()
+            quality_config['regime_probabilities'] = clustering_result.get('regime_probabilities')
+
             quality_metrics = await self._assess_cluster_quality(
                 features=transformed_features,
                 labels=clustering_result['regime_labels'],
                 market_data=market_data,
-                config=config
+                config=quality_config
             )
 
             tprint(f"✅ Quality assessment completed", "SUCCESS")
+
+            # Generate CSV quality report
+            tprint("📄 Generating quality report CSV...", "INFO")
+            assessor = create_cluster_quality_assessor(artifact_manager=self.artifact_manager)
+            csv_quality_path, csv_trials_path = assessor.generate_comprehensive_csv_report(
+                metrics=quality_metrics,
+                all_trials=None,  # Could pass if we have multiple trials
+                symbol=symbol,
+                output_dir='outcomes',
+                method_specific_config={
+                    'k_regimes': clustering_result['n_regimes'],
+                    'aic': clustering_result.get('aic'),
+                    'bic': clustering_result.get('bic'),
+                    'log_likelihood': clustering_result.get('log_likelihood')
+                }
+            )
 
             # Step 6: Generate artifacts
             tprint("💾 Step 6: Generating artifacts...", "INFO")
@@ -250,6 +271,13 @@ class StatsmodelClusteringPipelineStep(BaseStep):
                 transformers=transformers,
                 config=config
             )
+
+            # Add CSV report to artifacts if generated
+            if csv_quality_path:
+                artifacts.append(csv_quality_path)
+                tprint(f"✅ Quality report saved to: {csv_quality_path}", "SUCCESS")
+            else:
+                tprint(f"⚠️ Failed to generate quality report CSV", "WARNING")
 
             tprint(f"✅ Generated {len(artifacts)} artifacts", "SUCCESS")
 
@@ -704,29 +732,29 @@ class StatsmodelClusteringPipelineStep(BaseStep):
         try:
             result = self.markov_adapter.fit(X)
 
-            # Extract regime labels
-            regime_labels = result.get('regime_labels', result.get('filtered_marginal_probabilities', None))
+            # Extract cluster labels from MarkovRegressionResult dataclass
+            cluster_labels = result.cluster_labels
 
-            if regime_labels is None:
-                raise ValueError("Markov adapter did not return regime labels")
+            if cluster_labels is None or len(cluster_labels) == 0:
+                raise ValueError("Markov adapter did not return cluster labels")
 
             # If we got probabilities, convert to hard labels
-            if len(regime_labels.shape) > 1:
-                regime_labels = regime_labels.argmax(axis=1)
+            if len(cluster_labels.shape) > 1:
+                cluster_labels = cluster_labels.argmax(axis=1)
 
-            n_regimes = len(np.unique(regime_labels))
+            n_regimes = len(np.unique(cluster_labels))
 
             return {
-                'regime_labels': regime_labels,
+                'regime_labels': cluster_labels,  # Rename for consistency downstream
                 'n_regimes': n_regimes,
-                'model': result.get('model'),
-                'regime_probabilities': result.get('filtered_marginal_probabilities'),
-                'transition_matrix': result.get('transition_matrix'),
-                'regime_means': result.get('regime_means'),
-                'regime_covariances': result.get('regime_covariances'),
-                'aic': result.get('aic'),
-                'bic': result.get('bic'),
-                'log_likelihood': result.get('log_likelihood')
+                'model': result.fitted_model,
+                'regime_probabilities': result.cluster_probabilities,
+                'transition_matrix': result.transition_matrix,
+                'regime_means': result.regime_params,
+                'regime_covariances': result.regime_params,
+                'aic': result.aic,
+                'bic': result.bic,
+                'log_likelihood': result.log_likelihood
             }
 
         except Exception as e:
@@ -757,12 +785,12 @@ class StatsmodelClusteringPipelineStep(BaseStep):
             artifact_manager=self.artifact_manager
         )
 
-        # Assess quality
+        # Assess quality with regime probabilities
         quality_metrics = assessor.assess_clustering_quality(
             features=features.values,
             cluster_labels=labels,
             market_data=market_data,
-            regime_probabilities=None,  # Can add if available
+            regime_probabilities=config.get('regime_probabilities'),  # Pass probabilities from clustering result
             config=config
         )
 

@@ -466,26 +466,60 @@ class PenaltyConfig:
 @dataclass
 class ClusteringOptimizationGoals:
     """
-    Unified clustering optimization goals - Predictive & Economic Focus.
-    
-    Primary optimization goals (33% each):
-    1. Rolling/blocked predictive log-likelihood on held-out time blocks
-    2. One-step-ahead log-likelihood or predictive density  
-    3. Out-of-sample economic utility (Sharpe, risk-adjusted)
-    
+    Unified clustering optimization goals - Temporal, Economic & Statistical Focus.
+
+    Primary optimization goals (balanced weighting):
+    1. Temporal Smoothness (33%): Regime persistence and stability
+    2. Economic Quality (33%): Rolling log-likelihood + Economic utility (Sharpe)
+    3. Statistical Quality (34%): CV ratio (between/within cluster variance)
+
     Structural constraints:
     - Cluster count: 4-8 (preferred)
     - Cluster size: 2%-20% each
     """
-    
-    # ===== PRIMARY OPTIMIZATION GOALS (33% each) =====
-    
-    # Goal 1: Rolling Predictive Log-Likelihood
-    # Higher is better - measures predictive quality on held-out blocks
+
+    # ===== PRIMARY OPTIMIZATION GOALS =====
+
+    # Goal 1: Temporal Smoothness (33%)
+    # Higher is better - measures regime persistence and temporal stability
+    # Critical for financial markets: regimes should be persistent and economically meaningful
+    temporal_smoothness: GoalConfig = field(default_factory=lambda: GoalConfig(
+        name="Temporal Smoothness",
+        objective=OptimizationObjective.MAXIMIZE,
+        weight=0.33,  # 33% of composite score
+        target_range=(0.7, 1.0),  # Aim for high persistence (few transitions)
+        constraint_threshold=0.5,  # Soft constraint: smoothness >= 0.5
+        description="Regime persistence and temporal stability (penalizes rapid switching)",
+        enable_normalization=True,
+        normalization_method=NormalizationMethod.RANK,
+        stability_threshold=0.3
+    ))
+
+    # Goal 2: Economic Quality (33%)
+    # Composite of rolling log-likelihood and economic utility
+    # Sub-weights: 50% rolling LL + 50% Sharpe
+    economic_quality: GoalConfig = field(default_factory=lambda: GoalConfig(
+        name="Economic Quality",
+        objective=OptimizationObjective.MAXIMIZE,
+        weight=0.33,  # 33% of composite score
+        target_range=(0.0, 10.0),  # Normalized composite
+        constraint_threshold=None,
+        description="Economic quality: predictive likelihood + trading Sharpe",
+        enable_normalization=True,
+        normalization_method=NormalizationMethod.RANK,
+        stability_threshold=0.4,
+        # Sub-components for economic quality
+        sub_weights={
+            'rolling_ll': 0.5,  # 50% rolling log-likelihood
+            'sharpe': 0.5       # 50% economic utility (Sharpe)
+        }
+    ))
+
+    # Sub-component configs for economic quality
     rolling_log_likelihood: GoalConfig = field(default_factory=lambda: GoalConfig(
         name="Rolling Log-Likelihood",
         objective=OptimizationObjective.MAXIMIZE,
-        weight=0.33,  # 33% of composite score
+        weight=0.165,  # 16.5% of total (50% of economic 33%)
         target_range=(-10.0, 0.0),  # Closer to 0 is better
         constraint_threshold=None,
         description="Rolling/blocked predictive log-likelihood on held-out time blocks",
@@ -493,33 +527,32 @@ class ClusteringOptimizationGoals:
         normalization_method=NormalizationMethod.RANK,
         stability_threshold=0.4
     ))
-    
-    # Goal 2: One-Step-Ahead Log-Likelihood
-    # Higher is better - measures one-step predictive density
-    one_step_log_likelihood: GoalConfig = field(default_factory=lambda: GoalConfig(
-        name="One-Step Log-Likelihood",
-        objective=OptimizationObjective.MAXIMIZE,
-        weight=0.33,  # 33% of composite score
-        target_range=(-5.0, 0.0),  # Closer to 0 is better
-        constraint_threshold=None,
-        description="One-step-ahead log-likelihood averaged over held-out times",
-        enable_normalization=True,
-        normalization_method=NormalizationMethod.RANK,
-        stability_threshold=0.4
-    ))
-    
-    # Goal 3: Economic Utility (Out-of-Sample Sharpe)
-    # Higher is better - measures economic value of regime-aware strategy
+
     economic_utility: GoalConfig = field(default_factory=lambda: GoalConfig(
         name="Economic Utility (Sharpe)",
         objective=OptimizationObjective.MAXIMIZE,
-        weight=0.34,  # 34% of composite score (total=100%)
+        weight=0.165,  # 16.5% of total (50% of economic 33%)
         target_range=(0.5, 3.0),  # Aim for Sharpe > 1.0
         constraint_threshold=0.5,  # Soft constraint: Sharpe >= 0.5
         description="Out-of-sample annualized Sharpe of regime-aware strategy",
         enable_normalization=True,
         normalization_method=NormalizationMethod.RANK,
         stability_threshold=0.4
+    ))
+
+    # Goal 3: Statistical Quality (34%) - CV Ratio
+    # Higher is better - measures cluster separation quality
+    # CV ratio = between-cluster variance / within-cluster variance
+    statistical_quality: GoalConfig = field(default_factory=lambda: GoalConfig(
+        name="Statistical Quality (CV Ratio)",
+        objective=OptimizationObjective.MAXIMIZE,
+        weight=0.34,  # 34% of composite score (total=100%)
+        target_range=(10.0, 1000.0),  # Higher is better
+        constraint_threshold=5.0,  # Soft constraint: CV ratio >= 5
+        description="Coefficient of variation ratio (between/within cluster variance)",
+        enable_normalization=True,
+        normalization_method=NormalizationMethod.RANK,
+        stability_threshold=0.3
     ))
     
     # ===== STRUCTURAL CONSTRAINTS =====
@@ -555,36 +588,43 @@ class ClusteringOptimizationGoals:
     def get_all_goals(self) -> Dict[str, GoalConfig]:
         """Get all goal configurations as a dictionary."""
         return {
-            OptimizationGoal.ROLLING_LOG_LIKELIHOOD.value: self.rolling_log_likelihood,
-            OptimizationGoal.ONE_STEP_LOG_LIKELIHOOD.value: self.one_step_log_likelihood,
-            OptimizationGoal.ECONOMIC_UTILITY.value: self.economic_utility,
+            'temporal_smoothness': self.temporal_smoothness,
+            'economic_quality': self.economic_quality,
+            'statistical_quality': self.statistical_quality,
+            # Sub-components for reference
+            'rolling_ll': self.rolling_log_likelihood,
+            'economic_utility': self.economic_utility,
         }
-    
+
     def get_primary_goals(self) -> Dict[str, GoalConfig]:
-        """Get primary optimization goals (Predictive + Economic)."""
-        return self.get_all_goals()
+        """Get primary optimization goals (Temporal + Economic + Statistical)."""
+        return {
+            'temporal_smoothness': self.temporal_smoothness,
+            'economic_quality': self.economic_quality,
+            'statistical_quality': self.statistical_quality,
+        }
     
     def get_weights_dict(self) -> Dict[str, float]:
         """Get weights for composite score calculation."""
         return {
-            'rolling_ll': self.rolling_log_likelihood.weight,
-            'one_step_ll': self.one_step_log_likelihood.weight,
-            'economic': self.economic_utility.weight,
+            'temporal_smoothness': self.temporal_smoothness.weight,
+            'economic_quality': self.economic_quality.weight,
+            'statistical_quality': self.statistical_quality.weight,
         }
-    
+
     def validate_weights(self) -> bool:
         """Validate that weights sum to 1.0 (or close to it)."""
         total_weight = sum(self.get_weights_dict().values())
         return abs(total_weight - 1.0) < 1e-6
-    
+
     def normalize_weights(self):
         """Normalize weights to sum to 1.0."""
         weights = self.get_weights_dict()
         total = sum(weights.values())
         if total > 0:
-            self.rolling_log_likelihood.weight = weights['rolling_ll'] / total
-            self.one_step_log_likelihood.weight = weights['one_step_ll'] / total
-            self.economic_utility.weight = weights['economic'] / total
+            self.temporal_smoothness.weight = weights['temporal_smoothness'] / total
+            self.economic_quality.weight = weights['economic_quality'] / total
+            self.statistical_quality.weight = weights['statistical_quality'] / total
 
 
 @dataclass
@@ -1209,45 +1249,184 @@ class MetricNormalizer:
         return (values - min_val) / (max_val - min_val)
 
 
+# ===== CV RATIO CALCULATION =====
+
+def calculate_cv_ratio(
+    data: np.ndarray,
+    labels: np.ndarray,
+    use_jit: bool = True
+) -> float:
+    """
+    Calculate CV ratio (Calinski-Harabasz Index).
+
+    CV Ratio = Between-cluster variance / Within-cluster variance
+    Higher is better - indicates well-separated clusters.
+
+    Args:
+        data: Feature matrix (N, D)
+        labels: Cluster labels (N,)
+        use_jit: Use JIT-compiled version if available
+
+    Returns:
+        CV ratio (higher is better)
+    """
+    if len(data) == 0 or len(labels) == 0:
+        return 0.0
+
+    n_clusters = len(np.unique(labels))
+    if n_clusters <= 1:
+        return 0.0
+
+    # Use JIT-compiled versions if available
+    if use_jit and NUMBA_AVAILABLE:
+        within_var = _calculate_within_cluster_variance_jit(data, labels, n_clusters)
+        between_var = _calculate_between_cluster_variance_jit(data, labels, n_clusters)
+    else:
+        # Fallback to numpy implementation
+        within_var = 0.0
+        between_var = 0.0
+
+        # Global centroid
+        global_centroid = np.mean(data, axis=0)
+
+        for k in range(n_clusters):
+            mask = labels == k
+            cluster_size = np.sum(mask)
+
+            if cluster_size == 0:
+                continue
+
+            cluster_data = data[mask]
+            cluster_centroid = np.mean(cluster_data, axis=0)
+
+            # Within-cluster variance
+            within_var += np.sum((cluster_data - cluster_centroid) ** 2)
+
+            # Between-cluster variance
+            between_var += cluster_size * np.sum((cluster_centroid - global_centroid) ** 2)
+
+        # Normalize
+        n_samples = len(data)
+        within_var /= n_samples
+        between_var /= n_samples
+
+    # Calculate ratio
+    if within_var == 0 or np.isnan(within_var) or np.isinf(within_var):
+        return 0.0
+
+    cv_ratio = between_var / within_var
+
+    # Handle edge cases
+    if np.isnan(cv_ratio) or np.isinf(cv_ratio):
+        return 0.0
+
+    return float(cv_ratio)
+
+
+def calculate_temporal_smoothness(labels: np.ndarray, use_jit: bool = True) -> float:
+    """
+    Calculate temporal smoothness of regime assignments.
+
+    Smoothness = 1 - (n_transitions / max_transitions)
+    Higher values indicate more stable regimes with fewer transitions.
+
+    Args:
+        labels: Regime labels (T,)
+        use_jit: Use JIT-compiled version if available
+
+    Returns:
+        Smoothness score [0, 1], higher is better
+    """
+    if len(labels) <= 1:
+        return 1.0
+
+    # Use JIT-compiled version if available
+    if use_jit and NUMBA_AVAILABLE:
+        return _calculate_temporal_smoothness_jit(labels)
+    else:
+        # Fallback implementation
+        n_transitions = 0
+        for i in range(1, len(labels)):
+            if labels[i] != labels[i-1]:
+                n_transitions += 1
+
+        max_transitions = len(labels) - 1
+        smoothness = 1.0 - (n_transitions / max_transitions)
+
+        return float(smoothness)
+
+
 # ===== COMPOSITE SCORE CALCULATION =====
 
 def calculate_composite_score(
+    temporal_smoothness: float,
     rolling_ll: float,
-    one_step_ll: float,
     economic_utility: float,
+    cv_ratio: float,
     goals: Optional[ClusteringOptimizationGoals] = None,
-    penalties: Optional[Dict[str, float]] = None
+    penalties: Optional[Dict[str, float]] = None,
+    normalize: bool = True
 ) -> float:
     """
     Calculate weighted composite score from individual metrics.
-    
+
+    New Structure:
+    - 33% Temporal Smoothness: Regime persistence
+    - 33% Economic Quality: 50% rolling LL + 50% Sharpe
+    - 34% Statistical Quality: CV ratio (between/within variance)
+
     Args:
+        temporal_smoothness: Temporal smoothness score [0, 1] (higher is better)
         rolling_ll: Rolling log-likelihood (higher is better)
-        one_step_ll: One-step log-likelihood (higher is better)
         economic_utility: Economic Sharpe ratio (higher is better)
+        cv_ratio: CV ratio = between/within cluster variance (higher is better)
         goals: Optional custom goals configuration
         penalties: Optional penalties dict
-        
+        normalize: Whether to normalize sub-components
+
     Returns:
         Composite score (higher is better)
     """
     if goals is None:
         goals = DEFAULT_CLUSTERING_GOALS
-    
+
     weights = goals.get_weights_dict()
-    
-    # Calculate weighted sum
+
+    # Normalize components if requested
+    if normalize:
+        # Temporal smoothness already in [0, 1]
+        temporal_normalized = temporal_smoothness
+
+        # Rolling LL: typical range [-10, 0], normalize to [0, 1]
+        rolling_ll_normalized = np.clip((rolling_ll + 10.0) / 10.0, 0, 1)
+
+        # Economic utility (Sharpe): typical range [0, 3], normalize to [0, 1]
+        sharpe_normalized = np.clip(economic_utility / 3.0, 0, 1)
+
+        # CV ratio: typical range [5, 1000+], use log scale and normalize
+        cv_ratio_normalized = np.clip(np.log10(max(cv_ratio, 1.0)) / 3.0, 0, 1)  # log10(1000) = 3
+    else:
+        temporal_normalized = temporal_smoothness
+        rolling_ll_normalized = rolling_ll
+        sharpe_normalized = economic_utility
+        cv_ratio_normalized = cv_ratio
+
+    # Calculate economic quality as composite of rolling LL and Sharpe
+    # Sub-weights: 50% each
+    economic_quality = 0.5 * rolling_ll_normalized + 0.5 * sharpe_normalized
+
+    # Calculate weighted composite
     composite = (
-        weights['rolling_ll'] * rolling_ll +
-        weights['one_step_ll'] * one_step_ll +
-        weights['economic'] * economic_utility
+        weights['temporal_smoothness'] * temporal_normalized +
+        weights['economic_quality'] * economic_quality +
+        weights['statistical_quality'] * cv_ratio_normalized
     )
-    
+
     # Apply penalties
     if penalties is not None:
         total_penalty = sum(penalties.values())
         composite -= total_penalty
-    
+
     return composite
 
 

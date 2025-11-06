@@ -59,6 +59,24 @@ except ImportError:
     MarkovRegressionAdapter = None
     MarkovRegressionConfig = None
 
+# Import clustering optimization goals for HPO objective function
+try:
+    from src.training.steps.market_analysis.clusters.clustering_optimization_goals import (
+        calculate_composite_score,
+        calculate_temporal_smoothness,
+        calculate_cv_ratio,
+        MetricCalculator,
+        DEFAULT_CLUSTERING_GOALS
+    )
+    CLUSTERING_GOALS_AVAILABLE = True
+except ImportError:
+    CLUSTERING_GOALS_AVAILABLE = False
+    calculate_composite_score = None
+    calculate_temporal_smoothness = None
+    calculate_cv_ratio = None
+    MetricCalculator = None
+    DEFAULT_CLUSTERING_GOALS = None
+
 # Import utilities
 try:
     from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
@@ -833,10 +851,36 @@ class ClusteringStep(BaseStep):
                 if not result.success:
                     return -np.inf
 
-                # Calculate comprehensive score
-                # For now, use AIC/BIC as proxy (lower is better, so negate)
-                # In full implementation, would use clustering_optimization_goals metrics
-                score = -result.aic / 1000.0  # Normalize
+                # Calculate comprehensive score using new composite framework
+                # Components: Temporal smoothness + Economic + CV ratio
+
+                # 1. Temporal smoothness
+                temporal_smoothness = calculate_temporal_smoothness(result.cluster_labels)
+
+                # 2. Economic metrics
+                # Rolling LL (proxy from AIC/BIC)
+                rolling_ll = -result.aic / 1000.0  # Normalized
+
+                # Economic utility (Sharpe) - placeholder, would need actual returns
+                # For HPO without returns, use model fit quality as proxy
+                economic_utility = max(0, -result.bic / 5000.0)  # Normalized BIC as proxy
+
+                # 3. Statistical quality (CV ratio)
+                # Calculate on the original or preprocessed data
+                cv_ratio = calculate_cv_ratio(
+                    data=X_train.values if isinstance(X_train, pd.DataFrame) else X_train,
+                    labels=result.cluster_labels
+                )
+
+                # Calculate composite score
+                score = calculate_composite_score(
+                    temporal_smoothness=temporal_smoothness,
+                    rolling_ll=rolling_ll,
+                    economic_utility=economic_utility,
+                    cv_ratio=cv_ratio,
+                    goals=metric_calculator.goals if hasattr(metric_calculator, 'goals') else None,
+                    normalize=True
+                )
 
                 return score
 

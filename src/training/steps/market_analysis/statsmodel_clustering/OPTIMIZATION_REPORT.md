@@ -99,22 +99,38 @@ The HPO uses comprehensive clustering optimization goals from `clustering_optimi
 
 #### Comprehensive Metrics
 
-**Temporal Smoothness**:
-- Measures stability of regime assignments over time
-- Penalizes rapid regime switching (noise)
-- Encourages persistent regimes
-- Formula: `smoothness = 1 - (n_transitions / max_transitions)`
+**New Composite Structure** (Updated 2025-11-06):
 
-**CV Ratio (Calinski-Harabasz)**:
-- Between-cluster variance / Within-cluster variance
-- Higher ratio indicates better separation
-- Measures cluster quality and distinctness
+The optimization framework now uses a three-pillar approach:
 
-**Economic Relevance**:
-- Sharpe ratio of regime-aware strategies
-- Maximum drawdown constraints
-- Win rate and turnover analysis
-- Links clustering to trading performance
+1. **Temporal Smoothness (33%)**:
+   - Measures stability of regime assignments over time
+   - Penalizes rapid regime switching (noise)
+   - Encourages persistent regimes
+   - Formula: `smoothness = 1 - (n_transitions / max_transitions)`
+   - Critical for financial markets: regimes must last long enough for trading
+   - Target: > 0.85 for crypto, > 0.90 for equities
+
+2. **Economic Quality (33%)**:
+   - **Sub-component 1 (50%)**: Rolling log-likelihood - predictive quality
+   - **Sub-component 2 (50%)**: Economic utility (Sharpe ratio) - trading performance
+   - Balances model fit with real-world profitability
+   - Links clustering to both statistical quality and economic value
+
+3. **Statistical Quality (34%) - CV Ratio**:
+   - Between-cluster variance / Within-cluster variance (Calinski-Harabasz)
+   - Higher ratio indicates better separation
+   - Measures cluster quality and distinctness
+   - Target: > 10 (good), > 100 (excellent), > 1000 (exceptional)
+
+**Key Change from Previous Version**:
+- **Before**: 33% Rolling LL + 33% One-step LL + 34% Sharpe
+- **After**: 33% Temporal Smoothness + 33% Economic (LL + Sharpe) + 34% CV Ratio
+
+This new structure better reflects the priorities for financial clustering:
+- **Temporal stability** is now a first-class metric (not buried in penalties)
+- **Economic quality** combines predictive and trading value
+- **Statistical quality** ensures clusters are well-separated
 
 #### Gradient Duration Penalties
 

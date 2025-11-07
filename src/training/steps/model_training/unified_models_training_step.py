@@ -1010,21 +1010,25 @@ class UnifiedModelsTrainingStep(BaseStep):
             
             # Determine feature set size to use (default to 50 features)
             feature_set_size = config.get('feature_set_size', 50)
-            
+
             # Try to get selected features from feature_generation_final_feature_selection_step
+            # IMPORTANT: Fallback order prioritizes larger feature sets (60 > 50 > 40) for better model performance
             feature_artifact_names = [
                 f'selected_feature_dataframe_{feature_set_size}',  # Specific size
                 f'selected_features_{feature_set_size}',           # Alternative name
                 f'final_dataset_{feature_set_size}',               # Validation step generic alias
                 f'final_analyst_dataset_{feature_set_size}',       # Analyst-specific validation alias
+                'selected_feature_dataframe_60',                   # Fallback to 60 (try largest first)
                 'selected_feature_dataframe_50',                   # Fallback to 50
-                'selected_feature_dataframe_60',                   # Fallback to 60
                 'selected_feature_dataframe_40',                   # Fallback to 40
+                'final_dataset_60',                                # Validation step 60
+                'final_dataset_50',                                # Validation step 50
+                'final_dataset_40',                                # Validation step 40
             ]
 
             tprint_info(f"🔎 Attempting to load training features from artifacts: {feature_artifact_names}")
             feature_source_name = None
-            
+
             for artifact_name in feature_artifact_names:
                 try:
                     tprint_info(f"   ↪ Trying '{artifact_name}'")
@@ -1033,6 +1037,8 @@ class UnifiedModelsTrainingStep(BaseStep):
                         feature_source_name = artifact_name
                         tprint_success(f"✅ Retrieved training features from '{artifact_name}': {training_data.shape if hasattr(training_data, 'shape') else type(training_data)}")
                         break
+                    else:
+                        tprint_warning(f"⚠️ Artifact '{artifact_name}' returned None (metadata exists but data file missing?)")
                 except Exception as e:
                     self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
                     continue

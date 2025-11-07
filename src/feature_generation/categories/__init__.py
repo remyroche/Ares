@@ -221,6 +221,14 @@ from .regime_feature_integration import (
     generate_regime_features
 )
 
+# Multi-timeframe EWMA features (inspired by rolling_hmm_clustering)
+from .multi_timeframe_ewma import (
+    MultiTimeframeEWMAReturnsGenerator,
+    MultiTimeframeEWMAVolatilityGenerator,
+    MultiTimeframeEWMATrendGenerator,
+    MultiTimeframeEWMAVolumeGenerator,
+)
+
 __all__ = [
     # Core categories
     "ReturnsFeatureGenerator",
@@ -376,5 +384,10 @@ __all__ = [
     # Regime feature integration
     "RegimeFeatureIntegration",
     "RegimeFeatureConfig",
-    "generate_regime_features"
+    "generate_regime_features",
+    # Multi-timeframe EWMA features
+    "MultiTimeframeEWMAReturnsGenerator",
+    "MultiTimeframeEWMAVolatilityGenerator",
+    "MultiTimeframeEWMATrendGenerator",
+    "MultiTimeframeEWMAVolumeGenerator",
 ]

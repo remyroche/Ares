@@ -165,6 +165,166 @@ class TemporalSplitConfig:
         )
 
 
+@dataclass
+class WalkForwardFold:
+    """A single fold in walk-forward validation with train and validation periods."""
+
+    fold_num: int
+    training: TemporalPeriod
+    validation: TemporalPeriod
+
+    def __post_init__(self):
+        """Validate no overlap between training and validation."""
+        if self.training.effective_end >= self.validation.start:
+            raise ValueError(
+                f"Fold {self.fold_num}: Training period (ends {self.training.effective_end}) "
+                f"overlaps with validation period (starts {self.validation.start}). "
+                f"Increase embargo or adjust dates."
+            )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            'fold_num': self.fold_num,
+            'training': self.training.to_dict(),
+            'validation': self.validation.to_dict()
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'WalkForwardFold':
+        """Create from dictionary."""
+        return cls(
+            fold_num=data['fold_num'],
+            training=TemporalPeriod.from_dict(data['training']),
+            validation=TemporalPeriod.from_dict(data['validation'])
+        )
+
+
+@dataclass
+class WalkForwardSplitConfig:
+    """Configuration for walk-forward cross-validation with multiple train/val folds and held-out test."""
+
+    folds: list  # List[WalkForwardFold]
+    test: TemporalPeriod
+    strategy: str = 'expanding'  # 'expanding' or 'rolling'
+
+    def __post_init__(self):
+        """Validate fold sequence and no overlap with test period."""
+        if not self.folds:
+            raise ValueError("Must have at least one fold")
+
+        # Validate last fold doesn't overlap with test
+        last_fold = self.folds[-1]
+        if last_fold.validation.effective_end >= self.test.start:
+            raise ValueError(
+                f"Last validation fold (ends {last_fold.validation.effective_end}) "
+                f"overlaps with test period (starts {self.test.start}). "
+                f"Increase embargo or adjust dates."
+            )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            'folds': [fold.to_dict() for fold in self.folds],
+            'test': self.test.to_dict(),
+            'strategy': self.strategy
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'WalkForwardSplitConfig':
+        """Create from dictionary."""
+        return cls(
+            folds=[WalkForwardFold.from_dict(f) for f in data['folds']],
+            test=TemporalPeriod.from_dict(data['test']),
+            strategy=data.get('strategy', 'expanding')
+        )
+
+    def save(self, path: Path) -> None:
+        """Save config to JSON file."""
+        with open(path, 'w') as f:
+            json.dump(self.to_dict(), f, indent=2)
+
+    @classmethod
+    def load(cls, path: Path) -> 'WalkForwardSplitConfig':
+        """Load config from JSON file."""
+        with open(path, 'r') as f:
+            data = json.load(f)
+        return cls.from_dict(data)
+
+    @classmethod
+    def create_expanding_window(
+        cls,
+        data_start: datetime,
+        data_end: datetime,
+        n_folds: int = 3,
+        val_pct_per_fold: float = 0.10,
+        final_test_pct: float = 0.15,
+        min_train_pct: float = 0.55,
+        embargo_days: int = 1
+    ) -> 'WalkForwardSplitConfig':
+        """
+        Create expanding window walk-forward configuration.
+
+        With expanding window, each fold uses progressively more training data:
+        - Fold 1: Train on 0-55%, validate on 55-65%
+        - Fold 2: Train on 0-65%, validate on 65-75%
+        - Fold 3: Train on 0-75%, validate on 75-85%
+        - Test: 85-100%
+
+        Args:
+            data_start: Start of available data
+            data_end: End of available data
+            n_folds: Number of train/val pairs (default: 3)
+            val_pct_per_fold: Validation percentage per fold (default: 0.10)
+            final_test_pct: Percentage for final held-out test (default: 0.15)
+            min_train_pct: Minimum training percentage for first fold (default: 0.55)
+            embargo_days: Days of embargo between periods (default: 1)
+
+        Returns:
+            WalkForwardSplitConfig with expanding window folds
+        """
+        total_days = (data_end - data_start).days
+
+        # Calculate fold boundaries
+        folds = []
+        current_pct = min_train_pct
+
+        for i in range(n_folds):
+            # Training period: from start to current_pct
+            train_start = data_start
+            train_days = int(total_days * current_pct)
+            train_end = train_start + timedelta(days=train_days)
+
+            # Validation period: next val_pct_per_fold
+            val_start = train_end + timedelta(days=embargo_days)
+            val_days = int(total_days * val_pct_per_fold)
+            val_end = val_start + timedelta(days=val_days)
+
+            fold = WalkForwardFold(
+                fold_num=i + 1,
+                training=TemporalPeriod(train_start, train_end, embargo_days, f"training_fold_{i+1}"),
+                validation=TemporalPeriod(val_start, val_end, embargo_days, f"validation_fold_{i+1}")
+            )
+            folds.append(fold)
+
+            # Expand window for next fold
+            current_pct += val_pct_per_fold
+
+        # Final test period
+        test_start_pct = min_train_pct + (n_folds * val_pct_per_fold)
+        test_start_days = int(total_days * test_start_pct)
+        test_start = data_start + timedelta(days=test_start_days + embargo_days)
+        test_end = data_end
+
+        test_period = TemporalPeriod(test_start, test_end, 0, "test")
+
+        return cls(
+            folds=folds,
+            test=test_period,
+            strategy='expanding'
+        )
+
+
 class TemporalViewFilter:
     """Helper for filtering artifact views by temporal period."""
 
@@ -267,6 +427,77 @@ def create_temporal_split_config_for_pipeline(
         val_pct=0.2,
         test_pct=0.2,
         embargo_days=30
+    )
+
+    # Save for future use
+    config.save(config_path)
+
+    return config
+
+
+def create_walkforward_split_config_for_pipeline(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    data_start: Optional[datetime] = None,
+    data_end: Optional[datetime] = None,
+    n_folds: int = 3,
+    val_pct_per_fold: float = 0.10,
+    final_test_pct: float = 0.15,
+    min_train_pct: float = 0.55,
+    embargo_days: int = 1,
+    config_path: Optional[Path] = None
+) -> WalkForwardSplitConfig:
+    """
+    Create or load walk-forward split configuration for a trading pair.
+
+    This creates an expanding window configuration with multiple train/val folds
+    and a final held-out test period:
+    - Fold 1: Train 0-55%, Val 55-65%
+    - Fold 2: Train 0-65%, Val 65-75%
+    - Fold 3: Train 0-75%, Val 75-85%
+    - Test: 85-100%
+
+    Args:
+        symbol: Trading symbol (e.g., 'ETHUSDT')
+        exchange: Exchange name (e.g., 'binance')
+        timeframe: Timeframe (e.g., '15m')
+        data_start: Start of available data (required if creating new config)
+        data_end: End of available data (required if creating new config)
+        n_folds: Number of train/val pairs (default: 3)
+        val_pct_per_fold: Validation percentage per fold (default: 0.10)
+        final_test_pct: Percentage for final test (default: 0.15)
+        min_train_pct: Starting training percentage (default: 0.55)
+        embargo_days: Days of embargo between periods (default: 1)
+        config_path: Path to save/load config (default: auto-generated)
+
+    Returns:
+        WalkForwardSplitConfig for this trading pair
+    """
+    if config_path is None:
+        config_dir = Path("config/temporal_splits")
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_path = config_dir / f"{symbol}_{exchange}_{timeframe}_walkforward.json"
+
+    # Try to load existing config
+    if config_path.exists():
+        return WalkForwardSplitConfig.load(config_path)
+
+    # Create new config if data range provided
+    if data_start is None or data_end is None:
+        raise ValueError(
+            f"Walk-forward config not found at {config_path} and no data range provided. "
+            f"Please provide data_start and data_end to create new config."
+        )
+
+    config = WalkForwardSplitConfig.create_expanding_window(
+        data_start=data_start,
+        data_end=data_end,
+        n_folds=n_folds,
+        val_pct_per_fold=val_pct_per_fold,
+        final_test_pct=final_test_pct,
+        min_train_pct=min_train_pct,
+        embargo_days=embargo_days
     )
 
     # Save for future use

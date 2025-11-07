@@ -32,8 +32,10 @@ from src.training.steps.model_training.dynamic_config_calculator import (
 # Import temporal splitting for proper train/val/test separation
 from src.utils.versioned_artifacts import (
     create_temporal_split_config_for_pipeline,
+    create_walkforward_split_config_for_pipeline,
     get_data_for_purpose,
-    TemporalSplitConfig
+    TemporalSplitConfig,
+    WalkForwardSplitConfig
 )
 
 # Try to import unified training pipeline if it exists, otherwise use placeholder
@@ -122,8 +124,8 @@ class UnifiedModelsTrainingStep(BaseStep):
             self._full_tactician_targets = tactician_targets.copy() if tactician_targets is not None else None
 
             if training_data is not None and len(training_data) > 0:
-                # Create or load temporal split configuration
-                tprint_info(f"📅 Creating temporal split configuration for {symbol} {exchange}")
+                # Create or load WALK-FORWARD temporal split configuration
+                tprint_info(f"📅 Creating WALK-FORWARD split configuration for {symbol} {exchange}")
 
                 # Determine data boundaries from actual data
                 data_start = training_data.index.min()
@@ -132,49 +134,60 @@ class UnifiedModelsTrainingStep(BaseStep):
                 tprint_info(f"   Data range: {data_start} to {data_end}")
                 tprint_info(f"   Total samples: {len(training_data)}")
 
-                # Create temporal split config
-                temporal_config = create_temporal_split_config_for_pipeline(
+                # Create walk-forward split config with expanding window
+                walkforward_config = create_walkforward_split_config_for_pipeline(
                     symbol=symbol,
                     exchange=config.get('exchange', 'binance'),
                     timeframe=timeframe,
                     data_start=data_start,
                     data_end=data_end,
-                    train_pct=config.get('train_percentage', 0.70),  # 70% for training
-                    val_pct=config.get('validation_percentage', 0.15),  # 15% for validation (HPO)
-                    test_pct=config.get('test_percentage', 0.15),  # 15% for test
-                    embargo_days=1  # 1-day embargo between periods
+                    n_folds=3,  # 3 train/val pairs
+                    val_pct_per_fold=0.10,  # 10% validation per fold
+                    final_test_pct=0.15,  # 15% for final test
+                    min_train_pct=0.55,  # Start with 55% training
+                    embargo_days=1  # 1-day embargo
                 )
 
-                # Store temporal config for later use
-                self._temporal_config = temporal_config
-                config['temporal_config'] = temporal_config
+                # Store walk-forward config for later use
+                self._walkforward_config = walkforward_config
+                config['walkforward_config'] = walkforward_config
 
-                # Log temporal split boundaries
-                tprint_info("📊 Temporal Split Configuration:")
-                tprint_info(f"   Training:   {temporal_config.training.start} → {temporal_config.training.end} "
-                          f"({len(training_data.loc[temporal_config.training.start:temporal_config.training.effective_end])} samples)")
-                tprint_info(f"   Validation: {temporal_config.validation.start} → {temporal_config.validation.end} "
-                          f"({len(training_data.loc[temporal_config.validation.start:temporal_config.validation.effective_end])} samples)")
-                tprint_info(f"   Test:       {temporal_config.test.start} → {temporal_config.test.end} "
-                          f"({len(training_data.loc[temporal_config.test.start:temporal_config.test.end])} samples)")
-                tprint_info(f"   Embargo:    {temporal_config.embargo_days} day(s)")
+                # Log walk-forward split boundaries
+                tprint_info("=" * 80)
+                tprint_info("📊 WALK-FORWARD EXPANDING WINDOW CONFIGURATION:")
+                tprint_info("=" * 80)
+                for fold in walkforward_config.folds:
+                    train_samples = len(training_data.loc[fold.training.start:fold.training.effective_end])
+                    val_samples = len(training_data.loc[fold.validation.start:fold.validation.effective_end])
+                    tprint_info(f"   Fold {fold.fold_num}:")
+                    tprint_info(f"      Train: {fold.training.start} → {fold.training.effective_end} ({train_samples} samples)")
+                    tprint_info(f"      Val:   {fold.validation.start} → {fold.validation.effective_end} ({val_samples} samples)")
 
-                # Filter training data to TRAINING PERIOD ONLY
-                tprint_info("🔒 Filtering data to TRAINING period (preventing future data leakage)...")
+                test_samples = len(training_data.loc[walkforward_config.test.start:walkforward_config.test.end])
+                tprint_info(f"   Test:  {walkforward_config.test.start} → {walkforward_config.test.end} ({test_samples} samples)")
+                tprint_info(f"   Strategy: {walkforward_config.strategy}")
+                tprint_info("=" * 80)
+
+                # For walk-forward, we keep data for the LARGEST fold (Fold 3's training period)
+                # This ensures we have all data needed for HPO across all folds
+                last_fold = walkforward_config.folds[-1]
+                tprint_info(f"🔒 Filtering data to LARGEST training period (Fold {last_fold.fold_num}) for final model training...")
                 original_len = len(training_data)
 
-                # Use temporal filtering
-                training_data = get_data_for_purpose(
-                    training_data,
-                    purpose='training',
-                    config=temporal_config
-                )
+                # Filter to largest training period
+                training_data_filtered = training_data.loc[
+                    (training_data.index >= last_fold.training.start) &
+                    (training_data.index <= last_fold.training.effective_end)
+                ].copy()
 
-                filtered_len = len(training_data)
-                tprint_success(f"✅ Filtered to training period: {original_len} → {filtered_len} samples "
+                filtered_len = len(training_data_filtered)
+                tprint_success(f"✅ Filtered to largest training period: {original_len} → {filtered_len} samples "
                              f"({filtered_len/original_len*100:.1f}% of full dataset)")
 
-                # Filter targets to match training period
+                # Store filtered data for final model training
+                training_data = training_data_filtered
+
+                # Filter targets to match largest training period
                 if analyst_targets is not None:
                     analyst_targets = analyst_targets.loc[training_data.index]
                     tprint_info(f"   ↪ Analyst targets filtered to {len(analyst_targets)} samples")
@@ -186,7 +199,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                 tprint_info("=" * 80)
             else:
                 tprint_warning("⚠️ No training data available for temporal splitting")
-                self._temporal_config = None
+                self._walkforward_config = None
 
             # --- MODIFIED: Retrieve and merge additional features for ensemble/tactician models ---
             if training_type.endswith('ensemble') or training_type == 'tactician_base':
@@ -671,67 +684,83 @@ class UnifiedModelsTrainingStep(BaseStep):
                 tprint_info("Hyperparameter optimization disabled, using default parameters")
                 return model_config
             
-            tprint_info("🔍 Starting Hierarchical HPO with custom_balanced_score...")
+            tprint_info("🔍 Starting Hierarchical HPO with Walk-Forward Cross-Validation...")
 
             # ========================================================================
-            # OPTION A: Use VALIDATION PERIOD for HPO (not 80/20 split)
+            # WALK-FORWARD: HPO across multiple train/val folds with score aggregation
             # ========================================================================
             tprint_info("=" * 80)
-            tprint_info("🔐 HPO DATA SPLITTING - Using Validation Period")
+            tprint_info("🔐 WALK-FORWARD HPO - Multiple Validation Windows")
             tprint_info("=" * 80)
 
-            # Get temporal config
-            temporal_config = getattr(self, '_temporal_config', None)
+            # Get walk-forward config
+            walkforward_config = getattr(self, '_walkforward_config', None)
 
-            if temporal_config is not None and hasattr(self, '_full_training_data'):
-                # Use validation period for HPO
-                tprint_info("✅ Using temporal split: Training period for training, Validation period for HPO")
+            # This will store fold data for iteration
+            fold_data_list = []
 
-                # Training data is already filtered to training period
-                X_train = training_data
-                y_train = targets
+            if walkforward_config is not None and hasattr(self, '_full_training_data'):
+                # Walk-forward mode: iterate through all folds
+                tprint_info(f"✅ Using WALK-FORWARD with {len(walkforward_config.folds)} folds")
+                tprint_info("   Each fold provides independent train/val split for robust HPO")
+                tprint_info("")
 
-                # Get validation period data from full dataset
-                tprint_info("📅 Retrieving validation period data for HPO...")
-                validation_data = get_data_for_purpose(
-                    self._full_training_data,
-                    purpose='validation',
-                    config=temporal_config
-                )
+                for fold in walkforward_config.folds:
+                    # Get training data for this fold
+                    fold_training_data = self._full_training_data.loc[
+                        (self._full_training_data.index >= fold.training.start) &
+                        (self._full_training_data.index <= fold.training.effective_end)
+                    ].copy()
 
-                # Get validation targets
-                if training_type.startswith('analyst') and hasattr(self, '_full_analyst_targets'):
-                    validation_targets = self._full_analyst_targets.loc[validation_data.index]
-                elif training_type.startswith('tactician') and hasattr(self, '_full_tactician_targets'):
-                    validation_targets = self._full_tactician_targets.loc[validation_data.index]
-                else:
-                    validation_targets = None
+                    # Get validation data for this fold
+                    fold_validation_data = self._full_training_data.loc[
+                        (self._full_training_data.index >= fold.validation.start) &
+                        (self._full_training_data.index <= fold.validation.effective_end)
+                    ].copy()
 
-                if validation_targets is not None:
-                    X_val = validation_data
-                    y_val = validation_targets
+                    # Get targets for training and validation
+                    if training_type.startswith('analyst') and hasattr(self, '_full_analyst_targets'):
+                        fold_train_targets = self._full_analyst_targets.loc[fold_training_data.index]
+                        fold_val_targets = self._full_analyst_targets.loc[fold_validation_data.index]
+                    elif training_type.startswith('tactician') and hasattr(self, '_full_tactician_targets'):
+                        fold_train_targets = self._full_tactician_targets.loc[fold_training_data.index]
+                        fold_val_targets = self._full_tactician_targets.loc[fold_validation_data.index]
+                    else:
+                        fold_train_targets = None
+                        fold_val_targets = None
 
-                    tprint_success(f"✅ HPO data split:")
-                    tprint_info(f"   Training:   {len(X_train)} samples ({temporal_config.training.start} → {temporal_config.training.effective_end})")
-                    tprint_info(f"   Validation: {len(X_val)} samples ({temporal_config.validation.start} → {temporal_config.validation.effective_end})")
-                    tprint_info(f"   🔒 No data leakage: Validation period completely separate from training")
-                else:
-                    tprint_warning("⚠️ Validation targets not found, falling back to 80/20 split within training period")
-                    hpo_train_size = int(len(training_data) * 0.8)
-                    X_train = training_data.iloc[:hpo_train_size]
-                    X_val = training_data.iloc[hpo_train_size:]
-                    y_train = targets.iloc[:hpo_train_size]
-                    y_val = targets.iloc[hpo_train_size:]
-                    tprint_info(f"   Training: {len(X_train)} samples (80%)")
-                    tprint_info(f"   Validation: {len(X_val)} samples (20%)")
+                    if fold_train_targets is not None and fold_val_targets is not None:
+                        fold_data_list.append({
+                            'fold_num': fold.fold_num,
+                            'X_train': fold_training_data,
+                            'y_train': fold_train_targets,
+                            'X_val': fold_validation_data,
+                            'y_val': fold_val_targets
+                        })
+
+                        tprint_info(f"   Fold {fold.fold_num}:")
+                        tprint_info(f"      Train: {len(fold_training_data)} samples ({fold.training.start} → {fold.training.effective_end})")
+                        tprint_info(f"      Val:   {len(fold_validation_data)} samples ({fold.validation.start} → {fold.validation.effective_end})")
+
+                tprint_success(f"✅ Prepared {len(fold_data_list)} folds for walk-forward HPO")
+                tprint_info("   🔒 No data leakage: Each validation window is completely separate")
+                tprint_info("")
             else:
-                # Fallback to 80/20 split if temporal config not available
-                tprint_warning("⚠️ Temporal config not available, using 80/20 split within training data")
+                # Fallback to 80/20 split if walk-forward config not available
+                tprint_warning("⚠️ Walk-forward config not available, falling back to 80/20 split")
                 hpo_train_size = int(len(training_data) * 0.8)
                 X_train = training_data.iloc[:hpo_train_size]
                 X_val = training_data.iloc[hpo_train_size:]
                 y_train = targets.iloc[:hpo_train_size]
                 y_val = targets.iloc[hpo_train_size:]
+
+                fold_data_list.append({
+                    'fold_num': 1,
+                    'X_train': X_train,
+                    'y_train': y_train,
+                    'X_val': X_val,
+                    'y_val': y_val
+                })
                 tprint_info(f"   Training: {len(X_train)} samples (80%)")
                 tprint_info(f"   Validation: {len(X_val)} samples (20%)")
 
@@ -812,28 +841,59 @@ class UnifiedModelsTrainingStep(BaseStep):
                                 'is_classification': is_classification
                             })
             
-            # Run HPO for each model
+            # Run HPO for each model across all folds
             all_results = {}
             for model_info in models_to_optimize:
-                tprint_info(f"🎯 Optimizing {model_info['name']} ({model_info['type']})...")
-                
-                # Run HPO in separate thread to avoid blocking event loop
-                result = await asyncio.to_thread(
-                    self.hpo_orchestrator.run_hpo,
-                    model_name=model_info['name'],
-                    model_type=model_info['type'],
-                    X_train=X_train,
-                    y_train=y_train,
-                    X_val=X_val,
-                    y_val=y_val,
-                    model_class=model_info['class'],
-                    is_classification=model_info['is_classification']
-                )
-                
-                if result:
-                    all_results[model_info['name']] = result
-                    tprint_success(f"✅ {model_info['name']} HPO complete: score={result.best_score:.6f}")
-                    tprint_info(f"   Optimal params: {result.best_params}")
+                tprint_info(f"🎯 Optimizing {model_info['name']} ({model_info['type']}) across {len(fold_data_list)} folds...")
+                tprint_info("")
+
+                # Store results for each fold
+                fold_results = []
+
+                for fold_data in fold_data_list:
+                    fold_num = fold_data['fold_num']
+                    tprint_info(f"   Fold {fold_num}/{len(fold_data_list)}...")
+
+                    # Run HPO on this fold
+                    result = await asyncio.to_thread(
+                        self.hpo_orchestrator.run_hpo,
+                        model_name=model_info['name'],
+                        model_type=model_info['type'],
+                        X_train=fold_data['X_train'],
+                        y_train=fold_data['y_train'],
+                        X_val=fold_data['X_val'],
+                        y_val=fold_data['y_val'],
+                        model_class=model_info['class'],
+                        is_classification=model_info['is_classification']
+                    )
+
+                    if result:
+                        fold_results.append({
+                            'fold_num': fold_num,
+                            'result': result,
+                            'score': result.best_score
+                        })
+                        tprint_info(f"      ✓ Fold {fold_num} score: {result.best_score:.6f}")
+                    else:
+                        tprint_warning(f"      ⚠️ Fold {fold_num} HPO failed")
+
+                # Aggregate scores across folds
+                if fold_results:
+                    scores = [fr['score'] for fr in fold_results]
+                    mean_score = np.mean(scores)
+                    std_score = np.std(scores)
+
+                    # Use the result from the best fold (highest score)
+                    best_fold = max(fold_results, key=lambda x: x['score'])
+                    best_result = best_fold['result']
+
+                    all_results[model_info['name']] = best_result
+
+                    tprint_success(f"✅ {model_info['name']} Walk-Forward HPO Complete:")
+                    tprint_info(f"   Average score: {mean_score:.6f} ± {std_score:.6f}")
+                    tprint_info(f"   Best fold: {best_fold['fold_num']} (score: {best_fold['score']:.6f})")
+                    tprint_info(f"   Optimal params (from best fold): {best_result.best_params}")
+                    tprint_info("")
                 else:
                     tprint_warning(f"⚠️ HPO failed for {model_info['name']}, using default parameters")
             

@@ -77,8 +77,11 @@ from .base_step_adapter import VersionedArtifactAdapter
 from .temporal_splits import (
     TemporalPeriod,
     TemporalSplitConfig,
+    WalkForwardFold,
+    WalkForwardSplitConfig,
     TemporalViewFilter,
     create_temporal_split_config_for_pipeline,
+    create_walkforward_split_config_for_pipeline,
     get_data_for_purpose
 )
 
@@ -98,8 +101,11 @@ __all__ = [
     # Temporal splitting
     "TemporalPeriod",
     "TemporalSplitConfig",
+    "WalkForwardFold",
+    "WalkForwardSplitConfig",
     "TemporalViewFilter",
     "create_temporal_split_config_for_pipeline",
+    "create_walkforward_split_config_for_pipeline",
     "get_data_for_purpose",
 ]
 

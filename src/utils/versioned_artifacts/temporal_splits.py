@@ -122,7 +122,7 @@ class TemporalSplitConfig:
         train_pct: float = 0.6,
         val_pct: float = 0.2,
         test_pct: float = 0.2,
-        embargo_days: int = 30
+        embargo_days: int = 1  # Changed from 30 to 1 day
     ) -> 'TemporalSplitConfig':
         """
         Create split config from data range with specified proportions.
@@ -133,7 +133,7 @@ class TemporalSplitConfig:
             train_pct: Proportion for training (default: 0.6)
             val_pct: Proportion for validation (default: 0.2)
             test_pct: Proportion for testing (default: 0.2)
-            embargo_days: Days of embargo between periods (default: 30)
+            embargo_days: Days of embargo between periods (default: 1)
 
         Returns:
             TemporalSplitConfig with calculated periods
@@ -278,8 +278,8 @@ def create_temporal_split_config_for_pipeline(
 # Convenience function for BaseStep integration
 def get_data_for_purpose(
     view: ArtifactView,
-    purpose: str,
-    config: TemporalSplitConfig
+    purpose: str = 'training',  # Default to 'training' for backward compatibility
+    config: Optional[TemporalSplitConfig] = None
 ) -> ArtifactView:
     """
     Get data view filtered for specific purpose (training/validation/test).
@@ -289,25 +289,36 @@ def get_data_for_purpose(
 
     Args:
         view: Source artifact view
-        purpose: One of 'training', 'validation', 'test'
-        config: Temporal split configuration
+        purpose: One of 'training' (default), 'validation', 'test', or 'all'
+        config: Temporal split configuration (if None, returns full view)
 
     Returns:
-        Filtered view for the specified purpose
+        Filtered view for the specified purpose, or full view if config is None
 
     Example:
-        >>> # In model training step
-        >>> training_view = get_data_for_purpose(view, 'training', config)
+        >>> # Backward compatible - no config means training data (full view)
+        >>> training_view = get_data_for_purpose(view)  # Returns full view
         >>> training_data = training_view.materialize()
+        >>>
+        >>> # With temporal config
+        >>> config = create_temporal_split_config_for_pipeline(...)
+        >>>
+        >>> # In model training step (default)
+        >>> training_view = get_data_for_purpose(view, 'training', config)
         >>>
         >>> # In parameter optimization step
         >>> validation_view = get_data_for_purpose(view, 'validation', config)
-        >>> validation_data = validation_view.materialize()
         >>>
-        >>> # In final backtesting step
+        >>> # In backtesting step
         >>> test_view = get_data_for_purpose(view, 'test', config)
-        >>> test_data = test_view.materialize()
+        >>>
+        >>> # For monte carlo (all periods)
+        >>> all_view = get_data_for_purpose(view, 'all', config)
     """
+    # Backward compatibility: if no config provided, return full view
+    if config is None:
+        return view
+
     purpose = purpose.lower()
 
     if purpose == 'training':
@@ -316,7 +327,10 @@ def get_data_for_purpose(
         return TemporalViewFilter.get_validation_view(view, config)
     elif purpose == 'test':
         return TemporalViewFilter.get_test_view(view, config)
+    elif purpose == 'all':
+        # Return full view (no filtering) for monte carlo across all periods
+        return view
     else:
         raise ValueError(
-            f"Invalid purpose: {purpose}. Must be 'training', 'validation', or 'test'"
+            f"Invalid purpose: {purpose}. Must be 'training', 'validation', 'test', or 'all'"
         )

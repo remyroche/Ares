@@ -654,37 +654,67 @@ class ArtifactManager:
 			self.logger.error(f"Failed to save artifact {artifact_name}: {e}")
 			raise
 	
-	def _save_artifact_to_parquet(self, data: Any, artifact_name: str, 
-	                             artifact_type: str = "data", 
+	def _save_artifact_to_parquet(self, data: Any, artifact_name: str,
+	                             artifact_type: str = "data",
 	                             compression: str = "auto",
 	                             metadata: Optional[Dict] = None) -> str:
 		"""
-		Save an artifact as Parquet file.
-		
+		Save an artifact as Parquet file with temporal index preservation.
+
 		Args:
 			data: Data to save
 			artifact_name: Name for the artifact
 			artifact_type: Type of artifact
 			compression: Compression method
 			metadata: Additional metadata
-			
+
 		Returns:
 			Path where artifact was saved
 		"""
 		try:
+			# Initialize metadata if not provided
+			if metadata is None:
+				metadata = {}
+
 			# Generate enhanced filename and path
 			file_extension = "parquet"
 			enhanced_path = self._get_enhanced_path(
 				self._current_step_name, artifact_name, file_extension
 			)
-			
+
 			# Ensure directory exists
 			enhanced_path.parent.mkdir(parents=True, exist_ok=True)
-			
+
 			# Save the data
 			if isinstance(data, pd.DataFrame):
-				# Save DataFrame as Parquet
-				data.to_parquet(enhanced_path, compression='snappy')
+				# CRITICAL: Ensure temporal index before saving
+				data = self._ensure_temporal_index(data, artifact_name)
+
+				# Capture temporal metadata
+				metadata['row_count'] = len(data)
+				metadata['column_count'] = len(data.columns)
+				metadata['has_datetime_index'] = isinstance(data.index, pd.DatetimeIndex)
+				metadata['index_type'] = type(data.index).__name__
+
+				if isinstance(data.index, pd.DatetimeIndex):
+					metadata['index_start'] = str(data.index.min())
+					metadata['index_end'] = str(data.index.max())
+					metadata['index_frequency'] = str(data.index.inferred_freq)
+					metadata['index_tz'] = str(data.index.tz) if data.index.tz else None
+					metadata['index_is_monotonic'] = bool(data.index.is_monotonic_increasing)
+					self.logger.info(
+						f"💾 Saving DataFrame '{artifact_name}' with DatetimeIndex: "
+						f"{len(data)} rows, {metadata['index_start']} to {metadata['index_end']}"
+					)
+				else:
+					self.logger.warning(
+						f"⚠️ Saving DataFrame '{artifact_name}' without DatetimeIndex. "
+						f"Index type: {metadata['index_type']}"
+					)
+
+				# CRITICAL: Always save with index=True to preserve temporal information
+				data.to_parquet(enhanced_path, compression='snappy', index=True)
+
 			elif isinstance(data, dict):
 				# Convert dict to DataFrame and save as Parquet
 				# Handle nested dicts by flattening them
@@ -694,26 +724,28 @@ class ArtifactManager:
 					df = pd.json_normalize(processed_data)
 					if df.empty:
 						df = pd.DataFrame([processed_data])
-					df.to_parquet(enhanced_path, compression='snappy')
+
+					# Save with index preserved
+					df.to_parquet(enhanced_path, compression='snappy', index=True)
+					metadata['row_count'] = len(df)
+					metadata['column_count'] = len(df.columns)
 				except Exception as e:
 					# If JSON normalize fails, try direct conversion
 					self.logger.warning(f"JSON normalization failed: {e}, using direct conversion")
 					processed_data = self._preprocess_data_for_parquet(data)
 					df = pd.DataFrame([processed_data])
-					df.to_parquet(enhanced_path, compression='snappy')
+					df.to_parquet(enhanced_path, compression='snappy', index=True)
+					metadata['row_count'] = len(df)
+					metadata['column_count'] = len(df.columns)
 			else:
-				# For other data types, save as pickle first, then convert to parquet
+				# For other data types, save as pickle
 				temp_pickle_path = enhanced_path.with_suffix('.pkl')
 				with open(temp_pickle_path, 'wb') as f:
 					pickle.dump(data, f)
-				# For now, just keep as pickle for non-DataFrame data
-				temp_pickle_path.rename(enhanced_path.with_suffix('.pkl'))
 				enhanced_path = enhanced_path.with_suffix('.pkl')
-			
-			# Store metadata
-			if metadata is None:
-				metadata = {}
-			
+				metadata['data_type'] = type(data).__name__
+
+			# Store standard metadata
 			metadata.update({
 				'artifact_name': artifact_name,
 				'artifact_type': artifact_type,
@@ -722,13 +754,13 @@ class ArtifactManager:
 				'timestamp': datetime.now().isoformat(),
 				'compression': compression
 			})
-			
+
 			# Persist metadata
 			self._persist_metadata_to_disk(artifact_name, metadata)
-			
+
 			self._log_file_operation("Saved artifact", enhanced_path, success=True)
 			return str(enhanced_path)
-			
+
 		except Exception as e:
 			self.logger.error(f"Failed to save Parquet artifact {artifact_name}: {e}")
 			raise
@@ -736,10 +768,10 @@ class ArtifactManager:
 	def _preprocess_data_for_parquet(self, data: Any) -> Any:
 		"""
 		Pre-process data to handle problematic fields for Parquet serialization.
-		
+
 		Args:
 			data: Data to preprocess
-			
+
 		Returns:
 			Preprocessed data safe for Parquet serialization
 		"""
@@ -769,6 +801,117 @@ class ArtifactManager:
 			return [self._preprocess_data_for_parquet(item) for item in data]
 		else:
 			return data
+
+	def _ensure_temporal_index(self, df: pd.DataFrame, artifact_name: str) -> pd.DataFrame:
+		"""
+		Ensure DataFrame has a proper temporal index for financial data.
+
+		If no datetime index exists, attempt to create one from timestamp columns.
+		Raises warning if temporal index cannot be established.
+
+		Args:
+			df: DataFrame to validate/fix
+			artifact_name: Name of artifact for logging
+
+		Returns:
+			DataFrame with DatetimeIndex if possible
+		"""
+		# If already has DatetimeIndex, return as-is
+		if isinstance(df.index, pd.DatetimeIndex):
+			return df
+
+		# Check for timestamp columns
+		timestamp_candidates = ['timestamp', 'datetime', 'date', 'time', 'open_time', 'close_time']
+
+		for col in timestamp_candidates:
+			if col in df.columns:
+				try:
+					temp_df = df.copy()
+					# Try converting to datetime
+					temp_df.index = pd.to_datetime(temp_df[col], errors='coerce')
+
+					# Check if conversion was successful (not all NaT)
+					if not temp_df.index.isna().all():
+						# Drop rows with invalid timestamps
+						valid_mask = ~temp_df.index.isna()
+						if valid_mask.sum() < len(temp_df):
+							self.logger.warning(
+								f"Dropped {(~valid_mask).sum()} rows with invalid timestamps in '{artifact_name}'"
+							)
+						temp_df = temp_df[valid_mask]
+						temp_df = temp_df.drop(columns=[col])
+
+						self.logger.info(
+							f"✅ Converted '{col}' column to DatetimeIndex for artifact '{artifact_name}' "
+							f"({len(temp_df)} rows, range: {temp_df.index.min()} to {temp_df.index.max()})"
+						)
+						return temp_df
+				except Exception as e:
+					self.logger.debug(f"Failed to convert '{col}' to DatetimeIndex: {e}")
+					continue
+
+		# Warning: No temporal index found
+		self.logger.warning(
+			f"⚠️ Artifact '{artifact_name}' has no DatetimeIndex and no timestamp column found. "
+			f"Index type: {type(df.index).__name__}. "
+			f"This may cause temporal misalignment issues when combining artifacts."
+		)
+
+		return df
+
+	def _validate_temporal_alignment(self, *dataframes: pd.DataFrame,
+	                                operation: str = "combine") -> bool:
+		"""
+		Validate that multiple DataFrames are temporally aligned before combining.
+
+		Args:
+			*dataframes: DataFrames to check
+			operation: Description of operation for logging
+
+		Returns:
+			True if aligned
+
+		Raises:
+			ValueError: If DataFrames are not temporally aligned
+		"""
+		if len(dataframes) < 2:
+			return True
+
+		reference_df = dataframes[0]
+
+		# Check all have DatetimeIndex
+		for i, df in enumerate(dataframes):
+			if not isinstance(df.index, pd.DatetimeIndex):
+				raise ValueError(
+					f"DataFrame {i} in {operation} does not have DatetimeIndex. "
+					f"Found: {type(df.index).__name__}. "
+					f"All DataFrames must have DatetimeIndex for temporal alignment. "
+					f"Use ArtifactManager._ensure_temporal_index() to fix."
+				)
+
+		# Check indices match exactly
+		for i, df in enumerate(dataframes[1:], start=1):
+			if not reference_df.index.equals(df.index):
+				# Calculate overlap and differences
+				common_idx = reference_df.index.intersection(df.index)
+				only_ref = len(reference_df.index.difference(df.index))
+				only_other = len(df.index.difference(reference_df.index))
+
+				raise ValueError(
+					f"⚠️ Temporal misalignment detected in {operation}!\n"
+					f"DataFrame 0: {len(reference_df)} rows, "
+					f"range: {reference_df.index.min()} to {reference_df.index.max()}\n"
+					f"DataFrame {i}: {len(df)} rows, "
+					f"range: {df.index.min()} to {df.index.max()}\n"
+					f"Common timestamps: {len(common_idx)}\n"
+					f"Only in DataFrame 0: {only_ref} timestamps\n"
+					f"Only in DataFrame {i}: {only_other} timestamps\n"
+					f"Solution: Use .reindex() or .loc[] with common index before combining, "
+					f"or use BaseStep._align_to_reference() method."
+				)
+
+		self.logger.debug(f"✅ Temporal alignment validated for {len(dataframes)} DataFrames in {operation}")
+		return True
 	
 	def get_artifact(
 		self,

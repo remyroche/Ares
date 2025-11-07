@@ -8,7 +8,7 @@ Each step becomes autonomous with standardized artifact management and outcome f
 import os
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, List
 from datetime import datetime
 import traceback
 
@@ -371,7 +371,166 @@ class BaseStep(ABC):
             self.logger.error(f"Failed to save ML scored data: {e}")
             raise
     
-    def _get_sr_levels(self, symbol: str = None, exchange: str = None, 
+    def _safe_concat(self, dataframes: List[Any], axis: int = 1,
+                     operation_name: str = "concatenate",
+                     validate_alignment: bool = True) -> Any:
+        """
+        Safely concatenate DataFrames with temporal alignment validation.
+
+        Args:
+            dataframes: List of DataFrames to concatenate
+            axis: Concatenation axis (0=rows, 1=columns)
+            operation_name: Description for logging
+            validate_alignment: Whether to validate temporal alignment
+
+        Returns:
+            Concatenated DataFrame with validated alignment
+
+        Raises:
+            ValueError: If DataFrames are not temporally aligned (when validate_alignment=True)
+        """
+        import pandas as pd
+
+        if not dataframes:
+            raise ValueError("No DataFrames provided for concatenation")
+
+        if len(dataframes) == 1:
+            return dataframes[0]
+
+        # Filter out None values
+        dataframes = [df for df in dataframes if df is not None]
+
+        if not dataframes:
+            raise ValueError("All DataFrames are None")
+
+        # Validate temporal alignment if requested
+        if validate_alignment and len(dataframes) >= 2:
+            try:
+                self.artifact_manager._validate_temporal_alignment(
+                    *dataframes,
+                    operation=operation_name
+                )
+            except ValueError as e:
+                self.logger.error(f"Temporal alignment validation failed: {e}")
+                raise
+
+        # Perform safe concatenation
+        result = pd.concat(dataframes, axis=axis)
+
+        self.logger.info(
+            f"✅ Safe concatenation of {len(dataframes)} DataFrames: "
+            f"axis={axis}, result shape={result.shape}"
+        )
+
+        return result
+
+    def _safe_merge(self, left: Any, right: Any,
+                    how: str = 'inner',
+                    validate_alignment: bool = True,
+                    on: Optional[Union[str, List[str]]] = None) -> Any:
+        """
+        Safely merge DataFrames with temporal alignment validation.
+
+        Args:
+            left: Left DataFrame
+            right: Right DataFrame
+            how: Merge type ('inner', 'outer', 'left', 'right')
+            validate_alignment: Whether to validate temporal alignment
+            on: Column(s) to merge on (if None, merges on index)
+
+        Returns:
+            Merged DataFrame
+
+        Raises:
+            ValueError: If temporal alignment validation fails
+        """
+        import pandas as pd
+
+        if validate_alignment and on is None:
+            # For index-based joins, validate indices are compatible
+            if how in ['inner', 'left']:
+                if not isinstance(left.index, pd.DatetimeIndex):
+                    self.logger.warning(
+                        f"Left DataFrame in merge does not have DatetimeIndex. "
+                        f"Found: {type(left.index).__name__}"
+                    )
+            if how in ['inner', 'right']:
+                if not isinstance(right.index, pd.DatetimeIndex):
+                    self.logger.warning(
+                        f"Right DataFrame in merge does not have DatetimeIndex. "
+                        f"Found: {type(right.index).__name__}"
+                    )
+
+        # Merge on index or specified columns
+        if on is None:
+            result = left.join(right, how=how, rsuffix='_right')
+        else:
+            result = pd.merge(left, right, on=on, how=how)
+
+        # Log merge statistics
+        if on is None:
+            overlap = len(left.index.intersection(right.index))
+            self.logger.info(
+                f"✅ Safe merge: left={len(left)}, right={len(right)}, "
+                f"result={len(result)}, overlap={overlap}, how='{how}'"
+            )
+        else:
+            self.logger.info(
+                f"✅ Safe merge on columns {on}: left={len(left)}, right={len(right)}, "
+                f"result={len(result)}, how='{how}'"
+            )
+
+        return result
+
+    def _align_to_reference(self, reference: Any, *dataframes: Any) -> List[Any]:
+        """
+        Align multiple DataFrames to a reference DataFrame's index.
+
+        This is useful when combining artifacts that may have different temporal coverage
+        due to operations like dropna() or filtering.
+
+        Args:
+            reference: Reference DataFrame with target index
+            *dataframes: DataFrames to align to reference
+
+        Returns:
+            List of aligned DataFrames (same length as input dataframes)
+
+        Raises:
+            ValueError: If reference or any DataFrame lacks DatetimeIndex
+        """
+        import pandas as pd
+
+        if not isinstance(reference.index, pd.DatetimeIndex):
+            raise ValueError(
+                f"Reference DataFrame must have DatetimeIndex. "
+                f"Found: {type(reference.index).__name__}"
+            )
+
+        aligned = []
+        for i, df in enumerate(dataframes):
+            if not isinstance(df.index, pd.DatetimeIndex):
+                raise ValueError(
+                    f"DataFrame {i} must have DatetimeIndex for alignment. "
+                    f"Found: {type(df.index).__name__}"
+                )
+
+            # Align using reindex
+            aligned_df = df.reindex(reference.index)
+
+            # Log alignment statistics
+            missing = aligned_df.isna().all(axis=1).sum()
+            matched = len(df.index.intersection(reference.index))
+            self.logger.info(
+                f"Aligned DataFrame {i}: {len(df)} -> {len(aligned_df)} rows, "
+                f"{matched} matched, {missing} missing timestamps filled with NaN"
+            )
+
+            aligned.append(aligned_df)
+
+        return aligned
+
+    def _get_sr_levels(self, symbol: str = None, exchange: str = None,
                       timeframe: str = None, direction: str = None) -> Dict[str, Any]:
         """
         Get SR levels dictionary for use in training scripts.

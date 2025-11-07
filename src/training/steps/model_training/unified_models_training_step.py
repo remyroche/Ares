@@ -132,7 +132,13 @@ class UnifiedModelsTrainingStep(BaseStep):
                         tprint_info(
                             f"   ↪ Concatenating columns -> expected merged column count ≈ {merged_columns}"
                         )
-                        training_data = pd.concat([aligned_training_data, aligned_additional_outputs], axis=1)
+                        # Use safe concatenation with temporal alignment validation
+                        training_data = self._safe_concat(
+                            [aligned_training_data, aligned_additional_outputs],
+                            axis=1,
+                            operation_name="merge_training_and_additional_features",
+                            validate_alignment=True
+                        )
                         tprint_success(f"✅ Merged additional features. New training data shape: {training_data.shape}")
                 else:
                     tprint_warning(f"No additional model outputs found for {training_type}. Proceeding with primary features only.")
@@ -1449,12 +1455,18 @@ class UnifiedModelsTrainingStep(BaseStep):
 
             if additional_features_list:
                 # Concatenate all features (base outputs + meta-features)
-                # Use inner join to ensure all loaded features align perfectly
-                final_additional_features = pd.concat(additional_features_list, axis=1, join='inner')
-                if final_additional_features.empty and any(not df.empty for df in additional_features_list):
-                    tprint_error("❌ Concatenation of additional features resulted in an empty DataFrame. Check for severe index mismatches.")
+                # Use safe concatenation with temporal alignment validation
+                try:
+                    final_additional_features = self._safe_concat(
+                        additional_features_list,
+                        axis=1,
+                        operation_name="concatenate_additional_features",
+                        validate_alignment=True
+                    )
+                    return final_additional_features
+                except ValueError as e:
+                    tprint_error(f"❌ Temporal alignment error in additional features: {e}")
                     return None
-                return final_additional_features
             else:
                 return None
 

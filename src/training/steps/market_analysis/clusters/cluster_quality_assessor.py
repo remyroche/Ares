@@ -1474,12 +1474,16 @@ class ClusterQualityAssessor:
         regime_changes = np.sum(regime_labels[1:] != regime_labels[:-1])
         max_possible_changes = len(regime_labels) - 1
 
+        # Diagnostic logging
+        tprint_debug(f"  [Temporal Smoothness] Transitions: {regime_changes}/{max_possible_changes} ({regime_changes/max_possible_changes*100:.1f}%)")
+
         if max_possible_changes == 0:
             return 1.0, 1.0, 0.0
 
         # Raw smoothness score: fewer changes = higher smoothness
         if sensitivity_mode == "standard":
             smoothness_raw = 1.0 - (regime_changes / max_possible_changes)
+            tprint_debug(f"  [Temporal Smoothness] Raw smoothness (standard): {smoothness_raw:.6f}")
         elif sensitivity_mode == "exponential_decay":
             # More aggressive penalty: transitions are exponentially costly
             transition_ratio = regime_changes / max_possible_changes
@@ -1512,6 +1516,7 @@ class ClusterQualityAssessor:
 
         # Calculate flip-flop ratio
         flip_flop_ratio = flip_flops / max_possible_changes if max_possible_changes > 0 else 0.0
+        tprint_debug(f"  [Temporal Smoothness] Flip-flops: {flip_flops:.0f}, ratio: {flip_flop_ratio:.6f}")
         
         # NEW: Duration-weighted short-lived regime penalty
         # Penalize regimes that are short-lived between longer regimes (broader than 3-step flip-flops)
@@ -1552,6 +1557,21 @@ class ClusterQualityAssessor:
         max_lift = max(0.0, smoothness_raw - base_adjusted)
         smoothness_final = float(base_adjusted + max_lift * bonus_factor)
         smoothness_final = float(min(smoothness_final, smoothness_raw))
+
+        # Diagnostic logging
+        tprint_debug(
+            f"  [Temporal Smoothness] Penalties: flip_flop={flip_flop_penalty:.6f}, "
+            f"short_lived={short_lived_penalty:.6f}, autocorr={autocorr_penalty:.6f}, "
+            f"total={total_penalties:.6f}"
+        )
+        tprint_debug(
+            f"  [Temporal Smoothness] Bonuses: duration={regime_duration_bonus:.6f}, "
+            f"low_trans={low_transition_bonus:.6f}, total={total_bonuses:.6f}"
+        )
+        tprint_debug(
+            f"  [Temporal Smoothness] Final: raw={smoothness_raw:.6f}, "
+            f"base_adjusted={base_adjusted:.6f}, final={smoothness_final:.6f}"
+        )
 
         return float(smoothness_final), float(smoothness_raw), float(flip_flop_ratio)
 

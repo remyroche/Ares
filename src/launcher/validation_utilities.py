@@ -362,8 +362,7 @@ class StepValidationValidator(BaseValidator):
             "step15_tactician_specialist_training": ["step14_tactician_labeling"],
             "step16_confidence_calibration": ["step15_tactician_specialist_training"],
             "step17_final_parameters_optimization": ["step16_confidence_calibration"],
-            "step18_walk_forward_validation": ["step17_final_parameters_optimization"],
-            "step19_monte_carlo_validation": ["step18_walk_forward_validation"],
+            "step19_monte_carlo_validation": ["step17_final_parameters_optimization"],
             "step20_ab_testing": ["step19_monte_carlo_validation"],
             "step21_saving": ["step20_ab_testing"],
         }
@@ -392,7 +391,6 @@ class StepValidationValidator(BaseValidator):
             "step15_tactician_specialist_training",
             "step16_confidence_calibration",
             "step17_final_parameters_optimization",
-            "step18_walk_forward_validation",
             "step19_monte_carlo_validation",
             "step20_ab_testing",
             "step21_saving",

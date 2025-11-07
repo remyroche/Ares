@@ -1,0 +1,203 @@
+# Backtesting & Validation Refactoring
+
+## Summary of Changes
+
+This refactoring removes the dedicated `walk_forward_validation` step and strengthens `basic_backtesting_post` with integrated time-series cross-validation. The goal is to ensure robust validation without data leakage while streamlining the pipeline.
+
+## Key Changes
+
+### 1. Removed walk_forward_validation Step
+
+**Files Deleted:**
+- `src/training/steps/backtesting/walk_forward_validation_step.py`
+
+**Files Modified:**
+- `src/training/steps/backtesting/__init__.py` - Removed import and registration
+- `src/launcher/validation_utilities.py` - Removed from step dependencies and order
+- `src/launcher/ares_launcher.py` - Removed from BACKTESTING pipeline
+- `src/config/training.py` - Removed `enable_walk_forward_validation` flag
+- `src/config/multi_output_config.py` - Removed `enable_walk_forward_validation` flag
+
+**Rationale:**
+- The walk_forward_validation step was redundant with the CV capabilities already built into optimization stages
+- Time-series CV is now integrated directly into basic_backtesting_post for more cohesive validation
+- Reduces pipeline complexity while maintaining validation rigor
+
+### 2. Strengthened basic_backtesting_post with Time-Series CV
+
+**Enhanced Features:**
+- Added `sklearn.model_selection.TimeSeriesSplit` for proper temporal ordering
+- Implemented embargo period (2% default) between train/test to prevent look-ahead bias
+- Added `_run_time_series_cv_backtest()` method that:
+  - Splits data into N folds (default 5) with proper temporal ordering
+  - Applies embargo between train/test boundaries
+  - Validates strategy performance across different time periods
+  - Aggregates results with mean/std metrics
+- Updated report generation to include CV results section
+
+**Configuration:**
+```python
+self.enable_time_series_cv = True
+self.cv_n_splits = 5
+self.cv_embargo_pct = 0.02  # 2% embargo
+```
+
+**Validation Approach:**
+1. Data is split chronologically into N folds
+2. Each fold uses only data from previous folds for "training" context
+3. Embargo period ensures no overlap between train/test boundaries
+4. Strategy is backtested on each fold's test period independently
+5. Results are aggregated across all folds (mean ± std)
+
+### 3. HPO Validation Confirmation
+
+**Verified that `final_parameters_optimization` already includes:**
+
+✅ **Cross-Validation Support:**
+- `use_cv = config.get('use_cross_validation', True)`
+- `cv_folds = config.get('cv_folds', 5)`
+- Integrated with `TimeSeriesSplitValidator` from `src/utils/ml_common/validation/cv_utils.py`
+
+✅ **Time-Series CV in Hierarchical HPO:**
+- `hierarchical_hpo.py` imports `TimeSeriesSplit` from sklearn
+- Config includes `enable_time_series_cv: bool = True`
+- Supports purged k-fold with embargo via `PurgedKFoldTime`
+
+✅ **Validation Features:**
+- Overfitting detection (`enable_overfitting_detection`)
+- Temporal validation (`enable_temporal_validation`)
+- Timeframe validation (`enable_timeframe_validation`)
+- Data leakage detection via `DataLeakageDetector`
+
+✅ **Optimization Infrastructure:**
+- Bayesian TPE optimizer with staged optimization (coarse → fine → TPE)
+- Hardware acceleration (M1 GPU/CPU optimization)
+- Parallel evaluation with proper CV splits
+- Early stopping with patience and threshold
+
+**Key Files:**
+- `src/training/steps/backtesting/final_parameters_optimization.py`
+- `src/utils/ml_common/optimization/bayesian_tpe_optimizer.py`
+- `src/utils/ml_common/optimization/hierarchical_hpo.py`
+- `src/utils/ml_common/validation/cv_utils.py`
+
+## Data Leakage Prevention
+
+### 1. Time-Series CV with Embargo
+The new CV implementation in `basic_backtesting_post` ensures:
+- **Temporal Ordering:** Test data always comes after training data
+- **Embargo Period:** 2% buffer between train/test boundaries to prevent look-ahead
+- **No Overlap:** Each fold's test period is completely independent
+- **Realistic Walk-Forward:** Mimics real trading where you only have access to past data
+
+### 2. HPO Stage Validation
+The `final_parameters_optimization` step already ensures:
+- **Nested CV:** Inner CV loops for hyperparameter selection within outer CV folds
+- **Purged K-Fold:** Optional purging of samples near boundaries
+- **Embargo Logic:** Built into `PurgedKFoldTime` if enabled
+- **OOF Generation:** Out-of-fold predictions for unbiased validation
+
+### 3. ML Model Training Separation
+The pipeline structure naturally prevents leakage:
+```
+step15_tactician_specialist_training
+   ↓
+step16_confidence_calibration
+   ↓
+step17_final_parameters_optimization (with CV)
+   ↓
+step19_monte_carlo_validation (uses different period)
+   ↓
+step20_ab_testing
+```
+
+Each stage uses distinct time periods or CV folds, ensuring that:
+- Model training data ≠ Parameter optimization data ≠ Final validation data
+- Time-series CV ensures no future information leaks into past decisions
+- Monte Carlo simulation tests on synthetic variations
+
+## Validation Hierarchy
+
+### Level 1: Training-Time Validation
+- **Where:** Model training steps (analyst, tactician, regime models)
+- **Method:** Time-series CV during model fitting
+- **Purpose:** Prevent model overfitting to training data
+
+### Level 2: Parameter Optimization Validation
+- **Where:** `final_parameters_optimization` step
+- **Method:** Nested CV with embargo
+- **Purpose:** Validate parameter choices across different time periods
+- **Already Includes:** Walk-forward validation via nested CV
+
+### Level 3: Strategy Validation
+- **Where:** `basic_backtesting_post` step
+- **Method:** Time-series CV on full strategy
+- **Purpose:** Validate complete strategy performance with optimized parameters
+- **New Enhancement:** Integrated walk-forward CV with embargo
+
+### Level 4: Robustness Testing
+- **Where:** `monte_carlo_simulation` step
+- **Method:** Synthetic data variations
+- **Purpose:** Test strategy under different market conditions
+
+## Benefits of This Refactoring
+
+1. **Simplified Pipeline:** One less step to maintain and understand
+2. **Integrated Validation:** CV is where it belongs - in the backtesting step
+3. **No Functionality Loss:** All validation capabilities preserved
+4. **Better Reporting:** CV results integrated into backtest reports
+5. **Reduced Redundancy:** Eliminates duplicate validation logic
+6. **Maintained Rigor:** All data leakage prevention mechanisms intact
+
+## Configuration Changes Required
+
+### Old Configuration (No longer needed):
+```python
+"VALIDATION": {
+    "enable_walk_forward_validation": True,  # Removed
+    ...
+}
+```
+
+### New Configuration (Already in place):
+```python
+# In basic_backtesting_post
+self.enable_time_series_cv = True  # Enable CV during backtesting
+self.cv_n_splits = 5              # Number of CV splits
+self.cv_embargo_pct = 0.02        # 2% embargo between folds
+
+# In final_parameters_optimization (already configured)
+use_cv = True                      # Enable CV during optimization
+cv_folds = 5                       # Number of CV folds
+enable_time_series_cv = True       # Use time-series split
+```
+
+## Testing Recommendations
+
+1. **Verify CV Results:** Check that cv_results appear in backtest reports
+2. **Validate Embargo:** Ensure test periods don't overlap with training
+3. **Check Fold Sizes:** Verify each fold has sufficient samples (>50)
+4. **Compare Metrics:** CV std should indicate consistency across periods
+5. **Monitor Performance:** CV mean should be close to full backtest result
+
+## Migration Notes
+
+### For Existing Workflows:
+- Remove any explicit calls to `walk_forward_validation` step
+- Update pipeline configurations to remove the step
+- CV validation now happens automatically in `basic_backtesting_post`
+- Check backtest reports for new CV results section
+
+### For Custom Implementations:
+- If you need separate walk-forward validation, use `src/validation/walkforward_validation.WalkForwardValidator`
+- The full implementation is still available in `src/validation/` directory
+- This refactoring only removes it from the standard backtesting pipeline
+
+## Conclusion
+
+This refactoring maintains all validation capabilities while simplifying the pipeline. The key insight is that walk-forward validation is essentially time-series CV, which is better integrated into the backtesting step itself rather than being a separate pipeline stage. The HPO stages already include comprehensive CV validation, making the dedicated walk-forward step redundant.
+
+**Data Leakage Prevention:** ✅ Maintained via time-series CV + embargo
+**Validation Rigor:** ✅ Enhanced with integrated CV in backtesting
+**Pipeline Simplicity:** ✅ Improved by removing redundant step
+**HPO Validation:** ✅ Already comprehensive with nested CV

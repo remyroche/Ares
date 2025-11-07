@@ -186,7 +186,7 @@ def get_training_config() -> dict[str, Any]:
         },
         # --- Validation Configuration ---
         "VALIDATION": {
-            "enable_walk_forward_validation": True,
+            # Walk-forward validation removed - now integrated into basic_backtesting_post with time-series CV
             "enable_monte_carlo_validation": True,
             "enable_ab_testing": True,
             "enable_confidence_calibration": True,

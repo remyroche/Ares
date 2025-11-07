@@ -56,17 +56,8 @@ def add_columns_with_tags(
     if version_name is None:
         version_name = self._metadata.get('current_version')
 
-    # Get context from version metadata if available
-    version_meta = self._metadata.get('versions', {}).get(version_name, {})
-    context_parts = []
-    if 'symbol' in version_meta and 'exchange' in version_meta:
-        context_parts.append(f"{version_meta['symbol']}/{version_meta['exchange']}")
-    if 'timeframe' in version_meta:
-        context_parts.append(f"[{version_meta['timeframe']}]")
-    if 'direction' in version_meta and 'model' in version_meta:
-        context_parts.append(f"{version_meta['direction']}/{version_meta['model']}")
-
-    context_str = " ".join(context_parts) if context_parts else self.store_path.name
+    # Get context string for logging
+    context_str = self._get_context_string(version_name=version_name)
     tprint(f"🏷️  Adding {len(columns)} columns with operation '{operation_name}' | {context_str}")
 
     # First, add columns using existing method
@@ -206,17 +197,8 @@ def get_view_by_operation(
     if version_name is None:
         version_name = self._metadata.get('current_version')
 
-    # Get context from version metadata if available
-    version_meta = self._metadata.get('versions', {}).get(version_name, {})
-    context_parts = []
-    if 'symbol' in version_meta and 'exchange' in version_meta:
-        context_parts.append(f"{version_meta['symbol']}/{version_meta['exchange']}")
-    if 'timeframe' in version_meta:
-        context_parts.append(f"[{version_meta['timeframe']}]")
-    if 'direction' in version_meta and 'model' in version_meta:
-        context_parts.append(f"{version_meta['direction']}/{version_meta['model']}")
-
-    context_str = " ".join(context_parts) if context_parts else self.store_path.name
+    # Get context string for logging
+    context_str = self._get_context_string(version_name=version_name)
     tprint(f"👁️  Getting view for operation '{operation_name}' | {context_str}")
 
     columns = self.get_columns_by_operation(operation_name, version_name)

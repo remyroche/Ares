@@ -116,6 +116,34 @@ class VersionedArtifactStore:
         with open(self.metadata_file, 'w') as f:
             json.dump(self._metadata, f, indent=2)
 
+    def _get_context_string(self, metadata: Optional[Dict[str, Any]] = None,
+                           version_name: Optional[str] = None) -> str:
+        """
+        Extract and format context string from metadata.
+
+        Args:
+            metadata: Metadata dict to extract context from
+            version_name: Version name to lookup metadata from store
+
+        Returns:
+            Formatted context string (e.g., "BTCUSDT/binance [15m] long/analyst")
+        """
+        # Get metadata from version if not provided
+        if metadata is None and version_name:
+            metadata = self._metadata.get('versions', {}).get(version_name, {})
+
+        meta = metadata or {}
+        context_parts = []
+
+        if 'symbol' in meta and 'exchange' in meta:
+            context_parts.append(f"{meta['symbol']}/{meta['exchange']}")
+        if 'timeframe' in meta:
+            context_parts.append(f"[{meta['timeframe']}]")
+        if 'direction' in meta and 'model' in meta:
+            context_parts.append(f"{meta['direction']}/{meta['model']}")
+
+        return " ".join(context_parts) if context_parts else self.store_path.name
+
     def add_data(
         self,
         data: pd.DataFrame,
@@ -138,17 +166,8 @@ class VersionedArtifactStore:
         if not isinstance(data, pd.DataFrame):
             raise ValueError("Data must be a pandas DataFrame")
 
-        # Extract context information from metadata if available
-        meta = metadata or {}
-        context_parts = []
-        if 'symbol' in meta and 'exchange' in meta:
-            context_parts.append(f"{meta['symbol']}/{meta['exchange']}")
-        if 'timeframe' in meta:
-            context_parts.append(f"[{meta['timeframe']}]")
-        if 'direction' in meta and 'model' in meta:
-            context_parts.append(f"{meta['direction']}/{meta['model']}")
-
-        context_str = " ".join(context_parts) if context_parts else self.store_path.name
+        # Get context string for logging
+        context_str = self._get_context_string(metadata=metadata)
         tprint(f"💾 Adding data to store '{version_name}': {len(data)} rows × {len(data.columns)} cols | {context_str}")
 
         with h5py.File(self.h5_file, 'a') as f:
@@ -267,17 +286,8 @@ class VersionedArtifactStore:
         """
         from src.utils.tprint import tprint
 
-        # Get context from version metadata if available
-        version_meta = self._metadata.get('versions', {}).get(version_name, {})
-        context_parts = []
-        if 'symbol' in version_meta and 'exchange' in version_meta:
-            context_parts.append(f"{version_meta['symbol']}/{version_meta['exchange']}")
-        if 'timeframe' in version_meta:
-            context_parts.append(f"[{version_meta['timeframe']}]")
-        if 'direction' in version_meta and 'model' in version_meta:
-            context_parts.append(f"{version_meta['direction']}/{version_meta['model']}")
-
-        context_str = " ".join(context_parts) if context_parts else self.store_path.name
+        # Get context string for logging
+        context_str = self._get_context_string(version_name=version_name)
 
         with h5py.File(self.h5_file, 'r') as f:
             version_group = f['versions'][version_name]
@@ -300,10 +310,8 @@ class VersionedArtifactStore:
 
             tprint(f"📂 Loading {len(columns_to_load)}/{len(all_columns)} columns from '{version_name}' | {context_str}")
 
-            # Load data
-            data_dict = {}
-            for column in columns_to_load:
-                data_dict[column] = version_group[column][:]
+            # Load data efficiently using dict comprehension
+            data_dict = {col: version_group[col][:] for col in columns_to_load}
 
             # Create DataFrame
             df = pd.DataFrame(data_dict, index=index)
@@ -415,17 +423,8 @@ class VersionedArtifactStore:
         if version_name is None:
             version_name = self._metadata.get('current_version')
 
-        # Get context from version metadata if available
-        version_meta = self._metadata.get('versions', {}).get(version_name, {})
-        context_parts = []
-        if 'symbol' in version_meta and 'exchange' in version_meta:
-            context_parts.append(f"{version_meta['symbol']}/{version_meta['exchange']}")
-        if 'timeframe' in version_meta:
-            context_parts.append(f"[{version_meta['timeframe']}]")
-        if 'direction' in version_meta and 'model' in version_meta:
-            context_parts.append(f"{version_meta['direction']}/{version_meta['model']}")
-
-        context_str = " ".join(context_parts) if context_parts else self.store_path.name
+        # Get context string for logging
+        context_str = self._get_context_string(version_name=version_name)
         tprint(f"➕ Adding {len(columns)} columns to version '{version_name}' | {context_str}")
 
         with h5py.File(self.h5_file, 'a') as f:

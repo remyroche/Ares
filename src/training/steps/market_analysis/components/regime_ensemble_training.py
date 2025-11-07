@@ -77,6 +77,12 @@ from src.utils.ml_common.feature_engineering.feature_smoothing import (
 from src.utils.ml_common.post_training.model_validation import (
     ModelValidator, ValidationConfig
 )
+from src.utils.ml_common.validation.temporal_data_splitter import (
+    TemporalDataSplitter, RegimeAwareSplitter, create_temporal_splitter
+)
+from src.utils.ml_common.validation.regime_walk_forward_validator import (
+    RegimeWalkForwardValidator, RegimeValidationConfig, select_top_models
+)
 
 # Import new artifact schema and meta-features
 from .regime_artifact_schema import (
@@ -272,6 +278,29 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         # Initialize artifact extractor
         self.artifact_extractor = RegimeArtifactExtractor()
         tprint("🔧 [REGIME_ENSEMBLE] Artifact extractor initialized", color="green")
+
+        # Initialize temporal splitter for proper train/test splits
+        temporal_config = {
+            'test_size': getattr(temporal_config_data, 'test_size', 0.3),
+            'gap_size': getattr(temporal_config_data, 'gap_size', 1),
+            'validation_size': 0.2,
+            'min_regime_samples': 10,
+            'regime_aware': True
+        }
+        self.temporal_splitter = create_temporal_splitter(temporal_config)
+        tprint("🔧 [REGIME_ENSEMBLE] Temporal splitter initialized (regime-aware)", color="green")
+
+        # Initialize walk-forward validator
+        wf_config = RegimeValidationConfig(
+            n_outer_folds=5,
+            n_inner_folds=3,
+            embargo_pct=0.05,
+            min_train_samples=100,
+            min_val_samples=30,
+            min_regime_samples=10
+        )
+        self.walk_forward_validator = RegimeWalkForwardValidator(wf_config)
+        tprint("🔧 [REGIME_ENSEMBLE] Walk-forward validator initialized", color="green")
 
         # Initialize ensemble training parameters from centralized config
         ensemble_config_data = self.ensemble_config.ensemble if hasattr(self.ensemble_config, 'ensemble') else {}
@@ -627,23 +656,25 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     tprint(f"⚠️ [REGIME_ENSEMBLE] Soft labels length ({len(soft_labels)}) mismatch with processed labels ({min_length}). No weights applied.", "yellow")
 
 
-            # Perform proper temporal split to prevent data leakage using temporal validator
-            tprint("🔄 [REGIME_ENSEMBLE] Performing temporal train/test split to prevent data leakage", color="cyan")
+            # Perform proper temporal split to prevent data leakage using regime-aware splitter
+            tprint("🔄 [REGIME_ENSEMBLE] Performing regime-aware temporal train/val/test split", color="cyan")
 
-            # For temporal data, we need to sort by time if not already sorted
-            # Assuming data is already in temporal order, we'll split by index
-            total_samples = len(X_processed)
-            train_size = int(total_samples * 0.7)
+            # Use RegimeAwareSplitter for proper temporal split with regime awareness
+            X_train, X_val, X_test, y_train, y_val, y_test = self.temporal_splitter.split_regime_aware(
+                X_processed, y_processed
+            )
 
-            # Create temporal indices for validation
-            train_indices = np.arange(train_size)
-            test_indices = np.arange(train_size, total_samples)
+            tprint(f"✅ [REGIME_ENSEMBLE] Regime-aware temporal split completed", color="green")
+            tprint(f"   Train: {len(X_train)} samples", color="blue")
+            tprint(f"   Val: {len(X_val)} samples", color="blue")
+            tprint(f"   Test: {len(X_test)} samples", color="blue")
 
-            # Split the data temporally
-            X_train = X_processed[train_indices]
-            X_test = X_processed[test_indices]
-            y_train = y_processed[train_indices]
-            y_test = y_processed[test_indices]
+            # Create indices for weight splitting
+            n_train = len(X_train)
+            n_val = len(X_val)
+            train_indices = np.arange(n_train)
+            val_indices = np.arange(n_train, n_train + n_val)
+            test_indices = np.arange(n_train + n_val, len(X_processed))
 
             # Validate the temporal split
             validation_report = self.temporal_validator.validate_temporal_split(
@@ -653,47 +684,71 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             )
 
             if not validation_report.temporal_order_valid:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] Temporal validation failed: {validation_report.temporal_message}", color="yellow")
-                tprint("🔧 [REGIME_ENSEMBLE] Using fallback split method", color="yellow")
-                # Fallback to random split if temporal validation fails
-                from sklearn.model_selection import train_test_split
-                (
-                    X_train,
-                    X_test,
-                    y_train,
-                    y_test,
-                    train_indices,
-                    test_indices,
-                ) = self._perform_random_split_with_indices(
-                    X_processed,
-                    y_processed,
-                    test_size=0.3,
-                    random_state=42,
-                    stratify=y_processed,
-                )
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Temporal validation warning: {validation_report.temporal_message}", color="yellow")
+                tprint("   Continuing with temporal split (no fallback to random split)", color="yellow")
             else:
                 tprint("✅ [REGIME_ENSEMBLE] Temporal validation passed - no data leakage detected", color="green")
 
-            tprint(f"📊 [REGIME_ENSEMBLE] Train set: {X_train.shape}, Test set: {X_test.shape}", color="blue")
+            # Merge train and val for final model training (test is held out for final evaluation)
+            tprint("🔄 [REGIME_ENSEMBLE] Merging train+val for final model training", color="cyan")
+            X_train_full = np.vstack([X_train, X_val])
+            y_train_full = np.concatenate([y_train, y_val])
+            tprint(f"📊 [REGIME_ENSEMBLE] Full train set: {X_train_full.shape}, Test set: {X_test.shape}", color="blue")
 
-            # SPLIT SAMPLE WEIGHTS
-            weights_train, weights_test = None, None
+            # SPLIT SAMPLE WEIGHTS (now for train_full and test)
+            weights_train_full, weights_test = None, None
             if weights_processed is not None:
                 try:
-                    weights_train = weights_processed[train_indices]
+                    # Combine train and val weights
+                    train_val_indices = np.concatenate([train_indices, val_indices])
+                    weights_train_full = weights_processed[train_val_indices]
                     weights_test = weights_processed[test_indices]
-                    tprint(f"✅ [REGIME_ENSEMBLE] Sample weights split: Train={len(weights_train)}, Test={len(weights_test)}", "green")
+                    tprint(f"✅ [REGIME_ENSEMBLE] Sample weights split: Train+Val={len(weights_train_full)}, Test={len(weights_test)}", "green")
                 except Exception as e:
                     tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to split sample weights: {e}", "yellow")
-                    weights_train = None # Disable weighting if split fails
+                    weights_train_full = None # Disable weighting if split fails
 
-            # Train stacker_lgbm_calibrated meta-learner on training data only
-            tprint("🎭 [REGIME_ENSEMBLE] Training stacker_lgbm_calibrated meta-learner on training data", color="yellow")
-            stacker_result = self._train_stacker_lgbm_calibrated(X_train, y_train, base_models, weights_train)
+            # Train stacker_lgbm_calibrated meta-learner on training+validation data
+            tprint("🎭 [REGIME_ENSEMBLE] Training stacker_lgbm_calibrated meta-learner on train+val data", color="yellow")
+            stacker_result = self._train_stacker_lgbm_calibrated(X_train_full, y_train_full, base_models, weights_train_full)
 
             # Evaluate ensemble on holdout test data
             tprint("📊 [REGIME_ENSEMBLE] Evaluating ensemble performance on holdout test data", color="yellow")
             ensemble_metrics = self._evaluate_ensemble(X_test, y_test, stacker_result, weights_test)
+
+            # Run walk-forward validation on the ensemble model
+            tprint("🎯 [REGIME_ENSEMBLE] Running walk-forward validation for OOS ensemble performance", color="cyan")
+            try:
+                ensemble_model = stacker_result.get('model')
+                if ensemble_model is not None:
+                    wf_result = self.walk_forward_validator.validate_models(
+                        X_processed, y_processed,
+                        {'ensemble': ensemble_model},
+                        model_configs=None
+                    )
+
+                    # Extract walk-forward metrics
+                    walk_forward_metrics = {
+                        'validation_completed': True,
+                        'n_folds': wf_result.metadata['n_folds_completed'],
+                        'accuracy': wf_result.accuracy,
+                        'precision': wf_result.precision,
+                        'recall': wf_result.recall,
+                        'f1_score': wf_result.f1_score,
+                        'temporal_metrics': wf_result.temporal_metrics
+                    }
+
+                    tprint("✅ [REGIME_ENSEMBLE] Walk-forward validation completed:", color="green")
+                    tprint(f"   Accuracy: {wf_result.accuracy['mean']:.4f} [{wf_result.accuracy['ci_lower']:.4f}, {wf_result.accuracy['ci_upper']:.4f}]", color="blue")
+                    tprint(f"   F1-score: {wf_result.f1_score['mean']:.4f} [{wf_result.f1_score['ci_lower']:.4f}, {wf_result.f1_score['ci_upper']:.4f}]", color="blue")
+                    tprint(f"   MEL: {wf_result.temporal_metrics.get('mel', {}).get('mean', 0):.2f}", color="blue")
+                else:
+                    tprint("⚠️ [REGIME_ENSEMBLE] Ensemble model not available for walk-forward validation", color="yellow")
+                    walk_forward_metrics = {'validation_completed': False, 'error': 'Model not available'}
+
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Walk-forward validation failed: {e}", color="yellow")
+                walk_forward_metrics = {'validation_completed': False, 'error': str(e)}
 
             # Generate ensemble predictions and save to HDF5
             tprint("🎯 [REGIME_ENSEMBLE] Generating ensemble predictions for HDF5 storage", color="cyan")
@@ -744,11 +799,12 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     'metadata': {
                         'component_type': 'regime_ensemble_training',
                         'data_shape': X_processed.shape,
-                        'train_shape': X_train.shape,
+                        'train_shape': X_train_full.shape,
                         'test_shape': X_test.shape,
                         'n_regimes': len(np.unique(regime_labels_processed)) if regime_labels_processed is not None else 0,
                         'feature_names': feature_names,
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': datetime.now().isoformat(),
+                        'walk_forward_validation': walk_forward_metrics
                     }
                 }
             }
@@ -881,26 +937,23 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         tprint(f"✅ [REGIME_ENSEMBLE] Data prepared - X: {X.shape}, y: {y.shape}, regime_labels: {regime_labels.shape if regime_labels is not None else 'None'}", color="green")
         return X, y, regime_labels
 
-    def _perform_random_split_with_indices(
+    def _perform_temporal_split_with_indices(
         self,
         X: np.ndarray,
         y: np.ndarray,
         test_size: float = 0.3,
-        random_state: int = 42,
-        stratify: Optional[np.ndarray] = None,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Perform a random train/test split while preserving original indices."""
-        from sklearn.model_selection import train_test_split
+        """
+        Perform a temporal train/test split while preserving original indices.
 
-        indices = np.arange(len(X))
-        stratify_labels = stratify if stratify is not None else None
+        This replaces the old random split function to ensure temporal integrity.
+        Use self.temporal_splitter.split_regime_aware() for regime-aware splits.
+        """
+        n_samples = len(X)
+        split_idx = int(n_samples * (1 - test_size))
 
-        train_indices, test_indices = train_test_split(
-            indices,
-            test_size=test_size,
-            random_state=random_state,
-            stratify=stratify_labels,
-        )
+        train_indices = np.arange(split_idx)
+        test_indices = np.arange(split_idx, n_samples)
 
         return (
             X[train_indices],

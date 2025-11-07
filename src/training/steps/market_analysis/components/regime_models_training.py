@@ -106,6 +106,9 @@ from src.utils.ml_common.post_training.model_validation import (
 from src.utils.ml_common.validation.temporal_data_splitter import (
     TemporalDataSplitter, RegimeAwareSplitter, create_temporal_splitter
 )
+from src.utils.ml_common.validation.regime_walk_forward_validator import (
+    RegimeWalkForwardValidator, RegimeValidationConfig, select_top_models
+)
 from src.utils.ml_common.data.regime_label_extractor import (
     RegimeLabelExtractor, extract_regime_labels_fast_fail
 )
@@ -731,6 +734,18 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         # Initialize temporal splitter
         self.temporal_splitter = create_temporal_splitter(self.validated_config)
         tprint("✅ [REGIME_MODELS] Temporal splitter initialized", color="green")
+
+        # Initialize walk-forward validator for OOS model selection
+        wf_config = RegimeValidationConfig(
+            n_outer_folds=5,
+            n_inner_folds=3,
+            embargo_pct=0.05,
+            min_train_samples=100,
+            min_val_samples=30,
+            min_regime_samples=self.validated_config.get('min_regime_samples', 10)
+        )
+        self.walk_forward_validator = RegimeWalkForwardValidator(wf_config)
+        tprint("✅ [REGIME_MODELS] Walk-forward validator initialized", color="green")
         
         # Initialize regime label extractor
         self.regime_extractor = RegimeLabelExtractor(
@@ -1040,39 +1055,91 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 memory_report = memory_mgr.get_memory_report()
                 tprint(f"\n{memory_report}", color="blue")
 
-            # Select top 3 models based on performance for HDF5 storage
-            tprint("🎯 [REGIME_MODELS] Selecting top 3 models based on performance", color="cyan")
+            # Select top 3 models based on walk-forward OOS performance
+            tprint("🎯 [REGIME_MODELS] Running walk-forward validation for OOS model selection", color="cyan")
 
-            # Rank models by accuracy (primary metric)
-            model_rankings = []
-            for model_name, metrics in model_metrics.items():
-                if 'error' not in metrics:
-                    accuracy = metrics.get('accuracy', 0)
-                    f1_score = metrics.get('f1_score', 0)
-                    model_rankings.append({
-                        'name': model_name,
-                        'accuracy': accuracy,
-                        'f1_score': f1_score,
-                        'combined_score': (accuracy * 0.6 + f1_score * 0.4)  # Weighted score
+            # Run walk-forward validation
+            try:
+                wf_result = self.walk_forward_validator.validate_models(
+                    X, y, trained_models, model_configs=None
+                )
+
+                # Select top 3 models based on OOS metrics
+                selected_model_names = select_top_models(wf_result, top_n=3)
+
+                # Extract detailed metrics for selected models
+                selected_models = []
+                for rank in wf_result.model_rankings[:3]:
+                    selected_models.append({
+                        'name': rank['model_name'],
+                        'accuracy': rank['accuracy'],
+                        'f1_score': rank['f1_score'],
+                        'combined_score': rank['composite_score'],
+                        'accuracy_ci': rank['accuracy_ci'],
+                        'f1_ci': rank['f1_ci'],
+                        'mel': rank['mel'],
+                        'sfpr': rank['sfpr']
                     })
 
-            # Sort by combined score (descending)
-            model_rankings.sort(key=lambda x: x['combined_score'], reverse=True)
+                tprint(f"✅ [REGIME_MODELS] Selected top {len(selected_models)} models based on OOS performance:", color="green")
+                for i, model_info in enumerate(selected_models, 1):
+                    tprint(
+                        f"   {i}. {model_info['name']}: "
+                        f"accuracy={model_info['accuracy']:.4f} "
+                        f"[{model_info['accuracy_ci'][0]:.4f}, {model_info['accuracy_ci'][1]:.4f}], "
+                        f"f1={model_info['f1_score']:.4f}, "
+                        f"MEL={model_info['mel']:.2f}, "
+                        f"SFPR={model_info['sfpr']:.4f}",
+                        color="blue"
+                    )
 
-            # Select top 3 models
-            top_n_models = 3
-            selected_models = model_rankings[:min(top_n_models, len(model_rankings))]
-            selected_model_names = [m['name'] for m in selected_models]
+                # Store walk-forward results in metadata
+                walk_forward_metrics = {
+                    'validation_completed': True,
+                    'n_folds': wf_result.metadata['n_folds_completed'],
+                    'model_rankings': wf_result.model_rankings,
+                    'selected_models': selected_model_names
+                }
 
-            tprint(f"✅ [REGIME_MODELS] Selected top {len(selected_models)} models:", color="green")
-            for i, model_info in enumerate(selected_models, 1):
-                tprint(
-                    f"   {i}. {model_info['name']}: "
-                    f"accuracy={model_info['accuracy']:.4f}, "
-                    f"f1={model_info['f1_score']:.4f}, "
-                    f"score={model_info['combined_score']:.4f}",
-                    color="blue"
-                )
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Walk-forward validation failed: {e}", color="yellow")
+                tprint("   Falling back to single-split metrics for model selection", color="yellow")
+
+                # Fallback: Rank models by single-split accuracy (primary metric)
+                model_rankings = []
+                for model_name, metrics in model_metrics.items():
+                    if 'error' not in metrics:
+                        accuracy = metrics.get('accuracy', 0)
+                        f1_score = metrics.get('f1_score', 0)
+                        model_rankings.append({
+                            'name': model_name,
+                            'accuracy': accuracy,
+                            'f1_score': f1_score,
+                            'combined_score': (accuracy * 0.6 + f1_score * 0.4)  # Weighted score
+                        })
+
+                # Sort by combined score (descending)
+                model_rankings.sort(key=lambda x: x['combined_score'], reverse=True)
+
+                # Select top 3 models
+                top_n_models = 3
+                selected_models = model_rankings[:min(top_n_models, len(model_rankings))]
+                selected_model_names = [m['name'] for m in selected_models]
+
+                tprint(f"✅ [REGIME_MODELS] Selected top {len(selected_models)} models (fallback):", color="green")
+                for i, model_info in enumerate(selected_models, 1):
+                    tprint(
+                        f"   {i}. {model_info['name']}: "
+                        f"accuracy={model_info['accuracy']:.4f}, "
+                        f"f1={model_info['f1_score']:.4f}, "
+                        f"score={model_info['combined_score']:.4f}",
+                        color="blue"
+                    )
+
+                walk_forward_metrics = {
+                    'validation_completed': False,
+                    'error': str(e)
+                }
 
             # Generate predictions only for top 3 models
             tprint("🎯 [REGIME_MODELS] Generating predictions for top 3 models only", color="cyan")
@@ -1132,7 +1199,8 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         'n_regimes': len(np.unique(regime_labels)) if regime_labels is not None else 0,
                         'feature_names': feature_names,
                         'timestamp': datetime.now().isoformat(),
-                        'centralized_config_used': hasattr(self, 'config_manager')
+                        'centralized_config_used': hasattr(self, 'config_manager'),
+                        'walk_forward_validation': walk_forward_metrics
                     }
                 }
             }

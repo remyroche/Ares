@@ -237,21 +237,25 @@ def create_cli_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run a single step
+  # Run a single step (positional argument)
+  python ares_launcher.py regime_models_training --symbol ETHUSDT --execution-mode light
+  python ares_launcher.py regime_ensemble_training --symbol ETHUSDT --execution-mode light
+
+  # Run a single step (named argument)
   python ares_launcher.py --step data_download --symbol ETHUSDT --exchange binance
-  
+
   # Run multiple steps
   python ares_launcher.py --steps data_download,data_conversion --symbol ETHUSDT
-  
+
   # Run entire stage
   python ares_launcher.py --stage DATA_COLLECTION --symbol ETHUSDT
-  
+
   # PRE_TRAINING steps (maintain compatibility)
   python ares_launcher.py --step feature_generation_data_validation_step --symbol ETHUSDT --execution-mode light
-  
+
   # MODEL_TRAINING steps (maintain compatibility)
   python ares_launcher.py --train-analyst-base --symbol ETHUSDT --timeframe 15m --direction long
-  
+
   # FEATURE GENERATION INTERACTION GENERATION (differentiated modes)
   python ares_launcher.py --run-tactician-interaction --symbol ETHUSDT --timeframe 15m
   python ares_launcher.py --run-analyst-interaction --symbol ETHUSDT --timeframe 15m
@@ -270,7 +274,10 @@ Examples:
   python ares_launcher.py --mode sequential --sub_pipeline feature_generation_data_validation_step --symbol ETHUSDT
         """
     )
-    
+
+    # Positional argument for step name (optional)
+    parser.add_argument('command', nargs='?', type=str, help='Step name to execute (e.g., regime_models_training, regime_ensemble_training)')
+
     # Step execution options
     step_group = parser.add_mutually_exclusive_group(required=False)
     step_group.add_argument('--step', type=str, help='Run a single step')
@@ -454,6 +461,19 @@ async def main():
             print(f"  - {stage}")
         return
     
+    # Handle positional command argument
+    if args.command:
+        # Check if the command matches a registered step
+        if args.command in launcher.list_steps():
+            # Treat positional argument as --step
+            args.step = args.command
+            logger.info(f"Detected positional command: {args.command}")
+        else:
+            print(f"Error: Unknown command '{args.command}'")
+            print(f"Available steps: {', '.join(launcher.list_steps())}")
+            print("Use --list-steps to see all registered steps")
+            return
+
     # Check if any execution mode is specified
     has_execution_mode = any([
         args.step, args.steps, args.stage, args.mode, args.sub_pipeline,
@@ -463,14 +483,14 @@ async def main():
         args.hdbscan_regime_discovery, args.gmm_regime_discovery, args.rolling_hmm_regime_discovery, args.legacy_nas_tas,
         args.regime_models_training, args.regime_ensemble_training
     ])
-    
+
     if not has_execution_mode:
         print("No execution mode specified. Use --help to see available options.")
         print("Available utility commands:")
         print("  --list-steps    List all registered steps")
         print("  --list-stages   List all available stages")
         return
-    
+
     # Validate required parameters for execution modes
     if not args.symbol and has_execution_mode:
         parser.error("--symbol is required when running execution modes")

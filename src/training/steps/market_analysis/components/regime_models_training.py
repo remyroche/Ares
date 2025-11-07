@@ -742,6 +742,137 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         # Note: Using existing feature bank system instead of custom feature generator
         tprint("✅ [REGIME_MODELS] Using existing feature bank system", color="green")
 
+    async def _load_and_resample_regime_probabilities(
+        self,
+        base_step: Any
+    ) -> Optional[pd.DataFrame]:
+        """
+        Load rolling_hmm_regime_probabilities and resample to 15m.
+
+        Args:
+            base_step: BaseStep instance for artifact loading
+
+        Returns:
+            DataFrame with regime probabilities at 15m timeframe
+        """
+        try:
+            tprint("📥 [REGIME_MODELS] Loading rolling_hmm_regime_probabilities artifact", color="cyan")
+
+            # Load 1h regime probabilities
+            regime_probs_1h = base_step._get_artifact(
+                'rolling_hmm_regime_probabilities',
+                artifact_type='data'
+            )
+
+            if regime_probs_1h is None:
+                tprint("⚠️ [REGIME_MODELS] No rolling_hmm_regime_probabilities found", color="yellow")
+                return None
+
+            tprint(f"✅ [REGIME_MODELS] Loaded regime probabilities: {regime_probs_1h.shape}", color="green")
+            tprint(f"📊 [REGIME_MODELS] Columns: {list(regime_probs_1h.columns)}", color="blue")
+
+            # Ensure datetime index
+            if not isinstance(regime_probs_1h.index, pd.DatetimeIndex):
+                regime_probs_1h.index = pd.to_datetime(regime_probs_1h.index)
+
+            # Resample from 1h to 15m using forward-fill
+            tprint("🔄 [REGIME_MODELS] Resampling from 1h to 15m (forward-fill)", color="cyan")
+            regime_probs_15m = regime_probs_1h.resample('15T').ffill()
+
+            tprint(f"✅ [REGIME_MODELS] Resampled to 15m: {regime_probs_15m.shape}", color="green")
+
+            return regime_probs_15m
+
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] Failed to load/resample regime probabilities: {e}", color="red")
+            self.logger.error(f"Failed to load/resample regime probabilities: {e}", exc_info=True)
+            return None
+
+    async def _save_predictions_to_hdf5(
+        self,
+        predictions: pd.DataFrame,
+        base_step: Any,
+        artifact_name: str = 'regime_models_predictions'
+    ) -> None:
+        """
+        Save model predictions to HDF5 file at native 1h timeframe.
+        Handles column cleanup for disappeared regimes.
+
+        NOTE: Base model predictions stay at 1h (training timeframe).
+        Resampling to 15m only happens for ensemble predictions.
+
+        Args:
+            predictions: DataFrame with model predictions (columns = regime probabilities)
+            base_step: BaseStep instance for artifact saving
+            artifact_name: Name for the HDF5 artifact
+        """
+        try:
+            tprint(f"💾 [REGIME_MODELS] Saving predictions to HDF5: {artifact_name}", color="cyan")
+
+            # Ensure datetime index
+            if not isinstance(predictions.index, pd.DatetimeIndex):
+                predictions.index = pd.to_datetime(predictions.index)
+
+            # Try to load existing HDF5 to compare columns
+            try:
+                existing_data = base_step._get_artifact(artifact_name, artifact_type='data')
+
+                if existing_data is not None:
+                    # Compare columns - find disappeared regimes
+                    existing_cols = set(existing_data.columns)
+                    new_cols = set(predictions.columns)
+
+                    disappeared_cols = existing_cols - new_cols
+
+                    if disappeared_cols:
+                        tprint(f"🗑️  [REGIME_MODELS] Removing disappeared regime columns: {disappeared_cols}", color="yellow")
+                        # Drop disappeared columns
+                        existing_data = existing_data.drop(columns=list(disappeared_cols))
+
+                    # Merge with existing data (update overlapping, add new)
+                    merged_data = pd.concat([existing_data, predictions], axis=0)
+                    merged_data = merged_data[~merged_data.index.duplicated(keep='last')]
+                    merged_data = merged_data.sort_index()
+
+                    predictions = merged_data
+
+                    tprint(f"✅ [REGIME_MODELS] Merged with existing data: {predictions.shape}", color="green")
+
+            except Exception as e:
+                tprint(f"ℹ️ [REGIME_MODELS] No existing HDF5 found, creating new: {e}", color="blue")
+
+            # Keep native timeframe (1h) - DO NOT resample base model predictions
+            # Resampling to 15m will only happen for ensemble predictions in regime_ensemble_training
+            tprint(f"💾 [REGIME_MODELS] Saving at native 1h timeframe (resampling happens only for ensemble)", color="blue")
+
+            # Infer timeframe from index frequency
+            if isinstance(predictions.index, pd.DatetimeIndex) and predictions.index.freq is not None:
+                timeframe_str = str(predictions.index.freq)
+            else:
+                timeframe_str = '1h'  # Default to 1h
+
+            # Save to HDF5 at native timeframe
+            base_step._save_artifact(
+                data=predictions,
+                artifact_name=artifact_name,
+                artifact_type='data',
+                compression='auto',
+                metadata={
+                    'timeframe': timeframe_str,
+                    'n_regimes': len([c for c in predictions.columns if 'regime' in c.lower()]),
+                    'columns': list(predictions.columns),
+                    'shape': predictions.shape,
+                    'timestamp': datetime.now().isoformat(),
+                    'note': 'Base model predictions at native 1h timeframe'
+                }
+            )
+
+            tprint(f"✅ [REGIME_MODELS] Saved predictions to HDF5: {predictions.shape}", color="green")
+
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] Failed to save predictions to HDF5: {e}", color="red")
+            self.logger.error(f"Failed to save predictions to HDF5: {e}", exc_info=True)
+
     async def execute(self, data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
         Execute regime detection models training with enhanced hardware optimization and validation.
@@ -777,6 +908,26 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             # Monitor initial memory usage
             initial_memory = psutil.virtual_memory()
             tprint(f"🧠 [REGIME_MODELS] Initial memory usage: {initial_memory.percent:.1f}% ({initial_memory.used / 1024**3:.1f}GB / {initial_memory.total / 1024**3:.1f}GB)", color="blue")
+
+            # Load and resample rolling_hmm regime probabilities as base features
+            tprint("📥 [REGIME_MODELS] Loading rolling_hmm artifacts", color="cyan")
+            from src.training.steps.base_step import BaseStep
+            base_step_inst = BaseStep("regime_models_training_loader")
+            base_step_inst._current_context = {
+                'symbol': self.config.symbol,
+                'exchange': self.config.exchange,
+                'timeframe': self.config.timeframe,
+                'direction': 'long',
+                'model': 'regime'
+            }
+
+            regime_probs_15m = await self._load_and_resample_regime_probabilities(base_step_inst)
+
+            if regime_probs_15m is not None:
+                tprint(f"✅ [REGIME_MODELS] Using rolling_hmm regime probabilities as features: {regime_probs_15m.shape}", color="green")
+                # Add regime probabilities to protected_data
+                protected_data = protected_data.join(regime_probs_15m, how='left')
+                tprint(f"📊 [REGIME_MODELS] Enhanced data shape: {protected_data.shape}", color="blue")
 
             # Extract regime labels with standardized extractor (fast fail behavior)
             tprint("📊 [REGIME_MODELS] Extracting regime labels with standardized extractor", color="cyan")
@@ -888,6 +1039,66 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 # Print memory report
                 memory_report = memory_mgr.get_memory_report()
                 tprint(f"\n{memory_report}", color="blue")
+
+            # Select top 3 models based on performance for HDF5 storage
+            tprint("🎯 [REGIME_MODELS] Selecting top 3 models based on performance", color="cyan")
+
+            # Rank models by accuracy (primary metric)
+            model_rankings = []
+            for model_name, metrics in model_metrics.items():
+                if 'error' not in metrics:
+                    accuracy = metrics.get('accuracy', 0)
+                    f1_score = metrics.get('f1_score', 0)
+                    model_rankings.append({
+                        'name': model_name,
+                        'accuracy': accuracy,
+                        'f1_score': f1_score,
+                        'combined_score': (accuracy * 0.6 + f1_score * 0.4)  # Weighted score
+                    })
+
+            # Sort by combined score (descending)
+            model_rankings.sort(key=lambda x: x['combined_score'], reverse=True)
+
+            # Select top 3 models
+            top_n_models = 3
+            selected_models = model_rankings[:min(top_n_models, len(model_rankings))]
+            selected_model_names = [m['name'] for m in selected_models]
+
+            tprint(f"✅ [REGIME_MODELS] Selected top {len(selected_models)} models:", color="green")
+            for i, model_info in enumerate(selected_models, 1):
+                tprint(
+                    f"   {i}. {model_info['name']}: "
+                    f"accuracy={model_info['accuracy']:.4f}, "
+                    f"f1={model_info['f1_score']:.4f}, "
+                    f"score={model_info['combined_score']:.4f}",
+                    color="blue"
+                )
+
+            # Generate predictions only for top 3 models
+            tprint("🎯 [REGIME_MODELS] Generating predictions for top 3 models only", color="cyan")
+            model_predictions = {}
+
+            for model_name in selected_model_names:
+                if model_name in trained_models:
+                    model = trained_models[model_name]
+                    try:
+                        if hasattr(model, 'predict_proba'):
+                            pred_probs = model.predict_proba(X)
+                            # Create columns for each regime
+                            for regime_idx in range(pred_probs.shape[1]):
+                                col_name = f'{model_name}_regime_{regime_idx}_prob'
+                                model_predictions[col_name] = pred_probs[:, regime_idx]
+                            tprint(f"✅ [REGIME_MODELS] Generated predictions for {model_name}", color="green")
+                    except Exception as e:
+                        tprint(f"⚠️ [REGIME_MODELS] Failed to generate predictions for {model_name}: {e}", color="yellow")
+
+            if model_predictions:
+                predictions_df = pd.DataFrame(model_predictions, index=protected_data.index)
+                tprint(f"📊 [REGIME_MODELS] Saving predictions for {len(selected_model_names)} top models ({predictions_df.shape[1]} columns)", color="cyan")
+                # Save to HDF5
+                await self._save_predictions_to_hdf5(predictions_df, base_step_inst, 'regime_models_predictions')
+            else:
+                tprint("⚠️ [REGIME_MODELS] No model predictions generated", color="yellow")
 
             # Create comprehensive results
             execution_time = time.time() - execution_start_time

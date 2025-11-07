@@ -388,6 +388,34 @@ class TPrintManager:
         color = self.config.colors.get(level, "")
         return f"{color}{message}{Style.RESET_ALL}"
 
+    def _extract_raw_message(self, message: str, level: LogLevel) -> str:
+        """Extract raw message without tprint's timestamp and level prefix.
+
+        This is used to avoid double-formatting when passing messages to Python logger.
+        The Python logger will add its own timestamp and level, so we need to remove
+        tprint's formatting to prevent duplication.
+
+        Args:
+            message: The formatted tprint message (e.g., "[2025-01-11 06:30:15.123] INFO: Message")
+            level: The log level
+
+        Returns:
+            The raw message without timestamp and level prefix (e.g., "Message")
+        """
+        import re
+
+        # Pattern to match tprint timestamp and level prefix
+        # Matches: [YYYY-MM-DD HH:MM:SS.mmm] LEVEL: or [HH:MM:SS.mmm] LEVEL: or [HH:MM:SS]
+        pattern = r'^\[[\d\-\s:\.]+\]\s*(?:' + re.escape(level.value) + r':\s*)?'
+
+        # Also handle messages without level prefix (from _log_without_level)
+        # Pattern matches: [timestamp] message
+        if level.value + ':' not in message:
+            pattern = r'^\[[\d\-\s:\.]+\]\s+'
+
+        raw_message = re.sub(pattern, '', message)
+        return raw_message if raw_message else message
+
     def _write_to_outputs(self, message: str, level: LogLevel, **kwargs):
         """Write message to configured outputs."""
         # Fast path for minimal mode
@@ -426,7 +454,10 @@ class TPrintManager:
         if self.config.log_to_python_logger:
             try:
                 log_level = getattr(logging, level.value, logging.INFO)
-                self.logger.log(log_level, message)
+                # Extract raw message without tprint's timestamp and level prefix
+                # to avoid double-formatting in Python logger output
+                raw_message = self._extract_raw_message(message, level)
+                self.logger.log(log_level, raw_message)
             except Exception:
                 # Silently handle logger errors
                 pass

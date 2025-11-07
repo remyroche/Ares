@@ -173,7 +173,7 @@ def get_multi_output_config() -> dict[str, Any]:
         # Validation and testing
         "validation": {
             "enable_cross_validation": True,
-            "enable_walk_forward_validation": True,
+            # Walk-forward validation removed - now integrated into basic_backtesting_post with time-series CV
             "enable_monte_carlo_validation": True,
             "enable_ab_testing": True,
             "validation_metrics": [

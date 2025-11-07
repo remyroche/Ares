@@ -1,5 +1,5 @@
 """
-Versioned Artifact Management System - HDF5-Based Tabular Data Storage
+Versioned Artifact Management System with Temporal Splitting - HDF5-Based Tabular Data Storage
 
 A specialized storage system for versioned tabular data (DataFrames) used in
 machine learning pipelines, providing efficient storage, versioning, and view-based access.
@@ -73,6 +73,18 @@ from .row_version_tracker import RowVersionTracker, RowVersion
 from .view_mask import ViewMask
 from .base_step_adapter import VersionedArtifactAdapter
 
+# Temporal splitting for train/val/test separation
+from .temporal_splits import (
+    TemporalPeriod,
+    TemporalSplitConfig,
+    WalkForwardFold,
+    WalkForwardSplitConfig,
+    TemporalViewFilter,
+    create_temporal_split_config_for_pipeline,
+    create_walkforward_split_config_for_pipeline,
+    get_data_for_purpose
+)
+
 # Import enhanced methods to automatically patch VersionedArtifactStore
 from . import enhanced_methods  # noqa: F401
 
@@ -86,6 +98,15 @@ __all__ = [
     "RowVersion",
     "ViewMask",
     "VersionedArtifactAdapter",
+    # Temporal splitting
+    "TemporalPeriod",
+    "TemporalSplitConfig",
+    "WalkForwardFold",
+    "WalkForwardSplitConfig",
+    "TemporalViewFilter",
+    "create_temporal_split_config_for_pipeline",
+    "create_walkforward_split_config_for_pipeline",
+    "get_data_for_purpose",
 ]
 
 __version__ = "1.0.0"

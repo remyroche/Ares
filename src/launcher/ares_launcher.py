@@ -196,7 +196,7 @@ class SimplifiedAresLauncher:
             ],
             'BACKTESTING': [
                 'basic_backtesting_pre', 'final_parameters_optimization',
-                'basic_backtesting_post', 'walk_forward_validation',
+                'basic_backtesting_post',
                 'monte_carlo_simulation', 'ab_testing', 'reporting'
             ]
         }

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import TimeSeriesSplit
 
 # VectorBT imports
 try:
@@ -47,6 +48,15 @@ class BasicBacktestingPostStep(BaseStep):
         """Initialize the basic backtesting post step."""
         super().__init__(step_name)
         self.logger = system_logger.getChild('BasicBacktestingPost')
+
+        # Time-series CV configuration
+        self.enable_time_series_cv = True
+        self.cv_n_splits = 5  # Number of CV splits
+        self.cv_embargo_pct = 0.02  # 2% embargo between train/test to prevent leakage
+
+        # Overfitting detection configuration
+        self.enable_overfitting_detection = True
+        self.compare_train_test = True
         
     def _calculate_vectorbt_metrics(self, returns: pd.Series, prices: pd.Series) -> Dict[str, Any]:
         """
@@ -540,6 +550,145 @@ class BasicBacktestingPostStep(BaseStep):
             self.logger.error(f"VectorBT backtest failed: {e}")
             return None
     
+    def _run_time_series_cv_backtest(
+        self,
+        price_data: pd.DataFrame,
+        ml_scored_data: Optional[pd.DataFrame],
+        optimized_params: Optional[Dict[str, Any]],
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Run time-series cross-validation backtesting to ensure robust performance.
+
+        This implements walk-forward validation with embargo to prevent data leakage:
+        - Uses sklearn's TimeSeriesSplit for proper temporal ordering
+        - Applies embargo period between train/test to prevent look-ahead bias
+        - Validates that test periods contain only "unseen" data
+        - Aggregates results across all CV folds
+
+        Args:
+            price_data: DataFrame with OHLCV data
+            ml_scored_data: DataFrame with ML predictions (optional)
+            optimized_params: Dictionary of optimized parameters
+            config: Configuration dictionary
+
+        Returns:
+            Dictionary containing CV results with mean/std of metrics
+        """
+        if not self.enable_time_series_cv:
+            self.logger.info("Time-series CV disabled, skipping")
+            return {}
+
+        try:
+            tprint(f"🔄 Running time-series CV with {self.cv_n_splits} splits and {self.cv_embargo_pct:.1%} embargo", "INFO")
+
+            direction = config.get('direction', 'long')
+            use_ml_signals = ml_scored_data is not None
+
+            # Initialize TimeSeriesSplit
+            tscv = TimeSeriesSplit(n_splits=self.cv_n_splits)
+
+            # Storage for fold results
+            fold_results = []
+
+            # Iterate over CV folds
+            for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(price_data)):
+                tprint(f"  📊 Processing CV fold {fold_idx + 1}/{self.cv_n_splits}", "INFO")
+
+                # Apply embargo: remove samples near the train/test boundary
+                embargo_size = int(len(train_idx) * self.cv_embargo_pct)
+                if embargo_size > 0:
+                    # Remove last embargo_size samples from training set
+                    train_idx = train_idx[:-embargo_size]
+                    # Remove first embargo_size samples from test set
+                    if len(test_idx) > embargo_size:
+                        test_idx = test_idx[embargo_size:]
+
+                # Skip if test set is too small after embargo
+                if len(test_idx) < 50:
+                    self.logger.warning(f"Fold {fold_idx + 1} test set too small ({len(test_idx)} samples), skipping")
+                    continue
+
+                # Extract test data for this fold
+                test_price_data = price_data.iloc[test_idx].copy()
+
+                # Generate signals for test period
+                if use_ml_signals and ml_scored_data is not None:
+                    # Extract ML predictions for test period
+                    test_ml_data = ml_scored_data.iloc[test_idx].copy()
+                    long_entries, short_entries, exits = self._generate_ml_signals(
+                        test_ml_data, optimized_params, direction
+                    )
+                else:
+                    # Use simple signals as fallback
+                    long_entries, short_entries, exits = self._generate_simple_signals(
+                        test_price_data, optimized_params, direction
+                    )
+
+                # Run backtest on this fold
+                fold_backtest = self._run_vectorbt_backtest(
+                    test_price_data, long_entries, short_entries, exits, config
+                )
+
+                if fold_backtest is not None:
+                    # Extract key metrics
+                    fold_result = {
+                        'fold': fold_idx + 1,
+                        'train_size': len(train_idx),
+                        'test_size': len(test_idx),
+                        'embargo_size': embargo_size,
+                        'total_return': fold_backtest.get('total_return', 0.0),
+                        'sharpe_ratio': fold_backtest.get('sharpe_ratio', 0.0),
+                        'sortino_ratio': fold_backtest.get('sortino_ratio', 0.0),
+                        'max_drawdown': fold_backtest.get('max_drawdown', 0.0),
+                        'win_rate': fold_backtest.get('win_rate', 0.0),
+                        'profit_factor': fold_backtest.get('profit_factor', 0.0),
+                        'total_trades': fold_backtest.get('total_trades', 0)
+                    }
+                    fold_results.append(fold_result)
+
+                    tprint(f"    ✅ Fold {fold_idx + 1}: Return={fold_result['total_return']:.2%}, "
+                          f"Sharpe={fold_result['sharpe_ratio']:.2f}, Trades={fold_result['total_trades']}",
+                          "SUCCESS")
+                else:
+                    self.logger.warning(f"Fold {fold_idx + 1} backtest failed")
+
+            if not fold_results:
+                self.logger.error("All CV folds failed")
+                return {}
+
+            # Aggregate results across folds
+            cv_df = pd.DataFrame(fold_results)
+
+            cv_summary = {
+                'n_folds': len(fold_results),
+                'total_return_mean': float(cv_df['total_return'].mean()),
+                'total_return_std': float(cv_df['total_return'].std()),
+                'sharpe_ratio_mean': float(cv_df['sharpe_ratio'].mean()),
+                'sharpe_ratio_std': float(cv_df['sharpe_ratio'].std()),
+                'sortino_ratio_mean': float(cv_df['sortino_ratio'].mean()),
+                'sortino_ratio_std': float(cv_df['sortino_ratio'].std()),
+                'max_drawdown_mean': float(cv_df['max_drawdown'].mean()),
+                'max_drawdown_std': float(cv_df['max_drawdown'].std()),
+                'win_rate_mean': float(cv_df['win_rate'].mean()),
+                'win_rate_std': float(cv_df['win_rate'].std()),
+                'profit_factor_mean': float(cv_df['profit_factor'].mean()),
+                'profit_factor_std': float(cv_df['profit_factor'].std()),
+                'total_trades_mean': float(cv_df['total_trades'].mean()),
+                'fold_details': fold_results
+            }
+
+            tprint(f"✅ Time-series CV completed: "
+                  f"Return={cv_summary['total_return_mean']:.2%}±{cv_summary['total_return_std']:.2%}, "
+                  f"Sharpe={cv_summary['sharpe_ratio_mean']:.2f}±{cv_summary['sharpe_ratio_std']:.2f}",
+                  "SUCCESS")
+
+            return cv_summary
+
+        except Exception as e:
+            self.logger.error(f"Time-series CV failed: {e}", exc_info=True)
+            return {}
+
     def _calculate_trade_metrics(self, trades: pd.DataFrame) -> Dict[str, float]:
         """
         Calculate trade-level performance metrics.
@@ -760,7 +909,59 @@ class BasicBacktestingPostStep(BaseStep):
             lines.append(f"| Largest Win | {metrics.get('largest_win', 0):.4f} |")
             lines.append(f"| Largest Loss | {metrics.get('largest_loss', 0):.4f} |")
             lines.append("")
-            
+
+            # Time-Series CV Results
+            cv_results = metrics.get('cv_results', {})
+            if cv_results and cv_results.get('n_folds', 0) > 0:
+                lines.append("## 🔄 Time-Series Cross-Validation Results")
+                lines.append("")
+                lines.append("Cross-validation ensures strategy robustness across different time periods and prevents overfitting.")
+                lines.append("")
+                lines.append(f"| Metric | Mean | Std Dev |")
+                lines.append(f"|--------|------|---------|")
+                lines.append(f"| Total Return | {cv_results.get('total_return_mean', 0):.2%} | {cv_results.get('total_return_std', 0):.2%} |")
+                lines.append(f"| Sharpe Ratio | {cv_results.get('sharpe_ratio_mean', 0):.3f} | {cv_results.get('sharpe_ratio_std', 0):.3f} |")
+                lines.append(f"| Sortino Ratio | {cv_results.get('sortino_ratio_mean', 0):.3f} | {cv_results.get('sortino_ratio_std', 0):.3f} |")
+                lines.append(f"| Max Drawdown | {cv_results.get('max_drawdown_mean', 0):.2%} | {cv_results.get('max_drawdown_std', 0):.2%} |")
+                lines.append(f"| Win Rate | {cv_results.get('win_rate_mean', 0):.2%} | {cv_results.get('win_rate_std', 0):.2%} |")
+                lines.append(f"| Profit Factor | {cv_results.get('profit_factor_mean', 0):.3f} | {cv_results.get('profit_factor_std', 0):.3f} |")
+                lines.append("")
+                lines.append(f"**Number of CV Folds:** {cv_results.get('n_folds', 0)}")
+                lines.append("")
+
+            # Train vs Test Comparison (Overfitting Detection)
+            train_test_comp = metrics.get('train_test_comparison', {})
+            if train_test_comp:
+                lines.append("## 🔍 Training vs Test Performance (Overfitting Detection)")
+                lines.append("")
+
+                overfitting = train_test_comp.get('overfitting_detected', False)
+                quality = train_test_comp.get('generalization_quality', 'unknown')
+                avg_deg = train_test_comp.get('avg_performance_degradation', 0)
+
+                if overfitting:
+                    lines.append("⚠️ **OVERFITTING DETECTED** - Test performance significantly degraded")
+                else:
+                    lines.append(f"✅ **Good Generalization** - Quality: {quality}")
+
+                lines.append("")
+                lines.append(f"| Metric | Training | Test | Degradation |")
+                lines.append(f"|--------|----------|------|-------------|")
+
+                for metric in ['total_return', 'sharpe_ratio', 'sortino_ratio', 'win_rate', 'profit_factor']:
+                    train_val = train_test_comp.get(f'{metric}_train', 0)
+                    test_val = train_test_comp.get(f'{metric}_test', 0)
+                    deg = train_test_comp.get(f'{metric}_degradation', 0)
+
+                    if 'ratio' in metric or 'factor' in metric:
+                        lines.append(f"| {metric.replace('_', ' ').title()} | {train_val:.3f} | {test_val:.3f} | {deg:.1%} |")
+                    else:
+                        lines.append(f"| {metric.replace('_', ' ').title()} | {train_val:.2%} | {test_val:.2%} | {deg:.1%} |")
+
+                lines.append("")
+                lines.append(f"**Average Performance Degradation:** {avg_deg:.1%}")
+                lines.append("")
+
             # Comparison with Baseline
             comparison = metrics.get('improvement_vs_baseline', {})
             if comparison:
@@ -852,6 +1053,59 @@ class BasicBacktestingPostStep(BaseStep):
             self.logger.error(f"Failed to generate markdown report: {e}")
             return ""
 
+    def _compare_train_test_performance(
+        self,
+        training_results: Dict[str, Any],
+        test_results: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Compare training vs test performance to detect overfitting/generalization.
+
+        Args:
+            training_results: Results from training period backtest
+            test_results: Results from test period backtest
+
+        Returns:
+            Dictionary with comparison metrics and overfitting indicators
+        """
+        comparison = {}
+
+        # Key metrics to compare
+        metrics_to_compare = [
+            'total_return', 'sharpe_ratio', 'sortino_ratio', 'max_drawdown',
+            'win_rate', 'profit_factor', 'total_trades'
+        ]
+
+        for metric in metrics_to_compare:
+            train_val = training_results.get(metric, 0.0)
+            test_val = test_results.get(metric, 0.0)
+
+            # Calculate degradation (positive means worse performance on test)
+            if metric == 'max_drawdown':
+                # For drawdown, worse means more negative
+                degradation = test_val - train_val  # More negative = worse
+            else:
+                # For other metrics, lower is worse
+                degradation = (train_val - test_val) / max(abs(train_val), 1e-6)
+
+            comparison[f'{metric}_train'] = train_val
+            comparison[f'{metric}_test'] = test_val
+            comparison[f'{metric}_degradation'] = degradation
+
+        # Overall overfitting assessment
+        # High degradation in key metrics suggests overfitting
+        avg_degradation = np.mean([
+            comparison.get('total_return_degradation', 0),
+            comparison.get('sharpe_ratio_degradation', 0),
+            comparison.get('win_rate_degradation', 0)
+        ])
+
+        comparison['avg_performance_degradation'] = avg_degradation
+        comparison['overfitting_detected'] = avg_degradation > 0.3  # >30% degradation
+        comparison['generalization_quality'] = 'poor' if avg_degradation > 0.3 else 'good' if avg_degradation < 0.1 else 'moderate'
+
+        return comparison
+
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute post-optimization backtesting.
@@ -862,6 +1116,8 @@ class BasicBacktestingPostStep(BaseStep):
                 - exchange: Exchange name (e.g., 'binance')
                 - timeframe: Timeframe (e.g., '15m')
                 - direction: Trading direction ('long', 'short', 'both')
+                - backtest_period: 'training' (default), 'test', or 'both'
+                - temporal_config: Optional TemporalSplitConfig for period filtering
 
         Returns:
             Dict containing:
@@ -874,6 +1130,11 @@ class BasicBacktestingPostStep(BaseStep):
         tprint(f"📈 Starting post-optimization backtesting for {symbol}", "INFO")
 
         try:
+            # Step 0: Check if we should run on training, test, or both
+            backtest_period = config.get('backtest_period', 'training')  # Default: training (backward compatible)
+            temporal_config = config.get('temporal_config', None)
+
+            tprint(f"🎯 Running backtesting on period: {backtest_period}", "INFO")
             # Step 1: Load optimized parameters
             tprint("📊 Loading optimized parameters...", "INFO")
             optimized_params = self._load_optimized_parameters(config)
@@ -928,13 +1189,72 @@ class BasicBacktestingPostStep(BaseStep):
             backtest_results = self._run_vectorbt_backtest(
                 price_data, long_entries, short_entries, exits, config
             )
-            
+
             if backtest_results is None:
                 raise ValueError("Backtest simulation failed")
-            
+
+            # Step 5.5: Run time-series CV for robust validation
+            # This ensures the strategy performs consistently across different time periods
+            # and prevents overfitting to the full backtest period
+            cv_results = self._run_time_series_cv_backtest(
+                price_data, ml_scored_data if use_ml_signals else None,
+                optimized_params, config
+            )
+
             # Step 6: Compare with baseline
             tprint("📊 Comparing with baseline...", "INFO")
             comparison_metrics = self._compare_with_baseline(backtest_results, baseline_metrics)
+
+            # Step 6.5: Compare training vs test if both periods requested
+            train_test_comparison = {}
+            if backtest_period == 'both' and temporal_config is not None and self.compare_train_test:
+                tprint("🔍 Comparing training vs test performance (overfitting detection)...", "INFO")
+
+                # Run backtest on training period
+                train_period_start = temporal_config.training.start
+                train_period_end = temporal_config.training.effective_end
+                train_price_data = price_data[
+                    (price_data.index >= train_period_start) &
+                    (price_data.index <= train_period_end)
+                ].copy()
+
+                train_long_entries, train_short_entries, train_exits = self._generate_ml_signals(
+                    ml_scored_data, optimized_params, direction
+                ) if use_ml_signals else self._generate_simple_signals(
+                    train_price_data, optimized_params, direction
+                )
+
+                train_results = self._run_vectorbt_backtest(
+                    train_price_data, train_long_entries, train_short_entries, train_exits, config
+                )
+
+                # Run backtest on test period
+                test_period_start = temporal_config.test.start
+                test_period_end = temporal_config.test.end
+                test_price_data = price_data[
+                    (price_data.index >= test_period_start) &
+                    (price_data.index <= test_period_end)
+                ].copy()
+
+                test_long_entries, test_short_entries, test_exits = self._generate_ml_signals(
+                    ml_scored_data, optimized_params, direction
+                ) if use_ml_signals else self._generate_simple_signals(
+                    test_price_data, optimized_params, direction
+                )
+
+                test_results = self._run_vectorbt_backtest(
+                    test_price_data, test_long_entries, test_short_entries, test_exits, config
+                )
+
+                # Compare performance
+                if train_results and test_results:
+                    train_test_comparison = self._compare_train_test_performance(train_results, test_results)
+
+                    if train_test_comparison.get('overfitting_detected', False):
+                        tprint("⚠️  OVERFITTING DETECTED: Test performance significantly degraded", "WARNING")
+                        tprint(f"  Avg degradation: {train_test_comparison['avg_performance_degradation']:.1%}", "WARNING")
+                    else:
+                        tprint(f"✅ Good generalization: {train_test_comparison['generalization_quality']}", "SUCCESS")
             
             # Step 7: Prepare artifacts
             # Extract equity curve and returns for visualization
@@ -979,29 +1299,36 @@ class BasicBacktestingPostStep(BaseStep):
                 'calmar_ratio': backtest_results.get('calmar_ratio', 0.0),
                 'max_drawdown': backtest_results.get('max_drawdown', 0.0),
                 'max_drawdown_duration_days': backtest_results.get('max_drawdown_duration_days', 0),
-                
+
                 # Trade statistics
                 'win_rate': backtest_results.get('win_rate', 0.0),
                 'profit_factor': backtest_results.get('profit_factor', 0.0),
                 'total_trades': backtest_results.get('total_trades', 0),
                 'avg_trade_duration': backtest_results.get('avg_trade_duration', 0.0),
-                
+
                 # Trade quality metrics
                 'avg_win_loss_ratio': backtest_results.get('avg_win_loss_ratio', 0.0),
                 'expectancy': backtest_results.get('expectancy', 0.0),
                 'largest_win': backtest_results.get('largest_win', 0.0),
                 'largest_loss': backtest_results.get('largest_loss', 0.0),
                 'recovery_factor': backtest_results.get('recovery_factor', 0.0),
-                
+
                 # Efficiency metrics
                 'sharpe_sortino_spread': backtest_results.get('sharpe_sortino_spread', 0.0),
-                
+
+                # Time-series CV results (for validation robustness)
+                'cv_results': cv_results,
+
                 # Comparison with baseline
                 'improvement_vs_baseline': comparison_metrics,
-                
+
+                # Train vs Test comparison (overfitting detection)
+                'train_test_comparison': train_test_comparison,
+
                 # Metadata
                 'direction': config.get('direction', 'long'),
                 'execution_mode': config.get('execution_mode', 'light'),
+                'backtest_period': backtest_period,
                 'success': True
             }
             

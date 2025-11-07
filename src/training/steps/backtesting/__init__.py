@@ -9,7 +9,6 @@ from src.training.steps.base_step import step_registry
 # Import backtesting steps (order matters for dependencies)
 from .basic_backtesting_pre_step import BasicBacktestingPreStep
 from .basic_backtesting_post_step import BasicBacktestingPostStep
-from .walk_forward_validation_step import WalkForwardValidationStep
 from .monte_carlo_simulation_step import MonteCarloSimulationStep
 from .ab_testing_step import ABTestingStep
 from .reporting_step import ReportingStep
@@ -20,7 +19,6 @@ from .real_parameters_optimization import RealParametersOptimizer
 # The individual step files also auto-register themselves
 step_registry.register("basic_backtesting_pre", BasicBacktestingPreStep)
 step_registry.register("basic_backtesting_post", BasicBacktestingPostStep)
-step_registry.register("walk_forward_validation", WalkForwardValidationStep)
 step_registry.register("monte_carlo_simulation", MonteCarloSimulationStep)
 step_registry.register("ab_testing", ABTestingStep)
 step_registry.register("reporting", ReportingStep)

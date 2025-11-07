@@ -51,8 +51,14 @@ def add_columns_with_tags(
         # Later, retrieve only these columns
         features = store.get_columns_by_operation("final_feature_selection")
     """
+    from src.utils.tprint import tprint
+
     if version_name is None:
         version_name = self._metadata.get('current_version')
+
+    # Get context string for logging
+    context_str = self._get_context_string(version_name=version_name)
+    tprint(f"🏷️  Adding {len(columns)} columns with operation '{operation_name}' | {context_str}")
 
     # First, add columns using existing method
     view = self.add_columns(columns, version_name)
@@ -88,6 +94,7 @@ def add_columns_with_tags(
     )
 
     self.logger.info(f"Added {len(columns)} columns with operation '{operation_name}' to version '{version_name}'")
+    tprint(f"✅ Added {len(columns)} columns for operation '{operation_name}' | {context_str}")
 
     return view
 
@@ -185,11 +192,22 @@ def get_view_by_operation(
         features_view = store.get_view_by_operation("final_feature_selection")
         features_df = features_view.materialize()
     """
+    from src.utils.tprint import tprint
+
+    if version_name is None:
+        version_name = self._metadata.get('current_version')
+
+    # Get context string for logging
+    context_str = self._get_context_string(version_name=version_name)
+    tprint(f"👁️  Getting view for operation '{operation_name}' | {context_str}")
+
     columns = self.get_columns_by_operation(operation_name, version_name)
 
     if not columns:
+        tprint(f"⚠️ No columns found for operation '{operation_name}' | {context_str}")
         raise ValueError(f"No columns found for operation '{operation_name}'")
 
+    tprint(f"✅ Found {len(columns)} columns for operation '{operation_name}' | {context_str}")
     mask = ViewMask(column_mask=set(columns))
     return self.get_view(version_name, mask)
 

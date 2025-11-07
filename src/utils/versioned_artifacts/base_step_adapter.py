@@ -38,39 +38,54 @@ class VersionedArtifactAdapter:
         store_dir: str = "versioned_artifacts",
         symbol: Optional[str] = None,
         exchange: Optional[str] = None,
+        timeframe: str = "15m",
         direction: str = "long",
         model: str = "analyst"
     ):
         """
-        Initialize adapter.
+        Initialize adapter with full context separation.
 
         Args:
             store_dir: Base directory for versioned stores
-            symbol: Trading symbol
-            exchange: Exchange name
-            direction: Trading direction
-            model: Model type
+            symbol: Trading symbol (e.g., 'BTCUSDT')
+            exchange: Exchange name (e.g., 'binance')
+            timeframe: Timeframe for data (default: '15m')
+            direction: Trading direction - 'long' or 'short' (default: 'long')
+            model: Model type - 'analyst' or 'tactician' (default: 'analyst')
         """
         self.store_dir = Path(store_dir)
         self.symbol = symbol
         self.exchange = exchange
+        self.timeframe = timeframe
         self.direction = direction
         self.model = model
 
-        # Create store path with context
+        # Create store path with full context separation
+        # Format: {symbol}_{exchange}_{timeframe}_{direction}_{model}
         if symbol and exchange:
-            store_name = f"{symbol}_{exchange}_{direction}_{model}"
+            store_name = f"{symbol}_{exchange}_{timeframe}_{direction}_{model}"
         else:
-            store_name = "default"
+            store_name = f"default_{timeframe}_{direction}_{model}"
 
         store_path = self.store_dir / store_name
 
-        # Initialize store
+        # Initialize store with context metadata
         self.store = VersionedArtifactStore(
             store_path=store_path,
             auto_version=True,
             enable_row_versioning=True
         )
+
+        # Store context in store metadata for reference
+        if hasattr(self.store, '_metadata'):
+            self.store._metadata['context'] = {
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframe': timeframe,
+                'direction': direction,
+                'model': model
+            }
+            self.store._save_metadata()
 
         # Track artifact name to version name mapping
         self._artifact_versions: Dict[str, str] = {}
@@ -96,6 +111,13 @@ class VersionedArtifactAdapter:
         Returns:
             Path or identifier for saved artifact
         """
+        from datetime import datetime
+        from src.utils.tprint import tprint
+
+        # Log context information
+        context_str = f"{self.symbol}/{self.exchange} [{self.timeframe}] {self.direction}/{self.model}"
+        tprint(f"💾 Saving '{artifact_name}' to versioned store: {context_str}")
+
         # Convert to DataFrame if needed
         if not isinstance(data, pd.DataFrame):
             if isinstance(data, dict):
@@ -105,24 +127,35 @@ class VersionedArtifactAdapter:
                 data = pd.DataFrame({'value': [data]})
 
         # Generate version name
-        from datetime import datetime
         version_name = f"{artifact_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        # Prepare metadata with full context
+        artifact_metadata = {
+            'artifact_name': artifact_name,
+            'artifact_type': artifact_type,
+            'symbol': self.symbol,
+            'exchange': self.exchange,
+            'timeframe': self.timeframe,
+            'direction': self.direction,
+            'model': self.model,
+            'created_at': datetime.now().isoformat(),
+            **(metadata or {})
+        }
 
         # Add to store
         view = self.store.add_data(
             data=data,
             version_name=version_name,
-            metadata={
-                'artifact_name': artifact_name,
-                'artifact_type': artifact_type,
-                **(metadata or {})
-            }
+            metadata=artifact_metadata
         )
 
         # Track mapping
         self._artifact_versions[artifact_name] = version_name
 
-        return str(self.store.store_path / f"{version_name}.h5")
+        artifact_path = str(self.store.store_path / f"{version_name}.h5")
+        tprint(f"✅ Saved '{artifact_name}' [{context_str}] to {artifact_path}")
+
+        return artifact_path
 
     def get_artifact(
         self,
@@ -141,6 +174,12 @@ class VersionedArtifactAdapter:
         Returns:
             Retrieved data or (data, path) tuple
         """
+        from src.utils.tprint import tprint
+
+        # Log context information
+        context_str = f"{self.symbol}/{self.exchange} [{self.timeframe}] {self.direction}/{self.model}"
+        tprint(f"📂 Retrieving '{artifact_name}' from versioned store: {context_str}")
+
         # Get version name for this artifact
         version_name = self._artifact_versions.get(artifact_name)
 
@@ -150,6 +189,7 @@ class VersionedArtifactAdapter:
             matching = [v for v in versions if artifact_name in v]
 
             if not matching:
+                tprint(f"⚠️ Artifact '{artifact_name}' not found in versioned store [{context_str}]")
                 if return_path:
                     return None, None
                 return None
@@ -168,6 +208,8 @@ class VersionedArtifactAdapter:
                 if len(data) == 1:
                     data = data['value'].iloc[0]
 
+            tprint(f"✅ Retrieved '{artifact_name}' [{context_str}] (version: {version_name})")
+
             if return_path:
                 path = str(self.store.store_path / f"{version_name}.h5")
                 return data, path
@@ -175,6 +217,7 @@ class VersionedArtifactAdapter:
                 return data
 
         except Exception as e:
+            tprint(f"❌ Failed to retrieve '{artifact_name}' [{context_str}]: {e}")
             if return_path:
                 return None, None
             return None
@@ -202,6 +245,11 @@ class VersionedArtifactAdapter:
         Returns:
             Path or identifier
         """
+        from src.utils.tprint import tprint
+
+        context_str = f"{self.symbol}/{self.exchange} [{self.timeframe}] {self.direction}/{self.model}"
+        tprint(f"🔄 Updating {len(row_indices)} rows in '{artifact_name}' [{context_str}]")
+
         version_name = self._artifact_versions.get(artifact_name)
         if not version_name:
             raise ValueError(f"Artifact '{artifact_name}' not found")
@@ -213,6 +261,7 @@ class VersionedArtifactAdapter:
             version_name=version_name
         )
 
+        tprint(f"✅ Updated {len(row_indices)} rows in '{artifact_name}' [{context_str}]")
         return str(self.store.store_path / f"{version_name}.h5")
 
     def get_view(
@@ -258,6 +307,11 @@ class VersionedArtifactAdapter:
         Returns:
             Combined DataFrame
         """
+        from src.utils.tprint import tprint
+
+        context_str = f"{self.symbol}/{self.exchange} [{self.timeframe}] {self.direction}/{self.model}"
+        tprint(f"🔗 Combining {len(artifact_names)} artifacts [{context_str}] using strategy '{strategy}'")
+
         views = []
         for name in artifact_names:
             version_name = self._artifact_versions.get(name)
@@ -268,7 +322,10 @@ class VersionedArtifactAdapter:
             raise ValueError("No valid artifacts found")
 
         combined = self.store.combine_views(views, strategy=strategy)
-        return combined.materialize()
+        result = combined.materialize()
+
+        tprint(f"✅ Combined {len(artifact_names)} artifacts into DataFrame with shape {result.shape} [{context_str}]")
+        return result
 
     def get_changelog(self, artifact_name: Optional[str] = None):
         """
@@ -292,4 +349,13 @@ class VersionedArtifactAdapter:
 
     def __repr__(self) -> str:
         """String representation."""
-        return f"VersionedArtifactAdapter(symbol={self.symbol}, exchange={self.exchange}, artifacts={len(self._artifact_versions)})"
+        return (
+            f"VersionedArtifactAdapter("
+            f"symbol={self.symbol}, "
+            f"exchange={self.exchange}, "
+            f"timeframe={self.timeframe}, "
+            f"direction={self.direction}, "
+            f"model={self.model}, "
+            f"artifacts={len(self._artifact_versions)}"
+            f")"
+        )

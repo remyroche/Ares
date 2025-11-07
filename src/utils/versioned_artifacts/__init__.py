@@ -30,6 +30,9 @@ from .row_version_tracker import RowVersionTracker, RowVersion
 from .view_mask import ViewMask
 from .base_step_adapter import VersionedArtifactAdapter
 
+# Import enhanced methods to automatically patch VersionedArtifactStore
+from . import enhanced_methods  # noqa: F401
+
 __all__ = [
     "VersionedArtifactStore",
     "ArtifactView",

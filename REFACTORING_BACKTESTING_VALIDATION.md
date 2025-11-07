@@ -83,8 +83,54 @@ self.cv_embargo_pct = 0.02  # 2% embargo
 
 ## Data Leakage Prevention
 
-### 1. Time-Series CV with Embargo
-The new CV implementation in `basic_backtesting_post` ensures:
+### 1. **Temporal Split Configuration (NEW!)**
+
+**Added:** `src/utils/versioned_artifacts/temporal_splits.py`
+
+The system now provides **pipeline-level temporal boundaries** through versioned artifacts:
+
+```python
+# Create configuration once for the pipeline
+config = create_temporal_split_config_for_pipeline(
+    symbol="ETHUSDT",
+    exchange="binance",
+    timeframe="15m",
+    data_start=datetime(2020, 1, 1),
+    data_end=datetime(2025, 1, 1)
+)
+
+# Automatically creates:
+# Training:   2020-01-01 to 2023-01-01 (60%) + 30-day embargo
+# Validation: 2023-02-01 to 2024-01-01 (20%) + 30-day embargo
+# Test:       2024-02-01 to 2025-01-01 (20%)
+```
+
+**Usage in Pipeline Steps:**
+
+```python
+# In model training steps
+training_view = get_data_for_purpose(features_view, 'training', config)
+training_data = training_view.materialize()  # Only 2020-2023 data
+
+# In parameter optimization
+validation_view = get_data_for_purpose(predictions_view, 'validation', config)
+validation_data = validation_view.materialize()  # Only 2023-2024 data (unseen by models)
+
+# In final backtesting
+test_view = get_data_for_purpose(predictions_view, 'test', config)
+test_data = test_view.materialize()  # Only 2024-2025 data (completely unseen)
+```
+
+**Key Features:**
+- **Validation at Config Creation:** Ensures no overlap between periods
+- **Embargo Enforcement:** Automatic 30-day buffer between periods
+- **Saved & Reused:** Config saved to `config/temporal_splits/{symbol}_{exchange}_{timeframe}.json`
+- **Integrates with Versioned Artifacts:** Uses efficient view filtering (no full loads)
+
+See `src/utils/versioned_artifacts/TEMPORAL_SPLITS_GUIDE.md` for complete documentation.
+
+### 2. Time-Series CV with Embargo (Within Periods)
+The CV implementation in `basic_backtesting_post` ensures robustness **within the test period**:
 - **Temporal Ordering:** Test data always comes after training data
 - **Embargo Period:** 2% buffer between train/test boundaries to prevent look-ahead
 - **No Overlap:** Each fold's test period is completely independent

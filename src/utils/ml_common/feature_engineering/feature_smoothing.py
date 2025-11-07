@@ -91,7 +91,7 @@ def add_smoothed_features(
         Tuple of (smoothed_X, updated_feature_names)
     """
     if window_sizes is None:
-        window_sizes = [3, 5, 7]
+        window_sizes = [4, 8, 16, 24]
     
     n_samples, n_features = X.shape
     

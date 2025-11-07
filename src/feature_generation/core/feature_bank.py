@@ -838,6 +838,25 @@ class FeatureBank:
             except ImportError:
                 pass
 
+            # Multi-timeframe EWMA generators (inspired by rolling_hmm_clustering)
+            try:
+                from ..categories.multi_timeframe_ewma import (
+                    MultiTimeframeEWMAReturnsGenerator,
+                    MultiTimeframeEWMAVolatilityGenerator,
+                    MultiTimeframeEWMATrendGenerator,
+                    MultiTimeframeEWMAVolumeGenerator,
+                )
+                # Add EWMA generators with multiple timeframes
+                windows = [8, 12, 16, 20, 24]
+                generators.append(MultiTimeframeEWMAReturnsGenerator(windows=windows))
+                generators.append(MultiTimeframeEWMAVolatilityGenerator(windows=windows))
+                generators.append(MultiTimeframeEWMATrendGenerator(windows=windows))
+                generators.append(MultiTimeframeEWMAVolumeGenerator(windows=windows))
+                self.logger.info(f"✅ Added 4 multi-timeframe EWMA generators with windows {windows}")
+            except ImportError as e:
+                self.logger.debug(f"ℹ️ Multi-timeframe EWMA generators not available: {e}")
+                pass
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to create regime generators: {e}")
 

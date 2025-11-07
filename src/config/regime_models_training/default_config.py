@@ -220,7 +220,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         # Configuration des caractéristiques avancées de régime
         "advanced_regime_features": {
             "enabled": True,
-            "window_sizes": [3, 5, 7],
+            "window_sizes": [4, 8, 16, 24],
             "enable_smoothed_features": True
         },
         

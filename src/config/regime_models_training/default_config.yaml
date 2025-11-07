@@ -190,7 +190,7 @@ feature_engineering:
   # Configuration des caractéristiques avancées de régime
   advanced_regime_features:
     enabled: true
-    window_sizes: [3, 5, 7]
+    window_sizes: [4, 8, 16, 24]
     enable_smoothed_features: true
     
   # Sélection de caractéristiques

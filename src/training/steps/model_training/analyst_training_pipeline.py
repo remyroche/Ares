@@ -12,7 +12,7 @@ import asyncio
 
 class AnalystModelType(Enum):
     """Analyst model types."""
-    TCN = "tcn"
+    DEPTHWISE_CNN = "depthwise_cnn"  # DepthwiseSeparableCNNRegressor (replaces TCN)
     LIGHTGBM = "lightgbm"
     RIDGE = "ridge"
     ELASTIC_NET = "elastic_net"

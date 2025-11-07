@@ -139,9 +139,9 @@ class UnifiedModelsTrainingStep(BaseStep):
                     timeframe=timeframe,
                     data_start=data_start,
                     data_end=data_end,
-                    train_pct=config.get('train_percentage', 0.60),  # 60% for training
-                    val_pct=config.get('validation_percentage', 0.20),  # 20% for validation (HPO)
-                    test_pct=config.get('test_percentage', 0.20),  # 20% for test
+                    train_pct=config.get('train_percentage', 0.70),  # 70% for training
+                    val_pct=config.get('validation_percentage', 0.15),  # 15% for validation (HPO)
+                    test_pct=config.get('test_percentage', 0.15),  # 15% for test
                     embargo_days=1  # 1-day embargo between periods
                 )
 

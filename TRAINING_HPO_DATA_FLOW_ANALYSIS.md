@@ -432,9 +432,9 @@ Add section:
 **Reason**: Strict temporal boundaries enforced at pipeline level.
 
 **Protection**:
-1. Training period: 60% (2020-2023) + 1-day embargo
-2. Validation period: 20% (2023-2024) + 1-day embargo
-3. Test period: 20% (2024-2025) - completely unseen
+1. Training period: 70% (2020-2023) + 1-day embargo
+2. Validation period: 15% (2023-2024) + 1-day embargo
+3. Test period: 15% (2024-2025) - completely unseen
 4. HPO validates on validation period (unseen during model training)
 5. Final testing on test period (unseen during both training and HPO)
 
@@ -478,8 +478,8 @@ The current training pipeline does NOT integrate with the temporal splitting sys
 3. Test end-to-end to ensure proper data separation
 
 **Expected Outcome**:
-- ✅ Models train ONLY on training period (60% historical data)
-- ✅ HPO validates ONLY on validation period (20% unseen data)
-- ✅ Final testing ONLY on test period (20% completely unseen data)
+- ✅ Models train ONLY on training period (70% historical data)
+- ✅ HPO validates ONLY on validation period (15% unseen data)
+- ✅ Final testing ONLY on test period (15% completely unseen data)
 - ✅ Zero data leakage risk
 - ✅ Proper walk-forward validation throughout pipeline

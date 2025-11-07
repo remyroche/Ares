@@ -274,9 +274,9 @@ enable_time_series_cv = True       # Use time-series split
 Pipeline Start
     ↓
 Create Temporal Split Config
-    ├─ Training:   60% of data (2020-2023)
-    ├─ Validation: 20% of data (2023-2024)
-    └─ Test:       20% of data (2024-2025)
+    ├─ Training:   70% of data (2020-2023)
+    ├─ Validation: 15% of data (2023-2024)
+    └─ Test:       15% of data (2024-2025)
     ↓
 unified_models_training_step.py
     ├─ Retrieve full dataset from artifacts
@@ -306,9 +306,9 @@ basic_backtesting_post
 
 | Stage | Data Used | Period | Leakage Risk |
 |-------|-----------|--------|--------------|
-| **Model Training** | Training period | 2020-2023 (60%) | ✅ LOW - Isolated period |
-| **HPO Validation** | Validation period | 2023-2024 (20%) | ✅ LOW - Separate from training |
-| **Final Backtesting** | Test period | 2024-2025 (20%) | ✅ LOW - Never seen by models |
+| **Model Training** | Training period | 2020-2023 (70%) | ✅ LOW - Isolated period |
+| **HPO Validation** | Validation period | 2023-2024 (15%) | ✅ LOW - Separate from training |
+| **Final Backtesting** | Test period | 2024-2025 (15%) | ✅ LOW - Never seen by models |
 | **Embargo** | 1 day buffer | Between all periods | ✅ Active |
 
 ### 📝 Key Files Modified
@@ -334,7 +334,7 @@ basic_backtesting_post
    - Full dataset for model training (pre-refactor behavior)
 
 2. **Configuration**: Temporal config is created automatically using data boundaries:
-   - Percentages: 60% train / 20% validation / 20% test (configurable)
+   - Percentages: 70% train / 15% validation / 15% test (configurable)
    - Embargo: 1 day between periods (configurable)
 
 3. **Validation Period Purpose**: Used exclusively for HPO, ensuring hyperparameter optimization happens on data completely separate from model training.

@@ -302,6 +302,146 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         tprint(f"✅ [REGIME_ENSEMBLE] Required artifacts: {required_artifacts}", color="green")
         return required_artifacts
 
+    async def _load_regime_models_predictions(
+        self,
+        base_step: Any
+    ) -> Optional[pd.DataFrame]:
+        """
+        Load regime_models_predictions from HDF5.
+
+        Args:
+            base_step: BaseStep instance for artifact loading
+
+        Returns:
+            DataFrame with regime model predictions
+        """
+        try:
+            tprint("📥 [REGIME_ENSEMBLE] Loading regime_models_predictions", color="cyan")
+
+            predictions = base_step._get_artifact(
+                'regime_models_predictions',
+                artifact_type='data'
+            )
+
+            if predictions is None:
+                tprint("⚠️ [REGIME_ENSEMBLE] No regime_models_predictions found", color="yellow")
+                return None
+
+            tprint(f"✅ [REGIME_ENSEMBLE] Loaded predictions: {predictions.shape}", color="green")
+            tprint(f"📊 [REGIME_ENSEMBLE] Columns: {list(predictions.columns)}", color="blue")
+
+            return predictions
+
+        except Exception as e:
+            tprint(f"❌ [REGIME_ENSEMBLE] Failed to load predictions: {e}", color="red")
+            self.logger.error(f"Failed to load predictions: {e}", exc_info=True)
+            return None
+
+    def _calculate_disagreement_features(
+        self,
+        predictions: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Calculate disagreement features from base model predictions.
+
+        Args:
+            predictions: DataFrame with base model predictions
+
+        Returns:
+            DataFrame with disagreement features
+        """
+        try:
+            tprint("🔢 [REGIME_ENSEMBLE] Calculating disagreement features", color="cyan")
+
+            disagreement_features = pd.DataFrame(index=predictions.index)
+
+            # Group by regime (e.g., all *_regime_0_prob columns)
+            regime_groups = {}
+            for col in predictions.columns:
+                # Extract regime number from column name
+                if '_regime_' in col and '_prob' in col:
+                    regime_num = col.split('_regime_')[1].split('_')[0]
+                    if regime_num not in regime_groups:
+                        regime_groups[regime_num] = []
+                    regime_groups[regime_num].append(col)
+
+            # Calculate disagreement features for each regime
+            for regime_num, cols in regime_groups.items():
+                if len(cols) < 2:
+                    continue
+
+                regime_preds = predictions[cols]
+
+                # 1. Standard deviation
+                disagreement_features[f'regime_{regime_num}_std'] = regime_preds.std(axis=1)
+
+                # 2. Range
+                disagreement_features[f'regime_{regime_num}_range'] = regime_preds.max(axis=1) - regime_preds.min(axis=1)
+
+                # 3. Coefficient of variation
+                mean_pred = regime_preds.mean(axis=1)
+                disagreement_features[f'regime_{regime_num}_cv'] = disagreement_features[f'regime_{regime_num}_std'] / (mean_pred + 1e-8)
+
+                # 4. Median absolute deviation
+                median_pred = regime_preds.median(axis=1)
+                mad = (regime_preds.sub(median_pred, axis=0).abs()).median(axis=1)
+                disagreement_features[f'regime_{regime_num}_mad'] = mad
+
+            tprint(f"✅ [REGIME_ENSEMBLE] Calculated {len(disagreement_features.columns)} disagreement features", color="green")
+
+            return disagreement_features
+
+        except Exception as e:
+            tprint(f"❌ [REGIME_ENSEMBLE] Failed to calculate disagreement features: {e}", color="red")
+            self.logger.error(f"Failed to calculate disagreement features: {e}", exc_info=True)
+            return pd.DataFrame(index=predictions.index)
+
+    async def _save_ensemble_predictions_to_hdf5(
+        self,
+        predictions: pd.DataFrame,
+        base_step: Any,
+        artifact_name: str = 'regime_ensemble_predictions'
+    ) -> None:
+        """
+        Save ensemble predictions to HDF5 file.
+
+        Args:
+            predictions: DataFrame with ensemble predictions
+            base_step: BaseStep instance for artifact saving
+            artifact_name: Name for the HDF5 artifact
+        """
+        try:
+            tprint(f"💾 [REGIME_ENSEMBLE] Saving ensemble predictions to HDF5: {artifact_name}", color="cyan")
+
+            # Ensure datetime index and 15m timeframe
+            if not isinstance(predictions.index, pd.DatetimeIndex):
+                predictions.index = pd.to_datetime(predictions.index)
+
+            if predictions.index.freq != '15T':
+                predictions = predictions.resample('15T').ffill()
+
+            # Save to HDF5
+            base_step._save_artifact(
+                data=predictions,
+                artifact_name=artifact_name,
+                artifact_type='data',
+                compression='auto',
+                metadata={
+                    'timeframe': '15m',
+                    'ensemble_type': 'stacker_lgbm_calibrated',
+                    'n_regimes': len([c for c in predictions.columns if 'regime' in c.lower()]),
+                    'columns': list(predictions.columns),
+                    'shape': predictions.shape,
+                    'timestamp': datetime.now().isoformat()
+                }
+            )
+
+            tprint(f"✅ [REGIME_ENSEMBLE] Saved ensemble predictions to HDF5: {predictions.shape}", color="green")
+
+        except Exception as e:
+            tprint(f"❌ [REGIME_ENSEMBLE] Failed to save ensemble predictions to HDF5: {e}", color="red")
+            self.logger.error(f"Failed to save ensemble predictions to HDF5: {e}", exc_info=True)
+
     async def execute(self, data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
         Execute regime ensemble training with enhanced hardware optimization and validation.
@@ -327,6 +467,37 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint("🔒 [REGIME_ENSEMBLE] Applying lookahead protection", color="cyan")
             protected_data = self.lookahead_protection.automated_future_data_filtering(data)
             tprint("✅ [REGIME_ENSEMBLE] Lookahead protection applied", color="green")
+
+            # Load regime_models_predictions as base features
+            tprint("📥 [REGIME_ENSEMBLE] Loading regime_models artifacts", color="cyan")
+            from src.training.steps.base_step import BaseStep
+            base_step_inst = BaseStep("regime_ensemble_training_loader")
+            base_step_inst._current_context = {
+                'symbol': self.config.symbol,
+                'exchange': self.config.exchange,
+                'timeframe': self.config.timeframe,
+                'direction': 'long',
+                'model': 'regime'
+            }
+
+            regime_models_preds = await self._load_regime_models_predictions(base_step_inst)
+
+            if regime_models_preds is not None:
+                tprint(f"✅ [REGIME_ENSEMBLE] Using regime_models predictions as features: {regime_models_preds.shape}", color="green")
+
+                # Calculate disagreement features
+                disagreement_feats = self._calculate_disagreement_features(regime_models_preds)
+
+                if not disagreement_feats.empty:
+                    tprint(f"✅ [REGIME_ENSEMBLE] Calculated disagreement features: {disagreement_feats.shape}", color="green")
+                    # Combine predictions and disagreement features
+                    all_features = pd.concat([regime_models_preds, disagreement_feats], axis=1)
+                else:
+                    all_features = regime_models_preds
+
+                # Add to protected_data
+                protected_data = protected_data.join(all_features, how='left')
+                tprint(f"📊 [REGIME_ENSEMBLE] Enhanced data shape: {protected_data.shape}", color="blue")
 
             # Extract required data from pipeline state using standardized extractors
             tprint("📊 [REGIME_ENSEMBLE] Extracting data from pipeline state with standardized extractors", color="yellow", bold=True)
@@ -531,6 +702,27 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             # Evaluate ensemble on holdout test data
             tprint("📊 [REGIME_ENSEMBLE] Evaluating ensemble performance on holdout test data", color="yellow")
             ensemble_metrics = self._evaluate_ensemble(X_test, y_test, stacker_result, weights_test)
+
+            # Generate ensemble predictions and save to HDF5
+            tprint("🎯 [REGIME_ENSEMBLE] Generating ensemble predictions for HDF5 storage", color="cyan")
+            try:
+                ensemble_model = stacker_result.get('model')
+                if ensemble_model is not None and hasattr(ensemble_model, 'predict_proba'):
+                    pred_probs = ensemble_model.predict_proba(X_processed)
+                    # Create columns for each regime
+                    ensemble_predictions = {}
+                    for regime_idx in range(pred_probs.shape[1]):
+                        col_name = f'ensemble_regime_{regime_idx}_prob'
+                        ensemble_predictions[col_name] = pred_probs[:, regime_idx]
+
+                    predictions_df = pd.DataFrame(ensemble_predictions, index=protected_data.index)
+                    # Save to HDF5
+                    await self._save_ensemble_predictions_to_hdf5(predictions_df, base_step_inst, 'regime_ensemble_predictions')
+                    tprint("✅ [REGIME_ENSEMBLE] Ensemble predictions saved to HDF5", color="green")
+                else:
+                    tprint("⚠️ [REGIME_ENSEMBLE] Ensemble model not found or no predict_proba method", color="yellow")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to save ensemble predictions: {e}", color="yellow")
 
             # Create comprehensive results
             tprint("📦 [REGIME_ENSEMBLE] Creating comprehensive results", color="yellow")

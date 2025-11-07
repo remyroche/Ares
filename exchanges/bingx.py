@@ -524,6 +524,25 @@ class BingXExchange(BaseExchange):
         return await self._convert_to_market_data(raw_data, symbol, interval)
 
     @handles_errors
+    async def get_historical_klines(
+        self,
+        symbol: str,
+        interval: str,
+        start_time: datetime,
+        end_time: datetime,
+        limit: int = 1000,
+    ) -> list[MarketData]:
+        """Get historical kline data with time range - public interface method."""
+        # Convert datetime to milliseconds
+        start_time_ms = int(start_time.timestamp() * 1000)
+        end_time_ms = int(end_time.timestamp() * 1000)
+
+        raw_data = await self._get_historical_klines_raw(
+            symbol, interval, start_time_ms, end_time_ms, limit
+        )
+        return await self._convert_to_market_data(raw_data, symbol, interval)
+
+    @handles_errors
     async def get_account_info(self) -> dict[str, Any] | None:
         """Get account information - public interface method."""
         try:

@@ -133,8 +133,23 @@ class VersionedArtifactStore:
         Returns:
             ArtifactView referencing the new data
         """
+        from src.utils.tprint import tprint
+
         if not isinstance(data, pd.DataFrame):
             raise ValueError("Data must be a pandas DataFrame")
+
+        # Extract context information from metadata if available
+        meta = metadata or {}
+        context_parts = []
+        if 'symbol' in meta and 'exchange' in meta:
+            context_parts.append(f"{meta['symbol']}/{meta['exchange']}")
+        if 'timeframe' in meta:
+            context_parts.append(f"[{meta['timeframe']}]")
+        if 'direction' in meta and 'model' in meta:
+            context_parts.append(f"{meta['direction']}/{meta['model']}")
+
+        context_str = " ".join(context_parts) if context_parts else self.store_path.name
+        tprint(f"💾 Adding data to store '{version_name}': {len(data)} rows × {len(data.columns)} cols | {context_str}")
 
         with h5py.File(self.h5_file, 'a') as f:
             versions_group = f['versions']
@@ -200,6 +215,7 @@ class VersionedArtifactStore:
         )
 
         self.logger.info(f"Added data version '{version_name}': {len(data)} rows, {len(data.columns)} columns")
+        tprint(f"✅ Successfully added version '{version_name}' to store | {context_str}")
 
         # Create and return view
         return self.get_view(version_name)
@@ -249,6 +265,20 @@ class VersionedArtifactStore:
         Returns:
             Filtered DataFrame
         """
+        from src.utils.tprint import tprint
+
+        # Get context from version metadata if available
+        version_meta = self._metadata.get('versions', {}).get(version_name, {})
+        context_parts = []
+        if 'symbol' in version_meta and 'exchange' in version_meta:
+            context_parts.append(f"{version_meta['symbol']}/{version_meta['exchange']}")
+        if 'timeframe' in version_meta:
+            context_parts.append(f"[{version_meta['timeframe']}]")
+        if 'direction' in version_meta and 'model' in version_meta:
+            context_parts.append(f"{version_meta['direction']}/{version_meta['model']}")
+
+        context_str = " ".join(context_parts) if context_parts else self.store_path.name
+
         with h5py.File(self.h5_file, 'r') as f:
             version_group = f['versions'][version_name]
 
@@ -268,6 +298,8 @@ class VersionedArtifactStore:
             else:
                 columns_to_load = all_columns
 
+            tprint(f"📂 Loading {len(columns_to_load)}/{len(all_columns)} columns from '{version_name}' | {context_str}")
+
             # Load data
             data_dict = {}
             for column in columns_to_load:
@@ -278,7 +310,9 @@ class VersionedArtifactStore:
 
             # Apply row mask
             if mask.row_mask is not None:
+                original_len = len(df)
                 df = df[mask.row_mask]
+                tprint(f"✂️ Row mask applied: {len(df)}/{original_len} rows retained | {context_str}")
 
             return df
 
@@ -376,8 +410,23 @@ class VersionedArtifactStore:
         Returns:
             ArtifactView of updated data
         """
+        from src.utils.tprint import tprint
+
         if version_name is None:
             version_name = self._metadata.get('current_version')
+
+        # Get context from version metadata if available
+        version_meta = self._metadata.get('versions', {}).get(version_name, {})
+        context_parts = []
+        if 'symbol' in version_meta and 'exchange' in version_meta:
+            context_parts.append(f"{version_meta['symbol']}/{version_meta['exchange']}")
+        if 'timeframe' in version_meta:
+            context_parts.append(f"[{version_meta['timeframe']}]")
+        if 'direction' in version_meta and 'model' in version_meta:
+            context_parts.append(f"{version_meta['direction']}/{version_meta['model']}")
+
+        context_str = " ".join(context_parts) if context_parts else self.store_path.name
+        tprint(f"➕ Adding {len(columns)} columns to version '{version_name}' | {context_str}")
 
         with h5py.File(self.h5_file, 'a') as f:
             version_group = f['versions'][version_name]
@@ -407,6 +456,7 @@ class VersionedArtifactStore:
         )
 
         self.logger.info(f"Added {len(columns)} columns to version '{version_name}'")
+        tprint(f"✅ Added {len(columns)} columns to version '{version_name}' | {context_str}")
 
         return self.get_view(version_name)
 

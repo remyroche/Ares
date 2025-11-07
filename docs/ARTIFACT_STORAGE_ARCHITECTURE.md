@@ -205,29 +205,51 @@ self._save_artifact(data, "features_v2", data_category="features")  # → HDF5
 
 ## Routing Decision Flow
 
+**Hierarchy when in doubt: JSON → Pickle → Parquet → HDF5**
+(Prefer simpler formats first, move to more complex as needed)
+
 ```
 Artifact → ArtifactRouter._detect_format()
 │
 ├─ Explicit data_category provided?
-│  ├─ "config" / "metadata" → JSON
+│  ├─ "config" / "metadata" / "parameters" / "hpo" → JSON
 │  ├─ "model" → Pickle
 │  ├─ "historical" / "klines" / "ohlcv" → Parquet
 │  └─ "features" / "predictions" / "training" → HDF5
 │
 ├─ Artifact name contains keywords?
-│  ├─ "config", "metadata", "params" → JSON
-│  ├─ "model", "estimator", "classifier" → Pickle
-│  ├─ "historical", "klines", "ohlcv" → Parquet
-│  └─ "feature", "prediction", "training" → HDF5
+│  ├─ JSON: "config", "metadata", "params", "settings", "parameters",
+│  │        "hpo", "hyperparameter", "tuning", "grid", "search" → JSON
+│  │
+│  ├─ Pickle: "model", "estimator", "classifier", "regressor", "ml",
+│  │          "base", "ensemble", "sr", "stacked", "voting", "bagging" → Pickle
+│  │
+│  ├─ Parquet: "historical", "klines", "ohlcv", "candles",
+│  │           "market_data", "raw_data" → Parquet
+│  │
+│  └─ HDF5: "feature", "prediction", "score", "training", "cluster",
+│           "label", "target", "regime", "engineered", "selected" → HDF5
 │
-└─ Data type analysis
-   ├─ Dict (JSON-serializable) → JSON
-   ├─ Dict (complex) → Pickle
-   ├─ Small list/tuple → JSON
-   ├─ DataFrame with OHLCV columns → Parquet
-   ├─ Large DataFrame (>10 cols, >100 rows) → HDF5
+└─ Data type + complexity analysis (follows hierarchy)
+   ├─ Dict → Check JSON serializability
+   │  ├─ Simple (serializable) → JSON
+   │  └─ Complex (not serializable) → Pickle
+   │
+   ├─ List/Tuple → Check size and serializability
+   │  ├─ Empty or small & simple → JSON
+   │  └─ Large or complex → Pickle
+   │
+   ├─ DataFrame
+   │  ├─ Has OHLCV columns → Parquet
+   │  ├─ Large (>10 cols, >100 rows) → HDF5
+   │  ├─ Medium with HDF5 keywords → HDF5
+   │  └─ Small → Pickle
+   │
    ├─ ML model object → Pickle
-   └─ Default → Pickle
+   ├─ NumPy array (small & simple) → JSON
+   ├─ NumPy array (large/complex) → Pickle
+   ├─ Scalar types → JSON
+   └─ Unknown/Complex → Pickle (safe default)
 ```
 
 ## Usage in BaseStep

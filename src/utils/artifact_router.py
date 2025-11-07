@@ -107,6 +107,50 @@ class ArtifactRouter:
 
         self.logger = logging.getLogger("ArtifactRouter")
 
+    def _is_json_serializable(self, data: Any, depth: int = 0, max_depth: int = 10) -> bool:
+        """
+        Check if data is JSON serializable with depth limit to avoid infinite recursion.
+
+        Args:
+            data: Data to check
+            depth: Current recursion depth
+            max_depth: Maximum recursion depth
+
+        Returns:
+            True if data is JSON serializable
+        """
+        if depth > max_depth:
+            return False
+
+        # Simple types
+        if isinstance(data, (str, int, float, bool, type(None))):
+            return True
+
+        # Lists/tuples
+        if isinstance(data, (list, tuple)):
+            # Check sample if large
+            sample_size = min(len(data), 100)
+            sample = data[:sample_size] if sample_size > 0 else []
+            return all(self._is_json_serializable(item, depth + 1, max_depth) for item in sample)
+
+        # Dicts
+        if isinstance(data, dict):
+            # Check keys are strings and values are serializable
+            if not all(isinstance(k, str) for k in data.keys()):
+                return False
+            # Check sample if large
+            sample_size = min(len(data), 100)
+            sample_items = list(data.items())[:sample_size]
+            return all(self._is_json_serializable(v, depth + 1, max_depth) for k, v in sample_items)
+
+        # Try actual JSON serialization as final check
+        try:
+            import json
+            json.dumps(data, default=str)
+            return True
+        except (TypeError, ValueError):
+            return False
+
     def _detect_format(
         self,
         data: Any,
@@ -117,6 +161,9 @@ class ArtifactRouter:
         """
         Detect the most appropriate storage format for the data.
 
+        Uses hierarchy when in doubt: JSON → Pickle → Parquet → HDF5
+        (Prefer simpler formats first, more complex formats when needed)
+
         Args:
             data: Data to store
             artifact_name: Name of the artifact
@@ -126,11 +173,13 @@ class ArtifactRouter:
         Returns:
             Format string: 'json', 'pickle', 'parquet', or 'hdf5_versioned'
         """
-        # Explicit routing based on data_category
+        # Explicit routing based on data_category (highest priority)
         if data_category:
             category_map = {
                 'config': 'json',
                 'metadata': 'json',
+                'parameters': 'json',
+                'hpo': 'json',
                 'model': 'pickle',
                 'historical': 'parquet',
                 'klines': 'parquet',
@@ -142,55 +191,106 @@ class ArtifactRouter:
             if data_category.lower() in category_map:
                 return category_map[data_category.lower()]
 
-        # Name-based routing
-        if any(keyword in artifact_name.lower() for keyword in ['config', 'metadata', 'params', 'settings']):
+        # Enhanced name-based routing with comprehensive keywords
+        name_lower = artifact_name.lower()
+
+        # JSON keywords (configs, parameters, hyperparameters)
+        json_keywords = ['config', 'metadata', 'params', 'settings', 'parameters', 'hpo',
+                        'hyperparameter', 'tuning', 'grid', 'search']
+        if any(kw in name_lower for kw in json_keywords):
             return 'json'
 
-        if any(keyword in artifact_name.lower() for keyword in ['model', 'estimator', 'classifier', 'regressor']):
+        # Pickle keywords (ML models, ensembles, SR levels)
+        pickle_keywords = ['model', 'estimator', 'classifier', 'regressor', 'ml',
+                          'base', 'ensemble', 'sr', 'stacked', 'voting', 'bagging']
+        if any(kw in name_lower for kw in pickle_keywords):
             return 'pickle'
 
-        if any(keyword in artifact_name.lower() for keyword in ['historical', 'klines', 'ohlcv', 'candles']):
+        # Parquet keywords (historical data)
+        parquet_keywords = ['historical', 'klines', 'ohlcv', 'candles', 'market_data', 'raw_data']
+        if any(kw in name_lower for kw in parquet_keywords):
             return 'parquet'
 
-        if any(keyword in artifact_name.lower() for keyword in ['feature', 'prediction', 'score', 'training']):
+        # HDF5 keywords (features, clusters, regimes, labels)
+        hdf5_keywords = ['feature', 'prediction', 'score', 'training', 'cluster',
+                        'label', 'target', 'regime', 'engineered', 'selected']
+        if any(kw in name_lower for kw in hdf5_keywords):
             return 'hdf5_versioned' if self.enable_versioned_artifacts else 'pickle'
 
-        # Type-based routing
+        # Type-based routing with complexity analysis
+        # 1. Check for dictionaries (JSON vs Pickle based on complexity)
         if isinstance(data, dict) and not isinstance(data, pd.DataFrame):
-            # Check if it's a simple dict (JSON-serializable)
-            try:
-                import json
-                json.dumps(data, default=str)
+            # Try JSON first (hierarchy preference)
+            if self._is_json_serializable(data):
                 return 'json'
-            except (TypeError, ValueError):
+            else:
+                # Complex dict -> Pickle
                 return 'pickle'
 
-        if isinstance(data, (list, tuple)) and len(data) < 1000:
-            # Small lists/tuples -> JSON if simple types
-            if all(isinstance(x, (int, float, str, bool, type(None))) for x in data):
-                return 'json'
+        # 2. Check for lists/tuples
+        if isinstance(data, (list, tuple)):
+            if len(data) == 0:
+                return 'json'  # Empty collections
+
+            # Small collections -> try JSON first
+            if len(data) < 1000:
+                if self._is_json_serializable(data):
+                    return 'json'
+
+            # Large or complex collections -> Pickle
             return 'pickle'
 
-        # DataFrame routing
+        # 3. DataFrame routing
         if isinstance(data, pd.DataFrame):
-            # Check if it's OHLCV/historical data
+            # Empty DataFrame
+            if data.empty:
+                return 'json'
+
+            # Check if it's OHLCV/historical data (Parquet optimized for this)
             ohlcv_columns = {'open', 'high', 'low', 'close', 'volume'}
             if ohlcv_columns.issubset(set(data.columns)):
                 return 'parquet'
 
             # Large DataFrames with many features -> versioned HDF5
+            # (Optimized for column-wise access and versioning)
             if len(data.columns) > 10 and len(data) > 100:
                 return 'hdf5_versioned' if self.enable_versioned_artifacts else 'pickle'
 
-            # Small DataFrames -> pickle for simplicity
+            # Medium DataFrames (could be features or small datasets)
+            if len(data.columns) > 5 or len(data) > 50:
+                # Check name hints for HDF5 vs Pickle
+                if any(kw in name_lower for kw in hdf5_keywords):
+                    return 'hdf5_versioned' if self.enable_versioned_artifacts else 'pickle'
+                return 'pickle'
+
+            # Small DataFrames -> Pickle (simple serialization)
             return 'pickle'
 
-        # ML models (check for common ML library objects)
-        model_types = ('sklearn', 'xgboost', 'lightgbm', 'catboost', 'keras', 'tensorflow', 'torch')
-        if any(model_type in str(type(data).__module__) for model_type in model_types):
+        # 4. ML models (detected by module name)
+        model_types = ('sklearn', 'xgboost', 'lightgbm', 'catboost', 'keras',
+                      'tensorflow', 'torch', 'pytorch')
+        if any(model_type in str(type(data).__module__).lower() for model_type in model_types):
             return 'pickle'
 
-        # Default to pickle for complex objects
+        # 5. NumPy arrays
+        if hasattr(data, '__array__'):  # NumPy arrays
+            # Small arrays might be JSON serializable
+            try:
+                if data.size < 1000 and data.ndim <= 2:
+                    data_list = data.tolist()
+                    if self._is_json_serializable(data_list):
+                        return 'json'
+            except:
+                pass
+            # Default to pickle for arrays
+            return 'pickle'
+
+        # 6. Simple scalar types -> JSON
+        if isinstance(data, (str, int, float, bool, type(None))):
+            return 'json'
+
+        # Default: Pickle for any complex/unknown objects
+        # (Follows hierarchy: JSON first, but if not suitable, use Pickle)
         return 'pickle'
 
     def save(

@@ -55,23 +55,48 @@ class DataQualityLevel(Enum):
 class UnifiedTradingStandardizer:
     """
     Unified trading data standardizer that ensures complete equivalency across all exchanges.
-    
+
     This class provides a single interface for standardizing trading data from any exchange
     to a unified format that's fully compatible with trading utilities.
     """
-    
-    def __init__(self, quality_level: DataQualityLevel = DataQualityLevel.STANDARD):
-        """Initialize the unified trading standardizer"""
+
+    def __init__(
+        self,
+        quality_level: DataQualityLevel = DataQualityLevel.STANDARD,
+        strict_mode: bool = True
+    ):
+        """
+        Initialize the unified trading standardizer
+
+        Args:
+            quality_level: Quality validation level
+            strict_mode: If True (default), raise exceptions on standardization errors.
+                        If False, return invalid objects with validation errors.
+        """
         self.quality_level = quality_level
+        self.strict_mode = strict_mode
         self.logger = system_logger.getChild("UnifiedTradingStandardizer")
-        
+
         # Store mappings
         self.order_mappings = ORDER_FIELD_MAPPINGS
         self.position_mappings = POSITION_FIELD_MAPPINGS
         self.balance_mappings = BALANCE_FIELD_MAPPINGS
         self.trade_mappings = TRADE_FIELD_MAPPINGS
-        
-        self.logger.info(f"✅ UnifiedTradingStandardizer initialized with {quality_level.value} quality level")
+
+        # Telemetry
+        self.failure_counts = {
+            'orders': 0,
+            'positions': 0,
+            'balances': 0,
+            'trades': 0,
+            'account_info': 0
+        }
+
+        # Validate mappings at startup
+        self._validate_field_mappings()
+
+        mode_str = "strict (exceptions on errors)" if strict_mode else "lenient (invalid objects on errors)"
+        self.logger.info(f"✅ UnifiedTradingStandardizer initialized with {quality_level.value} quality level, {mode_str}")
     
     # ============================================================================
     # ORDER STANDARDIZATION
@@ -185,8 +210,15 @@ class UnifiedTradingStandardizer:
             return order
             
         except Exception as e:
-            self.logger.error(f"Failed to standardize order from {exchange.value}: {e}")
-            # Return invalid order for tracking
+            self.failure_counts['orders'] += 1
+            error_msg = f"Failed to standardize order from {exchange.value}: {e}"
+            self.logger.error(error_msg)
+
+            # In strict mode, re-raise the exception
+            if self.strict_mode:
+                raise ValueError(error_msg) from e
+
+            # In lenient mode, return invalid order for tracking
             return StandardizedOrder(
                 order_id=str(raw_order.get('orderId', raw_order.get('order_id', 'unknown'))),
                 symbol=symbol or 'UNKNOWN',
@@ -324,7 +356,15 @@ class UnifiedTradingStandardizer:
             return position
             
         except Exception as e:
-            self.logger.error(f"Failed to standardize position from {exchange.value}: {e}")
+            self.failure_counts['positions'] += 1
+            error_msg = f"Failed to standardize position from {exchange.value}: {e}"
+            self.logger.error(error_msg)
+
+            # In strict mode, re-raise the exception
+            if self.strict_mode:
+                raise ValueError(error_msg) from e
+
+            # In lenient mode, return invalid position for tracking
             return StandardizedPosition(
                 symbol=symbol or 'UNKNOWN',
                 exchange=exchange.value,
@@ -447,7 +487,15 @@ class UnifiedTradingStandardizer:
             return balance
             
         except Exception as e:
-            self.logger.error(f"Failed to standardize balance from {exchange.value}: {e}")
+            self.failure_counts['balances'] += 1
+            error_msg = f"Failed to standardize balance from {exchange.value}: {e}"
+            self.logger.error(error_msg)
+
+            # In strict mode, re-raise the exception
+            if self.strict_mode:
+                raise ValueError(error_msg) from e
+
+            # In lenient mode, return invalid balance for tracking
             return StandardizedBalance(
                 currency=str(currency).upper(),
                 exchange=exchange.value,
@@ -661,10 +709,18 @@ class UnifiedTradingStandardizer:
             return trade
             
         except Exception as e:
-            self.logger.error(f"Failed to standardize trade from {exchange.value}: {e}")
+            self.failure_counts['trades'] += 1
+            error_msg = f"Failed to standardize trade from {exchange.value}: {e}"
+            self.logger.error(error_msg)
+
+            # In strict mode, re-raise the exception
+            if self.strict_mode:
+                raise ValueError(error_msg) from e
+
+            # In lenient mode, return invalid trade for tracking
             return StandardizedTrade(
                 trade_id=str(raw_trade.get('id', 'unknown')),
-                order_id=str(order_id or 'unknown'),
+                order_id=str(order_id or 'unknown')),
                 symbol=str(symbol),
                 exchange=exchange.value,
                 side=OrderSide.BUY,
@@ -950,6 +1006,64 @@ class UnifiedTradingStandardizer:
             'warnings': warnings,
         }
 
+    def _validate_field_mappings(self) -> None:
+        """Validate that all exchange type mappings are configured correctly"""
+        required_exchanges = [
+            ExchangeType.BINANCE,
+            ExchangeType.OKX,
+            ExchangeType.BINGX,
+            ExchangeType.MEXC,
+            ExchangeType.GATE_IO,
+            ExchangeType.PHEMEX,
+        ]
 
-# Global instance for easy access
-unified_trading_standardizer = UnifiedTradingStandardizer()
+        missing_mappings = []
+
+        for exchange in required_exchanges:
+            if exchange not in self.order_mappings:
+                missing_mappings.append(f"Order mapping for {exchange.value}")
+            if exchange not in self.position_mappings:
+                missing_mappings.append(f"Position mapping for {exchange.value}")
+            if exchange not in self.balance_mappings:
+                missing_mappings.append(f"Balance mapping for {exchange.value}")
+            if exchange not in self.trade_mappings:
+                missing_mappings.append(f"Trade mapping for {exchange.value}")
+
+        if missing_mappings:
+            error_msg = f"Missing field mappings: {', '.join(missing_mappings)}"
+            self.logger.error(f"❌ {error_msg}")
+            if self.strict_mode:
+                raise ValueError(error_msg)
+            else:
+                self.logger.warning(f"⚠️ Continuing in lenient mode despite missing mappings")
+
+        self.logger.info(f"✅ Field mappings validated for {len(required_exchanges)} exchanges")
+
+    def get_telemetry(self) -> Dict[str, Any]:
+        """Get standardization telemetry and failure statistics"""
+        total_failures = sum(self.failure_counts.values())
+        return {
+            'total_failures': total_failures,
+            'failure_counts': dict(self.failure_counts),
+            'quality_level': self.quality_level.value,
+            'strict_mode': self.strict_mode,
+            'failure_rate_by_type': {
+                data_type: count / max(count, 1) * 100
+                for data_type, count in self.failure_counts.items()
+            }
+        }
+
+    def reset_telemetry(self) -> None:
+        """Reset telemetry counters"""
+        self.failure_counts = {
+            'orders': 0,
+            'positions': 0,
+            'balances': 0,
+            'trades': 0,
+            'account_info': 0
+        }
+        self.logger.info("Telemetry counters reset")
+
+
+# Global instance for easy access (with strict mode enabled by default)
+unified_trading_standardizer = UnifiedTradingStandardizer(strict_mode=True)

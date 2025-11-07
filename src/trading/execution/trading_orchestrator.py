@@ -163,7 +163,14 @@ class TradingOrchestrator:
         self.active_positions: Dict[str, Dict[str, Any]] = {}
         self._latest_signals: Dict[str, Any] = {}
         self._latest_market_snapshot: Optional[Dict[str, Any]] = None
-        
+
+        # Position limits
+        self.max_positions_per_symbol = config.get('max_positions_per_symbol', 6)
+        self.max_total_positions = config.get('max_total_positions', 6)
+        self.max_position_size = config.get('max_position_size', 1000.0)  # Max quantity per position
+        self.max_exposure_per_symbol = config.get('max_exposure_per_symbol', 0.2)  # 20% of account balance
+        self.max_total_exposure = config.get('max_total_exposure', 0.5)  # 50% of account balance
+
         # Prediction caching and uncertainty tracking
         self.prediction_cache = get_global_prediction_cache(
             max_candles=config.get('prediction_cache_size', 50),
@@ -669,6 +676,12 @@ class TradingOrchestrator:
                     await self._trigger_trade_callbacks(decision, event="skipped_gate")
                     tprint_warning("⚠️ Trade skipped due to global gate or risk checks")
                     return
+
+            # Validate position limits before execution
+            if not await self._validate_position_limits(decision):
+                await self._trigger_trade_callbacks(decision, event="position_limit_exceeded")
+                tprint_warning(f"⚠️ Trade rejected: position limits exceeded for {decision.symbol}")
+                return
 
             feature_bundle: TrailingFeatureBundle = market_snapshot['feature_bundle']
 
@@ -1278,15 +1291,129 @@ class TradingOrchestrator:
             )
             self._close_position(position_id, reason=decision.reason or 'trailing_exit')
 
-    async def _simulate_order_execution(self, decision: TradingDecision) -> bool:
-        """Simulate order execution (replace with real execution in live trading)."""
-        try:
-            # Simulate execution delay
-            await asyncio.sleep(0.1)
+    async def _validate_position_limits(self, decision: TradingDecision) -> bool:
+        """
+        Validate that executing this decision won't exceed position limits.
 
-            # Simulate execution success (95% success rate)
+        Args:
+            decision: Trading decision to validate
+
+        Returns:
+            True if position limits allow this trade, False otherwise
+        """
+        try:
+            # Skip validation for close actions
+            if decision.action.lower() in ['close', 'exit']:
+                return True
+
+            # Count existing positions for this symbol
+            symbol_positions = sum(1 for pos in self.active_positions.values() if pos.get('symbol') == decision.symbol)
+
+            # Check max positions per symbol
+            if symbol_positions >= self.max_positions_per_symbol:
+                self.logger.warning(
+                    f"⚠️ Max positions per symbol exceeded: {symbol_positions}/{self.max_positions_per_symbol} for {decision.symbol}"
+                )
+                return False
+
+            # Check total positions
+            total_positions = len(self.active_positions)
+            if total_positions >= self.max_total_positions:
+                self.logger.warning(
+                    f"⚠️ Max total positions exceeded: {total_positions}/{self.max_total_positions}"
+                )
+                return False
+
+            # Check position size
+            if decision.quantity > self.max_position_size:
+                self.logger.warning(
+                    f"⚠️ Position size exceeds limit: {decision.quantity} > {self.max_position_size}"
+                )
+                return False
+
+            # Calculate exposure
+            decision_exposure = decision.quantity * decision.price
+
+            # Check symbol exposure
+            symbol_total_exposure = sum(
+                pos.get('quantity', 0) * pos.get('entry_price', 0)
+                for pos in self.active_positions.values()
+                if pos.get('symbol') == decision.symbol
+            )
+            symbol_exposure_ratio = (symbol_total_exposure + decision_exposure) / self.account_balance
+
+            if symbol_exposure_ratio > self.max_exposure_per_symbol:
+                self.logger.warning(
+                    f"⚠️ Symbol exposure exceeds limit: {symbol_exposure_ratio:.2%} > {self.max_exposure_per_symbol:.2%}"
+                )
+                return False
+
+            # Check total exposure
+            total_exposure = sum(
+                pos.get('quantity', 0) * pos.get('entry_price', 0)
+                for pos in self.active_positions.values()
+            )
+            total_exposure_ratio = (total_exposure + decision_exposure) / self.account_balance
+
+            if total_exposure_ratio > self.max_total_exposure:
+                self.logger.warning(
+                    f"⚠️ Total exposure exceeds limit: {total_exposure_ratio:.2%} > {self.max_total_exposure:.2%}"
+                )
+                return False
+
+            # All checks passed
+            return True
+
+        except Exception as e:
+            self.logger.error(f"❌ Position limit validation error: {e}")
+            # In case of error, reject the trade for safety
+            return False
+
+    async def _simulate_order_execution(self, decision: TradingDecision) -> bool:
+        """
+        Simulate order execution with realistic behavior.
+
+        Simulates:
+        - Network latency
+        - Order book depth effects
+        - Exchange processing time
+        - Realistic failure rates based on market conditions
+        """
+        try:
+            # Simulate variable network latency (50-200ms)
             import random
-            return random.random() > 0.05
+            latency = random.uniform(0.05, 0.2)
+            await asyncio.sleep(latency)
+
+            # Calculate success probability based on decision confidence and market conditions
+            base_success_rate = 0.95
+            confidence_factor = decision.confidence if hasattr(decision, 'confidence') else 0.8
+
+            # Adjust success rate based on confidence (higher confidence = higher success)
+            adjusted_success_rate = base_success_rate * (0.9 + 0.1 * confidence_factor)
+
+            # Simulate order book depth - larger orders have slightly lower fill rate
+            size_penalty = min(0.05, decision.quantity / 1000.0 * 0.01)
+            final_success_rate = adjusted_success_rate - size_penalty
+
+            # Determine execution success
+            success = random.random() < final_success_rate
+
+            if success:
+                # Simulate exchange processing time for successful orders
+                processing_time = random.uniform(0.01, 0.05)
+                await asyncio.sleep(processing_time)
+                self.logger.debug(
+                    f"✅ Simulated order executed: {decision.symbol} {decision.action} "
+                    f"{decision.quantity} @ {decision.price:.2f} (latency: {latency*1000:.0f}ms)"
+                )
+            else:
+                self.logger.warning(
+                    f"⚠️ Simulated order failed: {decision.symbol} {decision.action} "
+                    f"(success_rate: {final_success_rate:.2%})"
+                )
+
+            return success
 
         except Exception as e:
             self.logger.error(f"❌ Order execution simulation failed: {e}")

@@ -239,11 +239,114 @@ enable_time_series_cv = True       # Use time-series split
 - The full implementation is still available in `src/validation/` directory
 - This refactoring only removes it from the standard backtesting pipeline
 
+## Implementation Status
+
+### ✅ Completed Features
+
+1. **Temporal Splitting System** (`src/utils/versioned_artifacts/temporal_splits.py`)
+   - ✅ `TemporalPeriod` class for period definitions
+   - ✅ `TemporalSplitConfig` for train/val/test configuration
+   - ✅ `get_data_for_purpose()` function for filtering data by period
+   - ✅ 1-day embargo between periods
+   - ✅ Backward compatible (returns full data if config=None)
+
+2. **Backtesting Integration** (`src/training/steps/backtesting/basic_backtesting_post_step.py`)
+   - ✅ Temporal filtering integrated
+   - ✅ `backtest_period` config: 'training', 'test', or 'both'
+   - ✅ Train/test comparison for overfitting detection
+   - ✅ Time-series CV within test period
+
+3. **Training Pipeline Integration** (`src/training/steps/model_training/unified_models_training_step.py`)
+   - ✅ Temporal config creation at pipeline start
+   - ✅ Training data filtered to training period only
+   - ✅ Full dataset preserved for validation period access
+   - ✅ HPO uses validation period (Option A implemented)
+   - ✅ Backward compatible fallback to 80/20 split if needed
+
+4. **HPO Best Practices** (`src/utils/ml_common/optimization/hierarchical_parameter_optimizer.py`)
+   - ✅ Uses `TimeSeriesSplit` for temporal ordering in CV
+   - ✅ Supports separate validation period for holdout validation
+   - ✅ Falls back to nested CV if validation set not provided
+
+### 📊 Data Flow (Current Implementation)
+
+```
+Pipeline Start
+    ↓
+Create Temporal Split Config
+    ├─ Training:   60% of data (2020-2023)
+    ├─ Validation: 20% of data (2023-2024)
+    └─ Test:       20% of data (2024-2025)
+    ↓
+unified_models_training_step.py
+    ├─ Retrieve full dataset from artifacts
+    ├─ Store full dataset for validation access
+    ├─ Filter to TRAINING period only
+    └─ Pass filtered training data to models
+    ↓
+HPO (_perform_hierarchical_hpo)
+    ├─ X_train: Training period data
+    ├─ X_val: Validation period data (separate!)
+    ├─ Validates on unseen validation period
+    └─ Returns optimal hyperparameters
+    ↓
+Model Training
+    ├─ Trains ONLY on training period
+    ├─ Uses optimal params from HPO
+    └─ Never sees validation or test data
+    ↓
+basic_backtesting_post
+    ├─ backtest_period='test'
+    ├─ Filters to TEST period only
+    ├─ Walk-forward CV within test period
+    └─ Compares train vs test for overfitting detection
+```
+
+### 🔒 Data Leakage Prevention (Active)
+
+| Stage | Data Used | Period | Leakage Risk |
+|-------|-----------|--------|--------------|
+| **Model Training** | Training period | 2020-2023 (60%) | ✅ LOW - Isolated period |
+| **HPO Validation** | Validation period | 2023-2024 (20%) | ✅ LOW - Separate from training |
+| **Final Backtesting** | Test period | 2024-2025 (20%) | ✅ LOW - Never seen by models |
+| **Embargo** | 1 day buffer | Between all periods | ✅ Active |
+
+### 📝 Key Files Modified
+
+1. **unified_models_training_step.py** (Lines 32-37, 112-189, 676-738)
+   - Added temporal splitting imports
+   - Integrated temporal config creation
+   - Filtered training data to training period
+   - Updated HPO to use validation period
+
+2. **basic_backtesting_post_step.py** (Previously modified)
+   - Integrated temporal filtering
+   - Added train/test comparison
+   - Implemented walk-forward CV
+
+3. **temporal_splits.py** (New file, 337 lines)
+   - Complete temporal splitting system
+
+### ⚠️ Important Notes
+
+1. **Backward Compatibility**: If temporal config is not available, the system falls back to:
+   - 80/20 split within training data for HPO
+   - Full dataset for model training (pre-refactor behavior)
+
+2. **Configuration**: Temporal config is created automatically using data boundaries:
+   - Percentages: 60% train / 20% validation / 20% test (configurable)
+   - Embargo: 1 day between periods (configurable)
+
+3. **Validation Period Purpose**: Used exclusively for HPO, ensuring hyperparameter optimization happens on data completely separate from model training.
+
 ## Conclusion
 
 This refactoring maintains all validation capabilities while simplifying the pipeline. The key insight is that walk-forward validation is essentially time-series CV, which is better integrated into the backtesting step itself rather than being a separate pipeline stage. The HPO stages already include comprehensive CV validation, making the dedicated walk-forward step redundant.
 
-**Data Leakage Prevention:** ✅ Maintained via time-series CV + embargo
-**Validation Rigor:** ✅ Enhanced with integrated CV in backtesting
+**NEW: Temporal splitting now enforces strict train/val/test boundaries at the pipeline level, preventing data leakage.**
+
+**Data Leakage Prevention:** ✅ Enforced via pipeline-level temporal splitting + embargo
+**Validation Rigor:** ✅ Enhanced with integrated CV in backtesting + separate validation period
 **Pipeline Simplicity:** ✅ Improved by removing redundant step
-**HPO Validation:** ✅ Already comprehensive with nested CV
+**HPO Validation:** ✅ Uses separate validation period (Option A implemented)
+**Training Isolation:** ✅ Models train ONLY on training period

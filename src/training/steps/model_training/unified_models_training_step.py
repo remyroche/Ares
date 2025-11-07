@@ -29,6 +29,13 @@ from src.training.steps.model_training.dynamic_config_calculator import (
     DynamicConfigCalculator, DynamicTrainingConfig
 )
 
+# Import temporal splitting for proper train/val/test separation
+from src.utils.versioned_artifacts import (
+    create_temporal_split_config_for_pipeline,
+    get_data_for_purpose,
+    TemporalSplitConfig
+)
+
 # Try to import unified training pipeline if it exists, otherwise use placeholder
 try:
     from src.training.steps.models_training.unified_training_pipeline import UnifiedTrainingPipeline
@@ -101,7 +108,86 @@ class UnifiedModelsTrainingStep(BaseStep):
             
             # Retrieve training data and targets from artifacts
             training_data, analyst_targets, tactician_targets = await self._retrieve_training_data(config, yaml_config)
-            
+
+            # ========================================================================
+            # TEMPORAL SPLITTING: Enforce train/val/test boundaries
+            # ========================================================================
+            tprint_info("=" * 80)
+            tprint_info("🔐 TEMPORAL DATA SPLITTING - Preventing Data Leakage")
+            tprint_info("=" * 80)
+
+            # Store full datasets before filtering (needed for validation period in HPO)
+            self._full_training_data = training_data.copy() if training_data is not None else None
+            self._full_analyst_targets = analyst_targets.copy() if analyst_targets is not None else None
+            self._full_tactician_targets = tactician_targets.copy() if tactician_targets is not None else None
+
+            if training_data is not None and len(training_data) > 0:
+                # Create or load temporal split configuration
+                tprint_info(f"📅 Creating temporal split configuration for {symbol} {exchange}")
+
+                # Determine data boundaries from actual data
+                data_start = training_data.index.min()
+                data_end = training_data.index.max()
+
+                tprint_info(f"   Data range: {data_start} to {data_end}")
+                tprint_info(f"   Total samples: {len(training_data)}")
+
+                # Create temporal split config
+                temporal_config = create_temporal_split_config_for_pipeline(
+                    symbol=symbol,
+                    exchange=config.get('exchange', 'binance'),
+                    timeframe=timeframe,
+                    data_start=data_start,
+                    data_end=data_end,
+                    train_pct=config.get('train_percentage', 0.60),  # 60% for training
+                    val_pct=config.get('validation_percentage', 0.20),  # 20% for validation (HPO)
+                    test_pct=config.get('test_percentage', 0.20),  # 20% for test
+                    embargo_days=1  # 1-day embargo between periods
+                )
+
+                # Store temporal config for later use
+                self._temporal_config = temporal_config
+                config['temporal_config'] = temporal_config
+
+                # Log temporal split boundaries
+                tprint_info("📊 Temporal Split Configuration:")
+                tprint_info(f"   Training:   {temporal_config.training.start} → {temporal_config.training.end} "
+                          f"({len(training_data.loc[temporal_config.training.start:temporal_config.training.effective_end])} samples)")
+                tprint_info(f"   Validation: {temporal_config.validation.start} → {temporal_config.validation.end} "
+                          f"({len(training_data.loc[temporal_config.validation.start:temporal_config.validation.effective_end])} samples)")
+                tprint_info(f"   Test:       {temporal_config.test.start} → {temporal_config.test.end} "
+                          f"({len(training_data.loc[temporal_config.test.start:temporal_config.test.end])} samples)")
+                tprint_info(f"   Embargo:    {temporal_config.embargo_days} day(s)")
+
+                # Filter training data to TRAINING PERIOD ONLY
+                tprint_info("🔒 Filtering data to TRAINING period (preventing future data leakage)...")
+                original_len = len(training_data)
+
+                # Use temporal filtering
+                training_data = get_data_for_purpose(
+                    training_data,
+                    purpose='training',
+                    config=temporal_config
+                )
+
+                filtered_len = len(training_data)
+                tprint_success(f"✅ Filtered to training period: {original_len} → {filtered_len} samples "
+                             f"({filtered_len/original_len*100:.1f}% of full dataset)")
+
+                # Filter targets to match training period
+                if analyst_targets is not None:
+                    analyst_targets = analyst_targets.loc[training_data.index]
+                    tprint_info(f"   ↪ Analyst targets filtered to {len(analyst_targets)} samples")
+
+                if tactician_targets is not None:
+                    tactician_targets = tactician_targets.loc[training_data.index]
+                    tprint_info(f"   ↪ Tactician targets filtered to {len(tactician_targets)} samples")
+
+                tprint_info("=" * 80)
+            else:
+                tprint_warning("⚠️ No training data available for temporal splitting")
+                self._temporal_config = None
+
             # --- MODIFIED: Retrieve and merge additional features for ensemble/tactician models ---
             if training_type.endswith('ensemble') or training_type == 'tactician_base':
                 tprint_info(f"Retrieving additional model outputs for {training_type}...")
@@ -586,15 +672,70 @@ class UnifiedModelsTrainingStep(BaseStep):
                 return model_config
             
             tprint_info("🔍 Starting Hierarchical HPO with custom_balanced_score...")
-            
-            # Split data for HPO validation (80/20 split)
-            hpo_train_size = int(len(training_data) * 0.8)
-            X_train = training_data.iloc[:hpo_train_size]
-            X_val = training_data.iloc[hpo_train_size:]
-            y_train = targets.iloc[:hpo_train_size]
-            y_val = targets.iloc[hpo_train_size:]
-            
-            tprint_info(f"HPO split: {len(X_train)} train, {len(X_val)} validation samples")
+
+            # ========================================================================
+            # OPTION A: Use VALIDATION PERIOD for HPO (not 80/20 split)
+            # ========================================================================
+            tprint_info("=" * 80)
+            tprint_info("🔐 HPO DATA SPLITTING - Using Validation Period")
+            tprint_info("=" * 80)
+
+            # Get temporal config
+            temporal_config = getattr(self, '_temporal_config', None)
+
+            if temporal_config is not None and hasattr(self, '_full_training_data'):
+                # Use validation period for HPO
+                tprint_info("✅ Using temporal split: Training period for training, Validation period for HPO")
+
+                # Training data is already filtered to training period
+                X_train = training_data
+                y_train = targets
+
+                # Get validation period data from full dataset
+                tprint_info("📅 Retrieving validation period data for HPO...")
+                validation_data = get_data_for_purpose(
+                    self._full_training_data,
+                    purpose='validation',
+                    config=temporal_config
+                )
+
+                # Get validation targets
+                if training_type.startswith('analyst') and hasattr(self, '_full_analyst_targets'):
+                    validation_targets = self._full_analyst_targets.loc[validation_data.index]
+                elif training_type.startswith('tactician') and hasattr(self, '_full_tactician_targets'):
+                    validation_targets = self._full_tactician_targets.loc[validation_data.index]
+                else:
+                    validation_targets = None
+
+                if validation_targets is not None:
+                    X_val = validation_data
+                    y_val = validation_targets
+
+                    tprint_success(f"✅ HPO data split:")
+                    tprint_info(f"   Training:   {len(X_train)} samples ({temporal_config.training.start} → {temporal_config.training.effective_end})")
+                    tprint_info(f"   Validation: {len(X_val)} samples ({temporal_config.validation.start} → {temporal_config.validation.effective_end})")
+                    tprint_info(f"   🔒 No data leakage: Validation period completely separate from training")
+                else:
+                    tprint_warning("⚠️ Validation targets not found, falling back to 80/20 split within training period")
+                    hpo_train_size = int(len(training_data) * 0.8)
+                    X_train = training_data.iloc[:hpo_train_size]
+                    X_val = training_data.iloc[hpo_train_size:]
+                    y_train = targets.iloc[:hpo_train_size]
+                    y_val = targets.iloc[hpo_train_size:]
+                    tprint_info(f"   Training: {len(X_train)} samples (80%)")
+                    tprint_info(f"   Validation: {len(X_val)} samples (20%)")
+            else:
+                # Fallback to 80/20 split if temporal config not available
+                tprint_warning("⚠️ Temporal config not available, using 80/20 split within training data")
+                hpo_train_size = int(len(training_data) * 0.8)
+                X_train = training_data.iloc[:hpo_train_size]
+                X_val = training_data.iloc[hpo_train_size:]
+                y_train = targets.iloc[:hpo_train_size]
+                y_val = targets.iloc[hpo_train_size:]
+                tprint_info(f"   Training: {len(X_train)} samples (80%)")
+                tprint_info(f"   Validation: {len(X_val)} samples (20%)")
+
+            tprint_info("=" * 80)
             
             # Create HPO orchestrator
             execution_mode = config.get('execution_mode', 'full')

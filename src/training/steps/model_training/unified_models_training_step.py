@@ -1372,27 +1372,35 @@ class UnifiedModelsTrainingStep(BaseStep):
 
             # --- START OF FIX 5: Load and Resample Regime Features ---
             try:
-                # Attempt to load regime probabilities (likely from 1h timeframe)
-                regime_features = self._get_artifact('regime_probabilities', 'data')
+                # Load regime ensemble predictions (from regime_ensemble_training)
+                regime_features = self._get_artifact('regime_ensemble_predictions', 'data')
                 if regime_features is not None:
-                    tprint_info(f"   ↪ Retrieved regime features: shape={regime_features.shape}, columns={len(regime_features.columns)}")
-                    tprint_info(f"Retrieved regime features: {regime_features.shape}")
-                    # Resample regime features (e.g., 1h) to match training data (e.g., 15m)
+                    tprint_info(f"   ↪ Retrieved regime_ensemble_predictions: shape={regime_features.shape}, columns={len(regime_features.columns)}")
+                    tprint_success(f"✅ Loaded regime ensemble predictions: {regime_features.shape}")
+                    # Resample regime features if needed to match training data (should already be 15m)
                     if not regime_features.index.equals(training_data.index):
                         tprint_warning(f"Regime features index mismatch. Resampling {len(regime_features)} rows to match {len(training_data)} rows.")
-                        # Use ffill to apply the 1h regime to all 15m candles within that hour
-                        # Use bfill to handle any NaNs at the very beginning
+                        # Use ffill and bfill for any alignment issues
                         regime_features_resampled = regime_features.reindex(training_data.index, method='ffill').fillna(method='bfill')
                         tprint_info(
                             f"   ↪ Resampled regime features -> shape={regime_features_resampled.shape}, columns={len(regime_features_resampled.columns)}"
                         )
                         additional_features_list.append(regime_features_resampled)
-                        tprint_success("✅ Resampled and added regime features.")
+                        tprint_success("✅ Resampled and added regime ensemble features.")
                     else:
                         tprint_info("   ↪ Regime features already aligned with training index")
                         additional_features_list.append(regime_features)
                 else:
-                    tprint_warning("⚠️ Regime features artifact ('regime_probabilities') not found.")
+                    tprint_warning("⚠️ Regime ensemble predictions artifact not found, trying fallback 'regime_probabilities'")
+                    # Fallback to regime_probabilities if regime_ensemble_predictions not found
+                    regime_features = self._get_artifact('regime_probabilities', 'data')
+                    if regime_features is not None:
+                        tprint_info(f"   ↪ Retrieved regime_probabilities (fallback): shape={regime_features.shape}")
+                        regime_features_resampled = regime_features.reindex(training_data.index, method='ffill').fillna(method='bfill')
+                        additional_features_list.append(regime_features_resampled)
+                        tprint_success("✅ Added regime probabilities (fallback).")
+                    else:
+                        tprint_warning("⚠️ No regime features found")
             except Exception as e:
                 tprint_warning(f"⚠️ Could not load regime features: {e}")
             # --- END OF FIX 5 ---

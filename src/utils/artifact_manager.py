@@ -961,8 +961,12 @@ class ArtifactManager:
 			if fallback_path and fallback_path.exists():
 				resolved_path = fallback_path
 				data = self._load_artifact_from_path(fallback_path)
-				self._log_file_operation("Retrieved artifact from fallback search", fallback_path, success=True)
-				return (data, str(resolved_path)) if return_path else data
+				if data is not None:
+					self._log_file_operation("Retrieved artifact from fallback search", fallback_path, success=True)
+					return (data, str(resolved_path)) if return_path else data
+				else:
+					self.logger.warning(f"Fallback search found file but load failed: {fallback_path}")
+					# Continue to next fallback option instead of returning None
 
 			# Step 4: Load from historical data directory if no artifact was found
 			if artifact_type == "data" and artifact_name in {"klines_data", "market_data", "ohlcv_data"}:
@@ -1215,7 +1219,28 @@ class ArtifactManager:
 					return pickle.load(f)
 			elif path.suffix == '.json':
 				with open(path, 'r') as f:
-					return json.load(f)
+					json_data = json.load(f)
+
+				# Check if this is artifact metadata (has 'file_path' and 'artifact_type' keys)
+				if isinstance(json_data, dict) and 'file_path' in json_data and 'artifact_type' in json_data:
+					self.logger.debug(f"Detected artifact metadata file, attempting to load actual data from: {json_data['file_path']}")
+					data_path = Path(json_data['file_path'])
+
+					# Try to load the actual data file referenced in metadata
+					if data_path.exists():
+						self.logger.info(f"✅ Loading actual data file from metadata reference: {data_path}")
+						return self._load_artifact_from_path(data_path)
+					else:
+						artifact_name = json_data.get('artifact_name', 'unknown')
+						self.logger.warning(f"⚠️ Found metadata for '{artifact_name}' but actual data file is missing!")
+						self.logger.warning(f"⚠️ Expected file: {data_path}")
+						self.logger.warning(f"⚠️ This may indicate:")
+						self.logger.warning(f"   1. Feature generation step needs to be re-run")
+						self.logger.warning(f"   2. Artifact cleanup removed the data files")
+						self.logger.warning(f"   3. Artifact preservation failed to copy files correctly")
+						return None  # Return None instead of metadata dict to trigger proper error handling
+
+				return json_data
 			else:
 				self.logger.warning(f"Unknown file extension: {path.suffix}")
 				return None

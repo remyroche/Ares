@@ -795,8 +795,11 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         artifact_name: str = 'regime_models_predictions'
     ) -> None:
         """
-        Save model predictions to HDF5 file at 15m timeframe.
+        Save model predictions to HDF5 file at native 1h timeframe.
         Handles column cleanup for disappeared regimes.
+
+        NOTE: Base model predictions stay at 1h (training timeframe).
+        Resampling to 15m only happens for ensemble predictions.
 
         Args:
             predictions: DataFrame with model predictions (columns = regime probabilities)
@@ -838,22 +841,29 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             except Exception as e:
                 tprint(f"ℹ️ [REGIME_MODELS] No existing HDF5 found, creating new: {e}", color="blue")
 
-            # Ensure 15m timeframe
-            if predictions.index.freq != '15T':
-                predictions = predictions.resample('15T').ffill()
+            # Keep native timeframe (1h) - DO NOT resample base model predictions
+            # Resampling to 15m will only happen for ensemble predictions in regime_ensemble_training
+            tprint(f"💾 [REGIME_MODELS] Saving at native 1h timeframe (resampling happens only for ensemble)", color="blue")
 
-            # Save to HDF5
+            # Infer timeframe from index frequency
+            if isinstance(predictions.index, pd.DatetimeIndex) and predictions.index.freq is not None:
+                timeframe_str = str(predictions.index.freq)
+            else:
+                timeframe_str = '1h'  # Default to 1h
+
+            # Save to HDF5 at native timeframe
             base_step._save_artifact(
                 data=predictions,
                 artifact_name=artifact_name,
                 artifact_type='data',
                 compression='auto',
                 metadata={
-                    'timeframe': '15m',
+                    'timeframe': timeframe_str,
                     'n_regimes': len([c for c in predictions.columns if 'regime' in c.lower()]),
                     'columns': list(predictions.columns),
                     'shape': predictions.shape,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now().isoformat(),
+                    'note': 'Base model predictions at native 1h timeframe'
                 }
             )
 

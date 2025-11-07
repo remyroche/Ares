@@ -1198,10 +1198,20 @@ class UnifiedModelsTrainingStep(BaseStep):
                     f"dtypes={training_data.dtypes.value_counts().to_dict()}"
                 )
 
-            # Get targets from labeling integration step
-            
-            # Try to get analyst targets
-            for artifact_name in ['analyst_targets', 'targets']:
+            # Get targets from labeling integration step (direction-aware)
+            direction = config.get('direction', 'long')
+            tprint_info(f"📍 Loading labels for direction: {direction}")
+
+            # Try to get analyst targets (direction-specific first, then generic)
+            analyst_artifact_names = [
+                f'analyst_targets_{direction}',  # Direction-specific (e.g., analyst_targets_long)
+                f'{direction}_analyst_targets',  # Alternative naming
+                f'{direction}_targets',           # Generic direction-specific
+                'analyst_targets',                # Generic analyst targets
+                'targets'                         # Fallback to generic targets
+            ]
+
+            for artifact_name in analyst_artifact_names:
                 try:
                     analyst_targets = self._get_artifact(artifact_name, 'data')
                     if analyst_targets is not None:
@@ -1210,9 +1220,17 @@ class UnifiedModelsTrainingStep(BaseStep):
                 except Exception as e:
                     self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
                     continue
-            
-            # Try to get tactician targets
-            for artifact_name in ['tactician_targets', 'targets']:
+
+            # Try to get tactician targets (direction-specific first, then generic)
+            tactician_artifact_names = [
+                f'tactician_targets_{direction}',  # Direction-specific
+                f'{direction}_tactician_targets',  # Alternative naming
+                f'{direction}_targets',             # Generic direction-specific
+                'tactician_targets',                # Generic tactician targets
+                'targets'                           # Fallback to generic targets
+            ]
+
+            for artifact_name in tactician_artifact_names:
                 try:
                     tactician_targets = self._get_artifact(artifact_name, 'data')
                     if tactician_targets is not None:
@@ -1232,13 +1250,26 @@ class UnifiedModelsTrainingStep(BaseStep):
                         labeled_data = self._get_artifact(artifact_name, 'data')
                         if labeled_data is not None and isinstance(labeled_data, pd.DataFrame):
                             tprint_info(f"✅ Found labeled_data artifact: {labeled_data.shape}")
-                            
-                            # Extract target columns
+
+                            # Extract target columns (direction-aware)
                             target_cols = [col for col in labeled_data.columns if 'target' in col.lower()]
                             if target_cols:
-                                tprint_success(f"✅ Extracting targets from labeled_data: {target_cols}")
-                                # Use first target column as analyst targets
-                                analyst_targets = labeled_data[target_cols[0]]
+                                tprint_info(f"📋 Available target columns: {target_cols}")
+
+                                # Prioritize direction-specific target columns
+                                direction_specific_cols = [
+                                    col for col in target_cols
+                                    if direction in col.lower()
+                                ]
+
+                                if direction_specific_cols:
+                                    target_col = direction_specific_cols[0]
+                                    tprint_success(f"✅ Using direction-specific target column: {target_col}")
+                                else:
+                                    target_col = target_cols[0]
+                                    tprint_warning(f"⚠️ No direction-specific column found, using: {target_col}")
+
+                                analyst_targets = labeled_data[target_col]
                                 tprint_success(f"✅ Extracted analyst targets: {len(analyst_targets)} samples")
                                 
                                 # CRITICAL: Ensure training_data and targets are aligned

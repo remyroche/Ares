@@ -14,6 +14,8 @@ import traceback
 
 from src.utils.artifact_manager import ArtifactManager
 from src.utils.tprint import tprint
+from src.utils.versioned_artifacts import VersionedArtifactStore
+from src.training.steps.temporal_validation import require_datetime_index
 
 
 class BaseStep(ABC):
@@ -28,12 +30,13 @@ class BaseStep(ABC):
     - Be callable only via launcher (no standalone CLI)
     """
     
-    def __init__(self, step_name: str):
+    def __init__(self, step_name: str, use_versioned_artifacts: bool = True):
         """
         Initialize the base step with lazy loading to reduce startup overhead.
 
         Args:
             step_name: Unique name for this step (used for artifact paths and outcomes)
+            use_versioned_artifacts: Whether to use versioned artifacts system (default: True)
         """
         self.step_name = step_name
         self.logger = logging.getLogger(f"ares.step.{step_name}")
@@ -42,6 +45,8 @@ class BaseStep(ABC):
         # Defer heavy initialization until needed (lazy loading)
         self._artifact_manager = None
         self._quality_assessor = None
+        self._versioned_store = None
+        self.use_versioned_artifacts = use_versioned_artifacts
 
         # Store context for lazy initialization
         self._current_context = {
@@ -62,6 +67,27 @@ class BaseStep(ABC):
         return self._artifact_manager
 
     @property
+    def versioned_store(self):
+        """Lazy initialization of versioned artifact store."""
+        if self._versioned_store is None and self.use_versioned_artifacts:
+            # Extract context for store path
+            symbol = self._current_context.get('symbol', 'UNKNOWN')
+            exchange = self._current_context.get('exchange', 'binance')
+            direction = self._current_context.get('direction', 'long')
+
+            # Create store path
+            store_name = f"{symbol}_{exchange}_{direction}"
+            store_path = os.path.join("src/utils/versioned_artifacts", store_name)
+
+            self._versioned_store = VersionedArtifactStore(
+                store_path=store_path,
+                auto_version=True,
+                enable_row_versioning=True
+            )
+            tprint(f"📦 Initialized VersionedArtifactStore at {store_path}")
+        return self._versioned_store
+
+    @property
     def quality_assessor(self):
         """Lazy initialization of quality assessor."""
         if self._quality_assessor is None:
@@ -75,12 +101,32 @@ class BaseStep(ABC):
         tprint(
             f"🧭 Updating context for '{self.step_name}' with {list(kwargs.keys())}"
         )
+
+        # Check if use_versioned_artifacts flag is being set
+        if 'use_versioned_artifacts' in kwargs:
+            self.use_versioned_artifacts = kwargs.pop('use_versioned_artifacts')
+
         self._current_context.update(kwargs)
         if self._artifact_manager is not None:
             self._artifact_manager.set_context(**self._current_context)
             tprint(
                 f"🔄 Applied new context to ArtifactManager for '{self.step_name}'"
             )
+
+        # If versioned store already initialized, reinitialize with new context
+        if self._versioned_store is not None and self.use_versioned_artifacts:
+            symbol = self._current_context.get('symbol', 'UNKNOWN')
+            exchange = self._current_context.get('exchange', 'binance')
+            direction = self._current_context.get('direction', 'long')
+            store_name = f"{symbol}_{exchange}_{direction}"
+            store_path = os.path.join("src/utils/versioned_artifacts", store_name)
+
+            self._versioned_store = VersionedArtifactStore(
+                store_path=store_path,
+                auto_version=True,
+                enable_row_versioning=True
+            )
+            tprint(f"🔄 Reinitialized VersionedArtifactStore with new context")
 
     def _detect_execution_mode(self, config: Dict[str, Any]) -> str:
         """
@@ -141,20 +187,28 @@ class BaseStep(ABC):
         """
         pass
     
-    def _save_artifact(self, data: Any, artifact_name: str, 
-                      artifact_type: str = "data", 
+    def _save_artifact(self, data: Any, artifact_name: str,
+                      artifact_type: str = "data",
                       compression: str = "auto",
-                      metadata: Optional[Dict] = None) -> str:
+                      metadata: Optional[Dict] = None,
+                      operation_name: Optional[str] = None,
+                      tags: Optional[Dict] = None) -> str:
         """
-        Save an artifact using the enhanced artifact manager with step-category organization.
-        
+        Save an artifact using versioned artifact store (default) or traditional artifact manager.
+
+        By default, uses versioned artifacts except for:
+        - historical_data artifacts (use historical_data/ directory)
+        - regime clustering artifacts (excluding regime_ensemble_training)
+
         Args:
             data: Data to save (DataFrame, dict, model, etc.)
             artifact_name: Name for the artifact
             artifact_type: Type of artifact ("data", "model", "metadata", etc.)
             compression: Compression method ("auto", "gzip", "lz4", "none")
             metadata: Additional metadata to store with artifact
-            
+            operation_name: Name of operation for versioned artifacts tagging
+            tags: Additional tags for versioned artifacts
+
         Returns:
             Path where artifact was saved
         """
@@ -162,16 +216,74 @@ class BaseStep(ABC):
             tprint(
                 f"💾 Saving artifact '{artifact_name}' (type: {artifact_type}) for '{self.step_name}'"
             )
-            artifact_path = self.artifact_manager.save(
-                data=data,
-                artifact_name=artifact_name,
-                artifact_type=artifact_type,
-                compression=compression,
-                metadata=metadata
-            )
+
+            # Determine if we should use versioned artifacts
+            use_versioned = self.use_versioned_artifacts
+
+            # Exclusion rules
+            if 'historical_data' in artifact_name:
+                use_versioned = False
+                tprint(f"📁 Using traditional storage for historical_data artifact")
+            elif 'regime_cluster' in artifact_name and 'regime_ensemble_training' not in self.step_name:
+                use_versioned = False
+                tprint(f"📁 Using traditional storage for regime clustering artifact")
+
+            # Save using appropriate system
+            if use_versioned and self.versioned_store is not None:
+                import pandas as pd
+                # Convert to DataFrame if needed
+                if isinstance(data, pd.DataFrame):
+                    # Use add_columns_with_tags for DataFrame with columns
+                    version_name = f"{artifact_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+                    # Add data to store
+                    view = self.versioned_store.add_data(
+                        data=data,
+                        version_name=version_name,
+                        metadata={
+                            'artifact_name': artifact_name,
+                            'artifact_type': artifact_type,
+                            'step_name': self.step_name,
+                            **(metadata or {})
+                        }
+                    )
+
+                    # If operation_name provided, tag columns
+                    if operation_name:
+                        columns_dict = {col: data[col].values for col in data.columns}
+                        self.versioned_store.add_columns_with_tags(
+                            columns=columns_dict,
+                            version_name=version_name,
+                            operation_name=operation_name,
+                            tags=tags or {}
+                        )
+
+                    artifact_path = str(self.versioned_store.store_path / f"{version_name}.h5")
+                    tprint(f"✅ Saved artifact '{artifact_name}' to versioned store: {artifact_path}")
+                else:
+                    # Fall back to traditional artifact manager for non-DataFrame data
+                    artifact_path = self.artifact_manager.save(
+                        data=data,
+                        artifact_name=artifact_name,
+                        artifact_type=artifact_type,
+                        compression=compression,
+                        metadata=metadata
+                    )
+                    tprint(f"✅ Saved non-DataFrame artifact '{artifact_name}' via traditional manager: {artifact_path}")
+            else:
+                # Use traditional artifact manager
+                artifact_path = self.artifact_manager.save(
+                    data=data,
+                    artifact_name=artifact_name,
+                    artifact_type=artifact_type,
+                    compression=compression,
+                    metadata=metadata
+                )
+                tprint(f"✅ Saved artifact '{artifact_name}' via traditional manager: {artifact_path}")
+
             self.logger.info(f"Saved artifact: {artifact_name} -> {artifact_path}")
-            tprint(f"✅ Saved artifact '{artifact_name}' to {artifact_path}")
             return artifact_path
+
         except Exception as e:
             self.logger.error(f"Failed to save artifact {artifact_name}: {e}")
             tprint(
@@ -179,15 +291,21 @@ class BaseStep(ABC):
             )
             raise
     
-    def _get_artifact(self, artifact_name: str, 
-                     artifact_type: str = "data") -> Any:
+    def _get_artifact(self, artifact_name: str,
+                     artifact_type: str = "data",
+                     operation_name: Optional[str] = None) -> Any:
         """
-        Retrieve an artifact using the enhanced artifact manager with step-category fallback.
-        
+        Retrieve an artifact using versioned artifact store (default) or traditional artifact manager.
+
+        By default, uses versioned artifacts except for:
+        - historical_data artifacts (use historical_data/ directory)
+        - regime clustering artifacts (excluding regime_ensemble_training)
+
         Args:
             artifact_name: Name of the artifact to retrieve
             artifact_type: Type of artifact to retrieve
-            
+            operation_name: If provided, retrieve view by operation name
+
         Returns:
             Retrieved data
         """
@@ -195,26 +313,78 @@ class BaseStep(ABC):
             tprint(
                 f"📂 Retrieving artifact '{artifact_name}' (type: {artifact_type}) for '{self.step_name}'"
             )
-            data, resolved_path = self.artifact_manager.get_artifact(
-                artifact_name=artifact_name,
-                artifact_type=artifact_type,
-                return_path=True
-            )
+
+            # Determine if we should use versioned artifacts
+            use_versioned = self.use_versioned_artifacts
+
+            # Exclusion rules (same as _save_artifact)
+            if 'historical_data' in artifact_name:
+                use_versioned = False
+                tprint(f"📁 Using traditional storage for historical_data artifact")
+            elif 'regime_cluster' in artifact_name and 'regime_ensemble_training' not in self.step_name:
+                use_versioned = False
+                tprint(f"📁 Using traditional storage for regime clustering artifact")
+
+            # Retrieve using appropriate system
+            if use_versioned and self.versioned_store is not None:
+                try:
+                    # Try to get from versioned store
+                    if operation_name:
+                        # Get view by operation
+                        view = self.versioned_store.get_view_by_operation(operation_name)
+                        data = view.materialize()
+                        tprint(f"✅ Retrieved artifact '{artifact_name}' by operation '{operation_name}' from versioned store")
+                    else:
+                        # Get most recent version matching artifact name
+                        versions = self.versioned_store.list_versions()
+                        matching = [v for v in versions if artifact_name in v]
+
+                        if matching:
+                            version_name = sorted(matching)[-1]
+                            view = self.versioned_store.get_view(version_name)
+                            data = view.materialize()
+                            tprint(f"✅ Retrieved artifact '{artifact_name}' (version: {version_name}) from versioned store")
+                        else:
+                            # Fall back to traditional artifact manager
+                            tprint(f"⚠️ Artifact '{artifact_name}' not found in versioned store, trying traditional manager")
+                            data, resolved_path = self.artifact_manager.get_artifact(
+                                artifact_name=artifact_name,
+                                artifact_type=artifact_type,
+                                return_path=True
+                            )
+                            if resolved_path:
+                                tprint(f"✅ Retrieved artifact '{artifact_name}' from traditional manager: {resolved_path}")
+                except Exception as ve:
+                    # Fall back to traditional artifact manager on error
+                    self.logger.warning(f"Failed to retrieve from versioned store: {ve}, trying traditional manager")
+                    data, resolved_path = self.artifact_manager.get_artifact(
+                        artifact_name=artifact_name,
+                        artifact_type=artifact_type,
+                        return_path=True
+                    )
+                    if resolved_path:
+                        tprint(f"✅ Retrieved artifact '{artifact_name}' from traditional manager: {resolved_path}")
+            else:
+                # Use traditional artifact manager
+                data, resolved_path = self.artifact_manager.get_artifact(
+                    artifact_name=artifact_name,
+                    artifact_type=artifact_type,
+                    return_path=True
+                )
+                if data is not None:
+                    if resolved_path:
+                        tprint(f"✅ Retrieved artifact '{artifact_name}' from traditional manager: {resolved_path}")
+                    else:
+                        tprint(f"✅ Retrieved artifact '{artifact_name}' via fallback (no direct file path)")
+
             if data is not None:
-                if resolved_path:
-                    tprint(
-                        f"✅ Retrieved artifact '{artifact_name}' from {resolved_path}"
-                    )
-                else:
-                    tprint(
-                        f"✅ Retrieved artifact '{artifact_name}' via fallback (no direct file path)"
-                    )
                 self.logger.info(f"Retrieved artifact: {artifact_name}")
                 return data
             else:
                 tprint(f"⚠️ Artifact '{artifact_name}' not found for '{self.step_name}'")
                 self.logger.warning(f"Artifact not found: {artifact_name}")
                 return None
+
         except Exception as e:
             self.logger.error(f"Failed to retrieve artifact {artifact_name}: {e}")
             tprint(
@@ -371,6 +541,7 @@ class BaseStep(ABC):
             self.logger.error(f"Failed to save ML scored data: {e}")
             raise
     
+    @require_datetime_index
     def _safe_concat(self, dataframes: List[Any], axis: int = 1,
                      operation_name: str = "concatenate",
                      validate_alignment: bool = True) -> Any:
@@ -424,6 +595,7 @@ class BaseStep(ABC):
 
         return result
 
+    @require_datetime_index
     def _safe_merge(self, left: Any, right: Any,
                     how: str = 'inner',
                     validate_alignment: bool = True,
@@ -482,6 +654,7 @@ class BaseStep(ABC):
 
         return result
 
+    @require_datetime_index
     def _align_to_reference(self, reference: Any, *dataframes: Any) -> List[Any]:
         """
         Align multiple DataFrames to a reference DataFrame's index.
@@ -529,6 +702,95 @@ class BaseStep(ABC):
             aligned.append(aligned_df)
 
         return aligned
+
+    def _add_columns_with_tags(self, columns: Dict[str, Any], operation_name: str,
+                               tags: Optional[Dict] = None) -> Any:
+        """
+        Add columns to versioned artifact store with operation tags.
+
+        Args:
+            columns: Dictionary of column_name -> values
+            operation_name: Name of the operation (e.g., "final_feature_selection")
+            tags: Additional metadata tags
+
+        Returns:
+            ArtifactView of updated data
+
+        Example:
+            self._add_columns_with_tags(
+                columns={"feature1": values1, "feature2": values2},
+                operation_name="feature_selection",
+                tags={"stage": "pre_training"}
+            )
+        """
+        if not self.use_versioned_artifacts or self.versioned_store is None:
+            self.logger.warning("Versioned artifacts not enabled, cannot add columns with tags")
+            return None
+
+        return self.versioned_store.add_columns_with_tags(
+            columns=columns,
+            operation_name=operation_name,
+            tags=tags or {}
+        )
+
+    def _get_columns_by_operation(self, operation_name: str) -> List[str]:
+        """
+        Get list of columns added by a specific operation.
+
+        Args:
+            operation_name: Name of the operation
+
+        Returns:
+            List of column names
+
+        Example:
+            feature_cols = self._get_columns_by_operation("final_feature_selection")
+        """
+        if not self.use_versioned_artifacts or self.versioned_store is None:
+            self.logger.warning("Versioned artifacts not enabled")
+            return []
+
+        return self.versioned_store.get_columns_by_operation(operation_name)
+
+    def _get_columns_by_tag(self, tag_key: str, tag_value: Any) -> List[str]:
+        """
+        Get list of columns with specific tag value.
+
+        Args:
+            tag_key: Tag key to search
+            tag_value: Tag value to match
+
+        Returns:
+            List of column names
+
+        Example:
+            tech_cols = self._get_columns_by_tag("type", "technical_indicator")
+        """
+        if not self.use_versioned_artifacts or self.versioned_store is None:
+            self.logger.warning("Versioned artifacts not enabled")
+            return []
+
+        return self.versioned_store.get_columns_by_tag(tag_key, tag_value)
+
+    def _get_view_by_operation(self, operation_name: str) -> Any:
+        """
+        Get an ArtifactView containing only columns from a specific operation.
+
+        Args:
+            operation_name: Name of the operation
+
+        Returns:
+            ArtifactView with operation's columns
+
+        Example:
+            view = self._get_view_by_operation("final_feature_selection")
+            features_df = view.materialize()
+        """
+        if not self.use_versioned_artifacts or self.versioned_store is None:
+            self.logger.warning("Versioned artifacts not enabled")
+            return None
+
+        return self.versioned_store.get_view_by_operation(operation_name)
 
     def _get_sr_levels(self, symbol: str = None, exchange: str = None,
                       timeframe: str = None, direction: str = None) -> Dict[str, Any]:

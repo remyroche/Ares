@@ -571,6 +571,63 @@ class M1MemoryOptimizer:
         """Get current memory usage statistics (alias for get_memory_stats)."""
         return self.get_memory_stats()
 
+    def calculate_optimal_allocation(self, workload_type: str = 'ml_training', requested_gb: float = None) -> float:
+        """
+        Calculate optimal memory allocation for a given workload type.
+
+        Args:
+            workload_type: Type of workload ('ml_training', 'data_processing', 'inference', etc.)
+            requested_gb: Requested memory in GB (optional)
+
+        Returns:
+            Optimal memory allocation in GB
+        """
+        try:
+            mem_stats = self.get_memory_stats()
+
+            if not mem_stats.get('psutil_available', False):
+                # Fallback when psutil is not available
+                return requested_gb if requested_gb else 4.0
+
+            # Get available memory in GB
+            available_gb = mem_stats.get('available_memory', 0) / (1024 ** 3)
+
+            # Define allocation strategies by workload type
+            allocation_ratios = {
+                'ml_training': 0.7,      # Use up to 70% of available memory for ML training
+                'data_processing': 0.6,  # Use up to 60% for data processing
+                'inference': 0.4,        # Use up to 40% for inference
+                'light': 0.3,           # Use up to 30% for light workloads
+                'default': 0.5          # Default to 50%
+            }
+
+            ratio = allocation_ratios.get(workload_type, allocation_ratios['default'])
+
+            # Calculate optimal allocation
+            optimal_gb = available_gb * ratio
+
+            # If requested_gb is specified, use the minimum of optimal and requested
+            if requested_gb:
+                optimal_gb = min(optimal_gb, requested_gb)
+
+            # Apply bounds: minimum 1GB, maximum 32GB (or memory limit if set)
+            min_gb = 1.0
+            max_gb = min(32.0, self.memory_limit_gb) if self.memory_limit_gb else 32.0
+
+            optimal_gb = max(min_gb, min(optimal_gb, max_gb))
+
+            self.logger.debug(
+                f"Optimal memory allocation for {workload_type}: {optimal_gb:.2f} GB "
+                f"(available: {available_gb:.2f} GB, ratio: {ratio:.1%})"
+            )
+
+            return optimal_gb
+
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate optimal allocation: {e}")
+            # Fallback to requested or default value
+            return requested_gb if requested_gb else 4.0
+
     def load_dataframe(self, file_path: str, **kwargs):
         """Load a DataFrame from file with M1 memory optimization.
 

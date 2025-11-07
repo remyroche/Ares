@@ -1100,6 +1100,21 @@ class UnifiedModelsTrainingStep(BaseStep):
                     tprint_warning(f"🧹 Dropping duplicate columns ({len(duplicate_cols)}): {duplicate_cols}")
                     training_data = training_data.loc[:, ~training_data.columns.duplicated()].copy()
 
+                # Drop columns that are entirely NaN or have insufficient valid data
+                min_valid_threshold = 0.01  # Require at least 1% valid data
+                empty_cols = []
+                for col in training_data.columns:
+                    valid_count = training_data[col].notna().sum()
+                    valid_ratio = valid_count / len(training_data)
+                    if valid_ratio < min_valid_threshold:
+                        empty_cols.append(col)
+
+                if empty_cols:
+                    tprint_warning(f"⚠️ Dropping {len(empty_cols)} columns with insufficient valid data (<{min_valid_threshold*100}%): {empty_cols[:10]}{'...' if len(empty_cols) > 10 else ''}")
+                    training_data = training_data.drop(columns=empty_cols)
+                else:
+                    tprint_info("✅ All columns have sufficient valid data")
+
                 # Remove non-numeric columns (they break model training/HPO)
                 non_numeric_cols = training_data.select_dtypes(exclude=[np.number, 'bool']).columns.tolist()
                 if non_numeric_cols:
@@ -1130,6 +1145,21 @@ class UnifiedModelsTrainingStep(BaseStep):
                     training_data = training_data.drop(columns=potential_target_cols)
                 else:
                     tprint_info("✅ No target-like columns detected in feature frame")
+
+                # Remove metadata columns that are not features
+                metadata_col_patterns = [
+                    'labeling_method', 'labeling_timestamp', 'base_threshold',
+                    'lookahead_periods', 'optimization_iteration', 'quality_acceptance_rate'
+                ]
+                metadata_cols_to_drop = [
+                    col for col in training_data.columns
+                    if any(pattern in col.lower() for pattern in metadata_col_patterns)
+                ]
+                if metadata_cols_to_drop:
+                    tprint_warning(f"⚠️ Dropping metadata columns from features: {metadata_cols_to_drop}")
+                    training_data = training_data.drop(columns=metadata_cols_to_drop)
+                else:
+                    tprint_info("✅ No metadata columns detected in feature frame")
 
                 if training_data.empty:
                     raise ValueError("All feature columns were removed during cleaning; check upstream artifacts.")
@@ -1186,37 +1216,29 @@ class UnifiedModelsTrainingStep(BaseStep):
                                 # CRITICAL: Ensure training_data and targets are aligned
                                 if len(training_data) != len(analyst_targets):
                                     tprint_warning(f"⚠️ Shape mismatch detected! Features: {len(training_data)}, Targets: {len(analyst_targets)}")
-                                    tprint_warning(f"⚠️ Attempting to align by using labeled_data as both features and targets...")
-                                    
-                                    # Use labeled_data for features (drop target columns and raw OHLCV)
-                                    all_non_feature_cols = target_cols + [col for col in labeled_data.columns if 'timestamp' in col.lower() or 'datetime' in col.lower()]
-                                    
-                                    # Also exclude raw OHLCV features using configuration
-                                    ohlcv_config = yaml_config.get('feature_engineering', {}).get('exclude_raw_ohlcv', {})
-                                    if ohlcv_config.get('enabled', True):
-                                        ohlcv_patterns = ohlcv_config.get('excluded_patterns', ['volume', 'close', 'high', 'open', 'low'])
-                                        technical_terms = ohlcv_config.get('technical_indicators', ['rsi', 'sma', 'ema', 'bb_', 'macd', 'atr', 'roc', 'mom', 
-                                                                                                 'return', 'pct', 'ratio', 'std', 'volatility', 'trend',
-                                                                                                 'momentum', 'oscillator', 'signal', 'cross', 'divergence'])
+
+                                    # Try to align by common indices if both have indices
+                                    if hasattr(training_data, 'index') and hasattr(labeled_data, 'index'):
+                                        common_idx = training_data.index.intersection(labeled_data.index)
+
+                                        if len(common_idx) > 0:
+                                            tprint_info(f"✅ Found {len(common_idx)} common samples, aligning by index...")
+                                            training_data = training_data.loc[common_idx]
+                                            analyst_targets = labeled_data.loc[common_idx, target_cols[0]]
+                                            tprint_success(f"✅ Aligned by index - Features: {training_data.shape}, Targets: {len(analyst_targets)} samples")
+                                        else:
+                                            tprint_warning(f"⚠️ No common indices found, using first N samples for alignment...")
+                                            # Align by position: use the smaller dataset size
+                                            min_len = min(len(training_data), len(analyst_targets))
+                                            training_data = training_data.iloc[:min_len]
+                                            analyst_targets = analyst_targets.iloc[:min_len]
+                                            tprint_success(f"✅ Aligned by position - Features: {training_data.shape}, Targets: {len(analyst_targets)} samples")
                                     else:
-                                        # Fallback to hardcoded values if config is disabled
-                                        ohlcv_patterns = ['volume', 'close', 'high', 'open', 'low']
-                                        technical_terms = ['rsi', 'sma', 'ema', 'bb_', 'macd', 'atr', 'roc', 'mom', 
-                                                         'return', 'pct', 'ratio', 'std', 'volatility', 'trend',
-                                                         'momentum', 'oscillator', 'signal', 'cross', 'divergence']
-                                    
-                                    for col in labeled_data.columns:
-                                        col_lower = col.lower()
-                                        if any(pattern in col_lower for pattern in ohlcv_patterns):
-                                            is_raw_ohlcv = not any(term in col_lower for term in technical_terms)
-                                            if is_raw_ohlcv and col not in all_non_feature_cols:
-                                                all_non_feature_cols.append(col)
-                                    
-                                    feature_cols = [col for col in labeled_data.columns if col not in all_non_feature_cols]
-                                    training_data = labeled_data[feature_cols]
-                                    analyst_targets = labeled_data[target_cols[0]]
-                                    
-                                    tprint_success(f"✅ Aligned data - Features: {training_data.shape}, Targets: {len(analyst_targets)} samples")
+                                        tprint_warning(f"⚠️ DataFrames lack indices, using first N samples for alignment...")
+                                        min_len = min(len(training_data), len(analyst_targets))
+                                        training_data = training_data.iloc[:min_len] if hasattr(training_data, 'iloc') else training_data[:min_len]
+                                        analyst_targets = analyst_targets.iloc[:min_len] if hasattr(analyst_targets, 'iloc') else analyst_targets[:min_len]
+                                        tprint_success(f"✅ Aligned by position - Features: {len(training_data)}, Targets: {len(analyst_targets)} samples")
                                 
                                 break
                     except Exception as e:

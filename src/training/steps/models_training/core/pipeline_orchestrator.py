@@ -550,17 +550,41 @@ class TrainingPipelineOrchestrator:
         try:
             if self._analyst_trainer is None:
                 raise ValueError("Analyst trainer not initialized")
-            
+
             tprint_info("📊 Starting analyst base models training...")
-            
+
             # Train analyst base models
             result = await self._analyst_trainer.train(data, targets)
-            
+
             if result.success:
+                # Generate predictions on training data
+                predictions = await self._generate_predictions(result.model, data)
+
+                # Save predictions to HDF5 as analyst_base_outputs
+                if predictions is not None:
+                    try:
+                        from src.utils.ml_common.artifact_manager import get_artifact_manager
+                        artifact_mgr = get_artifact_manager()
+                        artifact_mgr.save_artifact(
+                            predictions,
+                            'analyst_base_outputs',
+                            artifact_type='data',
+                            metadata={
+                                'phase': 'analyst_base',
+                                'shape': predictions.shape,
+                                'columns': list(predictions.columns) if hasattr(predictions, 'columns') else []
+                            }
+                        )
+                        tprint_success(f"✅ Saved analyst_base_outputs: {predictions.shape}")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to save analyst_base_outputs: {e}")
+
                 tprint_success("✅ Analyst base models trained successfully")
                 return {
                     'success': True,
-                    'model': result.model,  # Changed from models to model
+                    'model': result.model,
+                    'models': result.models if hasattr(result, 'models') else {},
+                    'predictions': predictions,
                     'metrics': result.metrics,
                     'training_time': result.training_time,
                     'validation_metrics': result.validation_metrics,
@@ -570,7 +594,7 @@ class TrainingPipelineOrchestrator:
             else:
                 tprint_error(f"❌ Analyst base models training failed: {result.error_message}")
                 return {'success': False, 'error_message': result.error_message}
-            
+
         except Exception as e:
             tprint_error(f"❌ Analyst base models training execution failed: {e}")
             return {'success': False, 'error_message': str(e)}
@@ -580,21 +604,50 @@ class TrainingPipelineOrchestrator:
         try:
             if self._ensemble_trainer is None:
                 raise ValueError("Ensemble trainer not initialized")
-            
+
             tprint_info("📊 Starting analyst ensemble training...")
-            
-            # Prepare data with base model predictions
+
+            # Prepare data with base model predictions + disagreement features
             enhanced_data = self._enhance_data_with_predictions(data, base_predictions)
-            
+
+            # Add disagreement features for ensemble
+            if base_predictions is not None and not base_predictions.empty:
+                disagreement_features = self._calculate_disagreement_features(base_predictions)
+                if disagreement_features is not None:
+                    enhanced_data = pd.concat([enhanced_data, disagreement_features], axis=1)
+                    tprint_info(f"📊 Added {len(disagreement_features.columns)} disagreement features")
+
             # Train analyst ensemble
             result = await self._ensemble_trainer.train(enhanced_data, targets)
-            
+
             if result.success:
+                # Generate ensemble predictions
+                predictions = result.predictions if hasattr(result, 'predictions') and result.predictions is not None else await self._generate_predictions(result.model, enhanced_data)
+
+                # Save predictions to HDF5 as analyst_ensemble_outputs
+                if predictions is not None:
+                    try:
+                        from src.utils.ml_common.artifact_manager import get_artifact_manager
+                        artifact_mgr = get_artifact_manager()
+                        artifact_mgr.save_artifact(
+                            predictions,
+                            'analyst_ensemble_outputs',
+                            artifact_type='data',
+                            metadata={
+                                'phase': 'analyst_ensemble',
+                                'shape': predictions.shape,
+                                'columns': list(predictions.columns) if hasattr(predictions, 'columns') else []
+                            }
+                        )
+                        tprint_success(f"✅ Saved analyst_ensemble_outputs: {predictions.shape}")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to save analyst_ensemble_outputs: {e}")
+
                 tprint_success("✅ Analyst ensemble trained successfully")
                 return {
                     'success': True,
                     'model': result.model,
-                    'predictions': result.predictions,
+                    'predictions': predictions,
                     'metrics': result.metrics,
                     'training_time': result.training_time,
                     'metadata': result.metadata
@@ -602,7 +655,7 @@ class TrainingPipelineOrchestrator:
             else:
                 tprint_error(f"❌ Analyst ensemble training failed: {result.error_message}")
                 return {'success': False, 'error_message': result.error_message}
-            
+
         except Exception as e:
             tprint_error(f"❌ Analyst ensemble training execution failed: {e}")
             return {'success': False, 'error_message': str(e)}
@@ -612,21 +665,43 @@ class TrainingPipelineOrchestrator:
         try:
             if self._tactician_trainer is None:
                 raise ValueError("Tactician trainer not initialized")
-            
+
             tprint_info("⚔️ Starting tactician base models training...")
-            
-            # Prepare data with analyst predictions
+
+            # Prepare data with analyst ensemble predictions (NOT base model predictions)
             enhanced_data = self._enhance_data_with_predictions(data, analyst_predictions)
-            
+
             # Train tactician base models
             result = await self._tactician_trainer.train(enhanced_data, targets)
-            
+
             if result.success:
+                # Generate predictions on training data
+                predictions = result.predictions if hasattr(result, 'predictions') and result.predictions is not None else await self._generate_predictions(result.model if hasattr(result, 'model') else result.models, enhanced_data)
+
+                # Save predictions to HDF5 as tactician_base_outputs
+                if predictions is not None:
+                    try:
+                        from src.utils.ml_common.artifact_manager import get_artifact_manager
+                        artifact_mgr = get_artifact_manager()
+                        artifact_mgr.save_artifact(
+                            predictions,
+                            'tactician_base_outputs',
+                            artifact_type='data',
+                            metadata={
+                                'phase': 'tactician_base',
+                                'shape': predictions.shape,
+                                'columns': list(predictions.columns) if hasattr(predictions, 'columns') else []
+                            }
+                        )
+                        tprint_success(f"✅ Saved tactician_base_outputs: {predictions.shape}")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to save tactician_base_outputs: {e}")
+
                 tprint_success("✅ Tactician base models trained successfully")
                 return {
                     'success': True,
-                    'models': result.models,
-                    'predictions': result.predictions,
+                    'models': result.models if hasattr(result, 'models') else {},
+                    'predictions': predictions,
                     'metrics': result.metrics,
                     'training_time': result.training_time,
                     'metadata': result.metadata
@@ -634,7 +709,7 @@ class TrainingPipelineOrchestrator:
             else:
                 tprint_error(f"❌ Tactician base models training failed: {result.error_message}")
                 return {'success': False, 'error_message': result.error_message}
-            
+
         except Exception as e:
             tprint_error(f"❌ Tactician base models training execution failed: {e}")
             return {'success': False, 'error_message': str(e)}
@@ -644,21 +719,50 @@ class TrainingPipelineOrchestrator:
         try:
             if self._ensemble_trainer is None:
                 raise ValueError("Ensemble trainer not initialized")
-            
+
             tprint_info("⚔️ Starting tactician ensemble training...")
-            
-            # Prepare data with base model predictions
+
+            # Prepare data with tactician base model predictions + disagreement features
             enhanced_data = self._enhance_data_with_predictions(data, base_predictions)
-            
+
+            # Add disagreement features for ensemble
+            if base_predictions is not None and not base_predictions.empty:
+                disagreement_features = self._calculate_disagreement_features(base_predictions)
+                if disagreement_features is not None:
+                    enhanced_data = pd.concat([enhanced_data, disagreement_features], axis=1)
+                    tprint_info(f"📊 Added {len(disagreement_features.columns)} disagreement features")
+
             # Train tactician ensemble
             result = await self._ensemble_trainer.train(enhanced_data, targets)
-            
+
             if result.success:
+                # Generate ensemble predictions
+                predictions = result.predictions if hasattr(result, 'predictions') and result.predictions is not None else await self._generate_predictions(result.model, enhanced_data)
+
+                # Save predictions to HDF5 as tactician_ensemble_outputs
+                if predictions is not None:
+                    try:
+                        from src.utils.ml_common.artifact_manager import get_artifact_manager
+                        artifact_mgr = get_artifact_manager()
+                        artifact_mgr.save_artifact(
+                            predictions,
+                            'tactician_ensemble_outputs',
+                            artifact_type='data',
+                            metadata={
+                                'phase': 'tactician_ensemble',
+                                'shape': predictions.shape,
+                                'columns': list(predictions.columns) if hasattr(predictions, 'columns') else []
+                            }
+                        )
+                        tprint_success(f"✅ Saved tactician_ensemble_outputs: {predictions.shape}")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to save tactician_ensemble_outputs: {e}")
+
                 tprint_success("✅ Tactician ensemble trained successfully")
                 return {
                     'success': True,
                     'model': result.model,
-                    'predictions': result.predictions,
+                    'predictions': predictions,
                     'metrics': result.metrics,
                     'training_time': result.training_time,
                     'metadata': result.metadata
@@ -666,7 +770,7 @@ class TrainingPipelineOrchestrator:
             else:
                 tprint_error(f"❌ Tactician ensemble training failed: {result.error_message}")
                 return {'success': False, 'error_message': result.error_message}
-            
+
         except Exception as e:
             tprint_error(f"❌ Tactician ensemble training execution failed: {e}")
             return {'success': False, 'error_message': str(e)}
@@ -952,7 +1056,129 @@ class TrainingPipelineOrchestrator:
             errors=[error_message] + self._pipeline_state['errors'],
             warnings=self._pipeline_state['warnings']
         )
-    
+
+    async def _generate_predictions(self, model: Any, data: pd.DataFrame) -> Optional[pd.DataFrame]:
+        """
+        Generate predictions from a trained model.
+
+        Args:
+            model: Trained model (can be single model or dict of models)
+            data: Input data for predictions
+
+        Returns:
+            DataFrame with predictions or None if failed
+        """
+        try:
+            import pandas as pd
+
+            # Handle dict of models (base models)
+            if isinstance(model, dict):
+                predictions_dict = {}
+                for model_name, model_obj in model.items():
+                    try:
+                        if hasattr(model_obj, 'predict'):
+                            pred = model_obj.predict(data)
+                            predictions_dict[model_name] = pred
+                        elif hasattr(model_obj, 'predict_proba'):
+                            pred = model_obj.predict_proba(data)
+                            # Use probability of positive class if binary
+                            if pred.ndim == 2 and pred.shape[1] == 2:
+                                predictions_dict[model_name] = pred[:, 1]
+                            else:
+                                predictions_dict[model_name] = pred
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to get predictions from {model_name}: {e}")
+                        continue
+
+                if predictions_dict:
+                    return pd.DataFrame(predictions_dict, index=data.index)
+                else:
+                    return None
+
+            # Handle single model
+            elif hasattr(model, 'predict'):
+                pred = model.predict(data)
+                return pd.DataFrame({'prediction': pred}, index=data.index)
+            elif hasattr(model, 'predict_proba'):
+                pred = model.predict_proba(data)
+                # Use probability of positive class if binary
+                if pred.ndim == 2 and pred.shape[1] == 2:
+                    return pd.DataFrame({'prediction_proba': pred[:, 1]}, index=data.index)
+                else:
+                    return pd.DataFrame(pred, index=data.index)
+            else:
+                tprint_warning("⚠️ Model does not have predict or predict_proba method")
+                return None
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate predictions: {e}")
+            return None
+
+    def _calculate_disagreement_features(self, predictions: pd.DataFrame) -> Optional[pd.DataFrame]:
+        """
+        Calculate disagreement features from base model predictions.
+
+        These features capture the diversity and disagreement among base models,
+        which are useful for ensemble learning.
+
+        Args:
+            predictions: DataFrame with predictions from multiple base models
+
+        Returns:
+            DataFrame with disagreement features
+        """
+        try:
+            import pandas as pd
+            import numpy as np
+
+            if predictions is None or predictions.empty or len(predictions.columns) < 2:
+                tprint_warning("⚠️ Need at least 2 base model predictions for disagreement features")
+                return None
+
+            disagreement_features = pd.DataFrame(index=predictions.index)
+
+            # 1. Standard deviation across predictions (diversity)
+            disagreement_features['pred_std'] = predictions.std(axis=1)
+
+            # 2. Range of predictions (min-max spread)
+            disagreement_features['pred_range'] = predictions.max(axis=1) - predictions.min(axis=1)
+
+            # 3. Coefficient of variation (normalized diversity)
+            mean_pred = predictions.mean(axis=1)
+            disagreement_features['pred_cv'] = disagreement_features['pred_std'] / (mean_pred.abs() + 1e-8)
+
+            # 4. Pairwise correlation disagreement (avg correlation)
+            try:
+                corr_matrix = predictions.corr()
+                # Get upper triangle (excluding diagonal)
+                upper_triangle = np.triu(corr_matrix.values, k=1)
+                avg_corr = upper_triangle[upper_triangle != 0].mean() if upper_triangle.size > 0 else 0
+                disagreement_features['pred_avg_corr'] = avg_corr
+            except:
+                pass
+
+            # 5. Median absolute deviation (robust diversity measure)
+            median_pred = predictions.median(axis=1)
+            mad = (predictions.sub(median_pred, axis=0).abs()).median(axis=1)
+            disagreement_features['pred_mad'] = mad
+
+            # 6. Interquartile range (IQR)
+            q75 = predictions.quantile(0.75, axis=1)
+            q25 = predictions.quantile(0.25, axis=1)
+            disagreement_features['pred_iqr'] = q75 - q25
+
+            # 7. Number of models agreeing (within 10% of mean)
+            threshold = mean_pred.abs() * 0.1 + 1e-8
+            agreements = predictions.sub(mean_pred, axis=0).abs().le(threshold, axis=0).sum(axis=1)
+            disagreement_features['pred_agreements'] = agreements / len(predictions.columns)
+
+            tprint_info(f"✅ Calculated {len(disagreement_features.columns)} disagreement features")
+            return disagreement_features
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to calculate disagreement features: {e}")
+            return None
+
     def get_pipeline_status(self) -> Dict[str, Any]:
         """Get current pipeline status."""
         return {

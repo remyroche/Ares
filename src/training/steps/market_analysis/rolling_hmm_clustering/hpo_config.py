@@ -376,27 +376,13 @@ class RollingHMMOptimizer:
             f"min_cov={params.get('min_covar', 1e-3):.1e}"
         )
 
-        # Log trial header
-        tprint("")
-        tprint(f"{'=' * 90}")
-        tprint(f"HPO Trial {trial_num} | Stage: {stage} | Progress: {stage_completed}/{stage_total} ({progress_pct:.1f}%)")
-        tprint(f"{'=' * 90}")
-
-        # Log parameters
-        tprint(f"Parameters: {param_str}")
-
-        # Log metrics (statsmodel_clustering style)
-        tprint("")
-        tprint(f"Quality Metrics:")
-        tprint(f"  • Within-Cluster CV:  {within_cv:8.4f}  (lower = tighter clusters)")
-        tprint(f"  • Between-Cluster CV: {between_cv:8.4f}  (higher = better separation)")
-        tprint(f"  • CV Ratio (B/W):     {cv_ratio:8.4f}  (higher = better separation)")
-        tprint(f"  • Temporal Smoothness: {temporal_smoothness:8.4f}  (higher = more persistent)")
-        tprint(f"  • Silhouette Score:    {silhouette:8.4f}  (higher = better separation)")
-        tprint(f"  • Quality Score:       {quality_score:8.4f}  (composite 0-1 score)")
-        tprint(f"  • Objective Score:     {objective_score:8.4f}  (weighted avg)")
-        tprint(f"{'=' * 90}")
-        tprint("")
+        # Compact single-line format showing key info (similar to statsmodel pattern)
+        tprint(
+            f"Trial {trial_num:3d} [{stage}] {stage_completed}/{stage_total} ({progress_pct:5.1f}%) | "
+            f"{param_str} | "
+            f"Within_CV={within_cv:.4f}, Between_CV={between_cv:.4f}, Ratio={cv_ratio:.4f}, "
+            f"Temp={temporal_smoothness:.4f}, Sil={silhouette:.4f}, Obj={objective_score:.4f}"
+        )
 
     def optimize(
         self,
@@ -475,12 +461,6 @@ class RollingHMMOptimizer:
         """
         tprint_info("Running custom hierarchical optimization")
 
-        # Stage 1: Coarse grid search
-        self.current_stage = "Coarse Grid Search"
-        tprint("")
-        tprint(f"🔍 Stage 1/3: {self.current_stage}")
-        tprint(f"{'=' * 90}")
-
         coarse_grid = {
             'ewma_config_idx': [0, 2, 4],  # 3 EWMA configs
             'n_components': [4, 5, 6],     # 3 states
@@ -498,7 +478,10 @@ class RollingHMMOptimizer:
         self.stage_trials_total = int(n_coarse_samples)
         self.stage_trials_completed = 0
 
-        tprint(f"Running {n_coarse_samples} coarse grid trials")
+        # Stage 1: Coarse grid search
+        self.current_stage = "Coarse Grid"
+        tprint("")
+        tprint(f"🔍 Stage 1/3: {self.current_stage} ({n_coarse_samples} trials)")
 
         for i in range(n_coarse_samples):
             self.current_trial += 1
@@ -516,19 +499,16 @@ class RollingHMMOptimizer:
                 best_params = params.copy()
 
         tprint(f"✅ Coarse grid complete - Best score: {best_score:.4f}")
-        tprint("")
 
         # Stage 2: Fine grid search around best region
-        self.current_stage = "Fine Grid Search"
-        tprint(f"🔍 Stage 2/3: {self.current_stage}")
-        tprint(f"{'=' * 90}")
-
+        self.current_stage = "Fine Grid"
         fine_grid = self._create_fine_grid(best_params)
         fine_results = []
         self.stage_trials_total = int(len(fine_grid))
         self.stage_trials_completed = 0
 
-        tprint(f"Running {len(fine_grid)} fine grid trials around best region")
+        tprint("")
+        tprint(f"🔍 Stage 2/3: {self.current_stage} ({len(fine_grid)} trials around best region)")
 
         for i, params in enumerate(fine_grid):
             self.current_trial += 1
@@ -542,20 +522,17 @@ class RollingHMMOptimizer:
                 best_params = params.copy()
 
         tprint(f"✅ Fine grid complete - Best score: {best_score:.4f}")
-        tprint("")
 
         # Stage 3: Final refinement with random search
         refinement_results = []
 
         if self.config.enable_final_refinement:
-            self.current_stage = "Random Refinement"
-            tprint(f"🔍 Stage 3/3: {self.current_stage}")
-            tprint(f"{'=' * 90}")
-
+            self.current_stage = "Refinement"
             self.stage_trials_total = int(self.config.final_refinement_trials)
             self.stage_trials_completed = 0
 
-            tprint(f"Running {self.config.final_refinement_trials} refinement trials")
+            tprint("")
+            tprint(f"🔍 Stage 3/3: {self.current_stage} ({self.config.final_refinement_trials} random trials)")
 
             for i in range(self.config.final_refinement_trials):
                 self.current_trial += 1
@@ -571,7 +548,6 @@ class RollingHMMOptimizer:
                     best_params = params.copy()
 
             tprint(f"✅ Refinement complete - Best score: {best_score:.4f}")
-            tprint("")
 
         all_round_one_results = coarse_results + fine_results + refinement_results
 
@@ -724,9 +700,9 @@ class RollingHMMOptimizer:
             tprint_warning("⚠️  No candidate parameters generated for second-round optimization")
             return current_best_score, current_best_params, []
 
-        self.current_stage = "Second Round Focused Search"
-        tprint(f"🔁 Initiating {self.current_stage}")
-        tprint(f"{'=' * 90}")
+        self.current_stage = "Round 2"
+        tprint("")
+        tprint(f"🔁 Stage 4: {self.current_stage} ({len(candidate_params)} trials around top performers)")
 
         self.stage_trials_total = int(len(candidate_params))
         self.stage_trials_completed = 0
@@ -744,8 +720,7 @@ class RollingHMMOptimizer:
                 current_best_score = score
                 current_best_params = params.copy()
 
-        tprint(f"✅ Second round complete - Best score: {current_best_score:.4f}")
-        tprint("")
+        tprint(f"✅ Round 2 complete - Best score: {current_best_score:.4f}")
 
         return current_best_score, current_best_params, second_round_results
 

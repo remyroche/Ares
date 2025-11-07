@@ -269,6 +269,10 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             # Save results
             labels_df, probs_df = await self._save_results(result, symbol, exchange, timeframe, config)
 
+            # Add HPO results to result dict for report generation
+            if hpo_results:
+                result['hpo_results'] = hpo_results
+
             # Generate reports
             await self._generate_reports(result, symbol, exchange, timeframe, config)
             
@@ -538,6 +542,12 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
 
             # Assess quality
             tprint_info("  → Assessing regime quality")
+
+            # Diagnostic: Check regime transitions
+            unique_regimes = np.unique(regime_labels)
+            regime_transitions = np.sum(regime_labels[1:] != regime_labels[:-1])
+            tprint_info(f"  → Found {len(unique_regimes)} unique regimes, {regime_transitions} transitions in {len(regime_labels)} samples")
+
             metrics = self.quality_assessor.assess_hmm_regime_quality(
                 regime_labels=regime_labels,
                 feature_data=features_pca,
@@ -727,12 +737,16 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             if not hpo_results:
                 hpo_results = config.get('hpo_summary')
             if hpo_results:
-                trial_keys = ['coarse_results', 'fine_results', 'refinement_results']
+                trial_keys = ['coarse_results', 'fine_results', 'refinement_results', 'second_round_results']
                 all_trials = []
                 for key in trial_keys:
                     trials = hpo_results.get(key)
                     if isinstance(trials, list):
-                        all_trials.extend(trials)
+                        # Each trial is a tuple of (params, score)
+                        for params, score in trials:
+                            trial_dict = params.copy() if isinstance(params, dict) else {}
+                            trial_dict['score'] = score
+                            all_trials.append(trial_dict)
 
             self.quality_assessor.generate_comprehensive_csv_report(
                 metrics_obj,

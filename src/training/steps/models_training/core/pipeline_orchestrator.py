@@ -1118,14 +1118,14 @@ class TrainingPipelineOrchestrator:
         """
         Calculate disagreement features from base model predictions.
 
-        These features capture the diversity and disagreement among base models,
-        which are useful for ensemble learning.
+        Only uses Coefficient of Variation (CV) as the disagreement metric,
+        which provides normalized diversity measure across base models.
 
         Args:
             predictions: DataFrame with predictions from multiple base models
 
         Returns:
-            DataFrame with disagreement features
+            DataFrame with CV disagreement feature
         """
         try:
             import pandas as pd
@@ -1137,42 +1137,12 @@ class TrainingPipelineOrchestrator:
 
             disagreement_features = pd.DataFrame(index=predictions.index)
 
-            # 1. Standard deviation across predictions (diversity)
-            disagreement_features['pred_std'] = predictions.std(axis=1)
-
-            # 2. Range of predictions (min-max spread)
-            disagreement_features['pred_range'] = predictions.max(axis=1) - predictions.min(axis=1)
-
-            # 3. Coefficient of variation (normalized diversity)
+            # Coefficient of variation (normalized diversity) - ONLY disagreement metric
+            std_pred = predictions.std(axis=1)
             mean_pred = predictions.mean(axis=1)
-            disagreement_features['pred_cv'] = disagreement_features['pred_std'] / (mean_pred.abs() + 1e-8)
+            disagreement_features['pred_cv'] = std_pred / (mean_pred.abs() + 1e-8)
 
-            # 4. Pairwise correlation disagreement (avg correlation)
-            try:
-                corr_matrix = predictions.corr()
-                # Get upper triangle (excluding diagonal)
-                upper_triangle = np.triu(corr_matrix.values, k=1)
-                avg_corr = upper_triangle[upper_triangle != 0].mean() if upper_triangle.size > 0 else 0
-                disagreement_features['pred_avg_corr'] = avg_corr
-            except:
-                pass
-
-            # 5. Median absolute deviation (robust diversity measure)
-            median_pred = predictions.median(axis=1)
-            mad = (predictions.sub(median_pred, axis=0).abs()).median(axis=1)
-            disagreement_features['pred_mad'] = mad
-
-            # 6. Interquartile range (IQR)
-            q75 = predictions.quantile(0.75, axis=1)
-            q25 = predictions.quantile(0.25, axis=1)
-            disagreement_features['pred_iqr'] = q75 - q25
-
-            # 7. Number of models agreeing (within 10% of mean)
-            threshold = mean_pred.abs() * 0.1 + 1e-8
-            agreements = predictions.sub(mean_pred, axis=0).abs().le(threshold, axis=0).sum(axis=1)
-            disagreement_features['pred_agreements'] = agreements / len(predictions.columns)
-
-            tprint_info(f"✅ Calculated {len(disagreement_features.columns)} disagreement features")
+            tprint_info(f"✅ Calculated {len(disagreement_features.columns)} disagreement feature (CV only)")
             return disagreement_features
 
         except Exception as e:

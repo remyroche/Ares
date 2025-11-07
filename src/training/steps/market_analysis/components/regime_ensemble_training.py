@@ -344,14 +344,16 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         """
         Calculate disagreement features from base model predictions.
 
+        Only uses Coefficient of Variation (CV) per regime as the disagreement metric.
+
         Args:
             predictions: DataFrame with base model predictions
 
         Returns:
-            DataFrame with disagreement features
+            DataFrame with CV disagreement features per regime
         """
         try:
-            tprint("🔢 [REGIME_ENSEMBLE] Calculating disagreement features", color="cyan")
+            tprint("🔢 [REGIME_ENSEMBLE] Calculating disagreement features (CV only per regime)", color="cyan")
 
             disagreement_features = pd.DataFrame(index=predictions.index)
 
@@ -365,29 +367,19 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                         regime_groups[regime_num] = []
                     regime_groups[regime_num].append(col)
 
-            # Calculate disagreement features for each regime
+            # Calculate CV (only) for each regime
             for regime_num, cols in regime_groups.items():
                 if len(cols) < 2:
                     continue
 
                 regime_preds = predictions[cols]
 
-                # 1. Standard deviation
-                disagreement_features[f'regime_{regime_num}_std'] = regime_preds.std(axis=1)
-
-                # 2. Range
-                disagreement_features[f'regime_{regime_num}_range'] = regime_preds.max(axis=1) - regime_preds.min(axis=1)
-
-                # 3. Coefficient of variation
+                # Coefficient of variation (normalized diversity) - ONLY disagreement metric
+                std_pred = regime_preds.std(axis=1)
                 mean_pred = regime_preds.mean(axis=1)
-                disagreement_features[f'regime_{regime_num}_cv'] = disagreement_features[f'regime_{regime_num}_std'] / (mean_pred + 1e-8)
+                disagreement_features[f'regime_{regime_num}_cv'] = std_pred / (mean_pred + 1e-8)
 
-                # 4. Median absolute deviation
-                median_pred = regime_preds.median(axis=1)
-                mad = (regime_preds.sub(median_pred, axis=0).abs()).median(axis=1)
-                disagreement_features[f'regime_{regime_num}_mad'] = mad
-
-            tprint(f"✅ [REGIME_ENSEMBLE] Calculated {len(disagreement_features.columns)} disagreement features", color="green")
+            tprint(f"✅ [REGIME_ENSEMBLE] Calculated {len(disagreement_features.columns)} disagreement features (CV only)", color="green")
 
             return disagreement_features
 

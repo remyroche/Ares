@@ -1080,6 +1080,42 @@ class UnifiedModelsTrainingStep(BaseStep):
                     raise
 
             if training_data is not None and isinstance(training_data, pd.DataFrame):
+                # Comprehensive feature loading verification and logging
+                tprint_info("=" * 80)
+                tprint_info("📊 COMPREHENSIVE FEATURE LOADING VERIFICATION")
+                tprint_info("=" * 80)
+                tprint_success(f"✅ HDF5 Access Verified: Successfully loaded from '{feature_source_name or 'unknown_source'}'")
+                tprint_info(f"📦 Feature DataFrame Shape: {training_data.shape} ({training_data.shape[0]:,} samples × {training_data.shape[1]:,} features)")
+                tprint_info(f"💾 Memory Usage: {training_data.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+                tprint_info(f"🔢 Data Types Distribution: {dict(training_data.dtypes.value_counts())}")
+                tprint_info(f"📋 Column Names (first 20): {list(training_data.columns[:20])}")
+                if len(training_data.columns) > 20:
+                    tprint_info(f"    ... and {len(training_data.columns) - 20} more columns")
+
+                # Check for missing data
+                null_counts = training_data.isnull().sum()
+                cols_with_nulls = null_counts[null_counts > 0]
+                if len(cols_with_nulls) > 0:
+                    tprint_warning(f"⚠️ Found {len(cols_with_nulls)} columns with missing values")
+                    tprint_info(f"   Top 10 columns with most nulls:")
+                    for col, count in cols_with_nulls.nlargest(10).items():
+                        pct = (count / len(training_data)) * 100
+                        tprint_info(f"      - {col}: {count:,} ({pct:.1f}%)")
+                else:
+                    tprint_success("✅ No missing values detected")
+
+                # Check for constant/zero-variance columns
+                numeric_cols = training_data.select_dtypes(include=[np.number]).columns
+                if len(numeric_cols) > 0:
+                    std_devs = training_data[numeric_cols].std()
+                    zero_var_cols = std_devs[std_devs == 0].index.tolist()
+                    if len(zero_var_cols) > 0:
+                        tprint_warning(f"⚠️ Found {len(zero_var_cols)} zero-variance columns (will be removed during cleaning)")
+                    else:
+                        tprint_success("✅ All numeric columns have variance")
+
+                tprint_info("=" * 80)
+
                 self._log_feature_snapshot(training_data, feature_source_name or 'unknown_source', prefix='📥 Raw load ')
                 tprint_info(
                     f"🧪 Raw feature frame -> shape={training_data.shape}, columns={len(training_data.columns)}, "
@@ -1370,40 +1406,44 @@ class UnifiedModelsTrainingStep(BaseStep):
             additional_features_list = []
             base_outputs_for_stats = None # Store the specific DataFrame to calculate stats on
 
-            # --- START OF FIX 5: Load and Resample Regime Features ---
+            # --- START: Load and Resample Regime Features (FAST-FAIL) ---
             try:
-                # Load regime ensemble predictions (from regime_ensemble_training)
+                # Load regime ensemble predictions (from regime_ensemble_training) - REQUIRED
                 regime_features = self._get_artifact('regime_ensemble_predictions', 'data')
-                if regime_features is not None:
-                    tprint_info(f"   ↪ Retrieved regime_ensemble_predictions: shape={regime_features.shape}, columns={len(regime_features.columns)}")
-                    tprint_success(f"✅ Loaded regime ensemble predictions: {regime_features.shape}")
-                    # Resample regime features if needed to match training data (should already be 15m)
-                    if not regime_features.index.equals(training_data.index):
-                        tprint_warning(f"Regime features index mismatch. Resampling {len(regime_features)} rows to match {len(training_data)} rows.")
-                        # Use ffill and bfill for any alignment issues
-                        regime_features_resampled = regime_features.reindex(training_data.index, method='ffill').fillna(method='bfill')
-                        tprint_info(
-                            f"   ↪ Resampled regime features -> shape={regime_features_resampled.shape}, columns={len(regime_features_resampled.columns)}"
-                        )
-                        additional_features_list.append(regime_features_resampled)
-                        tprint_success("✅ Resampled and added regime ensemble features.")
-                    else:
-                        tprint_info("   ↪ Regime features already aligned with training index")
-                        additional_features_list.append(regime_features)
+                if regime_features is None:
+                    error_msg = (
+                        "❌ CRITICAL: regime_ensemble_predictions artifact not found!\n"
+                        "   This artifact is REQUIRED for model training.\n"
+                        "   Please ensure regime_ensemble_training step has run successfully."
+                    )
+                    tprint_error(error_msg)
+                    raise ValueError(error_msg)
+
+                tprint_info(f"   ↪ Retrieved regime_ensemble_predictions: shape={regime_features.shape}, columns={len(regime_features.columns)}")
+                tprint_success(f"✅ Loaded regime ensemble predictions: {regime_features.shape}")
+
+                # Resample regime features if needed to match training data (should already be 15m)
+                if not regime_features.index.equals(training_data.index):
+                    tprint_warning(f"Regime features index mismatch. Resampling {len(regime_features)} rows to match {len(training_data)} rows.")
+                    # Use ffill and bfill for any alignment issues
+                    regime_features_resampled = regime_features.reindex(training_data.index, method='ffill').fillna(method='bfill')
+                    tprint_info(
+                        f"   ↪ Resampled regime features -> shape={regime_features_resampled.shape}, columns={len(regime_features_resampled.columns)}"
+                    )
+                    additional_features_list.append(regime_features_resampled)
+                    tprint_success("✅ Resampled and added regime ensemble features.")
                 else:
-                    tprint_warning("⚠️ Regime ensemble predictions artifact not found, trying fallback 'regime_probabilities'")
-                    # Fallback to regime_probabilities if regime_ensemble_predictions not found
-                    regime_features = self._get_artifact('regime_probabilities', 'data')
-                    if regime_features is not None:
-                        tprint_info(f"   ↪ Retrieved regime_probabilities (fallback): shape={regime_features.shape}")
-                        regime_features_resampled = regime_features.reindex(training_data.index, method='ffill').fillna(method='bfill')
-                        additional_features_list.append(regime_features_resampled)
-                        tprint_success("✅ Added regime probabilities (fallback).")
-                    else:
-                        tprint_warning("⚠️ No regime features found")
+                    tprint_info("   ↪ Regime features already aligned with training index")
+                    additional_features_list.append(regime_features)
+            except ValueError:
+                # Re-raise ValueError for fast-fail
+                raise
             except Exception as e:
-                tprint_warning(f"⚠️ Could not load regime features: {e}")
-            # --- END OF FIX 5 ---
+                # Unexpected errors should also fast-fail
+                error_msg = f"❌ CRITICAL: Failed to load regime_ensemble_predictions: {e}"
+                tprint_error(error_msg)
+                raise ValueError(error_msg) from e
+            # --- END: Load and Resample Regime Features (FAST-FAIL) ---
 
 
             if training_type == 'analyst_ensemble':

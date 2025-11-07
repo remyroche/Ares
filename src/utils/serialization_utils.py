@@ -1,7 +1,42 @@
 """
 Serialization Utilities Module
 
-This module provides various serialization utilities for data persistence.
+This module provides serialization utilities for non-tabular data persistence.
+
+RESPONSIBILITIES:
+----------------
+1. JSON Serialization:
+   - Configuration files
+   - Metadata dictionaries
+   - Small data structures
+   - Human-readable data (for debugging/inspection)
+
+2. Pickle Serialization:
+   - ML models (sklearn, xgboost, lightgbm, etc.)
+   - Complex Python objects
+   - Arbitrary data structures
+   - Non-tabular data
+
+3. Basic Parquet Operations:
+   - Simple DataFrame storage (for basic use cases)
+   - Note: For specialized OHLCV/time-series data, use kline_parquet.py
+   - Note: For versioned feature DataFrames, use versioned_artifacts/
+
+WHEN TO USE:
+-----------
+- Use JSON for: configs, metadata, small dicts, human-readable data
+- Use Pickle for: ML models, complex objects, non-tabular data
+- Use kline_parquet.py for: historical OHLCV data
+- Use versioned_artifacts/ for: feature DataFrames with versioning
+
+Example:
+    # Save ML model
+    from src.utils.serialization_utils import save_pickle
+    save_pickle(trained_model, "models/my_model.pkl")
+
+    # Save configuration
+    from src.utils.serialization_utils import save_json
+    save_json(config_dict, "configs/config.json")
 """
 
 import json

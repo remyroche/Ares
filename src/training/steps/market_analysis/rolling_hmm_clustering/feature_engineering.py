@@ -392,26 +392,35 @@ class RollingHMMFeatureEngineer:
         """
         features = {}
 
+        # Generate all feature types (logging reduced for performance)
+        feature_types = []
+        if self.config.use_log_returns:
+            feature_types.append("returns")
+        if self.config.use_volatility_features:
+            feature_types.append("volatility")
+        if self.config.use_trend_features:
+            feature_types.append("trend")
+        if self.config.use_volume_features:
+            feature_types.append("volume")
+
+        tprint_debug(f"  → Generating features: {', '.join(feature_types)}")
+
         # 1. Returns features
-        tprint_info(f"  → Generating returns features (log={self.config.use_log_returns})")
         returns_features = self._generate_returns_features(market_data, ewma_config)
         features.update(returns_features)
 
         # 2. Volatility features
         if self.config.use_volatility_features:
-            tprint_info(f"  → Generating volatility features (window={ewma_config.name})")
             volatility_features = self._generate_volatility_features(market_data, ewma_config)
             features.update(volatility_features)
 
         # 3. Trend features
         if self.config.use_trend_features:
-            tprint_info(f"  → Generating trend features (window={ewma_config.name})")
             trend_features = self._generate_trend_features(market_data, ewma_config)
             features.update(trend_features)
 
         # 4. Volume features
         if self.config.use_volume_features:
-            tprint_info(f"  → Generating volume features (window={ewma_config.name})")
             volume_features = self._generate_volume_features(market_data, ewma_config)
             features.update(volume_features)
 
@@ -426,7 +435,6 @@ class RollingHMMFeatureEngineer:
         ewma_config: EWMAConfig
     ) -> Dict[str, pd.Series]:
         """Generate returns-based features."""
-        tprint_debug(f"    Generating returns features for EWMA {ewma_config.name}")
         features = {}
 
         close = market_data['close']
@@ -468,7 +476,6 @@ class RollingHMMFeatureEngineer:
         ewma_config: EWMAConfig
     ) -> Dict[str, pd.Series]:
         """Generate volatility-based features."""
-        tprint_debug(f"    Generating volatility features for EWMA {ewma_config.name}")
         features = {}
 
         close = market_data['close']
@@ -535,7 +542,6 @@ class RollingHMMFeatureEngineer:
         ewma_config: EWMAConfig
     ) -> Dict[str, pd.Series]:
         """Generate trend-based features."""
-        tprint_debug(f"    Generating trend features for EWMA {ewma_config.name}")
         features = {}
 
         close = market_data['close']
@@ -615,7 +621,6 @@ class RollingHMMFeatureEngineer:
         ewma_config: EWMAConfig
     ) -> Dict[str, pd.Series]:
         """Generate volume-based features."""
-        tprint_debug(f"    Generating volume features for EWMA {ewma_config.name}")
         features = {}
 
         volume = market_data['volume']
@@ -713,11 +718,6 @@ class RollingHMMFeatureEngineer:
     def _calculate_obv(self, close: pd.Series, volume: pd.Series) -> pd.Series:
         """Calculate On-Balance Volume."""
         if self.config.enable_numba_jit:
-            tprint_debug("    Calculating OBV using Numba acceleration")
-        else:
-            tprint_debug("    Calculating OBV using pandas fallback")
-
-        if self.config.enable_numba_jit:
             obv_values = self._calculate_obv_numba(close.values, volume.values)
             return pd.Series(obv_values, index=close.index)
         else:
@@ -741,7 +741,7 @@ class RollingHMMFeatureEngineer:
 
         Features with much larger variance will dominate the HMM fit unless scaled.
         """
-        tprint_info(f"    Normalizing with {self.config.normalize_method}")
+        tprint_debug(f"    Normalizing with {self.config.normalize_method}")
 
         normalized_features = {}
 

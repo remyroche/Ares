@@ -171,12 +171,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             f"(timeframe: {timeframe})",
             "INFO"
         )
-        tprint("🧠 Enhanced Features:", "INFO")
-        tprint("   - EWMA-based rolling features (8+16, 8+20, 8+24, 12+16, 12+20, 12+24)", "INFO")
-        tprint("   - Returns, volatility, trend, and volume features", "INFO")
-        tprint("   - PCA dimensionality reduction (3-5 components)", "INFO")
-        tprint("   - Sticky HMM with diagonal covariance and regularization", "INFO")
-        tprint("   - VectorBT and hardware optimization for M1", "INFO")
+        tprint_debug("🧠 Enhanced Features: EWMA rolling (8+16 to 12+24), Returns/Vol/Trend/Volume, PCA (3-5), Sticky HMM, VectorBT+M1")
         
         try:
             # Initialize hardware optimization

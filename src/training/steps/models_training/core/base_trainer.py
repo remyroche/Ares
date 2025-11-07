@@ -49,7 +49,7 @@ class TrainingRole(Enum):
 class ModelType(Enum):
     """Types of ML models."""
     LIGHTGBM = "lightgbm"
-    TCN = "tcn"  # Temporal Convolutional Network
+    DEPTHWISE_CNN = "depthwise_cnn"  # DepthwiseSeparableCNNRegressor (replaces TCN)
     CATBOOST = "catboost"
     NEURAL_NETWORK = "neural_network"
     ENSEMBLE = "ensemble"

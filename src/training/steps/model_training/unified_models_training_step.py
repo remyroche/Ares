@@ -401,28 +401,24 @@ class UnifiedModelsTrainingStep(BaseStep):
         if 'analyst_config' in yaml_config:
             base_models = yaml_config['analyst_config'].get('base_models', {})
             
-            # Optimize TCN
-            if 'tcn' in base_models:
-                tcn_config = base_models['tcn']
-                tprint_warning(f"⚡ Applying {execution_mode.upper()} mode TCN optimizations (10x lighter)")
-                
-                # Drastically reduce TCN parameters for light mode
-                tcn_params = tcn_config.get('params', {})
-                tcn_params['num_filters'] = 32  # Reduced from 64
-                tcn_params['num_layers'] = 2  # Reduced from 4
-                tcn_params['epochs'] = 10  # Reduced from 50 (10x lighter)
-                tcn_params['batch_size'] = 128  # Increased from 64 (fewer iterations)
-                tcn_params['early_stopping_patience'] = 3  # Reduced from 7
-                tcn_params['use_autoencoder'] = False  # Disabled to save 25 epochs
-                tcn_params['autoencoder_epochs'] = 5  # Reduced from 25 if autoencoder is re-enabled
-                
-                # Disable TCN HPO in light mode
-                if 'hpo' in tcn_config:
-                    tcn_config['hpo']['enabled'] = False
-                
-                tprint_info(f"  TCN epochs: 50 → 10 (10x lighter)")
-                tprint_info(f"  TCN autoencoder: DISABLED (saves 25 epochs)")
-                tprint_info(f"  TCN HPO: DISABLED")
+            # Optimize DepthwiseCNN (replaces TCN)
+            if 'depthwise_cnn' in base_models:
+                depthwise_config = base_models['depthwise_cnn']
+                tprint_warning(f"⚡ Applying {execution_mode.upper()} mode DepthwiseCNN optimizations (10x lighter)")
+
+                # Drastically reduce DepthwiseCNN parameters for light mode
+                depthwise_params = depthwise_config.get('params', {})
+                depthwise_params['filters'] = 32  # Reduced from 64
+                depthwise_params['epochs'] = 10  # Reduced from 50 (10x lighter)
+                depthwise_params['batch_size'] = 128  # Increased from 64 (fewer iterations)
+                depthwise_params['early_stopping_patience'] = 3  # Reduced from 7
+
+                # Disable DepthwiseCNN HPO in light mode
+                if 'hpo' in depthwise_config:
+                    depthwise_config['hpo']['enabled'] = False
+
+                tprint_info(f"  DepthwiseCNN epochs: 50 → 10 (10x lighter)")
+                tprint_info(f"  DepthwiseCNN HPO: DISABLED")
             
             # Optimize CatBoost
             if 'catboost' in base_models:
@@ -734,28 +730,24 @@ class UnifiedModelsTrainingStep(BaseStep):
         if 'analyst_config' in yaml_config:
             base_models = yaml_config['analyst_config'].get('base_models', {})
             
-            # Optimize TCN (Legacy)
-            if 'tcn' in base_models:
-                tcn_config = base_models['tcn']
-                tprint_warning(f"⚡ Applying {execution_mode.upper()} mode TCN optimizations (10x lighter)")
-                
-                # Drastically reduce TCN parameters for light mode
-                tcn_params = tcn_config.get('params', {})
-                tcn_params['num_filters'] = 32  # Reduced from 64
-                tcn_params['num_layers'] = 2  # Reduced from 4
-                tcn_params['epochs'] = 10  # Reduced from 50 (10x lighter)
-                tcn_params['batch_size'] = 128  # Increased from 64 (fewer iterations)
-                tcn_params['early_stopping_patience'] = 3  # Reduced from 7
-                tcn_params['use_autoencoder'] = False  # Disabled to save 25 epochs
-                tcn_params['autoencoder_epochs'] = 5  # Reduced from 25 if autoencoder is re-enabled
-                
-                # Disable TCN HPO in light mode
-                if 'hpo' in tcn_config:
-                    tcn_config['hpo']['enabled'] = False
-                
-                tprint_info(f"  TCN epochs: 50 → 10 (10x lighter)")
-                tprint_info(f"  TCN autoencoder: DISABLED (saves 25 epochs)")
-                tprint_info(f"  TCN HPO: DISABLED")
+            # Optimize DepthwiseCNN (replaces TCN)
+            if 'depthwise_cnn' in base_models:
+                depthwise_config = base_models['depthwise_cnn']
+                tprint_warning(f"⚡ Applying {execution_mode.upper()} mode DepthwiseCNN optimizations (10x lighter)")
+
+                # Drastically reduce DepthwiseCNN parameters for light mode
+                depthwise_params = depthwise_config.get('params', {})
+                depthwise_params['filters'] = 32  # Reduced from 64
+                depthwise_params['epochs'] = 10  # Reduced from 50 (10x lighter)
+                depthwise_params['batch_size'] = 128  # Increased from 64 (fewer iterations)
+                depthwise_params['early_stopping_patience'] = 3  # Reduced from 7
+
+                # Disable DepthwiseCNN HPO in light mode
+                if 'hpo' in depthwise_config:
+                    depthwise_config['hpo']['enabled'] = False
+
+                tprint_info(f"  DepthwiseCNN epochs: 50 → 10 (10x lighter)")
+                tprint_info(f"  DepthwiseCNN HPO: DISABLED")
             
             # Optimize CatBoost
             if 'catboost' in base_models:

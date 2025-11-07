@@ -34,15 +34,24 @@ class TradingEngine:
         self._trading_active = False
         self._last_analysis: Dict[str, AnalysisResult] = {}
         self._last_strategy: Dict[str, StrategyResult] = {}
-        
+
+        # Circuit breaker state
+        self._circuit_breaker_open = False
+        self._consecutive_failures = 0
+        self._last_failure_time: Optional[datetime] = None
+        self._circuit_breaker_threshold = config.circuit_breaker_threshold if hasattr(config, 'circuit_breaker_threshold') else 5
+        self._circuit_breaker_reset_time = config.circuit_breaker_reset_time if hasattr(config, 'circuit_breaker_reset_time') else 300  # 5 minutes
+
         # Event handlers
         self.trading_handlers: Dict[str, List[Callable[[Any], Awaitable[None]]]] = {
             "on_trade_executed": [],
             "on_risk_violation": [],
             "on_data_received": [],
-            "on_error": []
+            "on_error": [],
+            "on_circuit_breaker_open": [],
+            "on_circuit_breaker_reset": []
         }
-        
+
         # Performance tracking
         self.trade_history: List[Dict[str, Any]] = []
         self.performance_metrics: Dict[str, Any] = {}
@@ -109,7 +118,12 @@ class TradingEngine:
         if not self._trading_active:
             self.logger.warning("Trading is not active, ignoring trade decision")
             return None
-        
+
+        # Check circuit breaker
+        if await self._check_circuit_breaker():
+            self.logger.warning("❌ Circuit breaker is open, rejecting trade decision")
+            return None
+
         try:
             # Validate trade decision with risk manager
             try:
@@ -125,12 +139,15 @@ class TradingEngine:
                         "action": decision.action,
                         "quantity": decision.quantity
                     })
+                    # Increment failure count
+                    await self._record_trade_failure()
                     return None
             except Exception as e:
                 self.logger.error(f"❌ Risk validation failed: {e}")
-                self.logger.warning("⚠️ Proceeding with trade despite risk validation failure - RISK MANAGEMENT DISABLED")
-                # Continue with trade execution
-            
+                # Don't proceed if risk validation fails - this is critical
+                await self._record_trade_failure()
+                return None
+
             # Create order from decision
             order = await self.order_manager.create_order_from_decision(decision)
             
@@ -147,16 +164,22 @@ class TradingEngine:
                 "risk_score": decision.risk_score
             }
             self.trade_history.append(trade_record)
-            
+
+            # Record successful trade (reset failure counter)
+            await self._record_trade_success()
+
             # Notify handlers
             await self._notify_handlers("on_trade_executed", trade_record)
-            
+
             self.logger.info(f"Trade executed: {decision.symbol} {decision.action} {decision.quantity}")
-            
+
             return order
-            
+
         except Exception as e:
             self.logger.error(f"Error executing trade decision: {e}")
+            # Record trade failure (increment failure counter)
+            await self._record_trade_failure()
+
             await self._notify_handlers("on_error", {
                 "type": "trade_execution_error",
                 "error": str(e),
@@ -304,23 +327,108 @@ class TradingEngine:
     
     async def emergency_stop(self) -> None:
         """Emergency stop - cancel all orders and pause trading"""
-        self.logger.warning("Emergency stop triggered!")
-        
+        self.logger.warning("⚠️  EMERGENCY STOP TRIGGERED!")
+
         try:
+            # Open circuit breaker immediately
+            self._circuit_breaker_open = True
+            await self._notify_handlers("on_circuit_breaker_open", {
+                "reason": "emergency_stop",
+                "consecutive_failures": self._consecutive_failures
+            })
+
             # Cancel all active orders
             active_orders = await self.order_manager.get_active_orders()
+            cancelled_count = 0
+            failed_count = 0
+
             for order in active_orders:
-                await self.order_manager.cancel_order(order.id)
-            
+                try:
+                    await self.order_manager.cancel_order(order.id)
+                    cancelled_count += 1
+                    self.logger.info(f"✅ Cancelled order: {order.id}")
+                except Exception as order_error:
+                    failed_count += 1
+                    self.logger.error(f"❌ Failed to cancel order {order.id}: {order_error}")
+
             # Pause trading
             await self.pause_trading()
-            
-            self.logger.info("Emergency stop completed - all orders cancelled and trading paused")
-            
+
+            if failed_count == 0:
+                self.logger.info(f"✅ Emergency stop completed - {cancelled_count} orders cancelled, trading paused")
+            else:
+                self.logger.warning(f"⚠️  Emergency stop completed with errors - {cancelled_count} orders cancelled, {failed_count} failures")
+
         except Exception as e:
-            self.logger.error(f"❌ Error during emergency stop: {e}")
-            self.logger.warning("⚠️ Emergency stop completed with errors - some orders may not have been cancelled")
-    
+            self.logger.error(f"❌ Critical error during emergency stop: {e}")
+            self.logger.warning("⚠️  Emergency stop may be incomplete - manual intervention required")
+
+    async def _check_circuit_breaker(self) -> bool:
+        """
+        Check if circuit breaker should be opened or if it can be reset.
+
+        Returns:
+            True if circuit breaker is open (trading should be blocked)
+        """
+        if not self._circuit_breaker_open:
+            return False
+
+        # Check if enough time has passed to reset circuit breaker
+        if self._last_failure_time:
+            time_since_failure = (datetime.now() - self._last_failure_time).total_seconds()
+            if time_since_failure > self._circuit_breaker_reset_time:
+                await self._reset_circuit_breaker()
+                return False
+
+        return True
+
+    async def _record_trade_failure(self) -> None:
+        """Record a trade failure and check if circuit breaker should be triggered"""
+        self._consecutive_failures += 1
+        self._last_failure_time = datetime.now()
+
+        if self._consecutive_failures >= self._circuit_breaker_threshold and not self._circuit_breaker_open:
+            self._circuit_breaker_open = True
+            self.logger.error(
+                f"❌ CIRCUIT BREAKER OPENED - {self._consecutive_failures} consecutive failures detected"
+            )
+            await self._notify_handlers("on_circuit_breaker_open", {
+                "consecutive_failures": self._consecutive_failures,
+                "threshold": self._circuit_breaker_threshold,
+                "last_failure_time": self._last_failure_time.isoformat()
+            })
+
+    async def _record_trade_success(self) -> None:
+        """Record a successful trade and reset failure counter"""
+        if self._consecutive_failures > 0:
+            self.logger.info(f"✅ Trade successful - resetting failure counter (was {self._consecutive_failures})")
+        self._consecutive_failures = 0
+
+    async def _reset_circuit_breaker(self) -> None:
+        """Manually reset the circuit breaker"""
+        if self._circuit_breaker_open:
+            self._circuit_breaker_open = False
+            self._consecutive_failures = 0
+            self.logger.info("✅ Circuit breaker reset - trading resumed")
+            await self._notify_handlers("on_circuit_breaker_reset", {
+                "reset_time": datetime.now().isoformat()
+            })
+
+    async def reset_circuit_breaker_manual(self) -> None:
+        """Manually reset the circuit breaker (user-triggered)"""
+        await self._reset_circuit_breaker()
+        self.logger.info("Circuit breaker manually reset by user")
+
+    def get_circuit_breaker_status(self) -> Dict[str, Any]:
+        """Get current circuit breaker status"""
+        return {
+            "circuit_breaker_open": self._circuit_breaker_open,
+            "consecutive_failures": self._consecutive_failures,
+            "threshold": self._circuit_breaker_threshold,
+            "last_failure_time": self._last_failure_time.isoformat() if self._last_failure_time else None,
+            "reset_time_seconds": self._circuit_breaker_reset_time
+        }
+
     def _register_internal_handlers(self) -> None:
         """Register internal event handlers"""
         # Order manager handlers

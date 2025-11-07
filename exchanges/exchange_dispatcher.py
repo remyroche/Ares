@@ -16,7 +16,7 @@ from src.interfaces.base_interfaces import MarketData
 
 from .base_exchange import BaseExchange
 from .exchange_types import ExchangeType  # Use the shared ExchangeType enum
-# from .okx import create_okx_exchange, OkxExchange  # Commented out to avoid circular import
+from .okx import create_okx_exchange
 from .shared.auth import AuthenticationManager
 from .shared.market import MarketMetadataManager
 from .shared.pricing import PriceManager, OHLCVManager
@@ -118,20 +118,25 @@ class ExchangeDispatcher:
             return self._initialized
             
         self._initializing = True
-        
+
         try:
+            # Validate paper trading requirements
+            if self.config.mode == TradingMode.PAPER and self._simulator_callback is None:
+                self.logger.error("❌ Paper trading mode requires simulator callback. Call set_simulator_callback() first.")
+                return False
+
             # Create exchange instance
             self.exchange = await self._create_exchange()
             if not self.exchange:
                 self.logger.error("Failed to create exchange instance")
                 return False
-            
+
             # Initialize exchange
             await self.exchange._initialize_exchange()
-            
+
             # Initialize shared utilities
             await self._initialize_shared_utilities()
-            
+
             self._initialized = True
             self.logger.info(f"✅ Exchange dispatcher initialized for {self.config.exchange_type.value}")
             return True

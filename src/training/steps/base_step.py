@@ -576,22 +576,27 @@ class BaseStep(ABC):
 
         # Validate temporal alignment if requested
         if validate_alignment and len(dataframes) >= 2:
+            tprint(f"🔍 Validating temporal alignment for {len(dataframes)} DataFrames in '{operation_name}'")
             try:
                 self.artifact_manager._validate_temporal_alignment(
                     *dataframes,
                     operation=operation_name
                 )
+                tprint(f"✅ Temporal alignment validated successfully")
             except ValueError as e:
                 self.logger.error(f"Temporal alignment validation failed: {e}")
+                tprint(f"❌ Temporal alignment validation failed for '{operation_name}': {e}")
                 raise
 
         # Perform safe concatenation
+        tprint(f"🔗 Concatenating {len(dataframes)} DataFrames (axis={axis}) for '{operation_name}'")
         result = pd.concat(dataframes, axis=axis)
 
         self.logger.info(
             f"✅ Safe concatenation of {len(dataframes)} DataFrames: "
             f"axis={axis}, result shape={result.shape}"
         )
+        tprint(f"✅ Successfully concatenated {len(dataframes)} DataFrames → shape {result.shape}")
 
         return result
 
@@ -618,6 +623,8 @@ class BaseStep(ABC):
         """
         import pandas as pd
 
+        tprint(f"🔀 Merging DataFrames (how='{how}', on={on}, left={len(left)} rows, right={len(right)} rows)")
+
         if validate_alignment and on is None:
             # For index-based joins, validate indices are compatible
             if how in ['inner', 'left']:
@@ -626,12 +633,14 @@ class BaseStep(ABC):
                         f"Left DataFrame in merge does not have DatetimeIndex. "
                         f"Found: {type(left.index).__name__}"
                     )
+                    tprint(f"⚠️ Left DataFrame lacks DatetimeIndex: {type(left.index).__name__}")
             if how in ['inner', 'right']:
                 if not isinstance(right.index, pd.DatetimeIndex):
                     self.logger.warning(
                         f"Right DataFrame in merge does not have DatetimeIndex. "
                         f"Found: {type(right.index).__name__}"
                     )
+                    tprint(f"⚠️ Right DataFrame lacks DatetimeIndex: {type(right.index).__name__}")
 
         # Merge on index or specified columns
         if on is None:
@@ -646,11 +655,13 @@ class BaseStep(ABC):
                 f"✅ Safe merge: left={len(left)}, right={len(right)}, "
                 f"result={len(result)}, overlap={overlap}, how='{how}'"
             )
+            tprint(f"✅ Merge completed: {len(result)} rows (overlap: {overlap})")
         else:
             self.logger.info(
                 f"✅ Safe merge on columns {on}: left={len(left)}, right={len(right)}, "
                 f"result={len(result)}, how='{how}'"
             )
+            tprint(f"✅ Merge completed on columns {on}: {len(result)} rows")
 
         return result
 
@@ -680,6 +691,8 @@ class BaseStep(ABC):
                 f"Found: {type(reference.index).__name__}"
             )
 
+        tprint(f"🎯 Aligning {len(dataframes)} DataFrames to reference (ref: {len(reference)} rows)")
+
         aligned = []
         for i, df in enumerate(dataframes):
             if not isinstance(df.index, pd.DatetimeIndex):
@@ -689,6 +702,7 @@ class BaseStep(ABC):
                 )
 
             # Align using reindex
+            tprint(f"   Aligning DataFrame {i} ({len(df)} rows)...")
             aligned_df = df.reindex(reference.index)
 
             # Log alignment statistics
@@ -698,9 +712,11 @@ class BaseStep(ABC):
                 f"Aligned DataFrame {i}: {len(df)} -> {len(aligned_df)} rows, "
                 f"{matched} matched, {missing} missing timestamps filled with NaN"
             )
+            tprint(f"   ✅ DataFrame {i}: {matched} matched, {missing} missing (filled with NaN)")
 
             aligned.append(aligned_df)
 
+        tprint(f"✅ Successfully aligned {len(dataframes)} DataFrames to reference")
         return aligned
 
     def _add_columns_with_tags(self, columns: Dict[str, Any], operation_name: str,
@@ -725,13 +741,17 @@ class BaseStep(ABC):
         """
         if not self.use_versioned_artifacts or self.versioned_store is None:
             self.logger.warning("Versioned artifacts not enabled, cannot add columns with tags")
+            tprint(f"⚠️ Versioned artifacts not enabled, cannot add columns for operation '{operation_name}'")
             return None
 
-        return self.versioned_store.add_columns_with_tags(
+        tprint(f"🏷️  Adding {len(columns)} columns with operation tag '{operation_name}'")
+        result = self.versioned_store.add_columns_with_tags(
             columns=columns,
             operation_name=operation_name,
             tags=tags or {}
         )
+        tprint(f"✅ Successfully added {len(columns)} columns for operation '{operation_name}'")
+        return result
 
     def _get_columns_by_operation(self, operation_name: str) -> List[str]:
         """
@@ -748,9 +768,13 @@ class BaseStep(ABC):
         """
         if not self.use_versioned_artifacts or self.versioned_store is None:
             self.logger.warning("Versioned artifacts not enabled")
+            tprint(f"⚠️ Versioned artifacts not enabled, cannot retrieve columns for operation '{operation_name}'")
             return []
 
-        return self.versioned_store.get_columns_by_operation(operation_name)
+        tprint(f"🔍 Retrieving columns for operation '{operation_name}'")
+        columns = self.versioned_store.get_columns_by_operation(operation_name)
+        tprint(f"✅ Found {len(columns)} columns for operation '{operation_name}'")
+        return columns
 
     def _get_columns_by_tag(self, tag_key: str, tag_value: Any) -> List[str]:
         """
@@ -768,9 +792,13 @@ class BaseStep(ABC):
         """
         if not self.use_versioned_artifacts or self.versioned_store is None:
             self.logger.warning("Versioned artifacts not enabled")
+            tprint(f"⚠️ Versioned artifacts not enabled, cannot retrieve columns by tag")
             return []
 
-        return self.versioned_store.get_columns_by_tag(tag_key, tag_value)
+        tprint(f"🔍 Retrieving columns with tag {tag_key}={tag_value}")
+        columns = self.versioned_store.get_columns_by_tag(tag_key, tag_value)
+        tprint(f"✅ Found {len(columns)} columns with tag {tag_key}={tag_value}")
+        return columns
 
     def _get_view_by_operation(self, operation_name: str) -> Any:
         """
@@ -788,9 +816,13 @@ class BaseStep(ABC):
         """
         if not self.use_versioned_artifacts or self.versioned_store is None:
             self.logger.warning("Versioned artifacts not enabled")
+            tprint(f"⚠️ Versioned artifacts not enabled, cannot retrieve view for operation '{operation_name}'")
             return None
 
-        return self.versioned_store.get_view_by_operation(operation_name)
+        tprint(f"👁️  Retrieving view for operation '{operation_name}'")
+        view = self.versioned_store.get_view_by_operation(operation_name)
+        tprint(f"✅ Retrieved view for operation '{operation_name}'")
+        return view
 
     def _get_sr_levels(self, symbol: str = None, exchange: str = None,
                       timeframe: str = None, direction: str = None) -> Dict[str, Any]:

@@ -262,6 +262,10 @@ Examples:
   python ares_launcher.py --hdbscan-regime-discovery --symbol ETHUSDT --execution-mode light
   python ares_launcher.py --gmm-regime-discovery --symbol BTCUSDT --execution-mode light
 
+  # REGIME TRAINING (ML models and ensembles)
+  python ares_launcher.py --regime-models-training --symbol ETHUSDT --execution-mode light
+  python ares_launcher.py --regime-ensemble-training --symbol ETHUSDT --execution-mode light
+
   # Legacy compatibility
   python ares_launcher.py --mode sequential --sub_pipeline feature_generation_data_validation_step --symbol ETHUSDT
         """
@@ -294,6 +298,8 @@ Examples:
     regime_group.add_argument('--gmm-regime-discovery', action='store_true', help='Run GMM regime discovery with correlation-based feature reduction')
     regime_group.add_argument('--rolling-hmm-regime-discovery', action='store_true', help='Run Rolling HMM regime discovery with EWMA features and HPO')
     regime_group.add_argument('--legacy-nas-tas', action='store_true', help='Run legacy NAS/TAS regime discovery (deprecated)')
+    regime_group.add_argument('--regime-models-training', action='store_true', help='Train machine learning models for regime classification')
+    regime_group.add_argument('--regime-ensemble-training', action='store_true', help='Train ensemble models for regime classification using meta-learning')
     
     # Common parameters
     parser.add_argument('--symbol', type=str, help='Trading symbol (e.g., ETHUSDT)')
@@ -454,7 +460,8 @@ async def main():
         args.train_analyst_base, args.train_analyst_ensemble,
         args.train_tactician_base, args.train_tactician_ensemble,
         args.run_tactician_interaction, args.run_analyst_interaction, args.run_both_interaction_modes,
-        args.hdbscan_regime_discovery, args.gmm_regime_discovery, args.rolling_hmm_regime_discovery, args.legacy_nas_tas
+        args.hdbscan_regime_discovery, args.gmm_regime_discovery, args.rolling_hmm_regime_discovery, args.legacy_nas_tas,
+        args.regime_models_training, args.regime_ensemble_training
     ])
     
     if not has_execution_mode:
@@ -560,6 +567,18 @@ async def main():
             logger.info("Running Rolling HMM regime discovery with EWMA features and HPO")
             result = await launcher.run_step('rolling_hmm_regime_discovery', config)
             print(f"Rolling HMM regime discovery completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
+
+        elif args.regime_models_training:
+            # Regime models training execution
+            logger.info("Training machine learning models for regime classification")
+            result = await launcher.run_step('regime_models_training', config)
+            print(f"Regime models training completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
+
+        elif args.regime_ensemble_training:
+            # Regime ensemble training execution
+            logger.info("Training ensemble models for regime classification using meta-learning")
+            result = await launcher.run_step('regime_ensemble_training', config)
+            print(f"Regime ensemble training completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
 
         elif args.legacy_nas_tas:
             # Legacy NAS/TAS regime discovery execution (deprecated)

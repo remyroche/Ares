@@ -37,6 +37,7 @@ import json
 
 # Import BaseStep and step registry
 from src.training.steps.base_step import BaseStep
+from src.training.steps.temporal_validation import require_datetime_index, log_temporal_info
 
 # Import feature selection component
 from src.training.steps.pre_training.components.final_feature_selection import (
@@ -508,6 +509,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             self.hardware_optimization_enabled = False
             tprint_warning("⚠️ Continuing without hardware optimizations")
 
+    @require_datetime_index
+    @log_temporal_info
     def _combine_features(self, features_data: Dict[str, Any], labeled_df: pd.DataFrame) -> pd.DataFrame:
         """Combine features from different sources into a single DataFrame with VectorBT optimizations."""
         tprint_info("🔄 Combining features with VectorBT optimizations...")
@@ -667,7 +670,12 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         # Concatenate all feature chunks at once (MEMORY OPTIMIZATION)
         if feature_chunks:
             tprint_info(f"📊 Concatenating {len(feature_chunks)} feature chunks...")
-            base_features = pd.concat([base_features] + feature_chunks, axis=1)
+            base_features = self._safe_concat(
+                [base_features] + feature_chunks,
+                axis=1,
+                operation_name="concatenate_feature_chunks",
+                validate_alignment=True
+            )
             tprint_success(f"✅ Successfully concatenated all feature chunks")
 
         # Remove any non-numeric columns except timestamp and target columns

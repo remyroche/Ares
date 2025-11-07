@@ -40,6 +40,7 @@ from pathlib import Path
 from sklearn.preprocessing import RobustScaler
 
 from src.training.steps.base_step import BaseStep
+from src.training.steps.temporal_validation import require_datetime_index, log_temporal_info
 from src.utils.logger import system_logger
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_error, tprint_performance,
@@ -1378,9 +1379,14 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             
             # Combine variant features with cross-timeframe features
             if len(cross_timeframe_features.columns) > 0:
-                # Combine DataFrames
-                combined_features = pd.concat([variant_features, cross_timeframe_features], axis=1)
-                
+                # Combine DataFrames with temporal alignment validation
+                combined_features = self._safe_concat(
+                    [variant_features, cross_timeframe_features],
+                    axis=1,
+                    operation_name="combine_variant_and_cross_timeframe_features",
+                    validate_alignment=True
+                )
+
                 tprint_success(f"✅ Combined features: {len(variant_features.columns)} variants + {len(cross_timeframe_features.columns)} cross-timeframe = {len(combined_features.columns)} total")
                 tprint_info(f"📊 Phase 1 Final Summary:")
                 tprint_info(f"  📈 Original features: {len(selected_features)}")
@@ -1401,6 +1407,8 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_error(f"❌ Variant generation failed: {e}")
             raise
 
+    @require_datetime_index
+    @log_temporal_info
     async def _generate_cross_timeframe_features(
         self,
         variant_features: pd.DataFrame,

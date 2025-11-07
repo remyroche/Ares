@@ -1030,24 +1030,61 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 memory_report = memory_mgr.get_memory_report()
                 tprint(f"\n{memory_report}", color="blue")
 
-            # Generate predictions on full dataset and save to HDF5
-            tprint("🎯 [REGIME_MODELS] Generating predictions for HDF5 storage", color="cyan")
+            # Select top 3 models based on performance for HDF5 storage
+            tprint("🎯 [REGIME_MODELS] Selecting top 3 models based on performance", color="cyan")
+
+            # Rank models by accuracy (primary metric)
+            model_rankings = []
+            for model_name, metrics in model_metrics.items():
+                if 'error' not in metrics:
+                    accuracy = metrics.get('accuracy', 0)
+                    f1_score = metrics.get('f1_score', 0)
+                    model_rankings.append({
+                        'name': model_name,
+                        'accuracy': accuracy,
+                        'f1_score': f1_score,
+                        'combined_score': (accuracy * 0.6 + f1_score * 0.4)  # Weighted score
+                    })
+
+            # Sort by combined score (descending)
+            model_rankings.sort(key=lambda x: x['combined_score'], reverse=True)
+
+            # Select top 3 models
+            top_n_models = 3
+            selected_models = model_rankings[:min(top_n_models, len(model_rankings))]
+            selected_model_names = [m['name'] for m in selected_models]
+
+            tprint(f"✅ [REGIME_MODELS] Selected top {len(selected_models)} models:", color="green")
+            for i, model_info in enumerate(selected_models, 1):
+                tprint(
+                    f"   {i}. {model_info['name']}: "
+                    f"accuracy={model_info['accuracy']:.4f}, "
+                    f"f1={model_info['f1_score']:.4f}, "
+                    f"score={model_info['combined_score']:.4f}",
+                    color="blue"
+                )
+
+            # Generate predictions only for top 3 models
+            tprint("🎯 [REGIME_MODELS] Generating predictions for top 3 models only", color="cyan")
             model_predictions = {}
 
-            for model_name, model in trained_models.items():
-                try:
-                    if hasattr(model, 'predict_proba'):
-                        pred_probs = model.predict_proba(X)
-                        # Create columns for each regime
-                        for regime_idx in range(pred_probs.shape[1]):
-                            col_name = f'{model_name}_regime_{regime_idx}_prob'
-                            model_predictions[col_name] = pred_probs[:, regime_idx]
-                        tprint(f"✅ [REGIME_MODELS] Generated predictions for {model_name}", color="green")
-                except Exception as e:
-                    tprint(f"⚠️ [REGIME_MODELS] Failed to generate predictions for {model_name}: {e}", color="yellow")
+            for model_name in selected_model_names:
+                if model_name in trained_models:
+                    model = trained_models[model_name]
+                    try:
+                        if hasattr(model, 'predict_proba'):
+                            pred_probs = model.predict_proba(X)
+                            # Create columns for each regime
+                            for regime_idx in range(pred_probs.shape[1]):
+                                col_name = f'{model_name}_regime_{regime_idx}_prob'
+                                model_predictions[col_name] = pred_probs[:, regime_idx]
+                            tprint(f"✅ [REGIME_MODELS] Generated predictions for {model_name}", color="green")
+                    except Exception as e:
+                        tprint(f"⚠️ [REGIME_MODELS] Failed to generate predictions for {model_name}: {e}", color="yellow")
 
             if model_predictions:
                 predictions_df = pd.DataFrame(model_predictions, index=protected_data.index)
+                tprint(f"📊 [REGIME_MODELS] Saving predictions for {len(selected_model_names)} top models ({predictions_df.shape[1]} columns)", color="cyan")
                 # Save to HDF5
                 await self._save_predictions_to_hdf5(predictions_df, base_step_inst, 'regime_models_predictions')
             else:

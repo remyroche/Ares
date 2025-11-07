@@ -1,12 +1,49 @@
 """
-Versioned Artifact Management System
+Versioned Artifact Management System - HDF5-Based Tabular Data Storage
 
-An alternative to the traditional artifact management approach, providing:
-- Single-file unified storage instead of multiple artifact files
-- View-based access with row/column masks instead of full data loads
-- Comprehensive change tracking at row and column level
-- Row-level versioning without full column rewrites
-- Space-efficient storage through shared columns and delta encoding
+A specialized storage system for versioned tabular data (DataFrames) used in
+machine learning pipelines, providing efficient storage, versioning, and view-based access.
+
+RESPONSIBILITIES:
+----------------
+1. Feature DataFrame Storage:
+   - ML features for training
+   - Engineered features with multiple columns
+   - Large tabular datasets requiring versioning
+
+2. ML Predictions & Scores:
+   - Model predictions
+   - Probability scores
+   - Evaluation metrics over time
+
+3. Training Data Management:
+   - Versioned training datasets
+   - Feature selection iterations
+   - Dataset snapshots for reproducibility
+
+4. View-Based Access:
+   - Lazy loading (load only needed columns/rows)
+   - Row/column masking
+   - Efficient subset queries without full data load
+
+5. Version Tracking:
+   - Change logs for all modifications
+   - Row-level versioning
+   - Column operation tagging
+   - Reproducible data states
+
+STORAGE FORMAT:
+--------------
+- Uses HDF5 (columnar storage like Parquet)
+- Efficient compression and chunking
+- Stored in versioned_artifacts/ directory
+- Organized by context (symbol/exchange/timeframe/direction/model)
+
+WHEN TO USE:
+-----------
+- Use this for: Feature DataFrames, training data, ML predictions
+- Use serialization_utils for: Configs, models, metadata
+- Use kline_parquet.py for: Historical OHLCV data
 
 Main Components:
 - VersionedArtifactStore: Main storage container
@@ -18,9 +55,15 @@ Main Components:
 Usage:
     from src.utils.versioned_artifacts import VersionedArtifactStore
 
-    store = VersionedArtifactStore("versioned_artifacts/ETHUSDT_binance_long")
-    view = store.add_data(df, version_name="v1")
-    subset = view.select_rows(mask).select_columns(["close", "predictions"])
+    # Store versioned features
+    store = VersionedArtifactStore("versioned_artifacts/ETHUSDT_binance_15m_long_analyst")
+    view = store.add_data(features_df, version_name="features_v1")
+
+    # Load specific columns efficiently
+    subset = view.select_columns(["feature_1", "feature_2"]).materialize()
+
+    # Query by time range without loading full dataset
+    data = store.query_by_index_range(start_time, end_time, columns=["predictions"])
 """
 
 from .store import VersionedArtifactStore

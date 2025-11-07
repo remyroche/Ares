@@ -13,6 +13,7 @@ from datetime import datetime
 import traceback
 
 from src.utils.artifact_manager import ArtifactManager
+from src.utils.artifact_router import ArtifactRouter
 from src.utils.tprint import tprint
 from src.utils.versioned_artifacts import VersionedArtifactStore
 from src.training.steps.temporal_validation import require_datetime_index
@@ -44,6 +45,7 @@ class BaseStep(ABC):
 
         # Defer heavy initialization until needed (lazy loading)
         self._artifact_manager = None
+        self._artifact_router = None
         self._quality_assessor = None
         self._versioned_store = None
         self.use_versioned_artifacts = use_versioned_artifacts
@@ -65,6 +67,18 @@ class BaseStep(ABC):
             # Apply deferred context
             self._artifact_manager.set_context(**self._current_context)
         return self._artifact_manager
+
+    @property
+    def artifact_router(self):
+        """Lazy initialization of artifact router."""
+        if self._artifact_router is None:
+            self._artifact_router = ArtifactRouter(
+                base_dir="artifacts",
+                versioned_store_dir="versioned_artifacts",
+                historical_data_dir="historical_data",
+                enable_versioned_artifacts=self.use_versioned_artifacts
+            )
+        return self._artifact_router
 
     @property
     def versioned_store(self):
@@ -225,13 +239,16 @@ class BaseStep(ABC):
                       compression: str = "auto",
                       metadata: Optional[Dict] = None,
                       operation_name: Optional[str] = None,
-                      tags: Optional[Dict] = None) -> str:
+                      tags: Optional[Dict] = None,
+                      data_category: Optional[str] = None) -> str:
         """
-        Save an artifact using versioned artifact store (default) or traditional artifact manager.
+        Save an artifact using intelligent format routing.
 
-        By default, uses versioned artifacts except for:
-        - historical_data artifacts (use historical_data/ directory)
-        - regime clustering artifacts (excluding regime_ensemble_training)
+        Routes to appropriate storage based on data type and content:
+        - JSON: configs, metadata, dictionaries
+        - Pickle: ML models, complex objects
+        - Parquet (via kline_parquet.py): historical OHLCV data
+        - HDF5 (via versioned_artifacts/): feature DataFrames, training data
 
         Args:
             data: Data to save (DataFrame, dict, model, etc.)
@@ -241,12 +258,13 @@ class BaseStep(ABC):
             metadata: Additional metadata to store with artifact
             operation_name: Name of operation for versioned artifacts tagging
             tags: Additional tags for versioned artifacts
+            data_category: Explicit category hint (config, model, historical, features, predictions)
 
         Returns:
             Path where artifact was saved
         """
         try:
-            # Build context string for logging
+            # Build context dict and string for logging
             symbol = self._current_context.get('symbol', 'UNKNOWN')
             exchange = self._current_context.get('exchange', 'binance')
             timeframe = self._current_context.get('timeframe', '15m')
@@ -254,80 +272,45 @@ class BaseStep(ABC):
             model = self._current_context.get('model', 'analyst')
             context_str = f"{symbol}/{exchange} [{timeframe}] {direction}/{model}"
 
+            # Build context dict for router
+            context_dict = {
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframe': timeframe,
+                'direction': direction,
+                'model': model,
+                'step_name': self.step_name
+            }
+
             tprint(
                 f"💾 Saving artifact '{artifact_name}' (type: {artifact_type}) | {context_str}"
             )
 
-            # Determine if we should use versioned artifacts
-            use_versioned = self.use_versioned_artifacts
+            # Auto-detect data category from artifact_name if not provided
+            if data_category is None:
+                if any(kw in artifact_name.lower() for kw in ['config', 'metadata', 'params', 'settings']):
+                    data_category = 'config'
+                elif any(kw in artifact_name.lower() for kw in ['model', 'estimator', 'classifier', 'regressor']):
+                    data_category = 'model'
+                elif any(kw in artifact_name.lower() for kw in ['historical', 'klines', 'ohlcv']):
+                    data_category = 'historical'
+                elif any(kw in artifact_name.lower() for kw in ['feature', 'training']):
+                    data_category = 'features'
+                elif any(kw in artifact_name.lower() for kw in ['prediction', 'score']):
+                    data_category = 'predictions'
 
-            # Exclusion rules
-            if 'historical_data' in artifact_name:
-                use_versioned = False
-                tprint(f"📁 Using traditional storage for historical_data artifact | {context_str}")
-            elif 'regime_cluster' in artifact_name and 'regime_ensemble_training' not in self.step_name:
-                use_versioned = False
-                tprint(f"📁 Using traditional storage for regime clustering artifact | {context_str}")
-
-            # Save using appropriate system
-            if use_versioned and self.versioned_store is not None:
-                import pandas as pd
-                # Convert to DataFrame if needed
-                if isinstance(data, pd.DataFrame):
-                    # Use add_columns_with_tags for DataFrame with columns
-                    version_name = f"{artifact_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-                    # Add data to store with full context metadata
-                    view = self.versioned_store.add_data(
-                        data=data,
-                        version_name=version_name,
-                        metadata={
-                            'artifact_name': artifact_name,
-                            'artifact_type': artifact_type,
-                            'step_name': self.step_name,
-                            'symbol': symbol,
-                            'exchange': exchange,
-                            'timeframe': timeframe,
-                            'direction': direction,
-                            'model': model,
-                            **(metadata or {})
-                        }
-                    )
-
-                    # If operation_name provided, tag columns
-                    if operation_name:
-                        columns_dict = {col: data[col].values for col in data.columns}
-                        self.versioned_store.add_columns_with_tags(
-                            columns=columns_dict,
-                            version_name=version_name,
-                            operation_name=operation_name,
-                            tags=tags or {}
-                        )
-
-                    artifact_path = str(self.versioned_store.store_path / f"{version_name}.h5")
-                    tprint(f"✅ Saved artifact '{artifact_name}' to versioned store | {context_str}")
-                else:
-                    # Fall back to traditional artifact manager for non-DataFrame data
-                    artifact_path = self.artifact_manager.save(
-                        data=data,
-                        artifact_name=artifact_name,
-                        artifact_type=artifact_type,
-                        compression=compression,
-                        metadata=metadata
-                    )
-                    tprint(f"✅ Saved non-DataFrame artifact '{artifact_name}' via traditional manager | {context_str}")
-            else:
-                # Use traditional artifact manager
-                artifact_path = self.artifact_manager.save(
-                    data=data,
-                    artifact_name=artifact_name,
-                    artifact_type=artifact_type,
-                    compression=compression,
-                    metadata=metadata
-                )
-                tprint(f"✅ Saved artifact '{artifact_name}' via traditional manager | {context_str}")
+            # Use ArtifactRouter for intelligent routing
+            artifact_path = self.artifact_router.save(
+                data=data,
+                artifact_name=artifact_name,
+                artifact_type=artifact_type,
+                data_category=data_category,
+                context=context_dict,
+                metadata=metadata
+            )
 
             self.logger.info(f"Saved artifact: {artifact_name} -> {artifact_path}")
+            tprint(f"✅ Saved artifact '{artifact_name}' | {context_str}")
             return artifact_path
 
         except Exception as e:
@@ -339,24 +322,28 @@ class BaseStep(ABC):
     
     def _get_artifact(self, artifact_name: str,
                      artifact_type: str = "data",
-                     operation_name: Optional[str] = None) -> Any:
+                     operation_name: Optional[str] = None,
+                     data_category: Optional[str] = None) -> Any:
         """
-        Retrieve an artifact using versioned artifact store (default) or traditional artifact manager.
+        Retrieve an artifact using intelligent format routing.
 
-        By default, uses versioned artifacts except for:
-        - historical_data artifacts (use historical_data/ directory)
-        - regime clustering artifacts (excluding regime_ensemble_training)
+        Routes to appropriate storage based on data type and content:
+        - JSON: configs, metadata, dictionaries
+        - Pickle: ML models, complex objects
+        - Parquet (via kline_parquet.py): historical OHLCV data
+        - HDF5 (via versioned_artifacts/): feature DataFrames, training data
 
         Args:
             artifact_name: Name of the artifact to retrieve
             artifact_type: Type of artifact to retrieve
             operation_name: If provided, retrieve view by operation name
+            data_category: Explicit category hint (config, model, historical, features, predictions)
 
         Returns:
             Retrieved data
         """
         try:
-            # Build context string for logging
+            # Build context dict and string for logging
             symbol = self._current_context.get('symbol', 'UNKNOWN')
             exchange = self._current_context.get('exchange', 'binance')
             timeframe = self._current_context.get('timeframe', '15m')
@@ -364,81 +351,68 @@ class BaseStep(ABC):
             model = self._current_context.get('model', 'analyst')
             context_str = f"{symbol}/{exchange} [{timeframe}] {direction}/{model}"
 
+            # Build context dict for router
+            context_dict = {
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframe': timeframe,
+                'direction': direction,
+                'model': model,
+                'step_name': self.step_name
+            }
+
             tprint(
                 f"📂 Retrieving artifact '{artifact_name}' (type: {artifact_type}) | {context_str}"
             )
 
-            # Determine if we should use versioned artifacts
-            use_versioned = self.use_versioned_artifacts
+            # Auto-detect data category from artifact_name if not provided
+            if data_category is None:
+                if any(kw in artifact_name.lower() for kw in ['config', 'metadata', 'params', 'settings']):
+                    data_category = 'config'
+                elif any(kw in artifact_name.lower() for kw in ['model', 'estimator', 'classifier', 'regressor']):
+                    data_category = 'model'
+                elif any(kw in artifact_name.lower() for kw in ['historical', 'klines', 'ohlcv']):
+                    data_category = 'historical'
+                elif any(kw in artifact_name.lower() for kw in ['feature', 'training']):
+                    data_category = 'features'
+                elif any(kw in artifact_name.lower() for kw in ['prediction', 'score']):
+                    data_category = 'predictions'
 
-            # Exclusion rules (same as _save_artifact)
-            if 'historical_data' in artifact_name:
-                use_versioned = False
-                tprint(f"📁 Using traditional storage for historical_data artifact | {context_str}")
-            elif 'regime_cluster' in artifact_name and 'regime_ensemble_training' not in self.step_name:
-                use_versioned = False
-                tprint(f"📁 Using traditional storage for regime clustering artifact | {context_str}")
+            # Use ArtifactRouter for intelligent routing
+            try:
+                data = self.artifact_router.load(
+                    artifact_name=artifact_name,
+                    artifact_type=artifact_type,
+                    data_category=data_category,
+                    context=context_dict
+                )
 
-            # Retrieve using appropriate system
-            if use_versioned and self.versioned_store is not None:
-                try:
-                    # Try to get from versioned store
-                    if operation_name:
-                        # Get view by operation
-                        view = self.versioned_store.get_view_by_operation(operation_name)
-                        data = view.materialize()
-                        tprint(f"✅ Retrieved artifact '{artifact_name}' by operation '{operation_name}' | {context_str}")
-                    else:
-                        # Get most recent version matching artifact name
-                        versions = self.versioned_store.list_versions()
-                        matching = [v for v in versions if artifact_name in v]
+                if data is not None:
+                    self.logger.info(f"Retrieved artifact: {artifact_name}")
+                    tprint(f"✅ Retrieved artifact '{artifact_name}' | {context_str}")
+                    return data
+                else:
+                    tprint(f"⚠️ Artifact '{artifact_name}' not found | {context_str}")
+                    self.logger.warning(f"Artifact not found: {artifact_name}")
+                    return None
 
-                        if matching:
-                            version_name = sorted(matching)[-1]
-                            view = self.versioned_store.get_view(version_name)
-                            data = view.materialize()
-                            tprint(f"✅ Retrieved artifact '{artifact_name}' (version: {version_name}) | {context_str}")
-                        else:
-                            # Fall back to traditional artifact manager
-                            tprint(f"⚠️ Artifact '{artifact_name}' not found in versioned store, trying traditional manager | {context_str}")
-                            data, resolved_path = self.artifact_manager.get_artifact(
-                                artifact_name=artifact_name,
-                                artifact_type=artifact_type,
-                                return_path=True
-                            )
-                            if resolved_path:
-                                tprint(f"✅ Retrieved artifact '{artifact_name}' from traditional manager | {context_str}")
-                except Exception as ve:
-                    # Fall back to traditional artifact manager on error
-                    self.logger.warning(f"Failed to retrieve from versioned store: {ve}, trying traditional manager")
-                    tprint(f"⚠️ Versioned store retrieval failed, trying traditional manager | {context_str}")
-                    data, resolved_path = self.artifact_manager.get_artifact(
-                        artifact_name=artifact_name,
-                        artifact_type=artifact_type,
-                        return_path=True
-                    )
-                    if resolved_path:
-                        tprint(f"✅ Retrieved artifact '{artifact_name}' from traditional manager | {context_str}")
-            else:
-                # Use traditional artifact manager
+            except FileNotFoundError:
+                # Fallback to traditional artifact manager if router fails
+                self.logger.warning(f"Artifact '{artifact_name}' not found via router, trying traditional manager")
+                tprint(f"⚠️ Trying fallback to traditional artifact manager | {context_str}")
+
                 data, resolved_path = self.artifact_manager.get_artifact(
                     artifact_name=artifact_name,
                     artifact_type=artifact_type,
                     return_path=True
                 )
-                if data is not None:
-                    if resolved_path:
-                        tprint(f"✅ Retrieved artifact '{artifact_name}' from traditional manager | {context_str}")
-                    else:
-                        tprint(f"✅ Retrieved artifact '{artifact_name}' via fallback | {context_str}")
 
-            if data is not None:
-                self.logger.info(f"Retrieved artifact: {artifact_name}")
-                return data
-            else:
-                tprint(f"⚠️ Artifact '{artifact_name}' not found | {context_str}")
-                self.logger.warning(f"Artifact not found: {artifact_name}")
-                return None
+                if data is not None and resolved_path:
+                    tprint(f"✅ Retrieved artifact '{artifact_name}' from fallback | {context_str}")
+                    return data
+                else:
+                    tprint(f"⚠️ Artifact '{artifact_name}' not found in any storage | {context_str}")
+                    return None
 
         except Exception as e:
             self.logger.error(f"Failed to retrieve artifact {artifact_name}: {e}")

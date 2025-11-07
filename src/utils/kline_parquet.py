@@ -1,8 +1,45 @@
 """
-KlinesParquetManager - Efficient and Standardized Klines Data Storage
+KlinesParquetManager - Specialized Parquet Storage for OHLCV/Time-Series Data
 
-This module provides a comprehensive manager for storing and retrieving klines data
-in parquet format with efficient compression, batch management, and data integrity.
+This module provides specialized storage for historical market data (OHLCV/klines)
+using Parquet format with optimizations for time-series data.
+
+RESPONSIBILITIES:
+----------------
+1. Historical OHLCV Data Storage:
+   - Candlestick/klines data (open, high, low, close, volume)
+   - Raw market data from exchanges
+   - Time-series data with temporal ordering
+
+2. Parquet Optimization:
+   - Efficient compression (ZSTD, LZ4, Snappy)
+   - Batch management for incremental updates
+   - Memory-efficient chunking
+   - Column-oriented storage for fast queries
+
+3. Data Integrity:
+   - Validation of OHLCV relationships
+   - Gap detection and handling
+   - Duplicate removal
+   - Metadata tracking
+
+4. Storage Organization:
+   - Stores in historical_data/ directory
+   - Organized by exchange/symbol/interval
+   - Batch versioning for incremental updates
+
+WHEN TO USE:
+-----------
+- Use this for: Historical OHLCV/klines data, raw market data
+- Use serialization_utils for: Configs, models, metadata
+- Use versioned_artifacts/ for: Feature DataFrames, training data
+
+Example:
+    from src.utils.kline_parquet import KlinesParquetManager
+
+    manager = KlinesParquetManager()
+    manager.store_klines(df, symbol="BTCUSDT", exchange="binance", interval="15m")
+    loaded_data = manager.load_klines("BTCUSDT", "binance", "15m")
 
 Features:
 - Efficient parquet storage with compression

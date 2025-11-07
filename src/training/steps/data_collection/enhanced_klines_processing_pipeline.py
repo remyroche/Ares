@@ -2025,6 +2025,51 @@ class EnhancedKlinesProcessingPipeline:
         }
         return interval_map.get(interval)
 
+    def _extract_timestamps_from_klines(self, klines_data: List[Any]) -> List[pd.Timestamp]:
+        """
+        Extract timestamps from klines data.
+
+        This method handles both object-based and list-based klines formats
+        and returns a list of pandas Timestamps.
+        """
+        timestamps = []
+
+        try:
+            for kline in klines_data:
+                if hasattr(kline, 'timestamp'):
+                    # KlineData object with timestamp attribute
+                    ts = kline.timestamp
+                    if isinstance(ts, pd.Timestamp):
+                        timestamps.append(ts)
+                    else:
+                        timestamps.append(pd.to_datetime(ts, utc=True))
+                else:
+                    # Raw list format - timestamp is first element
+                    timestamp = kline[0]
+
+                    if isinstance(timestamp, (int, float)):
+                        # Handle different timestamp formats (microseconds, milliseconds, seconds)
+                        if timestamp > 1e15:  # Microseconds (16+ digits)
+                            converted_timestamp = pd.to_datetime(timestamp, unit='us', utc=True)
+                        elif timestamp > 1e12:  # Milliseconds (13-15 digits)
+                            converted_timestamp = pd.to_datetime(timestamp, unit='ms', utc=True)
+                        elif timestamp > 1e9:  # Seconds (10-12 digits)
+                            converted_timestamp = pd.to_datetime(timestamp, unit='s', utc=True)
+                        else:  # Too small, likely an error but treat as seconds
+                            converted_timestamp = pd.to_datetime(timestamp, unit='s', utc=True)
+                    else:
+                        # Already a datetime or string
+                        converted_timestamp = pd.to_datetime(timestamp, utc=True)
+
+                    timestamps.append(converted_timestamp)
+
+        except Exception as e:
+            if self.enable_logging:
+                tprint_warning(f"⚠️ Error extracting timestamps: {e}")
+            return []
+
+        return timestamps
+
     async def _fill_gaps(
         self,
         df: pd.DataFrame,
@@ -2060,43 +2105,90 @@ class EnhancedKlinesProcessingPipeline:
                     )
 
                 # For large gaps (> 1000 minutes), download in batches
+                # IMPORTANT: We work BACKWARDS from gap_end to gap_start because exchanges
+                # with both start_time and end_time return the LAST limit candles near end_time
                 interval_minutes = self._interval_to_minutes(interval) or 1
                 batch_size = 1000
                 batch_duration = timedelta(minutes=batch_size * interval_minutes)
-                
+
                 gap_batches = []
-                current_start = gap_start_utc
+                # Start from the END of the gap and work backwards
+                current_end = gap_end_utc
+                earliest_downloaded = gap_end_utc
                 batch_num = 1
-                
-                while current_start < gap_end_utc:
-                    batch_end = min(current_start + batch_duration, gap_end_utc)
-                    
+                stall_count = 0
+                max_stalls = 3
+
+                while current_end > gap_start_utc:
+                    # Calculate the expected start for this batch
+                    batch_start = max(current_end - batch_duration, gap_start_utc)
+
                     if self.enable_logging and (batch_num == 1 or batch_num % 20 == 0):
-                        tprint_info(f"   Batch {batch_num}: {current_start.strftime('%Y-%m-%d %H:%M')}")
-                    
+                        tprint_info(f"   Batch {batch_num}: {batch_start.strftime('%Y-%m-%d %H:%M')} → {current_end.strftime('%Y-%m-%d %H:%M')}")
+
                     try:
                         batch_klines = await exchange_interface.get_klines(
                             symbol=symbol,
                             interval=interval,
-                            start_time=current_start,
-                            end_time=batch_end,
+                            start_time=batch_start,
+                            end_time=current_end,
                             limit=batch_size
                         )
-                        
+
                         if batch_klines:
-                            gap_batches.extend(batch_klines)
-                        elif self.enable_logging:
-                            tprint_warning(f"   ⚠️ No klines returned for batch {batch_num} ({current_start} → {batch_end}), treating gap as exhausted")
+                            # Extract actual timestamps from the returned data to verify progress
+                            actual_timestamps = self._extract_timestamps_from_klines(batch_klines)
+
+                            if actual_timestamps:
+                                actual_earliest = min(actual_timestamps)
+                                actual_latest = max(actual_timestamps)
+
+                                if self.enable_logging and batch_num == 1:
+                                    tprint_info(f"   📊 Batch {batch_num} returned {len(batch_klines)} candles: {actual_earliest.strftime('%Y-%m-%d %H:%M')} → {actual_latest.strftime('%Y-%m-%d %H:%M')}")
+
+                                # Check if we're making progress backwards
+                                if actual_earliest >= earliest_downloaded - timedelta(minutes=interval_minutes):
+                                    # We're stalled - the API keeps returning similar/overlapping data
+                                    stall_count += 1
+                                    if self.enable_logging:
+                                        tprint_warning(f"   ⚠️ Batch {batch_num} stalled (earliest: {actual_earliest.strftime('%Y-%m-%d %H:%M')}, previous: {earliest_downloaded.strftime('%Y-%m-%d %H:%M')}), stall count: {stall_count}/{max_stalls}")
+
+                                    if stall_count >= max_stalls:
+                                        if self.enable_logging:
+                                            tprint_warning(f"   ⚠️ Stopping after {max_stalls} stalled batches. Exchange may not have earlier data.")
+                                        break
+
+                                    # Move back further to try to get earlier data
+                                    current_end = actual_earliest - batch_duration
+                                else:
+                                    # We made progress! Reset stall counter
+                                    stall_count = 0
+                                    earliest_downloaded = actual_earliest
+
+                                    if self.enable_logging and batch_num % 20 == 0:
+                                        tprint_info(f"   ✓ Progress: now at {earliest_downloaded.strftime('%Y-%m-%d %H:%M')}")
+
+                                    gap_batches.extend(batch_klines)
+
+                                    # Move current_end to just before the earliest timestamp we got
+                                    current_end = actual_earliest - timedelta(minutes=interval_minutes)
+                            else:
+                                if self.enable_logging:
+                                    tprint_warning(f"   ⚠️ Could not extract timestamps from batch {batch_num}")
+                                break
+                        else:
+                            if self.enable_logging:
+                                tprint_warning(f"   ⚠️ No klines returned for batch {batch_num} ({batch_start} → {current_end}), treating gap as exhausted")
                             break
-                        
-                        current_start = batch_end
+
                         batch_num += 1
                         await asyncio.sleep(0.05)
-                        
+
                     except Exception as e:
                         if self.enable_logging:
                             tprint_warning(f"   ⚠️ Batch {batch_num} failed: {e}")
-                        current_start = batch_end
+                        # On error, try to continue by moving back
+                        current_end = current_end - batch_duration
                         batch_num += 1
                         await asyncio.sleep(1.0)
 

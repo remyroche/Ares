@@ -240,17 +240,44 @@ Artifact → ArtifactRouter._detect_format()
    │  └─ Large or complex → Pickle
    │
    ├─ DataFrame
-   │  ├─ Has OHLCV columns → Parquet
-   │  ├─ Large (>10 cols, >100 rows) → HDF5
-   │  ├─ Medium with HDF5 keywords → HDF5
-   │  └─ Small → Pickle
+   │  ├─ Empty → JSON
+   │  ├─ < 10 columns AND has historical keywords → Parquet
+   │  │  (historical, kline, klines, ohlcv, market_data, raw_data)
+   │  └─ All other DataFrames → HDF5
+   │     (features, predictions, training data, clusters, etc.)
    │
-   ├─ ML model object → Pickle
+   ├─ ML model object (module OR keyword detection) → Pickle
+   │  Module: sklearn, xgboost, lightgbm, catboost, keras, tensorflow, torch, pytorch
+   │  Keywords: model, estimator, classifier, regressor, ml, base, ensemble, stacked
    ├─ NumPy array (small & simple) → JSON
    ├─ NumPy array (large/complex) → Pickle
    ├─ Scalar types → JSON
    └─ Unknown/Complex → Pickle (safe default)
 ```
+
+## Enhanced Logging
+
+The router now provides detailed logging for every save operation:
+
+```
+🔀 Router: DataFrame (1000 rows × 5 cols) → PARQUET
+💾 Saved 'historical_klines' → historical_data/binance/btcusdt/klines/klines_binance_BTCUSDT_15m_batch_001.parquet
+
+🔀 Router: DataFrame (500 rows × 50 cols) → HDF5_VERSIONED
+💾 Saved 'training_features' → versioned_artifacts/BTCUSDT_binance_15m_long_analyst/store.h5
+
+🔀 Router: XGBClassifier → PICKLE
+💾 Saved 'ensemble_model' → artifacts/ensemble_model.pkl
+
+🔀 Router: dict (10 items) → JSON
+💾 Saved 'hpo_parameters' → artifacts/hpo_parameters.json
+```
+
+This helps you:
+- ✅ Verify the correct format is being used
+- ✅ Track exactly where artifacts are stored
+- ✅ Debug routing decisions
+- ✅ Monitor data flow through the pipeline
 
 ## Usage in BaseStep
 

@@ -242,34 +242,30 @@ class ArtifactRouter:
 
         # 3. DataFrame routing
         if isinstance(data, pd.DataFrame):
-            # Empty DataFrame
+            # Empty DataFrame → JSON
             if data.empty:
                 return 'json'
 
-            # Check if it's OHLCV/historical data (Parquet optimized for this)
-            ohlcv_columns = {'open', 'high', 'low', 'close', 'volume'}
-            if ohlcv_columns.issubset(set(data.columns)):
+            # Parquet if: less than 10 columns AND has historical keywords
+            parquet_df_keywords = ['historical', 'kline', 'klines', 'ohlcv', 'market_data', 'raw_data']
+            if len(data.columns) < 10 and any(kw in name_lower for kw in parquet_df_keywords):
                 return 'parquet'
 
-            # Large DataFrames with many features -> versioned HDF5
-            # (Optimized for column-wise access and versioning)
-            if len(data.columns) > 10 and len(data) > 100:
-                return 'hdf5_versioned' if self.enable_versioned_artifacts else 'pickle'
+            # All other DataFrames → HDF5 (features, predictions, training data, etc.)
+            return 'hdf5_versioned' if self.enable_versioned_artifacts else 'pickle'
 
-            # Medium DataFrames (could be features or small datasets)
-            if len(data.columns) > 5 or len(data) > 50:
-                # Check name hints for HDF5 vs Pickle
-                if any(kw in name_lower for kw in hdf5_keywords):
-                    return 'hdf5_versioned' if self.enable_versioned_artifacts else 'pickle'
-                return 'pickle'
-
-            # Small DataFrames -> Pickle (simple serialization)
-            return 'pickle'
-
-        # 4. ML models (detected by module name)
+        # 4. ML models (detected by module name AND semantic keywords)
+        # Module-based detection
         model_types = ('sklearn', 'xgboost', 'lightgbm', 'catboost', 'keras',
                       'tensorflow', 'torch', 'pytorch')
-        if any(model_type in str(type(data).__module__).lower() for model_type in model_types):
+        is_ml_model_type = any(model_type in str(type(data).__module__).lower() for model_type in model_types)
+
+        # Semantic keyword detection for ML models
+        ml_model_keywords = ['model', 'estimator', 'classifier', 'regressor', 'ml',
+                            'base', 'ensemble', 'stacked']
+        has_ml_keyword = any(kw in name_lower for kw in ml_model_keywords)
+
+        if is_ml_model_type or has_ml_keyword:
             return 'pickle'
 
         # 5. NumPy arrays
@@ -318,26 +314,45 @@ class ArtifactRouter:
         Returns:
             Path where artifact was saved
         """
+        from src.utils.tprint import tprint
+
+        # Get input data type information
+        data_type_name = type(data).__name__
+        if isinstance(data, pd.DataFrame):
+            input_info = f"DataFrame ({len(data)} rows × {len(data.columns)} cols)"
+        elif isinstance(data, (list, tuple)):
+            input_info = f"{data_type_name} ({len(data)} items)"
+        elif hasattr(data, '__array__'):  # NumPy array
+            input_info = f"ndarray (shape: {data.shape})"
+        else:
+            input_info = data_type_name
+
         # Detect format
         format_type = self._detect_format(data, artifact_name, artifact_type, data_category)
 
-        self.logger.info(f"Routing '{artifact_name}' to {format_type} storage")
+        # Log routing decision
+        self.logger.info(f"Routing '{artifact_name}' ({input_info}) to {format_type} storage")
+        tprint(f"🔀 Router: {input_info} → {format_type.upper()}")
 
         # Route to appropriate storage
         if format_type == 'json':
-            return self._save_json(data, artifact_name, metadata)
+            path = self._save_json(data, artifact_name, metadata)
 
         elif format_type == 'pickle':
-            return self._save_pickle(data, artifact_name, metadata)
+            path = self._save_pickle(data, artifact_name, metadata)
 
         elif format_type == 'parquet':
-            return self._save_parquet(data, artifact_name, context, metadata)
+            path = self._save_parquet(data, artifact_name, context, metadata)
 
         elif format_type == 'hdf5_versioned':
-            return self._save_hdf5_versioned(data, artifact_name, context, metadata)
+            path = self._save_hdf5_versioned(data, artifact_name, context, metadata)
 
         else:
             raise ValueError(f"Unknown format type: {format_type}")
+
+        # Log final path
+        tprint(f"💾 Saved '{artifact_name}' → {path}")
+        return path
 
     def _save_json(self, data: Any, artifact_name: str, metadata: Optional[Dict] = None) -> str:
         """Save data as JSON."""

@@ -17,13 +17,14 @@ Enhanced `train_tactician_ensemble` to properly load all required data sources f
   - Model predictions
   - Model probabilities
   - Model confidence scores
-- Calculates 18+ disagreement meta-features including:
-  - **Prediction Dispersion**: Variance and std of predictions across models
-  - **Direction Conflict**: Agreement rates on long vs short signals
-  - **Confidence Gap**: Margin between top predictions
-  - **Uncertainty/Entropy**: Shannon entropy of probability distributions
-  - **Model Spread**: Range and IQR of predictions
-  - **Pairwise Divergence**: JS and KL divergence between models
+- Calculates **7 core disagreement meta-features** (filtered from full set for optimal signal-to-noise ratio):
+  1. **prediction_dispersion**: Variance of predictions across models
+  2. **direction_conflict**: Directional disagreement rate (long vs short)
+  3. **confidence_gap**: Margin between top predictions
+  4. **uncertainty**: Normalized entropy (uncertainty measure)
+  5. **prediction_range**: Range of predictions (max - min)
+  6. **avg_divergence**: Average pairwise model divergence
+  7. **max_confidence**: Highest confidence among models
 
 **Benefits:**
 - Ensemble models can now learn from model disagreement patterns
@@ -91,7 +92,7 @@ Enhanced `train_tactician_ensemble` to properly load all required data sources f
 
 5. ✅ **Disagreement Features**: NEW - Now calculated from base model outputs
    - Calculated from tactician_base_outputs
-   - 18+ meta-features quantifying model disagreement
+   - 7 core meta-features quantifying model disagreement (filtered for optimal performance)
 
 ### 4. **Model Serialization Verification** ✅
 
@@ -109,7 +110,8 @@ Enhanced `train_tactician_ensemble` to properly load all required data sources f
 
 1. `src/training/steps/model_training/unified_models_training_step.py`
    - Added import for DisagreementMetaFeatures
-   - Implemented disagreement features calculation (lines 2161-2249)
+   - Implemented disagreement features calculation (lines 2161-2262)
+   - Features filtered to 7 most informative core features
    - Enhanced _save_training_artifacts to generate markdown reports (lines 2330-2401)
    - Added _generate_metrics_markdown_report method (lines 2403-2574)
 

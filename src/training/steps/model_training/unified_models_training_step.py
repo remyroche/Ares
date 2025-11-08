@@ -2229,10 +2229,30 @@ class UnifiedModelsTrainingStep(BaseStep):
                         )
 
                         # Convert dict of Series to DataFrame
-                        meta_features = pd.DataFrame(disagreement_features_dict, index=base_outputs_for_stats.index)
+                        all_meta_features = pd.DataFrame(disagreement_features_dict, index=base_outputs_for_stats.index)
 
-                        tprint_success(f"✅ Calculated {len(meta_features.columns)} disagreement meta-features:")
+                        # Filter to keep only the 7 most important disagreement features
+                        # These are the most informative features for ensemble learning
+                        core_features = [
+                            'prediction_dispersion',    # 1. Variance of predictions across models
+                            'direction_conflict',       # 2. Directional disagreement rate
+                            'confidence_gap',           # 3. Margin between top predictions
+                            'uncertainty',              # 4. Normalized entropy (uncertainty measure)
+                            'prediction_range',         # 5. Range of predictions (max - min)
+                            'avg_divergence',           # 6. Average pairwise model divergence
+                            'max_confidence'            # 7. Highest confidence among models
+                        ]
+
+                        # Select only core features that exist
+                        available_core_features = [f for f in core_features if f in all_meta_features.columns]
+                        meta_features = all_meta_features[available_core_features].copy()
+
+                        tprint_success(f"✅ Calculated {len(meta_features.columns)} core disagreement meta-features:")
                         tprint_info(f"   Feature columns: {list(meta_features.columns)}")
+
+                        if len(available_core_features) < len(core_features):
+                            missing = set(core_features) - set(available_core_features)
+                            tprint_warning(f"   ⚠️ Missing features: {missing}")
 
                         # Add these new features to the list
                         additional_features_list.append(meta_features)

@@ -2686,6 +2686,637 @@ class UnifiedModelsTrainingStep(BaseStep):
             self.logger.error(traceback.format_exc())
             return None
           
+    def _extract_comprehensive_metrics(
+        self,
+        result: Dict[str, Any],
+        training_type: str,
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Extract comprehensive metrics from training results.
+
+        This method centralizes metric extraction for all model types,
+        ensuring consistency and completeness across all reports.
+
+        Args:
+            result: Training result dictionary
+            training_type: Type of training (analyst_base, analyst_ensemble, tactician_base, tactician_ensemble)
+            config: Configuration dictionary
+
+        Returns:
+            Comprehensive metrics dictionary with all available metrics organized by category
+        """
+        metrics = result.get('metrics', {})
+        models = result.get('models', {})
+
+        comprehensive_metrics = {
+            'model_type': training_type,
+            'timestamp': datetime.now().isoformat(),
+            'execution_summary': {},
+            'overall_performance': {},
+            'per_model_metrics': {},
+            'training_metrics': {},
+            'validation_metrics': {},
+            'test_metrics': {},
+            'hpo_results': {},
+            'feature_importance': {},
+            'data_quality': {},
+            'model_complexity': {},
+            'prediction_statistics': {},
+            'ensemble_specific': {} if 'ensemble' in training_type else None,
+            'walkforward_results': {},
+            'error_analysis': {},
+            'data_drift_checks': {},
+            'uncertainty_calibration': {},
+            'shap_explanations': {},
+            'threshold_optimization': {}
+        }
+
+        # ===== EXECUTION SUMMARY =====
+        comprehensive_metrics['execution_summary'] = {
+            'success': result.get('success', False),
+            'execution_time_seconds': result.get('execution_time', 0.0),
+            'training_type': training_type,
+            'models_trained_count': len(models),
+            'model_names': list(models.keys()) if models else [],
+            'error': result.get('error', None),
+            'warnings': result.get('warnings', [])
+        }
+
+        # ===== OVERALL PERFORMANCE METRICS =====
+        overall_keys = [
+            'overall_accuracy', 'overall_precision', 'overall_recall', 'overall_f1_score',
+            'overall_r2_score', 'overall_mse', 'overall_mae', 'overall_rmse',
+            'overall_mape', 'overall_sharpe_ratio', 'overall_sortino_ratio',
+            'best_model', 'best_model_score', 'model_count'
+        ]
+        for key in overall_keys:
+            if key in metrics:
+                comprehensive_metrics['overall_performance'][key] = metrics[key]
+
+        # ===== PER-MODEL METRICS =====
+        for model_name in models.keys():
+            model_metrics = {}
+
+            # Standard metrics per model
+            metric_types = [
+                'accuracy', 'precision', 'recall', 'f1_score',
+                'r2_score', 'mse', 'mae', 'rmse', 'mape',
+                'train_accuracy', 'train_r2', 'train_loss', 'train_mse',
+                'val_accuracy', 'val_r2', 'val_loss', 'val_mse',
+                'test_accuracy', 'test_r2', 'test_loss', 'test_mse',
+                'cv_score_mean', 'cv_score_std', 'cv_scores',
+                'training_time_seconds', 'prediction_time_seconds',
+                'n_estimators', 'max_depth', 'learning_rate', 'num_leaves',
+                'iterations', 'depth', 'l2_leaf_reg'
+            ]
+
+            for metric_type in metric_types:
+                # Check both prefixed and non-prefixed versions
+                for key_variant in [f"{model_name}_{metric_type}", f"{metric_type}_{model_name}"]:
+                    if key_variant in metrics:
+                        model_metrics[metric_type] = metrics[key_variant]
+                        break
+
+            # Add if any metrics found
+            if model_metrics:
+                comprehensive_metrics['per_model_metrics'][model_name] = model_metrics
+
+        # ===== SPLIT-BASED METRICS (Train/Val/Test) =====
+        for split in ['train', 'val', 'test']:
+            split_metrics = {}
+            split_keys = [
+                f'{split}_accuracy', f'{split}_precision', f'{split}_recall', f'{split}_f1_score',
+                f'{split}_r2', f'{split}_r2_score', f'{split}_mse', f'{split}_mae', f'{split}_rmse',
+                f'{split}_loss', f'{split}_samples', f'{split}_time_seconds'
+            ]
+
+            for key in split_keys:
+                if key in metrics:
+                    metric_name = key.replace(f'{split}_', '')
+                    split_metrics[metric_name] = metrics[key]
+
+            if split_metrics:
+                if split == 'train':
+                    comprehensive_metrics['training_metrics'] = split_metrics
+                elif split == 'val':
+                    comprehensive_metrics['validation_metrics'] = split_metrics
+                elif split == 'test':
+                    comprehensive_metrics['test_metrics'] = split_metrics
+
+        # ===== HPO RESULTS =====
+        hpo_data = result.get('hpo_results') or metrics.get('hpo_results')
+        if hpo_data:
+            comprehensive_metrics['hpo_results'] = {
+                'method': hpo_data.get('method', 'unknown'),
+                'optimization_rounds': hpo_data.get('optimization_rounds', 0),
+                'total_trials': hpo_data.get('total_trials', 0),
+                'best_overall_score': hpo_data.get('best_overall_score', None),
+                'best_params': hpo_data.get('best_params', {}),
+                'best_scores': hpo_data.get('best_scores', {}),
+                'optimization_time': hpo_data.get('optimization_time', 0),
+                'per_model_trials': hpo_data.get('per_model_trials', {})
+            }
+
+        # ===== FEATURE IMPORTANCE =====
+        feature_importance_data = result.get('feature_importance') or metrics.get('feature_importance')
+        if feature_importance_data:
+            comprehensive_metrics['feature_importance'] = feature_importance_data
+
+        # ===== DATA QUALITY METRICS =====
+        data_quality = metrics.get('data_quality', {})
+        if data_quality:
+            comprehensive_metrics['data_quality'] = data_quality
+
+        # Add basic data stats if available
+        # Note: Top-level metrics override nested data_quality values if duplicates exist
+        if 'feature_count' in metrics:
+            comprehensive_metrics['data_quality']['feature_count'] = metrics['feature_count']
+        if 'sample_count' in metrics:
+            comprehensive_metrics['data_quality']['sample_count'] = metrics['sample_count']
+        if 'missing_values_pct' in metrics:
+            comprehensive_metrics['data_quality']['missing_values_pct'] = metrics['missing_values_pct']
+
+        # ===== MODEL COMPLEXITY =====
+        complexity_keys = [
+            'total_parameters', 'trainable_parameters', 'model_size_mb',
+            'inference_time_ms', 'memory_usage_mb'
+        ]
+        for key in complexity_keys:
+            if key in metrics:
+                comprehensive_metrics['model_complexity'][key] = metrics[key]
+
+        # ===== PREDICTION STATISTICS =====
+        pred_stats_keys = [
+            'prediction_mean', 'prediction_std', 'prediction_min', 'prediction_max',
+            'prediction_skewness', 'prediction_kurtosis',
+            'true_positive_rate', 'false_positive_rate', 'true_negative_rate', 'false_negative_rate',
+            'confusion_matrix'
+        ]
+        for key in pred_stats_keys:
+            if key in metrics:
+                comprehensive_metrics['prediction_statistics'][key] = metrics[key]
+
+        # ===== ENSEMBLE-SPECIFIC METRICS =====
+        if 'ensemble' in training_type and comprehensive_metrics['ensemble_specific'] is not None:
+            ensemble_keys = [
+                'ensemble_diversity', 'ensemble_agreement', 'stacking_improvement',
+                'base_models_count', 'meta_model_type', 'meta_model_accuracy',
+                'weighted_voting_accuracy', 'simple_voting_accuracy'
+            ]
+            for key in ensemble_keys:
+                if key in metrics:
+                    comprehensive_metrics['ensemble_specific'][key] = metrics[key]
+
+        # ===== WALK-FORWARD VALIDATION RESULTS =====
+        if hasattr(self, '_walkforward_config') and self._walkforward_config:
+            wf_metrics = {
+                'n_folds': len(self._walkforward_config.folds),
+                'strategy': self._walkforward_config.strategy,
+                'embargo_days': self._walkforward_config.embargo_days,
+                'per_fold_metrics': {}
+            }
+
+            # Extract per-fold metrics if available
+            for i, fold in enumerate(self._walkforward_config.folds, 1):
+                fold_key = f'fold_{i}'
+                fold_metrics = {}
+                for metric_name in ['accuracy', 'r2', 'mse', 'mae', 'loss']:
+                    key = f'{fold_key}_{metric_name}'
+                    if key in metrics:
+                        fold_metrics[metric_name] = metrics[key]
+
+                if fold_metrics:
+                    wf_metrics['per_fold_metrics'][fold_key] = fold_metrics
+
+            comprehensive_metrics['walkforward_results'] = wf_metrics
+
+        # ===== ERROR ANALYSIS =====
+        error_keys = [
+            'max_error', 'mean_absolute_error', 'mean_squared_error', 'root_mean_squared_error',
+            'median_absolute_error', 'explained_variance_score',
+            'directional_accuracy', 'sign_accuracy'
+        ]
+        for key in error_keys:
+            if key in metrics:
+                comprehensive_metrics['error_analysis'][key] = metrics[key]
+
+        # ===== DATA DRIFT / DISTRIBUTION SHIFT CHECKS =====
+        # Detects if train/val/test distributions differ significantly
+        # Critical for ensuring models aren't learning time leakage or anomalies
+        drift_keys = [
+            'ks_test_train_val', 'ks_test_train_test', 'ks_test_val_test',
+            'ks_statistic_train_val', 'ks_statistic_train_test', 'ks_statistic_val_test',
+            'ks_pvalue_train_val', 'ks_pvalue_train_test', 'ks_pvalue_val_test',
+            'psi_train_val', 'psi_train_test', 'psi_val_test',
+            'psi_score', 'psi_interpretation',
+            'chi_square_train_val', 'chi_square_train_test', 'chi_square_val_test',
+            'chi_square_statistic', 'chi_square_pvalue',
+            'wasserstein_distance_train_val', 'wasserstein_distance_train_test',
+            'jensen_shannon_divergence_train_val', 'jensen_shannon_divergence_train_test',
+            'drift_detected', 'drift_score', 'drift_features',
+            'covariate_shift_detected', 'concept_drift_detected'
+        ]
+        for key in drift_keys:
+            if key in metrics:
+                comprehensive_metrics['data_drift_checks'][key] = metrics[key]
+
+        # Also check per-model drift metrics
+        for model_name in models.keys():
+            for drift_metric in ['ks_test', 'psi', 'chi_square', 'drift_score']:
+                key = f"{model_name}_{drift_metric}"
+                if key in metrics:
+                    if f'{model_name}_drift' not in comprehensive_metrics['data_drift_checks']:
+                        comprehensive_metrics['data_drift_checks'][f'{model_name}_drift'] = {}
+                    comprehensive_metrics['data_drift_checks'][f'{model_name}_drift'][drift_metric] = metrics[key]
+
+        # ===== UNCERTAINTY / CONFIDENCE CALIBRATION =====
+        # Measures how well predicted probabilities match actual outcomes
+        # Critical for decision-making confidence in production
+        calibration_keys = [
+            'brier_score', 'brier_score_loss',
+            'expected_calibration_error', 'ece', 'ece_score',
+            'maximum_calibration_error', 'mce', 'mce_score',
+            'calibration_curve', 'reliability_diagram',
+            'calibration_slope', 'calibration_intercept',
+            'log_loss', 'cross_entropy_loss',
+            'prediction_confidence_mean', 'prediction_confidence_std',
+            'prediction_confidence_median',
+            'overconfidence_ratio', 'underconfidence_ratio',
+            'confidence_histogram', 'reliability_bins',
+            'sharpness', 'refinement',
+            'calibration_in_the_large', 'calibration_in_the_small'
+        ]
+        for key in calibration_keys:
+            if key in metrics:
+                comprehensive_metrics['uncertainty_calibration'][key] = metrics[key]
+
+        # Per-model calibration metrics
+        for model_name in models.keys():
+            for calib_metric in ['brier_score', 'ece', 'mce', 'log_loss', 'calibration_slope']:
+                key = f"{model_name}_{calib_metric}"
+                if key in metrics:
+                    if f'{model_name}_calibration' not in comprehensive_metrics['uncertainty_calibration']:
+                        comprehensive_metrics['uncertainty_calibration'][f'{model_name}_calibration'] = {}
+                    comprehensive_metrics['uncertainty_calibration'][f'{model_name}_calibration'][calib_metric] = metrics[key]
+
+        # ===== SHAPLEY-BASED EXPLANATIONS (SHAP) =====
+        # Model interpretability and feature attribution
+        # Note: Complex objects like plots are stored separately, only metadata here
+        shap_keys = [
+            'shap_values_available', 'shap_summary_plot_path', 'shap_dependence_plot_path',
+            'shap_force_plot_path', 'shap_waterfall_plot_path',
+            'shap_feature_importance', 'shap_interaction_values',
+            'shap_top_features', 'shap_top_10_features', 'shap_top_20_features',
+            'pdp_plots_path', 'ice_plots_path',
+            'pdp_features', 'ice_features',
+            'partial_dependence_available', 'individual_conditional_expectation_available',
+            'lime_explanations_available', 'lime_top_features',
+            'global_feature_importance', 'local_feature_importance'
+        ]
+        for key in shap_keys:
+            if key in metrics:
+                comprehensive_metrics['shap_explanations'][key] = metrics[key]
+
+        # Per-model SHAP data
+        for model_name in models.keys():
+            for shap_metric in ['shap_values', 'shap_feature_importance', 'shap_summary_plot_path']:
+                key = f"{model_name}_{shap_metric}"
+                if key in metrics:
+                    if f'{model_name}_shap' not in comprehensive_metrics['shap_explanations']:
+                        comprehensive_metrics['shap_explanations'][f'{model_name}_shap'] = {}
+                    comprehensive_metrics['shap_explanations'][f'{model_name}_shap'][shap_metric] = metrics[key]
+
+        # ===== DECISION THRESHOLD OPTIMIZATION =====
+        # Optimizing classification thresholds for business objectives
+        threshold_keys = [
+            'optimal_threshold', 'optimal_threshold_roc', 'optimal_threshold_pr',
+            'optimal_threshold_f1', 'optimal_threshold_fbeta',
+            'roc_auc_score', 'roc_curve', 'roc_curve_path',
+            'pr_auc_score', 'precision_recall_curve', 'pr_curve_path',
+            'f1_threshold_curve', 'fbeta_threshold_curve',
+            'fbeta_score', 'fbeta_optimal', 'beta_value',
+            'cost_matrix', 'cost_weighted_threshold', 'expected_cost',
+            'profit_curve', 'profit_optimal_threshold',
+            'youden_index', 'youden_threshold',
+            'sensitivity_specificity_curve',
+            'Matthews_correlation_coefficient', 'mcc', 'mcc_threshold',
+            'threshold_metrics', 'threshold_analysis',
+            'business_metric_optimal_threshold', 'custom_metric_threshold'
+        ]
+        for key in threshold_keys:
+            if key in metrics:
+                comprehensive_metrics['threshold_optimization'][key] = metrics[key]
+
+        # Per-model threshold optimization
+        for model_name in models.keys():
+            for thresh_metric in ['optimal_threshold', 'roc_auc', 'pr_auc', 'f1_threshold', 'fbeta_optimal']:
+                key = f"{model_name}_{thresh_metric}"
+                if key in metrics:
+                    if f'{model_name}_threshold' not in comprehensive_metrics['threshold_optimization']:
+                        comprehensive_metrics['threshold_optimization'][f'{model_name}_threshold'] = {}
+                    comprehensive_metrics['threshold_optimization'][f'{model_name}_threshold'][thresh_metric] = metrics[key]
+
+        return comprehensive_metrics
+
+    def _generate_csv_metrics_report(
+        self,
+        comprehensive_metrics: Dict[str, Any],
+        result: Dict[str, Any],
+        training_type: str,
+        config: Dict[str, Any],
+        reports_dir: str
+    ) -> Optional[str]:
+        """
+        Generate a CSV file with one line per model containing all metrics.
+
+        This CSV excludes complex objects (plots, curves, matrices) but includes
+        all numeric and string metrics for easy analysis in spreadsheets/data tools.
+
+        Args:
+            comprehensive_metrics: Extracted comprehensive metrics
+            result: Training result dictionary
+            training_type: Type of training
+            config: Configuration dictionary
+            reports_dir: Directory to save the CSV
+
+        Returns:
+            Path to the generated CSV file, or None if failed
+        """
+        try:
+            import csv
+
+            csv_path = os.path.join(reports_dir, f'{training_type}_metrics.csv')
+            models = result.get('models', {})
+
+            # If no models, create a single row for the training run
+            if not models:
+                models = {training_type: None}
+
+            # Collect all possible column names from comprehensive metrics
+            csv_columns = []
+            csv_rows = []
+
+            # Fixed columns (metadata)
+            # NOTE: timestamp is ISO format (YYYY-MM-DDTHH:MM:SS) for sorting
+            #       training_date is YYYY-MM-DD for daily grouping
+            fixed_columns = [
+                'timestamp',                # ISO format, sortable, identifies training run
+                'training_date',            # Date only (YYYY-MM-DD) for grouping by day
+                'model_name',
+                'training_type',
+                'symbol',
+                'timeframe',
+                'direction',
+                'execution_time_seconds',
+                'success',
+                'models_trained_count'
+            ]
+            csv_columns.extend(fixed_columns)
+
+            # Helper function to flatten nested dicts and filter out complex objects
+            def flatten_metrics(metrics_dict: Dict[str, Any], prefix: str = '') -> Dict[str, Any]:
+                """Flatten nested dict, exclude complex objects."""
+                flat = {}
+                for key, value in metrics_dict.items():
+                    full_key = f"{prefix}{key}" if prefix else key
+
+                    # Skip complex objects that can't be represented in one CSV cell
+                    if key in ['shap_values', 'shap_summary_plot_path', 'shap_dependence_plot_path',
+                               'shap_force_plot_path', 'shap_waterfall_plot_path',
+                               'pdp_plots_path', 'ice_plots_path',
+                               'roc_curve', 'pr_curve', 'calibration_curve',
+                               'reliability_diagram', 'confusion_matrix',
+                               'cost_matrix', 'reliability_bins', 'confidence_histogram',
+                               'cv_scores', 'threshold_metrics']:
+                        continue
+
+                    # Skip plot/curve paths (too long for CSV)
+                    if 'plot_path' in key or 'curve_path' in key or 'plots_path' in key:
+                        continue
+
+                    if isinstance(value, dict):
+                        # Recursively flatten nested dicts
+                        flat.update(flatten_metrics(value, f"{full_key}_"))
+                    elif isinstance(value, (list, tuple)):
+                        # Skip lists/arrays (can't represent in single cell easily)
+                        if len(value) <= 5 and all(isinstance(x, (int, float, str, bool)) for x in value):
+                            # Only include short lists of simple types
+                            flat[full_key] = str(value)
+                    elif isinstance(value, (int, float, str, bool, type(None))):
+                        flat[full_key] = value
+                    else:
+                        # Skip complex types
+                        continue
+
+                return flat
+
+            # Build rows for each model
+            for model_name in models.keys():
+                row = {}
+
+                # Add fixed metadata (timestamp fields first for easy sorting)
+                timestamp_str = comprehensive_metrics.get('timestamp', datetime.now().isoformat())
+                row['timestamp'] = timestamp_str
+
+                # Extract date part for daily grouping (YYYY-MM-DD)
+                try:
+                    if 'T' in timestamp_str:
+                        row['training_date'] = timestamp_str.split('T')[0]
+                    else:
+                        row['training_date'] = datetime.now().strftime('%Y-%m-%d')
+                except Exception:
+                    row['training_date'] = datetime.now().strftime('%Y-%m-%d')
+
+                row['model_name'] = model_name
+                row['training_type'] = training_type
+                row['symbol'] = config.get('symbol', 'UNKNOWN')
+                row['timeframe'] = config.get('timeframe', '15m')
+                row['direction'] = config.get('direction', 'long')
+                row['execution_time_seconds'] = comprehensive_metrics['execution_summary'].get('execution_time_seconds', 0)
+                row['success'] = comprehensive_metrics['execution_summary'].get('success', False)
+                row['models_trained_count'] = comprehensive_metrics['execution_summary'].get('models_trained_count', 0)
+
+                # Add flattened metrics from all categories
+                categories = [
+                    'overall_performance',
+                    'training_metrics',
+                    'validation_metrics',
+                    'test_metrics',
+                    'data_quality',
+                    'model_complexity',
+                    'prediction_statistics',
+                    'error_analysis',
+                    'data_drift_checks',
+                    'uncertainty_calibration',
+                    'threshold_optimization'
+                ]
+
+                for category in categories:
+                    if category in comprehensive_metrics:
+                        flat_cat = flatten_metrics(comprehensive_metrics[category], f"{category}_")
+                        row.update(flat_cat)
+
+                # Add per-model metrics if available
+                if model_name in comprehensive_metrics.get('per_model_metrics', {}):
+                    model_specific = flatten_metrics(
+                        comprehensive_metrics['per_model_metrics'][model_name],
+                        'model_specific_'
+                    )
+                    row.update(model_specific)
+
+                # Add HPO results (flattened)
+                if comprehensive_metrics.get('hpo_results'):
+                    hpo_flat = flatten_metrics(comprehensive_metrics['hpo_results'], 'hpo_')
+                    # Exclude large nested structures
+                    hpo_flat = {k: v for k, v in hpo_flat.items()
+                                if not k.endswith('_best_params') and not k.endswith('_best_scores')}
+                    row.update(hpo_flat)
+
+                # Add walk-forward metrics (simplified)
+                if comprehensive_metrics.get('walkforward_results'):
+                    wf = comprehensive_metrics['walkforward_results']
+                    if 'n_folds' in wf:
+                        row['walkforward_n_folds'] = wf['n_folds']
+                    if 'strategy' in wf:
+                        row['walkforward_strategy'] = wf['strategy']
+                    if 'embargo_days' in wf:
+                        row['walkforward_embargo_days'] = wf['embargo_days']
+
+                # Add ensemble-specific metrics if applicable
+                if comprehensive_metrics.get('ensemble_specific'):
+                    ensemble_flat = flatten_metrics(comprehensive_metrics['ensemble_specific'], 'ensemble_')
+                    row.update(ensemble_flat)
+
+                # Collect all column names
+                for key in row.keys():
+                    if key not in csv_columns:
+                        csv_columns.append(key)
+
+                csv_rows.append(row)
+
+            # ========================================================================
+            # 1. Write Per-Run CSV (timestamped, one file per training run)
+            # ========================================================================
+            with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=csv_columns, extrasaction='ignore')
+                writer.writeheader()
+
+                for row in csv_rows:
+                    # Ensure all columns exist in row (fill missing with None)
+                    complete_row = {col: row.get(col, None) for col in csv_columns}
+                    writer.writerow(complete_row)
+
+            tprint_success(f"✅ CSV metrics report saved: {csv_path}")
+
+            # ========================================================================
+            # 2. Append to Consolidated CSV (aggregates ALL models across ALL runs)
+            # ========================================================================
+            # This allows aggregation when running analyst/tactician base/ensemble separately
+            symbol = config.get('symbol', 'UNKNOWN')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+
+            # Consolidated CSV path (at symbol level, not timestamped)
+            consolidated_dir = os.path.join('reports', f"{symbol}_{timeframe}_{direction}")
+            os.makedirs(consolidated_dir, exist_ok=True)
+            consolidated_csv_path = os.path.join(consolidated_dir, 'all_models_metrics.csv')
+
+            # Check if consolidated CSV exists to determine if we need headers
+            file_exists = os.path.exists(consolidated_csv_path)
+
+            # If file exists, read existing headers to ensure compatibility
+            existing_columns = []
+            if file_exists:
+                try:
+                    with open(consolidated_csv_path, 'r', newline='', encoding='utf-8') as f:
+                        reader = csv.DictReader(f)
+                        existing_columns = reader.fieldnames if reader.fieldnames else []
+                except Exception as e:
+                    self.logger.warning(f"Could not read existing consolidated CSV headers: {e}")
+                    existing_columns = []
+
+            # Merge column sets (existing + new) to ensure all columns are present
+            if existing_columns:
+                # Create union of column sets, preserving order
+                all_columns = list(existing_columns)
+                for col in csv_columns:
+                    if col not in all_columns:
+                        all_columns.append(col)
+            else:
+                all_columns = csv_columns
+
+            # If columns were added, we need to rewrite the file with expanded headers
+            if file_exists and existing_columns and set(all_columns) != set(existing_columns):
+                tprint_info(f"📊 Expanding consolidated CSV with new columns...")
+
+                # Read existing data
+                existing_data = []
+                try:
+                    with open(consolidated_csv_path, 'r', newline='', encoding='utf-8') as f:
+                        reader = csv.DictReader(f)
+                        existing_data = list(reader)
+                except Exception as e:
+                    self.logger.error(f"Failed to read existing CSV for column expansion: {e}")
+                    existing_data = []
+
+                # Rewrite with expanded columns
+                if existing_data:
+                    with open(consolidated_csv_path, 'w', newline='', encoding='utf-8') as f:
+                        writer = csv.DictWriter(f, fieldnames=all_columns, extrasaction='ignore')
+                        writer.writeheader()
+                        for old_row in existing_data:
+                            complete_row = {col: old_row.get(col, None) for col in all_columns}
+                            writer.writerow(complete_row)
+                    file_exists = True  # File has been rewritten
+
+            # Append new rows to consolidated CSV
+            try:
+                # Use file locking to prevent concurrent write issues
+                import fcntl
+                has_fcntl = True
+            except ImportError:
+                # fcntl not available on Windows
+                has_fcntl = False
+
+            mode = 'a' if file_exists else 'w'
+            with open(consolidated_csv_path, mode, newline='', encoding='utf-8') as csvfile:
+                # Apply file lock if available (Unix-like systems)
+                if has_fcntl:
+                    try:
+                        fcntl.flock(csvfile.fileno(), fcntl.LOCK_EX)
+                    except Exception as e:
+                        self.logger.warning(f"Could not acquire file lock: {e}")
+
+                writer = csv.DictWriter(csvfile, fieldnames=all_columns, extrasaction='ignore')
+
+                # Write header only if file is new
+                if not file_exists:
+                    writer.writeheader()
+
+                # Append all rows from this training run
+                for row in csv_rows:
+                    complete_row = {col: row.get(col, None) for col in all_columns}
+                    writer.writerow(complete_row)
+
+                # Release lock (automatic when file closes, but explicit for clarity)
+                if has_fcntl:
+                    try:
+                        fcntl.flock(csvfile.fileno(), fcntl.LOCK_UN)
+                    except Exception:
+                        pass
+
+            tprint_success(f"✅ Consolidated CSV updated: {consolidated_csv_path}")
+            tprint_info(f"   ↪ Added {len(csv_rows)} model(s) to consolidated metrics")
+
+            return csv_path
+
+        except Exception as e:
+            self.logger.error(f"Failed to generate CSV metrics report: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return None
+
     def _generate_training_reports(
         self,
         result: Dict[str, Any],
@@ -2694,6 +3325,13 @@ class UnifiedModelsTrainingStep(BaseStep):
     ) -> Dict[str, str]:
         """
         Generate comprehensive markdown and JSON reports for training metrics.
+
+        This is the centralized reporting hub that creates detailed reports
+        with as many metrics as possible for each of the 4 model types:
+        - Analyst Base
+        - Analyst Ensemble
+        - Tactician Base
+        - Tactician Ensemble
 
         Args:
             result: Training result dictionary containing metrics and models
@@ -2705,10 +3343,11 @@ class UnifiedModelsTrainingStep(BaseStep):
         """
         try:
             import json
-            from datetime import datetime
 
             report_paths = {}
-            metrics = result.get('metrics', {})
+
+            # Extract comprehensive metrics using centralized extractor
+            comprehensive_metrics = self._extract_comprehensive_metrics(result, training_type, config)
 
             # Create reports directory
             symbol = config.get('symbol', 'UNKNOWN')
@@ -2725,174 +3364,594 @@ class UnifiedModelsTrainingStep(BaseStep):
             os.makedirs(reports_dir, exist_ok=True)
 
             # ========================================================================
-            # MARKDOWN REPORT
+            # COMPREHENSIVE MARKDOWN REPORT WITH ALL METRICS
             # ========================================================================
-            markdown_path = os.path.join(reports_dir, f'{training_type}_report.md')
+            markdown_path = os.path.join(reports_dir, f'{training_type}_comprehensive_report.md')
 
             with open(markdown_path, 'w') as f:
-                f.write(f"# {training_type.replace('_', ' ').title()} Training Report\n\n")
-                f.write(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                # ===== HEADER =====
+                f.write(f"# {training_type.replace('_', ' ').title()} - Comprehensive Training Report\n\n")
+                f.write(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n")
 
-                # Configuration Section
-                f.write("## Configuration\n\n")
+                # ===== EXECUTION SUMMARY =====
+                f.write("## 📋 Execution Summary\n\n")
+                exec_summary = comprehensive_metrics['execution_summary']
+                f.write(f"- **Training Type:** {exec_summary.get('training_type', 'N/A')}\n")
+                f.write(f"- **Success:** {'✅ Yes' if exec_summary.get('success', False) else '❌ No'}\n")
+                f.write(f"- **Execution Time:** {exec_summary.get('execution_time_seconds', 0):.2f} seconds\n")
+                f.write(f"- **Models Trained:** {exec_summary.get('models_trained_count', 0)}\n")
+                if exec_summary.get('model_names'):
+                    f.write(f"- **Model Names:** {', '.join(exec_summary['model_names'])}\n")
+                if exec_summary.get('error'):
+                    f.write(f"- **Error:** {exec_summary['error']}\n")
+                if exec_summary.get('warnings'):
+                    f.write(f"- **Warnings:** {len(exec_summary['warnings'])} warning(s)\n")
+                f.write("\n---\n\n")
+
+                # ===== CONFIGURATION =====
+                f.write("## ⚙️ Configuration\n\n")
                 f.write(f"- **Symbol:** {symbol}\n")
                 f.write(f"- **Exchange:** {config.get('exchange', 'binance')}\n")
                 f.write(f"- **Timeframe:** {timeframe}\n")
                 f.write(f"- **Direction:** {direction}\n")
-                f.write(f"- **Execution Mode:** {config.get('execution_mode', 'light')}\n")
-                f.write(f"- **Training Type:** {training_type}\n\n")
+                f.write(f"- **Execution Mode:** {config.get('execution_mode', 'full')}\n")
+                f.write(f"- **HPO Enabled:** {config.get('enable_hpo', True)}\n")
+                f.write("\n---\n\n")
 
-                # Overall Metrics Section
-                f.write("## Overall Training Metrics\n\n")
-                if metrics:
+                # ===== OVERALL PERFORMANCE METRICS =====
+                f.write("## 📊 Overall Performance Metrics\n\n")
+                overall_perf = comprehensive_metrics['overall_performance']
+                if overall_perf:
                     f.write("| Metric | Value |\n")
                     f.write("|--------|-------|\n")
-
-                    # Extract key metrics
-                    for key, value in sorted(metrics.items()):
-                        if isinstance(value, (int, float)):
-                            f.write(f"| {key} | {value:.6f if isinstance(value, float) else value} |\n")
-                        elif isinstance(value, str):
-                            f.write(f"| {key} | {value} |\n")
+                    for key, value in sorted(overall_perf.items()):
+                        label = key.replace('overall_', '').replace('_', ' ').title()
+                        if isinstance(value, (int, float)) and not isinstance(value, bool):
+                            f.write(f"| {label} | {value:.6f} |\n")
+                        else:
+                            f.write(f"| {label} | {value} |\n")
                     f.write("\n")
                 else:
-                    f.write("No overall metrics available.\n\n")
+                    f.write("*No overall performance metrics available.*\n\n")
+                f.write("---\n\n")
 
-                # Per-Model Metrics Section
-                f.write("## Per-Model Metrics\n\n")
+                # ===== TRAINING/VALIDATION/TEST SPLIT METRICS =====
+                f.write("## 📈 Split-Based Performance Metrics\n\n")
 
-                # Check for model-specific metrics
-                model_metrics = {}
-                if 'models' in result:
-                    f.write(f"**Total Models Trained:** {len(result['models'])}\n\n")
+                # Training Metrics
+                f.write("### Training Set Metrics\n\n")
+                train_metrics = comprehensive_metrics['training_metrics']
+                if train_metrics:
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    for key, value in sorted(train_metrics.items()):
+                        label = key.replace('_', ' ').title()
+                        if isinstance(value, (int, float)) and not isinstance(value, bool):
+                            f.write(f"| {label} | {value:.6f} |\n")
+                        else:
+                            f.write(f"| {label} | {value} |\n")
+                    f.write("\n")
+                else:
+                    f.write("*No training metrics available.*\n\n")
 
-                    # Try to extract per-model metrics
-                    for model_name in result['models'].keys():
-                        model_key = f"{model_name}_metrics"
-                        if model_key in metrics:
-                            model_metrics[model_name] = metrics[model_key]
-                        elif isinstance(metrics.get(model_name), dict):
-                            model_metrics[model_name] = metrics[model_name]
+                # Validation Metrics
+                f.write("### Validation Set Metrics\n\n")
+                val_metrics = comprehensive_metrics['validation_metrics']
+                if val_metrics:
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    for key, value in sorted(val_metrics.items()):
+                        label = key.replace('_', ' ').title()
+                        if isinstance(value, (int, float)) and not isinstance(value, bool):
+                            f.write(f"| {label} | {value:.6f} |\n")
+                        else:
+                            f.write(f"| {label} | {value} |\n")
+                    f.write("\n")
+                else:
+                    f.write("*No validation metrics available.*\n\n")
 
-                    if model_metrics:
-                        for model_name, model_metric_dict in model_metrics.items():
-                            f.write(f"### {model_name}\n\n")
+                # Test Metrics
+                f.write("### Test Set Metrics\n\n")
+                test_metrics = comprehensive_metrics['test_metrics']
+                if test_metrics:
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    for key, value in sorted(test_metrics.items()):
+                        label = key.replace('_', ' ').title()
+                        if isinstance(value, (int, float)) and not isinstance(value, bool):
+                            f.write(f"| {label} | {value:.6f} |\n")
+                        else:
+                            f.write(f"| {label} | {value} |\n")
+                    f.write("\n")
+                else:
+                    f.write("*No test metrics available.*\n\n")
+                f.write("---\n\n")
+
+                # ===== PER-MODEL DETAILED METRICS =====
+                f.write("## 🤖 Per-Model Detailed Metrics\n\n")
+                per_model = comprehensive_metrics['per_model_metrics']
+                if per_model:
+                    f.write(f"**Total Models:** {len(per_model)}\n\n")
+                    for model_name, model_metrics in per_model.items():
+                        f.write(f"### {model_name.upper()}\n\n")
+                        f.write("| Metric | Value |\n")
+                        f.write("|--------|-------|\n")
+                        for key, value in sorted(model_metrics.items()):
+                            label = key.replace('_', ' ').title()
+                            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                                f.write(f"| {label} | {value:.6f} |\n")
+                            else:
+                                f.write(f"| {label} | {value} |\n")
+                        f.write("\n")
+                else:
+                    f.write("*No per-model metrics available.*\n\n")
+                f.write("---\n\n")
+
+                # ===== HPO RESULTS =====
+                f.write("## 🔍 Hyperparameter Optimization (HPO) Results\n\n")
+                hpo_results = comprehensive_metrics['hpo_results']
+                if hpo_results and hpo_results.get('method'):
+                    f.write(f"**Method:** {hpo_results.get('method', 'N/A')}\n")
+                    f.write(f"**Optimization Rounds:** {hpo_results.get('optimization_rounds', 0)}\n")
+                    f.write(f"**Total Trials:** {hpo_results.get('total_trials', 0)}\n")
+                    f.write(f"**Best Overall Score:** {hpo_results.get('best_overall_score', 'N/A')}\n")
+                    f.write(f"**Optimization Time:** {hpo_results.get('optimization_time', 0):.2f}s\n\n")
+
+                    if hpo_results.get('best_params'):
+                        f.write("### Best Parameters by Model\n\n")
+                        for model_name, params in hpo_results['best_params'].items():
+                            f.write(f"#### {model_name.upper()}\n\n")
+                            if isinstance(params, dict):
+                                f.write("```json\n")
+                                f.write(json.dumps(params, indent=2))
+                                f.write("\n```\n\n")
+
+                    if hpo_results.get('best_scores'):
+                        f.write("### Best Scores by Model\n\n")
+                        f.write("| Model | Score |\n")
+                        f.write("|-------|-------|\n")
+                        for model_name, score_data in hpo_results['best_scores'].items():
+                            if isinstance(score_data, dict):
+                                score = score_data.get('score', 'N/A')
+                            else:
+                                score = score_data
+                            f.write(f"| {model_name} | {score if isinstance(score, str) else f'{score:.6f}'} |\n")
+                        f.write("\n")
+                else:
+                    f.write("*No HPO results available or HPO was disabled.*\n\n")
+                f.write("---\n\n")
+
+                # ===== WALK-FORWARD VALIDATION RESULTS =====
+                f.write("## 📅 Walk-Forward Validation Results\n\n")
+                wf_results = comprehensive_metrics['walkforward_results']
+                if wf_results and wf_results.get('n_folds'):
+                    f.write(f"**Number of Folds:** {wf_results.get('n_folds', 0)}\n")
+                    f.write(f"**Strategy:** {wf_results.get('strategy', 'N/A')}\n")
+                    f.write(f"**Embargo Days:** {wf_results.get('embargo_days', 0)}\n\n")
+
+                    per_fold = wf_results.get('per_fold_metrics', {})
+                    if per_fold:
+                        f.write("### Per-Fold Metrics\n\n")
+                        for fold_name, fold_metrics in sorted(per_fold.items()):
+                            f.write(f"#### {fold_name.upper().replace('_', ' ')}\n\n")
                             f.write("| Metric | Value |\n")
                             f.write("|--------|-------|\n")
-
-                            for key, value in sorted(model_metric_dict.items()):
+                            for key, value in sorted(fold_metrics.items()):
+                                label = key.replace('_', ' ').title()
                                 if isinstance(value, (int, float)):
-                                    f.write(f"| {key} | {value:.6f if isinstance(value, float) else value} |\n")
-                                elif isinstance(value, str):
-                                    f.write(f"| {key} | {value} |\n")
+                                    f.write(f"| {label} | {value:.6f} |\n")
+                                else:
+                                    f.write(f"| {label} | {value} |\n")
                             f.write("\n")
-                    else:
-                        f.write("No per-model metrics available in standard format.\n\n")
-
-                # HPO Results Section
-                f.write("## Hyperparameter Optimization\n\n")
-                if 'hpo_results' in metrics:
-                    hpo_results = metrics['hpo_results']
-                    f.write(f"**HPO Method:** {hpo_results.get('method', 'Unknown')}\n")
-                    f.write(f"**Best Score:** {hpo_results.get('best_score', 'N/A')}\n")
-                    f.write(f"**Optimization Time:** {hpo_results.get('optimization_time', 'N/A')}s\n\n")
-
-                    if 'best_params' in hpo_results:
-                        f.write("**Best Parameters:**\n\n")
-                        f.write("```json\n")
-                        f.write(json.dumps(hpo_results['best_params'], indent=2))
-                        f.write("\n```\n\n")
                 else:
-                    f.write("No HPO results available.\n\n")
+                    f.write("*No walk-forward validation results available.*\n\n")
+                f.write("---\n\n")
 
-                # Feature Information
-                f.write("## Feature Information\n\n")
-                if 'feature_count' in metrics:
-                    f.write(f"**Total Features:** {metrics['feature_count']}\n")
-                if 'sample_count' in metrics:
-                    f.write(f"**Training Samples:** {metrics['sample_count']}\n")
-                if 'feature_selection_info' in metrics:
-                    f.write(f"**Feature Selection Applied:** Yes\n")
-                    f.write(f"**Selected Features:** {metrics['feature_selection_info'].get('final_features', 'N/A')}\n")
-                f.write("\n")
+                # ===== ENSEMBLE-SPECIFIC METRICS =====
+                if comprehensive_metrics['ensemble_specific'] is not None:
+                    f.write("## 🎯 Ensemble-Specific Metrics\n\n")
+                    ensemble_metrics = comprehensive_metrics['ensemble_specific']
+                    if ensemble_metrics:
+                        f.write("| Metric | Value |\n")
+                        f.write("|--------|-------|\n")
+                        for key, value in sorted(ensemble_metrics.items()):
+                            label = key.replace('_', ' ').title()
+                            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                                f.write(f"| {label} | {value:.6f} |\n")
+                            else:
+                                f.write(f"| {label} | {value} |\n")
+                        f.write("\n")
+                    else:
+                        f.write("*No ensemble-specific metrics available.*\n\n")
+                    f.write("---\n\n")
 
-                # Data Quality
-                f.write("## Data Quality\n\n")
-                if 'data_quality' in metrics:
-                    dq = metrics['data_quality']
-                    f.write("| Quality Metric | Value |\n")
-                    f.write("|----------------|-------|\n")
-                    for key, value in sorted(dq.items()):
-                        if isinstance(value, (int, float)):
-                            f.write(f"| {key} | {value:.6f if isinstance(value, float) else value} |\n")
+                # ===== FEATURE IMPORTANCE =====
+                f.write("## 📋 Feature Importance\n\n")
+                feat_importance = comprehensive_metrics['feature_importance']
+                if feat_importance:
+                    if isinstance(feat_importance, dict):
+                        f.write("### Top 20 Most Important Features\n\n")
+                        # Sort by importance value (descending)
+                        sorted_features = sorted(feat_importance.items(), key=lambda x: x[1], reverse=True)[:20]
+                        f.write("| Rank | Feature | Importance |\n")
+                        f.write("|------|---------|------------|\n")
+                        for i, (feature, importance) in enumerate(sorted_features, 1):
+                            if isinstance(importance, (int, float)):
+                                f.write(f"| {i} | {feature} | {importance:.6f} |\n")
+                            else:
+                                f.write(f"| {i} | {feature} | {importance} |\n")
+                        f.write("\n")
+                else:
+                    f.write("*No feature importance data available.*\n\n")
+                f.write("---\n\n")
+
+                # ===== DATA QUALITY METRICS =====
+                f.write("## 📊 Data Quality Metrics\n\n")
+                data_quality = comprehensive_metrics['data_quality']
+                if data_quality:
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    for key, value in sorted(data_quality.items()):
+                        label = key.replace('_', ' ').title()
+                        if isinstance(value, (int, float)) and not isinstance(value, bool):
+                            f.write(f"| {label} | {value:.6f if isinstance(value, float) else value} |\n")
+                        else:
+                            f.write(f"| {label} | {value} |\n")
+                    f.write("\n")
+                else:
+                    f.write("*No data quality metrics available.*\n\n")
+                f.write("---\n\n")
+
+                # ===== MODEL COMPLEXITY =====
+                f.write("## 🧮 Model Complexity Metrics\n\n")
+                complexity = comprehensive_metrics['model_complexity']
+                if complexity:
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    for key, value in sorted(complexity.items()):
+                        label = key.replace('_', ' ').title()
+                        if isinstance(value, (int, float)) and not isinstance(value, bool):
+                            f.write(f"| {label} | {value:.6f if isinstance(value, float) else value} |\n")
+                        else:
+                            f.write(f"| {label} | {value} |\n")
+                    f.write("\n")
+                else:
+                    f.write("*No model complexity metrics available.*\n\n")
+                f.write("---\n\n")
+
+                # ===== PREDICTION STATISTICS =====
+                f.write("## 📊 Prediction Statistics\n\n")
+                pred_stats = comprehensive_metrics['prediction_statistics']
+                if pred_stats:
+                    f.write("| Statistic | Value |\n")
+                    f.write("|-----------|-------|\n")
+                    for key, value in sorted(pred_stats.items()):
+                        label = key.replace('_', ' ').title()
+                        if key == 'confusion_matrix':
+                            f.write(f"| {label} | See detailed analysis |\n")
+                        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                            f.write(f"| {label} | {value:.6f} |\n")
+                        else:
+                            f.write(f"| {label} | {value} |\n")
+                    f.write("\n")
+                else:
+                    f.write("*No prediction statistics available.*\n\n")
+                f.write("---\n\n")
+
+                # ===== ERROR ANALYSIS =====
+                f.write("## ⚠️ Error Analysis\n\n")
+                error_analysis = comprehensive_metrics['error_analysis']
+                if error_analysis:
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    for key, value in sorted(error_analysis.items()):
+                        label = key.replace('_', ' ').title()
+                        if isinstance(value, (int, float)) and not isinstance(value, bool):
+                            f.write(f"| {label} | {value:.6f} |\n")
+                        else:
+                            f.write(f"| {label} | {value} |\n")
+                    f.write("\n")
+                else:
+                    f.write("*No error analysis metrics available.*\n\n")
+                f.write("---\n\n")
+
+                # ===== DATA DRIFT / DISTRIBUTION SHIFT CHECKS =====
+                f.write("## 📊 Data Drift & Distribution Shift Checks\n\n")
+                f.write("*Detects if train/val/test distributions differ significantly (KS tests, PSI, chi-square)*\n\n")
+                drift_checks = comprehensive_metrics['data_drift_checks']
+                if drift_checks:
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    for key, value in sorted(drift_checks.items()):
+                        label = key.replace('_', ' ').title()
+                        if isinstance(value, dict):
+                            # Per-model drift metrics
+                            f.write(f"| **{label}** | (see details below) |\n")
+                        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                            f.write(f"| {label} | {value:.6f} |\n")
+                        else:
+                            f.write(f"| {label} | {value} |\n")
                     f.write("\n")
 
-                # Execution Summary
-                f.write("## Execution Summary\n\n")
-                f.write(f"- **Success:** {result.get('success', False)}\n")
-                f.write(f"- **Execution Time:** {result.get('execution_time', 0):.2f}s\n")
-                if 'error' in result:
-                    f.write(f"- **Error:** {result['error']}\n")
-                f.write("\n")
+                    # Detailed per-model drift if available
+                    per_model_drift = {k: v for k, v in drift_checks.items() if isinstance(v, dict)}
+                    if per_model_drift:
+                        f.write("### Per-Model Drift Metrics\n\n")
+                        for model_name, drift_data in per_model_drift.items():
+                            f.write(f"#### {model_name.replace('_', ' ').upper()}\n\n")
+                            f.write("| Metric | Value |\n")
+                            f.write("|--------|-------|\n")
+                            for key, value in sorted(drift_data.items()):
+                                label = key.replace('_', ' ').title()
+                                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                                    f.write(f"| {label} | {value:.6f} |\n")
+                                else:
+                                    f.write(f"| {label} | {value} |\n")
+                            f.write("\n")
+                else:
+                    f.write("*No data drift checks available.*\n\n")
+                f.write("---\n\n")
 
-                # Artifacts
-                f.write("## Generated Artifacts\n\n")
+                # ===== UNCERTAINTY / CONFIDENCE CALIBRATION =====
+                f.write("## 🎯 Uncertainty & Confidence Calibration\n\n")
+                f.write("*Measures how well predicted probabilities match actual outcomes (Brier Score, ECE)*\n\n")
+                calibration = comprehensive_metrics['uncertainty_calibration']
+                if calibration:
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    for key, value in sorted(calibration.items()):
+                        label = key.replace('_', ' ').title()
+                        if isinstance(value, dict):
+                            # Per-model calibration metrics
+                            f.write(f"| **{label}** | (see details below) |\n")
+                        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                            f.write(f"| {label} | {value:.6f} |\n")
+                        else:
+                            f.write(f"| {label} | {value} |\n")
+                    f.write("\n")
+
+                    # Detailed per-model calibration if available
+                    per_model_calib = {k: v for k, v in calibration.items() if isinstance(v, dict)}
+                    if per_model_calib:
+                        f.write("### Per-Model Calibration Metrics\n\n")
+                        for model_name, calib_data in per_model_calib.items():
+                            f.write(f"#### {model_name.replace('_', ' ').upper()}\n\n")
+                            f.write("| Metric | Value |\n")
+                            f.write("|--------|-------|\n")
+                            for key, value in sorted(calib_data.items()):
+                                label = key.replace('_', ' ').title()
+                                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                                    f.write(f"| {label} | {value:.6f} |\n")
+                                else:
+                                    f.write(f"| {label} | {value} |\n")
+                            f.write("\n")
+                else:
+                    f.write("*No uncertainty/calibration metrics available.*\n\n")
+                f.write("---\n\n")
+
+                # ===== SHAPLEY-BASED EXPLANATIONS (SHAP) =====
+                f.write("## 🔍 SHAP Explanations & Model Interpretability\n\n")
+                f.write("*Shapley values, PDP/ICE curves, and feature attribution*\n\n")
+                shap_exp = comprehensive_metrics['shap_explanations']
+                if shap_exp:
+                    # Filter out plot paths and complex objects for main table
+                    simple_shap = {k: v for k, v in shap_exp.items()
+                                   if not isinstance(v, dict) and 'plot' not in k.lower() and 'curve' not in k.lower()}
+
+                    if simple_shap:
+                        f.write("| Metric | Value |\n")
+                        f.write("|--------|-------|\n")
+                        for key, value in sorted(simple_shap.items()):
+                            label = key.replace('_', ' ').title()
+                            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                                f.write(f"| {label} | {value:.6f} |\n")
+                            else:
+                                f.write(f"| {label} | {value} |\n")
+                        f.write("\n")
+
+                    # Plot paths if available
+                    plot_paths = {k: v for k, v in shap_exp.items() if 'path' in k.lower()}
+                    if plot_paths:
+                        f.write("### Generated Explanation Plots\n\n")
+                        for key, path in sorted(plot_paths.items()):
+                            label = key.replace('_', ' ').replace('path', '').strip().title()
+                            f.write(f"- **{label}:** `{path}`\n")
+                        f.write("\n")
+
+                    # Per-model SHAP data
+                    per_model_shap = {k: v for k, v in shap_exp.items() if isinstance(v, dict)}
+                    if per_model_shap:
+                        f.write("### Per-Model SHAP Data\n\n")
+                        for model_name, shap_data in per_model_shap.items():
+                            f.write(f"#### {model_name.replace('_', ' ').upper()}\n\n")
+                            for key, value in sorted(shap_data.items()):
+                                label = key.replace('_', ' ').title()
+                                if 'path' in key.lower():
+                                    f.write(f"- **{label}:** `{value}`\n")
+                                elif isinstance(value, (int, float)):
+                                    f.write(f"- **{label}:** {value:.6f}\n")
+                                else:
+                                    f.write(f"- **{label}:** {value}\n")
+                            f.write("\n")
+                else:
+                    f.write("*No SHAP explanations available.*\n\n")
+                f.write("---\n\n")
+
+                # ===== DECISION THRESHOLD OPTIMIZATION =====
+                f.write("## ⚖️ Decision Threshold Optimization\n\n")
+                f.write("*ROC/PR curves, F-beta optimization, cost-weighted thresholds*\n\n")
+                threshold_opt = comprehensive_metrics['threshold_optimization']
+                if threshold_opt:
+                    # Filter out complex objects
+                    simple_threshold = {k: v for k, v in threshold_opt.items()
+                                        if not isinstance(v, dict) and 'curve' not in k.lower() and 'matrix' not in k.lower()}
+
+                    if simple_threshold:
+                        f.write("| Metric | Value |\n")
+                        f.write("|--------|-------|\n")
+                        for key, value in sorted(simple_threshold.items()):
+                            label = key.replace('_', ' ').title()
+                            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                                f.write(f"| {label} | {value:.6f} |\n")
+                            else:
+                                f.write(f"| {label} | {value} |\n")
+                        f.write("\n")
+
+                    # Per-model threshold optimization
+                    per_model_threshold = {k: v for k, v in threshold_opt.items() if isinstance(v, dict)}
+                    if per_model_threshold:
+                        f.write("### Per-Model Threshold Optimization\n\n")
+                        for model_name, thresh_data in per_model_threshold.items():
+                            f.write(f"#### {model_name.replace('_', ' ').upper()}\n\n")
+                            f.write("| Metric | Value |\n")
+                            f.write("|--------|-------|\n")
+                            for key, value in sorted(thresh_data.items()):
+                                label = key.replace('_', ' ').title()
+                                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                                    f.write(f"| {label} | {value:.6f} |\n")
+                                else:
+                                    f.write(f"| {label} | {value} |\n")
+                            f.write("\n")
+                else:
+                    f.write("*No threshold optimization metrics available.*\n\n")
+                f.write("---\n\n")
+
+                # ===== ARTIFACTS =====
+                f.write("## 💾 Generated Artifacts\n\n")
                 if 'artifacts' in result:
                     artifacts = result['artifacts']
+                    f.write("| Artifact Name | Path |\n")
+                    f.write("|---------------|------|\n")
                     for artifact_name, artifact_path in sorted(artifacts.items()):
-                        f.write(f"- **{artifact_name}:** `{artifact_path}`\n")
-                f.write("\n")
+                        f.write(f"| {artifact_name} | `{artifact_path}` |\n")
+                    f.write("\n")
+                else:
+                    f.write("*No artifacts information available.*\n\n")
 
-                # Footer
-                f.write("---\n")
-                f.write(f"*Report generated by Ares Training Pipeline v2.0 - {timestamp}*\n")
+                # ===== FOOTER =====
+                f.write("---\n\n")
+                f.write(f"*Comprehensive report generated by Ares Unified Training Pipeline v3.0 on {timestamp}*\n")
+                f.write(f"*Training Type: {training_type.upper()} | Symbol: {symbol} | Timeframe: {timeframe} | Direction: {direction}*\n")
 
             report_paths['markdown'] = markdown_path
             tprint_success(f"✅ Markdown report saved: {markdown_path}")
 
             # ========================================================================
-            # JSON REPORT
+            # COMPREHENSIVE JSON REPORT WITH ALL METRICS
             # ========================================================================
-            json_path = os.path.join(reports_dir, f'{training_type}_metrics.json')
+            json_path = os.path.join(reports_dir, f'{training_type}_comprehensive_metrics.json')
 
+            # Build comprehensive JSON report using the extracted metrics
             json_report = {
+                'report_version': '3.0',
                 'metadata': {
                     'training_type': training_type,
                     'symbol': symbol,
                     'exchange': config.get('exchange', 'binance'),
                     'timeframe': timeframe,
                     'direction': direction,
-                    'execution_mode': config.get('execution_mode', 'light'),
+                    'execution_mode': config.get('execution_mode', 'full'),
                     'timestamp': timestamp,
-                    'generated_at': datetime.now().isoformat()
+                    'generated_at': datetime.now().isoformat(),
+                    'report_type': 'comprehensive_training_metrics'
                 },
                 'configuration': {
                     'symbol': symbol,
                     'exchange': config.get('exchange', 'binance'),
                     'timeframe': timeframe,
                     'direction': direction,
-                    'execution_mode': config.get('execution_mode', 'light'),
+                    'execution_mode': config.get('execution_mode', 'full'),
                     'enable_hpo': config.get('enable_hpo', True),
+                    'train_percentage': config.get('train_percentage', 0.70),
+                    'validation_percentage': config.get('validation_percentage', 0.15),
+                    'test_percentage': config.get('test_percentage', 0.15),
                     'walkforward_config': str(config.get('walkforward_config', 'N/A'))
                 },
-                'metrics': metrics,
-                'execution_summary': {
-                    'success': result.get('success', False),
-                    'execution_time_seconds': result.get('execution_time', 0),
-                    'error': result.get('error', None)
-                },
+
+                # ===== COMPREHENSIVE METRICS =====
+                'execution_summary': comprehensive_metrics['execution_summary'],
+                'overall_performance': comprehensive_metrics['overall_performance'],
+                'per_model_metrics': comprehensive_metrics['per_model_metrics'],
+                'training_metrics': comprehensive_metrics['training_metrics'],
+                'validation_metrics': comprehensive_metrics['validation_metrics'],
+                'test_metrics': comprehensive_metrics['test_metrics'],
+                'hpo_results': comprehensive_metrics['hpo_results'],
+                'walkforward_results': comprehensive_metrics['walkforward_results'],
+                'feature_importance': comprehensive_metrics['feature_importance'],
+                'data_quality': comprehensive_metrics['data_quality'],
+                'model_complexity': comprehensive_metrics['model_complexity'],
+                'prediction_statistics': comprehensive_metrics['prediction_statistics'],
+                'error_analysis': comprehensive_metrics['error_analysis'],
+                'data_drift_checks': comprehensive_metrics['data_drift_checks'],
+                'uncertainty_calibration': comprehensive_metrics['uncertainty_calibration'],
+                'shap_explanations': comprehensive_metrics['shap_explanations'],
+                'threshold_optimization': comprehensive_metrics['threshold_optimization'],
+
+                # Add ensemble-specific metrics if applicable
+                'ensemble_specific': comprehensive_metrics['ensemble_specific'] if comprehensive_metrics['ensemble_specific'] is not None else None,
+
+                # ===== RAW METRICS (for backward compatibility) =====
+                'raw_metrics': result.get('metrics', {}),
+
+                # ===== ARTIFACTS =====
                 'artifacts': result.get('artifacts', {}),
+
+                # ===== MODELS INFO =====
                 'models': {
                     'count': len(result.get('models', {})),
-                    'names': list(result.get('models', {}).keys())
+                    'names': list(result.get('models', {}).keys()),
+                    'details': {
+                        model_name: {
+                            'type': str(type(model).__name__) if hasattr(model, '__class__') else 'unknown'
+                        }
+                        for model_name, model in result.get('models', {}).items()
+                    }
                 }
             }
 
+            # Save JSON report
             with open(json_path, 'w') as f:
                 json.dump(json_report, f, indent=2, default=str)
 
             report_paths['json'] = json_path
-            tprint_success(f"✅ JSON metrics saved: {json_path}")
+            tprint_success(f"✅ Comprehensive JSON metrics saved: {json_path}")
+
+            # ========================================================================
+            # CSV METRICS REPORT (One line per model)
+            # ========================================================================
+            csv_path = self._generate_csv_metrics_report(
+                comprehensive_metrics=comprehensive_metrics,
+                result=result,
+                training_type=training_type,
+                config=config,
+                reports_dir=reports_dir
+            )
+            if csv_path:
+                report_paths['csv'] = csv_path
+
+            # ========================================================================
+            # SUMMARY LOG OUTPUT
+            # ========================================================================
+            tprint_info("=" * 80)
+            tprint_info(f"📊 TRAINING REPORT SUMMARY - {training_type.upper()}")
+            tprint_info("=" * 80)
+            tprint_info(f"✅ Success: {comprehensive_metrics['execution_summary']['success']}")
+            tprint_info(f"⏱️  Execution Time: {comprehensive_metrics['execution_summary']['execution_time_seconds']:.2f}s")
+            tprint_info(f"🤖 Models Trained: {comprehensive_metrics['execution_summary']['models_trained_count']}")
+
+            if comprehensive_metrics['overall_performance']:
+                tprint_info("📈 Overall Performance:")
+                for key, value in list(comprehensive_metrics['overall_performance'].items())[:5]:
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        tprint_info(f"   • {key}: {value:.4f}")
+                    else:
+                        tprint_info(f"   • {key}: {value}")
+
+            tprint_info(f"📄 Markdown Report: {markdown_path}")
+            tprint_info(f"📊 JSON Report: {json_path}")
+            if csv_path:
+                tprint_info(f"📊 CSV Report: {csv_path}")
+            tprint_info("=" * 80)
 
             return report_paths
 

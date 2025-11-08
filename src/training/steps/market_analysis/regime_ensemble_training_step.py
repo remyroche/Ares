@@ -28,7 +28,7 @@ class RegimeEnsembleTrainingStep(BaseStep):
 
     def __init__(self, step_name: str = "regime_ensemble_training"):
         """Initialize the regime ensemble training step."""
-        super().__init__(step_name)
+        super().__init__(step_name, use_versioned_artifacts=True)  # Enable HDF5 storage
         self.logger = system_logger.getChild('RegimeEnsembleTraining')
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -77,10 +77,33 @@ class RegimeEnsembleTrainingStep(BaseStep):
             # Get pipeline state from config (should contain artifacts from previous steps)
             pipeline_state = config.get('pipeline_state', {})
 
-            market_data = pipeline_state.get('market_data') or config.get('market_data')
-            if market_data is None:
-                error_msg = "No market data available for regime ensemble training"
-                tprint(f"❌ {error_msg}", "ERROR")
+            # Load regime probabilities from versioned artifacts (HDF5)
+            # The ensemble needs regime probabilities as the data input
+            tprint("📥 Loading regime probabilities from versioned artifacts", "INFO")
+            
+            # Enable versioned artifacts for loading
+            self.use_versioned_artifacts = True
+            self.set_context(
+                symbol=config.get('symbol', 'ETHUSDT'),
+                exchange=config.get('exchange', 'binance'),
+                timeframe=regime_timeframe,
+                direction='long',
+                model='regime'
+            )
+            
+            regime_probs = self._get_artifact(
+                'rolling_hmm_regime_probabilities',
+                artifact_type='data',
+                data_category='features'
+            )
+            
+            if regime_probs is None:
+                error_msg = (
+                    "❌ No regime probabilities found in versioned artifacts!\n"
+                    "   Please run rolling_hmm_regime_discovery first:\n"
+                    f"   python3 src/launcher/ares_launcher.py rolling_hmm_regime_discovery --symbol {config.get('symbol')} --timeframe {regime_timeframe} --execution-mode blank"
+                )
+                tprint(error_msg, "ERROR")
                 self.logger.error(error_msg)
                 return {
                     'success': False,
@@ -88,15 +111,11 @@ class RegimeEnsembleTrainingStep(BaseStep):
                     'metrics': {},
                     'error': error_msg
                 }
-
-            # Convert market data to DataFrame if it's not already
-            if not isinstance(market_data, pd.DataFrame):
-                tprint("⚠️ Market data is not a DataFrame, attempting conversion", "WARNING")
-                if isinstance(market_data, dict):
-                    market_data = pd.DataFrame(market_data)
-                else:
-                    tprint("❌ Cannot convert market data to DataFrame", "ERROR")
-                    raise ValueError("Market data must be a pandas DataFrame or convertible dict")
+            
+            tprint(f"✅ Loaded regime probabilities: {regime_probs.shape}", "SUCCESS")
+            
+            # Use regime probabilities as the data input for the component
+            market_data = regime_probs
 
             tprint(f"📊 Market data shape: {market_data.shape}", "INFO")
             tprint(f"📊 Market data columns: {list(market_data.columns)}", "INFO")

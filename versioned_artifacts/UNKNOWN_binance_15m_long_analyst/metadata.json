@@ -4729,9 +4729,40 @@
       "direction": "long",
       "model": "analyst",
       "step_name": "feature_generation_final_validation_step"
+    },
+    "labeled_data_ETHUSDT_15m_20251108_174233_656": {
+      "created_at": "2025-11-08T17:42:33.651329",
+      "num_rows": 34171,
+      "num_columns": 4,
+      "columns": [
+        "target_long",
+        "target_short",
+        "labeling_timestamp",
+        "labeling_method_id"
+      ],
+      "artifact_name": "labeled_data_ETHUSDT_15m",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "15m",
+      "direction": "long",
+      "model": "analyst",
+      "step_name": "feature_generation_labeling_integration_step",
+      "labeling_method": "volatility_aware_multi_horizon",
+      "base_threshold": 0.007,
+      "lookahead_periods": 6,
+      "total_samples": 34171,
+      "opportunities_detected": 19897,
+      "high_quality_opportunities": 19897,
+      "avg_confidence_score": 0.5095138098256462,
+      "volatility_adaptation_range": "1.00x - 2.00x",
+      "target_structure": "simplified",
+      "target_columns": [
+        "target_long",
+        "target_short"
+      ]
     }
   },
-  "current_version": "final_validation_metrics_20251108_172829_318",
+  "current_version": "labeled_data_ETHUSDT_15m_20251108_174233_656",
   "created_at": "2025-11-07T18:22:44.911801",
-  "updated_at": "2025-11-08T17:28:29.333402"
+  "updated_at": "2025-11-08T17:42:33.674602"
 }

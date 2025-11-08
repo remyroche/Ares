@@ -1672,69 +1672,37 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     labels_series.index = market_data.index[:len(labels_series)]
                 price_targets = pd.to_numeric(labels_series, errors='coerce')
 
-            # Check if volume data is available for normalization
-            volume_available = 'volume' in market_data.columns
-            volume_data = None
-            
-            if volume_available:
-                try:
-                    # Align volume data with our target index
-                    volume_data = market_data['volume'].reindex(target_df.index)
-                    volume_data = pd.to_numeric(volume_data, errors='coerce')
-                    # Calculate volume baseline for normalization
-                    volume_ma = volume_data.rolling(window=20, min_periods=1).mean()
-                    volume_data = volume_data.fillna(volume_ma).fillna(1.0)
-                    tprint("✅ Volume data available for target normalization", "SUCCESS")
-                except Exception as e:
-                    tprint(f"⚠️ Failed to process volume data for normalization: {e}", "WARNING")
-                    volume_available = False
-            else:
-                tprint("⚠️ No volume data available - targets will not be volume-normalized", "WARNING")
-
-            # Create simplified target columns
-            if price_targets is not None and not price_targets.empty:
-                # Align price targets with our target index (features_data.index)
-                tprint(f"🐛 DEBUG: Before reindex - price_targets shape={price_targets.shape}, index range={price_targets.index.min()} to {price_targets.index.max()}", "INFO")
-                tprint(f"🐛 DEBUG: Target index (aligned_index) range={target_df.index.min()} to {target_df.index.max()}, shape={target_df.shape}", "INFO")
-                price_targets = price_targets.reindex(target_df.index)
-                price_targets = price_targets.fillna(0.0)
-                tprint(f"🐛 DEBUG: After reindex - price_targets shape={price_targets.shape}, non-zero count={np.count_nonzero(price_targets)}", "INFO")
+            # Use labeler's output directly instead of re-creating targets
+            # The volatility-aware labeler already produces target_long and target_short with proper thresholds
+            if isinstance(labels_data, pd.DataFrame) and 'target_long' in labels_data.columns and 'target_short' in labels_data.columns:
+                # Use labeler's targets directly - they already have volatility-aware thresholds applied
+                tprint_info("✅ Using labeler's target_long and target_short directly (volatility-aware)")
                 
-                # Create binary targets from price targets using volatility-aware threshold
-                # Use the base threshold (0.7% for ETHUSDT 15m) instead of hardcoded 1%
+                # Align labeler's targets with our target index
+                labels_aligned = labels_data.reindex(target_df.index)
+                target_df['target_long'] = labels_aligned['target_long'].fillna(0.0).astype(np.float32)
+                target_df['target_short'] = labels_aligned['target_short'].fillna(0.0).astype(np.float32)
+                
+                tprint_info(f"🎯 Labeler targets: long={(target_df['target_long'] != 0).sum()}, short={(target_df['target_short'] != 0).sum()}")
+                
+            elif price_targets is not None and not price_targets.empty:
+                # Fallback: Create targets from price_targets if labeler didn't produce target_long/target_short
+                tprint_warning("⚠️ Labeler didn't produce target_long/target_short - creating from price_targets (fallback)")
+                
+                # Align price targets with our target index
+                price_targets = price_targets.reindex(target_df.index).fillna(0.0)
+                
+                # Create binary targets using BASE_VOLATILITY_THRESHOLD
                 threshold = BASE_VOLATILITY_THRESHOLD  # 0.007 = 0.7%
-                target_long = (price_targets > threshold).astype(np.float32)
-                target_short = (price_targets < -threshold).astype(np.float32)
-                tprint_info(f"🎯 Using volatility-aware threshold: {threshold*100:.2f}% for target creation")
+                target_df['target_long'] = (price_targets > threshold).astype(np.float32)
+                target_df['target_short'] = (price_targets < -threshold).astype(np.float32)
                 
-                # Apply volume normalization if volume data is available
-                if volume_available and volume_data is not None:
-                    try:
-                        # Calculate volume ratio (current vs average)
-                        volume_ratio = volume_data / volume_data.rolling(window=20, min_periods=1).mean()
-                        volume_ratio = volume_ratio.fillna(1.0)
-                        
-                        # Apply volume normalization (cap at reasonable limits)
-                        volume_factor = np.clip(np.array(volume_ratio), 0.5, 2.0)
-                        
-                        # Normalize targets by volume factor
-                        target_long = target_long * volume_factor.astype(np.float32)
-                        target_short = target_short * volume_factor.astype(np.float32)
-                        
-                        tprint("✅ Applied volume normalization to targets", "SUCCESS")
-                    except Exception as e:
-                        tprint(f"⚠️ Failed to apply volume normalization: {e}", "WARNING")
-                
-                # Assign to target DataFrame
-                target_df['target_long'] = target_long
-                target_df['target_short'] = target_short
-                
-                tprint_info(f"🎯 Created volume-normalized targets: long={(target_long != 0).sum()}, short={(target_short != 0).sum()}")
+                tprint_info(f"🎯 Fallback targets created: long={(target_df['target_long'] != 0).sum()}, short={(target_df['target_short'] != 0).sum()}")
             else:
-                # Create empty target columns if no price targets available
+                # Create empty target columns if no targets available
                 target_df['target_long'] = np.zeros(len(target_df), dtype=np.float32)
                 target_df['target_short'] = np.zeros(len(target_df), dtype=np.float32)
-                tprint_warning("⚠️ No price targets available - created empty target columns")
+                tprint_warning("⚠️ No targets available - created empty target columns")
 
             # Add minimal metadata columns
             timestamp_ns = np.int64(pd.Timestamp.utcnow().value)

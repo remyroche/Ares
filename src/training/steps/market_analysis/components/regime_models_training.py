@@ -1438,6 +1438,68 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             else:
                 tprint("⚠️ [REGIME_MODELS] No model predictions generated", color="yellow")
 
+            # Save model predictions to versioned artifacts (HDF5) for ensemble training
+            tprint("💾 [REGIME_MODELS] Saving model predictions to versioned artifacts", color="cyan")
+            try:
+                from src.training.steps.base_step import BaseStep
+                
+                class _ArtifactSaverStep(BaseStep):
+                    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+                        return {'success': True, 'artifacts': [], 'metrics': {}}
+                
+                saver_step = _ArtifactSaverStep(
+                    "regime_models_training_saver",
+                    use_versioned_artifacts=True
+                )
+                saver_step.set_context(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    direction='long',
+                    model='regime'
+                )
+                
+                # Combine all model predictions into a single DataFrame
+                if model_predictions:
+                    predictions_df = pd.DataFrame(model_predictions, index=protected_data.index)
+                    
+                    saver_step._save_artifact(
+                        data=predictions_df,
+                        artifact_name='regime_models_predictions',
+                        artifact_type='data',
+                        data_category='features',
+                        metadata={
+                            'symbol': symbol,
+                            'exchange': exchange,
+                            'timeframe': timeframe,
+                            'model_names': list(model_predictions.keys()),
+                            'n_samples': len(predictions_df),
+                            'n_models': len(model_predictions)
+                        }
+                    )
+                    tprint(f"✅ [REGIME_MODELS] Saved model predictions: {predictions_df.shape}", color="green")
+                
+                # Save trained models to pickle
+                if trained_models:
+                    saver_step._save_artifact(
+                        data=trained_models,
+                        artifact_name='regime_trained_models',
+                        artifact_type='model',
+                        data_category='model',
+                        metadata={
+                            'symbol': symbol,
+                            'exchange': exchange,
+                            'timeframe': timeframe,
+                            'model_names': list(trained_models.keys()),
+                            'n_models': len(trained_models)
+                        }
+                    )
+                    tprint(f"✅ [REGIME_MODELS] Saved {len(trained_models)} trained models to pickle", color="green")
+                    
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Failed to save model artifacts: {e}", color="yellow")
+                self.logger.warning(f"Failed to save model artifacts: {e}", exc_info=True)
+
             # Create comprehensive results
             execution_time = time.time() - execution_start_time
             results = {

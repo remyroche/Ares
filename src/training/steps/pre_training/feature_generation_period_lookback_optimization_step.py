@@ -596,6 +596,93 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         return results
     
+    def _compute_feature_importance_from_data(self, merged_data: pd.DataFrame) -> Dict[str, Dict]:
+        """Compute feature importance from merged features and targets to create individual_results structure.
+        
+        This method computes basic feature importance metrics that can be used for lookback optimization
+        when pre-computed individual_feature_results are not available.
+        """
+        try:
+            from sklearn.ensemble import RandomForestRegressor
+            from sklearn.preprocessing import StandardScaler
+            
+            tprint("📊 Computing feature importance from merged data...")
+            
+            # Identify target and feature columns
+            target_cols = [col for col in merged_data.columns if 'target' in col.lower()]
+            if not target_cols:
+                tprint("⚠️ No target columns found in merged data")
+                return {}
+            
+            target_col = target_cols[0]  # Use first target column
+            feature_cols = [col for col in merged_data.columns 
+                           if col not in target_cols and col not in ['timestamp', 'labeling_method_id', 'labeling_timestamp']]
+            
+            if len(feature_cols) == 0:
+                tprint("⚠️ No feature columns found")
+                return {}
+            
+            tprint(f"📊 Using {len(feature_cols)} features and target '{target_col}'")
+            
+            # Prepare data
+            X = merged_data[feature_cols].fillna(0)
+            y = merged_data[target_col].fillna(0)
+            
+            # Remove rows with all-zero targets (no opportunities)
+            valid_mask = y != 0
+            if valid_mask.sum() < 50:
+                tprint(f"⚠️ Only {valid_mask.sum()} samples with non-zero targets - too few for reliable importance")
+                return {}
+            
+            X_valid = X[valid_mask]
+            y_valid = y[valid_mask]
+            
+            tprint(f"📊 Training on {len(y_valid)} samples with non-zero targets")
+            
+            # Train a simple Random Forest to get feature importances
+            rf = RandomForestRegressor(n_estimators=50, max_depth=10, random_state=42, n_jobs=-1)
+            rf.fit(X_valid, y_valid)
+            
+            # Get feature importances
+            importances = rf.feature_importances_
+            
+            # Organize by category (simplified categorization)
+            individual_results = {}
+            for idx, feature_name in enumerate(feature_cols):
+                importance = float(importances[idx])
+                
+                # Simple category detection based on feature name
+                category = 'other'
+                if any(kw in feature_name.lower() for kw in ['momentum', 'rsi', 'macd']):
+                    category = 'momentum'
+                elif any(kw in feature_name.lower() for kw in ['volatility', 'atr', 'std']):
+                    category = 'volatility'
+                elif any(kw in feature_name.lower() for kw in ['volume', 'obv']):
+                    category = 'volume'
+                elif any(kw in feature_name.lower() for kw in ['trend', 'ema', 'sma']):
+                    category = 'trend'
+                
+                if category not in individual_results:
+                    individual_results[category] = {}
+                
+                # Create result structure compatible with _optimize_lookback_periods_by_category
+                individual_results[category][feature_name] = {
+                    'optimal_lookback': 20,  # Default lookback
+                    'performance_score': importance,
+                    'stability_score': importance * 0.8,  # Approximate stability
+                    'feature_name': feature_name,
+                    'category': category
+                }
+            
+            tprint(f"✅ Computed importance for {len(feature_cols)} features across {len(individual_results)} categories")
+            return individual_results
+            
+        except Exception as e:
+            tprint(f"❌ Failed to compute feature importance: {e}")
+            import traceback
+            tprint(f"Traceback: {traceback.format_exc()}")
+            return {}
+    
     def _optimize_lookback_periods_by_category(self, individual_results: Dict[str, Dict], max_lookbacks_per_feature: int = 3) -> Dict[str, Any]:
         """Optimize each feature's lookbacks (best + informative alternatives)."""
         # Uses VectorBT when available to rank one optimal and two supportive lookbacks per feature.
@@ -4220,8 +4307,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         # Optimize lookback periods for all features (keep all features, optimize their lookbacks)
         lookback_optimization_result: Dict[str, Any] = {'category_optimizations': {}}
         try:
+            # NEW: Compute feature importance from merged data if individual results not available
             if artifacts.get('individual_feature_results'):
-                tprint("🎯 Optimizing lookback periods for all features...")
+                tprint("🎯 Optimizing lookback periods using pre-computed feature results...")
                 optimization_output = self._optimize_lookback_periods_by_category(
                     artifacts['individual_feature_results'], 
                     max_lookbacks_per_feature=3
@@ -4230,8 +4318,24 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     lookback_optimization_result = optimization_output
                 elif optimization_output is None:
                     tprint("⚠️ Lookback optimization returned no results; using empty defaults")
+            elif features is not None and not features.empty:
+                tprint("🎯 Computing feature importance from merged data for lookback optimization...")
+                # Compute feature importance using the merged features and targets
+                individual_results = self._compute_feature_importance_from_data(features)
+                if individual_results:
+                    tprint(f"✅ Computed importance for {sum(len(v) for v in individual_results.values())} features")
+                    optimization_output = self._optimize_lookback_periods_by_category(
+                        individual_results, 
+                        max_lookbacks_per_feature=3
+                    )
+                    if isinstance(optimization_output, dict):
+                        lookback_optimization_result = optimization_output
+                    elif optimization_output is None:
+                        tprint("⚠️ Lookback optimization returned no results; using empty defaults")
+                else:
+                    tprint("⚠️ Failed to compute feature importance; skipping lookback optimization")
             else:
-                tprint("⚠️ No individual feature results available; skipping lookback optimization")
+                tprint("⚠️ No data available for lookback optimization; skipping")
 
             artifacts['lookback_optimization'] = lookback_optimization_result
             

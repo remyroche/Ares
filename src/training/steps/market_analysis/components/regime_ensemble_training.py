@@ -492,14 +492,22 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             # Load regime_models_predictions as base features
             tprint("📥 [REGIME_ENSEMBLE] Loading regime_models artifacts", color="cyan")
             from src.training.steps.base_step import BaseStep
-            base_step_inst = BaseStep("regime_ensemble_training_loader")
-            base_step_inst._current_context = {
-                'symbol': self.config.symbol,
-                'exchange': self.config.exchange,
-                'timeframe': self.config.timeframe,
-                'direction': 'long',
-                'model': 'regime'
-            }
+            
+            class _ArtifactLoaderStep(BaseStep):
+                async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+                    return {'success': True, 'artifacts': [], 'metrics': {}}
+            
+            base_step_inst = _ArtifactLoaderStep(
+                "regime_ensemble_training_loader",
+                use_versioned_artifacts=True
+            )
+            base_step_inst.set_context(
+                symbol=self.config.symbol,
+                exchange=self.config.exchange,
+                timeframe=self.config.timeframe,
+                direction='long',
+                model='regime'
+            )
 
             regime_models_preds = await self._load_regime_models_predictions(base_step_inst)
 

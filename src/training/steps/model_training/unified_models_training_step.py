@@ -25,6 +25,9 @@ from src.training.steps.model_training.hpo_config import (
     ModelParameterGroups
 )
 
+# Import disagreement features calculator
+from src.feature_engineering_roadmap.disagreement_meta_features import DisagreementMetaFeatures
+
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error, tprint_warning
@@ -2155,13 +2158,95 @@ class UnifiedModelsTrainingStep(BaseStep):
                     )
                     base_outputs_for_stats = tactician_base_outputs # Calculate stats on these
 
-            # --- NEW: Calculate ensemble meta-features ---
+            # --- NEW: Calculate ensemble meta-features (disagreement features) ---
             if base_outputs_for_stats is not None and not base_outputs_for_stats.empty:
-                # Calculate meta-features from base model outputs
-                meta_features = pd.DataFrame(index=base_outputs_for_stats.index)
-                # Add these new features to the list
-                additional_features_list.append(meta_features)
-                tprint_success(f"✅ Added {len(meta_features.columns)} statistical meta-features for ensemble.")
+                try:
+                    tprint_info("🔍 Calculating disagreement meta-features from base model outputs...")
+
+                    # Initialize disagreement features calculator
+                    disagreement_calc = DisagreementMetaFeatures(logger=self.logger)
+
+                    # Prepare model outputs as dict for disagreement calculator
+                    # Assume columns are named like: model1_prediction, model2_prediction, etc.
+                    # or model1_prob_0, model1_prob_1, model2_prob_0, model2_prob_1, etc.
+
+                    model_predictions = {}
+                    model_probabilities = {}
+                    model_confidences = {}
+
+                    # Parse column names to identify model outputs
+                    for col in base_outputs_for_stats.columns:
+                        col_lower = col.lower()
+
+                        # Extract model predictions (columns ending with _prediction or _pred)
+                        if '_prediction' in col_lower or '_pred' in col_lower:
+                            model_name = col.split('_prediction')[0].split('_pred')[0]
+                            model_predictions[model_name] = base_outputs_for_stats[col].values
+
+                        # Extract model probabilities (columns with _prob or _probability)
+                        elif '_prob' in col_lower or '_probability' in col_lower:
+                            # Group multi-class probabilities by model
+                            parts = col.split('_')
+                            for i, part in enumerate(parts):
+                                if 'prob' in part.lower():
+                                    model_name = '_'.join(parts[:i])
+                                    if model_name not in model_probabilities:
+                                        model_probabilities[model_name] = []
+                                    model_probabilities[model_name].append(base_outputs_for_stats[col].values)
+                                    break
+
+                        # Extract model confidence scores
+                        elif '_confidence' in col_lower or '_conf' in col_lower:
+                            model_name = col.split('_confidence')[0].split('_conf')[0]
+                            model_confidences[model_name] = base_outputs_for_stats[col].values
+
+                    # Convert probability lists to arrays
+                    for model_name in model_probabilities:
+                        if isinstance(model_probabilities[model_name], list):
+                            model_probabilities[model_name] = np.column_stack(model_probabilities[model_name])
+
+                    tprint_info(f"   ↪ Parsed {len(model_predictions)} prediction outputs")
+                    tprint_info(f"   ↪ Parsed {len(model_probabilities)} probability outputs")
+                    tprint_info(f"   ↪ Parsed {len(model_confidences)} confidence outputs")
+
+                    # Calculate disagreement features
+                    if model_predictions or model_probabilities:
+                        # If we only have predictions, create dummy probabilities
+                        if not model_probabilities and model_predictions:
+                            tprint_warning("⚠️ No probabilities found, using predictions only for disagreement features")
+                            # Convert predictions to simple binary probabilities
+                            for model_name, preds in model_predictions.items():
+                                probs = np.column_stack([
+                                    np.where(preds > 0, 0, 1),  # Prob of class 0 (negative)
+                                    np.where(preds > 0, 1, 0)   # Prob of class 1 (positive)
+                                ])
+                                model_probabilities[model_name] = probs
+
+                        disagreement_features_dict = disagreement_calc.calculate_all_disagreement_features(
+                            model_predictions=model_predictions,
+                            model_probabilities=model_probabilities,
+                            model_confidences=model_confidences if model_confidences else None
+                        )
+
+                        # Convert dict of Series to DataFrame
+                        meta_features = pd.DataFrame(disagreement_features_dict, index=base_outputs_for_stats.index)
+
+                        tprint_success(f"✅ Calculated {len(meta_features.columns)} disagreement meta-features:")
+                        tprint_info(f"   Feature columns: {list(meta_features.columns)}")
+
+                        # Add these new features to the list
+                        additional_features_list.append(meta_features)
+                    else:
+                        tprint_warning("⚠️ Could not parse model outputs for disagreement features, creating empty meta-features")
+                        meta_features = pd.DataFrame(index=base_outputs_for_stats.index)
+                        # Don't add empty DataFrame to avoid errors
+
+                except Exception as e:
+                    tprint_error(f"❌ Failed to calculate disagreement features: {e}")
+                    import traceback
+                    tprint_error(traceback.format_exc())
+                    self.logger.error(f"Disagreement feature calculation failed: {e}")
+                    # Continue without disagreement features rather than failing
 
             if additional_features_list:
                 # Concatenate all features (base outputs + meta-features)
@@ -2246,7 +2331,7 @@ class UnifiedModelsTrainingStep(BaseStep):
         """Save training artifacts."""
         try:
             artifacts = {}
-            
+
             # Save model artifacts
             if 'models' in result:
                 for model_name, model in result['models'].items():
@@ -2263,9 +2348,10 @@ class UnifiedModelsTrainingStep(BaseStep):
                         }
                     )
                     artifacts[f"{training_type}_{model_name}"] = artifact_path
-            
-            # Save performance metrics
+
+            # Save performance metrics (JSON + Markdown report)
             if 'metrics' in result:
+                # Save as JSON
                 metrics_path = self._save_artifact(
                     data=result['metrics'],
                     artifact_name=f"{training_type}_metrics",
@@ -2279,7 +2365,23 @@ class UnifiedModelsTrainingStep(BaseStep):
                     }
                 )
                 artifacts[f"{training_type}_metrics"] = metrics_path
-            
+
+                # Save as Markdown report
+                try:
+                    md_report_path = self._generate_metrics_markdown_report(
+                        metrics=result['metrics'],
+                        training_type=training_type,
+                        config=config,
+                        hpo_results=result.get('hpo_results'),
+                        execution_time=result.get('execution_time', 0.0)
+                    )
+                    if md_report_path:
+                        artifacts[f"{training_type}_metrics_report"] = md_report_path
+                        tprint_success(f"✅ Saved metrics markdown report: {md_report_path}")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to save markdown report: {e}")
+                    self.logger.warning(f"Markdown report generation failed: {e}")
+
             # Save configuration
             config_path = self._save_artifact(
                 data=config,
@@ -2291,12 +2393,185 @@ class UnifiedModelsTrainingStep(BaseStep):
                 }
             )
             artifacts[f"{training_type}_config"] = config_path
-            
+
             return artifacts
-            
+
         except Exception as e:
             self.logger.error(f"Failed to save training artifacts: {e}")
             return {}
+
+    def _generate_metrics_markdown_report(
+        self,
+        metrics: Dict[str, Any],
+        training_type: str,
+        config: Dict[str, Any],
+        hpo_results: Optional[Dict[str, Any]] = None,
+        execution_time: float = 0.0
+    ) -> Optional[str]:
+        """
+        Generate a comprehensive markdown report for training metrics.
+
+        Args:
+            metrics: Training metrics dictionary
+            training_type: Type of training (tactician_ensemble, etc.)
+            config: Training configuration
+            hpo_results: HPO optimization results (optional)
+            execution_time: Total execution time in seconds
+
+        Returns:
+            Path to saved markdown report, or None if failed
+        """
+        try:
+            import os
+            from datetime import datetime
+
+            # Generate report content
+            report_lines = []
+
+            # Header
+            report_lines.append(f"# {training_type.replace('_', ' ').title()} Training Report")
+            report_lines.append("")
+            report_lines.append(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            report_lines.append(f"**Symbol:** {config.get('symbol', 'UNKNOWN')}")
+            report_lines.append(f"**Exchange:** {config.get('exchange', 'binance')}")
+            report_lines.append(f"**Timeframe:** {config.get('timeframe', '15m')}")
+            report_lines.append(f"**Direction:** {config.get('direction', 'long')}")
+            report_lines.append(f"**Execution Time:** {execution_time:.2f}s")
+            report_lines.append("")
+            report_lines.append("---")
+            report_lines.append("")
+
+            # HPO Results Section
+            if hpo_results:
+                report_lines.append("## Hyperparameter Optimization (HPO)")
+                report_lines.append("")
+                report_lines.append("### Best HPO Scores")
+                report_lines.append("")
+
+                if 'best_scores' in hpo_results:
+                    report_lines.append("| Model | Score | Parameters |")
+                    report_lines.append("|-------|-------|------------|")
+                    for model_name, score_data in hpo_results['best_scores'].items():
+                        score = score_data.get('score', 'N/A') if isinstance(score_data, dict) else score_data
+                        params = score_data.get('params', {}) if isinstance(score_data, dict) else {}
+                        params_str = ', '.join([f"{k}={v}" for k, v in list(params.items())[:3]])
+                        if len(params) > 3:
+                            params_str += ', ...'
+                        report_lines.append(f"| {model_name} | {score:.6f} | {params_str} |")
+
+                report_lines.append("")
+                report_lines.append("### HPO Details")
+                report_lines.append("")
+                report_lines.append(f"- **Optimization Rounds:** {hpo_results.get('optimization_rounds', 'N/A')}")
+                report_lines.append(f"- **Total Trials:** {hpo_results.get('total_trials', 'N/A')}")
+                report_lines.append(f"- **Best Overall Score:** {hpo_results.get('best_overall_score', 'N/A')}")
+                report_lines.append("")
+                report_lines.append("---")
+                report_lines.append("")
+
+            # Training Metrics Section
+            report_lines.append("## Training Metrics")
+            report_lines.append("")
+
+            # Accuracy metrics
+            if 'accuracy' in metrics or 'train_accuracy' in metrics:
+                report_lines.append("### Accuracy Metrics")
+                report_lines.append("")
+                report_lines.append("| Split | Accuracy |")
+                report_lines.append("|-------|----------|")
+                for split in ['train', 'val', 'test']:
+                    key = f"{split}_accuracy"
+                    if key in metrics:
+                        report_lines.append(f"| {split.capitalize()} | {metrics[key]:.4f} |")
+                    elif split == 'train' and 'accuracy' in metrics:
+                        report_lines.append(f"| Train | {metrics['accuracy']:.4f} |")
+                report_lines.append("")
+
+            # R² metrics
+            if any('r2' in k.lower() for k in metrics.keys()):
+                report_lines.append("### R² Score Metrics")
+                report_lines.append("")
+                report_lines.append("| Split | R² Score |")
+                report_lines.append("|-------|----------|")
+                for split in ['train', 'val', 'test']:
+                    for key in [f"{split}_r2", f"{split}_r2_score", f"r2_{split}"]:
+                        if key in metrics:
+                            report_lines.append(f"| {split.capitalize()} | {metrics[key]:.4f} |")
+                            break
+                report_lines.append("")
+
+            # Loss metrics
+            if any('loss' in k.lower() for k in metrics.keys()):
+                report_lines.append("### Loss Metrics")
+                report_lines.append("")
+                report_lines.append("| Split | Loss |")
+                report_lines.append("|-------|------|")
+                for split in ['train', 'val', 'test']:
+                    for key in [f"{split}_loss", f"loss_{split}"]:
+                        if key in metrics:
+                            report_lines.append(f"| {split.capitalize()} | {metrics[key]:.6f} |")
+                            break
+                report_lines.append("")
+
+            # Other metrics
+            report_lines.append("### Additional Metrics")
+            report_lines.append("")
+
+            # Filter out already-displayed metrics
+            displayed_keys = set()
+            for key in metrics.keys():
+                if any(x in key.lower() for x in ['accuracy', 'r2', 'loss']):
+                    displayed_keys.add(key)
+
+            remaining_metrics = {k: v for k, v in metrics.items() if k not in displayed_keys}
+
+            if remaining_metrics:
+                report_lines.append("| Metric | Value |")
+                report_lines.append("|--------|-------|")
+                for key, value in remaining_metrics.items():
+                    if isinstance(value, (int, float)):
+                        report_lines.append(f"| {key} | {value:.6f} |")
+                    else:
+                        report_lines.append(f"| {key} | {value} |")
+                report_lines.append("")
+
+            # Model Information
+            report_lines.append("---")
+            report_lines.append("")
+            report_lines.append("## Model Information")
+            report_lines.append("")
+            report_lines.append(f"- **Training Type:** {training_type}")
+            report_lines.append(f"- **Execution Mode:** {config.get('execution_mode', 'unknown')}")
+            report_lines.append(f"- **Enable HPO:** {config.get('enable_hpo', False)}")
+            report_lines.append("")
+
+            # Save report
+            report_content = '\n'.join(report_lines)
+
+            # Determine output directory
+            output_dir = os.path.join('outcomes', 'training_reports')
+            os.makedirs(output_dir, exist_ok=True)
+
+            # Generate filename
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            symbol = config.get('symbol', 'UNKNOWN')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+            filename = f"{training_type}_{symbol}_{timeframe}_{direction}_{timestamp}.md"
+            filepath = os.path.join(output_dir, filename)
+
+            # Write file
+            with open(filepath, 'w') as f:
+                f.write(report_content)
+
+            tprint_success(f"✅ Generated markdown metrics report: {filepath}")
+            return filepath
+
+        except Exception as e:
+            self.logger.error(f"Failed to generate markdown report: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return None
 
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Run method required by BaseStep interface."""

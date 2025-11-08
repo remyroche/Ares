@@ -175,6 +175,18 @@ class MicrostructureFeatureGenerator(VectorizedFeatureGenerator):
             # Bid-ask spread features
             if 'bid' in data.columns and 'ask' in data.columns:
                 features.update(self._calculate_bid_ask_features(data))
+            else:
+                missing = [col for col in ['bid', 'ask'] if col not in data.columns]
+                if missing:
+                    tprint(
+                        "⚠️ Skipping bid/ask microstructure features due to missing columns",
+                        level="warning",
+                        extra={
+                            "missing_columns": missing,
+                            "available_columns": list(data.columns),
+                            "feature_category": "microstructure",
+                        },
+                    )
 
             # Order flow features
             features.update(self._calculate_order_flow_features(data))
@@ -387,7 +399,8 @@ class BidAskSpreadGenerator(VectorizedFeatureGenerator):
             name="bid_ask_spread",
             category=FeatureCategory.MICROSTRUCTURE,
             description="Bid-ask spread analysis for market microstructure",
-            required_columns=["bid", "ask"],
+            required_columns=[],
+            optional_columns=["bid", "ask"],
             default_lookback=window,
             min_lookback=5,
             max_lookback=100,
@@ -660,7 +673,8 @@ class MarketDepthGenerator(VectorizedFeatureGenerator):
             name="market_depth",
             category=FeatureCategory.MICROSTRUCTURE,
             description="Market depth analysis",
-            required_columns=["bid_size", "ask_size"],
+            required_columns=[],  # Changed to optional to prevent fast-fail
+            optional_columns=["bid_size", "ask_size"],
             default_lookback=window,
             min_lookback=5,
             max_lookback=100,
@@ -672,6 +686,12 @@ class MarketDepthGenerator(VectorizedFeatureGenerator):
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate market depth feature."""
         try:
+            # Check if bid_size and ask_size columns exist
+            if 'bid_size' not in data.columns or 'ask_size' not in data.columns:
+                missing = [col for col in ['bid_size', 'ask_size'] if col not in data.columns]
+                tprint(f"⚠️ Skipping market depth feature due to missing columns: {missing}", "warning")
+                return pd.Series(np.zeros(len(data)), index=data.index)
+            
             bid_size = data['bid_size']
             ask_size = data['ask_size']
 

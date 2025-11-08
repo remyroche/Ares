@@ -190,7 +190,7 @@ class OrchestratorConfig:
     max_interaction_features: int = 100
     max_polynomial_features: int = 50
     max_cross_timeframe_features: int = 15
-    max_features: int = 200  # Maximum features after selection
+    max_features: int = 80  # Maximum features after selection
 
     # Horizon labeling parameters
     profit_targets: Dict[str, float] = field(default_factory=lambda: {

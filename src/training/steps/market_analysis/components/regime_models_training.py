@@ -39,6 +39,128 @@ except ImportError as e:
     CONFIG_SYSTEM_AVAILABLE = False
     tprint(f"⚠️ [REGIME_MODELS] Configuration system not available: {e}", color="yellow")
 
+try:
+    from src.config.regime_models_training.default_config import (
+        create_default_regime_training_config as _central_create_default_regime_training_config,
+        validate_regime_training_config as _central_validate_regime_training_config,
+    )
+except ImportError:
+    _central_create_default_regime_training_config = None
+    _central_validate_regime_training_config = None
+
+
+def _fallback_default_regime_training_config() -> Dict[str, Any]:
+    base_config: Dict[str, Any] = {
+        "test_size": 0.3,
+        "gap_size": 1,
+        "validation_size": 0.2,
+        "min_regime_samples": 10,
+        "regime_aware": True,
+        "temporal_validation": {
+            "enabled": True,
+            "strict_temporal_order": True,
+            "initial_train_size": 0.6,
+            "step_size": 0.1,
+            "min_test_size": 0.1,
+            "enable_leakage_detection": True,
+            "n_splits": 5,
+            "test_size": 0.2,
+            "gap_size": 1,
+        },
+        "model_validation": {
+            "enabled": True,
+            "cv_folds": 5,
+            "scoring_metrics": ["accuracy", "precision_weighted", "recall_weighted", "f1_weighted"],
+            "temporal_smoothing": True,
+            "smoothing_alpha": 0.1,
+            "enable_soft_labels": True,
+            "soft_label_smoothing": 0.1,
+        },
+        "data_validation": {
+            "min_samples": 10,
+            "min_features": 50,
+            "required_columns": ["close", "open", "high", "low", "volume"],
+            "max_nan_ratio": 0.1,
+            "enable_data_quality_checks": True,
+        },
+        "regime_extraction": {
+            "min_regimes": 2,
+            "max_regimes": 10,
+            "min_samples_per_regime": 5,
+            "extraction_method": "standardized",
+            "fallback_to_synthetic": True,
+        },
+        "hpo": {
+            "enabled": True,
+            "method": "bayesian",
+            "max_trials": 50,
+            "timeout_seconds": 300,
+            "early_stopping": True,
+            "enable_pruning": True,
+        },
+        "hardware_optimization": {
+            "enabled": True,
+            "cpu_optimization_level": "aggressive",
+            "gpu_optimization_level": "balanced",
+            "memory_optimization_level": "balanced",
+            "enable_adaptive_optimization": True,
+            "enable_learning": True,
+        },
+        "data_preparation": {
+            "enable_feature_scaling": True,
+            "scaling_method": "standard",
+            "handle_missing_values": "mean",
+            "remove_outliers": True,
+            "outlier_method": "iqr",
+            "iqr_multiplier": 3.0,
+        },
+        "evaluation": {
+            "enhanced_evaluation": True,
+            "temporal_metrics": True,
+            "regime_persistence_metrics": True,
+            "ensemble_evaluation": True,
+        },
+    }
+    return copy.deepcopy(base_config)
+
+
+def create_default_regime_training_config() -> Dict[str, Any]:
+    if _central_create_default_regime_training_config is not None:
+        return copy.deepcopy(_central_create_default_regime_training_config())
+    return _fallback_default_regime_training_config()
+
+
+def _deep_update(base: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_update(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+
+def validate_regime_training_config(config: Dict[str, Any], strict: bool = True) -> Dict[str, Any]:
+    if _central_validate_regime_training_config is not None:
+        return _central_validate_regime_training_config(copy.deepcopy(config), strict=strict)
+
+    validated = _fallback_default_regime_training_config()
+    _deep_update(validated, copy.deepcopy(config))
+
+    if strict:
+        if validated["temporal_validation"]["test_size"] <= 0 or validated["temporal_validation"]["test_size"] >= 1:
+            raise ValueError("temporal_validation.test_size must be between 0 and 1")
+        if validated["data_validation"]["min_samples"] < 1:
+            raise ValueError("data_validation.min_samples must be >= 1")
+        if validated["data_validation"]["min_features"] < 1:
+            raise ValueError("data_validation.min_features must be >= 1")
+        if validated["regime_extraction"]["min_regimes"] < 1:
+            raise ValueError("regime_extraction.min_regimes must be >= 1")
+        if validated["regime_extraction"]["max_regimes"] < validated["regime_extraction"]["min_regimes"]:
+            raise ValueError("regime_extraction.max_regimes must be >= min_regimes")
+        if validated["min_regime_samples"] < 1:
+            raise ValueError("min_regime_samples must be >= 1")
+
+    return validated
 # Enhanced imports for new functionality
 from src.utils.ml_common.unified_vectorization_manager import (
     UnifiedVectorizationManager, OperationType, OptimizationStrategy
@@ -762,45 +884,89 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         base_step: Any
     ) -> Optional[pd.DataFrame]:
         """
-        Load rolling_hmm_regime_probabilities and resample to 15m.
+        Load rolling_hmm_regime_probabilities from versioned artifacts.
+        
+        No resampling is performed - we load at the same timeframe as training (1h).
 
         Args:
             base_step: BaseStep instance for artifact loading
 
         Returns:
-            DataFrame with regime probabilities at 15m timeframe
+            DataFrame with regime probabilities at the same timeframe as training
         """
         try:
-            tprint("📥 [REGIME_MODELS] Loading rolling_hmm_regime_probabilities artifact", color="cyan")
+            tprint("📥 [REGIME_MODELS] Loading rolling_hmm_regime_probabilities artifact from versioned storage")
 
-            # Load 1h regime probabilities
-            regime_probs_1h = base_step._get_artifact(
+            # Load regime probabilities at the same timeframe as training
+            regime_probs = base_step._get_artifact(
                 'rolling_hmm_regime_probabilities',
+                artifact_type='data',
+                data_category='features'  # Hint that this is feature data stored in HDF5
+            )
+
+            if regime_probs is None:
+                tprint("⚠️ [REGIME_MODELS] No rolling_hmm_regime_probabilities found in versioned artifacts")
+                return None
+
+            tprint(f"✅ [REGIME_MODELS] Loaded regime probabilities: {regime_probs.shape}")
+            tprint(f"📊 [REGIME_MODELS] Columns: {list(regime_probs.columns)}")
+            tprint(f"📊 [REGIME_MODELS] Index range: {regime_probs.index.min()} to {regime_probs.index.max()}")
+
+            # Ensure datetime index
+            if not isinstance(regime_probs.index, pd.DatetimeIndex):
+                regime_probs.index = pd.to_datetime(regime_probs.index)
+
+            return regime_probs
+
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] Failed to load regime probabilities: {e}")
+            self.logger.error(f"Failed to load regime probabilities: {e}", exc_info=True)
+            return None
+
+    async def _load_rolling_hmm_regime_labels(
+        self,
+        base_step: Any
+    ) -> Optional[np.ndarray]:
+        """
+        Load rolling_hmm_regime_labels for training.
+
+        Args:
+            base_step: BaseStep instance for artifact loading
+
+        Returns:
+            Regime labels as numpy array
+        """
+        try:
+            tprint("📥 [REGIME_MODELS] Loading rolling_hmm_regime_labels artifact", color="cyan")
+
+            # Load regime labels
+            regime_labels_df = base_step._get_artifact(
+                'rolling_hmm_regime_labels',
                 artifact_type='data'
             )
 
-            if regime_probs_1h is None:
-                tprint("⚠️ [REGIME_MODELS] No rolling_hmm_regime_probabilities found", color="yellow")
+            if regime_labels_df is None:
+                tprint("⚠️ [REGIME_MODELS] No rolling_hmm_regime_labels found", color="yellow")
                 return None
 
-            tprint(f"✅ [REGIME_MODELS] Loaded regime probabilities: {regime_probs_1h.shape}", color="green")
-            tprint(f"📊 [REGIME_MODELS] Columns: {list(regime_probs_1h.columns)}", color="blue")
+            tprint(f"✅ [REGIME_MODELS] Loaded regime labels: {regime_labels_df.shape}", color="green")
+            tprint(f"📊 [REGIME_MODELS] Columns: {list(regime_labels_df.columns)}", color="blue")
 
-            # Ensure datetime index
-            if not isinstance(regime_probs_1h.index, pd.DatetimeIndex):
-                regime_probs_1h.index = pd.to_datetime(regime_probs_1h.index)
+            # Extract regime_label column
+            if 'regime_label' in regime_labels_df.columns:
+                regime_labels = regime_labels_df['regime_label'].values
+            else:
+                # Fallback to first column
+                regime_labels = regime_labels_df.iloc[:, 0].values
 
-            # Resample from 1h to 15m using forward-fill
-            tprint("🔄 [REGIME_MODELS] Resampling from 1h to 15m (forward-fill)", color="cyan")
-            regime_probs_15m = regime_probs_1h.resample('15T').ffill()
+            tprint(f"✅ [REGIME_MODELS] Extracted {len(regime_labels)} regime labels", color="green")
+            tprint(f"📊 [REGIME_MODELS] Unique regimes: {np.unique(regime_labels)}", color="blue")
 
-            tprint(f"✅ [REGIME_MODELS] Resampled to 15m: {regime_probs_15m.shape}", color="green")
-
-            return regime_probs_15m
+            return regime_labels
 
         except Exception as e:
-            tprint(f"❌ [REGIME_MODELS] Failed to load/resample regime probabilities: {e}", color="red")
-            self.logger.error(f"Failed to load/resample regime probabilities: {e}", exc_info=True)
+            tprint(f"❌ [REGIME_MODELS] Failed to load regime labels: {e}", color="red")
+            self.logger.error(f"Failed to load regime labels: {e}", exc_info=True)
             return None
 
     async def _save_predictions_to_hdf5(
@@ -910,6 +1076,58 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             self.hardware_manager.optimize_for_workload(WorkloadType.ML_TRAINING)
             tprint("✅ [REGIME_MODELS] Hardware optimization initialized", color="green")
 
+            # For blank mode, load fresh data from historical storage instead of using cached data
+            execution_mode = self.config.execution_mode if hasattr(self.config, 'execution_mode') else 'light'
+            symbol = self.config.symbol if hasattr(self.config, 'symbol') else 'ETHUSDT'
+            exchange = self.config.exchange if hasattr(self.config, 'exchange') else 'binance'
+            timeframe = self.config.timeframe if hasattr(self.config, 'timeframe') else '1h'
+            
+            if execution_mode == 'blank':
+                tprint(f"📥 [REGIME_MODELS] Blank mode: Loading fresh data for {symbol} from historical storage")
+                
+                # Load fresh data from historical storage
+                from src.utils.kline_parquet import KlinesParquetManager, StorageConfig
+                from datetime import datetime, timedelta
+                
+                klines_manager = KlinesParquetManager(config=StorageConfig(base_dir='historical_data'))
+                end_time = datetime.utcnow()
+                start_time = end_time - timedelta(days=180)
+                
+                fresh_data = klines_manager.load_klines(
+                    symbol=symbol,
+                    exchange=exchange,
+                    interval=timeframe,
+                    start_time=start_time,
+                    end_time=end_time,
+                )
+                
+                if fresh_data is not None and len(fresh_data) > 0:
+                    tprint(f"✅ [REGIME_MODELS] Loaded {len(fresh_data):,} rows from historical storage")
+                    
+                    # Check for and remove duplicate index labels
+                    if fresh_data.index.duplicated().any():
+                        n_duplicates = fresh_data.index.duplicated().sum()
+                        tprint(f"⚠️ [REGIME_MODELS] Found {n_duplicates} duplicate timestamps, removing duplicates")
+                        fresh_data = fresh_data[~fresh_data.index.duplicated(keep='first')]
+                        tprint(f"✅ [REGIME_MODELS] After deduplication: {len(fresh_data):,} rows")
+                    
+                    # Validate sample count
+                    expected_samples_per_day = 24 if timeframe == '1h' else (24 * 4 if timeframe == '15m' else 24)
+                    expected_samples = 180 * expected_samples_per_day
+                    actual_samples = len(fresh_data)
+                    
+                    tprint(f"📊 [REGIME_MODELS] Data validation: Expected ~{expected_samples:,} samples for 180 days of {timeframe} data")
+                    tprint(f"📊 [REGIME_MODELS] Data validation: Actual samples: {actual_samples:,}")
+                    
+                    if actual_samples < expected_samples * 0.5:
+                        tprint(f"⚠️ [REGIME_MODELS] WARNING: Only {actual_samples:,} samples available (expected ~{expected_samples:,})")
+                    
+                    # Use fresh data instead of cached data
+                    data = fresh_data
+                    tprint(f"✅ [REGIME_MODELS] Using fresh historical data ({len(data):,} rows)")
+                else:
+                    tprint("⚠️ [REGIME_MODELS] Failed to load from historical storage, using provided data")
+
             # Apply lookahead protection
             tprint("🔒 [REGIME_MODELS] Applying lookahead protection", color="cyan")
             protected_data = self.lookahead_protection.automated_future_data_filtering(data)
@@ -924,76 +1142,129 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             initial_memory = psutil.virtual_memory()
             tprint(f"🧠 [REGIME_MODELS] Initial memory usage: {initial_memory.percent:.1f}% ({initial_memory.used / 1024**3:.1f}GB / {initial_memory.total / 1024**3:.1f}GB)", color="blue")
 
-            # Load and resample rolling_hmm regime probabilities as base features
-            tprint("📥 [REGIME_MODELS] Loading rolling_hmm artifacts", color="cyan")
+            # Load rolling_hmm regime probabilities from versioned artifacts
+            tprint("📥 [REGIME_MODELS] Loading rolling_hmm regime probabilities from versioned artifacts")
             from src.training.steps.base_step import BaseStep
-            base_step_inst = BaseStep("regime_models_training_loader")
-            base_step_inst._current_context = {
-                'symbol': self.config.symbol,
-                'exchange': self.config.exchange,
-                'timeframe': self.config.timeframe,
-                'direction': 'long',
-                'model': 'regime'
-            }
 
-            regime_probs_15m = await self._load_and_resample_regime_probabilities(base_step_inst)
+            class _ArtifactLoaderStep(BaseStep):
+                async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+                    return {'success': True, 'artifacts': [], 'metrics': {}}
 
-            if regime_probs_15m is not None:
-                tprint(f"✅ [REGIME_MODELS] Using rolling_hmm regime probabilities as features: {regime_probs_15m.shape}", color="green")
+            # Enable versioned artifacts to load from HDF5 storage
+            base_step_inst = _ArtifactLoaderStep(
+                "regime_models_training_loader",
+                use_versioned_artifacts=True,  # CRITICAL: Enable versioned artifacts
+            )
+
+            # Access ComponentConfig dataclass attributes
+            symbol = self.config.symbol if hasattr(self.config, 'symbol') else 'ETHUSDT'
+            exchange = self.config.exchange if hasattr(self.config, 'exchange') else 'binance'
+            timeframe = self.config.timeframe if hasattr(self.config, 'timeframe') else '1h'
+
+            # Set context to match the regime discovery output (1h timeframe)
+            base_step_inst.set_context(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,  # Use the same timeframe as training (1h)
+                direction='long',
+                model='regime',
+            )
+
+            tprint(f"📊 [REGIME_MODELS] Loading regime probabilities for {symbol} {exchange} {timeframe}")
+            regime_probs = await self._load_and_resample_regime_probabilities(base_step_inst)
+
+            if regime_probs is not None:
+                tprint(f"✅ [REGIME_MODELS] Loaded rolling_hmm regime probabilities: {regime_probs.shape}")
+                
                 # Add regime probabilities to protected_data
-                protected_data = protected_data.join(regime_probs_15m, how='left')
-                tprint(f"📊 [REGIME_MODELS] Enhanced data shape: {protected_data.shape}", color="blue")
+                initial_cols = protected_data.columns.tolist()
+                protected_data = protected_data.join(regime_probs, how='left')
+                
+                # Check if the join resulted in all-NaN columns (mismatched timestamps)
+                new_cols = [col for col in protected_data.columns if col not in initial_cols]
+                all_nan_cols = []
+                for col in new_cols:
+                    if protected_data[col].isna().all():
+                        all_nan_cols.append(col)
+                
+                if all_nan_cols:
+                    error_msg = (
+                        f"❌ [REGIME_MODELS] CRITICAL: Regime probabilities have completely mismatched timestamps!\n"
+                        f"   All {len(all_nan_cols)} regime probability columns are 100% NaN.\n"
+                        f"   This means the regime discovery data doesn't match the current training data.\n"
+                        f"   \n"
+                        f"   SOLUTION: Run regime discovery FIRST with the same symbol and timeframe:\n"
+                        f"   python3 src/launcher/ares_launcher.py rolling_hmm_regime_discovery --symbol {symbol} --timeframe {timeframe} --execution-mode blank\n"
+                        f"   \n"
+                        f"   Then run regime models training again."
+                    )
+                    tprint(error_msg)
+                    raise ValueError(f"Regime probabilities completely mismatched - cannot train without valid regime labels. Run rolling_hmm_regime_discovery first for {symbol} {timeframe}.")
+                else:
+                    # Check for partial NaN values (some mismatch is acceptable)
+                    nan_counts = {col: protected_data[col].isna().sum() for col in new_cols}
+                    max_nan_pct = max(count / len(protected_data) * 100 for count in nan_counts.values()) if nan_counts else 0
+                    
+                    if max_nan_pct > 50:
+                        tprint(f"⚠️ [REGIME_MODELS] WARNING: {max_nan_pct:.1f}% of regime probabilities are NaN (partial mismatch)")
+                    
+                    tprint(f"✅ [REGIME_MODELS] Regime probabilities successfully joined")
+                    tprint(f"📊 [REGIME_MODELS] Enhanced data shape: {protected_data.shape}")
 
             # Extract regime labels with standardized extractor (fast fail behavior)
             tprint("📊 [REGIME_MODELS] Extracting regime labels with standardized extractor", color="cyan")
             
+            # First try to load rolling_hmm regime labels directly
             try:
-                regime_labels = extract_regime_labels_standardized(pipeline_state, min_samples=10, min_regimes=2)
-                tprint(f"✅ [REGIME_MODELS] Regime labels extracted: {len(regime_labels)} samples", color="green")
-                tprint(f"📊 [REGIME_MODELS] Unique regimes: {np.unique(regime_labels)}", color="blue")
-            except RegimeLabelExtractionError as e:
-                tprint(f"⚠️ [REGIME_MODELS] Regime label extraction failed: {e}", color="yellow")
-                tprint("⚠️ [REGIME_MODELS] Creating synthetic labels for testing", color="yellow")
+                regime_labels = await self._load_rolling_hmm_regime_labels(base_step_inst)
+                if regime_labels is not None:
+                    tprint(f"✅ [REGIME_MODELS] Rolling HMM regime labels loaded: {len(regime_labels)} samples", color="green")
+                    tprint(f"📊 [REGIME_MODELS] Unique regimes: {np.unique(regime_labels)}", color="blue")
+                else:
+                    raise ValueError("Rolling HMM labels not available")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Direct rolling HMM label loading failed: {e}", color="yellow")
+                
+                # Fall back to standardized extractor
+                try:
+                    regime_labels = extract_regime_labels_standardized(pipeline_state, min_samples=10, min_regimes=2)
+                    tprint(f"✅ [REGIME_MODELS] Regime labels extracted via standardized extractor: {len(regime_labels)} samples", color="green")
+                    tprint(f"📊 [REGIME_MODELS] Unique regimes: {np.unique(regime_labels)}", color="blue")
+                except RegimeLabelExtractionError as e:
+                    tprint(f"⚠️ [REGIME_MODELS] Regime label extraction failed: {e}", color="yellow")
+                    tprint("⚠️ [REGIME_MODELS] Creating synthetic labels for testing", color="yellow")
 
-                # Create configuration-aware synthetic regime labels when real labels are unavailable
-                n_samples = len(protected_data)
-                if n_samples == 0:
-                    raise ValueError("Cannot generate synthetic regime labels with no data samples")
+                    # Create configuration-aware synthetic regime labels when real labels are unavailable
+                    n_samples = len(protected_data)
+                    if n_samples == 0:
+                        raise ValueError("Cannot generate synthetic regime labels with no data samples")
 
-                regime_config = (self.validated_config or {}).get('regime_extraction', {})
-                min_regimes_cfg = max(1, int(regime_config.get('min_regimes', 2)))
-                max_regimes_cfg = max(min_regimes_cfg, int(regime_config.get('max_regimes', min_regimes_cfg)))
-                min_samples_per_regime_cfg = max(1, int(regime_config.get('min_samples_per_regime', 5)))
-                min_regime_samples_cfg = max(1, int((self.validated_config or {}).get('min_regime_samples', min_samples_per_regime_cfg)))
+                    regime_config = (self.validated_config or {}).get('regime_extraction', {})
+                    min_regimes_cfg = max(1, int(regime_config.get('min_regimes', 2)))
+                    max_regimes_cfg = max(min_regimes_cfg, int(regime_config.get('max_regimes', min_regimes_cfg)))
+                    min_samples_per_regime_cfg = max(1, int(regime_config.get('min_samples_per_regime', 5)))
+                    min_regime_samples_cfg = max(1, int((self.validated_config or {}).get('min_regime_samples', min_samples_per_regime_cfg)))
 
-                min_samples_required_per_regime = max(min_samples_per_regime_cfg, min_regime_samples_cfg)
-                max_regimes_by_samples = max(1, n_samples // max(1, min_samples_required_per_regime))
+                    min_samples_required_per_regime = max(min_samples_per_regime_cfg, min_regime_samples_cfg)
+                    max_regimes_by_samples = max(1, n_samples // max(1, min_samples_required_per_regime))
 
-                n_regimes = min(max_regimes_cfg, max_regimes_by_samples)
-                if n_regimes < min_regimes_cfg:
-                    n_regimes = min_regimes_cfg if n_samples >= min_regimes_cfg else 1
-                n_regimes = max(1, min(n_regimes, n_samples))
-
-                samples_per_regime = np.full(n_regimes, n_samples // n_regimes, dtype=int)
-                samples_per_regime[: n_samples % n_regimes] += 1
-
-                # Ensure minimum samples per regime; merge regimes if necessary
-                if any(count < min_samples_required_per_regime for count in samples_per_regime) and n_regimes > 1:
-                    n_regimes = max(1, min(n_samples // min_samples_required_per_regime, max_regimes_cfg))
+                    n_regimes = min(max_regimes_cfg, max_regimes_by_samples)
+                    if n_regimes < min_regimes_cfg:
+                        n_regimes = min_regimes_cfg if n_samples >= min_regimes_cfg else 1
                     n_regimes = max(1, min(n_regimes, n_samples))
                     samples_per_regime = np.full(n_regimes, n_samples // n_regimes, dtype=int)
                     samples_per_regime[: n_samples % n_regimes] += 1
 
-                regime_sequence = np.concatenate([
-                    np.full(count, regime_id, dtype=int)
-                    for regime_id, count in enumerate(samples_per_regime)
-                ])
+                    regime_sequence = np.concatenate([
+                        np.full(count, regime_id, dtype=int)
+                        for regime_id, count in enumerate(samples_per_regime)
+                    ])
 
-                regime_labels = regime_sequence[:n_samples]
-                tprint(
-                    f"✅ [REGIME_MODELS] Created synthetic regime labels: {n_samples} samples, {n_regimes} regimes",
-                    color="green"
-                )
+                    regime_labels = regime_sequence[:n_samples]
+                    tprint(
+                        f"✅ [REGIME_MODELS] Created synthetic regime labels: {n_samples} samples, {n_regimes} regimes",
+                        color="green"
+                    )
 
             # Prepare training data with existing feature bank
             tprint("🔧 [REGIME_MODELS] Preparing training data with existing feature bank", color="cyan")
@@ -1444,6 +1715,98 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 tprint(f"⚠️ [REGIME_MODELS] Still have {nan_after} NaN values after imputation", color="yellow")
             else:
                 tprint("✅ [REGIME_MODELS] NaN values handled successfully", color="green")
+
+            # Apply feature selection if high dimensionality detected
+            n_samples, n_features = X.shape
+            sample_to_feature_ratio = n_samples / n_features
+            
+            tprint(f"📊 [REGIME_MODELS] Feature dimensionality check: {n_features} features for {n_samples} samples (ratio: {sample_to_feature_ratio:.3f})", color="blue")
+            
+            if n_features > n_samples / 5:  # High dimensionality threshold
+                tprint("⚠️ [REGIME_MODELS] HIGH DIMENSIONALITY DETECTED - Applying feature selection", color="yellow")
+                tprint(f"   • {n_features} features for {n_samples} samples", color="yellow")
+                tprint("   • Feature selection will be applied to reduce to exactly 60 features", color="yellow")
+                tprint("   • This will improve generalization and model performance", color="yellow")
+                
+                # Apply feature selection using SelectFromModel with RandomForest
+                try:
+                    from sklearn.ensemble import RandomForestRegressor
+                    from sklearn.feature_selection import SelectFromModel
+                    
+                    # Always use exactly 60 features for consistency
+                    target_features = 60
+                    
+                    tprint(f"🎯 [REGIME_MODELS] Target feature count: {target_features} (fixed)", color="cyan")
+                    
+                    # Use RandomForest for feature importance
+                    rf_selector = SelectFromModel(
+                        RandomForestRegressor(
+                            n_estimators=100,
+                            max_depth=10,
+                            random_state=42,
+                            n_jobs=-1
+                        ),
+                        max_features=target_features
+                    )
+                    
+                    # Fit selector
+                    tprint("🔄 [REGIME_MODELS] Training RandomForest for feature importance selection...", color="cyan")
+                    rf_selector.fit(X, y)
+                    
+                    # Get selected features
+                    selected_features_mask = rf_selector.get_support()
+                    X_selected = rf_selector.transform(X)
+                    
+                    # Update feature names to match selected features
+                    # Ensure mask length matches feature_names length
+                    if len(selected_features_mask) != len(feature_names):
+                        tprint(f"⚠️ [REGIME_MODELS] Mask length mismatch: {len(selected_features_mask)} vs {len(feature_names)}", color="yellow")
+                        # Truncate or pad mask to match feature_names length
+                        if len(selected_features_mask) > len(feature_names):
+                            selected_features_mask = selected_features_mask[:len(feature_names)]
+                        else:
+                            # Pad with False (np is already imported at module level)
+                            padded_mask = np.zeros(len(feature_names), dtype=bool)
+                            padded_mask[:len(selected_features_mask)] = selected_features_mask
+                            selected_features_mask = padded_mask
+                    
+                    selected_feature_names = [feature_names[i] for i in range(len(feature_names)) if selected_features_mask[i]]
+                    removed_feature_count = len(feature_names) - len(selected_feature_names)
+                    
+                    # Calculate feature importances for logging
+                    feature_importances = rf_selector.estimator_.feature_importances_
+                    # Only use feature_names that match the number of features the model was trained on
+                    actual_feature_count = len(feature_importances)
+                    feature_names_for_importance = feature_names[:actual_feature_count] if len(feature_names) > actual_feature_count else feature_names
+                    
+                    importance_df = pd.DataFrame({
+                        'feature': feature_names_for_importance,
+                        'importance': feature_importances
+                    }).sort_values('importance', ascending=False)
+                    
+                    tprint(f"✅ [REGIME_MODELS] Feature selection completed:", color="green")
+                    tprint(f"   • Reduced from {n_features} to {X_selected.shape[1]} features", color="green")
+                    tprint(f"   • Removed {removed_feature_count} low-importance features", color="green")
+                    tprint(f"   • New sample-to-feature ratio: {n_samples / X_selected.shape[1]:.3f}", color="green")
+                    
+                    # Show top 10 selected features
+                    tprint(f"🎯 [REGIME_MODELS] Top 10 selected features:", color="blue")
+                    for i, row in importance_df.head(10).iterrows():
+                        tprint(f"   {i+1:2d}. {row['feature']:<40} (importance: {row['importance']:.6f})", color="blue")
+                    
+                    # Update X and feature_names with selected features
+                    X = X_selected
+                    feature_names = selected_feature_names
+                    
+                except Exception as e:
+                    tprint(f"⚠️ [REGIME_MODELS] Feature selection failed, continuing with all features: {e}", color="yellow")
+                    tprint(f"   • Exception type: {type(e).__name__}", color="yellow")
+                    tprint(f"   • Exception details: {str(e)}", color="yellow")
+                    tprint("   • This may result in slower training and potential overfitting", color="yellow")
+                    import traceback
+                    tprint(f"   • Traceback: {traceback.format_exc()}", color="yellow")
+            else:
+                tprint("✅ [REGIME_MODELS] Feature dimensionality is acceptable - no selection needed", color="green")
 
             data_validation_cfg = (self.validated_config or {}).get('data_validation', {})
             min_samples_required = data_validation_cfg.get('min_samples', 10)

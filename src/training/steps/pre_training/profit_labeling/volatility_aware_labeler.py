@@ -539,7 +539,11 @@ class VolatilityAwareMultiHorizonLabeler:
                 tprint_info(f"🔍 [DATA-DRIVEN LABELING] Generated {len(labels)} labels with {(labels != 0).sum()} signals")
             else:
                 # Generate labels based on volatility and (optionally) calibrated profit targets
-                labels = self._generate_price_target_vol_normalized_labels(price_series, volatility, calibrated_targets)
+                # Check if we should use new simplified target structure or legacy approach
+                if hasattr(self.config, 'use_simplified_targets') and self.config.use_simplified_targets:
+                    labels = self._generate_simplified_target_labels(price_series, volatility, calibrated_targets)
+                else:
+                    labels = self._generate_price_target_vol_normalized_labels(price_series, volatility, calibrated_targets)
             
             # Generate quality scores with proper alignment
             quality_scores = self._calculate_quality_scores(labels, price_series)
@@ -600,6 +604,23 @@ class VolatilityAwareMultiHorizonLabeler:
                 # Comprehensive outcome reporting
                 self._log_comprehensive_outcome_report(result_labels, quality_scores, metadata, training_strategy, performance_config)
             
+            # Fast-fail if labels were not produced correctly before further processing
+            if result_labels is None:
+                error_msg = "VolatilityAwareMultiHorizonLabeler produced no labels (result_labels is None)."
+                self.logger.error(error_msg)
+                raise RuntimeError(error_msg)
+            if isinstance(result_labels, (pd.Series, pd.DataFrame)) and result_labels.empty:
+                error_msg = "VolatilityAwareMultiHorizonLabeler produced empty labels."
+                self.logger.error(error_msg)
+                raise RuntimeError(error_msg)
+            if isinstance(result_labels, (pd.Series, pd.DataFrame)) and len(result_labels) != len(data):
+                error_msg = (
+                    "VolatilityAwareMultiHorizonLabeler labels length mismatch: "
+                    f"labels={len(result_labels)}, data={len(data)}"
+                )
+                self.logger.error(error_msg)
+                raise RuntimeError(error_msg)
+
             # Logging & observability - single-line KPI
             # "coverage" was misleading: you want actual signal rate, not non-null count (labels are 0/±1)
             if isinstance(result_labels, pd.DataFrame):
@@ -625,12 +646,7 @@ class VolatilityAwareMultiHorizonLabeler:
             return LabelingResult(result_labels, metadata, success=True, quality_scores=quality_scores)
         except Exception as e:
             self.logger.error(f"Error generating labels: {e}")
-            return LabelingResult(
-                pd.Series(dtype=float, name='label'),
-                {"reason": "error", "error": str(e), "n_horizons": 1, "n_targets": 0},
-                success=False,
-                error_message=str(e)
-            )
+            raise
     
     def _calculate_quality_scores(self, labels: Union[pd.Series, pd.DataFrame], prices: pd.Series) -> Dict[str, Any]:
         """Calculate comprehensive quality scores with IC, Hit Rate, Uplift, Stability, and Risk-aware metrics."""
@@ -755,32 +771,44 @@ class VolatilityAwareMultiHorizonLabeler:
     def _calculate_potential_profits(self, trade_opportunities: pd.Series, prices: pd.Series, target_name: str) -> pd.Series:
         """Calculate potential profit based on signal direction over a fixed lookahead window (default: 6 bars ≈ 90min on 15m data)."""
         # Use the same horizon as the labeling window for consistency
-        window_len = self.config.optimal_entry_detection.max_windows
-        # Map index label -> positional index once
-        pos = pd.Series(np.arange(len(prices)), index=prices.index)
-        out = {}
+        window_len = max(1, int(getattr(self.config.optimal_entry_detection, "max_windows", 1)))
+        # Pre-compute positional index mapping using RangeIndex semantics
+        indexer = {key: idx for idx, key in enumerate(prices.index)}
+        potentials: Dict[pd.Timestamp, float] = {}
+
+        price_values = prices.to_numpy()
+
         for ts, signal in trade_opportunities.items():
-            if ts not in pos.index:
-                out[ts] = 0.0
+            pos = indexer.get(ts)
+            if pos is None:
+                potentials[ts] = 0.0
                 continue
-            i = int(pos.loc[ts])
-            j = min(i + window_len, len(prices) - 1)
-            if j <= i:
-                out[ts] = 0.0
+
+            end_pos = min(pos + window_len, len(price_values) - 1)
+            if end_pos <= pos:
+                potentials[ts] = 0.0
                 continue
-            window = prices.iloc[i:j+1]
-            start = window.iloc[0]
-            if start <= 0 or len(window) < 2:
-                out[ts] = 0.0
+
+            window = price_values[pos:end_pos + 1]
+            if window.size < 2:
+                potentials[ts] = 0.0
                 continue
+
+            start_price = window[0]
+            if start_price <= 0:
+                potentials[ts] = 0.0
+                continue
+
             if signal > 0:
-                potential = (window.max() - start) / start
+                potential = (window.max() - start_price) / start_price
             elif signal < 0:
-                potential = (start - window.min()) / start
+                potential = (start_price - window.min()) / start_price
             else:
                 potential = 0.0
-            out[ts] = float(potential)
-        return pd.Series(out).reindex(trade_opportunities.index)
+
+            potentials[ts] = float(potential)
+
+        return pd.Series(potentials, index=trade_opportunities.index).fillna(0.0)
     
     def _calculate_trade_opportunity_metrics(self, trade_opportunities: pd.Series, potential_profits: pd.Series, target_name: str,
                                              lookahead_returns: Optional[pd.Series] = None) -> Dict[str, float]:
@@ -1158,6 +1186,72 @@ class VolatilityAwareMultiHorizonLabeler:
         tprint_info(f"🔍 [DATA-DRIVEN] Achieved {achieved_ops_per_day:.1f} ops/day vs target {cfg.target_ops_per_day}")
         tprint_debug(f"🔍 [DATA-DRIVEN] Time span: {time_span_days:.1f} days, Signals: {(labels != 0).sum()}")
 
+        return labels
+    
+    def _generate_simplified_target_labels(
+        self,
+        prices: pd.Series,
+        volatility: pd.Series,
+        calibrated_targets: List[float]
+    ) -> pd.DataFrame:
+        """
+        Generate simplified target labels (target_long, target_short) based on volatility.
+        
+        This method creates the new simplified target structure with separate binary targets
+        for long and short positions, volume-normalized as requested.
+        
+        Args:
+            prices: Price series for label generation
+            volatility: Volatility series for modulation
+            calibrated_targets: List of calibrated profit targets
+            
+        Returns:
+            DataFrame with target_long and target_short columns
+        """
+        tprint_info("🎯 Generating simplified target labels (target_long, target_short)")
+        
+        # Use the first calibrated target or default to 0.5%
+        base_target = calibrated_targets[0] if calibrated_targets else 0.005
+        
+        # Calculate forward returns
+        H = max(1, int(self.config.lookahead_periods))
+        fut_ret = prices.pct_change(H).shift(-H)
+        
+        # Calculate volatility-modulated thresholds
+        vol_mean = volatility.mean()
+        if vol_mean > 0:
+            vol_norm = volatility / vol_mean
+            # Apply volatility modulation with clipping
+            vol_factor = np.clip(
+                1.0 + self.config.volatility.sensitivity * (vol_norm - 1.0),
+                self.config.multi_target.min_threshold_multiplier,
+                self.config.multi_target.max_threshold_multiplier
+            )
+            effective_threshold = base_target * vol_factor
+        else:
+            effective_threshold = pd.Series(base_target, index=prices.index)
+        
+        # Generate binary targets for long and short positions
+        target_long = (fut_ret > effective_threshold).astype(np.int8)
+        target_short = (fut_ret < -effective_threshold).astype(np.int8)
+        
+        # Create result DataFrame
+        labels = pd.DataFrame({
+            'target_long': target_long,
+            'target_short': target_short
+        }, index=prices.index)
+        
+        # Log statistics
+        long_signals = target_long.sum()
+        short_signals = target_short.sum()
+        total_signals = long_signals + short_signals
+        
+        tprint_info(f"📊 Simplified target statistics:")
+        tprint_info(f"   Long signals: {long_signals} ({long_signals/len(labels):.1%})")
+        tprint_info(f"   Short signals: {short_signals} ({short_signals/len(labels):.1%})")
+        tprint_info(f"   Total signals: {total_signals} ({total_signals/len(labels):.1%})")
+        tprint_info(f"   Base threshold: {base_target:.4f} ({base_target*10000:.1f} bps)")
+        
         return labels
 
     def _build_multiscale_features(self, prices: pd.Series) -> pd.DataFrame:

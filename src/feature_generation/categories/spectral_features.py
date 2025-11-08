@@ -596,69 +596,73 @@ class DFASlopesGenerator(VectorizedFeatureGenerator):
     def _calculate_dfa_slope(self, returns: pd.Series) -> float:
         """Calculate DFA slope for a returns series."""
         try:
-            if len(returns) < 16:
-                return 0.5
-
-            # Remove NaN values
+            # Remove NaN values early
             returns = returns.dropna()
+
             if len(returns) < 16:
-                return 0.5
+                return np.nan
 
-            # Calculate cumulative sum
-            y = np.cumsum(returns.values)
+            # Center the cumulative sum to reduce drift effects
+            centered_returns = returns.values - np.mean(returns.values)
+            y = np.cumsum(centered_returns)
 
-            # Define scales
-            scales = np.logspace(np.log10(self.min_scale), np.log10(min(self.max_scale, len(y)//4)), 10).astype(int)
+            max_scale = min(self.max_scale, len(y) // 4)
+            if max_scale <= self.min_scale:
+                return np.nan
+
+            # Generate logarithmically spaced scales
+            scales = np.logspace(
+                np.log10(self.min_scale),
+                np.log10(max_scale),
+                num=8
+            ).astype(int)
             scales = np.unique(scales)
 
-            if len(scales) < 2:
-                return 0.5
-
-            # Calculate fluctuation function
-            fluctuations = []
+            fluctuations: List[float] = []
+            valid_scales: List[int] = []
 
             for scale in scales:
-                if scale >= len(y):
+                if scale < 4:
                     continue
 
-                # Divide into segments
                 n_segments = len(y) // scale
                 if n_segments < 2:
                     continue
 
-                segment_fluctuations = []
-
+                segment_fluctuations: List[float] = []
                 for i in range(n_segments):
                     start_idx = i * scale
                     end_idx = start_idx + scale
                     segment = y[start_idx:end_idx]
 
-                    # Detrend (linear fit)
+                    if len(segment) < 4:
+                        continue
+
                     x = np.arange(len(segment))
                     coeffs = np.polyfit(x, segment, 1)
                     trend = np.polyval(coeffs, x)
                     detrended = segment - trend
 
-                    # Calculate fluctuation
-                    fluctuation = np.sqrt(np.mean(detrended ** 2))
-                    segment_fluctuations.append(fluctuation)
+                    rms = np.sqrt(np.mean(detrended ** 2))
+                    if np.isfinite(rms) and rms > 0:
+                        segment_fluctuations.append(rms)
 
                 if segment_fluctuations:
-                    fluctuations.append(np.mean(segment_fluctuations))
+                    fluctuations.append(float(np.mean(segment_fluctuations)))
+                    valid_scales.append(scale)
 
             if len(fluctuations) < 2:
-                return 0.5
+                return np.nan
 
-            # Calculate slope
-            log_scales = np.log(scales[:len(fluctuations)])
+            log_scales = np.log(valid_scales)
             log_fluctuations = np.log(fluctuations)
 
-            slope, _ = np.polyfit(log_scales, log_fluctuations, 1)
+            slope = np.polyfit(log_scales, log_fluctuations, 1)[0]
+            return float(np.clip(slope, 0.0, 2.0))
 
-            return slope
-
-        except Exception:
-            return 0.5
+        except Exception as e:
+            warnings.warn(f"DFA slope calculation failed: {e}")
+            return np.nan
 
     def _calculate_dfa_slope_fallback(self, returns: pd.Series, window: int, index: pd.Index) -> pd.Series:
         """Fallback DFA calculation using pandas rolling."""

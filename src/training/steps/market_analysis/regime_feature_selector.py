@@ -1263,7 +1263,7 @@ class EnhancedRegimeFeatureSelector(BaseStep):
             # Get priority features for regime clustering
             priority_features = categorizer.get_priority_features(
                 FeatureUseCase.REGIME_CLUSTERING,
-                max_features=200  # Get top 200 priority features
+                max_features=80  # Get top 80 priority features
             )
             
             tprint_info(f"🎯 Found {len(priority_features)} priority regime clustering features")

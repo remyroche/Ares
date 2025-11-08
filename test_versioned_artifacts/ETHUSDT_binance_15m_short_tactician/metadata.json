@@ -1,0 +1,141 @@
+{
+  "versions": {
+    "adapter_test_features_20251108_002303": {
+      "created_at": "2025-11-08T00:23:03.920485",
+      "num_rows": 100,
+      "num_columns": 4,
+      "columns": [
+        "feature1",
+        "feature2",
+        "feature3",
+        "target"
+      ],
+      "artifact_name": "adapter_test_features",
+      "artifact_type": "data",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "15m",
+      "direction": "short",
+      "model": "tactician",
+      "adapter_test": true
+    },
+    "test_features_eth_20251108_003157": {
+      "created_at": "2025-11-08T00:31:57.246135",
+      "num_rows": 50,
+      "num_columns": 3,
+      "columns": [
+        "feature3",
+        "feature4",
+        "target"
+      ],
+      "artifact_name": "test_features_eth",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "15m",
+      "direction": "short",
+      "model": "tactician",
+      "test": true,
+      "store": "eth"
+    },
+    "adapter_test_eth_20251108_003157": {
+      "created_at": "2025-11-08T00:31:57.265080",
+      "num_rows": 50,
+      "num_columns": 3,
+      "columns": [
+        "feature3",
+        "feature4",
+        "target"
+      ],
+      "artifact_name": "adapter_test_eth",
+      "artifact_type": "data",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "15m",
+      "direction": "short",
+      "model": "tactician",
+      "adapter_test": true
+    },
+    "test_clusters_20251108_003743": {
+      "created_at": "2025-11-08T00:37:43.818562",
+      "num_rows": 50,
+      "num_columns": 3,
+      "columns": [
+        "regime1",
+        "regime2",
+        "target"
+      ],
+      "artifact_name": "test_clusters",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "15m",
+      "direction": "short",
+      "model": "tactician",
+      "test": true,
+      "type": "clusters"
+    },
+    "test_clusters_20251108_004728": {
+      "created_at": "2025-11-08T00:47:28.637634",
+      "num_rows": 50,
+      "num_columns": 3,
+      "columns": [
+        "regime1",
+        "regime2",
+        "target"
+      ],
+      "artifact_name": "test_clusters",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "15m",
+      "direction": "short",
+      "model": "tactician",
+      "test": true,
+      "type": "clusters"
+    },
+    "test_clusters_20251108_005752": {
+      "created_at": "2025-11-08T00:57:52.796817",
+      "num_rows": 50,
+      "num_columns": 3,
+      "columns": [
+        "regime1",
+        "regime2",
+        "target"
+      ],
+      "artifact_name": "test_clusters",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "15m",
+      "direction": "short",
+      "model": "tactician",
+      "test": true,
+      "type": "clusters"
+    },
+    "test_labels_20251108_005753": {
+      "created_at": "2025-11-08T00:57:53.844539",
+      "num_rows": 50,
+      "num_columns": 3,
+      "columns": [
+        "regime1",
+        "regime2",
+        "target"
+      ],
+      "artifact_name": "test_labels",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "15m",
+      "direction": "short",
+      "model": "tactician",
+      "test": true,
+      "type": "labels"
+    }
+  },
+  "current_version": "test_labels_20251108_005753",
+  "created_at": "2025-11-08T00:23:03.909807",
+  "context": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "short",
+    "model": "tactician"
+  },
+  "updated_at": "2025-11-08T00:57:53.887408"
+}

@@ -53,7 +53,7 @@ class LGBMSHAPRFEConfig:
     """Configuration for LGBM-SHAP RFE selector."""
     
     # Target settings
-    target_features: int = 60
+    target_features: int = 80  # Target 80 features for SHAP/LGBM filtering
     removal_percentage: float = 0.25  # Remove 25% of features per iteration
     
     # LGBM settings
@@ -824,7 +824,7 @@ if __name__ == "__main__":
     feature_names = [f"feature_{i}" for i in range(n_features)]
     
     # Create selector
-    config = LGBMSHAPRFEConfig(target_features=60, removal_percentage=0.25)
+    config = LGBMSHAPRFEConfig(target_features=80, removal_percentage=0.25)
     selector = create_lgbm_shap_rfe_selector(config)
     
     # Run selection

@@ -59,7 +59,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
                 "l2_leaf_reg": 3.0,
                 "subsample": 1.0,
                 "colsample_bylevel": 1.0,
-                "bootstrap_type": "Bayesian",
+                "bootstrap_type": "Bernoulli",
                 "task_type": "CPU",
                 "random_seed": 42,
                 "verbose": False,

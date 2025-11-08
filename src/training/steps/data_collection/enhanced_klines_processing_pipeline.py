@@ -305,6 +305,7 @@ def _lazy_import_quality_utilities():
 _lazy_import_quality_utilities()
 # Import ExchangeInterface from the proper location
 from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
+from exchanges.exchange_types import ExchangeType
 
 # Import the proper classes from their locations
 from exchanges.shared.unified_ohlcv_standardizer import UnifiedOHLCVStandardizer
@@ -518,6 +519,44 @@ class EnhancedKlinesProcessingPipeline:
         df_with_ts[f"{column_name}_ms"] = pd.Series(timestamp_ms, index=df_with_ts.index, dtype='int64')
 
         return df_with_ts
+
+    @staticmethod
+    def _to_naive_timestamp(value: Any) -> Optional[pd.Timestamp]:
+        """Convert any timestamp-like value to a timezone-naive UTC pandas Timestamp."""
+        if value is None:
+            return None
+
+        ts = pd.to_datetime(value, utc=True, errors='coerce')
+        if ts is pd.NaT:
+            return None
+
+        return ts.tz_convert('UTC').tz_localize(None)
+
+    @staticmethod
+    def _to_utc_naive_timestamp(value: Any) -> Optional[pd.Timestamp]:
+        """Convert any timestamp-like value to a timezone-naive UTC pandas Timestamp."""
+        ts_utc = EnhancedKlinesProcessingPipeline._ensure_utc_timestamp(value)
+        if ts_utc is None or ts_utc is pd.NaT:
+            return None
+
+        return ts_utc.tz_convert('UTC').tz_localize(None)
+
+    @staticmethod
+    def _normalize_calendar_columns(df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
+        """Ensure calendar-derived columns are stored as integer types for parquet serialization."""
+        if df is None or df.empty:
+            return df
+
+        normalized_df = df.copy()
+        for column in ('year', 'month', 'day'):
+            if column in normalized_df.columns:
+                series = pd.to_numeric(normalized_df[column], errors='coerce')
+                if isinstance(series, pd.Series):
+                    if series.isna().all():
+                        normalized_df[column] = series
+                    else:
+                        normalized_df[column] = series.astype('Int64', copy=False)
+        return normalized_df
 
     async def get_comprehensive_score(
         self,
@@ -1059,7 +1098,8 @@ class EnhancedKlinesProcessingPipeline:
         interval: str = "1m",
         api_key: str = "",
         api_secret: str = "",
-        use_testnet: bool = True,
+        api_password: str = "",
+        use_testnet: bool = False,
         resampling_config: Optional[ResamplingConfig] = None,
         batch_id: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -1085,14 +1125,21 @@ class EnhancedKlinesProcessingPipeline:
         
         # Create symbol
         symbol = f"{asset}USDT"
-        
+
+        # Ensure runtime configuration matches requested exchange
+        target_exchange = exchange.lower()
+        self.exchange = target_exchange
+        if hasattr(self.config, "exchange"):
+            self.config.exchange = target_exchange
+
         # Create exchange interface
         # Note: API keys are optional for public market data (klines)
         # Only required for authenticated operations like trading
         exchange_config = {
-            'exchange_type': exchange.lower(),
+            'exchange_type': target_exchange,
             'api_key': api_key if api_key else None,
             'api_secret': api_secret if api_secret else None,
+            'password': api_password if api_password else None,
             'testnet': use_testnet,
             'rate_limits': {}
         }
@@ -1104,11 +1151,15 @@ class EnhancedKlinesProcessingPipeline:
         if self.enable_logging:
             tprint_info(f"🔌 ExchangeInterface created: {exchange_interface}")
         
+        # Auto-generate a batch identifier when one isn't provided
+        if batch_id is None:
+            batch_id = f"{target_exchange}_{symbol.lower()}_{lookback_period}"
+
         try:
             # Connect to exchange (authentication skipped if no credentials provided)
             # Public market data doesn't require authentication
             # For BingX, skip connection entirely and use klines adapter directly
-            if exchange.lower() != 'bingx':
+            if target_exchange != 'bingx':
                 if api_key and api_secret:
                     await exchange_interface.connect()
                 else:
@@ -1604,40 +1655,16 @@ class EnhancedKlinesProcessingPipeline:
             data = []
             for kline in klines_data:
                 if hasattr(kline, 'timestamp'):
-                    # KlineData object
+                    # KlineData object - normalize timestamp to UTC naive before storage
+                    ts_naive = self._to_utc_naive_timestamp(kline.timestamp)
+                    if ts_naive is None:
+                        continue
+
                     data.append({
-                        'timestamp': kline.timestamp,
+                        'timestamp': ts_naive,
                         'open': kline.open_price,
                         'high': kline.high_price,
                         'low': kline.low_price,
-                        'close': kline.close_price,
-                        'volume': kline.volume,
-                        'quote_volume': getattr(kline, 'quote_asset_volume', 0),
-                        'trades': getattr(kline, 'number_of_trades', 0),
-                        'taker_buy_base': getattr(kline, 'taker_buy_base_asset_volume', 0),
-                        'taker_buy_quote': getattr(kline, 'taker_buy_quote_asset_volume', 0)
-                    })
-                else:
-                    # Raw list format - handle both milliseconds and microseconds
-                    timestamp = kline[0]
-                    # Handle timestamp being in various formats
-                    if isinstance(timestamp, (int, float)):
-                        # Binance uses milliseconds (13 digits for 2021-2025, e.g., 1730000000000)
-                        # Microseconds would be 16 digits (e.g., 1730000000000000)
-                        if timestamp > 1e15:  # Microseconds (16+ digits)
-                            converted_timestamp = pd.to_datetime(timestamp, unit='us', utc=True)
-                        elif timestamp > 1e12:  # Milliseconds (13-15 digits) - CORRECT for Binance
-                            converted_timestamp = pd.to_datetime(timestamp, unit='ms', utc=True)
-                        elif timestamp > 1e9:  # Seconds (10-12 digits)
-                            converted_timestamp = pd.to_datetime(timestamp, unit='s', utc=True)
-                        else:  # Too small, likely an error but treat as seconds
-                            converted_timestamp = pd.to_datetime(timestamp, unit='s', utc=True)
-                    else:
-                        # Already a datetime or string
-                        converted_timestamp = pd.to_datetime(timestamp, utc=True)
-                    
-                    data.append({
-                        'timestamp': converted_timestamp,
                         'open': float(kline[1]),
                         'high': float(kline[2]),
                         'low': float(kline[3]),
@@ -2037,31 +2064,27 @@ class EnhancedKlinesProcessingPipeline:
         try:
             for kline in klines_data:
                 if hasattr(kline, 'timestamp'):
-                    # KlineData object with timestamp attribute
-                    ts = kline.timestamp
-                    if isinstance(ts, pd.Timestamp):
-                        timestamps.append(ts)
-                    else:
-                        timestamps.append(pd.to_datetime(ts, utc=True))
+                    naive_ts = self._to_naive_timestamp(kline.timestamp)
+                    if naive_ts is not None:
+                        timestamps.append(naive_ts)
                 else:
-                    # Raw list format - timestamp is first element
                     timestamp = kline[0]
 
                     if isinstance(timestamp, (int, float)):
-                        # Handle different timestamp formats (microseconds, milliseconds, seconds)
-                        if timestamp > 1e15:  # Microseconds (16+ digits)
+                        if timestamp > 1e15:
                             converted_timestamp = pd.to_datetime(timestamp, unit='us', utc=True)
-                        elif timestamp > 1e12:  # Milliseconds (13-15 digits)
+                        elif timestamp > 1e12:
                             converted_timestamp = pd.to_datetime(timestamp, unit='ms', utc=True)
-                        elif timestamp > 1e9:  # Seconds (10-12 digits)
+                        elif timestamp > 1e9:
                             converted_timestamp = pd.to_datetime(timestamp, unit='s', utc=True)
-                        else:  # Too small, likely an error but treat as seconds
+                        else:
                             converted_timestamp = pd.to_datetime(timestamp, unit='s', utc=True)
                     else:
-                        # Already a datetime or string
                         converted_timestamp = pd.to_datetime(timestamp, utc=True)
 
-                    timestamps.append(converted_timestamp)
+                    naive_ts = self._to_naive_timestamp(converted_timestamp)
+                    if naive_ts is not None:
+                        timestamps.append(naive_ts)
 
         except Exception as e:
             if self.enable_logging:
@@ -2085,6 +2108,30 @@ class EnhancedKlinesProcessingPipeline:
             tz_obj = filled_data.index.tz
             tz_info = getattr(tz_obj, "zone", str(tz_obj))
             tprint_info(f"🕒 Gap filling using timezone: {tz_info}")
+
+        # Ensure we have a real dispatcher ready for gap downloads when working with Binance data
+        dispatcher = getattr(exchange_interface, "dispatcher", None)
+        exchange_type_value = getattr(exchange_interface, "exchange_type", "").lower()
+
+        if exchange_type_value == "simulated":
+            raise RuntimeError("Gap filling requires a real exchange interface, but a simulated exchange was provided.")
+
+        if dispatcher is None:
+            if self.enable_logging:
+                tprint_info("🔄 Exchange dispatcher not initialized; connecting before gap download")
+            await exchange_interface.connect()
+            dispatcher = getattr(exchange_interface, "dispatcher", None)
+
+        if dispatcher is None:
+            raise RuntimeError("Exchange dispatcher unavailable; cannot fill gaps without a real exchange connection.")
+
+        if self.exchange.lower() == "binance":
+            dispatcher_config = getattr(dispatcher, "config", None)
+            dispatcher_exchange_type = getattr(dispatcher_config, "exchange_type", None)
+            if dispatcher_exchange_type != ExchangeType.BINANCE:
+                raise RuntimeError(
+                    "Binance gap filling requires the Binance dispatcher; received a different exchange dispatcher."
+                )
 
         for gap_idx, gap in enumerate(gaps):
             if gap.priority > 1:  # Skip low priority gaps
@@ -2137,7 +2184,10 @@ class EnhancedKlinesProcessingPipeline:
 
                         if batch_klines:
                             # Extract actual timestamps from the returned data to verify progress
-                            actual_timestamps = self._extract_timestamps_from_klines(batch_klines)
+                            extracted_timestamps = self._extract_timestamps_from_klines(batch_klines)
+                            actual_timestamps = [
+                                self._ensure_utc_timestamp(ts) for ts in extracted_timestamps if ts is not None
+                            ]
 
                             if actual_timestamps:
                                 actual_earliest = min(actual_timestamps)
@@ -2155,7 +2205,25 @@ class EnhancedKlinesProcessingPipeline:
 
                                     if stall_count >= max_stalls:
                                         if self.enable_logging:
-                                            tprint_warning(f"   ⚠️ Stopping after {max_stalls} stalled batches. Exchange may not have earlier data.")
+                                            tprint_warning(
+                                                f"   ⚠️ Stall threshold reached. Switching to forward day-sized batching for remaining gap."
+                                            )
+                                        forward_df = await self._download_gap_forward(
+                                            gap_start=gap_start_utc,
+                                            current_coverage_start=earliest_downloaded,
+                                            gap_end=gap_end_utc,
+                                            symbol=symbol,
+                                            interval=interval,
+                                            interval_minutes=interval_minutes,
+                                            batch_size=batch_size,
+                                            exchange_interface=exchange_interface
+                                        )
+                                        if forward_df is not None and not forward_df.empty:
+                                            gap_batches.extend(self._dataframe_to_klines_list(forward_df))
+                                            earliest_downloaded = forward_df.index.min()
+                                            current_end = earliest_downloaded - timedelta(minutes=interval_minutes)
+                                            stall_count = 0
+                                            continue
                                         break
 
                                     # Move back further to try to get earlier data
@@ -2224,6 +2292,122 @@ class EnhancedKlinesProcessingPipeline:
                     tprint_warning(f"⚠️ Failed to fill gap {gap_start_utc}: {e}")
 
         return self._ensure_naive_datetime_index(filled_data)
+
+    @staticmethod
+    def _dataframe_to_klines_list(df: pd.DataFrame) -> List[List[Any]]:
+        """Convert a standardized DataFrame back into raw kline list format for downstream processing."""
+        records: List[List[Any]] = []
+        for ts, row in df.iterrows():
+            ts_naive = EnhancedKlinesProcessingPipeline._to_utc_naive_timestamp(ts)
+            if ts_naive is None:
+                continue
+
+            records.append([
+                int(ts_naive.value // 10**6),
+                float(row.get('open', 0.0)),
+                float(row.get('high', 0.0)),
+                float(row.get('low', 0.0)),
+                float(row.get('close', 0.0)),
+                float(row.get('volume', 0.0)),
+                float(row.get('quote_volume', 0.0)) if 'quote_volume' in row else 0.0,
+                int(row.get('trades_count', 0)) if 'trades_count' in row else 0,
+                float(row.get('taker_buy_base_volume', 0.0)) if 'taker_buy_base_volume' in row else 0.0,
+                float(row.get('taker_buy_quote_volume', 0.0)) if 'taker_buy_quote_volume' in row else 0.0
+            ])
+        return records
+
+    async def _download_gap_forward(
+        self,
+        gap_start: pd.Timestamp,
+        current_coverage_start: pd.Timestamp,
+        gap_end: pd.Timestamp,
+        symbol: str,
+        interval: str,
+        interval_minutes: int,
+        batch_size: int,
+        exchange_interface: ExchangeInterface
+    ) -> Optional[pd.DataFrame]:
+        """Download remaining gap candles by scanning forward in daily windows to work around exchange limits."""
+        collected_frames: List[pd.DataFrame] = []
+
+        gap_start_naive = self._to_naive_timestamp(gap_start)
+        coverage_start_naive = self._to_naive_timestamp(current_coverage_start)
+        gap_end_naive = self._to_naive_timestamp(gap_end)
+
+        if gap_start_naive is None or coverage_start_naive is None or gap_end_naive is None:
+            if self.enable_logging:
+                tprint_warning("⚠️ Forward gap download aborted due to invalid timestamps")
+            return None
+
+        cursor = gap_start_naive
+        interval_delta = timedelta(minutes=interval_minutes)
+
+        try:
+            while cursor < coverage_start_naive:
+                segment_end = min(cursor + timedelta(days=1), coverage_start_naive)
+                segment_cursor = cursor
+
+                while segment_cursor < segment_end:
+                    query_end = min(segment_cursor + timedelta(minutes=batch_size * interval_minutes), segment_end)
+                    try:
+                        batch_klines = await exchange_interface.get_klines(
+                            symbol=symbol,
+                            interval=interval,
+                            start_time=segment_cursor,
+                            end_time=query_end,
+                            limit=batch_size
+                        )
+                    except Exception as e:  # pragma: no cover - network dependent
+                        if self.enable_logging:
+                            tprint_warning(f"   ⚠️ Forward batch request failed: {e}")
+                        break
+
+                    if not batch_klines:
+                        break
+
+                    batch_df = self._klines_to_dataframe(batch_klines, symbol, interval)
+                    if batch_df.empty:
+                        break
+
+                    batch_df_utc = self._ensure_utc_index(batch_df)
+                    collected_frames.append(batch_df_utc)
+                    last_timestamp = batch_df_utc.index.max()
+                    if last_timestamp is pd.NaT:
+                        break
+
+                    # Convert to naive for comparison
+                    last_timestamp_naive = self._to_naive_timestamp(last_timestamp)
+                    if last_timestamp_naive is None:
+                        break
+
+                    segment_cursor = last_timestamp_naive + interval_delta
+
+                    if last_timestamp_naive >= segment_end - interval_delta:
+                        break
+
+                    await asyncio.sleep(0.05)
+
+                cursor = segment_end
+
+            if not collected_frames:
+                return None
+
+            gap_df = pd.concat(collected_frames, ignore_index=False)
+            gap_df = gap_df[~gap_df.index.duplicated(keep='first')]
+            gap_df.sort_index(inplace=True)
+
+            standardized_gap_df = self.data_standardizer.standardize(
+                gap_df, exchange=self.exchange
+            )
+            standardized_gap_df = self._ensure_utc_index(standardized_gap_df)
+            standardized_gap_df = self._ensure_timestamp_column(standardized_gap_df)
+
+            return standardized_gap_df
+
+        except Exception as e:  # pragma: no cover - defensive
+            if self.enable_logging:
+                tprint_warning(f"⚠️ Forward gap download failed: {e}")
+            return None
 
     async def _handle_duplicates(
         self,
@@ -2577,6 +2761,8 @@ class EnhancedKlinesProcessingPipeline:
             if 'interval' not in df.columns:
                 df['interval'] = interval
 
+            df = self._normalize_calendar_columns(df) or df
+
             # Create consolidated batch ID
             consolidated_batch_id = f"{batch_id}_consolidated" if batch_id else "consolidated"
 
@@ -2647,10 +2833,12 @@ class EnhancedKlinesProcessingPipeline:
             if self.enable_logging:
                 tprint_info(f"💾 Storing original data for {symbol} {interval}")
 
+            storage_df = self._normalize_calendar_columns(df) or df
+
             # Store data using KlinesParquetManager
             # Use overwrite=False to merge with existing monthly files instead of replacing them
             success = self.klines_manager.write_data(
-                df, symbol, interval, "raw", overwrite=False
+                storage_df, symbol, interval, "raw", overwrite=False
             )
 
             if success:
@@ -2664,14 +2852,14 @@ class EnhancedKlinesProcessingPipeline:
 
                 result.metadata = {
                     "stored_files": [f"{symbol}_{interval}_original"],
-                    "record_count": len(df),
+                    "record_count": len(storage_df),
                     "compression_ratio": compression_stats.get("overall_compression_ratio", 0),
                     "file_size_mb": compression_stats.get("total_file_size_mb", 0),
                     "optimization_applied": True
                 }
 
                 if self.enable_logging:
-                    tprint_success(f"✅ Stored {len(df)} records for {symbol} {interval}")
+                    tprint_success(f"✅ Stored {len(storage_df)} records for {symbol} {interval}")
                     if compression_stats.get("total_files", 0) > 0:
                         tprint_info(f"📊 Compression ratio: {compression_stats.get('overall_compression_ratio', 0):.1f}%")
                         tprint_info(f"💾 File size: {compression_stats.get('total_file_size_mb', 0):.2f} MB")
@@ -2747,6 +2935,7 @@ class EnhancedKlinesProcessingPipeline:
                     resampled_df = self._perform_resampling(df, target_interval, resampling_config)
 
                     if not resampled_df.empty:
+                        resampled_df = self._normalize_calendar_columns(resampled_df) or resampled_df
                         # Store resampled data
                         success = self.klines_manager.write_data(
                             resampled_df, symbol, target_interval, "processed", overwrite=True
@@ -2894,6 +3083,10 @@ if __name__ == "__main__":
     parser.add_argument('--interval', type=str, default='1m', help='Data interval (1m, 5m, 1h, etc.)')
     parser.add_argument('--years', type=int, default=4, help='Number of years of data to collect')
     parser.add_argument('--data-dir', type=str, default='historical_data', help='Data directory')
+    parser.add_argument('--api-key', type=str, default='', help='Exchange API key (optional)')
+    parser.add_argument('--api-secret', type=str, default='', help='Exchange API secret (optional)')
+    parser.add_argument('--api-password', type=str, default='', help='Exchange API password/passphrase (optional)')
+    parser.add_argument('--use-testnet', action='store_true', help='Use exchange testnet environment')
     parser.add_argument('--no-gap-filling', action='store_true', help='Disable gap filling')
     parser.add_argument('--no-resampling', action='store_true', help='Disable resampling')
     parser.add_argument('--no-quality-validation', action='store_true', help='Disable quality validation')
@@ -2916,6 +3109,7 @@ if __name__ == "__main__":
             print(f"   - Gap Filling: {'❌ Disabled' if args.no_gap_filling else '✅ Enabled'}")
             print(f"   - Resampling: {'❌ Disabled' if args.no_resampling else '✅ Enabled'}")
             print(f"   - Quality Validation: {'❌ Disabled' if args.no_quality_validation else '✅ Enabled'}")
+            print(f"   - Authenticated: {'✅ Yes' if args.api_key and args.api_secret else '❌ No'}")
             print()
             
             # Configure pipeline
@@ -2950,9 +3144,10 @@ if __name__ == "__main__":
             print(f"🔗 Connecting to {args.exchange.upper()}...")
             exchange_config = {
                 'exchange_type': args.exchange,
-                'api_key': None,  # Public data doesn't require API keys
-                'api_secret': None,
-                'testnet': False,
+                'api_key': args.api_key or None,
+                'api_secret': args.api_secret or None,
+                'password': args.api_password or None,
+                'testnet': args.use_testnet,
                 'rate_limits': {}
             }
             exchange_interface = ExchangeInterface(exchange_config)

@@ -26,6 +26,14 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
+# Import fast temporal metrics if available
+try:
+    from ..rolling_hmm_clustering.fast_hmm_algorithms import fast_temporal_smoothness
+    FAST_TEMPORAL_AVAILABLE = True
+except ImportError:
+    FAST_TEMPORAL_AVAILABLE = False
+    logging.debug("Fast temporal metrics not available")
+
 # Import sklearn metrics
 from sklearn.metrics import (
     silhouette_score,
@@ -139,12 +147,15 @@ class QualityThresholds:
     # *** NEW: Target return (0.7%) as requested ***
     ECONOMIC_TARGET_RETURN = 0.007 
     
-    # Quality score weights
-    WEIGHT_TEMPORAL_SMOOTHNESS = 0.25
-    WEIGHT_CV_RATIO = 0.35
-    WEIGHT_SILHOUETTE = 0.20
-    WEIGHT_BALANCE = 0.10
-    WEIGHT_NOISE_RATIO = 0.10
+    # Quality score weights (rebalanced to emphasize CV and Silhouette)
+    WEIGHT_TEMPORAL_SMOOTHNESS = 0.12
+    WEIGHT_CV_RATIO = 0.50
+    WEIGHT_SILHOUETTE = 0.25
+    WEIGHT_BALANCE = 0.08
+    WEIGHT_NOISE_RATIO = 0.05
+    CV_RATIO_SATURATION_POINT = 3.0  # Higher values keep increasing but with diminishing gains
+    TEMPORAL_BASELINE = 0.90         # Only ultra-smooth regimes score above this threshold
+    TEMPORAL_EXPONENT = 2.2          # Harsher exponent to flatten smoothness gains
     
     # *** MODIFIED: Use 1e-9 for more stability ***
     DBI_EPSILON = 1e-9  
@@ -629,7 +640,8 @@ class ClusterQualityAssessor:
                        forward_returns: Optional[pd.Series] = None,
                        timestamps: Optional[pd.DatetimeIndex] = None,
                        min_regime_size: int = 10,
-                       temporal_sensitivity_mode: str = "standard") -> ClusterQualityMetrics:
+                       temporal_sensitivity_mode: str = "standard",
+                       fast_mode: bool = False) -> ClusterQualityMetrics:
         """
         Comprehensive cluster quality assessment.
 
@@ -644,11 +656,15 @@ class ClusterQualityAssessor:
                 - "exponential_decay": More aggressive transition penalty
                 - "weighted_transitions": Weight transitions by regime duration
                 - "regime_persistence_focused": Emphasize long regime persistence
+            fast_mode: If True, skip expensive O(n²) calculations like silhouette scores (for HPO)
 
         Returns:
             ClusterQualityMetrics object with all computed metrics
         """
-        tprint_info("🔍 Starting comprehensive cluster quality assessment")
+        if fast_mode:
+            tprint_info("🔍 Starting FAST cluster quality assessment (HPO mode)")
+        else:
+            tprint_info("🔍 Starting comprehensive cluster quality assessment")
         
         # Initialize metrics object
         metrics = ClusterQualityMetrics()
@@ -674,77 +690,68 @@ class ClusterQualityAssessor:
         # Calculate basic statistics
         metrics.n_regimes = len(set(regime_labels[non_noise_mask]))
         metrics.noise_ratio = np.sum(~non_noise_mask) / len(regime_labels)
-        
-        tprint_info(f"📊 Assessing quality for {metrics.n_regimes} regimes with {metrics.noise_ratio:.1%} noise")
-        
-        # 1. Silhouette scores
-        try:
-            tprint_timer("Silhouette Score Calculation")
-            metrics.silhouette_score, metrics.silhouette_per_cluster = self._calculate_silhouette_scores(
-            regime_labels, features_clean, non_noise_mask
-            )
-            tprint_success(f"✅ Silhouette score: {metrics.silhouette_score:.4f}")
-        except Exception as e:
-            tprint_error(f"❌ Failed to calculate silhouette scores: {e}")
-        
-        # 2. Davies-Bouldin Index
-        try:
-            tprint_timer("Davies-Bouldin Index Calculation")
-            metrics.davies_bouldin_score = self._calculate_dbi(
+
+        # 1. Silhouette scores (SKIP in fast mode - O(n²) complexity)
+        if not fast_mode:
+            try:
+                metrics.silhouette_score, metrics.silhouette_per_cluster = self._calculate_silhouette_scores(
                 regime_labels, features_clean, non_noise_mask
-            )
-            tprint_success(f"✅ Davies-Bouldin Index: {metrics.davies_bouldin_score:.4f}")
-        except Exception as e:
-            tprint_error(f"❌ Failed to calculate DBI: {e}")
-        
+                )
+            except Exception as e:
+                tprint_error(f"❌ Silhouette calculation failed: {e}")
+        else:
+            metrics.silhouette_score = 0.0
+
+        # 2. Davies-Bouldin Index (SKIP in fast mode)
+        if not fast_mode:
+            try:
+                metrics.davies_bouldin_score = self._calculate_dbi(
+                    regime_labels, features_clean, non_noise_mask
+                )
+            except Exception as e:
+                tprint_error(f"❌ DBI calculation failed: {e}")
+        else:
+            metrics.davies_bouldin_score = 0.0
+
         # 3. Calinski-Harabasz Index
         try:
-            tprint_timer("Calinski-Harabasz Index Calculation")
             metrics.calinski_harabasz_score = self._calculate_ch(
                 regime_labels, features_clean, non_noise_mask
             )
-            tprint_success(f"✅ Calinski-Harabasz Index: {metrics.calinski_harabasz_score:.4f}")
         except Exception as e:
-            tprint_error(f"❌ Failed to calculate CH score: {e}")
-        
-        # 4. *** REVERTED: Kept original function call ***
+            tprint_error(f"❌ CH calculation failed: {e}")
+
+        # 4. CV Metrics
         try:
-            tprint_timer("CV Metrics Calculation")
             (metrics.within_regime_cv, metrics.within_regime_cv_std,
                 metrics.between_regime_cv, metrics.between_regime_cv_std,
                 metrics.per_regime_cv) = self._calculate_cv_metrics(
                 regime_labels, features_clean, non_noise_mask
             )
-            tprint_success(f"✅ Within CV: {metrics.within_regime_cv:.4f}, Between CV: {metrics.between_regime_cv:.4f}")
         except Exception as e:
-            tprint_error(f"❌ Failed to calculate CV metrics: {e}")
-        
+            tprint_error(f"❌ CV metrics failed: {e}")
+
         # 5. Balance metrics
         try:
-            tprint_timer("Balance Metrics Calculation")
             (metrics.balance_score, metrics.min_cluster_size_pct,
                 metrics.max_cluster_size_pct, metrics.cluster_size_std,
                 metrics.cluster_size_distribution) = self._calculate_balance_metrics(regime_labels)
-            tprint_success(f"✅ Balance score: {metrics.balance_score:.4f}")
         except Exception as e:
-            tprint_error(f"❌ Failed to calculate balance metrics: {e}")
-        
-        # 6. Temporal smoothness and persistence (with flip-flop penalty)
+            tprint_error(f"❌ Balance metrics failed: {e}")
+
+        # 6. Temporal metrics
         if timestamps is not None:
             try:
-                tprint_timer("Temporal Metrics Calculation")
                 (metrics.temporal_smoothness,
                     metrics.temporal_smoothness_raw,
                     metrics.flip_flop_ratio) = self._calculate_temporal_smoothness(
                     regime_labels, timestamps, sensitivity_mode=temporal_sensitivity_mode
                 )
                 metrics.regime_persistence = self._calculate_regime_persistence(regime_labels)
-
-                # Enhanced temporal metrics
                 metrics.regime_duration_distribution = self._calculate_regime_duration_distribution(regime_labels)
                 metrics.transition_probability_matrix = self._calculate_transition_probability_matrix(regime_labels)
 
-                # NEW: Comprehensive temporal score with 5 enhanced metrics
+                # Comprehensive temporal score
                 try:
                     comprehensive_temporal = self._calculate_comprehensive_temporal_metrics(
                         regime_labels,
@@ -752,107 +759,74 @@ class ClusterQualityAssessor:
                         forward_returns.values if forward_returns is not None else None,
                         target_mean_duration=(5, 20)
                     )
-                    # Store comprehensive temporal results
                     if comprehensive_temporal:
                         metrics.comprehensive_temporal_score = comprehensive_temporal.get('composite_temporal_score', 0.0)
                         metrics.comprehensive_temporal_breakdown = comprehensive_temporal
-                        tprint_success(
-                            f"✅ Comprehensive temporal score: {metrics.comprehensive_temporal_score:.4f} "
-                            f"(smoothness: {comprehensive_temporal.get('smoothness_score', 0):.3f}, "
-                            f"duration: {comprehensive_temporal.get('duration_score', 0):.3f}, "
-                            f"predictability: {comprehensive_temporal.get('predictability_score', 0):.3f}, "
-                            f"persistence: {comprehensive_temporal.get('persistence_score', 0):.3f}, "
-                            f"economic: {comprehensive_temporal.get('economic_score', 0):.3f})"
-                        )
                 except Exception as e:
-                    tprint_warning(f"⚠️ Failed to calculate comprehensive temporal score: {e}")
-                    logger.debug(f"Comprehensive temporal error details: {e}", exc_info=True)
-
-                tprint_success(f"✅ Temporal smoothness: {metrics.temporal_smoothness:.4f} (raw: {metrics.temporal_smoothness_raw:.4f}, flip-flop: {metrics.flip_flop_ratio:.3f}), Persistence: {metrics.regime_persistence:.2f}")
-                tprint_success(f"✅ Enhanced temporal: Duration stability={metrics.regime_duration_distribution.get('duration_stability_score', 0) if isinstance(metrics.regime_duration_distribution, dict) else 0:.3f}, Transition stability={metrics.transition_probability_matrix.get('transition_stability_score', 0) if isinstance(metrics.transition_probability_matrix, dict) else 0:.3f}")
+                    logger.debug(f"Comprehensive temporal failed: {e}", exc_info=True)
             except Exception as e:
-                tprint_error(f"❌ Failed to calculate temporal metrics: {e}")
-        
+                tprint_error(f"❌ Temporal metrics failed: {e}")
+
         # 6b. Per-category CV metrics
         try:
-            tprint_timer("Per-Category CV Metrics Calculation")
             metrics.feature_category_cv_metrics = self._calculate_cv_metrics_by_category(
                 regime_labels, features_clean, non_noise_mask
             )
-            num_categories = len(metrics.feature_category_cv_metrics)
-            category_names = ", ".join(metrics.feature_category_cv_metrics.keys()) or "<none>"
-            tprint_success(
-                f"✅ Calculated CV metrics for {num_categories} feature categories"
-                + (f" ({category_names})" if num_categories else "")
-            )
         except Exception as e:
-            tprint_error(f"❌ Failed to calculate per-category CV metrics: {e}")
-        
-        # 7. Per-regime metrics (includes regime type detection and NEW economic targets)
+            tprint_error(f"❌ Per-category CV failed: {e}")
+
+        # 7. Per-regime metrics
         try:
-            tprint_timer("Per-Regime Metrics Calculation")
             metrics.per_regime_metrics = self._calculate_per_regime_metrics(
                 regime_labels, features_clean, forward_returns
             )
-            
-            # Extract regime types from per-regime metrics
             metrics.regime_type_per_cluster = {
                 regime_id: regime_data.get('regime_type', RegimeType.UNKNOWN.value)
                 for regime_id, regime_data in metrics.per_regime_metrics.items()
             }
-            tprint_success(f"✅ Calculated metrics for {len(metrics.per_regime_metrics)} regimes")
         except Exception as e:
-            tprint_error(f"❌ Failed to calculate per-regime metrics: {e}")
-            
-        # *** NEW: 7b. Economic Coefficient of Variation ***
+            tprint_error(f"❌ Per-regime metrics failed: {e}")
+
+        # 7b. Economic CV metrics
         if forward_returns is not None:
             try:
-                tprint_timer("Economic CV Metrics Calculation")
                 metrics.economic_cv_metrics = self._calculate_economic_cv_metrics(
                     metrics.per_regime_metrics, forward_returns, regime_labels
                 )
-                tprint_success("✅ Economic CV metrics complete")
             except Exception as e:
-                tprint_error(f"❌ Failed to calculate economic CV metrics: {e}")
+                tprint_error(f"❌ Economic CV failed: {e}")
 
-        # 8. Economic validation (if forward returns provided)
+        # 8. Economic validation
         if forward_returns is not None:
             try:
                 metrics.economic_validation = metrics.per_regime_metrics
-                tprint_success("✅ Economic validation populated from per-regime metrics")
             except Exception as e:
-                tprint_error(f"❌ Failed to populate economic validation: {e}")
-        
-        # *** NEW: 7b. Economic Coefficient of Variation ***
-        if forward_returns is not None:
-            try:
-                tprint_timer("Economic CV Metrics Calculation")
-                metrics.economic_cv_metrics = self._calculate_economic_cv_metrics(
-                    metrics.per_regime_metrics, forward_returns, regime_labels
-                )
-                tprint_success("✅ Economic CV metrics complete")
-            except Exception as e:
-                tprint_error(f"❌ Failed to calculate economic CV metrics: {e}")
-        
+                tprint_error(f"❌ Economic validation failed: {e}")
+
         # 9. Predictive power
         if forward_returns is not None and len(forward_returns) > 0:
             try:
-                tprint_timer("Predictive Power Calculation")
                 metrics.predictive_power = self._calculate_predictive_power(
-                    regime_labels, forward_returns
+                    regime_labels, forward_returns, fast_mode=fast_mode
                 )
-                tprint_success(f"✅ Predictive power: {metrics.predictive_power:.4f}")
-            except Exception as e:
-                tprint_error(f"❌ Failed to calculate predictive power: {e}")
-        
+            except Exception:
+                metrics.predictive_power = 0.0
+
         # 10. Calculate overall quality score
         try:
             metrics.quality_score = self._calculate_quality_score(metrics)
-            tprint_success(f"✅ Overall quality score: {metrics.quality_score:.4f}")
         except Exception as e:
-            tprint_error(f"❌ Failed to calculate quality score: {e}")
-        
-        tprint_success(f"✅ Quality assessment complete - Quality Score: {metrics.quality_score:.3f}")
+            tprint_error(f"❌ Quality score calculation failed: {e}")
+
+        # CONSOLIDATED OUTPUT: Single summary tprint
+        cv_ratio = metrics.between_regime_cv / (metrics.within_regime_cv + 1e-8) if metrics.within_regime_cv else 0
+        tprint_success(
+            f"✅ Quality: {metrics.quality_score:.3f} | "
+            f"Regimes: {metrics.n_regimes} | "
+            f"CV: {cv_ratio:.2f} (W:{metrics.within_regime_cv:.3f} B:{metrics.between_regime_cv:.3f}) | "
+            f"Temporal: {metrics.temporal_smoothness:.3f} | "
+            f"Balance: {metrics.balance_score:.3f}"
+        )
         
         return metrics
     
@@ -867,11 +841,12 @@ class ClusterQualityAssessor:
         timeframe: str = "1h",
         min_regime_size: int = 10,
         run_validators: bool = True,
-        temporal_sensitivity_mode: str = "standard"
+        temporal_sensitivity_mode: str = "standard",
+        fast_mode: bool = False
     ) -> ClusterQualityMetrics:
         """
         ENHANCED cluster quality assessment with HMM-specific validators.
-        
+
         This method extends assess_quality() with:
         I. Predictive/generalization checks
         II. Stability & reproducibility
@@ -880,7 +855,7 @@ class ClusterQualityAssessor:
         V. Emission/geometric diagnostics
         VI. Posterior predictive checks
         VII. Economic utility & robustness
-        
+
         Args:
             regime_labels: Cluster/regime assignments
             feature_data: Feature DataFrame
@@ -888,23 +863,29 @@ class ClusterQualityAssessor:
             hmm_model: Fitted HMM model (if available)
             forward_returns: Forward returns for economic validation
             timestamps: Timestamps for temporal analysis
-            timeframe: Timeframe string (e.g., '1h', '1d')
-            min_regime_size: Minimum regime size
+            timeframe: Timeframe string (e.g., "1h", "15m")
+            min_regime_size: Minimum regime size to consider
             run_validators: Whether to run comprehensive validators
+            temporal_sensitivity_mode: Temporal smoothness calculation mode
+            fast_mode: If True, skip expensive O(n²) calculations for HPO
             
         Returns:
             ClusterQualityMetrics with all enhanced metrics
         """
-        tprint_info("🔍 Starting ENHANCED HMM regime quality assessment")
-        
-        # First, run standard quality assessment
+        if fast_mode:
+            tprint_info("🔍 Starting FAST HMM regime quality assessment (HPO mode)")
+        else:
+            tprint_info("🔍 Starting ENHANCED HMM regime quality assessment")
+
+        # First, run standard quality assessment with fast mode if requested
         metrics = self.assess_quality(
             regime_labels=regime_labels,
             feature_data=feature_data,
             forward_returns=forward_returns,
             timestamps=timestamps,
             min_regime_size=min_regime_size,
-            temporal_sensitivity_mode=temporal_sensitivity_mode
+            temporal_sensitivity_mode=temporal_sensitivity_mode,
+            fast_mode=fast_mode
         )
         
         # If validators disabled, return standard metrics
@@ -2628,16 +2609,19 @@ class ClusterQualityAssessor:
         
     def _calculate_predictive_power(self,
                                       regime_labels: np.ndarray,
-                                      forward_returns: pd.Series) -> float:
+                                      forward_returns: pd.Series,
+                                      fast_mode: bool = False) -> float:
         """
         Calculate predictive power: can current regime predict future returns?
-        
-        Uses Random Forest classifier to predict return sign from regime labels.
-        
+
+        In fast_mode: Uses simple mean separation metric (10-20x faster)
+        In normal mode: Uses Logistic Regression with 3-fold CV (balanced speed/accuracy)
+
         Args:
             regime_labels: Regime/cluster labels
             forward_returns: Forward returns series (must be aligned with regime_labels)
-            
+            fast_mode: If True, use fast approximation instead of ML model
+
         Returns:
             Cross-validation score (0-1) indicating predictive power
         """
@@ -2646,55 +2630,75 @@ class ClusterQualityAssessor:
             min_samples = QualityThresholds.MIN_SAMPLES_FOR_PREDICTIVE_POWER
             if len(regime_labels) < min_samples or len(forward_returns) < min_samples:
                 return 0.0
-            
+
             # Ensure arrays are aligned and valid
             min_len = min(len(regime_labels), len(forward_returns))
             if min_len < min_samples:
                 return 0.0
-            
+
             # Ensure alignment: regime_labels[t] predicts forward_returns[t+1]
             # Make sure we have matching lengths for prediction
             max_predictable = min_len - 1
             if max_predictable < min_samples:
                 return 0.0
-            
+
             # Extract aligned data: use regime at time t to predict return at t+1
             # Use LabelEncoder for more robust encoding (as suggested in review)
             from sklearn.preprocessing import LabelEncoder
             encoder = LabelEncoder()
             X = encoder.fit_transform(regime_labels[:max_predictable]).reshape(-1, 1)
             y = (forward_returns[1:max_predictable + 1] > 0).astype(int).values
-            
+
             # Validate alignment
             if len(X) != len(y):
                 self.logger.warning(
                     f"Alignment issue in predictive power: X length={len(X)}, y length={len(y)}"
                 )
                 return 0.0
-            
+
             # Check if we have enough samples and variation
             if len(y) < min_samples:
                 return 0.0
-            
+
             unique_values = len(set(y))
             if unique_values < 2:
                 return 0.0
-            
-            # Calculate safe number of CV folds using thresholds from QualityThresholds
+
+            # FAST MODE: Use simple mean-based metric (10-20x faster)
+            if fast_mode:
+                # Calculate mean returns per regime for up/down moves
+                regime_return_means = []
+                for regime_id in np.unique(X.flatten()):
+                    mask = X.flatten() == regime_id
+                    if np.sum(mask) >= 10:  # At least 10 samples
+                        regime_mean = np.mean(y[mask])
+                        regime_return_means.append(abs(regime_mean - 0.5))  # Deviation from random
+
+                if len(regime_return_means) == 0:
+                    return 0.0
+
+                # Normalize to 0-1 range (higher separation = better predictive power)
+                separation = np.mean(regime_return_means) * 2  # Scale to approximate CV score
+                return float(np.clip(separation, 0.0, 1.0))
+
+            # NORMAL MODE: Use Logistic Regression with limited CV (5-10x faster than RF)
+            # Calculate safe number of CV folds - use minimum for speed
             min_samples_per_fold = QualityThresholds.MIN_SAMPLES_PER_CV_FOLD
-            max_folds = min(QualityThresholds.MAX_CV_FOLDS, max(2, len(y) // min_samples_per_fold))
-            
+            max_folds = min(3, max(2, len(y) // min_samples_per_fold))  # Cap at 3 folds
+
             if max_folds < 2:
                 return 0.0
-            
-            rf = RandomForestClassifier(n_estimators=100, random_state=42)
-            cv_scores = cross_val_score(rf, X, y, cv=max_folds)
-            
+
+            # Logistic Regression is much faster than RandomForest
+            from sklearn.linear_model import LogisticRegression
+            clf = LogisticRegression(max_iter=100, random_state=42, solver='lbfgs')
+            cv_scores = cross_val_score(clf, X, y, cv=max_folds)
+
             if len(cv_scores) == 0:
                 return 0.0
-            
+
             return float(cv_scores.mean())
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to calculate predictive power: {e}")
             return 0.0
@@ -2725,13 +2729,11 @@ class ClusterQualityAssessor:
         # *** REVERTED: Kept original field names ***
         if metrics.within_regime_cv is not None and metrics.between_regime_cv is not None:
             # Ideal: low within, high between
-            # Ratio of between/within, normalized
+            # Ratio of between/within, normalized with soft saturation that keeps rewarding higher ratios
             cv_ratio = metrics.between_regime_cv / (metrics.within_regime_cv + QualityThresholds.DBI_EPSILON)
-            # ENHANCED: Use log-scaled tanh to prevent CV ratio from dominating the score
-            # tanh(log(1 + cv_ratio)) spreads values more evenly across the range
-            # This prevents small changes in high CV ratios from being ignored while
-            # preventing small changes in low CV ratios from dominating
-            cv_normalized = np.tanh(np.log1p(cv_ratio))  # Log-scaled sigmoid normalization
+            saturation = max(QualityThresholds.CV_RATIO_SATURATION_POINT, QualityThresholds.DBI_EPSILON)
+            cv_normalized = 1.0 - np.exp(-cv_ratio / saturation)
+            cv_normalized = float(np.clip(cv_normalized, 0.0, 1.0))
             score_components.append(cv_normalized)
             weights.append(QualityThresholds.WEIGHT_CV_RATIO)
             tprint_info(f"    • CV Ratio: {cv_normalized:.4f} (raw: {cv_ratio:.2f}, weight: {QualityThresholds.WEIGHT_CV_RATIO:.2f})")
@@ -2745,9 +2747,19 @@ class ClusterQualityAssessor:
         
         # 3. Temporal smoothness (already in [0, 1])
         if metrics.temporal_smoothness is not None:
-            score_components.append(metrics.temporal_smoothness)
+            adjusted = metrics.temporal_smoothness - QualityThresholds.TEMPORAL_BASELINE
+            if adjusted > 0:
+                span = max(1.0 - QualityThresholds.TEMPORAL_BASELINE, QualityThresholds.DBI_EPSILON)
+                normalized = np.clip(adjusted / span, 0.0, 1.0)
+                temporal_score = float(np.power(normalized, QualityThresholds.TEMPORAL_EXPONENT))
+            else:
+                temporal_score = 0.0
+            score_components.append(temporal_score)
             weights.append(QualityThresholds.WEIGHT_TEMPORAL_SMOOTHNESS)
-            tprint_info(f"    • Temporal Smoothness: {metrics.temporal_smoothness:.4f} (weight: {QualityThresholds.WEIGHT_TEMPORAL_SMOOTHNESS:.2f})")
+            tprint_info(
+                f"    • Temporal Smoothness: {metrics.temporal_smoothness:.4f} → {temporal_score:.4f} "
+                f"(weight: {QualityThresholds.WEIGHT_TEMPORAL_SMOOTHNESS:.2f})"
+            )
         
         # 4. Balance score (already in [0, 1])
         if metrics.balance_score is not None:

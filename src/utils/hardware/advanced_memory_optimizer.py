@@ -584,9 +584,13 @@ class AdvancedM1MemoryOptimizer(M1MemoryOptimizer):
                     # Make predictions
                     prediction = self.predictive_manager.predict_memory_usage(30)  # 30 minutes
 
-                    # Take action based on predictions
+                    # Take action based on predictions when a memory limit is configured
+                    memory_limit_gb = getattr(self, "memory_limit_gb", None)
+                    prediction_limit_gb = memory_limit_gb * 0.9 if memory_limit_gb else None
+
                     if (prediction and prediction.confidence and prediction.confidence > 0.7 and
-                        prediction.predicted_usage_mb is not None and prediction.predicted_usage_mb > self.memory_limit_gb * 0.9):
+                        prediction.predicted_usage_mb is not None and prediction_limit_gb is not None and
+                        prediction.predicted_usage_mb > prediction_limit_gb):
                         self.logger.warning(f"🚨 Predicted memory pressure in 30min: {prediction.predicted_usage_mb:.2f}GB")
                         self._proactive_memory_cleanup()
 
@@ -603,13 +607,18 @@ class AdvancedM1MemoryOptimizer(M1MemoryOptimizer):
         """Handle memory pressure events."""
         self.logger.warning(f"🚨 Memory pressure event: {event.size_bytes / (1024**2):.2f}MB")
 
-        # Adjust strategy based on pressure level
-        if event.size_bytes > self.memory_limit_bytes * 0.9:
-            self.strategy = MemoryStrategy.AGGRESSIVE
-            self._aggressive_memory_cleanup()
-        elif event.size_bytes > self.memory_limit_bytes * 0.8:
-            self.strategy = MemoryStrategy.BALANCED
-            self._moderate_memory_cleanup()
+        memory_limit_bytes = getattr(self, "memory_limit_bytes", None)
+
+        # Adjust strategy based on pressure level when a limit is configured
+        if memory_limit_bytes:
+            if event.size_bytes > memory_limit_bytes * 0.9:
+                self.strategy = MemoryStrategy.AGGRESSIVE
+                self._aggressive_memory_cleanup()
+            elif event.size_bytes > memory_limit_bytes * 0.8:
+                self.strategy = MemoryStrategy.BALANCED
+                self._moderate_memory_cleanup()
+        else:
+            self.logger.debug("Skipping memory pressure strategy adjustment: no memory limit configured")
 
     def _handle_allocation_event(self, event: MemoryEvent):
         """Handle allocation events."""

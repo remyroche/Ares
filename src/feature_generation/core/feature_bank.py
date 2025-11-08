@@ -1691,7 +1691,7 @@ class FeatureBank:
             FeatureCategory.AUTOENCODER,
             FeatureCategory.REPRESENTATION_LEARNING,
             FeatureCategory.TIME,
-            FeatureCategory.REGIME,
+            # FeatureCategory.REGIME,  # REMOVED: Enable regime features for regime models training
             FeatureCategory.NORMALIZATION,  # Not a feature category, it's a transform
             # Additional exclusions as specified in feature generation step
             FeatureCategory.ORDER_FLOW,

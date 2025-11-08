@@ -718,9 +718,9 @@ class UnifiedTradingStandardizer:
                 raise ValueError(error_msg) from e
 
             # In lenient mode, return invalid trade for tracking
-            return StandardizedTrade(
+            invalid_trade = StandardizedTrade(
                 trade_id=str(raw_trade.get('id', 'unknown')),
-                order_id=str(order_id or 'unknown')),
+                order_id=str(order_id or 'unknown'),
                 symbol=str(symbol),
                 exchange=exchange.value,
                 side=OrderSide.BUY,
@@ -732,6 +732,7 @@ class UnifiedTradingStandardizer:
                 is_valid=False,
                 validation_errors=[str(e)],
             )
+            return invalid_trade
     
     def standardize_trades(
         self,
@@ -1013,7 +1014,7 @@ class UnifiedTradingStandardizer:
             ExchangeType.OKX,
             ExchangeType.BINGX,
             ExchangeType.MEXC,
-            ExchangeType.GATE_IO,
+            ExchangeType.GATEIO,
             ExchangeType.PHEMEX,
         ]
 

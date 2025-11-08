@@ -8,8 +8,8 @@ Each step becomes autonomous with standardized artifact management and outcome f
 import os
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, Union, List
-from datetime import datetime
+from typing import Dict, Any, Optional, Union, List, Tuple
+from datetime import datetime, timedelta
 import traceback
 
 from src.utils.artifact_manager import ArtifactManager
@@ -18,6 +18,13 @@ from src.utils.tprint import tprint
 from src.utils.versioned_artifacts import VersionedArtifactStore
 from src.training.steps.temporal_validation import require_datetime_index
 
+try:
+    import pandas as pd
+except ImportError:  # pragma: no cover - pandas expected in runtime env
+    pd = None  # type: ignore[assignment]
+    pandas_available = False
+else:
+    pandas_available = True
 
 class BaseStep(ABC):
     """
@@ -30,6 +37,13 @@ class BaseStep(ABC):
     - Generate Markdown outcome files
     - Be callable only via launcher (no standalone CLI)
     """
+
+    _SUPPORTED_TIMEFRAMES = {
+        "1m", "3m", "5m", "15m", "30m", "45m",
+        "1h", "2h", "4h", "6h", "8h", "12h",
+        "1d", "3d", "1w", "2w",
+        "1mo", "3mo", "6mo", "1y"
+    }
     
     def __init__(self, step_name: str, use_versioned_artifacts: bool = True):
         """
@@ -58,6 +72,21 @@ class BaseStep(ABC):
 
         # Mode detection for differentiated execution
         self.execution_mode = None  # Will be set by _detect_execution_mode
+
+    def _infer_timeframe_from_artifact_name(self, artifact_name: str) -> Optional[str]:
+        """Infer timeframe token from artifact name if present."""
+        parts = artifact_name.split('_')
+        for part_original in reversed(parts):
+            normalized = part_original.lower()
+            if normalized in self._SUPPORTED_TIMEFRAMES:
+                return part_original
+        return None
+
+    @staticmethod
+    def _format_context_string(symbol: str, exchange: str, timeframe: Optional[str],
+                               direction: str, model: str) -> str:
+        timeframe_display = timeframe if timeframe not in (None, "") else "UNKNOWN"
+        return f"{symbol}/{exchange} [{timeframe_display}] {direction}/{model}"
 
     @property
     def artifact_manager(self):
@@ -175,10 +204,323 @@ class BaseStep(ABC):
             context_str = f"{symbol}/{exchange} [{timeframe}] {direction}/{model}"
             tprint(f"🔄 Reinitialized VersionedArtifactStore with new context: {context_str}")
 
+    # ------------------------------------------------------------------
+    # Market data loading utilities
+    # ------------------------------------------------------------------
+    def _load_market_data_from_artifacts(
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        artifact_candidates: Optional[List[Tuple[str, str]]] = None,
+        artifact_type: str = "data",
+    ) -> Optional[Any]:
+        """
+        Attempt to load market data using artifact manager/router.
+
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe string (e.g., '1h')
+            artifact_candidates: Ordered list of (step_name, artifact_name) pairs
+            artifact_type: Type hint for artifact retrieval
+
+        Returns:
+            Loaded market data object or None if not found
+        """
+        artifact_candidates = artifact_candidates or [
+            ("klines_downloading_processing", "klines_data"),
+            ("data_collection", "market_data"),
+            ("data_reading", "ohlcv_data"),
+        ]
+
+        original_context = self._current_context.copy()
+
+        try:
+            for step_name, artifact_name in artifact_candidates:
+                try:
+                    self.artifact_manager.set_context(
+                        step_name=step_name,
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                    )
+
+                    data = self._get_artifact(
+                        artifact_name=artifact_name,
+                        artifact_type=artifact_type,
+                    )
+
+                    if data is not None:
+                        tprint(
+                            f"✅ Loaded market data from {step_name}/{artifact_name}",
+                            color="green",
+                        )
+                        return data
+
+                except Exception as load_error:  # noqa: PERF203 - debug context
+                    self.logger.debug(
+                        "Artifact load failed from %s/%s: %s",
+                        step_name,
+                        artifact_name,
+                        load_error,
+                    )
+        finally:
+            # Restore original context
+            self.artifact_manager.set_context(**original_context)
+
+        return None
+
+    def _load_market_data_from_historical_storage(
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        data_dir: str = "historical_data",
+        start_date: Optional[Union[str, datetime]] = None,
+        end_date: Optional[Union[str, datetime]] = None,
+    ) -> Optional[Any]:
+        """
+        Load market data directly from historical storage using KlinesParquetManager.
+
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe (VectorBT/klines style, e.g., '1h')
+            data_dir: Historical data directory root
+            start_date: Optional start date filter
+            end_date: Optional end date filter
+
+        Returns:
+            Market data DataFrame or None
+        """
+        try:
+            from src.utils.kline_parquet import KlinesParquetManager, StorageConfig
+
+            start_dt: Optional[datetime]
+            end_dt: Optional[datetime]
+
+            if start_date is None:
+                start_dt = None
+            elif pandas_available and pd is not None:
+                start_dt = pd.to_datetime(start_date)
+            else:
+                start_dt = start_date if isinstance(start_date, datetime) else datetime.fromisoformat(str(start_date))
+
+            if end_date is None:
+                end_dt = None
+            elif pandas_available and pd is not None:
+                end_dt = pd.to_datetime(end_date)
+            else:
+                end_dt = end_date if isinstance(end_date, datetime) else datetime.fromisoformat(str(end_date))
+
+            klines_manager = KlinesParquetManager(
+                config=StorageConfig(base_dir=data_dir)
+            )
+
+            execution_mode = str(
+                self._current_context.get(
+                    'execution_mode',
+                    self._current_context.get('mode', 'light')
+                )
+            ).lower()
+
+            requested_start = self._current_context.get('start_date')
+            requested_end = self._current_context.get('end_date')
+
+            if start_date is None:
+                start_date = requested_start
+            if end_date is None:
+                end_date = requested_end
+
+            timeframe = self._current_context.get('timeframe', timeframe)
+
+            if start_date is None:
+                mode_days_defaults = {
+                    'light': self._current_context.get('light_mode_days', 20),
+                    'blank': self._current_context.get('blank_mode_days', 180),
+                }
+                days_limit = mode_days_defaults.get(execution_mode)
+
+                if days_limit is not None:
+                    effective_end = end_date or end_dt or datetime.utcnow()
+                    start_dt = effective_end - timedelta(days=days_limit)
+                    end_dt = effective_end
+                    message_prefix = "💡 Light" if execution_mode == 'light' else "⚪ Blank"
+                    tprint(
+                        f"{message_prefix} mode pre-filter: loading data window "
+                        f"{start_dt.date()} → {end_dt.date()} ({days_limit} days, timeframe {timeframe})"
+                    )
+
+            market_data = klines_manager.load_klines(
+                symbol=symbol,
+                exchange=exchange,
+                interval=timeframe,
+                start_time=start_dt,
+                end_time=end_dt,
+            )
+
+            if market_data is not None and not getattr(market_data, "empty", False):
+                tprint(
+                    f"✅ Loaded {len(market_data)} rows from historical storage",
+                    color="green",
+                )
+                return market_data
+
+        except Exception as exc:  # pragma: no cover - defensive logging
+            self.logger.debug(
+                "Historical storage load failed for %s %s %s: %s",
+                symbol,
+                exchange,
+                timeframe,
+                exc,
+            )
+
+        return None
+
+    def load_market_data_or_fail(
+        self,
+        config: Dict[str, Any],
+        pipeline_state: Optional[Dict[str, Any]] = None,
+        *,
+        allow_config_override: bool = True,
+        light_mode_filter: bool = True,
+        artifact_candidates: Optional[List[Tuple[str, str]]] = None,
+    ) -> Tuple[Any, str]:
+        """
+        Load market data using a multi-stage strategy.
+
+        Priority order:
+            1. Config override (if allow_config_override)
+            2. Pipeline state cache
+            3. Artifact manager/router
+            4. Historical storage directory
+
+        Args:
+            config: Launcher configuration dictionary
+            pipeline_state: Mutable pipeline state dictionary
+            allow_config_override: Enable config['market_data'] usage
+            light_mode_filter: Apply BaseStep light mode filtering
+            artifact_candidates: Optional override for artifact search order
+
+        Returns:
+            Tuple of (market_data, source_description)
+
+        Raises:
+            ValueError: If no market data can be located
+        """
+        pipeline_state = pipeline_state or {}
+
+        symbol_value = config.get("symbol")
+        if not isinstance(symbol_value, str) or not symbol_value:
+            raise ValueError("Configuration must include a symbol string")
+        symbol = symbol_value
+
+        exchange_value = config.get("exchange")
+        if not isinstance(exchange_value, str) or not exchange_value:
+            raise ValueError("Configuration must include an exchange string")
+        exchange = exchange_value
+
+        timeframe_value = config.get("timeframe")
+        if not isinstance(timeframe_value, str) or not timeframe_value:
+            timeframe_value = config.get("regime_timeframe")
+        if not isinstance(timeframe_value, str) or not timeframe_value:
+            raise ValueError("Configuration must include a timeframe string")
+        timeframe = timeframe_value
+
+        # 1. Config override
+        if allow_config_override and config.get("market_data") is not None:
+            data = config["market_data"]
+            tprint("✅ Using market data provided in config", color="green")
+            return data, "config.market_data"
+
+        # 2. Pipeline state cache
+        pipeline_sources = [
+            ("pipeline_state.market_data", pipeline_state.get("market_data")),
+            ("pipeline_state.validated_data", pipeline_state.get("validated_data")),
+            ("pipeline_state.dataframe", pipeline_state.get("dataframe")),
+            ("pipeline_state.raw_market_data", pipeline_state.get("raw_market_data")),
+        ]
+
+        for source_name, candidate in pipeline_sources:
+            if candidate is not None:
+                tprint(f"✅ Using cached market data from {source_name}", color="green")
+                return candidate, source_name
+
+        # 3. Artifact manager/router
+        data = self._load_market_data_from_artifacts(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            artifact_candidates=artifact_candidates,
+        )
+
+        if data is not None:
+            source_name = "artifacts"
+        else:
+            # 4. Historical storage directory
+            data_dir = config.get("data_dir", "historical_data")
+            data = self._load_market_data_from_historical_storage(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                data_dir=data_dir,
+                start_date=config.get("start_date"),
+                end_date=config.get("end_date"),
+            )
+            source_name = "historical_data"
+
+        if data is None:
+            raise ValueError(
+                "No market data available. Ensure data collection steps have populated "
+                "artifacts or provide market_data in the launcher config."
+            )
+
+        # Optional light mode filter
+        if light_mode_filter and pandas_available and isinstance(data, pd.DataFrame):
+            data = self._apply_light_mode_filter(data, config, timeframe)
+
+        return data, source_name
+
+    def ensure_market_data_in_pipeline_state(
+        self,
+        config: Dict[str, Any],
+        pipeline_state: Dict[str, Any],
+        *,
+        allow_config_override: bool = True,
+        artifact_candidates: Optional[List[Tuple[str, str]]] = None,
+    ) -> Tuple[Any, str]:
+        """
+        Load market data and persist it into pipeline_state for downstream steps.
+
+        Args:
+            config: Step configuration dictionary
+            pipeline_state: Pipeline state dictionary (mutated in-place)
+            allow_config_override: Whether to honour config["market_data"]
+            artifact_candidates: Optional artifact loading order override
+
+        Returns:
+            Tuple of (market_data, source_description)
+        """
+        market_data, source = self.load_market_data_or_fail(
+            config,
+            pipeline_state,
+            allow_config_override=allow_config_override,
+            artifact_candidates=artifact_candidates,
+        )
+
+        # Persist in pipeline state
+        pipeline_state["market_data"] = market_data
+        if pandas_available and isinstance(market_data, pd.DataFrame):
+            pipeline_state.setdefault("validated_data", market_data)
+            pipeline_state.setdefault("dataframe", market_data)
+
+        return market_data, source
+
     def _detect_execution_mode(self, config: Dict[str, Any]) -> str:
         """
         Detect execution mode based on launcher arguments and step context.
-        
+
         This method can be overridden by subclasses for more specific mode detection.
         
         Args:
@@ -270,7 +612,6 @@ class BaseStep(ABC):
             timeframe = self._current_context.get('timeframe', '15m')
             direction = self._current_context.get('direction', 'long')
             model = self._current_context.get('model', 'analyst')
-            context_str = f"{symbol}/{exchange} [{timeframe}] {direction}/{model}"
 
             # Build context dict for router
             context_dict = {
@@ -282,9 +623,23 @@ class BaseStep(ABC):
                 'step_name': self.step_name
             }
 
+            artifact_timeframe = self._infer_timeframe_from_artifact_name(artifact_name)
+            if artifact_timeframe and str(timeframe).lower() != artifact_timeframe.lower():
+                tprint(
+                    f"🐛 DEBUG: Overriding context timeframe {timeframe} → {artifact_timeframe} "
+                    f"based on artifact name '{artifact_name}'",
+                    "INFO"
+                )
+                timeframe = artifact_timeframe
+                context_dict['timeframe'] = timeframe
+
+            context_str = self._format_context_string(symbol, exchange, timeframe, direction, model)
+
             tprint(
                 f"💾 Saving artifact '{artifact_name}' (type: {artifact_type}) | {context_str}"
             )
+            tprint(f"🐛 DEBUG: BaseStep._save_artifact called with artifact_name={artifact_name}, data_category={data_category}", "INFO")
+            tprint(f"🐛 DEBUG: Data type: {type(data)}, shape: {getattr(data, 'shape', 'N/A')}", "INFO")
 
             # Auto-detect data category from artifact_name if not provided
             if data_category is None:
@@ -299,15 +654,23 @@ class BaseStep(ABC):
                 elif any(kw in artifact_name.lower() for kw in ['prediction', 'score']):
                     data_category = 'predictions'
 
+            tprint(f"🐛 DEBUG: Final data_category: {data_category}, use_versioned_artifacts: {self.use_versioned_artifacts}", "INFO")
+
+            metadata_for_save = metadata.copy() if isinstance(metadata, dict) else metadata
+            if isinstance(metadata_for_save, dict) and timeframe and 'timeframe' not in metadata_for_save:
+                metadata_for_save['timeframe'] = timeframe
+
             # Use ArtifactRouter for intelligent routing
+            tprint("🐛 DEBUG: Calling artifact_router.save()...", "INFO")
             artifact_path = self.artifact_router.save(
                 data=data,
                 artifact_name=artifact_name,
                 artifact_type=artifact_type,
                 data_category=data_category,
                 context=context_dict,
-                metadata=metadata
+                metadata=metadata_for_save
             )
+            tprint(f"🐛 DEBUG: artifact_router.save() returned: {artifact_path}", "INFO")
 
             self.logger.info(f"Saved artifact: {artifact_name} -> {artifact_path}")
             tprint(f"✅ Saved artifact '{artifact_name}' | {context_str}")
@@ -361,6 +724,18 @@ class BaseStep(ABC):
                 'step_name': self.step_name
             }
 
+            artifact_timeframe = self._infer_timeframe_from_artifact_name(artifact_name)
+            if artifact_timeframe and str(timeframe).lower() != artifact_timeframe.lower():
+                tprint(
+                    f"🐛 DEBUG: Overriding context timeframe {timeframe} → {artifact_timeframe} "
+                    f"based on artifact name '{artifact_name}'",
+                    "INFO"
+                )
+                timeframe = artifact_timeframe
+                context_dict['timeframe'] = timeframe
+
+            context_str = self._format_context_string(symbol, exchange, timeframe, direction, model)
+
             tprint(
                 f"📂 Retrieving artifact '{artifact_name}' (type: {artifact_type}) | {context_str}"
             )
@@ -401,11 +776,18 @@ class BaseStep(ABC):
                 self.logger.warning(f"Artifact '{artifact_name}' not found via router, trying traditional manager")
                 tprint(f"⚠️ Trying fallback to traditional artifact manager | {context_str}")
 
-                data, resolved_path = self.artifact_manager.get_artifact(
-                    artifact_name=artifact_name,
-                    artifact_type=artifact_type,
-                    return_path=True
-                )
+                original_artifact_context = self._current_context.copy()
+                adjusted_context = original_artifact_context.copy()
+                adjusted_context['timeframe'] = timeframe
+                try:
+                    self.artifact_manager.set_context(**adjusted_context)
+                    data, resolved_path = self.artifact_manager.get_artifact(
+                        artifact_name=artifact_name,
+                        artifact_type=artifact_type,
+                        return_path=True
+                    )
+                finally:
+                    self.artifact_manager.set_context(**original_artifact_context)
 
                 if data is not None and resolved_path:
                     tprint(f"✅ Retrieved artifact '{artifact_name}' from fallback | {context_str}")

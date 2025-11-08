@@ -21,12 +21,19 @@ Key Features:
 - Comprehensive causality enforcement
 - Category coverage tracking (≥2 per category in final set)
         - CMI complementarity for Tactician mode
+- Support for simplified target structure (target_long, target_short) from labeling integration
 
 Cross-Timeframe Features:
 - For each variant feature (base, volnorm, vwap, trend_adj), generates 4 additional timeframe versions
 - Creates ratio-based interactions: feature_base / feature_3x, feature_base / feature_6x, feature_base / feature_9x, feature_base / feature_27x
 - Uses safe division with math validation and causality enforcement (.shift(1))
 - Effectively multiplies feature count by ~5x after Phase 1 (1 base + 4 ratios per variant)
+
+Target Structure:
+- Works with simplified binary targets from labeling integration step:
+  - target_long: Binary target for long positions (volume-normalized)
+  - target_short: Binary target for short positions (volume-normalized)
+- Maintains backward compatibility with legacy target columns
 """
 
 import asyncio
@@ -2027,6 +2034,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         # Primary target columns (from labeling integration step)
         primary_target_columns = [col for col in labeled_data.columns if col in [
+            'target_long', 'target_short',  # New simplified target structure
             'directional_confidence', 'opportunity_asymmetry',
             'long_overall_opportunity', 'short_overall_opportunity', 'opportunity',
             'confidence_score', 'quality_score', 'signal_strength'
@@ -2085,7 +2093,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             - Secondary candidates: {secondary_target_columns}
             
             This indicates a problem with the labeling integration step.
-            Expected columns from labeling step: opportunity, directional_confidence, etc.
+            Expected columns from labeling step: target_long, target_short, opportunity, directional_confidence, etc.
             """
             tprint_error(error_msg)
             raise ValueError("No valid target columns found in labeled_data - check labeling integration step")
@@ -2112,12 +2120,22 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             targets['opportunity_asymmetry'] = labeled_data['dummy_target']
             targets['long_overall_opportunity'] = labeled_data['dummy_target'].clip(lower=0)
             targets['short_overall_opportunity'] = labeled_data['dummy_target'].clip(upper=0).abs()
+        elif set(target_columns) == {'target_long', 'target_short'}:
+            # New simplified target structure from labeling integration step
+            # Binary targets for long and short positions (volume-normalized)
+            tprint_info("📊 Using new simplified target structure: target_long and target_short")
+            targets = labeled_data[['target_long', 'target_short']]
+            # Create derived targets for compatibility
+            targets['directional_confidence'] = (labeled_data['target_long'] + labeled_data['target_short']).abs()
+            targets['opportunity_asymmetry'] = labeled_data['target_long'] - labeled_data['target_short']
+            targets['long_overall_opportunity'] = labeled_data['target_long']
+            targets['short_overall_opportunity'] = labeled_data['target_short']
         else:
             # Use alternative target columns
             tprint_info(f"📊 Using alternative target columns: {target_columns}")
             targets = labeled_data[target_columns]
-            # Only create derived targets if we don't have the specific target we want
-            if len(target_columns) == 1 and target_columns[0] != 'price_target_vol_normalized':
+            # Only create derived targets if we don't have the specific targets we want
+            if len(target_columns) == 1 and target_columns[0] not in ['target_long', 'target_short']:
                 target_col = target_columns[0]
                 targets['directional_confidence'] = labeled_data[target_col].abs()
                 targets['opportunity_asymmetry'] = labeled_data[target_col]
@@ -3538,6 +3556,19 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         tprint_info(f"    - Base features: {base_count}")
         tprint_info("="*80)
         
+        # Update artifact manager context with symbol before saving
+        symbol = config.get('symbol', 'ETHUSDT')
+        exchange = config.get('exchange', 'binance')
+        timeframe = config.get('timeframe', '15m')
+        self.artifact_manager.set_context(
+            step_name=self.step_name,
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            datetime=datetime.now()
+        )
+        tprint_info(f"📁 Updated context: {symbol}/{exchange} [{timeframe}]")
+        
         features_path = self._save_artifact(
             data=combined_features,
             artifact_name='analyst_interaction_features',
@@ -3826,7 +3857,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         # Add SHAP analysis insights
         if 'shap_analysis' in shap_metadata:
             shap_stats = shap_metadata['shap_analysis']
-        content += f"""
+            content += f"""
 ## SHAP Analysis Insights
 - **Top Contributing Features**: {len(shap_stats.get('top_features', []))}
 - **Feature Importance Range**: {shap_stats.get('min_importance', 0):.4f} - {shap_stats.get('max_importance', 0):.4f}
@@ -3834,10 +3865,10 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
 - **SHAP Value Stability**: {shap_stats.get('stability_score', 0):.2f}/1.0
 """
             
-        if shap_stats.get('top_features'):
-            content += f"- **Most Important Features**:\n"
-            for i, (feature, importance) in enumerate(shap_stats['top_features'][:5], 1):
-                    content += f"  {i}. `{feature}`: {importance:.4f}\n"
+            if shap_stats.get('top_features'):
+                content += f"- **Most Important Features**:\n"
+                for i, (feature, importance) in enumerate(shap_stats['top_features'][:5], 1):
+                        content += f"  {i}. `{feature}`: {importance:.4f}\n"
         
         # Add model performance details
         if 'model_performance' in shap_metadata:

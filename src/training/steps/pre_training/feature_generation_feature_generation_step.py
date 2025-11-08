@@ -49,7 +49,22 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             - 'metrics': dict of performance metrics
             - 'error': error message if step failed (optional)
         """
-        tprint(f"⚙️ Starting feature generation for {config.get('symbol', 'UNKNOWN')}")
+        # Set context with symbol from config to ensure proper versioned store path
+        symbol = config.get('symbol', 'UNKNOWN')
+        exchange = config.get('exchange', 'binance')
+        timeframe = config.get('timeframe', '15m')
+        direction = config.get('direction', 'long')
+        model = config.get('model', 'analyst')
+        
+        self.set_context(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            direction=direction,
+            model=model
+        )
+        
+        tprint(f"⚙️ Starting feature generation for {symbol}")
 
         try:
             # Load data and generate features
@@ -190,17 +205,52 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
         """Load market data for feature generation."""
         try:
             from src.utils.data.klines_parquet import get_klines_manager
+            from datetime import datetime, timedelta
+            import pandas as pd
 
             klines_manager = get_klines_manager(data_dir=config.get('data_dir', 'historical_data'))
+
+            # Calculate date range for light/blank modes
+            execution_mode = str(config.get('execution_mode', 'light')).lower()
+            start_date = config.get('start_date')
+            end_date = config.get('end_date')
+            
+            # For light/blank modes, we need to determine the date range based on available data
+            # First load without filters to find the latest available date, then filter
+            if start_date is None and execution_mode in ('light', 'blank'):
+                mode_days_map = {'light': 20, 'blank': 180}
+                days_limit = config.get(f'{execution_mode}_mode_days', mode_days_map.get(execution_mode, 20))
+                mode_emoji = "💡" if execution_mode == 'light' else "⚪"
+                tprint(
+                    f"{mode_emoji} {execution_mode.capitalize()} mode: will load last {days_limit} days from most recent data"
+                )
 
             market_data = klines_manager.read_data(
                 symbol=config['symbol'],
                 interval=config['timeframe'],
+                start_date=start_date,
+                end_date=end_date,
                 data_type="processed"
             )
-
-            # Apply light mode filtering if enabled
-            market_data = self._apply_light_mode_filter(market_data, config, config['timeframe'])
+            
+            # Apply light/blank mode filtering based on actual data availability
+            if market_data is not None and not market_data.empty and start_date is None and execution_mode in ('light', 'blank'):
+                mode_days_map = {'light': 20, 'blank': 180}
+                days_limit = config.get(f'{execution_mode}_mode_days', mode_days_map.get(execution_mode, 20))
+                
+                # Get the latest date from the actual data
+                if isinstance(market_data.index, pd.DatetimeIndex):
+                    latest_date = market_data.index.max()
+                    cutoff_date = latest_date - pd.Timedelta(days=days_limit)
+                    original_size = len(market_data)
+                    market_data = market_data[market_data.index >= cutoff_date]
+                    filtered_size = len(market_data)
+                    
+                    mode_emoji = "💡" if execution_mode == 'light' else "⚪"
+                    tprint(
+                        f"{mode_emoji} {execution_mode.capitalize()} mode: filtered to last {days_limit} days "
+                        f"({cutoff_date.date()} → {latest_date.date()}) - {original_size:,} → {filtered_size:,} rows"
+                    )
 
             return market_data
 

@@ -63,7 +63,7 @@ class ExecutionModeLookbackConfig:
                 # Feature lookback optimization - Full intensity
                 optimization_window_days=1460,  # ~4 years of daily data
                 optimization_sample_size=100000,  # Full sample size
-                optimization_max_features=200,  # Maximum features to optimize
+                optimization_max_features=80,  # Maximum features to optimize
 
                 # PID-based feature generation - Full complexity
                 pid_generation_window_days=1460,  # ~4 years
@@ -89,7 +89,7 @@ class ExecutionModeLookbackConfig:
                 # Feature lookback optimization - Light intensity
                 optimization_window_days=10,  # 10 days for quick optimization
                 optimization_sample_size=1000,  # Reduced sample size
-                optimization_max_features=200,  # Keep all features
+                optimization_max_features=80,  # Keep all features
 
                 # PID-based feature generation - Light complexity
                 pid_generation_window_days=10,  # 10 days
@@ -115,7 +115,7 @@ class ExecutionModeLookbackConfig:
                 # Feature lookback optimization - Minimal intensity
                 optimization_window_days=180,  # 180 days for validation
                 optimization_sample_size=500,  # Minimal sample size
-                optimization_max_features=200,  # Keep all features
+                optimization_max_features=80,  # Keep all features
 
                 # PID-based feature generation - Minimal complexity
                 pid_generation_window_days=180,  # 180 days

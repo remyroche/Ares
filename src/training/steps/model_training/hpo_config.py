@@ -784,6 +784,13 @@ class HPOOrchestrator:
         """
         if self.execution_mode == 'light':
             return [OptimizationStage.COARSE_GRID]
+        elif self.execution_mode == 'small_dataset':
+            # Additional optimizations for very small datasets (< 500 samples)
+            return [
+                OptimizationStage.COARSE_GRID,
+                OptimizationStage.FINE_GRID,  # Limited fine grid
+                # Skip TPE for very small datasets to avoid overfitting
+            ]
         else:
             return [
                 OptimizationStage.COARSE_GRID,

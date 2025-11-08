@@ -12,7 +12,7 @@ analyst_config:
         n_estimators: 1000
         learning_rate: 0.01
         max_depth: 3
-        num_leaves: 10
+        num_leaves: 7
         subsample: 0.6
         colsample_bytree: 0.6
         random_state: 42
@@ -70,14 +70,14 @@ analyst_config:
           reg_lambda: 0.0
           sampling_rate: 0.6
           min_child_samples: 10
-          num_leaves: 10
+          num_leaves: 7
           subsample: 0.6
           colsample_bytree: 0.6
         last_optimization:
-          timestamp: '2025-11-06T23:48:00.266367'
+          timestamp: '2025-11-08T10:50:52.502799'
           best_score: 0.0
           total_trials: 12
-          total_time_seconds: 0.014279842376708984
+          total_time_seconds: 0.012005090713500977
           n_rounds: 2
     depthwise_cnn:
       model_type: DepthwiseSeparableCNNRegressor
@@ -197,10 +197,10 @@ analyst_config:
           subsample: 0.6
           colsample_bylevel: 0.6
         last_optimization:
-          timestamp: '2025-11-06T23:48:00.347114'
+          timestamp: '2025-11-08T10:50:52.653921'
           best_score: 0.0
           total_trials: 12
-          total_time_seconds: 0.025444746017456055
+          total_time_seconds: 0.014953374862670898
           n_rounds: 2
   training:
     training_samples: 50000

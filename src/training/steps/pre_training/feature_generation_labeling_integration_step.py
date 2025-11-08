@@ -6,7 +6,7 @@ This step integrates labeling with feature generation.
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from datetime import datetime
 from pathlib import Path
 import psutil
@@ -18,7 +18,7 @@ from contextlib import contextmanager
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 from src.training.steps.pre_training.utils.comprehensive_report_generator import ComprehensiveReportGenerator
 
 # Import memory optimization utilities
@@ -67,7 +67,7 @@ def calculate_volume_confidence_adjustment(
     volume_column: str = 'volume',
     lookback_window: int = 20,
     volume_sensitivity: float = 0.5
-) -> tuple[pd.Series, Dict[str, Any]]:
+) -> tuple:
     """
     Calculate volume-based confidence adjustment with LINEAR scaling.
     
@@ -113,7 +113,7 @@ def calculate_volume_confidence_adjustment(
     
     # Volume trend (3-bar rate of change)
     volume_roc = volume.pct_change(3).rolling(window=3).mean()
-    volume_roc = volume_roc.fillna(0.0)
+    volume_roc = pd.Series(volume_roc).fillna(0.0)
     
     # Initialize confidence adjustment (1.0 = neutral)
     confidence_adjustment = pd.Series(1.0, index=data.index)
@@ -133,9 +133,21 @@ def calculate_volume_confidence_adjustment(
     
     for idx in data.index[opportunity_mask]:
         try:
-            vol_ratio = volume_ratio.loc[idx]
-            vol_trend = volume_roc.loc[idx] if idx in volume_roc.index else 0
-            label_direction = labels.loc[idx]
+            vol_ratio_value = volume_ratio.loc[idx]
+            if isinstance(vol_ratio_value, pd.Series):
+                vol_ratio_value = vol_ratio_value.iloc[-1]
+            vol_ratio = float(vol_ratio_value) if pd.notna(vol_ratio_value) else 1.0
+
+            vol_trend_value = volume_roc.loc[idx] if idx in volume_roc.index else 0.0
+            if isinstance(vol_trend_value, pd.Series):
+                # Use the most recent value if duplicates exist
+                vol_trend_value = vol_trend_value.iloc[-1]
+            vol_trend = float(vol_trend_value) if pd.notna(vol_trend_value) else 0.0
+
+            label_value = labels.loc[idx]
+            if isinstance(label_value, pd.Series):
+                label_value = label_value.iloc[-1]
+            label_direction = float(label_value) if pd.notna(label_value) else 0.0
             
             adjustments_applied['total_opportunities'] += 1
             
@@ -269,7 +281,7 @@ def detect_and_correct_price_spikes(
     lookback_window: int = 10,
     threshold_multiplier: float = 3.0,
     volatility_window: int = 20
-) -> tuple[pd.DataFrame, Dict[str, Any]]:
+) -> tuple:
     """
     Detect and correct price spikes (noise) in market data.
     
@@ -350,26 +362,20 @@ def detect_and_correct_price_spikes(
     tprint(f"🚨 Detected {spikes_detected} price spikes in {len(data)} samples ({spikes_detected/len(data)*100:.2f}%)", "WARNING")
     
     # Correct spikes: set to average between previous and next bar
-    spike_indices = spike_mask[spike_mask].index
+    spike_positions = np.flatnonzero(spike_mask.to_numpy())
     spikes_corrected = 0
     spike_magnitudes = []
     
-    for idx in spike_indices:
+    for pos in spike_positions:
         try:
-            # Get position in series
-            pos = data.index.get_loc(idx)
-            
             # Skip if at boundaries (can't correct without prev/next)
             if pos == 0 or pos == len(data) - 1:
                 continue
             
-            # Get previous and next prices
-            prev_idx = data.index[pos - 1]
-            next_idx = data.index[pos + 1]
-            
-            prev_price = price_series.loc[prev_idx]
-            next_price = price_series.loc[next_idx]
-            original_price = price_series.loc[idx]
+            # Use positional indexing to avoid slice-based indices
+            prev_price = price_series.iloc[pos - 1]
+            next_price = price_series.iloc[pos + 1]
+            original_price = price_series.iloc[pos]
             
             # Skip if prev or next prices are NaN
             if pd.isna(prev_price) or pd.isna(next_price) or pd.isna(original_price):
@@ -384,11 +390,11 @@ def detect_and_correct_price_spikes(
             spike_magnitudes.append(spike_magnitude)
             
             # Apply correction
-            cleaned_data.loc[idx, price_column] = corrected_price
+            cleaned_data.iloc[pos, cleaned_data.columns.get_loc(price_column)] = corrected_price
             spikes_corrected += 1
             
         except Exception as e:
-            tprint(f"⚠️ Failed to correct spike at index {idx}: {e}", "WARNING")
+            tprint(f"⚠️ Failed to correct spike at position {pos}: {e}", "WARNING")
             continue
     
     # Calculate statistics
@@ -596,6 +602,9 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 min_predictability=0.0   # Predictability gate disabled - let all opportunities through
             )
             
+            # Enable simplified target generation (target_long, target_short)
+            vol_config.use_simplified_targets = True
+            
             # Validate threshold consistency
             validate_threshold_consistency(optimal_threshold, vol_config.volatility_threshold)
             
@@ -662,219 +671,177 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     opportunities_detected = int((labeling_result.labels != 0).sum())
                 
                 # Calculate long/short bias from actual results
-                if hasattr(labeling_result.labels, 'value_counts'):
-                    vc = labeling_result.labels.value_counts()
-                    long_opportunities = int(vc.get(1, 0))
-                    short_opportunities = int(vc.get(-1, 0))
-                else:
-                    # For DataFrame, count across all columns
-                    if isinstance(labeling_result.labels, pd.DataFrame):
+                if isinstance(labeling_result.labels, pd.DataFrame):
+                    # Check for new simplified target structure (target_long, target_short)
+                    if 'target_long' in labeling_result.labels.columns and 'target_short' in labeling_result.labels.columns:
+                        long_opportunities = int((labeling_result.labels['target_long'] > 0).sum())
+                        short_opportunities = int((labeling_result.labels['target_short'] > 0).sum())
+                        tprint(f"📊 Using new simplified target structure for counting opportunities", "INFO")
+                    else:
+                        # For DataFrame, count across all columns
                         long_opportunities = int((labeling_result.labels > 0).any(axis=1).sum())
                         short_opportunities = int((labeling_result.labels < 0).any(axis=1).sum())
-                    else:
-                        long_opportunities = int((labeling_result.labels > 0).sum())
-                        short_opportunities = int((labeling_result.labels < 0).sum())
+                elif hasattr(labeling_result.labels, 'value_counts'):
+                    # For Series, use value_counts
+                    vc = labeling_result.labels.value_counts()
+                    long_opportunities = int(vc.get(1) or 0)
+                    short_opportunities = int(vc.get(-1) or 0)
+                else:
+                    # For other types, count directly
+                    long_opportunities = int((labeling_result.labels > 0).sum())
+                    short_opportunities = int((labeling_result.labels < 0).sum())
 
                 # Extract actual quality metrics from labeler if available
                 quality_scores = getattr(labeling_result, 'quality_scores', {})
-                if quality_scores:
-                    # Get quality data from the quality scores structure
-                    first_target = list(quality_scores.values())[0] if quality_scores else None
-                    
-                    if first_target and hasattr(first_target, 'opportunity_quality_scores'):
-                        # Quality filtering using individual opportunity quality scores
-                        scores = list(first_target.opportunity_quality_scores or [])
-                        n = len(scores)
-                        if n:
-                            # Primary threshold: accept opportunities with quality score >= 30%
-                            quality_threshold = 0.3
-                            high_quality_opportunities = sum(1 for s in scores if s >= quality_threshold)
-                            filtered_opportunities = opportunities_detected - high_quality_opportunities
+                first_target = None
+                if isinstance(quality_scores, dict) and quality_scores:
+                    first_target = next(iter(quality_scores.values()))
 
-                            # Quality validation: Check if quality distribution is reasonable
-                            quality_rate = high_quality_opportunities / opportunities_detected if opportunities_detected > 0 else 0
-                            
-                            if quality_rate < 0.05:  # Less than 5% pass quality threshold
-                                # This indicates a serious problem with the labeling or quality scoring
-                                tprint(f"❌ CRITICAL: Only {quality_rate:.1%} opportunities pass quality threshold - labeling may be faulty", "ERROR")
-                                # Don't use fallback - report as failure
-                                high_quality_opportunities = 0
-                                filtered_opportunities = opportunities_detected
-                                tprint(f"⚠️ Quality filtering: Rejecting all opportunities due to poor quality distribution", "WARNING")
-                            elif quality_rate < 0.15:  # Less than 15% pass - warning but continue
-                                tprint(f"⚠️ Quality filtering: Only {quality_rate:.1%} opportunities pass quality threshold - consider reviewing thresholds", "WARNING")
-                                tprint(f"✅ Quality filtering: {high_quality_opportunities} opportunities passed 30% threshold ({quality_rate:.1f}%)", "SUCCESS")
-                            else:
-                                tprint(f"✅ Quality filtering: {high_quality_opportunities} opportunities passed 30% threshold ({quality_rate:.1f}%)", "SUCCESS")
-                        else:
-                            high_quality_opportunities = opportunities_detected
-                            filtered_opportunities = 0
-                    else:
-                        high_quality_opportunities = opportunities_detected
-                        filtered_opportunities = 0
-                    
-                    # Extract confidence and adaptation metrics from quality scores
-                    if hasattr(first_target, 'metrics'):
-                        metrics = first_target.metrics
-                        raw_ic = metrics.get('ic', 0.0)
+                high_quality_opportunities = opportunities_detected
+                filtered_opportunities = 0
+                avg_confidence_score = 0.0
+                volume_confidence_stats = {'volume_available': False}
+                avg_volatility_adaptation = 1.0
+                max_volatility_adaptation = 2.0
+                min_volatility_adaptation = 1.0
 
-                        # Calculate confidence based on multiple factors for better accuracy
-                        # 1. Information coefficient (IC) - primary signal quality measure
-                        # 2. Hit rate - percentage of correct directional predictions
-                        # 3. Signal consistency - how consistent the signals are
-                        ic_confidence = abs(raw_ic)  # Take absolute value for confidence measure
+                if first_target and hasattr(first_target, 'opportunity_quality_scores'):
+                    scores = list(first_target.opportunity_quality_scores or [])
+                    if scores:
+                        quality_threshold = 0.3
+                        high_quality_opportunities = sum(1 for s in scores if s >= quality_threshold)
+                        filtered_opportunities = opportunities_detected - high_quality_opportunities
 
-                        # 2. Hit rate confidence
-                        hit_rate = metrics.get('hit_rate', 0.0)
-                        hit_rate_confidence = hit_rate if hit_rate > 0 else 0.0
+                        quality_rate = high_quality_opportunities / opportunities_detected if opportunities_detected > 0 else 0
 
-                        # 3. Signal stability confidence
-                        stability = metrics.get('stability', 0.0)
-                        stability_confidence = stability if stability > 0 else 0.5  # Default moderate confidence
-
-                        # 4. Potential profit consistency
-                        avg_potential = metrics.get('avg_potential_profit', 0.0)
-                        profit_confidence = min(1.0, avg_potential / BASE_VOLATILITY_THRESHOLD) if avg_potential > 0 else 0.0
-
-                        # Combine confidence measures with weights (only if at least one component is non-zero)
-                        if ic_confidence > 0 or hit_rate_confidence > 0 or stability_confidence > 0 or profit_confidence > 0:
-                            avg_confidence_score = (
-                                ic_confidence * 0.4 +           # 40% weight to IC
-                                hit_rate_confidence * 0.3 +     # 30% weight to hit rate
-                                stability_confidence * 0.2 +    # 20% weight to stability
-                                profit_confidence * 0.1         # 10% weight to profit potential
+                        if quality_rate < 0.05:
+                            tprint(
+                                f"❌ CRITICAL: Only {quality_rate:.1%} opportunities pass quality threshold - labeling may be faulty",
+                                "ERROR",
+                            )
+                            high_quality_opportunities = 0
+                            filtered_opportunities = opportunities_detected
+                            tprint(
+                                "⚠️ Quality filtering: Rejecting all opportunities due to poor quality distribution",
+                                "WARNING",
+                            )
+                        elif quality_rate < 0.15:
+                            tprint(
+                                f"⚠️ Quality filtering: Only {quality_rate:.1%} opportunities pass quality threshold - consider reviewing thresholds",
+                                "WARNING",
+                            )
+                            tprint(
+                                f"✅ Quality filtering: {high_quality_opportunities} opportunities passed 30% threshold ({quality_rate:.1f}%)",
+                                "SUCCESS",
                             )
                         else:
-                            # All components zero - calculate from detection statistics
-                            if opportunities_detected > 0:
-                                detection_rate = opportunities_detected / total_samples if total_samples > 0 else 0.0
-                                avg_confidence_score = min(0.3, detection_rate * 3.0)  # Cap at 0.3 for fallback
+                            tprint(
+                                f"✅ Quality filtering: {high_quality_opportunities} opportunities passed 30% threshold ({quality_rate:.1f}%)",
+                                "SUCCESS",
+                            )
+
+                if first_target and hasattr(first_target, 'metrics'):
+                    metrics = first_target.metrics
+                    raw_ic = metrics.get('ic', 0.0)
+                    ic_confidence = abs(raw_ic)
+                    hit_rate_confidence = metrics.get('hit_rate', 0.0) if metrics.get('hit_rate', 0.0) > 0 else 0.0
+                    stability_confidence = metrics.get('stability', 0.0) if metrics.get('stability', 0.0) > 0 else 0.5
+                    avg_potential = metrics.get('avg_potential_profit', 0.0)
+                    profit_confidence = min(1.0, avg_potential / BASE_VOLATILITY_THRESHOLD) if avg_potential > 0 else 0.0
+
+                    if any((ic_confidence, hit_rate_confidence, stability_confidence, profit_confidence)):
+                        avg_confidence_score = (
+                            ic_confidence * 0.4
+                            + hit_rate_confidence * 0.3
+                            + stability_confidence * 0.2
+                            + profit_confidence * 0.1
+                        )
+                    elif opportunities_detected > 0:
+                        detection_rate = opportunities_detected / total_samples if total_samples > 0 else 0.0
+                        avg_confidence_score = min(0.3, detection_rate * 3.0)
+
+                    avg_confidence_score = max(0.0, min(1.0, avg_confidence_score))
+
+                    tprint("📊 Applying volume-based confidence adjustments...", "INFO")
+                    try:
+                        labels_for_volume = labeling_result.labels
+                        if isinstance(labels_for_volume, pd.DataFrame):
+                            labels_for_volume = labels_for_volume.iloc[:, 0]
+
+                        volume_adjustments, volume_stats = calculate_volume_confidence_adjustment(
+                            data=market_data,
+                            labels=labels_for_volume,
+                            volume_column='volume',
+                            lookback_window=20,
+                            volume_sensitivity=0.5,
+                        )
+
+                        if hasattr(labeling_result, 'labels') and not labeling_result.labels.empty:
+                            opportunity_confidence = pd.Series(avg_confidence_score, index=market_data.index)
+                            opportunity_confidence = opportunity_confidence * volume_adjustments
+                            opportunity_confidence = opportunity_confidence.clip(0.0, 1.0)
+
+                            has_opportunities = opportunities_detected > 0
+                            if has_opportunities:
+                                mask = labeling_result.labels != 0
+                                # Fix: Convert DataFrame to Series before indexing
+                                if isinstance(opportunity_confidence, pd.DataFrame):
+                                    opportunity_confidence = opportunity_confidence.iloc[:, 0]
+                                avg_confidence_score_adjusted = float(opportunity_confidence[mask].mean())
                             else:
-                                avg_confidence_score = 0.0
+                                avg_confidence_score_adjusted = avg_confidence_score
 
-                        # Ensure confidence is in reasonable range
-                        avg_confidence_score = max(0.0, min(1.0, avg_confidence_score))
+                            tprint(
+                                f"📊 Confidence adjustment: {avg_confidence_score:.3f} → {avg_confidence_score_adjusted:.3f}",
+                                "INFO",
+                            )
+                            avg_confidence_score = avg_confidence_score_adjusted
+                            volume_confidence_stats = volume_stats
+                        else:
+                            tprint("⚠️ No labels available for volume adjustment", "WARNING")
+                    except Exception as e:
+                        tprint(f"⚠️ Volume confidence adjustment failed: {e}", "WARNING")
+                        volume_confidence_stats = {'volume_available': False, 'error': str(e)}
 
-                        # VOLUME-BASED CONFIDENCE ADJUSTMENT
-                        # Apply volume analysis to modulate confidence for each opportunity
-                        tprint("📊 Applying volume-based confidence adjustments...", "INFO")
-                        
+                    def calculate_volatility_adaptation_metrics(dataframe, config_):
                         try:
-                            volume_adjustments, volume_stats = calculate_volume_confidence_adjustment(
-                                data=market_data,
-                                labels=labeling_result.labels,
-                                volume_column='volume',
-                                lookback_window=20,
-                                volume_sensitivity=0.5
-                            )
-                            
-                            # Apply volume adjustments to create opportunity-specific confidence
-                            if hasattr(labeling_result, 'labels') and not labeling_result.labels.empty:
-                                # Create per-opportunity confidence array
-                                opportunity_confidence = pd.Series(avg_confidence_score, index=market_data.index)
-                                
-                                # Apply volume-based adjustments
-                                opportunity_confidence = opportunity_confidence * volume_adjustments
-                                
-                                # Clamp to valid range [0.0, 1.0]
-                                opportunity_confidence = opportunity_confidence.clip(0.0, 1.0)
-                                
-                                # Recalculate average confidence after volume adjustment
-                                avg_confidence_score_adjusted = float(
-                                    opportunity_confidence[labeling_result.labels != 0].mean()
-                                ) if (labeling_result.labels != 0).sum() > 0 else avg_confidence_score
-                                
-                                tprint(f"📊 Confidence adjustment: {avg_confidence_score:.3f} → {avg_confidence_score_adjusted:.3f}", "INFO")
-                                
-                                # Update the confidence score
-                                avg_confidence_score = avg_confidence_score_adjusted
-                                
-                                # Store volume stats for reporting
-                                volume_confidence_stats = volume_stats
-                            else:
-                                volume_confidence_stats = {'volume_available': False}
-                                tprint("⚠️ No labels available for volume adjustment", "WARNING")
-                                
-                        except Exception as e:
-                            tprint(f"⚠️ Volume confidence adjustment failed: {e}", "WARNING")
-                            volume_confidence_stats = {'volume_available': False, 'error': str(e)}
+                            price_series = dataframe['close']
+                            volatility_window = getattr(config_.volatility, 'window', 20)
+                            volatility = price_series.pct_change().rolling(window=volatility_window).std().dropna()
 
-                        # FIXED: Calculate volatility adaptation using the same logic as the labeler
-                        def calculate_volatility_adaptation_metrics(market_data, vol_config):
-                            """Calculate volatility adaptation metrics matching labeler implementation."""
-                            try:
-                                # Use the same volatility calculation as the labeler
-                                price_series = market_data['close']
-                                
-                                # Calculate rolling volatility with the same window as labeler
-                                volatility_window = getattr(vol_config.volatility, 'window', 20)
-                                volatility = price_series.pct_change().rolling(window=volatility_window).std()
-                                
-                                # Remove NaN values
-                                volatility = volatility.dropna()
-                                
-                                if len(volatility) == 0:
-                                    return 1.0, 1.0, 1.0
-                                
-                                vol_mean = volatility.mean()
-                                
-                                if vol_mean <= 0:
-                                    return 1.0, 1.0, 1.0
-                                
-                                # Normalize volatility
-                                vol_norm = volatility / vol_mean
-                                
-                                # Use the same sensitivity and bounds as the labeler
-                                sensitivity = getattr(vol_config.volatility, 'sensitivity', 1.0)
-                                min_mult = 1.0  # No reduction below base threshold
-                                max_mult = 2.0  # Maximum 2x multiplier
-                                
-                                # Calculate effective multipliers (matching labeler logic exactly)
-                                effective_multipliers = np.clip(
-                                    1.0 + sensitivity * (vol_norm - 1.0), 
-                                    min_mult, 
-                                    max_mult
-                                )
-                                
-                                return (
-                                    float(effective_multipliers.mean()),
-                                    float(effective_multipliers.max()),
-                                    float(effective_multipliers.min())
-                                )
-                                
-                            except Exception as e:
-                                tprint(f"⚠️ Failed to calculate volatility adaptation: {e}", "WARNING")
-                                return 1.0, 2.0, 1.0
-                        
-                        # Calculate volatility adaptation metrics
-                        avg_volatility_adaptation, max_volatility_adaptation, min_volatility_adaptation = \
-                            calculate_volatility_adaptation_metrics(market_data, vol_config)
-                    else:
-                        # Fallback confidence calculation based on opportunities detected
-                        if opportunities_detected > 0:
-                            # Base confidence on detection rate and quality acceptance
-                            detection_confidence = min(1.0, opportunities_detected / total_samples * 10)  # Scale detection rate
-                            quality_confidence = high_quality_opportunities / opportunities_detected if opportunities_detected > 0 else 0.0
-                            avg_confidence_score = (detection_confidence * 0.6 + quality_confidence * 0.4)
-                        else:
-                            avg_confidence_score = 0.0
-                        avg_volatility_adaptation = 1.0
-                        max_volatility_adaptation = 2.0
-                        min_volatility_adaptation = 1.0
+                            if len(volatility) == 0:
+                                return 1.0, 1.0, 1.0
+
+                            vol_mean = volatility.mean()
+                            if vol_mean <= 0:
+                                return 1.0, 1.0, 1.0
+
+                            vol_norm = volatility / vol_mean
+                            sensitivity = getattr(config_.volatility, 'sensitivity', 1.0)
+                            effective_multipliers = np.clip(1.0 + sensitivity * (vol_norm - 1.0), 1.0, 2.0)
+
+                            return (
+                                float(effective_multipliers.mean()),
+                                float(effective_multipliers.max()),
+                                float(effective_multipliers.min()),
+                            )
+                        except Exception as err:
+                            tprint(f"⚠️ Failed to calculate volatility adaptation: {err}", "WARNING")
+                            return 1.0, 2.0, 1.0
+
+                    (
+                        avg_volatility_adaptation,
+                        max_volatility_adaptation,
+                        min_volatility_adaptation,
+                    ) = calculate_volatility_adaptation_metrics(market_data, vol_config)
                 else:
-                    # Fallback if quality scores not available
-                    high_quality_opportunities = opportunities_detected
-                    filtered_opportunities = 0
-                    # Use the same fallback logic as above
                     if opportunities_detected > 0:
                         detection_confidence = min(1.0, opportunities_detected / total_samples * 10)
-                        quality_confidence = high_quality_opportunities / opportunities_detected if opportunities_detected > 0 else 0.0
-                        avg_confidence_score = (detection_confidence * 0.6 + quality_confidence * 0.4)
-                    else:
-                        avg_confidence_score = 0.0
-                    avg_volatility_adaptation = 1.0
-                    max_volatility_adaptation = 2.0
-                    min_volatility_adaptation = 1.0
+                        quality_confidence = (
+                            high_quality_opportunities / opportunities_detected if opportunities_detected > 0 else 0.0
+                        )
+                        avg_confidence_score = detection_confidence * 0.6 + quality_confidence * 0.4
+
 
             # FIXED: Calculate time-based metrics dynamically from actual timeframe
             timeframe_minutes = timeframe_to_minutes(config['timeframe'])
@@ -1219,20 +1186,44 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
 
             # Save labeled data using BaseStep artifact manager with memory optimization
             tprint("💾 Persisting labeled data to artifacts...", "INFO")
+            tprint(f"🐛 DEBUG: About to save labeled data - opportunities_detected={opportunities_detected}, total_samples={total_samples}", "INFO")
 
             # Use memory-efficient data processing
             if labeling_result.success and opportunities_detected > 0:
                 with self._memory_efficient_processing():
                     # Create labeled data DataFrame with market data and labels (avoid full copy)
-                    labeled_data_df = self._create_labeled_dataframe_efficiently(
+                    tprint("🐛 DEBUG: Creating labeled DataFrame efficiently...", "INFO")
+                    tprint(f"🐛 DEBUG: labeling_result.success={labeling_result.success}, opportunities_detected={opportunities_detected}", "INFO")
+                    tprint(f"🐛 DEBUG: labeling_result type={type(labeling_result)}", "INFO")
+                    tprint(f"🐛 DEBUG: labeling_result.labels type={type(labeling_result.labels)}", "INFO")
+                    if hasattr(labeling_result, 'labels'):
+                        tprint(f"🐛 DEBUG: labels shape={labeling_result.labels.shape if hasattr(labeling_result.labels, 'shape') else 'no shape'}", "INFO")
+                    
+                    labeled_data_df = self._create_target_dataframe_efficiently(
                         market_data, labeling_result, vol_config
                     )
+                    tprint(f"🐛 DEBUG: Created labeled DataFrame - shape={labeled_data_df.shape}, columns={list(labeled_data_df.columns)}", "INFO")
+                    
+                    # Check if target_long and target_short columns exist and show statistics
+                    if 'target_long' in labeled_data_df.columns and 'target_short' in labeled_data_df.columns:
+                        long_opportunities = (labeled_data_df['target_long'] > 0).sum()
+                        short_opportunities = (labeled_data_df['target_short'] > 0).sum()
+                        tprint(f"📊 Target columns found in DataFrame:", "INFO")
+                        tprint(f"   • target_long: {long_opportunities} opportunities", "INFO")
+                        tprint(f"   • target_short: {short_opportunities} opportunities", "INFO")
+                        tprint(f"   • DataFrame shape: {labeled_data_df.shape}", "INFO")
+                        tprint(f"   • Saving to HDF5 with data_category='features'", "INFO")
+                    else:
+                        tprint("⚠️ Expected target columns (target_long, target_short) not found in DataFrame", "WARNING")
+                        tprint(f"   • Available columns: {list(labeled_data_df.columns)}", "INFO")
                     
                     # Save labeled data using BaseStep artifact manager with compression
+                    tprint("💾 Saving labeled data with new simplified target structure (target_long, target_short)...", "INFO")
                     labeled_data_path = self._save_artifact(
                         data=labeled_data_df,
                         artifact_name=f'labeled_data_{config["symbol"]}_{config["timeframe"]}',
                         artifact_type='data',
+                        data_category='features',  # Explicitly set to features for HDF5 versioning
                         compression='auto',  # Use automatic compression for large datasets
                         metadata={
                             'symbol': config['symbol'],
@@ -1246,10 +1237,16 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                             'high_quality_opportunities': high_quality_opportunities,
                             'avg_confidence_score': avg_confidence_score,
                             'volatility_adaptation_range': f'{min_volatility_adaptation:.2f}x - {max_volatility_adaptation:.2f}x',
+                            'target_structure': 'simplified',  # New simplified target structure
+                            'target_columns': ['target_long', 'target_short'],  # Explicitly list target columns
                             'created_at': datetime.now().isoformat()
-                    }
+                        }
                     )
-                    tprint(f"✅ Saved labeled data to: {labeled_data_path}", "SUCCESS")
+                    tprint(f"🐛 DEBUG: _save_artifact returned path: {labeled_data_path}", "INFO")
+                    tprint(f"✅ Successfully saved labeled data with simplified target structure to: {labeled_data_path}", "SUCCESS")
+                    tprint(f"   • Target structure: target_long (volume-normalized), target_short (volume-normalized)", "INFO")
+                    tprint(f"   • Data category: 'features' for HDF5 versioning", "INFO")
+                    tprint(f"   • Compression: auto for efficient storage", "INFO")
                     
                     # Clear large DataFrames from memory
                     del labeled_data_df
@@ -1525,55 +1522,249 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 final_memory = psutil.virtual_memory().used / (1024 * 1024)
                 tprint(f"🧠 Memory usage: {initial_memory:.1f}MB -> {final_memory:.1f}MB", "INFO")
     
-    def _create_labeled_dataframe_efficiently(self, market_data, labeling_result, vol_config):
-        """Create labeled DataFrame efficiently without full copying."""
+    def _create_target_dataframe_efficiently(self, market_data, labeling_result, vol_config):
+        """Create simplified target DataFrame with only volume-normalized long/short targets.
+        
+        This method creates a clean, simple DataFrame containing ONLY:
+        - target_long: Volume-normalized binary target for long positions (1=long opportunity, 0=no)
+        - target_short: Volume-normalized binary target for short positions (1=short opportunity, 0=no)
+        - labeling_timestamp: Timestamp when labeling was performed
+        - labeling_method_id: Identifier for the labeling method used
+        
+        The goal is a clean output with just volume-normalized long/short targets for model training.
+        OHLCV data, target_neutral, and price_target_vol_normalized are excluded.
+        """
         try:
-            # Start with essential columns only
-            essential_columns = ['close', 'open', 'high', 'low', 'volume']
-            available_columns = [col for col in essential_columns if col in market_data.columns]
+            tprint("🐛 DEBUG: _create_target_dataframe_efficiently START", "INFO")
+            tprint(f"🐛 DEBUG: market_data shape={market_data.shape}, columns={list(market_data.columns)[:5]}", "INFO")
             
-            # Create DataFrame with only essential columns initially
-            labeled_data_df = market_data[available_columns].copy()
-            
-            if hasattr(labeling_result, 'labels') and labeling_result.labels is not None:
-                # Add labels efficiently
-                labeled_data_df['price_target_vol_normalized'] = labeling_result.labels
+            # Get features data to align time periods
+            try:
+                from src.utils.versioned_artifacts import create_versioned_store
+                store = create_versioned_store(
+                    store_key="UNKNOWN_binance_15m_long_analyst",
+                    store_dir="versioned_artifacts"
+                )
                 
-                # Add quality scores if available (memory-efficient)
-                if hasattr(labeling_result, 'quality_scores') and labeling_result.quality_scores:
-                    for target_name, target_data in labeling_result.quality_scores.items():
-                        if hasattr(target_data, 'opportunity_quality_scores'):
-                            # Create sparse quality scores (only for labeled data)
-                            quality_scores_full = pd.Series(index=labeled_data_df.index, dtype=float)
-                            
-                            # Only process where labels exist (non-zero)
-                            label_mask = labeling_result.labels != 0
-                            if len(label_mask[label_mask]) > 0:
-                                labeled_indices = labeling_result.labels[label_mask].index
-                                
-                                # Efficiently assign quality scores
-                                if len(target_data.opportunity_quality_scores) == len(labeled_indices):
-                                    quality_scores_full.loc[labeled_indices] = target_data.opportunity_quality_scores
-                                else:
-                                    # Handle length mismatch efficiently
-                                    min_len = min(len(target_data.opportunity_quality_scores), len(labeled_indices))
-                                    quality_scores_full.loc[labeled_indices[:min_len]] = target_data.opportunity_quality_scores[:min_len]
-                            
-                            labeled_data_df[f'quality_scores_{target_name}'] = quality_scores_full
+                # Try to get the latest features data to match time period
+                # Priority order: final datasets (from interaction generation) first,
+                # then selected features, then generated features (from feature generation step)
+                feature_artifacts = [
+                    'selected_feature_dataframe_50',
+                    'selected_feature_dataframe_60',
+                    'selected_feature_dataframe_40',
+                    'final_dataset_50',
+                    'final_dataset_60',
+                    'final_dataset_40',
+                    'generated_features_15m',
+                    'generated_features',
+                ]
                 
-                # Add metadata columns efficiently
-                labeled_data_df['labeling_timestamp'] = datetime.now()
-                labeled_data_df['labeling_method'] = 'volatility_aware_multi_horizon'
-                labeled_data_df['base_threshold'] = vol_config.volatility_threshold
-                labeled_data_df['lookahead_periods'] = vol_config.lookahead_periods
+                features_data = None
+                tprint(f"🐛 DEBUG: Searching for features data in {len(feature_artifacts)} possible artifacts...", "INFO")
+                for artifact_name in feature_artifacts:
+                    try:
+                        tprint(f"🐛 DEBUG: Trying to load '{artifact_name}'...", "INFO")
+                        # Use correct VersionedArtifactStore API: get_view() then materialize()
+                        view = store.get_view(artifact_name)
+                        if view is not None:
+                            tprint(f"🐛 DEBUG: Got view for '{artifact_name}', materializing...", "INFO")
+                            features_data = view.materialize()
+                            if features_data is not None and not features_data.empty:
+                                tprint(f"✅ Found features data '{artifact_name}' with shape={features_data.shape}", "SUCCESS")
+                                tprint(f"🐛 DEBUG: Features index range: {features_data.index.min()} to {features_data.index.max()}", "INFO")
+                                break
+                            else:
+                                tprint(f"🐛 DEBUG: View '{artifact_name}' materialized to empty/None", "INFO")
+                                features_data = None
+                        else:
+                            tprint(f"🐛 DEBUG: No view found for '{artifact_name}'", "INFO")
+                    except Exception as e:
+                        tprint(f"🐛 DEBUG: Failed to load '{artifact_name}': {type(e).__name__}: {e}", "INFO")
+                        continue
+
+                if features_data is not None:
+                    # Use the same time period as features data
+                    tprint(f"✅ Aligning targets to features time period: {features_data.index.min()} to {features_data.index.max()} ({len(features_data)} samples)", "SUCCESS")
+                    aligned_index = features_data.index
+                else:
+                    # Fallback to market data index
+                    tprint("⚠️ No features data found, using full market data index", "WARNING")
+                    tprint(f"🐛 DEBUG: Market data index range: {market_data.index.min()} to {market_data.index.max()} ({len(market_data)} samples)", "INFO")
+                    aligned_index = market_data.index
+            except Exception as e:
+                tprint(f"🐛 DEBUG: Failed to get features data: {e}", "WARNING")
+                aligned_index = market_data.index
             
-            return labeled_data_df
+            # Create a minimal DataFrame with the aligned index
+            target_df = pd.DataFrame(index=aligned_index)
+            tprint(f"🐛 DEBUG: Created empty DataFrame with aligned index, shape={target_df.shape}", "INFO")
+
+            # Validate labeling result
+            if not hasattr(labeling_result, 'labels'):
+                tprint_error("❌ Labeling result missing 'labels' attribute. Failing early.")
+                raise ValueError("Labeling result missing 'labels' attribute")
+
+            labels_data = labeling_result.labels
+            if labels_data is None:
+                tprint_error("❌ Labeling result returned 'labels=None'. Failing early.")
+                raise ValueError("Labeling result returned None for labels")
+
+            if isinstance(labels_data, (pd.Series, pd.DataFrame)) and labels_data.empty:
+                tprint_error("❌ Labeling result returned empty labels structure. Failing early.")
+                raise ValueError("Labeling result returned empty labels")
+
+            # Normalize label structures into pandas containers
+            if isinstance(labels_data, dict):
+                chosen_key = None
+                for key, value in labels_data.items():
+                    if isinstance(value, (pd.Series, pd.DataFrame)):
+                        labels_data = value
+                        chosen_key = key
+                        break
+                    if isinstance(value, (np.ndarray, list, tuple)):
+                        labels_data = pd.Series(value)
+                        chosen_key = key
+                        break
+                if chosen_key is None:
+                    raise ValueError(f"Unsupported dict-based label structure: keys={list(labels_data.keys())[:3]}")
+
+            if isinstance(labels_data, np.ndarray):
+                if labels_data.ndim == 1:
+                    labels_data = pd.Series(labels_data)
+                elif labels_data.ndim == 2:
+                    column_names = [f"target_{i}" for i in range(labels_data.shape[1])]
+                    labels_data = pd.DataFrame(labels_data, columns=pd.Index(column_names))
+                else:
+                    raise ValueError(f"Unsupported numpy label shape: {labels_data.shape}")
+
+            if isinstance(labels_data, (list, tuple)):
+                labels_data = pd.Series(labels_data)
+
+            # Get price targets for creating binary long/short signals
+            price_targets = None
             
+            if isinstance(labels_data, pd.DataFrame):
+                # Look for price target column in DataFrame
+                labels_df = labels_data.copy()
+                # Align labels to market_data index first (labels are generated from market_data)
+                if labels_df.index.empty or not labels_df.index.equals(market_data.index):
+                    labels_df.index = market_data.index[:len(labels_df)]
+
+                # Try to find a column that looks like price targets
+                for col in labels_df.columns:
+                    if 'target' in str(col).lower() or 'price' in str(col).lower():
+                        price_targets = pd.to_numeric(labels_df[col], errors='coerce')
+                        break
+
+                # If no obvious column found, use the first numeric column
+                if price_targets is None:
+                    for col in labels_df.columns:
+                        if pd.api.types.is_numeric_dtype(labels_df[col]):
+                            price_targets = pd.to_numeric(labels_df[col], errors='coerce')
+                            break
+
+            elif isinstance(labels_data, pd.Series):
+                # Use the series directly as price targets
+                labels_series = labels_data
+                # Align labels to market_data index first (labels are generated from market_data)
+                if labels_series.index.empty or not labels_series.index.equals(market_data.index):
+                    labels_series.index = market_data.index[:len(labels_series)]
+                price_targets = pd.to_numeric(labels_series, errors='coerce')
+
+            # Check if volume data is available for normalization
+            volume_available = 'volume' in market_data.columns
+            volume_data = None
+            
+            if volume_available:
+                try:
+                    # Align volume data with our target index
+                    volume_data = market_data['volume'].reindex(target_df.index)
+                    volume_data = pd.to_numeric(volume_data, errors='coerce')
+                    # Calculate volume baseline for normalization
+                    volume_ma = volume_data.rolling(window=20, min_periods=1).mean()
+                    volume_data = volume_data.fillna(volume_ma).fillna(1.0)
+                    tprint("✅ Volume data available for target normalization", "SUCCESS")
+                except Exception as e:
+                    tprint(f"⚠️ Failed to process volume data for normalization: {e}", "WARNING")
+                    volume_available = False
+            else:
+                tprint("⚠️ No volume data available - targets will not be volume-normalized", "WARNING")
+
+            # Create simplified target columns
+            if price_targets is not None and not price_targets.empty:
+                # Align price targets with our target index (features_data.index)
+                tprint(f"🐛 DEBUG: Before reindex - price_targets shape={price_targets.shape}, index range={price_targets.index.min()} to {price_targets.index.max()}", "INFO")
+                tprint(f"🐛 DEBUG: Target index (aligned_index) range={target_df.index.min()} to {target_df.index.max()}, shape={target_df.shape}", "INFO")
+                price_targets = price_targets.reindex(target_df.index)
+                price_targets = price_targets.fillna(0.0)
+                tprint(f"🐛 DEBUG: After reindex - price_targets shape={price_targets.shape}, non-zero count={np.count_nonzero(price_targets)}", "INFO")
+                
+                # Create binary targets from price targets using volatility-aware threshold
+                # Use the base threshold (0.7% for ETHUSDT 15m) instead of hardcoded 1%
+                threshold = BASE_VOLATILITY_THRESHOLD  # 0.007 = 0.7%
+                target_long = (price_targets > threshold).astype(np.float32)
+                target_short = (price_targets < -threshold).astype(np.float32)
+                tprint_info(f"🎯 Using volatility-aware threshold: {threshold*100:.2f}% for target creation")
+                
+                # Apply volume normalization if volume data is available
+                if volume_available and volume_data is not None:
+                    try:
+                        # Calculate volume ratio (current vs average)
+                        volume_ratio = volume_data / volume_data.rolling(window=20, min_periods=1).mean()
+                        volume_ratio = volume_ratio.fillna(1.0)
+                        
+                        # Apply volume normalization (cap at reasonable limits)
+                        volume_factor = np.clip(np.array(volume_ratio), 0.5, 2.0)
+                        
+                        # Normalize targets by volume factor
+                        target_long = target_long * volume_factor.astype(np.float32)
+                        target_short = target_short * volume_factor.astype(np.float32)
+                        
+                        tprint("✅ Applied volume normalization to targets", "SUCCESS")
+                    except Exception as e:
+                        tprint(f"⚠️ Failed to apply volume normalization: {e}", "WARNING")
+                
+                # Assign to target DataFrame
+                target_df['target_long'] = target_long
+                target_df['target_short'] = target_short
+                
+                tprint_info(f"🎯 Created volume-normalized targets: long={(target_long != 0).sum()}, short={(target_short != 0).sum()}")
+            else:
+                # Create empty target columns if no price targets available
+                target_df['target_long'] = np.zeros(len(target_df), dtype=np.float32)
+                target_df['target_short'] = np.zeros(len(target_df), dtype=np.float32)
+                tprint_warning("⚠️ No price targets available - created empty target columns")
+
+            # Add minimal metadata columns
+            timestamp_ns = np.int64(pd.Timestamp.utcnow().value)
+            target_df['labeling_timestamp'] = np.full(len(target_df), timestamp_ns, dtype=np.int64)
+            target_df['labeling_method_id'] = np.full(len(target_df), 1, dtype=np.int8)
+            
+            # Validate we have the required target columns
+            required_targets = ['target_long', 'target_short']
+            missing_targets = [col for col in required_targets if col not in target_df.columns]
+            if missing_targets:
+                raise ValueError(f"Missing required target columns: {missing_targets}")
+            
+            tprint_success(f"✅ Created simplified target DataFrame with columns: {list(target_df.columns)}")
+            tprint(f"🐛 DEBUG: Final target DataFrame shape: {target_df.shape}", "INFO")
+            
+            return target_df
         except Exception as e:
-            tprint(f"⚠️ Failed to create labeled DataFrame efficiently: {e}", "WARNING")
-            # Fallback to simple copy
-            return market_data.copy()
-    
+            tprint(f"⚠️ Failed to create simplified target DataFrame: {e}", "WARNING")
+            # Create a minimal DataFrame with target columns even on error
+            try:
+                minimal_df = pd.DataFrame(index=market_data.index)
+                minimal_df['target_long'] = np.zeros(len(minimal_df), dtype=np.float32)
+                minimal_df['target_short'] = np.zeros(len(minimal_df), dtype=np.float32)
+                minimal_df['labeling_timestamp'] = np.int64(pd.Timestamp.utcnow().value)
+                minimal_df['labeling_method_id'] = np.int8(1)
+                tprint_warning("⚠️ Created minimal target DataFrame due to error")
+                return minimal_df
+            except Exception as fallback_e:
+                tprint_error(f"❌ Critical: Failed to create minimal DataFrame: {fallback_e}")
+                return pd.DataFrame(index=market_data.index)
     def _optimize_dataframe_memory(self, df):
         """Optimize DataFrame memory usage."""
         if self.memory_optimizer and hasattr(self.memory_optimizer, 'optimize_dataframe'):

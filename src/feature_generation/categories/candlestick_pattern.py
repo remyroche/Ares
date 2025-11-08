@@ -318,9 +318,10 @@ class CandlestickPatternFeatureGenerator(VectorizedFeatureGenerator):
         return pattern_features
 
     def _detect_doji_pattern(self, body_ratio: np.ndarray, total_range: np.ndarray) -> np.ndarray:
-        """Detect doji pattern using VectorBT optimization."""
-        # Doji: very small body relative to total range
-        doji_condition = body_ratio <= self.body_threshold
+        """Detect doji pattern using VectorBT optimization with intensity scoring."""
+        # Calculate intensity based on how small the body is relative to threshold
+        # Lower body ratio = higher intensity (stronger doji)
+        intensity = np.clip(1.0 - (body_ratio / self.body_threshold), 0.0, 1.0)
 
         # Use VectorBTRollingOptimizer for rolling statistics if available
         if self.rolling_optimizer and len(body_ratio) > 10:
@@ -333,24 +334,27 @@ class CandlestickPatternFeatureGenerator(VectorizedFeatureGenerator):
                     pd.Series(body_ratio_clean), window=5
                 ).values
 
-                # Enhanced doji detection with context
-                enhanced_doji = doji_condition & (body_ratio_clean < rolling_body_mean * 0.5)
+                # Enhanced doji intensity with context - boost when body is unusually small
+                context_factor = np.clip(rolling_body_mean / (body_ratio_clean + 1e-8), 0.5, 2.0)
+                enhanced_intensity = intensity * context_factor
+                
                 self.performance_stats['vectorbt_operations'] += 1
-                return enhanced_doji.astype(float)
+                return np.clip(enhanced_intensity, 0.0, 1.0)
             except Exception as e:
                 logger.warning(f"VectorBT doji detection failed: {e}, using fallback")
 
-        return doji_condition.astype(float)
+        return intensity
 
     def _detect_hammer_pattern(self, body_ratio: np.ndarray, upper_shadow_ratio: np.ndarray,
                               lower_shadow_ratio: np.ndarray) -> np.ndarray:
-        """Detect hammer pattern using VectorBT optimization."""
-        # Hammer: small body, long lower shadow, short upper shadow
-        hammer_condition = (
-            (body_ratio <= self.body_threshold) &
-            (lower_shadow_ratio >= self.shadow_threshold) &
-            (upper_shadow_ratio <= self.shadow_threshold * 0.5)
-        )
+        """Detect hammer pattern using VectorBT optimization with intensity scoring."""
+        # Calculate intensity components
+        body_intensity = np.clip(1.0 - (body_ratio / self.body_threshold), 0.0, 1.0)
+        lower_shadow_intensity = np.clip(lower_shadow_ratio / self.shadow_threshold, 0.0, 2.0)
+        upper_shadow_intensity = np.clip(1.0 - (upper_shadow_ratio / (self.shadow_threshold * 0.5)), 0.0, 1.0)
+        
+        # Combined intensity: small body, long lower shadow, short upper shadow
+        intensity = body_intensity * lower_shadow_intensity * upper_shadow_intensity
 
         # Use VectorBTRollingOptimizer for enhanced detection
         if self.rolling_optimizer and len(body_ratio) > 10:
@@ -363,24 +367,27 @@ class CandlestickPatternFeatureGenerator(VectorizedFeatureGenerator):
                     pd.Series(lower_shadow_ratio_clean), window=5
                 ).values
 
-                # Enhanced hammer detection
-                enhanced_hammer = hammer_condition & (lower_shadow_ratio_clean > rolling_lower_shadow * 1.5)
+                # Enhanced hammer intensity with context
+                context_factor = np.clip(lower_shadow_ratio_clean / (rolling_lower_shadow + 1e-8), 0.5, 2.0)
+                enhanced_intensity = intensity * context_factor
+                
                 self.performance_stats['vectorbt_operations'] += 1
-                return enhanced_hammer.astype(float)
+                return np.clip(enhanced_intensity, 0.0, 1.0)
             except Exception as e:
                 logger.warning(f"VectorBT hammer detection failed: {e}, using fallback")
 
-        return hammer_condition.astype(float)
+        return intensity
 
     def _detect_shooting_star_pattern(self, body_ratio: np.ndarray, upper_shadow_ratio: np.ndarray,
                                     lower_shadow_ratio: np.ndarray) -> np.ndarray:
-        """Detect shooting star pattern using VectorBT optimization."""
-        # Shooting star: small body, long upper shadow, short lower shadow
-        shooting_star_condition = (
-            (body_ratio <= self.body_threshold) &
-            (upper_shadow_ratio >= self.shadow_threshold) &
-            (lower_shadow_ratio <= self.shadow_threshold * 0.5)
-        )
+        """Detect shooting star pattern using VectorBT optimization with intensity scoring."""
+        # Calculate intensity components
+        body_intensity = np.clip(1.0 - (body_ratio / self.body_threshold), 0.0, 1.0)
+        upper_shadow_intensity = np.clip(upper_shadow_ratio / self.shadow_threshold, 0.0, 2.0)
+        lower_shadow_intensity = np.clip(1.0 - (lower_shadow_ratio / (self.shadow_threshold * 0.5)), 0.0, 1.0)
+        
+        # Combined intensity: small body, long upper shadow, short lower shadow
+        intensity = body_intensity * upper_shadow_intensity * lower_shadow_intensity
 
         # Use VectorBTRollingOptimizer for enhanced detection
         if self.rolling_optimizer and len(body_ratio) > 10:
@@ -393,24 +400,27 @@ class CandlestickPatternFeatureGenerator(VectorizedFeatureGenerator):
                     pd.Series(upper_shadow_ratio_clean), window=5
                 ).values
 
-                # Enhanced shooting star detection
-                enhanced_shooting_star = shooting_star_condition & (upper_shadow_ratio_clean > rolling_upper_shadow * 1.5)
+                # Enhanced shooting star intensity with context
+                context_factor = np.clip(upper_shadow_ratio_clean / (rolling_upper_shadow + 1e-8), 0.5, 2.0)
+                enhanced_intensity = intensity * context_factor
+                
                 self.performance_stats['vectorbt_operations'] += 1
-                return enhanced_shooting_star.astype(float)
+                return np.clip(enhanced_intensity, 0.0, 1.0)
             except Exception as e:
                 logger.warning(f"VectorBT shooting star detection failed: {e}, using fallback")
 
-        return shooting_star_condition.astype(float)
+        return intensity
 
     def _detect_hanging_man_pattern(self, body_ratio: np.ndarray, upper_shadow_ratio: np.ndarray,
                                   lower_shadow_ratio: np.ndarray) -> np.ndarray:
-        """Detect hanging man pattern using VectorBT optimization."""
-        # Hanging man: similar to hammer but appears after uptrend
-        hanging_man_condition = (
-            (body_ratio <= self.body_threshold) &
-            (lower_shadow_ratio >= self.shadow_threshold) &
-            (upper_shadow_ratio <= self.shadow_threshold * 0.5)
-        )
+        """Detect hanging man pattern using VectorBT optimization with intensity scoring."""
+        # Calculate intensity components
+        body_intensity = np.clip(1.0 - (body_ratio / self.body_threshold), 0.0, 1.0)
+        lower_shadow_intensity = np.clip(lower_shadow_ratio / self.shadow_threshold, 0.0, 2.0)
+        upper_shadow_intensity = np.clip(1.0 - (upper_shadow_ratio / (self.shadow_threshold * 0.5)), 0.0, 1.0)
+        
+        # Combined intensity: small body, long lower shadow, short upper shadow
+        intensity = body_intensity * lower_shadow_intensity * upper_shadow_intensity
 
         # Use VectorBTRollingOptimizer for trend context
         if self.rolling_optimizer and len(body_ratio) > 20:
@@ -423,23 +433,25 @@ class CandlestickPatternFeatureGenerator(VectorizedFeatureGenerator):
                     pd.Series(body_ratio_clean), window=10
                 ).values
 
-                # Enhanced hanging man detection with trend context
-                enhanced_hanging_man = hanging_man_condition & (body_ratio_clean < rolling_body * 0.8)
+                # Enhanced hanging man intensity with trend context
+                trend_factor = np.clip(rolling_body / (body_ratio_clean + 1e-8), 0.5, 2.0)
+                enhanced_intensity = intensity * trend_factor
+                
                 self.performance_stats['vectorbt_operations'] += 1
-                return enhanced_hanging_man.astype(float)
+                return np.clip(enhanced_intensity, 0.0, 1.0)
             except Exception as e:
                 logger.warning(f"VectorBT hanging man detection failed: {e}, using fallback")
 
-        return hanging_man_condition.astype(float)
+        return intensity
 
     def _detect_engulfing_pattern(self, open_prices: np.ndarray, close_prices: np.ndarray,
                                 body_ratio: np.ndarray) -> np.ndarray:
-        """Detect engulfing pattern using VectorBT optimization."""
-        # Engulfing: current candle completely engulfs previous candle
-        engulfing_pattern = np.zeros(len(open_prices))
+        """Detect engulfing pattern using VectorBT optimization with intensity scoring."""
+        # Initialize intensity array
+        engulfing_intensity = np.zeros(len(open_prices))
 
         if len(open_prices) < 2:
-            return engulfing_pattern
+            return engulfing_intensity
 
         # Calculate previous candle body
         prev_open = np.roll(open_prices, 1)
@@ -449,54 +461,55 @@ class CandlestickPatternFeatureGenerator(VectorizedFeatureGenerator):
         # Current candle body
         current_body_size = np.abs(close_prices - open_prices)
 
-        # Bullish engulfing: current green candle engulfs previous red candle
-        bullish_engulfing = (
+        # Bullish engulfing intensity
+        bullish_engulfing_intensity = np.zeros(len(open_prices))
+        bullish_condition = (
             (close_prices > open_prices) &  # Current candle is green
             (prev_close < prev_open) &      # Previous candle is red
             (open_prices < prev_close) &    # Current open below previous close
-            (close_prices > prev_open) &    # Current close above previous open
-            (current_body_size > prev_body_size * (1 + self.engulfing_threshold))
+            (close_prices > prev_open)      # Current close above previous open
+        )
+        
+        # Intensity based on how much larger current body is compared to previous
+        body_size_ratio = np.where(
+            prev_body_size > 0,
+            current_body_size / prev_body_size,
+            1.0
+        )
+        bullish_engulfing_intensity = np.where(
+            bullish_condition,
+            np.clip(body_size_ratio * (1 + self.engulfing_threshold), 0.0, 2.0),
+            0.0
         )
 
-        # Bearish engulfing: current red candle engulfs previous green candle
-        bearish_engulfing = (
+        # Bearish engulfing intensity
+        bearish_engulfing_intensity = np.zeros(len(open_prices))
+        bearish_condition = (
             (close_prices < open_prices) &  # Current candle is red
             (prev_close > prev_open) &      # Previous candle is green
             (open_prices > prev_close) &    # Current open above previous close
-            (close_prices < prev_open) &    # Current close below previous open
-            (current_body_size > prev_body_size * (1 + self.engulfing_threshold))
+            (close_prices < prev_open)      # Current close below previous open
+        )
+        
+        bearish_engulfing_intensity = np.where(
+            bearish_condition,
+            np.clip(body_size_ratio * (1 + self.engulfing_threshold), 0.0, 2.0),
+            0.0
         )
 
-        # Use VectorBTRollingOptimizer for enhanced detection
-        if self.rolling_optimizer and len(open_prices) > 10:
-            try:
-                # Calculate rolling statistics for context
-                rolling_body_std = self.rolling_optimizer.rolling_std(
-                    pd.Series(current_body_size), window=5
-                ).values
-
-                # Enhanced engulfing detection with volatility context
-                enhanced_bullish = bullish_engulfing & (current_body_size > rolling_body_std * 2)
-                enhanced_bearish = bearish_engulfing & (current_body_size > rolling_body_std * 2)
-
-                engulfing_pattern = (enhanced_bullish.astype(float) + enhanced_bearish.astype(float))
-                self.performance_stats['vectorbt_operations'] += 1
-                return engulfing_pattern
-            except Exception as e:
-                logger.warning(f"VectorBT engulfing detection failed: {e}, using fallback")
-
-        # Fallback to basic detection
-        engulfing_pattern = (bullish_engulfing.astype(float) + bearish_engulfing.astype(float))
-        return engulfing_pattern
+        # Combined engulfing intensity
+        engulfing_intensity = bullish_engulfing_intensity + bearish_engulfing_intensity
+        
+        return np.clip(engulfing_intensity, 0.0, 1.0)
 
     def _detect_morning_star_pattern(self, open_prices: np.ndarray, high_prices: np.ndarray,
                                    low_prices: np.ndarray, close_prices: np.ndarray) -> np.ndarray:
-        """Detect morning star pattern using VectorBT optimization."""
+        """Detect morning star pattern using VectorBT optimization with intensity scoring."""
         # Morning star: 3-candle pattern (bearish, small body, bullish)
-        morning_star = np.zeros(len(open_prices))
+        morning_star_intensity = np.zeros(len(open_prices))
 
         if len(open_prices) < 3:
-            return morning_star
+            return morning_star_intensity
 
         # Previous candles
         prev2_open = np.roll(open_prices, 2)
@@ -504,35 +517,61 @@ class CandlestickPatternFeatureGenerator(VectorizedFeatureGenerator):
         prev_open = np.roll(open_prices, 1)
         prev_close = np.roll(close_prices, 1)
 
-        # First candle: bearish
-        first_bearish = prev2_close < prev2_open
+        # First candle: bearish intensity
+        first_bearish_intensity = np.where(prev2_close < prev2_open, 1.0, 0.0)
 
-        # Second candle: small body (doji-like)
-        second_small_body = np.abs(prev_close - prev_open) <= self.body_threshold * np.abs(prev2_close - prev2_open)
+        # Second candle: small body intensity (doji-like)
+        prev2_body_size = np.abs(prev2_close - prev2_open)
+        prev_body_size = np.abs(prev_close - prev_open)
+        second_small_body_intensity = np.where(
+            prev_body_size <= self.body_threshold * prev2_body_size,
+            1.0 - (prev_body_size / (self.body_threshold * prev2_body_size + 1e-8)),
+            0.0
+        )
 
-        # Third candle: bullish and closes above first candle's midpoint
-        third_bullish = close_prices > open_prices
-        third_strong = close_prices > (prev2_open + prev2_close) / 2
+        # Third candle: bullish intensity
+        third_bullish_intensity = np.where(close_prices > open_prices, 1.0, 0.0)
 
-        morning_star_condition = first_bearish & second_small_body & third_bullish & third_strong
+        # Third candle strength: closes above first candle's midpoint
+        first_midpoint = (prev2_open + prev2_close) / 2
+        third_strong_intensity = np.where(
+            close_prices > first_midpoint,
+            (close_prices - first_midpoint) / (np.abs(prev2_close - prev2_open) + 1e-8),
+            0.0
+        )
+
+        # Combined morning star intensity
+        morning_star_intensity = (
+            first_bearish_intensity * 
+            second_small_body_intensity * 
+            third_bullish_intensity * 
+            np.clip(third_strong_intensity, 0.0, 1.0)
+        )
 
         # Use VectorBTRollingOptimizer for enhanced detection
         if self.rolling_optimizer and len(open_prices) > 20:
             try:
                 # Calculate rolling volatility for context
                 price_range = high_prices - low_prices
+                price_range_clean = np.nan_to_num(price_range, nan=0.0, posinf=1e8, neginf=0.0)
+
                 rolling_volatility = self.rolling_optimizer.rolling_std(
-                    pd.Series(price_range), window=10
+                    pd.Series(price_range_clean), window=10
                 ).values
 
-                # Enhanced morning star detection
-                enhanced_morning_star = morning_star_condition & (price_range > rolling_volatility * 1.5)
+                # Enhanced morning star intensity with volatility context
+                volatility_factor = np.clip(
+                    price_range_clean / (rolling_volatility + 1e-8),
+                    0.5, 2.0
+                )
+                enhanced_intensity = morning_star_intensity * volatility_factor
+                
                 self.performance_stats['vectorbt_operations'] += 1
-                return enhanced_morning_star.astype(float)
+                return np.clip(enhanced_intensity, 0.0, 1.0)
             except Exception as e:
                 logger.warning(f"VectorBT morning star detection failed: {e}, using fallback")
 
-        return morning_star_condition.astype(float)
+        return morning_star_intensity
 
     def _detect_evening_star_pattern(self, open_prices: np.ndarray, high_prices: np.ndarray,
                                    low_prices: np.ndarray, close_prices: np.ndarray) -> np.ndarray:

@@ -10,11 +10,16 @@ import yaml
 import os
 import pandas as pd
 import numpy as np
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from datetime import datetime
 
 # HPO imports (only those actually used)
 import lightgbm as lgb
+from sklearn.feature_selection import VarianceThreshold, SelectFromModel
+from sklearn.ensemble import RandomForestRegressor
+import psutil
+import gc
+
 from src.training.steps.model_training.hpo_config import (
     HPOOrchestrator,
     ModelParameterGroups
@@ -125,7 +130,7 @@ class UnifiedModelsTrainingStep(BaseStep):
 
             if training_data is not None and len(training_data) > 0:
                 # Create or load WALK-FORWARD temporal split configuration
-                tprint_info(f"📅 Creating WALK-FORWARD split configuration for {symbol} {exchange}")
+                tprint_info(f"📅 Creating WALK-FORWARD split configuration for {symbol} {config.get('exchange', 'binance')}")
 
                 # Determine data boundaries from actual data
                 data_start = training_data.index.min()
@@ -647,6 +652,313 @@ class UnifiedModelsTrainingStep(BaseStep):
         
         return yaml_config
     
+    def _apply_feature_selection_before_hpo(
+        self,
+        training_data: pd.DataFrame,
+        targets: pd.Series,
+        config: Dict[str, Any],
+        training_type: str
+    ) -> Tuple[pd.DataFrame, pd.Series, Dict[str, Any]]:
+        """
+        Apply feature selection before HPO to reduce dimensionality and improve performance.
+        
+        This method implements:
+        1. Variance threshold to remove zero-variance features
+        2. SelectFromModel to reduce from 1,637 to ~80 features
+        3. Detailed logging of removed features
+        4. Memory usage monitoring
+        
+        Args:
+            training_data: Original training data with all features
+            targets: Target variables
+            config: Configuration dictionary
+            training_type: Type of training (analyst_base, etc.)
+            
+        Returns:
+            Tuple of (selected_features, targets, feature_selection_info)
+        """
+        try:
+            tprint_info("=" * 80)
+            tprint_info("🔍 FEATURE SELECTION BEFORE HPO - Reducing Dimensionality")
+            tprint_info("=" * 80)
+            
+            original_shape = training_data.shape
+            original_memory = training_data.memory_usage(deep=True).sum() / 1024**2
+            sample_to_feature_ratio = len(training_data) / len(training_data.columns)
+            
+            tprint_info(f"📊 Original Data:")
+            tprint_info(f"   Samples: {len(training_data):,}")
+            tprint_info(f"   Features: {len(training_data.columns):,}")
+            tprint_info(f"   Sample-to-Feature Ratio: {sample_to_feature_ratio:.3f}")
+            tprint_info(f"   Memory Usage: {original_memory:.2f} MB")
+            
+            feature_selection_info = {
+                'original_shape': original_shape,
+                'original_memory_mb': original_memory,
+                'sample_to_feature_ratio': sample_to_feature_ratio,
+                'removed_features': {
+                    'zero_variance': [],
+                    'low_importance': []
+                },
+                'feature_importance_stats': {}
+            }
+            
+            # ========================================================================
+            # STEP 1: Remove Zero-Variance Features
+            # ========================================================================
+            tprint_info("\n🔧 STEP 1: Removing Zero-Variance Features...")
+            
+            # Calculate variance for each feature
+            numeric_cols = training_data.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) == 0:
+                tprint_warning("⚠️ No numeric columns found for variance threshold")
+                return training_data, targets, feature_selection_info
+            
+            # Calculate variance
+            variances = training_data[numeric_cols].var()
+            zero_var_features = variances[variances == 0].index.tolist()
+            
+            if zero_var_features:
+                tprint_warning(f"⚠️ Found {len(zero_var_features)} zero-variance features:")
+                for feature in zero_var_features[:10]:  # Show first 10
+                    tprint_info(f"      - {feature}")
+                if len(zero_var_features) > 10:
+                    tprint_info(f"      ... and {len(zero_var_features) - 10} more")
+                
+                # Remove zero-variance features
+                training_data = training_data.drop(columns=zero_var_features)
+                feature_selection_info['removed_features']['zero_variance'] = zero_var_features
+                
+                tprint_success(f"✅ Removed {len(zero_var_features)} zero-variance features")
+            else:
+                tprint_success("✅ No zero-variance features found")
+            
+            # ========================================================================
+            # STEP 2: Apply SelectFromModel for Feature Importance Selection
+            # ========================================================================
+            tprint_info("\n🎯 STEP 2: SelectFromModel Feature Importance Selection...")
+            
+            current_shape = training_data.shape
+            current_memory = training_data.memory_usage(deep=True).sum() / 1024**2
+            
+            tprint_info(f"📊 After Zero-Variance Removal:")
+            tprint_info(f"   Features: {current_shape[1]:,}")
+            tprint_info(f"   Memory Usage: {current_memory:.2f} MB")
+            
+            # Determine target number of features based on dataset size
+            n_samples = len(training_data)
+            if n_samples < 500:
+                target_features = min(80, max(50, n_samples // 3))
+            elif n_samples < 1000:
+                target_features = min(100, max(60, n_samples // 5))
+            else:
+                target_features = min(150, max(80, n_samples // 10))
+            
+            tprint_info(f"🎯 Target feature count: {target_features}")
+            
+            # Use RandomForest for feature importance
+            rf_selector = SelectFromModel(
+                RandomForestRegressor(
+                    n_estimators=100,
+                    max_depth=10,
+                    random_state=42,
+                    n_jobs=-1
+                ),
+                max_features=target_features
+            )
+            
+            # Fit selector
+            tprint_info("🔄 Training RandomForest for feature importance...")
+            rf_selector.fit(training_data, targets)
+            
+            # Get selected features
+            selected_features_mask = rf_selector.get_support()
+            selected_feature_names = training_data.columns[selected_features_mask].tolist()
+            removed_feature_names = training_data.columns[~selected_features_mask].tolist()
+            
+            # Calculate feature importances
+            feature_importances = rf_selector.estimator_.feature_importances_
+            importance_df = pd.DataFrame({
+                'feature': training_data.columns,
+                'importance': feature_importances
+            }).sort_values('importance', ascending=False)
+            
+            # Log feature importance statistics
+            feature_selection_info['feature_importance_stats'] = {
+                'top_10_features': importance_df.head(10).to_dict('records'),
+                'importance_distribution': {
+                    'mean': float(importance_df['importance'].mean()),
+                    'std': float(importance_df['importance'].std()),
+                    'min': float(importance_df['importance'].min()),
+                    'max': float(importance_df['importance'].max()),
+                    'median': float(importance_df['importance'].median())
+                },
+                'high_importance_count': int((importance_df['importance'] > 0.01).sum()),
+                'medium_importance_count': int((importance_df['importance'] > 0.001).sum()),
+                'low_importance_count': int((importance_df['importance'] <= 0.001).sum())
+            }
+            
+            # Apply feature selection
+            training_data_selected = training_data[selected_feature_names]
+            
+            feature_selection_info['removed_features']['low_importance'] = removed_feature_names
+            
+            # ========================================================================
+            # STEP 3: Log Results and Memory Savings
+            # ========================================================================
+            final_shape = training_data_selected.shape
+            final_memory = training_data_selected.memory_usage(deep=True).sum() / 1024**2
+            memory_reduction = (original_memory - final_memory) / original_memory * 100
+            feature_reduction = (original_shape[1] - final_shape[1]) / original_shape[1] * 100
+            final_sample_to_feature_ratio = len(training_data_selected) / len(training_data_selected.columns)
+            
+            tprint_info("\n📊 FEATURE SELECTION SUMMARY:")
+            tprint_info("=" * 60)
+            tprint_info(f"Original:  {original_shape[0]:,} samples × {original_shape[1]:,} features")
+            tprint_info(f"Final:     {final_shape[0]:,} samples × {final_shape[1]:,} features")
+            tprint_info(f"Reduction: {feature_reduction:.1f}% features removed")
+            tprint_info(f"Memory:    {original_memory:.2f} MB → {final_memory:.2f} MB ({memory_reduction:.1f}% reduction)")
+            tprint_info(f"Ratio:     {sample_to_feature_ratio:.3f} → {final_sample_to_feature_ratio:.3f}")
+            
+            tprint_info(f"\n🎯 Top 10 Selected Features:")
+            for i, row in importance_df.head(10).iterrows():
+                tprint_info(f"   {i+1:2d}. {row['feature']:<40} (importance: {row['importance']:.6f})")
+            
+            # Check for suspicious HPO scores potential
+            if final_sample_to_feature_ratio < 1.0:
+                tprint_warning(f"⚠️ Low sample-to-feature ratio ({final_sample_to_feature_ratio:.3f}) - risk of overfitting")
+            elif final_sample_to_feature_ratio < 2.0:
+                tprint_warning(f"⚠️ Moderate sample-to-feature ratio ({final_sample_to_feature_ratio:.3f}) - monitor for overfitting")
+            else:
+                tprint_success(f"✅ Good sample-to-feature ratio ({final_sample_to_feature_ratio:.3f})")
+            
+            # Log removed features for debugging
+            if removed_feature_names:
+                tprint_info(f"\n🗑️ Removed {len(removed_feature_names)} low-importance features:")
+                low_importance_preview = removed_feature_names[:5]
+                for feature in low_importance_preview:
+                    importance = importance_df[importance_df['feature'] == feature]['importance'].iloc[0]
+                    tprint_info(f"      - {feature} (importance: {importance:.6f})")
+                if len(removed_feature_names) > 5:
+                    tprint_info(f"      ... and {len(removed_feature_names) - 5} more")
+            
+            # Update feature selection info
+            feature_selection_info.update({
+                'final_shape': final_shape,
+                'final_memory_mb': final_memory,
+                'memory_reduction_pct': memory_reduction,
+                'feature_reduction_pct': feature_reduction,
+                'final_sample_to_feature_ratio': final_sample_to_feature_ratio,
+                'target_features': target_features,
+                'actual_features': len(selected_feature_names)
+            })
+            
+            tprint_info("=" * 80)
+            tprint_success(f"✅ Feature selection complete: {original_shape[1]:,} → {final_shape[1]:,} features")
+            tprint_info("=" * 80)
+            
+            return training_data_selected, targets, feature_selection_info
+            
+        except Exception as e:
+            tprint_error(f"❌ Feature selection failed: {e}")
+            import traceback
+            self.logger.error(f"Feature selection error: {e}\n{traceback.format_exc()}")
+            # Return original data if feature selection fails
+            return training_data, targets, {'error': str(e)}
+
+    def _monitor_memory_usage(self, operation_name: str = "Unknown") -> Dict[str, float]:
+        """
+        Monitor current memory usage and return statistics.
+        
+        Args:
+            operation_name: Name of the current operation for logging
+            
+        Returns:
+            Dictionary with memory usage statistics
+        """
+        try:
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            memory_percent = process.memory_percent()
+            
+            # System memory
+            system_memory = psutil.virtual_memory()
+            
+            memory_stats = {
+                'process_memory_mb': memory_info.rss / 1024 / 1024,
+                'process_memory_percent': memory_percent,
+                'system_memory_gb': system_memory.total / 1024 / 1024 / 1024,
+                'system_memory_used_gb': system_memory.used / 1024 / 1024 / 1024,
+                'system_memory_percent': system_memory.percent,
+                'available_memory_gb': system_memory.available / 1024 / 1024 / 1024
+            }
+            
+            # Log warnings if memory usage is high
+            if memory_percent > 85:
+                tprint_warning(f"⚠️ HIGH MEMORY USAGE during {operation_name}: {memory_percent:.1f}%")
+            elif memory_percent > 70:
+                tprint_info(f"ℹ️ Memory usage during {operation_name}: {memory_percent:.1f}%")
+            
+            return memory_stats
+            
+        except Exception as e:
+            self.logger.warning(f"Memory monitoring failed: {e}")
+            return {}
+
+    def _check_for_data_leakage(
+        self,
+        hpo_score: float,
+        feature_selection_info: Dict[str, Any],
+        training_type: str
+    ) -> bool:
+        """
+        Check for potential data leakage based on suspiciously high HPO scores.
+        
+        Args:
+            hpo_score: The HPO score achieved
+            feature_selection_info: Information about feature selection
+            training_type: Type of training
+            
+        Returns:
+            True if data leakage is suspected, False otherwise
+        """
+        try:
+            leakage_suspected = False
+            
+            # Check for suspiciously high scores
+            if hpo_score > 0.85:
+                tprint_warning(f"⚠️ SUSPICIOUSLY HIGH HPO SCORE: {hpo_score:.6f}")
+                tprint_warning(f"   This may indicate data leakage or overfitting")
+                leakage_suspected = True
+            
+            # Check sample-to-feature ratio
+            ratio = feature_selection_info.get('final_sample_to_feature_ratio', 0)
+            if ratio < 1.0 and hpo_score > 0.75:
+                tprint_warning(f"⚠️ HIGH SCORE WITH LOW SAMPLE-TO-FEATURE RATIO")
+                tprint_warning(f"   Score: {hpo_score:.6f}, Ratio: {ratio:.3f}")
+                tprint_warning(f"   This combination often indicates data leakage")
+                leakage_suspected = True
+            
+            # Check for extreme feature reduction with high score
+            feature_reduction = feature_selection_info.get('feature_reduction_pct', 0)
+            if feature_reduction > 90 and hpo_score > 0.80:
+                tprint_warning(f"⚠️ EXTREME FEATURE REDUCTION WITH HIGH SCORE")
+                tprint_warning(f"   Feature reduction: {feature_reduction:.1f}%, Score: {hpo_score:.6f}")
+                leakage_suspected = True
+            
+            if leakage_suspected:
+                tprint_error("🚨 DATA LEAKAGE INVESTIGATION RECOMMENDED:")
+                tprint_error("   1. Check temporal ordering of features and targets")
+                tprint_error("   2. Verify no future information is in features")
+                tprint_error("   3. Review feature engineering for look-ahead bias")
+                tprint_error("   4. Consider using stricter temporal validation")
+            
+            return leakage_suspected
+            
+        except Exception as e:
+            self.logger.warning(f"Data leakage check failed: {e}")
+            return False
+
     # --- NEW HPO METHOD USING CUSTOM_BALANCED_SCORE ---
     async def _perform_hierarchical_hpo(
         self,
@@ -687,6 +999,34 @@ class UnifiedModelsTrainingStep(BaseStep):
             tprint_info("🔍 Starting Hierarchical HPO with Walk-Forward Cross-Validation...")
 
             # ========================================================================
+            # FEATURE SELECTION: Apply before HPO to reduce dimensionality
+            # ========================================================================
+            tprint_info("=" * 80)
+            tprint_info("🎯 FEATURE SELECTION BEFORE HPO")
+            tprint_info("=" * 80)
+            
+            # Monitor memory before feature selection
+            memory_before = self._monitor_memory_usage("Before Feature Selection")
+            
+            # Apply feature selection
+            training_data_selected, targets_selected, feature_selection_info = self._apply_feature_selection_before_hpo(
+                training_data=training_data,
+                targets=targets,
+                config=config,
+                training_type=training_type
+            )
+            
+            # Monitor memory after feature selection
+            memory_after = self._monitor_memory_usage("After Feature Selection")
+            
+            # Update training_data and targets for HPO
+            training_data = training_data_selected
+            targets = targets_selected
+            
+            # Store feature selection info for later use
+            self._feature_selection_info = feature_selection_info
+
+            # ========================================================================
             # WALK-FORWARD: HPO across multiple train/val folds with score aggregation
             # ========================================================================
             tprint_info("=" * 80)
@@ -706,17 +1046,23 @@ class UnifiedModelsTrainingStep(BaseStep):
                 tprint_info("")
 
                 for fold in walkforward_config.folds:
-                    # Get training data for this fold
-                    fold_training_data = self._full_training_data.loc[
+                    # Get training data for this fold (apply feature selection)
+                    fold_training_data_full = self._full_training_data.loc[
                         (self._full_training_data.index >= fold.training.start) &
                         (self._full_training_data.index <= fold.training.effective_end)
                     ].copy()
 
-                    # Get validation data for this fold
-                    fold_validation_data = self._full_training_data.loc[
+                    # Get validation data for this fold (apply feature selection)
+                    fold_validation_data_full = self._full_training_data.loc[
                         (self._full_training_data.index >= fold.validation.start) &
                         (self._full_training_data.index <= fold.validation.effective_end)
                     ].copy()
+                    
+                    # Apply the same feature selection to fold data
+                    # Use only the selected features from the main feature selection
+                    selected_features = training_data.columns.tolist()
+                    fold_training_data = fold_training_data_full[selected_features].copy()
+                    fold_validation_data = fold_validation_data_full[selected_features].copy()
 
                     # Get targets for training and validation
                     if training_type.startswith('analyst') and hasattr(self, '_full_analyst_targets'):
@@ -887,12 +1233,23 @@ class UnifiedModelsTrainingStep(BaseStep):
                     best_fold = max(fold_results, key=lambda x: x['score'])
                     best_result = best_fold['result']
 
+                    # Check for data leakage
+                    self._check_for_data_leakage(
+                        hpo_score=best_fold['score'],
+                        feature_selection_info=feature_selection_info,
+                        training_type=training_type
+                    )
+
                     all_results[model_info['name']] = best_result
 
                     tprint_success(f"✅ {model_info['name']} Walk-Forward HPO Complete:")
                     tprint_info(f"   Average score: {mean_score:.6f} ± {std_score:.6f}")
                     tprint_info(f"   Best fold: {best_fold['fold_num']} (score: {best_fold['score']:.6f})")
                     tprint_info(f"   Optimal params (from best fold): {best_result.best_params}")
+                    
+                    # Memory cleanup after each model HPO
+                    gc.collect()
+                    memory_cleanup = self._monitor_memory_usage(f"After {model_info['name']} HPO")
                     tprint_info("")
                 else:
                     tprint_warning(f"⚠️ HPO failed for {model_info['name']}, using default parameters")
@@ -1457,18 +1814,44 @@ class UnifiedModelsTrainingStep(BaseStep):
                             if target_cols:
                                 tprint_info(f"📋 Available target columns: {target_cols}")
 
-                                # Prioritize direction-specific target columns
-                                direction_specific_cols = [
-                                    col for col in target_cols
-                                    if direction in col.lower()
-                                ]
-
-                                if direction_specific_cols:
-                                    target_col = direction_specific_cols[0]
-                                    tprint_success(f"✅ Using direction-specific target column: {target_col}")
+                                # Check for new simplified target structure first (highest priority)
+                                if 'target_long' in labeled_data.columns and 'target_short' in labeled_data.columns:
+                                    # New simplified target structure from labeling integration step
+                                    # Use direction-specific target based on the training direction
+                                    if direction == 'long':
+                                        target_col = 'target_long'
+                                        tprint_success(f"✅ Using new simplified target structure: target_long for {direction} direction")
+                                    elif direction == 'short':
+                                        target_col = 'target_short'
+                                        tprint_success(f"✅ Using new simplified target structure: target_short for {direction} direction")
+                                    else:
+                                        # For 'both' direction, use target_long as default for analyst
+                                        target_col = 'target_long'
+                                        tprint_success(f"✅ Using new simplified target structure: target_long (default for analyst)")
+                                    
+                                    # Log target statistics for the new simplified structure
+                                    long_signals = (labeled_data['target_long'] > 0).sum()
+                                    short_signals = (labeled_data['target_short'] > 0).sum()
+                                    total_signals = long_signals + short_signals
+                                    tprint_info(f"📊 Simplified target statistics:")
+                                    tprint_info(f"   • Long signals: {long_signals} ({long_signals/len(labeled_data)*100:.1f}%)")
+                                    tprint_info(f"   • Short signals: {short_signals} ({short_signals/len(labeled_data)*100:.1f}%)")
+                                    tprint_info(f"   • Total signals: {total_signals} ({total_signals/len(labeled_data)*100:.1f}%)")
+                                    
                                 else:
-                                    target_col = target_cols[0]
-                                    tprint_warning(f"⚠️ No direction-specific column found, using: {target_col}")
+                                    # Fallback to legacy target detection
+                                    # Prioritize direction-specific target columns
+                                    direction_specific_cols = [
+                                        col for col in target_cols
+                                        if direction in col.lower()
+                                    ]
+
+                                    if direction_specific_cols:
+                                        target_col = direction_specific_cols[0]
+                                        tprint_success(f"✅ Using legacy direction-specific target column: {target_col}")
+                                    else:
+                                        target_col = target_cols[0]
+                                        tprint_warning(f"⚠️ No direction-specific column found, using legacy: {target_col}")
 
                                 analyst_targets = labeled_data[target_col]
                                 tprint_success(f"✅ Extracted analyst targets: {len(analyst_targets)} samples")
@@ -1504,6 +1887,33 @@ class UnifiedModelsTrainingStep(BaseStep):
                     except Exception as e:
                         self.logger.debug(f"Could not extract targets from '{artifact_name}': {e}")
                         continue
+            
+            # Also extract tactician targets from same labeled_data if not found separately
+            if tactician_targets is None and 'labeled_data' in locals():
+                try:
+                    labeled_data = locals()['labeled_data']
+                    if isinstance(labeled_data, pd.DataFrame):
+                        # For tactician, use the appropriate target based on direction
+                        if 'target_long' in labeled_data.columns and 'target_short' in labeled_data.columns:
+                            # New simplified target structure
+                            if direction == 'long':
+                                # For long direction tactician, use target_short (exit signals for long positions)
+                                tactician_targets = labeled_data['target_short']
+                                tprint_success(f"✅ Using target_short for tactician {direction} direction (exit signals)")
+                            elif direction == 'short':
+                                # For short direction tactician, use target_long (exit signals for short positions)
+                                tactician_targets = labeled_data['target_long']
+                                tprint_success(f"✅ Using target_long for tactician {direction} direction (exit signals)")
+                            else:
+                                # Default: use target_long for tactician (both directions)
+                                tactician_targets = labeled_data['target_long']
+                                tprint_success(f"✅ Using target_long for tactician (default for both directions)")
+                        else:
+                            # Fallback to legacy structure - use same targets as analyst
+                            tactician_targets = analyst_targets.copy() if analyst_targets is not None else None
+                            tprint_warning(f"⚠️ Using legacy targets for tactician (same as analyst)")
+                except Exception as e:
+                    self.logger.warning(f"Failed to extract tactician targets: {e}")
             
             # FAIL FAST: If still no targets found, raise error
             if analyst_targets is None and tactician_targets is None:

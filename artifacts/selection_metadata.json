@@ -1,0 +1,14 @@
+{
+  "total_features_available": 473,
+  "feature_set_sizes": [
+    60,
+    50,
+    40
+  ],
+  "selection_method": "permutation",
+  "scoring_threshold": 0.01,
+  "use_tree_based": true,
+  "timestamp": "2025-11-08T17:25:44.737874",
+  "symbol": "ETHUSDT",
+  "execution_mode": "blank"
+}

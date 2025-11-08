@@ -71,8 +71,8 @@ class EnhancedModelsTrainingIntegration:
     Uses LGBM-SHAP RFE for feature selection when > 60 features available.
     """
     
-    def __init__(self, 
-                 target_features: int = 60,
+    def __init__(self,
+                 target_features: int = 80,  # Target 80 features for SHAP/LGBM filtering
                  enable_comprehensive_features: bool = True,
                  enable_lgbm_shap_rfe: bool = True,
                  removal_percentage: float = 0.25,

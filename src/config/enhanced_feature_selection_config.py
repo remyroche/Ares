@@ -20,7 +20,7 @@ class EnhancedFeatureSelectionConfig:
 
     # Core feature selection parameters
     target_features: int = Field(
-        default = 100, description="Target number of features to select"
+        default = 80, description="Target number of features to select (SHAP/LGBM filtering)"
     )
     min_features_per_category: int = Field(
         default = 3, description="Minimum features to select from each category"
@@ -239,7 +239,7 @@ def get_optimized_feature_selection_config() -> dict[str, Any]:
     # Optimize for speed and efficiency
     base_config["feature_reduction"].update(
         {
-            "target_features": 80,  # Slightly fewer features for efficiency
+            "target_features": 80,  # Target 80 features for SHAP/LGBM filtering
             "max_interaction_features": 30,  # Fewer interaction features
             "cv_folds": 3,  # Fewer CV folds for speed
             "enable_stability_analysis": False,  # Disable for speed
@@ -256,8 +256,8 @@ def get_comprehensive_feature_selection_config() -> dict[str, Any]:
     # Optimize for thoroughness and quality
     base_config["feature_reduction"].update(
         {
-            "target_features": 120,  # More features for thoroughness
-            "max_interaction_features": 80,  # More interaction features
+            "target_features": 80,  # Target 80 features for SHAP/LGBM filtering
+            "max_interaction_features": 40,  # Moderate interaction features
             "cv_folds": 10,  # More CV folds for robustness
             "enable_stability_analysis": True,  # Enable for quality
             "save_intermediate_results": True,  # Enable for analysis

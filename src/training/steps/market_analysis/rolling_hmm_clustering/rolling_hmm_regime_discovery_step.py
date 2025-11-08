@@ -14,7 +14,6 @@ Optimized for Mac M1 with VectorBT, hardware acceleration, and Numba JIT.
 Inherits from BaseStep for standardized artifact management and execution.
 """
 
-import asyncio
 import logging
 import time
 from typing import Dict, Any, Optional, Tuple
@@ -32,7 +31,6 @@ from src.utils.tprint import tprint, tprint_info, tprint_error, tprint_warning, 
 from .feature_engineering import (
     RollingHMMFeatureEngineer,
     FeatureEngineeringConfig,
-    EWMAConfig,
     DEFAULT_EWMA_CONFIGS
 )
 from .sticky_hmm_model import (
@@ -91,7 +89,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
         Args:
             step_name: Name for this step (used for artifact organization)
         """
-        super().__init__(step_name)
+        super().__init__(step_name, use_versioned_artifacts=True)  # Enable HDF5 storage for regime probabilities
         self.logger = system_logger.getChild('RollingHMMRegimeDiscovery')
 
         # Quality assessor will be created lazily when first accessed
@@ -177,15 +175,13 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             # Initialize hardware optimization
             self._initialize_hardware_optimization()
             
-            # Set artifact manager context
-            self.artifact_manager.set_context(
-                step_name=self.step_name,
+            # Set context for versioned artifacts (HDF5 storage)
+            self.set_context(
                 symbol=symbol,
                 exchange=exchange,
-                datetime=datetime.now(),
-                information="regime_discovery",
+                timeframe=timeframe,
                 direction="long",
-                model="Analyst"
+                model="regime"
             )
             
             # Load market data
@@ -201,16 +197,29 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             
             # Check execution mode and if HPO is enabled
             execution_mode = config.get('execution_mode', 'full')
-            enable_auto_tuning = config.get('enable_auto_tuning', True)
+            enable_auto_tuning = config.get('enable_auto_tuning', True)  # Default to True
             hpo_results: Optional[Dict[str, Any]] = None
             best_params: Optional[Dict[str, Any]] = None
+            
+            tprint_info(f"🔧 Configuration check: execution_mode={execution_mode}, enable_auto_tuning={enable_auto_tuning}")
+            
+            # Check if manual params are provided
+            has_manual_params = 'rolling_hmm_params' in config and config['rolling_hmm_params']
+            if has_manual_params:
+                tprint_info(f"📋 Manual params found: {list(config['rolling_hmm_params'].keys())}")
             
             # Apply execution mode data limits (blank=20d, light=20d, full=all)
             market_data = self._apply_execution_mode_filter(market_data, execution_mode, timeframe)
             tprint(f"   → After execution mode filter ({execution_mode}): {len(market_data)} samples")
             
             # Initialize feature engineer
-            feature_config = self._get_feature_config(config)
+            feature_config = self._get_feature_config(
+                config,
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                execution_mode=execution_mode
+            )
             feature_engineer = RollingHMMFeatureEngineer(feature_config)
             
             # Pre-compute ALL features for ALL EWMA windows ONCE (cached for HPO)
@@ -221,11 +230,13 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 tprint(f"✅ Cached features for {len(all_cached_features)} EWMA configurations")
                 tprint("")
             
-            # Only skip if user provided manual params
+            # Only skip if user provided manual params AND explicitly disabled auto-tuning
             if 'rolling_hmm_params' in config and config['rolling_hmm_params']:
-                if 'enable_auto_tuning' not in config:
+                if config.get('enable_auto_tuning') is False:
                     enable_auto_tuning = False
-                    tprint_info("ℹ️  Manual params provided, skipping HPO (set enable_auto_tuning=True to override)")
+                    tprint_info("ℹ️  Manual params provided with enable_auto_tuning=False, skipping HPO")
+                else:
+                    tprint_info("ℹ️  Manual params provided but enable_auto_tuning=True (default), running HPO")
             
             # Show execution mode info
             if enable_auto_tuning and execution_mode in ['light', 'blank']:
@@ -258,7 +269,14 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             # Run clustering
             tprint("🔍 Running Rolling HMM clustering...", "INFO")
             result = await self._run_clustering(
-                market_data, feature_engineer, symbol, exchange, timeframe, config
+                market_data,
+                feature_engineer,
+                symbol,
+                exchange,
+                timeframe,
+                config,
+                hpo_results=hpo_results,
+                best_params=best_params,
             )
 
             # Save results
@@ -371,10 +389,22 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             OptimizationLevel.BALANCED
         )
 
-    def _get_feature_config(self, config: Dict[str, Any]) -> FeatureEngineeringConfig:
+    def _get_feature_config(
+        self,
+        config: Dict[str, Any],
+        *,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        execution_mode: str
+    ) -> FeatureEngineeringConfig:
         """Get feature engineering configuration."""
         tprint_debug("Fetching feature engineering configuration")
         feature_config = config.get('feature_config', {})
+
+        cache_dir = Path(feature_config.get('cache_dir', 'artifacts/cache/rolling_hmm'))
+        cache_namespace = feature_config.get('cache_namespace') or \
+            f"{symbol}_{exchange}_{timeframe}_{execution_mode}"
 
         return FeatureEngineeringConfig(
             ewma_configs=DEFAULT_EWMA_CONFIGS,
@@ -387,7 +417,11 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             rolling_normalize_window=feature_config.get('rolling_normalize_window', 100),
             enable_vectorbt_optimization=feature_config.get('enable_vectorbt_optimization', True),
             enable_hardware_optimization=feature_config.get('enable_hardware_optimization', True),
-            enable_numba_jit=feature_config.get('enable_numba_jit', True)
+            enable_numba_jit=feature_config.get('enable_numba_jit', True),
+            cache_dir=cache_dir,
+            enable_persistent_cache=feature_config.get('enable_persistent_cache', True),
+            cache_version=feature_config.get('cache_version', 'v1'),
+            cache_namespace=cache_namespace
         )
 
     def _get_hpo_config(self, config: Dict[str, Any]) -> HPOConfig:
@@ -413,9 +447,9 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             enable_final_refinement=hpo_config.get('enable_final_refinement', True),
             final_refinement_trials=hpo_config['final_refinement_trials'],
             cv_folds=hpo_config['cv_folds'],
-            weight_predictive_ll=hpo_config.get('weight_predictive_ll', 0.33),
-            weight_temporal=hpo_config.get('weight_temporal', 0.33),
-            weight_economic=hpo_config.get('weight_economic', 0.34),
+            weight_between_within_cv=hpo_config.get('weight_between_within_cv', 0.40),
+            weight_temporal=hpo_config.get('weight_temporal', 0.20),
+            weight_economic=hpo_config.get('weight_economic', 0.40),
             direction=hpo_config.get('direction', 'maximize'),
             use_custom_balanced_score=hpo_config.get('use_custom_balanced_score', True),
             verbose=hpo_config.get('verbose', True)
@@ -474,7 +508,9 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
         symbol: str,
         exchange: str,
         timeframe: str,
-        config: Dict[str, Any]
+        config: Dict[str, Any],
+        hpo_results: Optional[Dict[str, Any]] = None,
+        best_params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Run Rolling HMM clustering."""
         try:
@@ -571,7 +607,9 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 'model_summary': model_summary,
                 'quality_metrics': metrics.to_dict() if hasattr(metrics, 'to_dict') else metrics,
                 'n_regimes': n_components,
-                'timestamps': features_pca.index
+                'timestamps': features_pca.index,
+                'hpo_results': hpo_results,  # Include HPO results in the output
+                'best_params': best_params   # Include best params for reference
             }
 
             return result
@@ -603,7 +641,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             probs_df = pd.DataFrame(
                 result['regime_probs'],
                 index=result['timestamps'],
-                columns=probs_columns
+                columns=pd.Index(probs_columns)
             )
 
             # Save labels
@@ -625,8 +663,8 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             # Save transition matrix
             transition_matrix_df = pd.DataFrame(
                 result['transition_matrix'],
-                columns=[f'to_regime_{i}' for i in range(result['n_regimes'])],
-                index=[f'from_regime_{i}' for i in range(result['n_regimes'])]
+                columns=pd.Index([f'to_regime_{i}' for i in range(result['n_regimes'])]),
+                index=pd.Index([f'from_regime_{i}' for i in range(result['n_regimes'])])
             )
             self._save_artifact(
                 data=transition_matrix_df,
@@ -717,9 +755,28 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
 
             # Persist detailed reports via quality assessor
             metrics_obj = ClusterQualityMetrics(**metrics) if isinstance(metrics, dict) else metrics
+            
+            # Extract EWMA config for readable output
+            ewma_config_idx = config.get('rolling_hmm_params', {}).get('ewma_config_idx', 0)
+            ewma_config = DEFAULT_EWMA_CONFIGS[int(ewma_config_idx)]
+            
+            # Format rolling_hmm_params for readable output
+            rolling_hmm_params = config.get('rolling_hmm_params', {})
+            formatted_params = {}
+            if rolling_hmm_params:
+                for key, value in rolling_hmm_params.items():
+                    if key == 'ewma_config_idx':
+                        formatted_params[key] = f"{value} ({ewma_config.name})"
+                    else:
+                        formatted_params[key] = value
+            
             method_config = {
-                'rolling_hmm_params': config.get('rolling_hmm_params', {}),
-                'ewma_config': getattr(hmm_model, 'config', None)
+                'rolling_hmm_params': formatted_params if formatted_params else "Default parameters used",
+                'ewma_config': {
+                    'name': ewma_config.name,
+                    'short_window': ewma_config.short_window,
+                    'long_window': ewma_config.long_window
+                }
             }
             self.quality_assessor.generate_markdown_report(
                 metrics_obj,
@@ -731,18 +788,66 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             hpo_results = result.get('hpo_results') or config.get('hpo_results')
             if not hpo_results:
                 hpo_results = config.get('hpo_summary')
+            
+            # Debug: Check HPO results more thoroughly
+            if hpo_results is None:
+                tprint("⚠️ No HPO results found in result or config", "WARNING")
+            elif not hpo_results:
+                tprint("⚠️ HPO results found but empty dictionary", "WARNING")
+            elif not isinstance(hpo_results, dict):
+                tprint(f"⚠️ HPO results found but wrong type: {type(hpo_results)}", "WARNING")
+                hpo_results = None  # Reset to None to avoid further issues
+            
             if hpo_results:
+                tprint(f"📋 Found HPO results with keys: {list(hpo_results.keys())}", "INFO")
                 trial_keys = ['coarse_results', 'fine_results', 'refinement_results', 'second_round_results']
                 all_trials = []
                 for key in trial_keys:
                     trials = hpo_results.get(key)
                     if isinstance(trials, list):
-                        # Each trial is a tuple of (params, score)
-                        for params, score in trials:
-                            trial_dict = params.copy() if isinstance(params, dict) else {}
-                            trial_dict['score'] = score
-                            all_trials.append(trial_dict)
+                        tprint(f"📋 Processing {len(trials)} trials from {key}", "INFO")
+                        for trial in trials:
+                            if isinstance(trial, dict):
+                                params = trial.get('params', {})
+                                trial_dict = params.copy() if isinstance(params, dict) else {}
+                                trial_dict['score'] = trial.get('score')
 
+                                quality_metrics = trial.get('quality_metrics')
+                                if isinstance(quality_metrics, dict):
+                                    # Preserve full metrics dict for downstream consumers
+                                    trial_dict['quality_metrics'] = quality_metrics
+
+                                    # Also flatten a shallow copy for convenience in CSV export
+                                    for k, v in quality_metrics.items():
+                                        if isinstance(v, dict):
+                                            for sub_k, sub_v in v.items():
+                                                trial_dict[f'{k}_{sub_k}'] = sub_v
+                                        else:
+                                            trial_dict[k] = v
+
+                                trial_dict['trial_number'] = trial.get('trial_number')
+                                all_trials.append(trial_dict)
+                            elif isinstance(trial, tuple) and len(trial) >= 2:
+                                params, score = trial[:2]
+                                trial_dict = params.copy() if isinstance(params, dict) else {}
+                                trial_dict['score'] = score
+                                all_trials.append(trial_dict)
+                    else:
+                        tprint(f"📋 No trials found for key {key} (type: {type(trials)})", "INFO")
+            else:
+                tprint("⚠️ No HPO results found in result or config", "WARNING")
+                # Debug: check what keys are available
+                available_keys = list(result.keys()) if isinstance(result, dict) else []
+                if available_keys:
+                    tprint(f"📋 Available result keys: {available_keys}", "INFO")
+                config_keys = list(config.keys()) if isinstance(config, dict) else []
+                if config_keys:
+                    tprint(f"📋 Available config keys: {config_keys}", "INFO")
+
+            if all_trials:
+                tprint(f"📋 Passing {len(all_trials)} trials to comprehensive CSV report generation", "INFO")
+            else:
+                tprint("⚠️ No trials available for all-trials CSV export", "WARNING")
             self.quality_assessor.generate_comprehensive_csv_report(
                 metrics_obj,
                 all_trials=all_trials,

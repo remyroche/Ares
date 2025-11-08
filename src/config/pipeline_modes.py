@@ -41,6 +41,7 @@ class ModeConfiguration:
     enable_ensemble_training: bool
     enable_multi_timeframe_training: bool
     enable_adaptive_training: bool
+    min_samples: int = 100  # Default minimum samples requirement
 
 # Centralized mode definitions
 FULL_MODE_CONFIG: Final[ModeConfiguration] = ModeConfiguration(
@@ -66,7 +67,8 @@ FULL_MODE_CONFIG: Final[ModeConfiguration] = ModeConfiguration(
     enable_advanced_features=True,
     enable_ensemble_training=True,
     enable_multi_timeframe_training=True,
-    enable_adaptive_training=True
+    enable_adaptive_training=True,
+    min_samples=1000  # High minimum for full production mode
 )
 
 LIGHT_MODE_CONFIG: Final[ModeConfiguration] = ModeConfiguration(
@@ -92,12 +94,13 @@ LIGHT_MODE_CONFIG: Final[ModeConfiguration] = ModeConfiguration(
     enable_advanced_features=True,
     enable_ensemble_training=True,
     enable_multi_timeframe_training=True,
-    enable_adaptive_training=True
+    enable_adaptive_training=True,
+    min_samples=50  # Lower minimum for light development mode
 )
 
 BLANK_MODE_CONFIG: Final[ModeConfiguration] = ModeConfiguration(
     name="blank",
-    description="Quick testing mode - All features/models with shorter lookback",
+    description="Quick testing mode - All features/models with 180 days and 268+ samples",
     lookback_days=180,  # 6 months
     lookback_years=0,  # Less than a year
     intensity_percentage=0.1,  # 10% intensity
@@ -118,7 +121,8 @@ BLANK_MODE_CONFIG: Final[ModeConfiguration] = ModeConfiguration(
     enable_advanced_features=True,
     enable_ensemble_training=True,
     enable_multi_timeframe_training=True,
-    enable_adaptive_training=True
+    enable_adaptive_training=True,
+    min_samples=268  # Minimum samples requirement for blank mode
 )
 
 # Mode registry for easy access

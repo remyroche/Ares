@@ -87,11 +87,20 @@ class VersionedArtifactStore:
         self.logger = logging.getLogger(f"VersionedArtifactStore.{self.store_path.name}")
 
         # Metadata
+        from src.utils.tprint import tprint
+        tprint(f"🐛 DEBUG: Loading metadata from {self.metadata_file}", "INFO")
         self._metadata = self._load_metadata()
+        tprint(f"🐛 DEBUG: Loaded metadata with {len(self._metadata.get('versions', {}))} versions", "INFO")
+        tprint(f"🐛 DEBUG: Current version: {self._metadata.get('current_version')}", "INFO")
 
         # Initialize HDF5 file if needed
+        from src.utils.tprint import tprint
+        tprint(f"🐛 DEBUG: Checking HDF5 file existence: {self.h5_file.exists()}", "INFO")
         if not self.h5_file.exists():
+            tprint("🐛 DEBUG: HDF5 file does not exist, initializing new file", "INFO")
             self._init_h5_file()
+        else:
+            tprint(f"🐛 DEBUG: HDF5 file exists, size: {self.h5_file.stat().st_size} bytes", "INFO")
 
     def _init_h5_file(self) -> None:
         """Initialize new HDF5 file."""
@@ -108,21 +117,51 @@ class VersionedArtifactStore:
 
     def _load_metadata(self) -> Dict[str, Any]:
         """Load store metadata."""
+        from src.utils.tprint import tprint
+        
+        tprint(f"🐛 DEBUG: _load_metadata() checking {self.metadata_file}", "INFO")
         if self.metadata_file.exists():
-            with open(self.metadata_file, 'r') as f:
-                return json.load(f)
-        return {
-            'versions': {},
-            'current_version': None,
-            'created_at': datetime.now().isoformat()
-        }
+            tprint(f"🐛 DEBUG: Metadata file exists, size: {self.metadata_file.stat().st_size} bytes", "INFO")
+            try:
+                with open(self.metadata_file, 'r') as f:
+                    metadata = json.load(f)
+                    tprint(f"🐛 DEBUG: Successfully loaded metadata with {len(metadata.get('versions', {}))} versions", "INFO")
+                    return metadata
+            except Exception as e:
+                tprint(f"🐛 DEBUG: Error loading metadata: {e}", "ERROR")
+                # Return default metadata on error
+                return {
+                    'versions': {},
+                    'current_version': None,
+                    'created_at': datetime.now().isoformat(),
+                    'load_error': str(e)
+                }
+        else:
+            tprint("🐛 DEBUG: Metadata file does not exist, returning default metadata", "INFO")
+            return {
+                'versions': {},
+                'current_version': None,
+                'created_at': datetime.now().isoformat()
+            }
 
     def _save_metadata(self) -> None:
         """Save store metadata."""
+        from src.utils.tprint import tprint
+        
+        tprint(f"🐛 DEBUG: _save_metadata() called, saving to {self.metadata_file}", "INFO")
+        tprint(f"🐛 DEBUG: Metadata has {len(self._metadata.get('versions', {}))} versions", "INFO")
+        tprint(f"🐛 DEBUG: Current version in metadata: {self._metadata.get('current_version')}", "INFO")
+        
         self._metadata['updated_at'] = datetime.now().isoformat()
 
-        with open(self.metadata_file, 'w') as f:
-            json.dump(self._metadata, f, indent=2)
+        try:
+            with open(self.metadata_file, 'w') as f:
+                json.dump(self._metadata, f, indent=2)
+            tprint(f"🐛 DEBUG: Successfully saved metadata to {self.metadata_file}", "INFO")
+            tprint(f"🐛 DEBUG: New metadata file size: {self.metadata_file.stat().st_size} bytes", "INFO")
+        except Exception as e:
+            tprint(f"🐛 DEBUG: Error saving metadata: {e}", "ERROR")
+            raise
 
     def _get_context_string(self, metadata: Optional[Dict[str, Any]] = None,
                            version_name: Optional[str] = None) -> str:
@@ -204,39 +243,81 @@ class VersionedArtifactStore:
         Returns:
             ArtifactView referencing the new data
         """
-        from src.utils.tprint import tprint
-
         if not isinstance(data, pd.DataFrame):
             raise ValueError("Data must be a pandas DataFrame")
 
         # Get context string for logging
+        from src.utils.tprint import tprint
         context_str = self._get_context_string(metadata=metadata)
         tprint(f"💾 Adding data to store '{version_name}': {len(data)} rows × {len(data.columns)} cols | {context_str}")
+        tprint(f"🐛 DEBUG: VersionedArtifactStore.add_data() called", "INFO")
+        tprint(f"🐛 DEBUG: Store path: {self.h5_file}", "INFO")
+        tprint(f"🐛 DEBUG: Version name: {version_name}", "INFO")
+        tprint(f"🐛 DEBUG: Data shape: {data.shape}, columns: {list(data.columns)[:10]}...", "INFO")
 
         with h5py.File(self.h5_file, 'a') as f:
             versions_group = f['versions']
+            tprint(f"🐛 DEBUG: Opened HDF5 file, versions_group exists: {'versions' in f}", "INFO")
 
             # Check if version already exists
             if version_name in versions_group:
                 raise ValueError(f"Version '{version_name}' already exists")
 
             # Create version group
+            tprint(f"🐛 DEBUG: Creating version group '{version_name}'", "INFO")
             version_group = versions_group.create_group(version_name)
 
             # Calculate optimal chunk shape
             chunk_rows, chunk_cols = self._calculate_chunk_shape(len(data), len(data.columns))
+            tprint(f"🐛 DEBUG: Calculated chunk shape: ({chunk_rows}, {chunk_cols})", "INFO")
+
+            # Normalize chunk dimensions for 1D column datasets
+            chunk_rows = max(1, chunk_rows)
+            chunk_cols = max(1, chunk_cols)
 
             # Store data with chunking
-            for column in data.columns:
-                version_group.create_dataset(
-                    column,
-                    data=data[column].values,
-                    compression=self.compression,
-                    compression_opts=self.compression_level,
-                    chunks=(chunk_rows, chunk_cols)
-                )
+            for i, column in enumerate(data.columns):
+                series = data[column]
+                column_data = series.to_numpy()
+
+                if pd.api.types.is_datetime64_any_dtype(series):
+                    column_data = series.view(np.int64)
+                elif pd.api.types.is_bool_dtype(series):
+                    column_data = series.astype(np.int8).to_numpy()
+                elif pd.api.types.is_categorical_dtype(series):
+                    # Convert categorical to string, handling NaN properly
+                    column_data = series.astype(str).replace('nan', '').astype('S256').to_numpy()
+                elif pd.api.types.is_string_dtype(series) or column_data.dtype == object:
+                    column_data = series.fillna('').astype('string').astype('S256').to_numpy()
+                elif pd.api.types.is_float_dtype(series):
+                    column_data = series.astype(np.float64).to_numpy()
+                elif pd.api.types.is_integer_dtype(series):
+                    column_data = series.astype(np.int64).to_numpy()
+                elif column_data.dtype == object:
+                    column_data = series.astype('category').cat.codes.astype(np.int32).to_numpy()
+
+                if column_data.ndim == 1:
+                    chunk_shape = (max(1, min(chunk_rows, column_data.shape[0] or chunk_rows)),)
+                else:
+                    chunk_shape = (chunk_rows, chunk_cols)
+
+                try:
+                    tprint(f"🐛 DEBUG: Storing column {i+1}/{len(data.columns)}: '{column}' (dtype: {column_data.dtype}, shape: {column_data.shape})", "INFO")
+                    version_group.create_dataset(
+                        column,
+                        data=column_data,
+                        compression=self.compression,
+                        compression_opts=self.compression_level,
+                        chunks=chunk_shape
+                    )
+                except TypeError as err:
+                    tprint(f"🐛 DEBUG: Failed to store column '{column}': {err}", "ERROR")
+                    raise TypeError(
+                        f"Failed to store column '{column}' with dtype {column_data.dtype}: {err}"
+                    ) from err
 
             # Store index
+            tprint(f"🐛 DEBUG: Storing index (type: {type(data.index)})", "INFO")
             if isinstance(data.index, pd.DatetimeIndex):
                 index_data = data.index.astype(np.int64).values
                 version_group.create_dataset(
@@ -259,8 +340,10 @@ class VersionedArtifactStore:
             version_group.attrs['created_at'] = datetime.now().isoformat()
             version_group.attrs['num_rows'] = len(data)
             version_group.attrs['num_columns'] = len(data.columns)
+            tprint(f"🐛 DEBUG: Stored version metadata", "INFO")
 
         # Update store metadata
+        tprint(f"🐛 DEBUG: Updating store metadata", "INFO")
         self._metadata['versions'][version_name] = {
             'created_at': datetime.now().isoformat(),
             'num_rows': len(data),
@@ -270,8 +353,10 @@ class VersionedArtifactStore:
         }
         self._metadata['current_version'] = version_name
         self._save_metadata()
+        tprint(f"🐛 DEBUG: Saved store metadata to {self.metadata_file}", "INFO")
 
         # Record change
+        tprint(f"🐛 DEBUG: Recording change in changelog", "INFO")
         self.changelog.record_change(
             change_type=ChangeType.ADD_DATA,
             version_name=version_name,
@@ -284,7 +369,10 @@ class VersionedArtifactStore:
         tprint(f"✅ Successfully added version '{version_name}' to store | {context_str}")
 
         # Create and return view
-        return self.get_view(version_name)
+        tprint(f"🐛 DEBUG: Creating view for version '{version_name}'", "INFO")
+        view = self.get_view(version_name)
+        tprint(f"🐛 DEBUG: Created view: {view}", "INFO")
+        return view
 
     def get_view(
         self,
@@ -331,9 +419,8 @@ class VersionedArtifactStore:
         Returns:
             Filtered DataFrame
         """
-        from src.utils.tprint import tprint
-
         # Get context string for logging
+        from src.utils.tprint import tprint
         context_str = self._get_context_string(version_name=version_name)
 
         with h5py.File(self.h5_file, 'r') as f:
@@ -543,7 +630,38 @@ class VersionedArtifactStore:
         Returns:
             List of version names
         """
-        return list(self._metadata['versions'].keys())
+        from src.utils.tprint import tprint
+        
+        tprint(f"🐛 DEBUG: list_versions() called", "INFO")
+        tprint(f"🐛 DEBUG: Metadata file exists: {self.metadata_file.exists()}", "INFO")
+        tprint(f"🐛 DEBUG: HDF5 file exists: {self.h5_file.exists()}", "INFO")
+        
+        # Reload metadata to ensure we have the latest
+        tprint("🐛 DEBUG: Reloading metadata to get latest versions", "INFO")
+        self._metadata = self._load_metadata()
+        
+        versions = list(self._metadata['versions'].keys())
+        tprint(f"🐛 DEBUG: Found {len(versions)} versions in metadata: {versions}", "INFO")
+        
+        # Also check HDF5 file directly
+        if self.h5_file.exists():
+            try:
+                with h5py.File(self.h5_file, 'r') as f:
+                    if 'versions' in f:
+                        h5_versions = list(f['versions'].keys())
+                        tprint(f"🐛 DEBUG: Found {len(h5_versions)} versions in HDF5: {h5_versions}", "INFO")
+                        
+                        # Check for discrepancies
+                        if set(versions) != set(h5_versions):
+                            tprint(f"🐛 DEBUG: MISMATCH between metadata and HDF5!", "ERROR")
+                            tprint(f"🐛 DEBUG: Metadata only: {set(versions) - set(h5_versions)}", "ERROR")
+                            tprint(f"🐛 DEBUG: HDF5 only: {set(h5_versions) - set(versions)}", "ERROR")
+                    else:
+                        tprint("🐛 DEBUG: No 'versions' group found in HDF5 file!", "ERROR")
+            except Exception as e:
+                tprint(f"🐛 DEBUG: Error reading HDF5 file: {e}", "ERROR")
+        
+        return versions
 
     def get_version_info(self, version_name: str) -> Dict[str, Any]:
         """
@@ -862,6 +980,14 @@ class VersionedArtifactStore:
         Returns:
             Dictionary with statistics
         """
+        from src.utils.tprint import tprint
+        
+        tprint(f"🐛 DEBUG: get_statistics() called", "INFO")
+        
+        # Reload metadata to ensure we have the latest
+        tprint("🐛 DEBUG: Reloading metadata for statistics", "INFO")
+        self._metadata = self._load_metadata()
+        
         stats = {
             'store_path': str(self.store_path),
             'num_versions': len(self._metadata['versions']),
@@ -873,6 +999,10 @@ class VersionedArtifactStore:
                 'chunk_cols': self.chunk_cols or 'auto'
             }
         }
+        
+        tprint(f"🐛 DEBUG: Statistics - num_versions: {stats['num_versions']}", "INFO")
+        tprint(f"🐛 DEBUG: Statistics - current_version: {stats['current_version']}", "INFO")
+        tprint(f"🐛 DEBUG: Statistics - h5_file_size_mb: {stats['h5_file_size_mb']}", "INFO")
 
         # Add changelog stats
         changelog_stats = self.changelog.get_statistics()

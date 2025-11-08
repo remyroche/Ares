@@ -167,11 +167,11 @@ class FinalFeatureSelectionStep:
         """Initialize feature selection configuration with model-aware defaults."""
         tprint_debug("🎯 Initializing feature selection configuration")
 
-        # Model-specific feature count profiles
+        # Model-specific feature count profiles (all targeting 80 features for SHAP/LGBM filtering)
         self.model_profiles = {
             'AdvancedMambaHybrid': {
-                'min_features': 50, 'target_features': 60, 'max_features': 80,
-                'stage_targets': [60],
+                'min_features': 60, 'target_features': 80, 'max_features': 100,
+                'stage_targets': [80],
                 'priority_categories': ['momentum', 'interaction', 'microstructure']
             },
             'FinancialResNet': {
@@ -180,13 +180,13 @@ class FinalFeatureSelectionStep:
                 'priority_categories': ['regime', 'temporal', 'volatility']
             },
             'DeepScaler': {
-                'min_features': 40, 'target_features': 60, 'max_features': 80,
-                'stage_targets': [60],
+                'min_features': 60, 'target_features': 80, 'max_features': 100,
+                'stage_targets': [80],
                 'priority_categories': ['statistical', 'momentum', 'volatility']
             },
             'NBEATS': {
-                'min_features': 30, 'target_features': 50, 'max_features': 70,
-                'stage_targets': [50],
+                'min_features': 60, 'target_features': 80, 'max_features': 100,
+                'stage_targets': [80],
                 'priority_categories': ['temporal', 'trend', 'seasonality']
             }
         }
@@ -198,7 +198,7 @@ class FinalFeatureSelectionStep:
         model_type = self.config.get('model_type', 'default')
         profile = self.model_profiles.get(model_type, {
             'min_features': 60, 'target_features': 80, 'max_features': 100,
-            'stage_targets': [95, 75, 65],
+            'stage_targets': [80],
             'priority_categories': ['momentum', 'volatility', 'microstructure']
         })
 

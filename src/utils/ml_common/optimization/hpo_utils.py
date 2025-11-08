@@ -1422,7 +1422,9 @@ class HyperparameterOptimization:
                 'iterations': {'type': 'int', 'low': 500, 'high': 1200},
                 'subsample': {'type': 'float', 'low': 0.5, 'high': 0.9},
                 'colsample_bylevel': {'type': 'float', 'low': 0.5, 'high': 0.9},
-                'bootstrap_type': {'type': 'categorical', 'choices': ['Bayesian', 'Bernoulli']}
+                # Bayesian bootstrap does not support subsample < 1.0.
+                # Restrict search to supported strategies when subsample is tuned.
+                'bootstrap_type': {'type': 'categorical', 'choices': ['Bernoulli']}
             },
             'extratrees_regime': {
                 'n_estimators': {'type': 'int', 'low': 300, 'high': 800},

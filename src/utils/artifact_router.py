@@ -42,7 +42,7 @@ Usage:
 """
 
 import logging
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, List
 from pathlib import Path
 from datetime import datetime
 import pandas as pd
@@ -174,6 +174,7 @@ class ArtifactRouter:
             Format string: 'json', 'pickle', 'parquet', or 'hdf5_versioned'
         """
         # Explicit routing based on data_category (highest priority)
+        # But check data type compatibility first for HDF5
         if data_category:
             category_map = {
                 'config': 'json',
@@ -189,7 +190,14 @@ class ArtifactRouter:
                 'training': 'hdf5_versioned',
             }
             if data_category.lower() in category_map:
-                return category_map[data_category.lower()]
+                suggested_format = category_map[data_category.lower()]
+                # HDF5 versioned only works with DataFrames, fallback to JSON/pickle for other types
+                if suggested_format == 'hdf5_versioned' and not isinstance(data, pd.DataFrame):
+                    if isinstance(data, dict) and self._is_json_serializable(data):
+                        return 'json'
+                    else:
+                        return 'pickle'
+                return suggested_format
 
         # Enhanced name-based routing with comprehensive keywords
         name_lower = artifact_name.lower()
@@ -327,8 +335,12 @@ class ArtifactRouter:
         else:
             input_info = data_type_name
 
+        tprint(f"🐛 DEBUG: ArtifactRouter.save() called with artifact_name={artifact_name}, data_category={data_category}", "INFO")
+        tprint(f"🐛 DEBUG: Input data info: {input_info}", "INFO")
+
         # Detect format
         format_type = self._detect_format(data, artifact_name, artifact_type, data_category)
+        tprint(f"🐛 DEBUG: Detected format type: {format_type}", "INFO")
 
         # Log routing decision
         self.logger.info(f"Routing '{artifact_name}' ({input_info}) to {format_type} storage")
@@ -336,21 +348,26 @@ class ArtifactRouter:
 
         # Route to appropriate storage
         if format_type == 'json':
+            tprint("🐛 DEBUG: Routing to JSON storage", "INFO")
             path = self._save_json(data, artifact_name, metadata)
 
         elif format_type == 'pickle':
+            tprint("🐛 DEBUG: Routing to Pickle storage", "INFO")
             path = self._save_pickle(data, artifact_name, metadata)
 
         elif format_type == 'parquet':
+            tprint("🐛 DEBUG: Routing to Parquet storage", "INFO")
             path = self._save_parquet(data, artifact_name, context, metadata)
 
         elif format_type == 'hdf5_versioned':
+            tprint("🐛 DEBUG: Routing to HDF5 Versioned storage", "INFO")
             path = self._save_hdf5_versioned(data, artifact_name, context, metadata)
 
         else:
             raise ValueError(f"Unknown format type: {format_type}")
 
         # Log final path
+        tprint(f"🐛 DEBUG: Final saved path: {path}", "INFO")
         tprint(f"💾 Saved '{artifact_name}' → {path}")
         return path
 
@@ -439,16 +456,25 @@ class ArtifactRouter:
         metadata: Optional[Dict] = None
     ) -> str:
         """Save DataFrame to versioned HDF5 store."""
+        from src.utils.tprint import tprint
+        
         if not isinstance(data, pd.DataFrame):
             raise TypeError(f"HDF5 versioned storage requires DataFrame, got {type(data)}")
 
         context = context or {}
+        tprint(f"🐛 DEBUG: _save_hdf5_versioned() called with artifact_name={artifact_name}", "INFO")
+        tprint(f"🐛 DEBUG: Context: {context}", "INFO")
+        tprint(f"🐛 DEBUG: Data shape: {data.shape}, columns: {list(data.columns)[:10]}...", "INFO")
 
         # Get or create versioned store for this context
+        tprint("🐛 DEBUG: Getting or creating versioned store...", "INFO")
         store = self._get_versioned_store(context)
+        tprint(f"🐛 DEBUG: Versioned store path: {store.store_path}", "INFO")
 
-        # Generate version name
-        version_name = f"{artifact_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # Generate version name with milliseconds to avoid collisions
+        now = datetime.now()
+        version_name = f"{artifact_name}_{now.strftime('%Y%m%d_%H%M%S')}_{now.microsecond // 1000:03d}"
+        tprint(f"🐛 DEBUG: Generated version name: {version_name}", "INFO")
 
         # Prepare metadata
         artifact_metadata = {
@@ -457,20 +483,40 @@ class ArtifactRouter:
             **(context or {}),
             **(metadata or {})
         }
+        tprint(f"🐛 DEBUG: Prepared artifact metadata: {list(artifact_metadata.keys())}", "INFO")
 
         # Add data to store
+        tprint("🐛 DEBUG: Adding data to versioned store...", "INFO")
         view = store.add_data(
             data=data,
             version_name=version_name,
             metadata=artifact_metadata
         )
+        tprint(f"🐛 DEBUG: Store.add_data() returned view: {view}", "INFO")
 
         filepath = str(store.store_path / f"{version_name}.h5")
+        tprint(f"🐛 DEBUG: Final HDF5 filepath: {filepath}", "INFO")
+        
+        # Verify the save was successful by checking store statistics
+        tprint("🐛 DEBUG: Verifying save by checking store statistics...", "INFO")
+        stats = store.get_statistics()
+        tprint(f"🐛 DEBUG: Store statistics after save: {stats}", "INFO")
+        
+        # Check if the file actually exists
+        from pathlib import Path
+        file_path = Path(filepath)
+        if file_path.exists():
+            tprint(f"🐛 DEBUG: File exists at {filepath}, size: {file_path.stat().st_size} bytes", "INFO")
+        else:
+            tprint(f"🐛 DEBUG: WARNING - File does not exist at {filepath}!", "ERROR")
+        
         self.logger.info(f"Saved HDF5 versioned: {filepath}")
         return filepath
 
     def _get_versioned_store(self, context: Dict[str, Any]) -> VersionedArtifactStore:
         """Get or create a versioned store for the given context."""
+        from src.utils.tprint import tprint
+        
         symbol = context.get('symbol', 'UNKNOWN')
         exchange = context.get('exchange', 'binance')
         timeframe = context.get('timeframe', '15m')
@@ -479,14 +525,25 @@ class ArtifactRouter:
 
         # Create unique key for this context
         store_key = f"{symbol}_{exchange}_{timeframe}_{direction}_{model}"
+        tprint(f"🐛 DEBUG: _get_versioned_store() with store_key: {store_key}", "INFO")
 
         if store_key not in self._versioned_stores:
             store_path = self.versioned_store_dir / store_key
+            tprint(f"🐛 DEBUG: Creating new VersionedArtifactStore at {store_path}", "INFO")
             self._versioned_stores[store_key] = VersionedArtifactStore(
                 store_path=store_path,
                 auto_version=True,
                 enable_row_versioning=True
             )
+            
+            # Check store statistics after creation
+            stats = self._versioned_stores[store_key].get_statistics()
+            tprint(f"🐛 DEBUG: New store statistics: {stats}", "INFO")
+        else:
+            tprint(f"🐛 DEBUG: Using existing cached store for {store_key}", "INFO")
+            # Check existing store statistics
+            stats = self._versioned_stores[store_key].get_statistics()
+            tprint(f"🐛 DEBUG: Existing store statistics: {stats}", "INFO")
 
         return self._versioned_stores[store_key]
 
@@ -545,15 +602,48 @@ class ArtifactRouter:
         # Try versioned HDF5
         if self.enable_versioned_artifacts and context:
             try:
+                from src.utils.tprint import tprint
+                
+                tprint(f"🐛 DEBUG: Attempting to load '{artifact_name}' from versioned store", "INFO")
                 store = self._get_versioned_store(context)
                 versions = store.list_versions()
+                tprint(f"🐛 DEBUG: Found {len(versions)} versions in store: {versions}", "INFO")
                 matching = [v for v in versions if artifact_name in v]
-
+                tprint(f"🐛 DEBUG: Found {len(matching)} matching versions: {matching}", "INFO")
+                
                 if matching:
                     version_name = sorted(matching)[-1]
+                    tprint(f"🐛 DEBUG: Loading version: {version_name}", "INFO")
                     view = store.get_view(version_name)
-                    return view.materialize()
+                    data = view.materialize()
+                    tprint(f"🐛 DEBUG: Successfully loaded data with shape: {data.shape}", "INFO")
+                    return data
+                else:
+                    tprint(f"🐛 DEBUG: No matching versions found for '{artifact_name}'", "INFO")
+                    
+                    # Check if there's a metadata/HDF5 inconsistency
+                    # This happens when metadata shows versions that don't exist in HDF5
+                    tprint(f"🐛 DEBUG: Checking for metadata/HDF5 inconsistency", "INFO")
+                    
+                    # Get all stores to check if the artifact exists in any other store
+                    all_stores_found = False
+                    for store_key, cached_store in self._versioned_stores.items():
+                        store_versions = cached_store.list_versions()
+                        store_matching = [v for v in store_versions if artifact_name in v]
+                        if store_matching:
+                            tprint(f"🐛 DEBUG: Found artifact in store '{store_key}': {store_matching}", "INFO")
+                            version_name = sorted(store_matching)[-1]
+                            view = cached_store.get_view(version_name)
+                            data = view.materialize()
+                            tprint(f"🐛 DEBUG: Successfully loaded data from alternate store with shape: {data.shape}", "INFO")
+                            return data
+                    
+                    if not all_stores_found:
+                        tprint(f"🐛 DEBUG: Artifact '{artifact_name}' not found in any versioned store", "WARNING")
+                        
             except Exception as e:
+                from src.utils.tprint import tprint
+                tprint(f"🐛 DEBUG: Failed to load from versioned store: {e}", "ERROR")
                 self.logger.warning(f"Failed to load from versioned store: {e}")
 
         raise FileNotFoundError(f"Artifact '{artifact_name}' not found in any storage")
@@ -595,3 +685,50 @@ class ArtifactRouter:
             return info
 
         return info
+
+    def list_all_versions(self, artifact_type: Optional[str] = None) -> List[str]:
+        """
+        List all versions across all stores.
+        
+        Args:
+            artifact_type: Optional filter for artifact type (e.g., 'clusters', 'regimes')
+                           If provided, will filter stores based on artifact name patterns
+        
+        Returns:
+            List of all version names from all stores
+        """
+        from typing import List
+        from src.utils.tprint import tprint
+        
+        tprint(f"🐛 DEBUG: list_all_versions() called with artifact_type={artifact_type}", "INFO")
+        all_versions = []
+        
+        for store_key, store in self._versioned_stores.items():
+            # For clusters/regimes, we don't differentiate by model/direction
+            # So we include all stores regardless of context
+            if artifact_type is None or self._should_include_store(store_key, artifact_type):
+                versions = store.list_versions()
+                tprint(f"🐛 DEBUG: Store {store_key} has {len(versions)} versions: {versions}", "INFO")
+                all_versions.extend(versions)
+            else:
+                tprint(f"🐛 DEBUG: Skipping store {store_key} (doesn't match artifact type: {artifact_type})", "INFO")
+        
+        tprint(f"🐛 DEBUG: Total versions across all stores: {len(all_versions)}", "INFO")
+        return all_versions
+    
+    def _should_include_store(self, store_key: str, artifact_type: Optional[str]) -> bool:
+        """
+        Determine if a store should be included based on artifact type.
+        
+        For clusters/regimes/labels, we include all stores regardless of context.
+        For other types, we include all stores.
+        """
+        if artifact_type is None:
+            return True
+        
+        # For clusters, regimes, and labels, include all stores
+        if artifact_type.lower() in ['clusters', 'regimes', 'labels']:
+            return True
+        
+        # For other types, include all stores
+        return True

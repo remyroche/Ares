@@ -35,7 +35,7 @@ from exchanges.shared import (
     HighLevelRiskManager, HighLevelBalanceManager, HighLevelRateLimitManager
 )
 
-from exchanges.exchange_dispatcher import ExchangeDispatcher, ExchangeConfig
+from exchanges.exchange_dispatcher import ExchangeDispatcher, ExchangeConfig, TradingMode
 from exchanges.exchange_types import ExchangeType  # Use the shared ExchangeType enum
 from exchanges.shared import (
     # Auth
@@ -309,8 +309,10 @@ class ExchangeInterface:
                         exchange_type=exchange_type,
                         api_key=self.api_key,
                         api_secret=self.api_secret,
+                        password=self.config.get('password'),
                         use_testnet=self.testnet,
-                        trade_symbol=self.config.get('trade_symbol', 'BTCUSDT')
+                        trade_symbol=self.config.get('trade_symbol', 'BTCUSDT'),
+                        mode=TradingMode.TRADE
                     )
 
                     self.dispatcher = ExchangeDispatcher(config)

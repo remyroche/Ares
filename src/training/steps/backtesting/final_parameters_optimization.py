@@ -1091,9 +1091,50 @@ class FinalParametersOptimizer(BaseStep):
             tactician_conf = calibration_results.get('tactician_confidence', np.array([]))
             returns = calibration_results.get('returns', np.array([]))
             
-            # Ensure we have data
-            if len(analyst_conf) == 0 or len(tactician_conf) == 0 or len(returns) == 0:
-                raise ValueError("calibration_results must contain analyst_confidence, tactician_confidence, and returns arrays")
+            # Check for new simplified target structure
+            target_long = calibration_results.get('target_long', np.array([]))
+            target_short = calibration_results.get('target_short', np.array([]))
+            
+            # If we have the new simplified target structure, use it
+            if len(target_long) > 0 and len(target_short) > 0:
+                tprint_info("📊 Using new simplified target structure (target_long, target_short)")
+                
+                # Create combined targets for backward compatibility
+                # Use target_long for long opportunities, target_short for short opportunities
+                min_len = min(len(target_long), len(target_short))
+                
+                # Create combined target for optimization (prioritize long opportunities)
+                combined_targets = target_long[:min_len]
+                
+                # Create directional signals from new target structure
+                long_signals = (target_long[:min_len] > 0).astype(int)
+                short_signals = (target_short[:min_len] > 0).astype(int)
+                
+                # Create combined signals (long=1, short=-1, neutral=0)
+                combined_signals = long_signals - short_signals
+                
+                # Use targets as returns if actual returns not available
+                if len(returns) == 0:
+                    # Simulate returns from target structure
+                    # target_long and target_short are volume-normalized binary targets
+                    # We'll use them as proxy for returns
+                    returns = combined_targets[:min_len]
+                    tprint_info("📊 Using target structure as proxy for returns")
+                else:
+                    returns = returns[:min_len]
+                
+                # Update calibration results with derived data for backward compatibility
+                calibration_results['derived_signals'] = combined_signals
+                calibration_results['derived_targets'] = combined_targets
+                calibration_results['target_structure'] = 'simplified'
+                
+            else:
+                # Use legacy target structure
+                tprint_info("📊 Using legacy target structure")
+                
+                # Ensure we have data
+                if len(analyst_conf) == 0 or len(tactician_conf) == 0 or len(returns) == 0:
+                    raise ValueError("calibration_results must contain analyst_confidence, tactician_confidence, and returns arrays")
             
             # Combine confidence scores as features
             min_len = min(len(analyst_conf), len(tactician_conf))
@@ -1134,23 +1175,56 @@ class FinalParametersOptimizer(BaseStep):
         """
         try:
             # Extract confidence data
-            analyst_conf = calibration_results['analyst_confidence']
-            tactician_conf = calibration_results['tactician_confidence']
-            returns = calibration_results['returns']
+            analyst_conf = calibration_results.get('analyst_confidence', np.array([]))
+            tactician_conf = calibration_results.get('tactician_confidence', np.array([]))
+            returns = calibration_results.get('returns', np.array([]))
+            
+            # Check for new simplified target structure
+            target_long = calibration_results.get('target_long', np.array([]))
+            target_short = calibration_results.get('target_short', np.array([]))
+            derived_signals = calibration_results.get('derived_signals', np.array([]))
+            derived_targets = calibration_results.get('derived_targets', np.array([]))
+            
+            # If we have the new simplified target structure, use it
+            if len(target_long) > 0 and len(target_short) > 0:
+                tprint_info("📊 Using new simplified target structure for hierarchical optimization")
+                
+                # Use derived signals and targets if available
+                if len(derived_signals) > 0 and len(derived_targets) > 0:
+                    signals = derived_signals
+                    targets = derived_targets
+                else:
+                    # Create signals from target structure
+                    long_signals = (target_long > 0).astype(int)
+                    short_signals = (target_short > 0).astype(int)
+                    signals = long_signals - short_signals
+                    targets = target_long  # Use target_long as primary target
+                
+                # Use returns if available, otherwise use targets as proxy
+                if len(returns) == 0:
+                    returns = targets
+                else:
+                    min_len = min(len(signals), len(returns))
+                    signals = signals[:min_len]
+                    targets = targets[:min_len]
+                    returns = returns[:min_len]
+                
+            else:
+                # Use legacy target structure
+                min_len = min(len(analyst_conf), len(tactician_conf), len(returns))
+                tactician_conf = tactician_conf[:min_len]
+                returns = returns[:min_len]
 
-            min_len = min(len(analyst_conf), len(tactician_conf), len(returns))
-            tactician_conf = tactician_conf[:min_len]
-            returns = returns[:min_len]
-
-            conf_threshold = params.get('tactician_confidence_threshold', 0.75)
-            signals = (tactician_conf >= conf_threshold).astype(int)
+                conf_threshold = params.get('tactician_confidence_threshold', 0.75)
+                signals = (tactician_conf >= conf_threshold).astype(int)
+                targets = (returns > 0).astype(int)
 
             simulated_returns = signals * returns
             predictions = signals.astype(float)
 
             return {
                 'predictions': predictions,
-                'targets': (returns > 0).astype(int),
+                'targets': targets,
                 'returns': simulated_returns,
                 'regime_labels': calibration_results.get('regime_labels')
             }
@@ -2594,6 +2668,25 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             analyst_conf = calibration_results.get('analyst_confidence', np.array([]))
             tactician_conf = calibration_results.get('tactician_confidence', np.array([]))
             returns = calibration_results.get('returns', np.array([]))
+            
+            # Check for new simplified target structure
+            target_long = calibration_results.get('target_long', np.array([]))
+            target_short = calibration_results.get('target_short', np.array([]))
+            derived_signals = calibration_results.get('derived_signals', np.array([]))
+            derived_targets = calibration_results.get('derived_targets', np.array([]))
+            
+            # If we have the new simplified target structure, use it for evaluation
+            if len(target_long) > 0 and len(target_short) > 0:
+                tprint_info("📊 Evaluating confidence parameters with new simplified target structure")
+                
+                # Use derived signals and targets for evaluation
+                if len(derived_signals) > 0 and len(derived_targets) > 0:
+                    return self._evaluate_confidence_with_new_targets(params, derived_signals, derived_targets, returns)
+                else:
+                    # Fall back to using target_long and target_short directly
+                    combined_signals = (target_long > 0).astype(int) - (target_short > 0).astype(int)
+                    combined_targets = target_long  # Use target_long as primary target
+                    return self._evaluate_confidence_with_new_targets(params, combined_signals, combined_targets, returns)
 
             # If we have actual confidence data, use simulation-based evaluation
             if len(analyst_conf) > 0 and len(tactician_conf) > 0 and len(returns) > 0:
@@ -2605,6 +2698,120 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         except Exception as e:
             self.logger.error(f"Error evaluating confidence params: {e}")
             tprint(f"❌ Confidence evaluation error: {e}", "error")
+            return 0.0
+
+    def _evaluate_confidence_with_new_targets(self, params: Dict[str, Any],
+                                         signals: np.ndarray,
+                                         targets: np.ndarray,
+                                         returns: np.ndarray) -> float:
+        """
+        Evaluate confidence parameters using new simplified target structure.
+        
+        This method evaluates parameters using the new target_long and target_short
+        structure, which provides separate binary targets for long and short positions.
+        
+        Args:
+            params: Confidence parameters to evaluate
+            signals: Trading signals (1=long, -1=short, 0=neutral)
+            targets: Target values (from target_long or target_short)
+            returns: Returns array
+            
+        Returns:
+            Evaluation score based on simulated trading
+        """
+        try:
+            # Validate inputs
+            if len(signals) != len(targets) or len(signals) != len(returns):
+                tprint(f"⚠️  Signals/targets/returns length mismatch: signals={len(signals)}, targets={len(targets)}, returns={len(returns)}", "warning")
+                return 0.0
+
+            # Apply confidence threshold with validation
+            confidence_threshold = validate_probability(
+                params.get('tactician_confidence_threshold', 0.7), default=0.7
+            )
+            
+            # For new target structure, we use the targets directly as signals
+            # since target_long and target_short are already binary signals
+            if len(targets) > 0:
+                # Use targets as signals (they're already binary)
+                filtered_signals = targets
+                filtered_returns = returns[:len(targets)]
+                
+                # Apply additional confidence filtering if we have confidence data
+                if 'tactician_confidence' in self.calibration_results:
+                    tactician_conf = self.calibration_results['tactician_confidence'][:len(targets)]
+                    conf_mask = tactician_conf >= confidence_threshold
+                    filtered_signals = filtered_signals[conf_mask]
+                    filtered_returns = filtered_returns[conf_mask]
+            else:
+                # Fallback to using provided signals
+                conf_mask = signals >= confidence_threshold if len(signals.shape) == 1 else signals >= 0
+                filtered_signals = signals[conf_mask]
+                filtered_returns = returns[conf_mask]
+
+            if len(filtered_signals) == 0:
+                tprint("⚠️  No signals after confidence filtering", "warning")
+                return 0.0
+
+            # Calculate position sizing with validation
+            base_position_size = validate_positive(
+                params.get('base_position_size', 0.01), default=0.01
+            )
+            base_position_size = validate_range(base_position_size, 0.001, 0.2, default=0.01)
+
+            # Calculate trade returns
+            trade_returns = filtered_signals * filtered_returns * base_position_size
+
+            # Remove invalid values
+            valid_mask = ~(check_for_nans(trade_returns) | check_for_infs(trade_returns))
+            trade_returns = trade_returns[valid_mask]
+
+            if len(trade_returns) == 0:
+                tprint("⚠️  No valid trade returns", "warning")
+                return 0.0
+
+            # Use VectorBT optimization for metrics calculation if available
+            if self.vectorbt_enabled and self.rolling_optimizer:
+                tprint("🎯 Using VectorBT-optimized metrics calculation for new targets", "debug")
+                sharpe, sortino, max_dd, win_rate, profit_factor, total_return = self._calculate_metrics_vectorbt(trade_returns)
+            else:
+                # Calculate metrics using common_operations utilities
+                sharpe = calculate_sharpe_ratio(trade_returns)
+                sortino = calculate_sortino_ratio(trade_returns)
+                max_dd = calculate_max_drawdown(np.cumsum(trade_returns))
+                win_rate = calculate_win_rate(trade_returns)
+                profit_factor = calculate_profit_factor(trade_returns)
+                total_return = float(np.sum(trade_returns))
+
+            # Validate all metrics
+            sharpe = validate_positive(sharpe, default=0.0) if not check_for_nans(sharpe) else 0.0
+            sortino = validate_positive(sortino, default=0.0) if not check_for_nans(sortino) else 0.0
+            max_dd = float(max_dd) if not check_for_nans(max_dd) else 0.0
+            win_rate = validate_probability(win_rate) if not check_for_nans(win_rate) else 0.0
+            profit_factor = validate_positive(profit_factor, default=0.0) if not check_for_nans(profit_factor) else 0.0
+
+            metrics = EvaluationMetrics(
+                sharpe_ratio=sharpe,
+                sortino_ratio=sortino,
+                max_drawdown=max_dd,
+                win_rate=win_rate,
+                profit_factor=profit_factor,
+                total_return=total_return,
+                n_trades=int(len(trade_returns)),
+                avg_trade_duration=0.0,  # Would need timestamps
+                confidence_score=float(np.mean(targets)) if len(targets) > 0 else 0.0
+            )
+
+            score = metrics.to_score()
+            
+            # Apply regime performance adjustment if available
+            score = self._apply_regime_performance_adjustment('confidence', score)
+
+            return score
+
+        except Exception as e:
+            self.logger.error(f"Error in confidence evaluation with new targets: {e}")
+            tprint(f"❌ New target confidence evaluation error: {e}", "error")
             return 0.0
 
     def _evaluate_confidence_with_simulation(self, params: Dict[str, Any],
@@ -3850,6 +4057,68 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 # Fallback to standard evaluation
                 return [objective_function(params) for params in parameter_batch]
 
+    def _has_valid_calibration(self, calibration_results: Dict[str, Any]) -> bool:
+        """
+        Check if calibration results are valid for optimization.
+        
+        This method validates calibration results and checks for both the new simplified
+        target structure (target_long, target_short) and legacy structure.
+        
+        Args:
+            calibration_results: Calibration results dictionary
+            
+        Returns:
+            True if calibration results are valid, False otherwise
+        """
+        try:
+            if not calibration_results or not isinstance(calibration_results, dict):
+                tprint_warning("⚠️ Calibration results is empty or not a dictionary")
+                return False
+            
+            # Check for new simplified target structure first (highest priority)
+            target_long = calibration_results.get('target_long', np.array([]))
+            target_short = calibration_results.get('target_short', np.array([]))
+            
+            if len(target_long) > 0 and len(target_short) > 0:
+                tprint_success("✅ Valid calibration results found with new simplified target structure")
+                tprint_info(f"   • target_long: {len(target_long)} samples")
+                tprint_info(f"   • target_short: {len(target_short)} samples")
+                return True
+            
+            # Check for legacy target structure
+            analyst_conf = calibration_results.get('analyst_confidence', np.array([]))
+            tactician_conf = calibration_results.get('tactician_confidence', np.array([]))
+            returns = calibration_results.get('returns', np.array([]))
+            
+            if len(analyst_conf) > 0 and len(tactician_conf) > 0 and len(returns) > 0:
+                tprint_success("✅ Valid calibration results found with legacy target structure")
+                tprint_info(f"   • analyst_confidence: {len(analyst_conf)} samples")
+                tprint_info(f"   • tactician_confidence: {len(tactician_conf)} samples")
+                tprint_info(f"   • returns: {len(returns)} samples")
+                return True
+            
+            # Check for alternative legacy target names
+            price_target_vol_normalized = calibration_results.get('price_target_vol_normalized', np.array([]))
+            volatility_labels = calibration_results.get('volatility_labels', np.array([]))
+            
+            if len(price_target_vol_normalized) > 0 or len(volatility_labels) > 0:
+                tprint_success("✅ Valid calibration results found with alternative legacy target structure")
+                tprint_info(f"   • price_target_vol_normalized: {len(price_target_vol_normalized)} samples")
+                tprint_info(f"   • volatility_labels: {len(volatility_labels)} samples")
+                return True
+            
+            # No valid target structure found
+            tprint_error("❌ No valid target structure found in calibration results")
+            tprint_info("   Expected one of:")
+            tprint_info("   • New simplified: target_long, target_short")
+            tprint_info("   • Legacy: analyst_confidence, tactician_confidence, returns")
+            tprint_info("   • Alternative legacy: price_target_vol_normalized, volatility_labels")
+            return False
+            
+        except Exception as e:
+            tprint_error(f"❌ Error validating calibration results: {e}")
+            return False
+
             # Use VectorBTRollingOptimizer for parallel batch processing
             if hasattr(rolling_optimizer, 'process_batch_parallel'):
                 return rolling_optimizer.process_batch_parallel(
@@ -4676,6 +4945,136 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         except Exception as e:
             self.logger.warning(f"Error calculating turnover penalty: {e}")
             return 0.001  # Small default penalty
+
+    async def _load_calibration_results(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Load calibration results from artifacts.
+        
+        Args:
+            config: Configuration dictionary containing symbol, exchange, etc.
+            
+        Returns:
+            Dictionary containing calibration results
+        """
+        try:
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', 'binance')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+            
+            tprint_info(f"📥 Loading calibration results for {symbol} from {exchange}")
+            
+            # Set artifact manager context to look for calibration artifacts
+            self.artifact_manager.set_context(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                direction=direction,
+                model='Calibration'
+            )
+            
+            # Try to load calibration results from different possible artifact names
+            calibration_artifacts = [
+                'confidence_calibration_results',
+                'calibration_results',
+                'step16_confidence_calibration_results'
+            ]
+            
+            calibration_results = {}
+            
+            for artifact_name in calibration_artifacts:
+                try:
+                    artifact_data = self.artifact_manager.get_artifact(
+                        artifact_name=artifact_name,
+                        artifact_type='data'
+                    )
+                    
+                    if artifact_data is not None:
+                        calibration_results.update(artifact_data)
+                        tprint_success(f"✅ Loaded calibration results from {artifact_name}")
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Failed to load {artifact_name}: {e}")
+                    continue
+            
+            # If no calibration results found, return empty dict
+            if not calibration_results:
+                tprint_warning("⚠️ No calibration results found in artifacts")
+                return {}
+            
+            # Check if calibration results contain required data
+            required_keys = ['analyst_confidence', 'tactician_confidence', 'returns']
+            missing_keys = [key for key in required_keys if key not in calibration_results]
+            
+            if missing_keys:
+                tprint_warning(f"⚠️ Missing required calibration data: {missing_keys}")
+                return {}
+            
+            tprint_success(f"✅ Calibration results loaded successfully")
+            return calibration_results
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load calibration results: {e}")
+            tprint_error(f"❌ Failed to load calibration results: {e}")
+            return {}
+
+    async def _load_previous_results(self, symbol: str, exchange: str, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Load previous optimization results for warm start.
+        
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            config: Configuration dictionary
+            
+        Returns:
+            Dictionary containing previous optimization results or None
+        """
+        try:
+            tprint_info(f"📥 Loading previous optimization results for {symbol} from {exchange}")
+            
+            # Set artifact manager context to look for previous optimization artifacts
+            self.artifact_manager.set_context(
+                symbol=symbol,
+                exchange=exchange,
+                model='FinalParameters'
+            )
+            
+            # Try to load previous optimization results from different possible artifact names
+            optimization_artifacts = [
+                'final_parameters_optimization_result',
+                'optimization_results',
+                'parameters_optimization_results'
+            ]
+            
+            previous_results = None
+            
+            for artifact_name in optimization_artifacts:
+                try:
+                    artifact_data = self.artifact_manager.get_artifact(
+                        artifact_name=artifact_name,
+                        artifact_type='data'
+                    )
+                    
+                    if artifact_data is not None:
+                        previous_results = artifact_data
+                        tprint_success(f"✅ Loaded previous optimization results from {artifact_name}")
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Failed to load {artifact_name}: {e}")
+                    continue
+            
+            if previous_results is None:
+                tprint_info("ℹ️ No previous optimization results found - starting fresh")
+                return None
+            
+            tprint_success(f"✅ Previous optimization results loaded successfully")
+            return previous_results
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load previous optimization results: {e}")
+            tprint_error(f"❌ Failed to load previous optimization results: {e}")
+            return None
 
     def _load_regime_performance_stats(self) -> Dict[str, Any]:
         """Load per-regime performance statistics if available.

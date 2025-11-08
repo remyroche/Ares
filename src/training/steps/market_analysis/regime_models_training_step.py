@@ -5,31 +5,31 @@ This step trains machine learning models for regime classification using the com
 RegimeModelsTrainingComponent implementation.
 """
 
-import asyncio
+import asyncio  # type: ignore  # noqa: F401
 import logging
-from typing import Any, Dict, List, Optional
-from datetime import datetime
+from typing import Any, Dict  # type: ignore  # noqa: F401
+from datetime import datetime  # type: ignore  # noqa: F401
 
 # Handle optional dependencies gracefully
 try:
-    import numpy as np
-    NUMPY_AVAILABLE = True
+    import numpy as np  # noqa: F401
+    NUMPY_AVAILABLE = True  # type: ignore
 except ImportError:
-    NUMPY_AVAILABLE = False
-    np = None
+    NUMPY_AVAILABLE = False  # type: ignore
+    np = None  # type: ignore
 
 try:
     import pandas as pd
-    PANDAS_AVAILABLE = True
+    PANDAS_AVAILABLE = True  # type: ignore
 except ImportError:
-    PANDAS_AVAILABLE = False
-    pd = None
+    PANDAS_AVAILABLE = False  # type: ignore
+    pd = None  # type: ignore
 
-from src.training.steps.base_step import BaseStep
-from src.utils.logger import system_logger
-from src.utils.tprint import tprint
-from src.training.steps.market_analysis.components.regime_models_training import RegimeModelsTrainingComponent
-from src.training.steps.market_analysis.components.base_component import ComponentConfig
+from src.training.steps.base_step import BaseStep  # type: ignore
+from src.utils.logger import system_logger  # type: ignore
+from src.utils.tprint import tprint  # type: ignore
+from src.training.steps.market_analysis.components.regime_models_training import RegimeModelsTrainingComponent  # type: ignore
+from src.training.steps.market_analysis.components.base_component import ComponentConfig  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,12 @@ class RegimeModelsTrainingStep(BaseStep):
         """
         tprint(f"🧠 Starting regime models training for {config.get('symbol', 'UNKNOWN')}", "INFO")
         
+        # DEBUG: Confirm execute method is being called
+        tprint("=" * 80, "INFO")
+        tprint("🔥 REGIME_MODELS_TRAINING_STEP.EXECUTE() CALLED!", "SUCCESS")
+        tprint(f"🔥 Symbol: {config.get('symbol')}, Execution Mode: {config.get('execution_mode')}", "SUCCESS")
+        tprint("=" * 80, "INFO")
+        
         # Use regime_timeframe (defaults to 1h) for regime models training
         regime_timeframe = config.get('regime_timeframe', '1h')
         if 'regime_timeframe' not in config:
@@ -91,21 +97,102 @@ class RegimeModelsTrainingStep(BaseStep):
 
             # Get pipeline state from config (should contain artifacts from previous steps)
             pipeline_state = config.get('pipeline_state', {})
+
+            # For blank mode, prioritize loading fresh data from historical storage
+            execution_mode = config.get('execution_mode', 'light')
+            symbol = config.get('symbol', 'UNKNOWN')
             
-            # Get market data from pipeline state or create synthetic data if not available
-            market_data = pipeline_state.get('market_data')
-            if market_data is None:
-                tprint("⚠️ No market data found in pipeline state, creating synthetic data", "WARNING")
-                market_data = self._create_synthetic_market_data(config)
+            if execution_mode == 'blank':
+                tprint(f"📥 Blank mode: Loading fresh data for {symbol} from historical storage", "INFO")
+                # Try to load directly from historical storage first using BaseStep method
+                market_data = self._load_market_data_from_historical_storage(
+                    symbol=symbol,
+                    exchange=config.get('exchange', 'binance'),
+                    timeframe=config.get('timeframe', '1h'),
+                    start_date=None,  # Will use execution mode defaults
+                    end_date=None
+                )
+                
+                if market_data is not None and len(market_data) > 0:
+                    market_data_source = "historical_storage"
+                    tprint(f"✅ Loaded {len(market_data):,} rows from historical storage", "SUCCESS")
+                else:
+                    tprint("⚠️ Failed to load from historical storage, falling back to artifacts", "WARNING")
+                    # Fallback to artifact loading
+                    market_data, market_data_source = self.ensure_market_data_in_pipeline_state(
+                        config,
+                        pipeline_state,
+                        allow_config_override=True,
+                    )
+            else:
+                # For other modes, use standard loading
+                market_data, market_data_source = self.ensure_market_data_in_pipeline_state(
+                    config,
+                    pipeline_state,
+                    allow_config_override=True,
+                )
+
+            tprint(
+                f"✅ Using market data from {market_data_source}",
+                "SUCCESS"
+            )
+            
+            # Get timeframe for validation (execution_mode and symbol already defined above)
+            timeframe = config.get('timeframe', '1h')
+            
+            # Check if we have enough data for blank mode (180 days)
+            if execution_mode == 'blank' and market_data is not None:
+                expected_samples_per_day = 24 if timeframe == '1h' else (24 * 4 if timeframe == '15m' else 24)
+                expected_samples = 180 * expected_samples_per_day
+                actual_samples = len(market_data)
+                
+                tprint(f"📊 Data validation: Expected ~{expected_samples:,} samples for 180 days of {timeframe} data", "INFO")
+                tprint(f"📊 Data validation: Actual samples: {actual_samples:,}", "INFO")
+                
+                # If we have significantly less data than expected, warn the user
+                if actual_samples < expected_samples * 0.5:  # Less than 50% of expected
+                    tprint(f"⚠️ WARNING: Only {actual_samples:,} samples available (expected ~{expected_samples:,})", "WARNING")
+                    tprint(f"⚠️ This may indicate:", "WARNING")
+                    tprint(f"   • Cached data from wrong symbol (check if {symbol} data exists)", "WARNING")
+                    tprint(f"   • Incomplete historical data", "WARNING")
+                    tprint(f"   • Need to run klines_downloading_processing first", "WARNING")
             
             # Convert market data to DataFrame if it's not already
-            if not isinstance(market_data, pd.DataFrame):
+            if not isinstance(market_data, pd.DataFrame):  # type: ignore
                 tprint("⚠️ Market data is not a DataFrame, attempting conversion", "WARNING")
                 if isinstance(market_data, dict):
-                    market_data = pd.DataFrame(market_data)
+                    market_data = pd.DataFrame(market_data)  # type: ignore
                 else:
                     tprint("❌ Cannot convert market data to DataFrame", "ERROR")
                     raise ValueError("Market data must be a pandas DataFrame or convertible dict")
+
+            # Apply execution mode data filtering for blank mode (180 days)
+            if (execution_mode == 'blank' and 
+                market_data is not None and
+                hasattr(market_data, 'index') and 
+                hasattr(market_data.index, 'max') and
+                isinstance(market_data.index, pd.DatetimeIndex)):  # type: ignore
+                original_size = len(market_data)
+                end_date = market_data.index.max()
+                if end_date is not None:
+                    start_date = end_date - pd.Timedelta(days=180)  # type: ignore
+                    market_data = market_data.loc[market_data.index >= start_date]
+                    filtered_size = len(market_data)
+                    # Simple string conversion for logging
+                    tprint(f"📅 Blank mode: Filtered data from {original_size:,} to {filtered_size:,} rows (180 days)", "INFO")
+            elif (execution_mode == 'light' and 
+                  market_data is not None and
+                  hasattr(market_data, 'index') and 
+                  hasattr(market_data.index, 'max') and
+                  isinstance(market_data.index, pd.DatetimeIndex)):  # type: ignore
+                original_size = len(market_data)
+                end_date = market_data.index.max()
+                if end_date is not None:
+                    start_date = end_date - pd.Timedelta(days=20)  # type: ignore
+                    market_data = market_data.loc[market_data.index >= start_date]
+                    filtered_size = len(market_data)
+                    # Simple string conversion for logging
+                    tprint(f"📅 Light mode: Filtered data from {original_size:,} to {filtered_size:,} rows (20 days)", "INFO")
 
             tprint(f"📊 Market data shape: {market_data.shape}", "INFO")
             tprint(f"📊 Market data columns: {list(market_data.columns)}", "INFO")
@@ -134,7 +221,7 @@ class RegimeModelsTrainingStep(BaseStep):
                     if models:
                         # Calculate average accuracy across all models
                         accuracies = []
-                        for model_name, model_data in models.items():
+                        for _model_name, model_data in models.items():
                             if isinstance(model_data, dict) and 'accuracy' in model_data:
                                 accuracies.append(model_data['accuracy'])
                             elif hasattr(model_data, 'score'):
@@ -178,76 +265,6 @@ class RegimeModelsTrainingStep(BaseStep):
                 'error': error_msg
             }
 
-    def _create_synthetic_market_data(self, config: Dict[str, Any]) -> pd.DataFrame:
-        """
-        Create synthetic market data for testing when real data is not available.
-        
-        Args:
-            config: Configuration dictionary
-            
-        Returns:
-            Synthetic market data DataFrame
-        """
-        tprint("🔧 Creating synthetic market data for regime models training", "INFO")
-        
-        try:
-            # Create synthetic OHLCV data
-            n_samples = 1000
-            np.random.seed(42)
-            
-            # Generate synthetic price data with regime-like patterns
-            base_price = 100.0
-            returns = np.random.normal(0, 0.02, n_samples)
-            
-            # Add regime-like patterns
-            regime_changes = np.random.choice([0, 1, 2, 3], n_samples, p=[0.4, 0.3, 0.2, 0.1])
-            regime_multipliers = np.array([1.0, 1.5, 0.5, 2.0])[regime_changes]
-            returns *= regime_multipliers
-            
-            # Generate OHLCV data
-            prices = [base_price]
-            for ret in returns:
-                prices.append(prices[-1] * (1 + ret))
-            
-            prices = np.array(prices[1:])  # Remove initial base price
-            
-            # Generate OHLC from close prices
-            high_multiplier = 1 + np.abs(np.random.normal(0, 0.01, n_samples))
-            low_multiplier = 1 - np.abs(np.random.normal(0, 0.01, n_samples))
-            
-            high = prices * high_multiplier
-            low = prices * low_multiplier
-            open_prices = np.roll(prices, 1)
-            open_prices[0] = base_price
-            
-            # Generate volume
-            volume = np.random.lognormal(10, 1, n_samples)
-            
-            # Create DataFrame
-            market_data = pd.DataFrame({
-                'open': open_prices,
-                'high': high,
-                'low': low,
-                'close': prices,
-                'volume': volume,
-                'timestamp': pd.date_range(start='2024-01-01', periods=n_samples, freq='1H')
-            })
-            
-            tprint(f"✅ Synthetic market data created: {market_data.shape}", "SUCCESS")
-            return market_data
-            
-        except Exception as e:
-            tprint(f"❌ Failed to create synthetic market data: {e}", "ERROR")
-            # Return minimal fallback data
-            return pd.DataFrame({
-                'open': [100.0],
-                'high': [101.0],
-                'low': [99.0],
-                'close': [100.5],
-                'volume': [1000],
-                'timestamp': [pd.Timestamp.now()]
-            })
-
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Run method required by BaseStep interface."""
         return await self.execute(config)
@@ -256,7 +273,7 @@ class RegimeModelsTrainingStep(BaseStep):
 # Register the step
 def register_regime_models_training_step():
     """Register the regime models training step."""
-    from src.training.steps.base_step import step_registry
+    from src.training.steps.base_step import step_registry  # type: ignore
 
     step_registry.register("regime_models_training", RegimeModelsTrainingStep)
     tprint("✅ Regime models training step registered", "SUCCESS")

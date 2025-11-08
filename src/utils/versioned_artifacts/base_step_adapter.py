@@ -5,7 +5,7 @@ Provides compatibility layer between VersionedArtifactStore and the
 existing BaseStep artifact management interface.
 """
 
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List
 from pathlib import Path
 import pandas as pd
 
@@ -67,7 +67,9 @@ class VersionedArtifactAdapter:
         else:
             store_name = f"default_{timeframe}_{direction}_{model}"
 
+        from src.utils.tprint import tprint
         store_path = self.store_dir / store_name
+        tprint(f"🐛 DEBUG: VersionedArtifactAdapter initializing store at {store_path}", "INFO")
 
         # Initialize store with context metadata
         self.store = VersionedArtifactStore(
@@ -75,9 +77,11 @@ class VersionedArtifactAdapter:
             auto_version=True,
             enable_row_versioning=True
         )
+        tprint(f"🐛 DEBUG: VersionedArtifactStore initialized", "INFO")
 
         # Store context in store metadata for reference
         if hasattr(self.store, '_metadata'):
+            tprint("🐛 DEBUG: Storing context in store metadata", "INFO")
             self.store._metadata['context'] = {
                 'symbol': symbol,
                 'exchange': exchange,
@@ -86,9 +90,11 @@ class VersionedArtifactAdapter:
                 'model': model
             }
             self.store._save_metadata()
+            tprint("🐛 DEBUG: Context saved to store metadata", "INFO")
 
         # Track artifact name to version name mapping
         self._artifact_versions: Dict[str, str] = {}
+        tprint("🐛 DEBUG: VersionedArtifactAdapter initialization complete", "INFO")
 
     def save(
         self,
@@ -115,6 +121,7 @@ class VersionedArtifactAdapter:
         from src.utils.tprint import tprint
 
         # Log context information
+        from src.utils.tprint import tprint
         context_str = f"{self.symbol}/{self.exchange} [{self.timeframe}] {self.direction}/{self.model}"
         tprint(f"💾 Saving '{artifact_name}' to versioned store: {context_str}")
 
@@ -143,18 +150,26 @@ class VersionedArtifactAdapter:
         }
 
         # Add to store
+        tprint(f"🐛 DEBUG: Adding data to store with version_name={version_name}", "INFO")
         view = self.store.add_data(
             data=data,
             version_name=version_name,
             metadata=artifact_metadata
         )
+        tprint(f"🐛 DEBUG: Store.add_data() returned view: {view}", "INFO")
 
         # Track mapping
         self._artifact_versions[artifact_name] = version_name
+        tprint(f"🐛 DEBUG: Tracked artifact mapping: {artifact_name} -> {version_name}", "INFO")
 
         artifact_path = str(self.store.store_path / f"{version_name}.h5")
         tprint(f"✅ Saved '{artifact_name}' [{context_str}] to {artifact_path}")
 
+        # Verify the save was successful
+        tprint("🐛 DEBUG: Verifying save was successful...", "INFO")
+        versions = self.store.list_versions()
+        tprint(f"🐛 DEBUG: Store now has {len(versions)} versions: {versions}", "INFO")
+        
         return artifact_path
 
     def get_artifact(
@@ -177,16 +192,21 @@ class VersionedArtifactAdapter:
         from src.utils.tprint import tprint
 
         # Log context information
+        from src.utils.tprint import tprint
         context_str = f"{self.symbol}/{self.exchange} [{self.timeframe}] {self.direction}/{self.model}"
         tprint(f"📂 Retrieving '{artifact_name}' from versioned store: {context_str}")
 
         # Get version name for this artifact
         version_name = self._artifact_versions.get(artifact_name)
+        tprint(f"🐛 DEBUG: Looking up artifact '{artifact_name}', found version_name: {version_name}", "INFO")
 
         if version_name is None:
             # Try to find latest version with this artifact name
+            tprint("🐛 DEBUG: Artifact not in cache, searching store versions...", "INFO")
             versions = self.store.list_versions()
+            tprint(f"🐛 DEBUG: Store has {len(versions)} versions: {versions}", "INFO")
             matching = [v for v in versions if artifact_name in v]
+            tprint(f"🐛 DEBUG: Found {len(matching)} matching versions: {matching}", "INFO")
 
             if not matching:
                 tprint(f"⚠️ Artifact '{artifact_name}' not found in versioned store [{context_str}]")
@@ -197,6 +217,7 @@ class VersionedArtifactAdapter:
             # Use most recent matching version
             version_name = sorted(matching)[-1]
             self._artifact_versions[artifact_name] = version_name
+            tprint(f"🐛 DEBUG: Selected latest version: {version_name}", "INFO")
 
         # Get view and materialize
         try:
@@ -247,6 +268,7 @@ class VersionedArtifactAdapter:
         """
         from src.utils.tprint import tprint
 
+        from src.utils.tprint import tprint
         context_str = f"{self.symbol}/{self.exchange} [{self.timeframe}] {self.direction}/{self.model}"
         tprint(f"🔄 Updating {len(row_indices)} rows in '{artifact_name}' [{context_str}]")
 
@@ -309,6 +331,7 @@ class VersionedArtifactAdapter:
         """
         from src.utils.tprint import tprint
 
+        from src.utils.tprint import tprint
         context_str = f"{self.symbol}/{self.exchange} [{self.timeframe}] {self.direction}/{self.model}"
         tprint(f"🔗 Combining {len(artifact_names)} artifacts [{context_str}] using strategy '{strategy}'")
 
@@ -345,7 +368,11 @@ class VersionedArtifactAdapter:
 
     def get_statistics(self) -> Dict:
         """Get store statistics."""
-        return self.store.get_statistics()
+        from src.utils.tprint import tprint
+        tprint("🐛 DEBUG: VersionedArtifactAdapter.get_statistics() called", "INFO")
+        stats = self.store.get_statistics()
+        tprint(f"🐛 DEBUG: Store statistics: {stats}", "INFO")
+        return stats
 
     def __repr__(self) -> str:
         """String representation."""
@@ -359,3 +386,44 @@ class VersionedArtifactAdapter:
             f"artifacts={len(self._artifact_versions)}"
             f")"
         )
+
+    def list_all_versions(self, artifact_type: Optional[str] = None) -> List[str]:
+        """
+        List all versions across all stores.
+        
+        Args:
+            artifact_type: Optional filter for artifact type (e.g., 'clusters', 'regimes')
+                           If provided, will filter stores based on artifact name patterns
+        
+        Returns:
+            List of all version names from all stores
+        """
+        from typing import List
+        from src.utils.tprint import tprint
+        
+        tprint(f"🐛 DEBUG: VersionedArtifactAdapter.list_all_versions() called with artifact_type={artifact_type}", "INFO")
+        all_versions = []
+        
+        # Get all store directories
+        store_dirs = [d for d in self.store.store_path.parent.iterdir() if d.is_dir()]
+        tprint(f"🐛 DEBUG: Found {len(store_dirs)} store directories: {store_dirs}", "INFO")
+        
+        for store_dir in store_dirs:
+            # For clusters/regimes/labels, we include all stores regardless of context
+            if artifact_type is None or artifact_type.lower() in ['clusters', 'regimes', 'labels']:
+                store_path = self.store.store_path.parent / store_dir
+                if store_path.exists():
+                    # Create a temporary store to list versions
+                    temp_store = VersionedArtifactStore(
+                        store_path=store_path,
+                        auto_version=True,
+                        enable_row_versioning=True
+                    )
+                    versions = temp_store.list_versions()
+                    tprint(f"🐛 DEBUG: Store {store_dir} has {len(versions)} versions: {versions}", "INFO")
+                    all_versions.extend(versions)
+                else:
+                    tprint(f"🐛 DEBUG: Skipping store {store_dir} (doesn't match artifact type: {artifact_type})", "INFO")
+        
+        tprint(f"🐛 DEBUG: Total versions across all stores: {len(all_versions)}", "INFO")
+        return all_versions

@@ -320,7 +320,7 @@ class HPODiagnostics:
         if n_features > n_samples / 5:
             print(f"\n⚠️  HIGH DIMENSIONALITY WARNING:")
             print(f"   • {n_features} features for {n_samples} samples")
-            print(f"   • Feature selection will be applied to reduce to ~200 features")
+            print(f"   • Feature selection will be applied to reduce to ~80 features")
             print(f"   • This will improve generalization and model performance")
 
         if "class_distribution" in stats:

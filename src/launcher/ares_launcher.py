@@ -27,6 +27,17 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 from pathlib import Path
 
+
+FEATURE_GENERATION_STEP_FLAGS = [
+    'feature_generation_data_validation_step',
+    'feature_generation_labeling_integration_step',
+    'feature_generation_feature_generation_step',
+    'feature_generation_period_lookback_optimization_step',
+    'feature_generation_interaction_generation_step',
+    'feature_generation_final_feature_selection_step',
+    'feature_generation_final_validation_step',
+]
+
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -169,8 +180,6 @@ class SimplifiedAresLauncher:
             ],
             'MARKET_ANALYSIS': [
                 'sr_detection', 'sr_clustering', 'sr_parameter_optimization',  # Fixed order: detection -> clustering -> optimization
-                'hdbscan_regime_discovery',  # HDBSCAN-based regime discovery
-                'gmm_regime_discovery',  # GMM-based regime discovery with correlation reduction
                 'statsmodel_clustering_pipeline',  # Statsmodel Markov-switching clustering
                 'sticky_finite_hmm_regime_discovery',  # Sticky Finite HMM regime discovery (K=5, VB inference)
                 'rolling_hmm_regime_discovery',  # Rolling HMM regime discovery with EWMA features and HPO
@@ -182,9 +191,7 @@ class SimplifiedAresLauncher:
                 'feature_generation_labeling_integration_step',
                 'feature_generation_feature_generation_step',
                 'feature_generation_period_lookback_optimization_step',
-                'feature_generation_feature_selection_step',
                 'feature_generation_interaction_generation_step',
-                'feature_generation_gate_feature_step',
                 'feature_generation_final_feature_selection_step',
                 'feature_generation_final_validation_step'
             ],
@@ -195,9 +202,13 @@ class SimplifiedAresLauncher:
                 'tactician_ensemble_training'
             ],
             'BACKTESTING': [
-                'basic_backtesting_pre', 'final_parameters_optimization',
-                'basic_backtesting_post',
-                'monte_carlo_simulation', 'ab_testing', 'reporting'
+                'feature_generation_data_validation_step',
+                'feature_generation_labeling_integration_step',
+                'feature_generation_feature_generation_step',
+                'feature_generation_period_lookback_optimization_step',
+                'feature_generation_interaction_generation_step',
+                'feature_generation_final_feature_selection_step',
+                'feature_generation_final_validation_step'
             ]
         }
         
@@ -261,11 +272,6 @@ Examples:
   python ares_launcher.py --run-analyst-interaction --symbol ETHUSDT --timeframe 15m
   python ares_launcher.py --run-both-interaction-modes --symbol ETHUSDT --timeframe 15m
 
-  # REGIME DISCOVERY (various algorithms)
-  python ares_launcher.py --rolling-hmm-regime-discovery --symbol BTCUSDT --execution-mode full
-  python ares_launcher.py --hdbscan-regime-discovery --symbol ETHUSDT --execution-mode light
-  python ares_launcher.py --gmm-regime-discovery --symbol BTCUSDT --execution-mode light
-
   # REGIME TRAINING (ML models and ensembles)
   python ares_launcher.py --regime-models-training --symbol ETHUSDT --execution-mode light
   python ares_launcher.py --regime-ensemble-training --symbol ETHUSDT --execution-mode light
@@ -301,12 +307,19 @@ Examples:
     
     # Regime discovery options
     regime_group = parser.add_mutually_exclusive_group()
-    regime_group.add_argument('--hdbscan-regime-discovery', action='store_true', help='Run HDBSCAN regime discovery (replaces NAS/TAS)')
-    regime_group.add_argument('--gmm-regime-discovery', action='store_true', help='Run GMM regime discovery with correlation-based feature reduction')
     regime_group.add_argument('--rolling-hmm-regime-discovery', action='store_true', help='Run Rolling HMM regime discovery with EWMA features and HPO')
-    regime_group.add_argument('--legacy-nas-tas', action='store_true', help='Run legacy NAS/TAS regime discovery (deprecated)')
     regime_group.add_argument('--regime-models-training', action='store_true', help='Train machine learning models for regime classification')
     regime_group.add_argument('--regime-ensemble-training', action='store_true', help='Train ensemble models for regime classification using meta-learning')
+
+    # Feature generation step shortcuts
+    feature_group = parser.add_argument_group('Feature generation step shortcuts')
+    for flag in FEATURE_GENERATION_STEP_FLAGS:
+        friendly_name = flag.replace('_', ' ')
+        feature_group.add_argument(
+            f'--{flag}',
+            action='store_true',
+            help=f"Run the '{friendly_name}' step"
+        )
     
     # Common parameters
     parser.add_argument('--symbol', type=str, help='Trading symbol (e.g., ETHUSDT)')
@@ -474,13 +487,40 @@ async def main():
             print("Use --list-steps to see all registered steps")
             return
 
+    # Map feature generation shortcut flags to step execution
+    feature_step_flags = [flag for flag in FEATURE_GENERATION_STEP_FLAGS if getattr(args, flag, False)]
+    if feature_step_flags:
+        logger.info(f"Detected feature generation shortcuts: {feature_step_flags}")
+
+        # Only apply feature generation shortcuts if no other step was specified via positional command
+        # This prevents feature generation steps from interfering with other steps like regime_models_training
+        if args.command:
+            logger.warning(f"⚠️ Ignoring feature generation shortcuts because positional command '{args.command}' was provided")
+        elif args.steps:
+            existing_steps = [s.strip() for s in args.steps.split(',') if s.strip()]
+            combined_steps = existing_steps + feature_step_flags
+            args.steps = ','.join(combined_steps)
+        elif args.step:
+            combined_steps = [args.step] + feature_step_flags
+            args.steps = ','.join(combined_steps)
+            args.step = None
+        else:
+            if len(feature_step_flags) == 1:
+                args.step = feature_step_flags[0]
+            else:
+                args.steps = ','.join(feature_step_flags)
+
+        # Reset shortcut flags to avoid re-processing later
+        for flag in feature_step_flags:
+            setattr(args, flag, False)
+
     # Check if any execution mode is specified
     has_execution_mode = any([
         args.step, args.steps, args.stage, args.mode, args.sub_pipeline,
         args.train_analyst_base, args.train_analyst_ensemble,
         args.train_tactician_base, args.train_tactician_ensemble,
         args.run_tactician_interaction, args.run_analyst_interaction, args.run_both_interaction_modes,
-        args.hdbscan_regime_discovery, args.gmm_regime_discovery, args.rolling_hmm_regime_discovery, args.legacy_nas_tas,
+        args.rolling_hmm_regime_discovery,
         args.regime_models_training, args.regime_ensemble_training
     ])
 
@@ -570,21 +610,11 @@ async def main():
             result = await launcher.run_step(step_name, config)
             print(f"Model training '{training_type}' completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
-        elif args.hdbscan_regime_discovery:
-            # HDBSCAN regime discovery execution
-            logger.info("Running HDBSCAN regime discovery (replaces NAS/TAS)")
-            result = await launcher.run_step('hdbscan_regime_discovery', config)
-            print(f"HDBSCAN regime discovery completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
-            
-        elif args.gmm_regime_discovery:
-            # GMM regime discovery execution
-            logger.info("Running GMM regime discovery with correlation-based feature reduction")
-            result = await launcher.run_step('gmm_regime_discovery', config)
-            print(f"GMM regime discovery completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
-
         elif args.rolling_hmm_regime_discovery:
             # Rolling HMM regime discovery execution
             logger.info("Running Rolling HMM regime discovery with EWMA features and HPO")
+            # Ensure HPO is enabled by default unless explicitly disabled
+            config['enable_auto_tuning'] = True
             result = await launcher.run_step('rolling_hmm_regime_discovery', config)
             print(f"Rolling HMM regime discovery completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
 
@@ -600,13 +630,6 @@ async def main():
             result = await launcher.run_step('regime_ensemble_training', config)
             print(f"Regime ensemble training completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
 
-        elif args.legacy_nas_tas:
-            # Legacy NAS/TAS regime discovery execution (deprecated)
-            logger.warning("Running legacy NAS/TAS regime discovery (deprecated - use --hdbscan-regime-discovery instead)")
-            # For now, redirect to HDBSCAN until legacy is fully removed
-            result = await launcher.run_step('hdbscan_regime_discovery', config)
-            print(f"Legacy NAS/TAS regime discovery (redirected to HDBSCAN) completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
-            
         elif args.run_tactician_interaction:
             # Tactician mode interaction generation (MI-based)
             logger.info("Running feature generation interaction generation in Tactician mode (MI-based)")

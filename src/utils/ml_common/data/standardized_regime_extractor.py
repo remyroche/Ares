@@ -7,10 +7,19 @@ from pipeline state artifacts, with fast-fail behavior and clear error messages.
 
 import numpy as np
 from typing import Dict, Any, Optional
-from src.utils.logger import system_logger
-from src.utils.tprint import tprint
 
-logger = system_logger.getChild('StandardizedRegimeExtractor')
+try:
+    from src.utils.logger import system_logger
+    logger = system_logger.getChild('StandardizedRegimeExtractor')
+except ImportError:
+    import logging
+    logger = logging.getLogger('StandardizedRegimeExtractor')
+
+try:
+    from src.utils.tprint import tprint
+except ImportError:
+    def tprint(msg, color=None):
+        logger.info(msg)
 
 
 class RegimeLabelExtractionError(Exception):
@@ -80,7 +89,8 @@ class StandardizedRegimeExtractor:
                 f"Available artifacts: {available_keys}. "
                 f"Expected one of: 'optimal_regime_clustering_result', "
                 f"'regime_clustering_result', 'gmm_regime_discovery_result', "
-                f"'hmm_regime_discovery_result', or direct labels."
+                f"'rolling_hmm_regime_discovery_result', 'hmm_regime_discovery_result', "
+                f"or direct labels."
             )
         
         # Validate extracted labels
@@ -119,13 +129,19 @@ class StandardizedRegimeExtractor:
             tprint("✅ [REGIME_EXTRACTOR] Extracted from gmm_regime_discovery_result", color="green")
             return labels
         
-        # 4. Try HMM regime discovery result
+        # 4. Try Rolling HMM regime discovery result (new addition)
+        labels = self._extract_from_rolling_hmm_discovery(artifacts)
+        if labels is not None:
+            tprint("✅ [REGIME_EXTRACTOR] Extracted from rolling_hmm_regime_discovery_result", color="green")
+            return labels
+        
+        # 5. Try HMM regime discovery result
         labels = self._extract_from_hmm_discovery(artifacts)
         if labels is not None:
             tprint("✅ [REGIME_EXTRACTOR] Extracted from hmm_regime_discovery_result", color="green")
             return labels
         
-        # 5. Try direct keys
+        # 6. Try direct keys
         labels = self._extract_from_direct_keys(artifacts)
         if labels is not None:
             tprint("✅ [REGIME_EXTRACTOR] Extracted from direct artifact keys", color="green")
@@ -191,6 +207,31 @@ class StandardizedRegimeExtractor:
         if not result:
             return None
         
+        if 'labels' in result:
+            return result['labels']
+        if 'state_sequence' in result:
+            return result['state_sequence']
+        
+        return None
+    
+    def _extract_from_rolling_hmm_discovery(self, artifacts: Dict[str, Any]) -> Optional[np.ndarray]:
+        """Extract from rolling_hmm_regime_discovery_result."""
+        result = artifacts.get('rolling_hmm_regime_discovery_result')
+        if not result:
+            return None
+        
+        # Try artifacts dict first
+        artifacts_dict = result.get('artifacts', {})
+        if 'labels' in artifacts_dict:
+            labels_df = artifacts_dict['labels']
+            if hasattr(labels_df, 'regime_label'):
+                return labels_df['regime_label'].values
+            elif hasattr(labels_df, 'values'):
+                return labels_df.values.flatten()
+        
+        # Try direct result keys
+        if 'regime_labels' in result:
+            return result['regime_labels']
         if 'labels' in result:
             return result['labels']
         if 'state_sequence' in result:

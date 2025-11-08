@@ -274,24 +274,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             }
     
     def _evaluate_lookback_period(self, data: pd.DataFrame, feature_name: str, target_column: str, lookback: int) -> float:
-        """
-        Evaluate a specific lookback period using MI-aligned approach with NumPy optimization.
-        
-        This method applies the same logic as _compute_mutual_information_proxy but with:
-        1. NumPy-based rolling correlation for better performance
-        2. Target-type adaptive scoring (binary vs continuous)
-        3. Variance weighting for continuous targets
-        4. Log scaling for binary targets
-        
-        Args:
-            data: DataFrame containing feature and target columns
-            feature_name: Name of the feature column
-            target_column: Name of the target column
-            lookback: Lookback period to evaluate
-            
-        Returns:
-            float: Score between 0 and 1 representing feature quality
-        """
+        """Evaluate a specific lookback period using MI-aligned approach with NumPy optimization."""
+        # Applies same logic as _compute_mutual_information_proxy with NumPy optimizations.
         try:
             # Extract data as NumPy arrays for performance
             feature_data = data[feature_name].values
@@ -361,21 +345,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
     
     def _precompute_rolling_statistics(self, feature_data: np.ndarray, target_data: np.ndarray, 
                                       lookback_ranges: List[int]) -> Dict[int, Dict[str, np.ndarray]]:
-        """
-        Pre-compute rolling statistics for all lookback periods to avoid redundant calculations.
-        
-        This method computes rolling means, variances, and other statistics once for all
-        lookback periods, then caches them for reuse. This provides significant performance
-        improvements when evaluating multiple lookback periods for the same feature.
-        
-        Args:
-            feature_data: Feature values as NumPy array
-            target_data: Target values as NumPy array  
-            lookback_ranges: List of lookback periods to pre-compute
-            
-        Returns:
-            Dictionary mapping lookback periods to their pre-computed statistics
-        """
+        """Pre-compute rolling statistics for all lookback periods to avoid redundant calculations."""
+        # Computes rolling means, variances, and other statistics once for all lookback periods.
         try:
             cache_key = f"{hash(feature_data.tobytes())}_{hash(target_data.tobytes())}"
             
@@ -435,17 +406,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
     
     def _numpy_precompute_rolling_stats(self, feature_data: np.ndarray, target_data: np.ndarray, 
                                         lookback: int) -> Dict[str, np.ndarray]:
-        """
-        NumPy-based pre-computation of rolling statistics as fallback.
+        """NumPy-based pre-computation of rolling statistics as fallback.
         
-        Args:
-            feature_data: Feature values as NumPy array
-            target_data: Target values as NumPy array
-            lookback: Lookback period
-            
         Returns:
             Dictionary containing pre-computed rolling statistics
-        """
+        """    
         try:
             n = len(feature_data)
             result_size = n - lookback + 1
@@ -486,21 +451,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
     
     def _batch_evaluate_lookback_periods(self, feature_data: np.ndarray, target_data: np.ndarray,
                                         lookback_ranges: List[int]) -> Dict[int, float]:
-        """
-        Batch evaluate multiple lookback periods using pre-computed statistics.
-        
-        This method evaluates all lookback periods simultaneously using pre-computed
-        rolling statistics, providing significant performance improvements over
-        individual evaluations.
-        
-        Args:
-            feature_data: Feature values as NumPy array
-            target_data: Target values as NumPy array
-            lookback_ranges: List of lookback periods to evaluate
-            
-        Returns:
-            Dictionary mapping lookback periods to their scores
-        """
+        """Batch evaluate multiple lookback periods using pre-computed statistics."""
+        # Evaluates all lookback periods simultaneously using pre-computed rolling statistics.
         try:
             # Pre-compute rolling statistics for all lookback periods
             stats_cache = self._precompute_rolling_statistics(feature_data, target_data, lookback_ranges)
@@ -569,21 +521,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
     
     def _batch_process_features_with_vectorization_manager(self, features: List[str], data: pd.DataFrame, 
                                                           target_column: str) -> List[Dict]:
-        """
-        Process multiple features using UnifiedVectorizationManager for maximum performance.
-        
-        This method uses the UnifiedVectorizationManager to process multiple features
-        simultaneously with VectorBT optimizations, providing significant performance
-        improvements over individual feature processing.
-        
-        Args:
-            features: List of feature names to process
-            data: DataFrame containing feature and target data
-            target_column: Name of the target column
-            
-        Returns:
-            List of optimization results for each feature
-        """
+        """Process multiple features using UnifiedVectorizationManager for maximum performance."""
         try:
             if not self.vectorization_manager or not self.batch_processing_enabled:
                 # Fallback to individual processing
@@ -600,15 +538,23 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 'batch_size': min(self.max_batch_size, len(features))
             }
             
+            tprint(f"   ▶️ Batch request => features: {len(batch_data['features'])}, lookbacks: {len(batch_data['lookback_ranges'])}")
             # Use vectorization manager for batch processing
             batch_results = self.vectorization_manager.process_feature_batch(batch_data)
-            
-            if batch_results and 'results' in batch_results:
-                tprint(f"✅ Batch processing completed: {len(batch_results['results'])} features processed")
+            result_count = len(batch_results.get('results', [])) if isinstance(batch_results, dict) else 0
+            error_count = len(batch_results.get('errors', [])) if isinstance(batch_results, dict) else 0
+            tprint(f"   📥 Batch response => results: {result_count}, errors: {error_count}")
+            if error_count:
+                tprint(f"   ⚠️ Batch errors: {batch_results.get('errors')}")
+
+            if result_count:
+                tprint(f"✅ Batch processing completed: {result_count} features processed")
+                sample_result = batch_results['results'][0]
+                tprint(f"   🧪 Sample batch result keys: {list(sample_result.keys())}")
                 return batch_results['results']
             else:
-                tprint("⚠️ Batch processing failed, falling back to individual processing")
-                return self._process_features_individually(features, data, target_column)
+                tprint("❌ Batch processing produced no results; aborting to prevent silent skip")
+                raise RuntimeError("Vectorization manager returned no feature results")
                 
         except Exception as e:
             self.logger.warning(f"Batch processing with vectorization manager failed: {e}")
@@ -617,76 +563,24 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
     
     def _process_features_individually(self, features: List[str], data: pd.DataFrame, 
                                      target_column: str) -> List[Dict]:
-        """
-        Process features individually as fallback when batch processing is not available.
-        
-        Args:
-            features: List of feature names to process
-            data: DataFrame containing feature and target data
-            target_column: Name of the target column
-            
-        Returns:
-            List of optimization results for each feature
-        """
+        """Process features individually as fallback when batch processing is not available."""
         results = []
         
         for feature_name in features:
             try:
-                # Use the optimized batch evaluation for individual features
-                feature_data = data[feature_name].values
-                target_data = data[target_column].values
+                # Process individual feature
+                start_time = time.time()
                 
-                # Remove NaN/inf values
-                valid_mask = np.isfinite(feature_data) & np.isfinite(target_data)
+                # Get feature-specific lookback ranges
+                lookback_ranges = self._get_feature_specific_lookbacks(feature_name)
                 
-                if valid_mask.sum() < 50:
-                    results.append({
-                        'feature_name': feature_name,
-                        'optimal_lookback': 5,
-                        'performance_score': 0.0,
-                        'stability_score': 0.0,
-                        'cached': False,
-                        'optimization_time': 0.001,
-                        'error': 'Insufficient data'
-                    })
-                    continue
-                
-                feature_valid = feature_data[valid_mask]
-                target_valid = target_data[valid_mask]
-                
-                # Use batch evaluation for this single feature
-                lookback_scores = self._batch_evaluate_lookback_periods(
-                    feature_valid, target_valid, self.intelligent_lookbacks
+                # Optimize lookback for this feature
+                optimal_result = self._optimize_single_feature_lookback(
+                    feature_name, data, target_column, lookback_ranges
                 )
                 
-                if not lookback_scores:
-                    results.append({
-                        'feature_name': feature_name,
-                        'optimal_lookback': 5,
-                        'performance_score': 0.0,
-                        'stability_score': 0.0,
-                        'cached': False,
-                        'optimization_time': 0.001,
-                        'error': 'No valid scores'
-                    })
-                    continue
-                
-                # Find best lookback
-                best_lookback = max(lookback_scores, key=lookback_scores.get)
-                
-                # Calculate performance metrics
-                performance_score = self._calculate_performance_score(data, feature_name, target_column, best_lookback)
-                stability_score = self._calculate_stability_score(data, feature_name, best_lookback)
-                
-                results.append({
-                    'feature_name': feature_name,
-                    'optimal_lookback': best_lookback,
-                    'performance_score': performance_score,
-                    'stability_score': stability_score,
-                    'cached': False,
-                    'optimization_time': 0.1,  # Estimated time
-                    'lookback_scores': lookback_scores
-                })
+                optimal_result['optimization_time'] = time.time() - start_time
+                results.append(optimal_result)
                 
             except Exception as e:
                 self.logger.warning(f"Individual processing failed for {feature_name}: {e}")
@@ -696,30 +590,15 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     'performance_score': 0.0,
                     'stability_score': 0.0,
                     'cached': False,
-                    'optimization_time': 0.001,
+                    'optimization_time': time.time() - start_time if 'start_time' in locals() else 0.001,
                     'error': str(e)
                 })
         
         return results
     
     def _optimize_lookback_periods_by_category(self, individual_results: Dict[str, Dict], max_lookbacks_per_feature: int = 3) -> Dict[str, Any]:
-        """
-        Optimize lookback periods for each feature: 1 optimal + 2 informative & non-redundant alternatives.
-        
-        For each feature:
-        1. Find the single most informative/stable lookback period
-        2. Find 2 additional informative & non-redundant lookback periods
-        
-        Uses VectorBT optimization for enhanced performance and accuracy.
-        Keeps ALL features but optimizes their lookback periods.
-        
-        Args:
-            individual_results: Dictionary of individual feature optimization results
-            max_lookbacks_per_feature: Total lookback periods per feature (1 optimal + 2 alternatives)
-            
-        Returns:
-            Dictionary containing optimized lookback periods for all features
-        """
+        """Optimize each feature's lookbacks (best + informative alternatives)."""
+        # Uses VectorBT when available to rank one optimal and two supportive lookbacks per feature.
         try:
             # Initialize VectorBT components if available
             vectorbt_optimizer = getattr(self, 'vectorbt_optimizer', None)
@@ -1056,12 +935,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         }
     
     def _proxy_optimize_features(self, features: List[str], data: pd.DataFrame, target_column: str) -> List[Dict]:
-        """
-        Ultra-fast batch proxy optimization processing multiple features simultaneously.
-        
-        This method provides 50x speedup by processing multiple features in parallel
-        using VectorBT batch operations and parallel processing.
-        """
+        """Ultra-fast batch proxy optimization for multiple features using VectorBT parallelism."""
         try:
             tprint(f"🎯 Starting batch proxy optimization for {len(features)} features")
             start_time = time.time()
@@ -1085,11 +959,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return self._process_features_individually(features, data, target_column)
     
     def _batch_process_features(self, features: List[str], data: pd.DataFrame, target_column: str) -> List[Dict]:
-        """
-        Process multiple features simultaneously using VectorBT batch operations.
-        
-        This method is 50x faster by processing all features in a single batch operation.
-        """
+        """Process multiple features simultaneously using VectorBT batch operations."""
         try:
             # Prepare batch data for VectorBT
             feature_data = data[features].values  # All features at once
@@ -1106,9 +976,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return self._parallel_process_features(features, data, target_column)
     
     def _vectorbt_batch_features(self, features: List[str], feature_data: np.ndarray, target_data: np.ndarray, target_column: str) -> List[Dict]:
-        """
-        Ultra-fast batch processing using VectorBTRollingOptimizer for all features simultaneously.
-        """
+        """Batch process features via VectorBTRollingOptimizer."""
         try:
             # Convert to DataFrame for VectorBT batch processing
             feature_df = pd.DataFrame(feature_data, columns=features)
@@ -1163,9 +1031,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return self._numpy_batch_features(features, feature_data, target_data, target_column)
     
     def _numpy_batch_features(self, features: List[str], feature_data: np.ndarray, target_data: np.ndarray, target_column: str) -> List[Dict]:
-        """
-        Fast batch processing using numpy vectorized operations for all features.
-        """
+        """Fast batch processing using numpy vectorized operations for all features."""
         try:
             all_results = []
             
@@ -1216,12 +1082,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return self._parallel_process_features(features, feature_data, target_data, target_column)
     
     def _fast_vectorized_lookback_evaluation(self, feature_data: np.ndarray, target_data: np.ndarray, feature_name: str) -> List[Dict]:
-        """
-        Ultra-fast vectorized evaluation using batch processing for all lookback periods simultaneously.
-        
-        This method processes all lookback periods in a single vectorized operation,
-        providing 10-20x speedup over sequential processing.
-        """
+        """Vectorized evaluation of all lookback periods in a single batch."""
+        # Provides roughly an order-of-magnitude speedup versus sequential processing.
         try:
             # Use the new vectorized batch processing method
             return self._vectorized_batch_lookback_evaluation(feature_data, target_data, feature_name)
@@ -1231,15 +1093,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return self._sequential_lookback_evaluation(feature_data, target_data, feature_name)
     
     def _vectorized_batch_lookback_evaluation(self, feature_data: np.ndarray, target_data: np.ndarray, feature_name: str) -> List[Dict]:
-        """
-        Ultra-fast vectorized batch processing with sketching algorithms and parallel processing.
-        
-        This method provides 50-100x speedup by using:
-        1. Sketching algorithms for approximate calculations
-        2. Parallel processing of lookback periods
-        3. Ultra-fast correlation approximation
-        4. Pre-computed rolling statistics
-        """
+        """Vectorized batch processing leveraging sketching and parallel computation."""
         lookback_scores = []
         
         # Filter valid lookbacks based on data length
@@ -1292,12 +1146,10 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return self._sequential_lookback_evaluation(feature_data, target_data, feature_name)
     
     def _sketching_based_evaluation(self, feature_data: np.ndarray, target_data: np.ndarray, valid_lookbacks: List[int], feature_name: str) -> List[Dict]:
-        """
-        Ultra-fast evaluation using sketching algorithms (Count-Min, HyperLogLog).
-        
-        This method provides 100-1000x speedup for large datasets by using
-        probabilistic data structures for approximate calculations.
-        """
+        """Ultra-fast evaluation using sketching algorithms (Count-Min, HyperLogLog)."""
+        # Probabilistic data structures (e.g., Count-Min Sketch, HyperLogLog) are used here
+        # to approximate correlations and stability metrics, delivering massive speedups on
+        # large datasets compared to exact calculations.
         try:
             lookback_scores = []
             
@@ -1312,7 +1164,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         continue
                     
                     # Use sketching algorithms for approximate correlation
-                    # This is 100-1000x faster than exact calculations
+                    # This is much faster than exact calculations
                     approximate_correlation = self._sketching_correlation_approximation(feature_windows, target_windows)
                     
                     if np.isnan(approximate_correlation) or approximate_correlation <= 0:
@@ -1345,12 +1197,10 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return []
     
     def _sketching_correlation_approximation(self, feature_windows: np.ndarray, target_windows: np.ndarray) -> float:
-        """
-        Ultra-fast correlation approximation using sketching algorithms.
-        """
+        """Ultra-fast correlation approximation using sketching algorithms."""
         try:
             # Use Count-Min sketch for approximate correlation
-            # This is 100-1000x faster than exact correlation calculation
+            # This is much faster than exact correlation calculation
             
             # Sample a subset for ultra-fast approximation
             sample_size = min(100, len(feature_windows))
@@ -1418,12 +1268,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return 0.0
     
     def _parallel_lookback_evaluation(self, feature_data: np.ndarray, target_data: np.ndarray, valid_lookbacks: List[int], feature_name: str) -> List[Dict]:
-        """
-        Parallel processing of lookback periods using multiprocessing.
-        
-        This method provides 4-8x speedup by processing lookback periods
-        in parallel using multiple CPU cores.
-        """
+        """Parallel lookback evaluation using multiprocessing."""
+        # Runs batches concurrently across CPU cores for significant speed gains.
         try:
             from multiprocessing import Pool, cpu_count
             import functools
@@ -1609,12 +1455,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         return lookback_scores
     
     def _precompute_all_rolling_statistics(self, feature_data: np.ndarray, target_data: np.ndarray, lookback_periods: List[int]) -> Dict[int, Dict]:
-        """
-        Ultra-fast pre-computation of all rolling statistics using vectorized operations.
-        
-        This method provides 10-20x speedup by computing all rolling statistics
-        in a single vectorized operation using numpy stride_tricks.
-        """
+        """Pre-compute rolling statistics using vectorized operations."""
+        # Uses NumPy stride tricks to compute all windows in one pass for major speedups.
         try:
             # Use ultra-fast vectorized pre-computation
             rolling_stats = self._ultra_fast_rolling_statistics(feature_data, target_data, lookback_periods)
@@ -1631,12 +1473,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return {}
     
     def _ultra_fast_rolling_statistics(self, feature_data: np.ndarray, target_data: np.ndarray, lookback_periods: List[int]) -> Dict[int, Dict]:
-        """
-        Ultra-fast rolling statistics using numpy stride_tricks and vectorized operations.
-        
-        This method provides 10-20x speedup by using numpy's stride_tricks
-        for ultra-fast sliding window operations.
-        """
+        """Rolling statistics via NumPy stride tricks and vectorization."""
         try:
             rolling_stats = {}
             
@@ -1732,12 +1569,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return {}
     
     def _vectorized_correlation_matrix(self, feature_data: np.ndarray, target_data: np.ndarray, lookback_periods: List[int]) -> np.ndarray:
-        """
-        Ultra-fast vectorized correlation matrix using Pearson approximation and sliding window.
-        
-        This method provides 50-100x speedup by using np.correlate() and vectorized operations
-        instead of pandas rolling correlation.
-        """
+        """Compute correlation matrix via vectorized Pearson-style approximations."""
+        # Uses np.correlate and similar vector tricks to avoid costly pandas rolling ops.
         try:
             # Use ultra-fast Pearson correlation approximation
             correlations = self._ultra_fast_pearson_approximation(feature_data, target_data, lookback_periods)
@@ -1761,12 +1594,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return None
     
     def _ultra_fast_pearson_approximation(self, feature_data: np.ndarray, target_data: np.ndarray, lookback_periods: List[int]) -> np.ndarray:
-        """
-        Ultra-fast Pearson correlation approximation using np.correlate() and sliding window.
-        
-        This method provides 50-100x speedup over pandas rolling correlation by using
-        vectorized operations and mathematical approximations.
-        """
+        """Approximate Pearson correlation using np.correlate with sliding windows."""
+        # Vectorized math replaces slower pandas rolling correlation computations.
         try:
             correlations = []
             
@@ -1787,7 +1616,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         continue
                     
                     # Ultra-fast sliding window correlation using np.correlate()
-                    # This is 50-100x faster than pandas rolling
+                    # This is much faster than pandas rolling
                     window_size = lookback
                     
                     # Create sliding windows using vectorized operations
@@ -1874,12 +1703,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return 0.0
     
     def _vectorized_distance_metrics(self, feature_data: np.ndarray, target_data: np.ndarray, lookback_periods: List[int]) -> np.ndarray:
-        """
-        Ultra-fast vectorized distance metrics (Euclidean, Manhattan) as correlation proxy.
-        
-        This method provides 20-50x speedup over correlation by using distance metrics
-        which are much faster to compute.
-        """
+        """Approximate correlation via vectorized distance metrics (e.g., Euclidean)."""
+        # Distance-based similarity is substantially faster than exact correlation here.
         try:
             from scipy.spatial.distance import cdist
             
@@ -2068,12 +1893,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         }
     
     def _filter_lookback_periods_for_feature(self, feature_name: str, data: pd.DataFrame, target_column: str) -> List[int]:
-        """
-        Filter lookback periods for a single feature using fast rolling window statistics and distance-based grouping.
-        
-        This method uses ultra-fast statistical methods to evaluate lookback periods and group similar ones,
-        providing 5-10x speedup over correlation-based methods.
-        """
+        """Filter lookbacks for a feature using fast statistics and distance grouping."""
+        # Fast statistical pruning keeps only diverse, high-quality lookbacks.
         try:
             feature_data = data[feature_name].values
             target_data = data[target_column].values
@@ -2106,11 +1927,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return self.intelligent_lookbacks[:5]  # Return first 5 as fallback
     
     def _fast_rolling_window_evaluation(self, feature_data: np.ndarray, target_data: np.ndarray, feature_name: str) -> List[Dict]:
-        """
-        Ultra-fast batch vectorized evaluation using VectorBTRollingOptimizer and UnifiedVectorizationManager.
-        
-        This method is 50x faster by using batch vectorized operations and VectorBT optimization.
-        """
+        """Batch vectorized evaluation leveraging VectorBT tooling."""
+        # UnifiedVectorizationManager accelerates multi-lookback scoring drastically.
         try:
             # Use VectorBT for ultra-fast batch rolling operations
             if self.vectorbt_optimizer and self.vectorization_manager:
@@ -2122,12 +1940,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return self._fallback_batch_evaluation(feature_data, target_data, feature_name)
     
     def _vectorbt_batch_evaluation(self, feature_data: np.ndarray, target_data: np.ndarray, feature_name: str) -> List[Dict]:
-        """
-        Ultra-fast batch evaluation using VectorBTRollingOptimizer for all lookbacks simultaneously.
-        
-        This method processes ALL lookback periods in a single vectorized operation,
-        providing 50x speedup over individual lookback evaluation.
-        """
+        """Evaluate all lookbacks at once via VectorBTRollingOptimizer."""
+        # Processes every lookback in a single vectorized pass instead of sequential loops.
         lookback_scores = []
         
         try:
@@ -2185,12 +1999,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return self._fallback_batch_evaluation(feature_data, target_data, feature_name)
     
     def _fallback_batch_evaluation(self, feature_data: np.ndarray, target_data: np.ndarray, feature_name: str) -> List[Dict]:
-        """
-        Fallback batch evaluation using numpy vectorized operations when VectorBT is not available.
-        
-        This method is still 20x faster than individual lookback evaluation by processing
-        multiple lookbacks simultaneously using vectorized numpy operations.
-        """
+        """Fallback batch evaluation with NumPy vectorization."""
+        # Vectorized NumPy still evaluates many lookbacks together when VectorBT is missing.
         lookback_scores = []
         
         # Pre-compute global statistics for fast comparison
@@ -2248,12 +2058,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         return lookback_scores
     
     def _ultra_fast_rolling_std(self, data: np.ndarray, window: int) -> np.ndarray:
-        """
-        Ultra-fast rolling standard deviation using vectorized numpy operations.
-        
-        This method is 10x faster than pandas rolling operations by using
-        pure numpy vectorized calculations.
-        """
+        """Rolling standard deviation via pure NumPy vectorization."""
         try:
             if len(data) < window:
                 return None
@@ -2272,12 +2077,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return None
     
     def _simple_distance_grouping(self, lookback_scores: List[Dict]) -> List[List[Dict]]:
-        """
-        Group similar lookback periods using simple distance-based clustering.
-        
-        This method is 20x faster than K-means clustering by using simple
-        correlation similarity thresholds instead of iterative optimization.
-        """
+        """Group similar lookback periods using lightweight distance thresholds."""
         if not lookback_scores:
             return []
         
@@ -2313,12 +2113,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         return groups
     
     def _select_group_representatives(self, grouped_lookbacks: List[List[Dict]]) -> List[int]:
-        """
-        Select the best representative from each group to avoid redundancy.
-        
-        This method ensures we get diverse, high-quality lookback periods
-        without computational redundancy.
-        """
+        """Pick a representative lookback from each similarity group."""
         selected_lookbacks = []
         
         for group in grouped_lookbacks:
@@ -2344,14 +2139,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         return selected_lookbacks
     
-    def _optimize_feature_with_filtered_lookbacks(self, feature_name: str, data: pd.DataFrame, 
-                                                 target_column: str, promising_lookbacks: List[int]) -> Dict:
-        """
-        Optimize a feature using only the filtered promising lookback periods.
-        
-        This method applies full optimization but only to the lookback periods
-        that passed the proxy filtering, providing significant speedup.
-        """
+    def _optimize_feature_with_filtered_lookbacks(self, feature_name: str, data: pd.DataFrame, target_column: str, promising_lookbacks: List[int]) -> Dict:
+        """Optimize a feature using only the filtered promising lookbacks."""
         try:
             start_time = time.time()
             
@@ -2454,12 +2243,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             }
     
     def _fast_mi_proxy_ranking(self, features: List[str], data: pd.DataFrame, target_column: str) -> List[Tuple[str, float]]:
-        """
-        Fast mutual information approximation for feature ranking.
-        
-        This method uses fast MI estimators to rank features by their
-        information content, providing 20x speedup over full optimization.
-        """
+        """Fast mutual information approximation for feature ranking."""
+        # Uses lightweight MI estimators to prioritize features quickly.
         try:
             target_data = data[target_column].values
             
@@ -2520,12 +2305,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return [(f, 0.0) for f in features]  # Return all features with zero scores
     
     def _fast_mutual_information_approximation(self, feature: np.ndarray, target: np.ndarray) -> float:
-        """
-        Fast mutual information approximation using binning and entropy estimation.
-        
-        This method provides a 20x speedup over exact MI calculation while
-        maintaining good accuracy for feature ranking purposes.
-        """
+        """Fast MI approximation via binning and entropy estimation."""
         try:
             # Use adaptive binning for better MI estimation
             n_bins = min(20, int(np.sqrt(len(feature))))
@@ -2638,26 +2418,15 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return (0.6 * performance + 0.4 * stability)
     
     def _vectorbt_rolling_correlation(self, feature: np.ndarray, target: np.ndarray, window: int) -> np.ndarray:
-        """
-        Compute rolling correlation using VectorBT for maximum performance.
-        
-        Uses VectorBT's optimized rolling operations with pre-computed statistics
-        for significantly better performance than manual NumPy loops.
-        
-        Optimizations:
-        - VectorBT native rolling operations (10-100x faster than manual loops)
-        - Pre-computed rolling statistics caching
-        - GPU acceleration support
-        - Memory-efficient batch processing
-        
-        Args:
-            feature: Feature values as NumPy array (1D)
-            target: Target values as NumPy array (1D)
-            window: Rolling window size
-            
-        Returns:
-            NumPy array of rolling correlations (n - window + 1 elements)
-        """
+        """Compute rolling correlation using VectorBT for maximum performance."""
+        # Uses VectorBT's optimized rolling operations with pre-computed statistics
+        # for significantly better performance than manual NumPy loops.
+        #
+        # Optimizations:
+        # - VectorBT native rolling operations (much faster than manual loops)
+        # - Pre-computed rolling statistics caching
+        # - GPU acceleration support
+        # - Memory-efficient batch processing
         try:
             if not VECTORBT_AVAILABLE:
                 # Fallback to optimized numpy implementation
@@ -2699,8 +2468,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         - Handles edge cases (low variance, division by zero)
         
         Args:
-            feature: Feature values as NumPy array (1D)
-            target: Target values as NumPy array (1D)
+            feature: Feature values as NumPy array (1-dimensional)
+            target: Target values as NumPy array (1-dimensional)
             window: Rolling window size
             
         Returns:
@@ -2846,7 +2615,12 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                      target_column: str) -> List[Dict]:
         """Process a chunk of features with adaptive performance optimization."""
         try:
-            # Use proxy optimization for large feature sets
+            # Try batch processing with vectorization manager first so diagnostics always run
+            if self.batch_processing_enabled and self.vectorization_manager:
+                tprint(f"🚀 Using VectorBT batch processing for chunk of {len(features)} features")
+                return self._batch_process_features_with_vectorization_manager(features, data, target_column)
+            
+            # Use proxy optimization for large feature sets if batch path unavailable
             if self.use_proxy_optimization and len(features) > 10:
                 tprint(f"🎯 Using proxy optimization for {len(features)} features")
                 return self._proxy_optimize_features(features, data, target_column)
@@ -2857,11 +2631,6 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 if len(features) > optimal_batch_size:
                     # Split into smaller batches
                     return self._process_feature_chunks_adaptive(features, data, target_column, optimal_batch_size)
-            
-            # Try batch processing with vectorization manager first
-            if self.batch_processing_enabled and self.vectorization_manager:
-                tprint(f"🚀 Using VectorBT batch processing for chunk of {len(features)} features")
-                return self._batch_process_features_with_vectorization_manager(features, data, target_column)
             elif self.parallel_processing and len(features) > 5:
                 tprint(f"⚡ Using parallel processing for chunk of {len(features)} features")
                 return self._parallel_process_features(features, data, target_column)
@@ -3670,53 +3439,114 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             }
     
     def _load_generated_features(self, config: Dict[str, Any]) -> Optional[Any]:
-        """Load the most recently generated features using artifact manager with proper context."""
+        """
+        Load generated features and target labels, then merge them.
+        
+        This step requires:
+        1. Features from feature_generation_feature_generation_step
+        2. Target labels from feature_generation_labeling_integration_step
+        """
         try:
             import pandas as pd
             from pathlib import Path
             
-            # Try to load from the specific step's artifacts directory
-            # The artifact manager should handle the path construction
+            original_context = self.artifact_manager._current_step_name
+            generated_features = None
+            labeled_data = None
+            
+            # Step 1: Load generated features from feature_generation_feature_generation_step
             try:
-                # Temporarily switch context to the labeling step to load its artifacts
-                original_context = self.artifact_manager._current_step_name
                 self.artifact_manager.set_context(
-                step_name='feature_generation_labeling_integration_step',
+                    step_name='feature_generation_feature_generation_step',
                     datetime=datetime.now()
                 )
                 
-                # Try to load the labeled data
-                features = self.artifact_manager.get_artifact(
+                generated_features = self.artifact_manager.get_artifact(
+                    artifact_name='generated_features_15m',
+                    artifact_type='data'
+                )
+                
+                if generated_features is not None:
+                    tprint(f"📂 Loaded generated features from feature_generation_feature_generation_step")
+                    tprint(f"📊 Features shape: {generated_features.shape}")
+                    tprint(f"📊 Features columns (first 10): {generated_features.columns.tolist()[:10]}")
+                
+            except Exception as e:
+                self.logger.warning(f"Failed to load generated features: {e}")
+                generated_features = None
+            
+            # Step 2: Load target labels from feature_generation_labeling_integration_step
+            try:
+                self.artifact_manager.set_context(
+                    step_name='feature_generation_labeling_integration_step',
+                    datetime=datetime.now()
+                )
+                
+                labeled_data = self.artifact_manager.get_artifact(
                     artifact_name='labeled_data_ETHUSDT_15m',
-                artifact_type='data'
-            )
-                
-                # Restore original context
-                self.artifact_manager.set_context(
-                    step_name=original_context,
-                    datetime=datetime.now()
+                    artifact_type='data'
                 )
+                
+                if labeled_data is not None:
+                    tprint(f"📂 Loaded labeled data from feature_generation_labeling_integration_step")
+                    tprint(f"📊 Labels shape: {labeled_data.shape}")
+                    tprint(f"📊 Labels columns: {labeled_data.columns.tolist()}")
                 
             except Exception as e:
                 self.logger.warning(f"Failed to load labeled data: {e}")
-                features = None
+                labeled_data = None
             
-            if features is not None:
-                tprint(f"📂 Loaded labeled data from feature_generation_labeling_integration_step")
-                tprint(f"📊 Data preview - Columns: {features.columns.tolist()}")
-                tprint(f"📊 Data preview - Shape: {features.shape}")
-                
-                # Clean duplicate columns to prevent reindexing errors
-                features = self._clean_duplicate_columns(features)
-                tprint(f"🧹 Cleaned duplicate columns - New shape: {features.shape}")
-                
-                return features
+            # Restore original context
+            self.artifact_manager.set_context(
+                step_name=original_context,
+                datetime=datetime.now()
+            )
             
-            # Fast fail: No fallback - if we can't load the correct data, fail immediately
-            tprint(f"❌ CRITICAL: Could not load analyst-labeled data from feature_generation_labeling_integration_step")
-            tprint(f"   This step requires features from the labeling integration step.")
-            tprint(f"   Please run the feature_generation_labeling_integration_step first.")
-            raise ValueError("Required analyst-labeled data not found. Run feature_generation_labeling_integration_step first.")
+            # Step 3: Merge features and labels
+            if generated_features is not None and labeled_data is not None:
+                # Identify target columns from labeled data
+                target_columns = [col for col in labeled_data.columns 
+                                 if 'target' in col.lower() or col in ['price_target_vol_normalized']]
+                
+                if not target_columns:
+                    tprint(f"⚠️ WARNING: No target columns found in labeled data")
+                    tprint(f"   Available columns: {labeled_data.columns.tolist()}")
+                    # Use all labeled data columns as fallback
+                    target_columns = labeled_data.columns.tolist()
+                
+                tprint(f"🎯 Identified target columns: {target_columns}")
+                
+                # Merge on index (timestamps should align)
+                merged_data = generated_features.join(labeled_data[target_columns], how='inner')
+                
+                tprint(f"✅ Merged features and labels")
+                tprint(f"📊 Merged data shape: {merged_data.shape}")
+                tprint(f"📊 Feature columns: {len(generated_features.columns)}")
+                tprint(f"📊 Target columns: {len(target_columns)}")
+                
+                # Clean duplicate columns
+                merged_data = self._clean_duplicate_columns(merged_data)
+                tprint(f"🧹 Cleaned duplicate columns - Final shape: {merged_data.shape}")
+                
+                return merged_data
+            
+            elif generated_features is not None:
+                tprint(f"⚠️ WARNING: Only features loaded, no target labels available")
+                tprint(f"   Optimization may not work correctly without targets")
+                return self._clean_duplicate_columns(generated_features)
+            
+            elif labeled_data is not None:
+                tprint(f"⚠️ WARNING: Only labels loaded, no generated features available")
+                tprint(f"   Using labeled data as fallback (includes basic OHLCV features)")
+                return self._clean_duplicate_columns(labeled_data)
+            
+            # Fast fail: No data loaded
+            tprint(f"❌ CRITICAL: Could not load features or labels")
+            tprint(f"   This step requires:")
+            tprint(f"   1. Features from feature_generation_feature_generation_step")
+            tprint(f"   2. Labels from feature_generation_labeling_integration_step")
+            tprint(f"   Please run both steps first.")
+            raise ValueError("Required features and labels not found. Run feature_generation steps first.")
             
         except Exception as e:
             self.logger.warning(f"Could not load generated features: {e}")
@@ -3909,6 +3739,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 'error': f"Import failed: {import_error}"
             }
         
+        # Ensure artifacts structure exists even if early failures occur
+        artifacts: Dict[str, Any] = {'individual_feature_results': {}}
+        optimization_results: Dict[str, Any] = {}
+        per_feature_optimization: Dict[str, Any] = {}
+
         try:
             # Main optimization logic
             import pandas as pd
@@ -4012,9 +3847,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             tprint(f"❌ Failed: _run_optimization")
 
             # Run optimization for different feature categories
-            optimization_results = {}
-            artifacts = {'individual_feature_results': {}}  # Initialize artifacts early
-            
+            # artifacts already initialized above
+
             # STEP 1: Generate features using Feature Bank first
             tprint("🚀 Generating features using Feature Bank...")
             from src.feature_generation.core.feature_bank import FeatureBank
@@ -4108,6 +3942,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             # STEP 2: Categorize the generated features properly
             tprint("🔍 Categorizing generated features...")
+            tprint(f"   📋 Generated feature columns: {len(generated_features.columns)} (including target)")
+            if generated_features.columns.any():
+                tprint(f"   🔎 Sample columns: {list(generated_features.columns[:10])}")
             feature_categories = {}
             
             # Get features for each category using Feature Bank's classification
@@ -4165,9 +4002,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         'lookback_range': lookback_range
                     }
                     
-                    tprint(f"📊 {category.value}: {len(available_features)} features from Feature Bank")
                     if len(available_features) > 0:
+                        tprint(f"📊 {category.value}: {len(available_features)} features from Feature Bank")
                         tprint(f"   Examples: {available_features[:5]}")
+                    else:
+                        tprint(f"⚠️ {category.value}: No features found in generated dataset")
                     
                 except Exception as e:
                     tprint(f"⚠️ Could not categorize {category.value} features: {e}")
@@ -4176,6 +4015,42 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         'lookback_range': (5, 30)
                     }
             
+            # Summary statistics for category coverage
+            total_columns = set(generated_features.columns)
+            if target_column in total_columns:
+                total_columns.remove(target_column)
+            total_feature_columns = len(total_columns)
+            matched_feature_columns = set()
+            category_coverage = {}
+
+            for category_key, category_info in feature_categories.items():
+                category_features = set(category_info['features'])
+                matching = category_features & total_columns
+                missing = category_features - total_columns
+                matched_feature_columns.update(matching)
+                category_coverage[category_key] = {
+                    'requested': len(category_features),
+                    'matched': len(matching),
+                    'missing': len(missing),
+                    'sample_missing': list(sorted(missing))[:5]
+                }
+
+            unmatched_columns = total_columns - matched_feature_columns
+
+            tprint("📊 Category coverage summary:")
+            for category_key, stats in category_coverage.items():
+                tprint(
+                    f"   {category_key}: requested={stats['requested']}, matched={stats['matched']}, missing={stats['missing']}"
+                )
+                if stats['missing']:
+                    tprint(f"      Missing sample: {stats['sample_missing']}")
+
+            tprint(
+                f"📊 Aggregate coverage: total_feature_columns={total_feature_columns}, matched={len(matched_feature_columns)}, unmatched={len(unmatched_columns)}"
+            )
+            if unmatched_columns:
+                tprint(f"   Unmatched generated columns (sample): {list(sorted(unmatched_columns))[:10]}")
+
             # If no features were found, fall back to comprehensive pattern matching
             total_features_found = sum(len(category_info['features']) for category_info in feature_categories.values())
             if total_features_found == 0:
@@ -4249,14 +4124,14 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Initialize hardware monitoring (if needed)
             # Note: UnifiedHardwareManager uses internal performance_monitor for monitoring
             pass
-            
             for category, category_info in feature_categories.items():
                 if not category_info['features']:
                     tprint(f"⚠️ No features found for {category}, skipping")
                     continue
-                
+
                 tprint(f"🔍 Optimizing {category} features: {len(category_info['features'])} features")
-                
+                tprint(f"   🔎 Sample features: {category_info['features'][:5]}")
+
                 # Use memory-efficient chunk processing with parallel optimization
                 try:
                     # Process features in chunks to manage memory usage
@@ -4285,9 +4160,18 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                             chunk_size=chunk_size
                         )
                         
-                        # Store per-feature results for reporting
+                    result_count = len(category_feature_results) if category_feature_results else 0
+                    tprint(f"   📈 Per-feature result count for {category}: {result_count}")
+                    if category_feature_results:
+                        sample_result = category_feature_results[0]
+                        if isinstance(sample_result, dict):
+                            tprint(f"   🧪 Sample result keys: {list(sample_result.keys())}")
+                        else:
+                            tprint(f"   🧪 Sample result type: {type(sample_result)}")
+
+                    # Store per-feature results for reporting
                     per_feature_optimization[category] = category_feature_results
-                    
+
                     # Also store individual feature results in artifacts for CSV export
                     if category_feature_results:
                         individual_feature_results = artifacts.get('individual_feature_results', {})
@@ -4310,7 +4194,10 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                 }
                         
                         artifacts['individual_feature_results'] = individual_feature_results
-                        
+                        tprint(f"   ✅ Captured {len(individual_feature_results[category])} individual feature entries for {category}")
+                    else:
+                        tprint(f"   ⚠️ No individual feature results captured for {category}")
+
                         # Check for identical results (only log warnings)
                         all_lookbacks = [r.get('optimal_lookback', 'N/A') for r in individual_feature_results[category].values()]
                         unique_lookbacks = set(all_lookbacks)
@@ -4331,18 +4218,25 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     continue
         
         # Optimize lookback periods for all features (keep all features, optimize their lookbacks)
-        lookback_optimization_result = None
+        lookback_optimization_result: Dict[str, Any] = {'category_optimizations': {}}
         try:
             if artifacts.get('individual_feature_results'):
                 tprint("🎯 Optimizing lookback periods for all features...")
-                lookback_optimization_result = self._optimize_lookback_periods_by_category(
+                optimization_output = self._optimize_lookback_periods_by_category(
                     artifacts['individual_feature_results'], 
                     max_lookbacks_per_feature=3
                 )
+                if isinstance(optimization_output, dict):
+                    lookback_optimization_result = optimization_output
+                elif optimization_output is None:
+                    tprint("⚠️ Lookback optimization returned no results; using empty defaults")
+            else:
+                tprint("⚠️ No individual feature results available; skipping lookback optimization")
+
             artifacts['lookback_optimization'] = lookback_optimization_result
             
             # Log optimized lookbacks by category
-            category_optimizations = lookback_optimization_result.get('category_optimizations', {})
+            category_optimizations = lookback_optimization_result.get('category_optimizations', {}) if isinstance(lookback_optimization_result, dict) else {}
             if category_optimizations:
                 tprint("✅ OPTIMIZED LOOKBACKS BY CATEGORY:")
                 for category, features in category_optimizations.items():
@@ -4361,8 +4255,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             error_details = traceback.format_exc()
             self.logger.warning(f"Failed to optimize lookback periods: {e}")
             self.logger.info(f"Error details: {error_details}")
-            lookback_optimization_result = None
-            
+            lookback_optimization_result = {'category_optimizations': {}}
+
             # Cleanup: Stop hardware monitoring
             try:
                 if hasattr(self.hardware_manager, 'shutdown'):
@@ -4372,7 +4266,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             # Check if we have any successful optimizations from lookback optimization
             successful_optimizations = []
-            if lookback_optimization_result:
+            if isinstance(lookback_optimization_result, dict):
                 category_optimizations = lookback_optimization_result.get('category_optimizations', {})
                 for category, features in category_optimizations.items():
                     if features:
@@ -4408,7 +4302,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             avg_performance_list = []
             avg_stability_list = []
             
-            if lookback_optimization_result:
+            if isinstance(lookback_optimization_result, dict):
                 category_optimizations = lookback_optimization_result.get('category_optimizations', {})
                 for category, features in category_optimizations.items():
                     if features:
@@ -5503,7 +5397,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             # Priority 2: Exact matches for labeling step targets
             labeling_step_targets = [
-                'price_target_vol_normalized',  # New name for volatility-aware target qualification
+                'target_long',  # New simplified target for long positions
+                'target_short',  # New simplified target for short positions
+                'price_target_vol_normalized',  # Legacy name (deprecated)
                 'volatility_labels',  # Legacy name (still in existing data)
                 'labels',            # Generic labels column
                 'label',             # Single label column
@@ -5561,7 +5457,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 'analyst_signal': 0.9,
                 
                 # Medium priority patterns (labeling outputs)
-                'price_target_vol_normalized': 0.8,
+                'target_long': 1.0,  # New simplified target (highest priority)
+                'target_short': 1.0,  # New simplified target (highest priority)
+                'price_target_vol_normalized': 0.8,  # Legacy name (deprecated)
                 'volatility_labels': 0.8,  # Legacy name
                 'direction_confidence': 0.8,
                 'opportunity_asymmetry': 0.8,

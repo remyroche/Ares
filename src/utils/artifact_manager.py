@@ -936,6 +936,15 @@ class ArtifactManager:
 		"""
 		try:
 			resolved_path: Optional[Path] = None
+			
+			# Step 0: Try versioned artifacts first (highest priority for latest data)
+			versioned_data = self._load_from_versioned_artifacts(artifact_name)
+			if versioned_data is not None:
+				self.logger.info(f"✅ Retrieved artifact from versioned storage: {artifact_name}")
+				# Return path as versioned_artifacts for tracking
+				versioned_path = f"versioned_artifacts/{artifact_name}"
+				return (versioned_data, versioned_path) if return_path else versioned_data
+			
 			# Step 1: Try exact path construction (mirrors _get_enhanced_path logic)
 			exact_path = self._get_artifact_exact_path(artifact_name, artifact_type)
 			if exact_path and exact_path.exists():
@@ -1254,6 +1263,86 @@ class ArtifactManager:
 				return None
 		except Exception as e:
 			self.logger.error(f"Failed to load artifact from {path}: {e}")
+			return None
+	
+	def _load_from_versioned_artifacts(self, artifact_name: str) -> Optional[pd.DataFrame]:
+		"""
+		Load artifact from versioned artifacts storage.
+		
+		This method searches for the artifact in the versioned_artifacts directory
+		and loads the latest version if found.
+		
+		Args:
+			artifact_name: Name of the artifact to load
+			
+		Returns:
+			DataFrame if found, None otherwise
+		"""
+		try:
+			from src.utils.versioned_artifacts import VersionedArtifactStore
+			
+			# Get versioned artifacts root directory
+			versioned_root = Path(self.config.get('versioned_artifacts_dir', 'versioned_artifacts'))
+			if not versioned_root.exists():
+				return None
+			
+			# Search for store directories that might contain this artifact
+			# Pattern: SYMBOL_exchange_timeframe_direction_model
+			# e.g., ETHUSDT_binance_15m_long_analyst or UNKNOWN_binance_15m_long_analyst
+			# Priority order: exact symbol match > UNKNOWN > any other
+			matching_stores = []
+			unknown_stores = []
+			other_stores = []
+			
+			current_symbol = self._current_symbol or "UNKNOWN"
+			
+			for store_dir in versioned_root.iterdir():
+				if store_dir.is_dir() and (store_dir / "store.h5").exists():
+					store_name = store_dir.name
+					if store_name.startswith(current_symbol):
+						matching_stores.append(store_dir)
+					elif store_name.startswith("UNKNOWN"):
+						unknown_stores.append(store_dir)
+					else:
+						other_stores.append(store_dir)
+			
+			# Combine in priority order
+			all_stores = matching_stores + unknown_stores + other_stores
+			
+			if not all_stores:
+				return None
+			
+			# Try each store to find the artifact (in priority order)
+			for store_dir in all_stores:
+				try:
+					store = VersionedArtifactStore(store_path=str(store_dir))
+					versions = store.list_versions()
+					
+					# Find versions matching the artifact name
+					matching_versions = [v for v in versions if artifact_name in v]
+					
+					if matching_versions:
+						# Get the latest version (versions are sorted by timestamp)
+						latest_version = matching_versions[-1]
+						self.logger.info(f"📂 Loading versioned artifact: {latest_version} from {store_dir.name}")
+						
+						# Load the data using the store's view mechanism
+						view = store.get_view(version_name=latest_version)
+						data = view.to_pandas()
+						
+						self.logger.info(f"✅ Loaded versioned artifact: {artifact_name} ({data.shape[0]} rows × {data.shape[1]} cols)")
+						return data
+						
+				except Exception as e:
+					self.logger.warning(f"Could not load from store {store_dir.name}: {e}")
+					import traceback
+					self.logger.debug(f"Traceback: {traceback.format_exc()}")
+					continue
+			
+			return None
+			
+		except Exception as e:
+			self.logger.debug(f"Failed to load from versioned artifacts: {e}")
 			return None
 	
 	def _persist_metadata_to_disk(self, artifact_name: str, metadata: Dict[str, Any]) -> None:

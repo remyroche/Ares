@@ -430,8 +430,7 @@ class TPrintManager:
         colored_message = self._get_colored_message(level, message)
 
         # Filter out tprint-specific parameters that print() doesn't accept
-        filtered_kwargs = {k: v for k, v in kwargs.items()
-                          if k not in ['color', 'bold']}
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k not in ['file', 'flush', 'end', 'extra']}
 
         if self.config.output_to_console:
             try:
@@ -596,17 +595,9 @@ class TPrintManager:
 
         # Format the message
         if not args:
-            message = ""
-        else:
-            message = " ".join(str(arg) for arg in args)
-
-        # Filter out recursion guard from kwargs
-        filtered_kwargs = {k: v for k, v in kwargs.items() if k != '_recursion_guard'}
-
-        # Log to tprint if enabled
-        if self.config.capture_print_to_tprint:
-            self._write_to_outputs(f"[PRINT] {message}", self.config.print_capture_level, **filtered_kwargs)
-
+            return
+        
+        message = " ".join(str(arg) for arg in args)
         # Log to Python logging if enabled
         if self.config.log_to_python_logger:
             try:
@@ -717,6 +708,8 @@ def tprint(*args, **kwargs) -> None:
         error_indicators = ['error', 'failed', 'exception', 'traceback', 'crash', 'fatal', 'critical', '❌', '🚨']
         is_error_message = any(indicator in message_str for indicator in error_indicators)
 
+    extra = kwargs.pop('extra', None)
+
     if color:
         # Map color names to log levels for backward compatibility
         color_to_level = {
@@ -728,9 +721,16 @@ def tprint(*args, **kwargs) -> None:
             'magenta': LogLevel.PERFORMANCE,
         }
         level = color_to_level.get(color, LogLevel.INFO)
-        _global_manager._log(level, *args, **kwargs)
+        _global_manager._log(level, *args, extra=extra, **kwargs)
+    elif extra and 'level' in extra:
+        level_value = extra.pop('level')
+        try:
+            level = level_value if isinstance(level_value, LogLevel) else LogLevel(level_value)
+        except ValueError:
+            level = LogLevel.INFO
+        _global_manager._log(level, *args, extra=extra, **kwargs)
     else:
-        _global_manager._log_without_level(*args, **kwargs)
+        _global_manager._log_without_level(*args, extra=extra, **kwargs)
 
     # Add traceback if this is an error message and we're in an exception context
     if is_error_message and include_traceback and _global_manager.config.include_traceback:

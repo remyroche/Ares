@@ -247,8 +247,8 @@ class KlinesParquetManager:
             DataFrame containing klines data
         """
         try:
-            # Find relevant files
-            files = self._find_klines_files(symbol, exchange, interval, batch_id)
+            # Find relevant files (with pre-filtering by date range if provided)
+            files = self._find_klines_files(symbol, exchange, interval, batch_id, start_time, end_time)
             if not files:
                 tprint_warning(f"⚠️ No klines files found for {symbol} {exchange} {interval}")
                 return pd.DataFrame()
@@ -731,19 +731,70 @@ class KlinesParquetManager:
         symbol: str,
         exchange: str,
         interval: str,
-        batch_id: Optional[str] = None
+        batch_id: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None
     ) -> List[Path]:
-        """Find klines files matching criteria."""
+        """Find klines files matching criteria, optionally filtered by date range."""
+        # Check processed directory first (preferred), then fall back to klines directory
+        processed_dir = self.base_dir / exchange.lower() / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
         klines_dir = self.base_dir / exchange.lower() / symbol.lower() / "klines"
 
-        if not klines_dir.exists():
+        all_files = []
+        
+        # Try processed directory first (contains partitioned parquet files)
+        if processed_dir.exists():
+            # Processed data is partitioned by year, so we need to search recursively
+            all_files = list(processed_dir.glob("**/*.parquet"))
+            if all_files:
+                tprint_info(f"📁 Loading from processed directory: {len(all_files)} files found")
+        
+        # Fall back to klines directory if no processed data found
+        if not all_files and klines_dir.exists():
+            pattern = f"klines_{exchange}_{symbol}_{interval}_*.parquet"
+            if batch_id:
+                pattern = f"klines_{exchange}_{symbol}_{interval}_{batch_id}.parquet"
+            all_files = list(klines_dir.glob(pattern))
+            if all_files:
+                tprint_info(f"📁 Loading from klines directory: {len(all_files)} files found")
+        
+        if not all_files:
             return []
-
-        pattern = f"klines_{exchange}_{symbol}_{interval}_*.parquet"
-        if batch_id:
-            pattern = f"klines_{exchange}_{symbol}_{interval}_{batch_id}.parquet"
-
-        return list(klines_dir.glob(pattern))
+        
+        # If no time filters, return all files
+        if start_time is None and end_time is None:
+            return all_files
+        
+        # For processed files (partitioned by year), skip metadata filtering and rely on in-memory filtering
+        # since processed files don't have metadata files
+        if processed_dir.exists() and all_files:
+            tprint_info(f"📁 Using all {len(all_files)} processed files (will filter in-memory)")
+            return all_files
+        
+        # Filter files by metadata date ranges (only for klines directory files)
+        filtered_files = []
+        for file_path in all_files:
+            metadata = self._load_file_metadata(file_path)
+            if metadata:
+                # Check if file's time range overlaps with requested range
+                file_start = metadata.start_time
+                file_end = metadata.end_time
+                
+                # Skip files that are completely outside the requested range
+                if start_time and file_end < start_time:
+                    continue
+                if end_time and file_start > end_time:
+                    continue
+                    
+                filtered_files.append(file_path)
+            else:
+                # If no metadata, include the file (fallback to in-memory filtering)
+                filtered_files.append(file_path)
+        
+        if start_time or end_time:
+            tprint_info(f"📁 File pre-filter: {len(all_files)} total → {len(filtered_files)} relevant files")
+        
+        return filtered_files
 
     def _load_and_combine_files(
         self,
@@ -767,19 +818,61 @@ class KlinesParquetManager:
             return pd.DataFrame()
 
         # Combine dataframes
-        combined_df = pd.concat(dataframes, ignore_index=True)
+        combined_df = pd.concat(dataframes, ignore_index=False)  # Keep index if timestamp is in index
 
-        # Remove duplicates
-        combined_df = combined_df.drop_duplicates(subset=['timestamp'], keep='last')
-
-        # Sort by timestamp
-        combined_df = combined_df.sort_values('timestamp')
-
-        # Apply time filters
-        if start_time:
-            combined_df = combined_df[combined_df['timestamp'] >= start_time]
-        if end_time:
-            combined_df = combined_df[combined_df['timestamp'] <= end_time]
+        # Check if timestamp is in the index or as a column
+        has_timestamp_index = combined_df.index.name == 'timestamp' or isinstance(combined_df.index, pd.DatetimeIndex)
+        has_timestamp_column = 'timestamp' in combined_df.columns
+        
+        if has_timestamp_index:
+            # Timestamp is in the index
+            combined_df = combined_df.sort_index()
+            combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+            
+            # Apply time filters - handle timezone awareness
+            if start_time:
+                # Convert to pandas Timestamp and localize if needed
+                start_ts = pd.Timestamp(start_time)
+                if hasattr(combined_df.index, 'tz') and combined_df.index.tz is not None:
+                    if start_ts.tz is None:
+                        start_ts = start_ts.tz_localize('UTC').tz_convert(combined_df.index.tz)
+                combined_df = combined_df[combined_df.index >= start_ts]
+            if end_time:
+                # Convert to pandas Timestamp and localize if needed
+                end_ts = pd.Timestamp(end_time)
+                if hasattr(combined_df.index, 'tz') and combined_df.index.tz is not None:
+                    if end_ts.tz is None:
+                        end_ts = end_ts.tz_localize('UTC').tz_convert(combined_df.index.tz)
+                combined_df = combined_df[combined_df.index <= end_ts]
+                
+        elif has_timestamp_column:
+            # Timestamp is a column
+            # Remove duplicates
+            combined_df = combined_df.drop_duplicates(subset=['timestamp'], keep='last')
+            
+            # Sort by timestamp
+            combined_df = combined_df.sort_values('timestamp')
+            
+            # Apply time filters - ensure timestamp is datetime for comparison
+            if start_time or end_time:
+                # Convert timestamp to datetime if it's not already
+                if not pd.api.types.is_datetime64_any_dtype(combined_df['timestamp']):
+                    # Check if timestamp is in milliseconds or seconds
+                    if combined_df['timestamp'].max() > 1e12:  # Likely milliseconds
+                        combined_df['timestamp'] = pd.to_datetime(combined_df['timestamp'], unit='ms', utc=True)
+                    else:  # Likely seconds
+                        combined_df['timestamp'] = pd.to_datetime(combined_df['timestamp'], unit='s', utc=True)
+            
+            if start_time:
+                # Ensure start_time is timezone-aware if timestamp is
+                if combined_df['timestamp'].dt.tz is not None and start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=pd.Timestamp.utcnow().tz)
+                combined_df = combined_df[combined_df['timestamp'] >= start_time]
+            if end_time:
+                # Ensure end_time is timezone-aware if timestamp is
+                if combined_df['timestamp'].dt.tz is not None and end_time.tzinfo is None:
+                    end_time = end_time.replace(tzinfo=pd.Timestamp.utcnow().tz)
+                combined_df = combined_df[combined_df['timestamp'] <= end_time]
 
         return combined_df
 

@@ -240,10 +240,10 @@ class ScalingNormalizer:
         else:
             characteristics['recommended_strategy'] = 'standard'
 
-        tprint_info(f"📊 Data analysis: {len(characteristics['numeric_features'])} numeric, "
-                   f"{len(characteristics['outlier_features'])} with outliers, "
-                   f"{len(characteristics['skewed_features'])} skewed, "
-                   f"VectorBT suitable: {characteristics['vectorbt_suitable']}")
+        # tprint_info(f"📊 Data analysis: {len(characteristics['numeric_features'])} numeric, "
+        #            f"{len(characteristics['outlier_features'])} with outliers, "
+        #            f"{len(characteristics['skewed_features'])} skewed, "
+        #            f"VectorBT suitable: {characteristics['vectorbt_suitable']}")
 
         return characteristics
 
@@ -302,7 +302,7 @@ class ScalingNormalizer:
         Returns:
             Scaled DataFrame
         """
-        tprint_info("🔧 Starting scaling and normalization")
+        # tprint_info("🔧 Starting scaling and normalization")
 
         # Analyze data characteristics
         characteristics = self.analyze_data_characteristics(data)
@@ -358,13 +358,13 @@ class ScalingNormalizer:
 
                 if scaled_feature is not None:
                     scaled_data[feature] = scaled_feature
-                    tprint_success(f"✅ Scaled {feature} using {selected_strategy}")
+                    # tprint_success(f"✅ Scaled {feature} using {selected_strategy}")
 
             except Exception as e:
                 tprint_error(f"❌ Error scaling feature {feature}: {e}")
                 continue
 
-        tprint_success(f"✅ Scaling completed: {len(feature_list)} features processed")
+        # tprint_success(f"✅ Scaling completed: {len(feature_list)} features processed")
         return scaled_data
 
     @staticmethod

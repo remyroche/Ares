@@ -547,8 +547,8 @@ class UnifiedVectorizationManager:
             logger.info(f"UnifiedVectorizationManager initialized: VectorBT={self.config.enable_vectorbt}, GPU={self.config.enable_gpu}, Memory={self.config.memory_efficient}")
             UnifiedVectorizationManager._logged_initialization = True
 
-    def rolling_operation(self, data: Union[pd.Series, pd.DataFrame],
-                         operation: str, window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+    def rolling_operation(self, data: Union[pd.Series, pd.DataFrame], operation: str,
+                          window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """
         Perform optimized rolling operation with enhanced logging and validation.
 
@@ -670,6 +670,221 @@ class UnifiedVectorizationManager:
             execution_time = time.time() - start_time
             self.performance_stats['total_time'] += execution_time
             tprint_performance(f"Rolling {operation}", execution_time)
+
+    def process_feature_batch(self, batch_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Process a batch of features leveraging the rolling optimizer's batch analysis."""
+
+        required_keys = {'features', 'data', 'target_column'}
+        missing = [key for key in required_keys if key not in batch_config]
+        if missing:
+            raise UnifiedVectorizationError(
+                f"Batch configuration missing required keys: {missing}",
+                operation="feature_batch"
+            )
+
+        features: List[str] = batch_config['features']
+        data: pd.DataFrame = batch_config['data']
+        target_column: str = batch_config['target_column']
+        lookback_ranges: List[int] = batch_config.get('lookback_ranges') or list(range(5, 51, 5))
+        metrics: List[str] = batch_config.get('metrics') or ['corr', 'std', 'var']
+
+        if not isinstance(data, pd.DataFrame):
+            raise UnifiedVectorizationError("data must be a pandas DataFrame", operation="feature_batch")
+
+        if target_column not in data.columns:
+            raise UnifiedVectorizationError(
+                f"Target column '{target_column}' not present in data",
+                operation="feature_batch"
+            )
+
+        available_features = [feature for feature in features if feature in data.columns]
+        if not available_features:
+            missing_preview = features[:5]
+            tprint_warning(
+                f"⚠️ Batch request rejected: none of the requested features exist in data. Sample missing: {missing_preview}"
+            )
+            return {'results': [], 'errors': ['No requested features found in data'], 'missing_features': features}
+
+        feature_df = data[available_features].copy()
+        target_series = data[target_column].copy()
+
+        missing_features = [feature for feature in features if feature not in available_features]
+        if missing_features:
+            tprint_warning(
+                f"⚠️ {len(missing_features)}/ {len(features)} requested features missing in data. Sample: {missing_features[:5]}"
+            )
+
+        tprint_debug(
+            f"🔬 Batch processing summary: available={len(available_features)}, missing={len(missing_features)}, lookbacks={len(lookback_ranges)}"
+        )
+        tprint_debug(f"🔎 Available feature sample: {available_features[:5]}")
+
+        batch_analysis: Dict[str, Dict[str, Dict[str, float]]] = {}
+        errors: List[str] = []
+
+        if self.rolling_optimizer and hasattr(self.rolling_optimizer, 'batch_multi_feature_analysis'):
+            try:
+                batch_analysis = self.rolling_optimizer.batch_multi_feature_analysis(
+                    feature_df,
+                    target_series,
+                    lookback_ranges,
+                    metrics
+                )
+            except Exception as batch_err:
+                error_msg = f"VectorBT batch analysis failed: {batch_err}"
+                tprint_warning(f"⚠️ {error_msg}")
+                errors.append(error_msg)
+
+        if not batch_analysis:
+            try:
+                batch_analysis = self._fallback_batch_feature_analysis(
+                    feature_df,
+                    target_series,
+                    lookback_ranges,
+                    metrics
+                )
+            except Exception as fallback_err:
+                error_msg = f"Fallback batch analysis failed: {fallback_err}"
+                tprint_error(f"❌ {error_msg}")
+                errors.append(error_msg)
+                batch_analysis = {}
+
+        results: List[Dict[str, Any]] = []
+
+        for feature_name in available_features:
+            feature_results = batch_analysis.get(feature_name)
+            if not feature_results:
+                tprint_warning(f"⚠️ No batch metrics returned for feature '{feature_name}'")
+                errors.append(f"No batch results for feature {feature_name}")
+                continue
+
+            try:
+                optimal_key = max(
+                    feature_results.keys(),
+                    key=lambda lb_key: feature_results[lb_key].get('combined_score', 0.0)
+                )
+                optimal_lookback = int(optimal_key)
+                optimal_stats = feature_results[optimal_key]
+
+                performance_score = float(optimal_stats.get('combined_score', 0.0))
+
+                feature_std = float(optimal_stats.get('feature_std', 0.0))
+                feature_global_std = float(optimal_stats.get('feature_global_std', 0.0))
+                if feature_global_std <= 1e-9:
+                    stability_score = 0.0
+                else:
+                    stability_score = 1.0 - min(1.0, feature_std / (feature_global_std + 1e-9))
+                    stability_score = float(max(0.0, min(stability_score, 1.0)))
+
+                results.append({
+                    'feature_name': feature_name,
+                    'optimal_lookback': optimal_lookback,
+                    'performance_score': performance_score,
+                    'stability_score': stability_score,
+                    'optimization_method': 'vectorbt_batch',
+                    'lookback_range': f"{min(lookback_ranges)}-{max(lookback_ranges)}",
+                    'cv_folds': batch_config.get('cv_folds', 2),
+                    'optimization_time': 0.0,
+                    'memory_usage': 0.0,
+                    'success': True,
+                    'lookback_results': feature_results
+                })
+
+            except Exception as feature_err:
+                error_msg = f"Failed to summarize batch results for {feature_name}: {feature_err}"
+                tprint_warning(f"⚠️ {error_msg}")
+                errors.append(error_msg)
+
+        if not results:
+            errors.append('Batch processing returned zero feature results')
+            tprint_warning("⚠️ Batch processing produced zero feature results")
+
+        return {'results': results, 'errors': errors, 'missing_features': missing_features}
+
+    def _fallback_batch_feature_analysis(self,
+                                         feature_df: pd.DataFrame,
+                                         target_series: pd.Series,
+                                         lookbacks: List[int],
+                                         metrics: List[str]) -> Dict[str, Dict[str, Dict[str, float]]]:
+        """Fallback batch analysis using pandas/numpy when VectorBT batch is unavailable."""
+
+        analysis: Dict[str, Dict[str, Dict[str, float]]] = {}
+
+        if feature_df.empty or target_series.empty:
+            return analysis
+
+        sorted_lookbacks = sorted({int(lb) for lb in lookbacks if lb and lb > 0})
+        if not sorted_lookbacks:
+            return analysis
+
+        for feature_name in feature_df.columns:
+            feature_series = feature_df[feature_name]
+            aligned = pd.concat([feature_series, target_series], axis=1, join='inner').dropna()
+            if aligned.empty:
+                continue
+
+            feature_aligned = aligned.iloc[:, 0]
+            target_aligned = aligned.iloc[:, 1]
+            max_lookback = max(sorted_lookbacks)
+            if len(feature_aligned) <= max_lookback:
+                continue
+
+            feature_global_std = float(feature_aligned.std(ddof=0) if feature_aligned.std(ddof=0) is not None else 0.0)
+            target_global_std = float(target_aligned.std(ddof=0) if target_aligned.std(ddof=0) is not None else 0.0)
+
+            lookback_stats: Dict[str, Dict[str, float]] = {}
+
+            for lookback in sorted_lookbacks:
+                if len(feature_aligned) <= lookback:
+                    continue
+
+                window_key = str(int(lookback))
+                stats: Dict[str, float] = {
+                    'combined_score': 0.0,
+                    'feature_global_std': feature_global_std,
+                    'target_global_std': target_global_std
+                }
+
+                if 'corr' in metrics:
+                    corr_series = feature_aligned.rolling(window=lookback).corr(target_aligned)
+                    corr_value = float(corr_series.abs().mean(skipna=True) or 0.0)
+                else:
+                    corr_value = 0.0
+
+                if 'std' in metrics:
+                    feature_std_series = feature_aligned.rolling(window=lookback).std()
+                    target_std_series = target_aligned.rolling(window=lookback).std()
+                    feature_std = float(feature_std_series.abs().mean(skipna=True) or 0.0)
+                    target_std = float(target_std_series.abs().mean(skipna=True) or 0.0)
+                else:
+                    feature_std = 0.0
+                    target_std = 0.0
+
+                if 'var' in metrics:
+                    feature_var_series = feature_aligned.rolling(window=lookback).var()
+                    target_var_series = target_aligned.rolling(window=lookback).var()
+                    feature_var = float(feature_var_series.abs().mean(skipna=True) or feature_std ** 2)
+                    target_var = float(target_var_series.abs().mean(skipna=True) or target_std ** 2)
+                else:
+                    feature_var = feature_std ** 2
+                    target_var = target_std ** 2
+
+                stats.update({
+                    'correlation': float(max(corr_value, 0.0)),
+                    'feature_std': float(max(feature_std, 0.0)),
+                    'target_std': float(max(target_std, 0.0)),
+                    'feature_var': float(max(feature_var, 0.0)),
+                    'target_var': float(max(target_var, 0.0))
+                })
+
+                stats['combined_score'] = float(min(max(corr_value, 0.0), 1.0))
+
+                lookback_stats[window_key] = stats
+
+            if lookback_stats:
+                analysis[feature_name] = lookback_stats
+
+        return analysis
 
     def scale_data(self, data: Union[pd.Series, pd.DataFrame],
                    method: str = 'zscore', **kwargs) -> Union[pd.Series, pd.DataFrame]:

@@ -183,7 +183,7 @@ class SupportResistanceFeatureGenerator(VectorizedFeatureGenerator):
             return pivot.rolling(window=window).mean()
 
     def _calculate_fibonacci_sr(self, high: pd.Series, low: pd.Series) -> pd.Series:
-        """Calculate Fibonacci-based support/resistance levels."""
+        """Calculate Fibonacci-based support/resistance intensity levels."""
         if self.rolling_optimizer:
             window = self.config.parameters.get('pivot_windows', [20])[0]
             fibonacci_levels = self.config.parameters.get('fibonacci_levels', [0.618])
@@ -193,7 +193,17 @@ class SupportResistanceFeatureGenerator(VectorizedFeatureGenerator):
             rolling_low = self.rolling_optimizer.rolling_min(low, window)
             range_size = rolling_high - rolling_low
             fibonacci_level = rolling_low + (range_size * level)
-            return fibonacci_level
+            
+            # Calculate intensity based on how close current price is to Fibonacci level
+            # Use a proxy close price (midpoint of high-low for intensity calculation)
+            current_price = (high + low) / 2
+            distance_to_fib = np.abs(current_price - fibonacci_level)
+            normalized_distance = distance_to_fib / (range_size + 1e-8)
+            
+            # Intensity: higher when closer to Fibonacci level
+            intensity = np.exp(-normalized_distance * 5)  # Exponential decay with distance
+            
+            return intensity
         else:
             window = self.config.parameters.get('pivot_windows', [20])[0]
             fibonacci_levels = self.config.parameters.get('fibonacci_levels', [0.618])
@@ -202,7 +212,15 @@ class SupportResistanceFeatureGenerator(VectorizedFeatureGenerator):
             rolling_high = high.rolling(window=window).max()
             rolling_low = low.rolling(window=window).min()
             range_size = rolling_high - rolling_low
-            return rolling_low + (range_size * level)
+            fibonacci_level = rolling_low + (range_size * level)
+            
+            # Calculate intensity
+            current_price = (high + low) / 2
+            distance_to_fib = np.abs(current_price - fibonacci_level)
+            normalized_distance = distance_to_fib / (range_size + 1e-8)
+            intensity = np.exp(-normalized_distance * 5)
+            
+            return intensity
 
 # Support Level Generator
 

@@ -211,7 +211,7 @@ class NormalizationFeatureGenerator(FeatureGenerator):
             result = normalized_df[primary_column]
 
             if TPRINT_AVAILABLE:
-                tprint_info(f"✅ Applied {self.normalization_config.method} normalization using features_common")
+                pass  # tprint_info(f"✅ Applied {self.normalization_config.method} normalization using features_common")
 
             return result
 

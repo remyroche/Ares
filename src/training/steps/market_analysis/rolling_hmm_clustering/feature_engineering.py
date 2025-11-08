@@ -16,6 +16,9 @@ import logging
 from enum import Enum
 from numba import jit
 import numpy.typing as npt
+from pathlib import Path
+import joblib
+import hashlib
 
 # Type aliases
 ArrayLike = Union[npt.NDArray[np.float64], pd.Series, pd.DataFrame]
@@ -82,12 +85,16 @@ class FeatureEngineeringConfig:
         use_volatility_features: bool = True,
         use_trend_features: bool = True,
         use_volume_features: bool = True,
-        pca_components: int = 4,  # 3-5 for 80-90% variance
+        pca_components: int = 5,
         normalize_method: NormalizeMethod = 'zscore',
         rolling_normalize_window: int = 100,
         enable_vectorbt_optimization: bool = True,
         enable_hardware_optimization: bool = True,
-        enable_numba_jit: bool = True
+        enable_numba_jit: bool = True,
+        cache_dir: Optional[Union[str, Path]] = None,
+        enable_persistent_cache: bool = True,
+        cache_version: str = "v1",
+        cache_namespace: Optional[str] = None
     ) -> None:
         self.ewma_configs = ewma_configs
         self.use_log_returns = use_log_returns
@@ -100,6 +107,10 @@ class FeatureEngineeringConfig:
         self.enable_vectorbt_optimization = enable_vectorbt_optimization
         self.enable_hardware_optimization = enable_hardware_optimization
         self.enable_numba_jit = enable_numba_jit
+        self.cache_dir = cache_dir
+        self.enable_persistent_cache = enable_persistent_cache
+        self.cache_version = cache_version
+        self.cache_namespace = cache_namespace
 
 
 class RollingHMMFeatureEngineer:
@@ -125,11 +136,33 @@ class RollingHMMFeatureEngineer:
         self._feature_cache: Dict[str, pd.DataFrame] = {}
         self._normalized_feature_cache: Dict[str, pd.DataFrame] = {}
         self._pca_cache: Dict[Tuple[str, int], Tuple[pd.DataFrame, Any, float]] = {}
-        
+        self._feature_signatures: Dict[str, str] = {}
+
         # Initialize optimizers with proper type hints
         self.rolling_optimizer: Optional[ConsolidatedRollingOptimizer] = None
         self.stat_optimizer: Optional[StatisticalCalculationsOptimizer] = None
         self.hardware_manager = get_unified_hardware_manager() if config.enable_hardware_optimization else None
+
+        # Persistent cache directories
+        self.cache_dir = Path(config.cache_dir) if config.cache_dir else None
+        self._persistent_base_dir: Optional[Path] = None
+        self._pca_persistent_dir: Optional[Path] = None
+
+        if config.enable_persistent_cache and self.cache_dir is not None:
+            namespace = config.cache_namespace or "default"
+            base_dir = self.cache_dir / config.cache_version / namespace
+            try:
+                base_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                base_dir = None
+
+            if base_dir is not None:
+                self._persistent_base_dir = base_dir
+                self._pca_persistent_dir = base_dir / "pca"
+                try:
+                    self._pca_persistent_dir.mkdir(parents=True, exist_ok=True)
+                except Exception:
+                    self._pca_persistent_dir = None
 
         # Initialize optimizers
         if config.enable_vectorbt_optimization:
@@ -375,6 +408,21 @@ class RollingHMMFeatureEngineer:
 
         return features_normalized
 
+    def _apply_targeted_normalization(self, normalized_df: pd.DataFrame) -> pd.DataFrame:
+        """Apply additional normalization to dampen high-CV feature clusters."""
+
+        adjusted = normalized_df.copy()
+
+        vol_cols = [col for col in adjusted.columns if 'volatility' in col or 'return' in col]
+        if vol_cols:
+            adjusted.loc[:, vol_cols] = np.tanh(adjusted[vol_cols])
+
+        ratio_cols = [col for col in adjusted.columns if 'ratio' in col or 'skew' in col]
+        if ratio_cols:
+            adjusted.loc[:, ratio_cols] = adjusted[ratio_cols].clip(-5.0, 5.0)
+
+        return adjusted
+
     def _generate_features_internal(
         self,
         market_data: pd.DataFrame,
@@ -468,6 +516,32 @@ class RollingHMMFeatureEngineer:
             ewma_config.long_window
         ).sum()
 
+        # Demeaned returns per EWMA band to highlight bursts
+        for span in [5, 10, 20]:
+            ewma_mean = returns.ewm(span=span).mean()
+            features[f'demeaned_return_{span}'] = returns - ewma_mean
+
+        # Realized range and high-frequency volatility spikes
+        if {'high', 'low', 'close'}.issubset(market_data.columns):
+            realized_range = (market_data['high'] - market_data['low']) / market_data['close']
+            features['realized_range'] = realized_range
+            features['range_pct_change_1'] = realized_range.pct_change()
+            features['range_pct_change_2'] = realized_range.pct_change(2)
+
+        # Liquidity/volume features
+        if 'volume' in market_data.columns:
+            features['volume_pct_change_1'] = market_data['volume'].pct_change()
+            features['volume_pct_change_2'] = market_data['volume'].pct_change(2)
+            features['volume_ewma_5'] = market_data['volume'].ewm(span=5).mean()
+            volume_ewma_std = market_data['volume'].ewm(span=5).std()
+            features['volume_zscore_5'] = (market_data['volume'] - features['volume_ewma_5']) / (volume_ewma_std + 1e-8)
+
+        # Regime-specific z-score features
+        for span in [5, 10, 20]:
+            rolling_mean = returns.rolling(span).mean()
+            rolling_std = returns.rolling(span).std()
+            features[f'zscore_{span}'] = (returns - rolling_mean) / (rolling_std + 1e-8)
+
         return features
 
     def _generate_volatility_features(
@@ -475,7 +549,7 @@ class RollingHMMFeatureEngineer:
         market_data: pd.DataFrame,
         ewma_config: EWMAConfig
     ) -> Dict[str, pd.Series]:
-        """Generate volatility-based features."""
+        """Generate volatility-based features with batched rolling operations."""
         features = {}
 
         close = market_data['close']
@@ -486,8 +560,10 @@ class RollingHMMFeatureEngineer:
         if self.config.use_log_returns:
             returns = np.log(close / close.shift(1))
 
-        # Rolling standard deviation
+        # Batch ALL rolling standard deviation operations together
         if self.rolling_optimizer:
+            # Prepare all std operations at once
+            hl_ratio = (high / low).apply(np.log)
             configs = [
                 RollingOperationConfig(
                     operation=RollingOperationType.STD,
@@ -498,12 +574,22 @@ class RollingHMMFeatureEngineer:
                     operation=RollingOperationType.STD,
                     window=ewma_config.long_window,
                     min_periods=max(2, ewma_config.long_window // 2)
+                ),
+                RollingOperationConfig(
+                    operation=RollingOperationType.STD,
+                    window=ewma_config.short_window,
+                    min_periods=max(2, ewma_config.short_window // 2)
                 )
             ]
-            raw_results = self.rolling_optimizer.batch_rolling_operations(returns, configs)
-            result_list = self._extract_batch_results(raw_results, configs)
-            vol_short = self._ensure_series(result_list[0], returns.index, f"rolling_std_{ewma_config.short_window}")
-            vol_long = self._ensure_series(result_list[1], returns.index, f"rolling_std_{ewma_config.long_window}")
+            # Batch process returns std (2 ops) and hl_ratio std (1 op)
+            raw_results_returns = self.rolling_optimizer.batch_rolling_operations(returns, configs[:2])
+            result_list_returns = self._extract_batch_results(raw_results_returns, configs[:2])
+            vol_short = self._ensure_series(result_list_returns[0], returns.index, f"rolling_std_{ewma_config.short_window}")
+            vol_long = self._ensure_series(result_list_returns[1], returns.index, f"rolling_std_{ewma_config.long_window}")
+
+            raw_results_hl = self.rolling_optimizer.batch_rolling_operations(hl_ratio, [configs[2]])
+            result_list_hl = self._extract_batch_results(raw_results_hl, [configs[2]])
+            realized_vol = self._ensure_series(result_list_hl[0], hl_ratio.index, f"realized_vol_{ewma_config.short_window}") * np.sqrt(252)
         else:
             vol_short = returns.rolling(
                 ewma_config.short_window,
@@ -513,12 +599,14 @@ class RollingHMMFeatureEngineer:
                 ewma_config.long_window,
                 min_periods=max(2, ewma_config.long_window // 2)
             ).std()
+            hl_ratio = (high / low).apply(np.log)
+            realized_vol = hl_ratio.rolling(ewma_config.short_window).std() * np.sqrt(252)
 
         features[f'volatility_{ewma_config.short_window}'] = vol_short
         features[f'volatility_{ewma_config.long_window}'] = vol_long
         features[f'volatility_ratio_{ewma_config.name}'] = vol_short / (vol_long + 1e-8)
 
-        # EWMA volatility
+        # EWMA volatility - use pandas built-in (already optimized)
         ewma_vol_short = returns.ewm(span=ewma_config.short_window, adjust=False).std()
         ewma_vol_long = returns.ewm(span=ewma_config.long_window, adjust=False).std()
 
@@ -526,8 +614,6 @@ class RollingHMMFeatureEngineer:
         features[f'ewma_volatility_{ewma_config.long_window}'] = ewma_vol_long
 
         # Realized volatility (Parkinson estimator)
-        hl_ratio = (high / low).apply(np.log)
-        realized_vol = hl_ratio.rolling(ewma_config.short_window).std() * np.sqrt(252)
         features[f'realized_volatility_{ewma_config.short_window}'] = realized_vol
 
         # Log volatility (stabilizes scale)
@@ -541,7 +627,7 @@ class RollingHMMFeatureEngineer:
         market_data: pd.DataFrame,
         ewma_config: EWMAConfig
     ) -> Dict[str, pd.Series]:
-        """Generate trend-based features."""
+        """Generate trend-based features with batched rolling operations."""
         features = {}
 
         close = market_data['close']
@@ -552,9 +638,10 @@ class RollingHMMFeatureEngineer:
         else:
             returns = close.pct_change()
 
-        # Simple Moving Averages
+        # Batch all rolling operations on close and returns together
         if self.rolling_optimizer:
-            configs = [
+            # Batch close operations (SMA)
+            configs_close = [
                 RollingOperationConfig(
                     operation=RollingOperationType.MEAN,
                     window=ewma_config.short_window,
@@ -566,10 +653,30 @@ class RollingHMMFeatureEngineer:
                     min_periods=max(1, ewma_config.long_window // 2)
                 )
             ]
-            raw_results = self.rolling_optimizer.batch_rolling_operations(close, configs)
-            result_list = self._extract_batch_results(raw_results, configs)
-            sma_short = self._ensure_series(result_list[0], close.index, f"sma_{ewma_config.short_window}")
-            sma_long = self._ensure_series(result_list[1], close.index, f"sma_{ewma_config.long_window}")
+            # Batch returns operations (mean and std for Sharpe)
+            configs_returns = [
+                RollingOperationConfig(
+                    operation=RollingOperationType.MEAN,
+                    window=ewma_config.short_window,
+                    min_periods=max(1, ewma_config.short_window // 2)
+                ),
+                RollingOperationConfig(
+                    operation=RollingOperationType.STD,
+                    window=ewma_config.short_window,
+                    min_periods=max(2, ewma_config.short_window // 2)
+                )
+            ]
+
+            # Execute batched operations
+            raw_results_close = self.rolling_optimizer.batch_rolling_operations(close, configs_close)
+            result_list_close = self._extract_batch_results(raw_results_close, configs_close)
+            sma_short = self._ensure_series(result_list_close[0], close.index, f"sma_{ewma_config.short_window}")
+            sma_long = self._ensure_series(result_list_close[1], close.index, f"sma_{ewma_config.long_window}")
+
+            raw_results_returns = self.rolling_optimizer.batch_rolling_operations(returns, configs_returns)
+            result_list_returns = self._extract_batch_results(raw_results_returns, configs_returns)
+            rolling_mean = self._ensure_series(result_list_returns[0], returns.index, f"rolling_mean_{ewma_config.short_window}")
+            rolling_std = self._ensure_series(result_list_returns[1], returns.index, f"rolling_std_{ewma_config.short_window}")
         else:
             sma_short = close.rolling(
                 ewma_config.short_window,
@@ -579,6 +686,8 @@ class RollingHMMFeatureEngineer:
                 ewma_config.long_window,
                 min_periods=max(1, ewma_config.long_window // 2)
             ).mean()
+            rolling_mean = returns.rolling(ewma_config.short_window).mean()
+            rolling_std = returns.rolling(ewma_config.short_window).std()
 
         features[f'sma_{ewma_config.short_window}'] = sma_short
         features[f'sma_{ewma_config.long_window}'] = sma_long
@@ -586,7 +695,7 @@ class RollingHMMFeatureEngineer:
         features[f'price_to_sma_{ewma_config.short_window}'] = close / (sma_short + 1e-8)
         features[f'price_to_sma_{ewma_config.long_window}'] = close / (sma_long + 1e-8)
 
-        # EWMA (Exponential Weighted Moving Average)
+        # EWMA (Exponential Weighted Moving Average) - pandas built-in is already optimized
         ewma_short = close.ewm(span=ewma_config.short_window, adjust=False).mean()
         ewma_long = close.ewm(span=ewma_config.long_window, adjust=False).mean()
 
@@ -602,11 +711,8 @@ class RollingHMMFeatureEngineer:
         features[f'sma_slope_{ewma_config.short_window}'] = sma_short_slope
         features[f'sma_slope_{ewma_config.long_window}'] = sma_long_slope
 
-        # Rolling Sharpe ratio (annualized)
-        rolling_mean = returns.rolling(ewma_config.short_window).mean()
-        rolling_std = returns.rolling(ewma_config.short_window).std()
+        # Rolling Sharpe ratio (annualized) - already have rolling_mean and rolling_std from batch
         rolling_sharpe = (rolling_mean / (rolling_std + 1e-8)) * np.sqrt(252)
-
         features[f'rolling_sharpe_{ewma_config.short_window}'] = rolling_sharpe
 
         # Rolling Z-score (mean-reversion indicator)
@@ -620,7 +726,7 @@ class RollingHMMFeatureEngineer:
         market_data: pd.DataFrame,
         ewma_config: EWMAConfig
     ) -> Dict[str, pd.Series]:
-        """Generate volume-based features."""
+        """Generate volume-based features with batched rolling operations."""
         features = {}
 
         volume = market_data['volume']
@@ -630,7 +736,7 @@ class RollingHMMFeatureEngineer:
         log_volume = np.log(volume + 1)
         features['log_volume'] = log_volume
 
-        # Rolling average volume
+        # Batch all rolling operations on volume
         if self.rolling_optimizer:
             configs = [
                 RollingOperationConfig(
@@ -642,12 +748,24 @@ class RollingHMMFeatureEngineer:
                     operation=RollingOperationType.MEAN,
                     window=ewma_config.long_window,
                     min_periods=max(1, ewma_config.long_window // 2)
+                ),
+                RollingOperationConfig(
+                    operation=RollingOperationType.MEAN,
+                    window=ewma_config.long_window,
+                    min_periods=max(1, ewma_config.long_window // 2)
+                ),
+                RollingOperationConfig(
+                    operation=RollingOperationType.STD,
+                    window=ewma_config.long_window,
+                    min_periods=max(2, ewma_config.long_window // 2)
                 )
             ]
             raw_results = self.rolling_optimizer.batch_rolling_operations(volume, configs)
             result_list = self._extract_batch_results(raw_results, configs)
             avg_vol_short = self._ensure_series(result_list[0], volume.index, f"avg_volume_{ewma_config.short_window}")
             avg_vol_long = self._ensure_series(result_list[1], volume.index, f"avg_volume_{ewma_config.long_window}")
+            volume_mean = self._ensure_series(result_list[2], volume.index, f"volume_mean_{ewma_config.long_window}")
+            volume_std = self._ensure_series(result_list[3], volume.index, f"volume_std_{ewma_config.long_window}")
         else:
             avg_vol_short = volume.rolling(
                 ewma_config.short_window,
@@ -657,18 +775,18 @@ class RollingHMMFeatureEngineer:
                 ewma_config.long_window,
                 min_periods=max(1, ewma_config.long_window // 2)
             ).mean()
+            volume_mean = volume.rolling(ewma_config.long_window).mean()
+            volume_std = volume.rolling(ewma_config.long_window).std()
 
         features[f'avg_volume_{ewma_config.short_window}'] = avg_vol_short
         features[f'avg_volume_{ewma_config.long_window}'] = avg_vol_long
         features[f'volume_ratio_{ewma_config.name}'] = volume / (avg_vol_short + 1e-8)
 
-        # EWMA volume
+        # EWMA volume - pandas built-in is already optimized
         ewma_vol = volume.ewm(span=ewma_config.short_window, adjust=False).mean()
         features[f'ewma_volume_{ewma_config.short_window}'] = ewma_vol
 
-        # Volume Z-score
-        volume_mean = volume.rolling(ewma_config.long_window).mean()
-        volume_std = volume.rolling(ewma_config.long_window).std()
+        # Volume Z-score - already computed rolling mean and std in batch above
         volume_zscore = (volume - volume_mean) / (volume_std + 1e-8)
         features[f'volume_zscore_{ewma_config.long_window}'] = volume_zscore
 
@@ -714,6 +832,70 @@ class RollingHMMFeatureEngineer:
                 obv[i] = obv[i-1]
 
         return obv
+
+    @staticmethod
+    @jit(nopython=True)
+    def _calculate_ewma_numba(values: np.ndarray, span: int) -> np.ndarray:
+        """Calculate EWMA using Numba JIT for performance."""
+        n = len(values)
+        alpha = 2.0 / (span + 1)
+        ewma = np.zeros(n)
+        
+        # Initialize with first value
+        if n > 0:
+            ewma[0] = values[0]
+            
+        # Calculate EWMA
+        for i in range(1, n):
+            if not np.isnan(values[i]):
+                ewma[i] = alpha * values[i] + (1 - alpha) * ewma[i-1]
+            else:
+                ewma[i] = ewma[i-1]
+                
+        return ewma
+
+    @staticmethod
+    @jit(nopython=True)
+    def _calculate_rolling_std_numba(values: np.ndarray, window: int) -> np.ndarray:
+        """Calculate rolling standard deviation using Numba JIT."""
+        n = len(values)
+        result = np.full(n, np.nan)
+        
+        if window >= n:
+            return result
+            
+        for i in range(window - 1, n):
+            window_values = values[i - window + 1:i + 1]
+            valid_mask = ~np.isnan(window_values)
+            if np.sum(valid_mask) >= 2:
+                valid_values = window_values[valid_mask]
+                result[i] = np.std(valid_values)
+                
+        return result
+
+    @staticmethod
+    @jit(nopython=True)
+    def _calculate_zscore_numba(values: np.ndarray, window: int) -> np.ndarray:
+        """Calculate rolling z-score using Numba JIT."""
+        n = len(values)
+        result = np.full(n, np.nan)
+        
+        if window >= n:
+            return result
+            
+        for i in range(window - 1, n):
+            window_values = values[i - window + 1:i + 1]
+            valid_mask = ~np.isnan(window_values)
+            if np.sum(valid_mask) >= 2:
+                valid_values = window_values[valid_mask]
+                mean_val = np.mean(valid_values)
+                std_val = np.std(valid_values)
+                if std_val > 1e-8:
+                    result[i] = (values[i] - mean_val) / std_val
+                else:
+                    result[i] = 0.0
+                    
+        return result
 
     def _calculate_obv(self, close: pd.Series, volume: pd.Series) -> pd.Series:
         """Calculate On-Balance Volume."""
@@ -800,7 +982,9 @@ class RollingHMMFeatureEngineer:
 
             normalized_features[col] = normalized_series.rename(col)
 
-        return pd.DataFrame(normalized_features, index=feature_df.index)
+        normalized_df = pd.DataFrame(normalized_features, index=feature_df.index)
+
+        return self._apply_targeted_normalization(normalized_df)
 
     def apply_pca(
         self,

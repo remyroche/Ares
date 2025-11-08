@@ -1305,7 +1305,19 @@ class VectorBTRollingOptimizer:
         if isinstance(data, pd.DataFrame):
             nan_counts = data.isnull().sum()
             if nan_counts.any():
-                tprint_warning(f"⚠️ NaN values detected in data: {nan_counts[nan_counts > 0].to_dict()}")
+                impacted = nan_counts[nan_counts > 0]
+                total_nans = int(impacted.sum())
+                cols = list(impacted.index)
+                tprint_warning(
+                    "⚠️ NaN values detected in rolling input",
+                    extra={
+                        "total_nan_values": total_nans,
+                        "impacted_columns": cols,
+                        "nan_counts": impacted.to_dict(),
+                        "window": window,
+                        "operation": operation,
+                    },
+                )
 
         # Check data types for numeric operations
         if operation in ['mean', 'std', 'var', 'sum', 'quantile', 'skew', 'kurt']:
@@ -2083,6 +2095,138 @@ class VectorBTRollingOptimizer:
         except Exception as e:
             tprint_warning(f"⚠️ Hardware optimization failed: {e}")
             return data
+
+    def batch_multi_feature_analysis(
+        self,
+        feature_data: pd.DataFrame,
+        target_data: Union[pd.Series, pd.DataFrame],
+        lookbacks: List[int],
+        metrics: Optional[List[str]] = None
+    ) -> Dict[str, Dict[str, Dict[str, float]]]:
+        """Analyze multiple features across multiple lookback windows in a single pass."""
+
+        metrics = metrics or ['corr', 'std', 'var']
+
+        if feature_data is None or feature_data.empty:
+            return {}
+
+        if target_data is None or len(target_data) == 0:
+            return {}
+
+        lookbacks = [int(lb) for lb in lookbacks if isinstance(lb, (int, np.integer)) and int(lb) > 0]
+        if not lookbacks:
+            return {}
+
+        results: Dict[str, Dict[str, Dict[str, float]]] = {}
+
+        if isinstance(target_data, pd.DataFrame):
+            if target_data.shape[1] != 1:
+                raise ValueError("target_data DataFrame must contain exactly one column")
+            target_series = target_data.iloc[:, 0]
+        else:
+            target_series = target_data
+
+        for feature_name in feature_data.columns:
+            try:
+                feature_series = feature_data[feature_name]
+
+                aligned = pd.concat([feature_series, target_series], axis=1, join='inner').dropna()
+                if aligned.empty:
+                    continue
+
+                feature_aligned = aligned.iloc[:, 0]
+                target_aligned = aligned.iloc[:, 1]
+
+                # Ensure sufficient data for the largest lookback
+                max_lookback = max(lookbacks)
+                if len(feature_aligned) <= max_lookback:
+                    continue
+
+                feature_global_std = float(feature_aligned.std(ddof=0) if feature_aligned.std(ddof=0) is not None else 0.0)
+                target_global_std = float(target_aligned.std(ddof=0) if target_aligned.std(ddof=0) is not None else 0.0)
+
+                feature_results: Dict[str, Dict[str, float]] = {}
+
+                for lookback in lookbacks:
+                    if len(feature_aligned) <= lookback:
+                        continue
+
+                    lookback_key = str(int(lookback))
+                    lookback_stats: Dict[str, float] = {
+                        'combined_score': 0.0,
+                        'feature_global_std': feature_global_std,
+                        'target_global_std': target_global_std
+                    }
+
+                    corr_value = 0.0
+                    if 'corr' in metrics:
+                        try:
+                            corr_series = self.rolling_corr(feature_aligned, target_aligned, window=lookback)
+                            if corr_series is not None and len(corr_series) > 0:
+                                corr_value = float(np.nanmean(np.abs(corr_series.values)))
+                        except Exception as corr_err:
+                            tprint_debug(f"⚠️ Rolling correlation failed for {feature_name}@{lookback}: {corr_err}")
+                            corr_value = 0.0
+
+                    feature_std_mean = 0.0
+                    target_std_mean = 0.0
+                    if 'std' in metrics:
+                        try:
+                            feature_std_series = self.rolling_std(feature_aligned, window=lookback)
+                            if feature_std_series is not None and len(feature_std_series) > 0:
+                                feature_std_mean = float(np.nanmean(np.abs(feature_std_series.values)))
+                        except Exception as std_err:
+                            tprint_debug(f"⚠️ Rolling std failed for {feature_name}@{lookback}: {std_err}")
+                            feature_std_mean = 0.0
+
+                        try:
+                            target_std_series = self.rolling_std(target_aligned, window=lookback)
+                            if target_std_series is not None and len(target_std_series) > 0:
+                                target_std_mean = float(np.nanmean(np.abs(target_std_series.values)))
+                        except Exception as t_std_err:
+                            tprint_debug(f"⚠️ Target rolling std failed for {feature_name}@{lookback}: {t_std_err}")
+                            target_std_mean = 0.0
+
+                    feature_var_mean = 0.0
+                    target_var_mean = 0.0
+                    if 'var' in metrics:
+                        try:
+                            feature_var_series = self.rolling_var(feature_aligned, window=lookback)
+                            if feature_var_series is not None and len(feature_var_series) > 0:
+                                feature_var_mean = float(np.nanmean(np.abs(feature_var_series.values)))
+                        except Exception as var_err:
+                            tprint_debug(f"⚠️ Rolling var failed for {feature_name}@{lookback}: {var_err}")
+                            feature_var_mean = feature_std_mean ** 2
+
+                        try:
+                            target_var_series = self.rolling_var(target_aligned, window=lookback)
+                            if target_var_series is not None and len(target_var_series) > 0:
+                                target_var_mean = float(np.nanmean(np.abs(target_var_series.values)))
+                        except Exception as t_var_err:
+                            tprint_debug(f"⚠️ Target rolling var failed for {feature_name}@{lookback}: {t_var_err}")
+                            target_var_mean = target_std_mean ** 2
+
+                    lookback_stats.update({
+                        'correlation': float(max(corr_value, 0.0)),
+                        'feature_std': float(max(feature_std_mean, 0.0)),
+                        'target_std': float(max(target_std_mean, 0.0)),
+                        'feature_var': float(max(feature_var_mean, 0.0)),
+                        'target_var': float(max(target_var_mean, 0.0))
+                    })
+
+                    combined_score = float(min(max(corr_value, 0.0), 1.0))
+                    lookback_stats['combined_score'] = combined_score
+
+                    feature_results[lookback_key] = lookback_stats
+
+                if feature_results:
+                    results[feature_name] = feature_results
+
+            except Exception as feature_err:
+                tprint_warning(f"⚠️ Batch analysis failed for feature {feature_name}: {feature_err}")
+                continue
+
+        return results
 
     def batch_rolling_operations(self, data: Union[pd.Series, pd.DataFrame],
                                 operations: List[str], window: int, **kwargs) -> Dict[str, Union[pd.Series, pd.DataFrame]]:

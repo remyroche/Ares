@@ -311,7 +311,7 @@ class JumpIndicatorsGenerator(VectorizedFeatureGenerator):
         return pd.Series(jump_values, index=index)
 
     def _jump_indicator(self, data: np.ndarray, threshold: float) -> float:
-        """Calculate jump indicator using Bipower Variation."""
+        """Calculate jump indicator intensity using Bipower Variation."""
         try:
             if len(data) < 5:
                 return 0.0
@@ -332,10 +332,16 @@ class JumpIndicatorsGenerator(VectorizedFeatureGenerator):
             if bipower_variation == 0:
                 return 0.0
 
-            jump_stat = (realized_variance - bipower_variation) / bipower_variation
+            jump_stat = np.sqrt(abs(realized_variance - bipower_variation) / bipower_variation)
 
-            # Binary jump indicator
-            return 1.0 if jump_stat > threshold else 0.0
+            # Intensity-based jump indicator: how much the statistic exceeds threshold
+            if jump_stat > threshold:
+                intensity = np.clip((jump_stat - threshold) / threshold, 0.0, 2.0)
+                return float(intensity)
+            else:
+                # Small intensity for sub-threshold jumps
+                intensity = np.clip(jump_stat / threshold, 0.0, 0.1)
+                return float(intensity)
 
         except Exception:
             return 0.0

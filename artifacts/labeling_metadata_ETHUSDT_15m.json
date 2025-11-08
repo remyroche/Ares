@@ -1,0 +1,45 @@
+{
+  "data": {
+    "labeling_result": {
+      "success": true,
+      "total_samples": 34171,
+      "opportunities_detected": 19897,
+      "long_opportunities": "9902",
+      "short_opportunities": "0",
+      "high_quality_opportunities": 19897,
+      "filtered_opportunities": 0,
+      "detection_rate": 0.5822773696994528,
+      "quality_acceptance_rate": 1.0,
+      "avg_confidence_score": 0.5095138098256462,
+      "volatility_adaptation": {
+        "avg": 1.1207000989616893,
+        "min": 1.0,
+        "max": 2.0
+      }
+    },
+    "configuration": {
+      "base_threshold": 0.007,
+      "lookahead_periods": 6,
+      "label_type": "BINARY",
+      "enable_long_positions": true,
+      "enable_short_positions": false,
+      "min_label_quality": 0.0,
+      "min_predictability": 0.0
+    },
+    "execution_info": {
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "15m",
+      "execution_mode": "blank",
+      "execution_time": 1.0644655840005726,
+      "created_at": "2025-11-08T17:16:08.135023"
+    }
+  },
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "created_at": "2025-11-08T17:16:08.135027"
+  },
+  "saved_at": "2025-11-08T17:16:08.135405"
+}

@@ -21,13 +21,13 @@ def get_execution_mode() -> str:
     Get the current execution mode from environment or config.
     
     Returns:
-        'light', 'blank', or 'full'
+        'light', 'blank', 'full', or 'small_dataset'
     """
     # Check environment variable first
     mode = os.environ.get('ARES_EXECUTION_MODE', '').lower()
     
     # Default to 'full' if not set
-    if mode not in ['light', 'blank', 'full']:
+    if mode not in ['light', 'blank', 'full', 'small_dataset']:
         mode = 'full'
     
     return mode
@@ -44,7 +44,7 @@ def adjust_hpo_params_for_mode(
     Args:
         n_trials: Original number of trials
         cv_folds: Original number of CV folds
-        execution_mode: Execution mode ('light', 'blank', 'full'). If None, auto-detect.
+        execution_mode: Execution mode ('light', 'blank', 'full', 'small_dataset'). If None, auto-detect.
     
     Returns:
         Tuple of (adjusted_n_trials, adjusted_cv_folds)
@@ -65,6 +65,13 @@ def adjust_hpo_params_for_mode(
         adjusted_folds = 3
         logger.info(f"⚡ BLANK mode: Reducing HPO trials {n_trials} → {adjusted_trials} (25%)")
         logger.info(f"⚡ BLANK mode: Reducing CV folds {cv_folds} → {adjusted_folds}")
+        
+    elif execution_mode == 'small_dataset':
+        # Small dataset mode: 5% iterations, 2 CV folds (aggressive optimization for very small datasets)
+        adjusted_trials = max(1, int(n_trials * 0.05))
+        adjusted_folds = 2
+        logger.info(f"⚡ SMALL_DATASET mode: Aggressively reducing HPO trials {n_trials} → {adjusted_trials} (5%)")
+        logger.info(f"⚡ SMALL_DATASET mode: Using 2 CV folds for very small datasets")
         
     else:
         # Full mode: no change
@@ -116,8 +123,8 @@ def set_execution_mode(mode: str) -> None:
     Args:
         mode: Execution mode ('light', 'blank', 'full')
     """
-    if mode not in ['light', 'blank', 'full']:
-        raise ValueError(f"Invalid execution mode: {mode}. Must be 'light', 'blank', or 'full'")
+    if mode not in ['light', 'blank', 'full', 'small_dataset']:
+        raise ValueError(f"Invalid execution mode: {mode}. Must be 'light', 'blank', 'full', or 'small_dataset'")
     
     os.environ['ARES_EXECUTION_MODE'] = mode
     logger.info(f"🔧 Execution mode set to: {mode.upper()}")

@@ -1,0 +1,56 @@
+{
+  "folds": [
+    {
+      "fold_num": 1,
+      "training": {
+        "start": "2025-08-24T10:45:00",
+        "end": "2025-09-03T10:45:00",
+        "embargo_days": 1,
+        "name": "training_fold_1"
+      },
+      "validation": {
+        "start": "2025-09-04T10:45:00",
+        "end": "2025-09-05T10:45:00",
+        "embargo_days": 1,
+        "name": "validation_fold_1"
+      }
+    },
+    {
+      "fold_num": 2,
+      "training": {
+        "start": "2025-08-24T10:45:00",
+        "end": "2025-09-05T10:45:00",
+        "embargo_days": 1,
+        "name": "training_fold_2"
+      },
+      "validation": {
+        "start": "2025-09-06T10:45:00",
+        "end": "2025-09-07T10:45:00",
+        "embargo_days": 1,
+        "name": "validation_fold_2"
+      }
+    },
+    {
+      "fold_num": 3,
+      "training": {
+        "start": "2025-08-24T10:45:00",
+        "end": "2025-09-07T10:45:00",
+        "embargo_days": 1,
+        "name": "training_fold_3"
+      },
+      "validation": {
+        "start": "2025-09-08T10:45:00",
+        "end": "2025-09-09T10:45:00",
+        "embargo_days": 1,
+        "name": "validation_fold_3"
+      }
+    }
+  ],
+  "test": {
+    "start": "2025-09-10T10:45:00",
+    "end": "2025-09-13T10:30:00",
+    "embargo_days": 0,
+    "name": "test"
+  },
+  "strategy": "expanding"
+}

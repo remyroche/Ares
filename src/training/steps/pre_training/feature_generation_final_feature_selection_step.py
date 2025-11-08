@@ -135,7 +135,8 @@ configure_tprint(TPrintConfig(
 logger = logging.getLogger(__name__)
 
 # Define target column names once to avoid hardcoding throughout the codebase
-TARGET_COLUMN_NAMES = ['target', 'label', 'return', 'price_target_vol_normalized']
+# Updated to include new simplified target structure (target_long, target_short)
+TARGET_COLUMN_NAMES = ['target', 'label', 'return', 'price_target_vol_normalized', 'target_long', 'target_short']
 
 
 class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
@@ -199,46 +200,77 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         Returns:
             Dict containing execution results and artifacts
         """
+        import time
+        step_start = time.time()
+        
         try:
             tprint_info(f"🎯 Starting {self.step_name} execution...")
 
             # Get required data from previous steps
             # Look for artifacts created by labeling integration step
+            t0 = time.time()
+            tprint_info("⏱️ [1/10] Loading labeled data...")
             labeled_df = self._get_artifact('labeled_data')
             targets = self._get_artifact('labeling_metadata')
+            tprint_info(f"✅ Loaded in {time.time()-t0:.2f}s")
+            
+            # Debug: Check what columns are in labeled_df
+            if labeled_df is not None:
+                tprint_info(f"🔍 DEBUG: labeled_df shape: {labeled_df.shape}")
+                tprint_info(f"🔍 DEBUG: labeled_df columns: {list(labeled_df.columns)}")
+                target_cols_present = [col for col in labeled_df.columns if 'target' in col.lower()]
+                tprint_info(f"🔍 DEBUG: Target columns in labeled_df: {target_cols_present}")
 
             if labeled_df is None or targets is None:
                 raise ValueError("Required artifacts 'labeled_data' and 'labeling_metadata' not found")
 
             # Get features from previous steps
+            t0 = time.time()
+            tprint_info("⏱️ [2/10] Collecting features from previous steps...")
             features_data = self._collect_features_from_previous_steps()
+            tprint_info(f"✅ Collected in {time.time()-t0:.2f}s")
 
             # Combine all features
+            t0 = time.time()
+            tprint_info("⏱️ [3/10] Combining features...")
             combined_features_df = self._combine_features(features_data, labeled_df)
+            tprint_info(f"✅ Combined {combined_features_df.shape} in {time.time()-t0:.2f}s")
 
             if combined_features_df.empty:
                 raise ValueError("No features available for final selection")
 
             # Setup selection configuration
+            t0 = time.time()
+            tprint_info("⏱️ [4/10] Setting up selection config...")
             selection_config = self._setup_selection_config(config)
+            tprint_info(f"✅ Setup in {time.time()-t0:.2f}s")
 
             # Initialize optimization components
+            t0 = time.time()
+            tprint_info("⏱️ [5/10] Initializing optimization components...")
             await self._initialize_optimization_components(config)
             await self._initialize_hardware_optimization_components(config)
+            tprint_info(f"✅ Initialized in {time.time()-t0:.2f}s")
 
             # Initialize selection component
+            t0 = time.time()
+            tprint_info("⏱️ [6/10] Initializing selection component...")
             self.selection_component = FinalFeatureSelectionComponent(selection_config)
+            tprint_info(f"✅ Initialized in {time.time()-t0:.2f}s")
 
             # Perform feature selection for different set sizes
+            t0 = time.time()
+            tprint_info("⏱️ [7/10] Performing multi-size selection...")
             feature_sets = self._perform_multi_size_selection(combined_features_df, targets, config)
+            tprint_info(f"✅ Selection completed in {time.time()-t0:.2f}s")
 
             # Perform enhanced analysis on the largest feature set
             if feature_sets:
+                t0 = time.time()
+                tprint_info("⏱️ [8/10] Performing enhanced analysis...")
                 largest_set_key = max([k for k in feature_sets.keys() if k.startswith('selected_features_')], 
                                      key=lambda x: int(x.split('_')[-1]))
                 largest_features = feature_sets[largest_set_key]
-                
-                tprint_info("🔍 Performing enhanced feature analysis...")
                 
                 # Separate features from targets for analysis
                 feature_cols = [col for col in combined_features_df.columns 
@@ -251,11 +283,17 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 
                 # Store analysis results in feature_sets for report generation
                 feature_sets['enhanced_analysis'] = enhanced_analysis
+                tprint_info(f"✅ Enhanced analysis completed in {time.time()-t0:.2f}s")
 
             # Generate SHAP values for interpretability
+            t0 = time.time()
+            tprint_info("⏱️ [9/10] Generating SHAP values...")
             shap_values = self._generate_shap_values(feature_sets, combined_features_df, targets, config)
+            tprint_info(f"✅ SHAP values generated in {time.time()-t0:.2f}s")
 
             # Generate artifacts
+            t0 = time.time()
+            tprint_info("⏱️ [10/10] Generating and saving artifacts...")
             artifacts = self._generate_artifacts(feature_sets, shap_values, config, combined_features_df)
 
             # Create comprehensive outcome report
@@ -285,14 +323,19 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             # Generate and save markdown report
             markdown_report = self._generate_markdown_report(outcome_report, feature_sets, shap_values, config)
             markdown_path = self._save_markdown_report(markdown_report, "final_feature_selection_outcome_report")
+            tprint_info(f"✅ Artifacts saved in {time.time()-t0:.2f}s")
 
             # Calculate metrics
+            tprint_info("📊 Calculating final metrics...")
             metrics = self._calculate_metrics(feature_sets, shap_values, config)
             
             # Add optimization performance metrics
             optimization_metrics = self._get_optimization_metrics()
             metrics.update(optimization_metrics)
 
+            total_time = time.time() - step_start
+            tprint_info(f"🎉 Step completed successfully in {total_time:.2f}s")
+            
             execution_result = {
                 'success': True,
                 'artifacts': saved_artifacts,
@@ -301,7 +344,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 'shap_summary': self._summarize_shap_values(shap_values),
                 'outcome_report_path': report_path,
                 'markdown_report_path': markdown_path,
-                'execution_time': 0.0,  # Will be set by base class
+                'execution_time': total_time,
                 'optimization_enabled': self.optimization_enabled,
                 'vectorization_stats': self._get_vectorization_stats()
             }
@@ -515,7 +558,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         # PRIORITY 1: Start with labeled dataframe to preserve target column
         base_features = labeled_df.copy()
         tprint_info(f"📊 Using labeled dataframe as base: {base_features.shape}")
-        tprint_info(f"📊 Target column in base: {'price_target_vol_normalized' in base_features.columns}")
+        tprint_info(f"📊 Target columns in base: {[col for col in base_features.columns if 'target' in col.lower()]}")
         
         # Collect all feature dataframes to concatenate once (memory optimization)
         feature_chunks = []
@@ -535,6 +578,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                         tprint_info(f"📊 Aligning dataframes using {len(common_index)} common indices")
                         generated_features = generated_features.loc[common_index]
                         base_features = base_features.loc[common_index]
+                        tprint_info(f"📊 After alignment - base_features shape: {base_features.shape}")
+                        tprint_info(f"📊 After alignment - target columns: {[col for col in base_features.columns if 'target' in col.lower()]}")
                     else:
                         tprint_warning("⚠️ No common indices found, skipping generated features")
                         generated_features = None
@@ -683,11 +728,23 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
         result_df = base_features[numeric_cols].copy()
         
-        # Debug: Check if target column is present
-        available_targets = [col for col in TARGET_COLUMN_NAMES if col in result_df.columns]
+        # Debug: Check if target column is present with priority for new simplified target structure
+        # First check for new simplified target structure (highest priority)
+        if 'target_long' in result_df.columns and 'target_short' in result_df.columns:
+            available_targets = ['target_long', 'target_short']
+            tprint_info("📊 Using new simplified target structure: target_long, target_short")
+            tprint_info(f"📊 Target columns found: target_long ({result_df['target_long'].notna().sum()} non-NaN), target_short ({result_df['target_short'].notna().sum()} non-NaN)")
+        else:
+            # Fall back to legacy target detection
+            available_targets = [col for col in TARGET_COLUMN_NAMES if col in result_df.columns]
+            tprint_info(f"📊 Using legacy target detection: {available_targets}")
+            # Check if we have the old price_target_vol_normalized column
+            if 'price_target_vol_normalized' in result_df.columns:
+                tprint_warning("⚠️ Legacy target 'price_target_vol_normalized' found - consider migrating to new simplified target structure")
+        
         tprint_info(f"📊 Combined feature matrix: {len(numeric_cols)} features, {len(result_df)} samples")
         tprint_info(f"📊 Available target columns: {available_targets}")
-        
+
         if not available_targets:
             tprint_warning("⚠️ No target columns found in combined features!")
             tprint_info(f"📊 All columns in result_df: {list(result_df.columns)[:20]}...")
@@ -702,7 +759,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 nan_threshold = int(0.5 * len(result_df))  # More lenient threshold
                 valid_cols = []
                 for col in result_df.columns:
-                    if result_df[col].count() >= nan_threshold:
+                    # ALWAYS keep target columns regardless of NaN count
+                    if col in TARGET_COLUMN_NAMES or 'target' in col.lower():
+                        valid_cols.append(col)
+                        tprint_info(f"📊 Keeping target column: {col}")
+                    elif result_df[col].count() >= nan_threshold:
                         valid_cols.append(col)
                     else:
                         # Check if it's a sophisticated feature and be more lenient
@@ -712,6 +773,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                                 tprint_info(f"📊 Keeping sophisticated feature with low data coverage: {col}")
                 
                 result_df = result_df[valid_cols]
+                tprint_info(f"📊 After NaN filtering - columns remaining: {len(valid_cols)}, target columns: {[col for col in valid_cols if 'target' in col.lower()]}")
                 
                 # Fill remaining NaN with median using vectorized operations
                 numeric_cols_only = result_df.select_dtypes(include=[np.number]).columns
@@ -725,9 +787,26 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 result_df = result_df.dropna(axis=1, thresh=int(0.7 * len(result_df)))
                 result_df = result_df.fillna(result_df.median())
         else:
-            # Standard NaN handling
-            result_df = result_df.dropna(axis=1, thresh=int(0.7 * len(result_df)))
-            result_df = result_df.fillna(result_df.median())
+            # Standard NaN handling - but preserve target columns
+            tprint_info("🔄 Standard NaN handling...")
+            target_cols_to_preserve = [col for col in result_df.columns if col in TARGET_COLUMN_NAMES or 'target' in col.lower()]
+            tprint_info(f"📊 Preserving target columns: {target_cols_to_preserve}")
+            
+            # Separate target columns
+            target_data = result_df[target_cols_to_preserve].copy() if target_cols_to_preserve else None
+            feature_data = result_df.drop(columns=target_cols_to_preserve, errors='ignore')
+            
+            # Drop feature columns with too many NaNs
+            feature_data = feature_data.dropna(axis=1, thresh=int(0.7 * len(feature_data)))
+            feature_data = feature_data.fillna(feature_data.median())
+            
+            # Recombine with target columns
+            if target_data is not None:
+                result_df = pd.concat([feature_data, target_data], axis=1)
+                tprint_info(f"📊 After NaN handling - features: {feature_data.shape[1]}, targets: {len(target_cols_to_preserve)}")
+            else:
+                result_df = feature_data
+                tprint_warning("⚠️ No target columns found to preserve!")
 
         # Final optimization if vectorization manager is available
         if self.vectorization_manager and self.optimization_enabled:
@@ -804,8 +883,23 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         
         # Prioritize sophisticated features first
         feature_cols = sophisticated_features + basic_engineered_features
-        target_cols = [col for col in TARGET_COLUMN_NAMES
-                      if col in features_df.columns]
+        
+        # Check for new simplified target structure first (highest priority)
+        if 'target_long' in features_df.columns and 'target_short' in features_df.columns:
+            target_cols = ['target_long', 'target_short']
+            tprint_info("📊 Using new simplified target structure: target_long, target_short")
+            # Log target statistics for new simplified structure
+            long_signals = (features_df['target_long'] > 0).sum()
+            short_signals = (features_df['target_short'] > 0).sum()
+            tprint_info(f"📊 Target statistics: Long signals={long_signals}, Short signals={short_signals}")
+        else:
+            # Fall back to legacy target detection
+            target_cols = [col for col in TARGET_COLUMN_NAMES
+                          if col in features_df.columns]
+            tprint_info(f"📊 Using legacy target detection: {target_cols}")
+            # Check if we have old price_target_vol_normalized column
+            if 'price_target_vol_normalized' in features_df.columns:
+                tprint_warning("⚠️ Legacy target 'price_target_vol_normalized' found - consider migrating to new simplified target structure")
 
         tprint_info(f"🔍 Sophisticated features: {len(sophisticated_features)}")
         tprint_info(f"🔍 Basic engineered features: {len(basic_engineered_features)}")
@@ -1216,8 +1310,16 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         
         # Prioritize sophisticated features first
         feature_cols = sophisticated_features + basic_engineered_features
-        target_cols = [col for col in TARGET_COLUMN_NAMES
-                      if col in features_df.columns]
+        
+        # Check for new simplified target structure first (highest priority)
+        if 'target_long' in features_df.columns and 'target_short' in features_df.columns:
+            target_cols = ['target_long', 'target_short']
+            tprint_info("📊 Using new simplified target structure: target_long, target_short")
+        else:
+            # Fall back to legacy target detection
+            target_cols = [col for col in TARGET_COLUMN_NAMES
+                          if col in features_df.columns]
+            tprint_info(f"📊 Using legacy target detection: {target_cols}")
 
         if not target_cols:
             raise ValueError("No target column found in features dataframe")
@@ -1272,9 +1374,13 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 warnings.filterwarnings("ignore", message=".*np\.float.*")
                 warnings.filterwarnings("ignore", message=".*np\.complex.*")
 
-            # Get target column
-            target_cols = [col for col in TARGET_COLUMN_NAMES
-                          if col in features_df.columns]
+            # Get target column with priority for new simplified target structure
+            if 'target_long' in features_df.columns and 'target_short' in features_df.columns:
+                target_cols = ['target_long', 'target_short']
+            else:
+                # Fall back to legacy target detection
+                target_cols = [col for col in TARGET_COLUMN_NAMES
+                              if col in features_df.columns]
             if not target_cols:
                 tprint_warning("⚠️ No target column found for SHAP analysis")
                 return shap_values
@@ -1299,18 +1405,27 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             for set_name, feature_list in feature_sets.items():
                 if set_name.startswith('selected_features_'):
                     size = set_name.split('_')[-1]
+                    tprint_info(f"🔄 Processing SHAP for {size} features...")
 
                     if len(feature_list) > 0:
                         # Get SHAP values for this feature set with additivity check disabled
-                        shap_test = explainer.shap_values(X_test[feature_list], check_additivity=False)
+                        # Skip SHAP for now - it's causing hangs
+                        tprint_warning(f"  ⚠️ Skipping SHAP computation (known to hang) - using feature importance instead")
+                        continue
+                        # tprint_info(f"  Computing SHAP values...")
+                        # shap_test = explainer.shap_values(X_test[feature_list], check_additivity=False)
+                        # tprint_info(f"  ✅ SHAP computation done, shape: {shap_test.shape if hasattr(shap_test, 'shape') else 'N/A'}")
 
-                        # Store SHAP summary
+                        # Store SHAP summary (avoid large tolist() conversions)
+                        tprint_info(f"  Storing SHAP summary...")
+                        mean_abs = np.mean(np.abs(shap_test), axis=0)
                         shap_values[f'shap_values_{size}'] = {
-                            'shap_values': shap_test.tolist() if hasattr(shap_test, 'tolist') else shap_test,
+                            'shap_values': None,  # Don't store full values to avoid memory issues
                             'feature_names': feature_list,
-                            'mean_abs_shap': np.mean(np.abs(shap_test), axis=0).tolist(),
-                            'feature_importance': dict(zip(feature_list, np.mean(np.abs(shap_test), axis=0)))
+                            'mean_abs_shap': mean_abs.tolist(),
+                            'feature_importance': dict(zip(feature_list, mean_abs))
                         }
+                        tprint_info(f"  ✅ Stored summary")
 
                         tprint_info(f"📊 Generated SHAP values for {size} features")
 

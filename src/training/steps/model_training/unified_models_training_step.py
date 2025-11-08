@@ -2725,7 +2725,11 @@ class UnifiedModelsTrainingStep(BaseStep):
             'prediction_statistics': {},
             'ensemble_specific': {} if 'ensemble' in training_type else None,
             'walkforward_results': {},
-            'error_analysis': {}
+            'error_analysis': {},
+            'data_drift_checks': {},
+            'uncertainty_calibration': {},
+            'shap_explanations': {},
+            'threshold_optimization': {}
         }
 
         # ===== EXECUTION SUMMARY =====
@@ -2897,7 +2901,304 @@ class UnifiedModelsTrainingStep(BaseStep):
             if key in metrics:
                 comprehensive_metrics['error_analysis'][key] = metrics[key]
 
+        # ===== DATA DRIFT / DISTRIBUTION SHIFT CHECKS =====
+        # Detects if train/val/test distributions differ significantly
+        # Critical for ensuring models aren't learning time leakage or anomalies
+        drift_keys = [
+            'ks_test_train_val', 'ks_test_train_test', 'ks_test_val_test',
+            'ks_statistic_train_val', 'ks_statistic_train_test', 'ks_statistic_val_test',
+            'ks_pvalue_train_val', 'ks_pvalue_train_test', 'ks_pvalue_val_test',
+            'psi_train_val', 'psi_train_test', 'psi_val_test',
+            'psi_score', 'psi_interpretation',
+            'chi_square_train_val', 'chi_square_train_test', 'chi_square_val_test',
+            'chi_square_statistic', 'chi_square_pvalue',
+            'wasserstein_distance_train_val', 'wasserstein_distance_train_test',
+            'jensen_shannon_divergence_train_val', 'jensen_shannon_divergence_train_test',
+            'drift_detected', 'drift_score', 'drift_features',
+            'covariate_shift_detected', 'concept_drift_detected'
+        ]
+        for key in drift_keys:
+            if key in metrics:
+                comprehensive_metrics['data_drift_checks'][key] = metrics[key]
+
+        # Also check per-model drift metrics
+        for model_name in models.keys():
+            for drift_metric in ['ks_test', 'psi', 'chi_square', 'drift_score']:
+                key = f"{model_name}_{drift_metric}"
+                if key in metrics:
+                    if f'{model_name}_drift' not in comprehensive_metrics['data_drift_checks']:
+                        comprehensive_metrics['data_drift_checks'][f'{model_name}_drift'] = {}
+                    comprehensive_metrics['data_drift_checks'][f'{model_name}_drift'][drift_metric] = metrics[key]
+
+        # ===== UNCERTAINTY / CONFIDENCE CALIBRATION =====
+        # Measures how well predicted probabilities match actual outcomes
+        # Critical for decision-making confidence in production
+        calibration_keys = [
+            'brier_score', 'brier_score_loss',
+            'expected_calibration_error', 'ece', 'ece_score',
+            'maximum_calibration_error', 'mce', 'mce_score',
+            'calibration_curve', 'reliability_diagram',
+            'calibration_slope', 'calibration_intercept',
+            'log_loss', 'cross_entropy_loss',
+            'prediction_confidence_mean', 'prediction_confidence_std',
+            'prediction_confidence_median',
+            'overconfidence_ratio', 'underconfidence_ratio',
+            'confidence_histogram', 'reliability_bins',
+            'sharpness', 'refinement',
+            'calibration_in_the_large', 'calibration_in_the_small'
+        ]
+        for key in calibration_keys:
+            if key in metrics:
+                comprehensive_metrics['uncertainty_calibration'][key] = metrics[key]
+
+        # Per-model calibration metrics
+        for model_name in models.keys():
+            for calib_metric in ['brier_score', 'ece', 'mce', 'log_loss', 'calibration_slope']:
+                key = f"{model_name}_{calib_metric}"
+                if key in metrics:
+                    if f'{model_name}_calibration' not in comprehensive_metrics['uncertainty_calibration']:
+                        comprehensive_metrics['uncertainty_calibration'][f'{model_name}_calibration'] = {}
+                    comprehensive_metrics['uncertainty_calibration'][f'{model_name}_calibration'][calib_metric] = metrics[key]
+
+        # ===== SHAPLEY-BASED EXPLANATIONS (SHAP) =====
+        # Model interpretability and feature attribution
+        # Note: Complex objects like plots are stored separately, only metadata here
+        shap_keys = [
+            'shap_values_available', 'shap_summary_plot_path', 'shap_dependence_plot_path',
+            'shap_force_plot_path', 'shap_waterfall_plot_path',
+            'shap_feature_importance', 'shap_interaction_values',
+            'shap_top_features', 'shap_top_10_features', 'shap_top_20_features',
+            'pdp_plots_path', 'ice_plots_path',
+            'pdp_features', 'ice_features',
+            'partial_dependence_available', 'individual_conditional_expectation_available',
+            'lime_explanations_available', 'lime_top_features',
+            'global_feature_importance', 'local_feature_importance'
+        ]
+        for key in shap_keys:
+            if key in metrics:
+                comprehensive_metrics['shap_explanations'][key] = metrics[key]
+
+        # Per-model SHAP data
+        for model_name in models.keys():
+            for shap_metric in ['shap_values', 'shap_feature_importance', 'shap_summary_plot_path']:
+                key = f"{model_name}_{shap_metric}"
+                if key in metrics:
+                    if f'{model_name}_shap' not in comprehensive_metrics['shap_explanations']:
+                        comprehensive_metrics['shap_explanations'][f'{model_name}_shap'] = {}
+                    comprehensive_metrics['shap_explanations'][f'{model_name}_shap'][shap_metric] = metrics[key]
+
+        # ===== DECISION THRESHOLD OPTIMIZATION =====
+        # Optimizing classification thresholds for business objectives
+        threshold_keys = [
+            'optimal_threshold', 'optimal_threshold_roc', 'optimal_threshold_pr',
+            'optimal_threshold_f1', 'optimal_threshold_fbeta',
+            'roc_auc_score', 'roc_curve', 'roc_curve_path',
+            'pr_auc_score', 'precision_recall_curve', 'pr_curve_path',
+            'f1_threshold_curve', 'fbeta_threshold_curve',
+            'fbeta_score', 'fbeta_optimal', 'beta_value',
+            'cost_matrix', 'cost_weighted_threshold', 'expected_cost',
+            'profit_curve', 'profit_optimal_threshold',
+            'youden_index', 'youden_threshold',
+            'sensitivity_specificity_curve',
+            'Matthews_correlation_coefficient', 'mcc', 'mcc_threshold',
+            'threshold_metrics', 'threshold_analysis',
+            'business_metric_optimal_threshold', 'custom_metric_threshold'
+        ]
+        for key in threshold_keys:
+            if key in metrics:
+                comprehensive_metrics['threshold_optimization'][key] = metrics[key]
+
+        # Per-model threshold optimization
+        for model_name in models.keys():
+            for thresh_metric in ['optimal_threshold', 'roc_auc', 'pr_auc', 'f1_threshold', 'fbeta_optimal']:
+                key = f"{model_name}_{thresh_metric}"
+                if key in metrics:
+                    if f'{model_name}_threshold' not in comprehensive_metrics['threshold_optimization']:
+                        comprehensive_metrics['threshold_optimization'][f'{model_name}_threshold'] = {}
+                    comprehensive_metrics['threshold_optimization'][f'{model_name}_threshold'][thresh_metric] = metrics[key]
+
         return comprehensive_metrics
+
+    def _generate_csv_metrics_report(
+        self,
+        comprehensive_metrics: Dict[str, Any],
+        result: Dict[str, Any],
+        training_type: str,
+        config: Dict[str, Any],
+        reports_dir: str
+    ) -> Optional[str]:
+        """
+        Generate a CSV file with one line per model containing all metrics.
+
+        This CSV excludes complex objects (plots, curves, matrices) but includes
+        all numeric and string metrics for easy analysis in spreadsheets/data tools.
+
+        Args:
+            comprehensive_metrics: Extracted comprehensive metrics
+            result: Training result dictionary
+            training_type: Type of training
+            config: Configuration dictionary
+            reports_dir: Directory to save the CSV
+
+        Returns:
+            Path to the generated CSV file, or None if failed
+        """
+        try:
+            import csv
+
+            csv_path = os.path.join(reports_dir, f'{training_type}_metrics.csv')
+            models = result.get('models', {})
+
+            # If no models, create a single row for the training run
+            if not models:
+                models = {training_type: None}
+
+            # Collect all possible column names from comprehensive metrics
+            csv_columns = []
+            csv_rows = []
+
+            # Fixed columns (metadata)
+            fixed_columns = [
+                'model_name',
+                'training_type',
+                'symbol',
+                'timeframe',
+                'direction',
+                'execution_time_seconds',
+                'success',
+                'models_trained_count',
+                'timestamp'
+            ]
+            csv_columns.extend(fixed_columns)
+
+            # Helper function to flatten nested dicts and filter out complex objects
+            def flatten_metrics(metrics_dict: Dict[str, Any], prefix: str = '') -> Dict[str, Any]:
+                """Flatten nested dict, exclude complex objects."""
+                flat = {}
+                for key, value in metrics_dict.items():
+                    full_key = f"{prefix}{key}" if prefix else key
+
+                    # Skip complex objects that can't be represented in one CSV cell
+                    if key in ['shap_values', 'shap_summary_plot_path', 'shap_dependence_plot_path',
+                               'shap_force_plot_path', 'shap_waterfall_plot_path',
+                               'pdp_plots_path', 'ice_plots_path',
+                               'roc_curve', 'pr_curve', 'calibration_curve',
+                               'reliability_diagram', 'confusion_matrix',
+                               'cost_matrix', 'reliability_bins', 'confidence_histogram',
+                               'cv_scores', 'threshold_metrics']:
+                        continue
+
+                    # Skip plot/curve paths (too long for CSV)
+                    if 'plot_path' in key or 'curve_path' in key or 'plots_path' in key:
+                        continue
+
+                    if isinstance(value, dict):
+                        # Recursively flatten nested dicts
+                        flat.update(flatten_metrics(value, f"{full_key}_"))
+                    elif isinstance(value, (list, tuple)):
+                        # Skip lists/arrays (can't represent in single cell easily)
+                        if len(value) <= 5 and all(isinstance(x, (int, float, str, bool)) for x in value):
+                            # Only include short lists of simple types
+                            flat[full_key] = str(value)
+                    elif isinstance(value, (int, float, str, bool, type(None))):
+                        flat[full_key] = value
+                    else:
+                        # Skip complex types
+                        continue
+
+                return flat
+
+            # Build rows for each model
+            for model_name in models.keys():
+                row = {}
+
+                # Add fixed metadata
+                row['model_name'] = model_name
+                row['training_type'] = training_type
+                row['symbol'] = config.get('symbol', 'UNKNOWN')
+                row['timeframe'] = config.get('timeframe', '15m')
+                row['direction'] = config.get('direction', 'long')
+                row['execution_time_seconds'] = comprehensive_metrics['execution_summary'].get('execution_time_seconds', 0)
+                row['success'] = comprehensive_metrics['execution_summary'].get('success', False)
+                row['models_trained_count'] = comprehensive_metrics['execution_summary'].get('models_trained_count', 0)
+                row['timestamp'] = comprehensive_metrics.get('timestamp', '')
+
+                # Add flattened metrics from all categories
+                categories = [
+                    'overall_performance',
+                    'training_metrics',
+                    'validation_metrics',
+                    'test_metrics',
+                    'data_quality',
+                    'model_complexity',
+                    'prediction_statistics',
+                    'error_analysis',
+                    'data_drift_checks',
+                    'uncertainty_calibration',
+                    'threshold_optimization'
+                ]
+
+                for category in categories:
+                    if category in comprehensive_metrics:
+                        flat_cat = flatten_metrics(comprehensive_metrics[category], f"{category}_")
+                        row.update(flat_cat)
+
+                # Add per-model metrics if available
+                if model_name in comprehensive_metrics.get('per_model_metrics', {}):
+                    model_specific = flatten_metrics(
+                        comprehensive_metrics['per_model_metrics'][model_name],
+                        'model_specific_'
+                    )
+                    row.update(model_specific)
+
+                # Add HPO results (flattened)
+                if comprehensive_metrics.get('hpo_results'):
+                    hpo_flat = flatten_metrics(comprehensive_metrics['hpo_results'], 'hpo_')
+                    # Exclude large nested structures
+                    hpo_flat = {k: v for k, v in hpo_flat.items()
+                                if not k.endswith('_best_params') and not k.endswith('_best_scores')}
+                    row.update(hpo_flat)
+
+                # Add walk-forward metrics (simplified)
+                if comprehensive_metrics.get('walkforward_results'):
+                    wf = comprehensive_metrics['walkforward_results']
+                    if 'n_folds' in wf:
+                        row['walkforward_n_folds'] = wf['n_folds']
+                    if 'strategy' in wf:
+                        row['walkforward_strategy'] = wf['strategy']
+                    if 'embargo_days' in wf:
+                        row['walkforward_embargo_days'] = wf['embargo_days']
+
+                # Add ensemble-specific metrics if applicable
+                if comprehensive_metrics.get('ensemble_specific'):
+                    ensemble_flat = flatten_metrics(comprehensive_metrics['ensemble_specific'], 'ensemble_')
+                    row.update(ensemble_flat)
+
+                # Collect all column names
+                for key in row.keys():
+                    if key not in csv_columns:
+                        csv_columns.append(key)
+
+                csv_rows.append(row)
+
+            # Write CSV file
+            with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=csv_columns, extrasaction='ignore')
+                writer.writeheader()
+
+                for row in csv_rows:
+                    # Ensure all columns exist in row (fill missing with None)
+                    complete_row = {col: row.get(col, None) for col in csv_columns}
+                    writer.writerow(complete_row)
+
+            tprint_success(f"✅ CSV metrics report saved: {csv_path}")
+            return csv_path
+
+        except Exception as e:
+            self.logger.error(f"Failed to generate CSV metrics report: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return None
 
     def _generate_training_reports(
         self,
@@ -3237,6 +3538,167 @@ class UnifiedModelsTrainingStep(BaseStep):
                     f.write("*No error analysis metrics available.*\n\n")
                 f.write("---\n\n")
 
+                # ===== DATA DRIFT / DISTRIBUTION SHIFT CHECKS =====
+                f.write("## 📊 Data Drift & Distribution Shift Checks\n\n")
+                f.write("*Detects if train/val/test distributions differ significantly (KS tests, PSI, chi-square)*\n\n")
+                drift_checks = comprehensive_metrics['data_drift_checks']
+                if drift_checks:
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    for key, value in sorted(drift_checks.items()):
+                        label = key.replace('_', ' ').title()
+                        if isinstance(value, dict):
+                            # Per-model drift metrics
+                            f.write(f"| **{label}** | (see details below) |\n")
+                        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                            f.write(f"| {label} | {value:.6f} |\n")
+                        else:
+                            f.write(f"| {label} | {value} |\n")
+                    f.write("\n")
+
+                    # Detailed per-model drift if available
+                    per_model_drift = {k: v for k, v in drift_checks.items() if isinstance(v, dict)}
+                    if per_model_drift:
+                        f.write("### Per-Model Drift Metrics\n\n")
+                        for model_name, drift_data in per_model_drift.items():
+                            f.write(f"#### {model_name.replace('_', ' ').upper()}\n\n")
+                            f.write("| Metric | Value |\n")
+                            f.write("|--------|-------|\n")
+                            for key, value in sorted(drift_data.items()):
+                                label = key.replace('_', ' ').title()
+                                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                                    f.write(f"| {label} | {value:.6f} |\n")
+                                else:
+                                    f.write(f"| {label} | {value} |\n")
+                            f.write("\n")
+                else:
+                    f.write("*No data drift checks available.*\n\n")
+                f.write("---\n\n")
+
+                # ===== UNCERTAINTY / CONFIDENCE CALIBRATION =====
+                f.write("## 🎯 Uncertainty & Confidence Calibration\n\n")
+                f.write("*Measures how well predicted probabilities match actual outcomes (Brier Score, ECE)*\n\n")
+                calibration = comprehensive_metrics['uncertainty_calibration']
+                if calibration:
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    for key, value in sorted(calibration.items()):
+                        label = key.replace('_', ' ').title()
+                        if isinstance(value, dict):
+                            # Per-model calibration metrics
+                            f.write(f"| **{label}** | (see details below) |\n")
+                        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                            f.write(f"| {label} | {value:.6f} |\n")
+                        else:
+                            f.write(f"| {label} | {value} |\n")
+                    f.write("\n")
+
+                    # Detailed per-model calibration if available
+                    per_model_calib = {k: v for k, v in calibration.items() if isinstance(v, dict)}
+                    if per_model_calib:
+                        f.write("### Per-Model Calibration Metrics\n\n")
+                        for model_name, calib_data in per_model_calib.items():
+                            f.write(f"#### {model_name.replace('_', ' ').upper()}\n\n")
+                            f.write("| Metric | Value |\n")
+                            f.write("|--------|-------|\n")
+                            for key, value in sorted(calib_data.items()):
+                                label = key.replace('_', ' ').title()
+                                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                                    f.write(f"| {label} | {value:.6f} |\n")
+                                else:
+                                    f.write(f"| {label} | {value} |\n")
+                            f.write("\n")
+                else:
+                    f.write("*No uncertainty/calibration metrics available.*\n\n")
+                f.write("---\n\n")
+
+                # ===== SHAPLEY-BASED EXPLANATIONS (SHAP) =====
+                f.write("## 🔍 SHAP Explanations & Model Interpretability\n\n")
+                f.write("*Shapley values, PDP/ICE curves, and feature attribution*\n\n")
+                shap_exp = comprehensive_metrics['shap_explanations']
+                if shap_exp:
+                    # Filter out plot paths and complex objects for main table
+                    simple_shap = {k: v for k, v in shap_exp.items()
+                                   if not isinstance(v, dict) and 'plot' not in k.lower() and 'curve' not in k.lower()}
+
+                    if simple_shap:
+                        f.write("| Metric | Value |\n")
+                        f.write("|--------|-------|\n")
+                        for key, value in sorted(simple_shap.items()):
+                            label = key.replace('_', ' ').title()
+                            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                                f.write(f"| {label} | {value:.6f} |\n")
+                            else:
+                                f.write(f"| {label} | {value} |\n")
+                        f.write("\n")
+
+                    # Plot paths if available
+                    plot_paths = {k: v for k, v in shap_exp.items() if 'path' in k.lower()}
+                    if plot_paths:
+                        f.write("### Generated Explanation Plots\n\n")
+                        for key, path in sorted(plot_paths.items()):
+                            label = key.replace('_', ' ').replace('path', '').strip().title()
+                            f.write(f"- **{label}:** `{path}`\n")
+                        f.write("\n")
+
+                    # Per-model SHAP data
+                    per_model_shap = {k: v for k, v in shap_exp.items() if isinstance(v, dict)}
+                    if per_model_shap:
+                        f.write("### Per-Model SHAP Data\n\n")
+                        for model_name, shap_data in per_model_shap.items():
+                            f.write(f"#### {model_name.replace('_', ' ').upper()}\n\n")
+                            for key, value in sorted(shap_data.items()):
+                                label = key.replace('_', ' ').title()
+                                if 'path' in key.lower():
+                                    f.write(f"- **{label}:** `{value}`\n")
+                                elif isinstance(value, (int, float)):
+                                    f.write(f"- **{label}:** {value:.6f}\n")
+                                else:
+                                    f.write(f"- **{label}:** {value}\n")
+                            f.write("\n")
+                else:
+                    f.write("*No SHAP explanations available.*\n\n")
+                f.write("---\n\n")
+
+                # ===== DECISION THRESHOLD OPTIMIZATION =====
+                f.write("## ⚖️ Decision Threshold Optimization\n\n")
+                f.write("*ROC/PR curves, F-beta optimization, cost-weighted thresholds*\n\n")
+                threshold_opt = comprehensive_metrics['threshold_optimization']
+                if threshold_opt:
+                    # Filter out complex objects
+                    simple_threshold = {k: v for k, v in threshold_opt.items()
+                                        if not isinstance(v, dict) and 'curve' not in k.lower() and 'matrix' not in k.lower()}
+
+                    if simple_threshold:
+                        f.write("| Metric | Value |\n")
+                        f.write("|--------|-------|\n")
+                        for key, value in sorted(simple_threshold.items()):
+                            label = key.replace('_', ' ').title()
+                            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                                f.write(f"| {label} | {value:.6f} |\n")
+                            else:
+                                f.write(f"| {label} | {value} |\n")
+                        f.write("\n")
+
+                    # Per-model threshold optimization
+                    per_model_threshold = {k: v for k, v in threshold_opt.items() if isinstance(v, dict)}
+                    if per_model_threshold:
+                        f.write("### Per-Model Threshold Optimization\n\n")
+                        for model_name, thresh_data in per_model_threshold.items():
+                            f.write(f"#### {model_name.replace('_', ' ').upper()}\n\n")
+                            f.write("| Metric | Value |\n")
+                            f.write("|--------|-------|\n")
+                            for key, value in sorted(thresh_data.items()):
+                                label = key.replace('_', ' ').title()
+                                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                                    f.write(f"| {label} | {value:.6f} |\n")
+                                else:
+                                    f.write(f"| {label} | {value} |\n")
+                            f.write("\n")
+                else:
+                    f.write("*No threshold optimization metrics available.*\n\n")
+                f.write("---\n\n")
+
                 # ===== ARTIFACTS =====
                 f.write("## 💾 Generated Artifacts\n\n")
                 if 'artifacts' in result:
@@ -3303,6 +3765,10 @@ class UnifiedModelsTrainingStep(BaseStep):
                 'model_complexity': comprehensive_metrics['model_complexity'],
                 'prediction_statistics': comprehensive_metrics['prediction_statistics'],
                 'error_analysis': comprehensive_metrics['error_analysis'],
+                'data_drift_checks': comprehensive_metrics['data_drift_checks'],
+                'uncertainty_calibration': comprehensive_metrics['uncertainty_calibration'],
+                'shap_explanations': comprehensive_metrics['shap_explanations'],
+                'threshold_optimization': comprehensive_metrics['threshold_optimization'],
 
                 # Add ensemble-specific metrics if applicable
                 'ensemble_specific': comprehensive_metrics['ensemble_specific'] if comprehensive_metrics['ensemble_specific'] is not None else None,
@@ -3334,6 +3800,19 @@ class UnifiedModelsTrainingStep(BaseStep):
             tprint_success(f"✅ Comprehensive JSON metrics saved: {json_path}")
 
             # ========================================================================
+            # CSV METRICS REPORT (One line per model)
+            # ========================================================================
+            csv_path = self._generate_csv_metrics_report(
+                comprehensive_metrics=comprehensive_metrics,
+                result=result,
+                training_type=training_type,
+                config=config,
+                reports_dir=reports_dir
+            )
+            if csv_path:
+                report_paths['csv'] = csv_path
+
+            # ========================================================================
             # SUMMARY LOG OUTPUT
             # ========================================================================
             tprint_info("=" * 80)
@@ -3353,6 +3832,8 @@ class UnifiedModelsTrainingStep(BaseStep):
 
             tprint_info(f"📄 Markdown Report: {markdown_path}")
             tprint_info(f"📊 JSON Report: {json_path}")
+            if csv_path:
+                tprint_info(f"📊 CSV Report: {csv_path}")
             tprint_info("=" * 80)
 
             return report_paths

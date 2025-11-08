@@ -408,12 +408,20 @@ class UnifiedModelsTrainingStep(BaseStep):
                         tprint_warning(f"⚠️ Failed to save ML-scored data: {e}")
                         self.logger.warning(f"ML-scored data save failed: {e}")
 
+                # Generate comprehensive training reports (markdown + JSON)
+                tprint_info("📝 Generating comprehensive training reports...")
+                report_paths = self._generate_training_reports(result, training_type, config)
+                if report_paths:
+                    artifacts.update(report_paths)
+                    tprint_success(f"✅ Training reports generated: {len(report_paths)} files")
+
                 return {
                     'success': True,
                     'artifacts': artifacts,
                     'metrics': result.get('metrics', {}),
                     'training_type': training_type,
-                    'execution_time': result.get('execution_time', 0.0)
+                    'execution_time': result.get('execution_time', 0.0),
+                    'reports': report_paths
                 }
             else:
                 tprint_error(f"❌ Unified {training_type} training failed")
@@ -2371,6 +2379,222 @@ class UnifiedModelsTrainingStep(BaseStep):
             
         except Exception as e:
             self.logger.error(f"Failed to save training artifacts: {e}")
+            return {}
+
+    def _generate_training_reports(
+        self,
+        result: Dict[str, Any],
+        training_type: str,
+        config: Dict[str, Any]
+    ) -> Dict[str, str]:
+        """
+        Generate comprehensive markdown and JSON reports for training metrics.
+
+        Args:
+            result: Training result dictionary containing metrics and models
+            training_type: Type of training (analyst_base, tactician_base, etc.)
+            config: Configuration dictionary
+
+        Returns:
+            Dictionary with paths to generated reports
+        """
+        try:
+            import json
+            from datetime import datetime
+
+            report_paths = {}
+            metrics = result.get('metrics', {})
+
+            # Create reports directory
+            symbol = config.get('symbol', 'UNKNOWN')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+            reports_dir = os.path.join(
+                'reports',
+                training_type,
+                f"{symbol}_{timeframe}_{direction}",
+                timestamp
+            )
+            os.makedirs(reports_dir, exist_ok=True)
+
+            # ========================================================================
+            # MARKDOWN REPORT
+            # ========================================================================
+            markdown_path = os.path.join(reports_dir, f'{training_type}_report.md')
+
+            with open(markdown_path, 'w') as f:
+                f.write(f"# {training_type.replace('_', ' ').title()} Training Report\n\n")
+                f.write(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+
+                # Configuration Section
+                f.write("## Configuration\n\n")
+                f.write(f"- **Symbol:** {symbol}\n")
+                f.write(f"- **Exchange:** {config.get('exchange', 'binance')}\n")
+                f.write(f"- **Timeframe:** {timeframe}\n")
+                f.write(f"- **Direction:** {direction}\n")
+                f.write(f"- **Execution Mode:** {config.get('execution_mode', 'light')}\n")
+                f.write(f"- **Training Type:** {training_type}\n\n")
+
+                # Overall Metrics Section
+                f.write("## Overall Training Metrics\n\n")
+                if metrics:
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+
+                    # Extract key metrics
+                    for key, value in sorted(metrics.items()):
+                        if isinstance(value, (int, float)):
+                            f.write(f"| {key} | {value:.6f if isinstance(value, float) else value} |\n")
+                        elif isinstance(value, str):
+                            f.write(f"| {key} | {value} |\n")
+                    f.write("\n")
+                else:
+                    f.write("No overall metrics available.\n\n")
+
+                # Per-Model Metrics Section
+                f.write("## Per-Model Metrics\n\n")
+
+                # Check for model-specific metrics
+                model_metrics = {}
+                if 'models' in result:
+                    f.write(f"**Total Models Trained:** {len(result['models'])}\n\n")
+
+                    # Try to extract per-model metrics
+                    for model_name in result['models'].keys():
+                        model_key = f"{model_name}_metrics"
+                        if model_key in metrics:
+                            model_metrics[model_name] = metrics[model_key]
+                        elif isinstance(metrics.get(model_name), dict):
+                            model_metrics[model_name] = metrics[model_name]
+
+                    if model_metrics:
+                        for model_name, model_metric_dict in model_metrics.items():
+                            f.write(f"### {model_name}\n\n")
+                            f.write("| Metric | Value |\n")
+                            f.write("|--------|-------|\n")
+
+                            for key, value in sorted(model_metric_dict.items()):
+                                if isinstance(value, (int, float)):
+                                    f.write(f"| {key} | {value:.6f if isinstance(value, float) else value} |\n")
+                                elif isinstance(value, str):
+                                    f.write(f"| {key} | {value} |\n")
+                            f.write("\n")
+                    else:
+                        f.write("No per-model metrics available in standard format.\n\n")
+
+                # HPO Results Section
+                f.write("## Hyperparameter Optimization\n\n")
+                if 'hpo_results' in metrics:
+                    hpo_results = metrics['hpo_results']
+                    f.write(f"**HPO Method:** {hpo_results.get('method', 'Unknown')}\n")
+                    f.write(f"**Best Score:** {hpo_results.get('best_score', 'N/A')}\n")
+                    f.write(f"**Optimization Time:** {hpo_results.get('optimization_time', 'N/A')}s\n\n")
+
+                    if 'best_params' in hpo_results:
+                        f.write("**Best Parameters:**\n\n")
+                        f.write("```json\n")
+                        f.write(json.dumps(hpo_results['best_params'], indent=2))
+                        f.write("\n```\n\n")
+                else:
+                    f.write("No HPO results available.\n\n")
+
+                # Feature Information
+                f.write("## Feature Information\n\n")
+                if 'feature_count' in metrics:
+                    f.write(f"**Total Features:** {metrics['feature_count']}\n")
+                if 'sample_count' in metrics:
+                    f.write(f"**Training Samples:** {metrics['sample_count']}\n")
+                if 'feature_selection_info' in metrics:
+                    f.write(f"**Feature Selection Applied:** Yes\n")
+                    f.write(f"**Selected Features:** {metrics['feature_selection_info'].get('final_features', 'N/A')}\n")
+                f.write("\n")
+
+                # Data Quality
+                f.write("## Data Quality\n\n")
+                if 'data_quality' in metrics:
+                    dq = metrics['data_quality']
+                    f.write("| Quality Metric | Value |\n")
+                    f.write("|----------------|-------|\n")
+                    for key, value in sorted(dq.items()):
+                        if isinstance(value, (int, float)):
+                            f.write(f"| {key} | {value:.6f if isinstance(value, float) else value} |\n")
+                    f.write("\n")
+
+                # Execution Summary
+                f.write("## Execution Summary\n\n")
+                f.write(f"- **Success:** {result.get('success', False)}\n")
+                f.write(f"- **Execution Time:** {result.get('execution_time', 0):.2f}s\n")
+                if 'error' in result:
+                    f.write(f"- **Error:** {result['error']}\n")
+                f.write("\n")
+
+                # Artifacts
+                f.write("## Generated Artifacts\n\n")
+                if 'artifacts' in result:
+                    artifacts = result['artifacts']
+                    for artifact_name, artifact_path in sorted(artifacts.items()):
+                        f.write(f"- **{artifact_name}:** `{artifact_path}`\n")
+                f.write("\n")
+
+                # Footer
+                f.write("---\n")
+                f.write(f"*Report generated by Ares Training Pipeline v2.0 - {timestamp}*\n")
+
+            report_paths['markdown'] = markdown_path
+            tprint_success(f"✅ Markdown report saved: {markdown_path}")
+
+            # ========================================================================
+            # JSON REPORT
+            # ========================================================================
+            json_path = os.path.join(reports_dir, f'{training_type}_metrics.json')
+
+            json_report = {
+                'metadata': {
+                    'training_type': training_type,
+                    'symbol': symbol,
+                    'exchange': config.get('exchange', 'binance'),
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'execution_mode': config.get('execution_mode', 'light'),
+                    'timestamp': timestamp,
+                    'generated_at': datetime.now().isoformat()
+                },
+                'configuration': {
+                    'symbol': symbol,
+                    'exchange': config.get('exchange', 'binance'),
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'execution_mode': config.get('execution_mode', 'light'),
+                    'enable_hpo': config.get('enable_hpo', True),
+                    'walkforward_config': str(config.get('walkforward_config', 'N/A'))
+                },
+                'metrics': metrics,
+                'execution_summary': {
+                    'success': result.get('success', False),
+                    'execution_time_seconds': result.get('execution_time', 0),
+                    'error': result.get('error', None)
+                },
+                'artifacts': result.get('artifacts', {}),
+                'models': {
+                    'count': len(result.get('models', {})),
+                    'names': list(result.get('models', {}).keys())
+                }
+            }
+
+            with open(json_path, 'w') as f:
+                json.dump(json_report, f, indent=2, default=str)
+
+            report_paths['json'] = json_path
+            tprint_success(f"✅ JSON metrics saved: {json_path}")
+
+            return report_paths
+
+        except Exception as e:
+            self.logger.error(f"Failed to generate training reports: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return {}
 
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:

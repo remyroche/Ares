@@ -486,7 +486,29 @@ class FinalParametersOptimizer(BaseStep):
                 direction=direction,
                 model='FinalParameters'
             )
-            
+
+            # Load HDF5 data from versioned artifacts (NEW!)
+            tprint("=" * 80, "header")
+            tprint("📥 LOADING PIPELINE DATA FROM HDF5 ARTIFACTS", "header")
+            tprint("=" * 80, "header")
+            loaded_hdf5_data = await self.load_hdf5_data_from_pipeline(config)
+
+            # Store loaded data for use in optimization
+            self.labeled_data = loaded_hdf5_data.get('labeled_data')
+            self.regime_probabilities = loaded_hdf5_data.get('regime_probabilities')
+            self.analyst_confidence = loaded_hdf5_data.get('analyst_confidence')
+            self.disagreement_features = loaded_hdf5_data.get('disagreement_features')
+
+            # Log what was loaded
+            if self.labeled_data is not None:
+                tprint(f"✅ Loaded labeled_data: {self.labeled_data.shape}", "success")
+            if self.regime_probabilities is not None:
+                tprint(f"✅ Loaded regime_probabilities: {self.regime_probabilities.shape}", "success")
+            if self.analyst_confidence is not None:
+                tprint(f"✅ Loaded analyst_confidence: {self.analyst_confidence.shape}", "success")
+            if self.disagreement_features is not None:
+                tprint(f"✅ Loaded disagreement_features: {self.disagreement_features.shape}", "success")
+
             # Load supporting data (calibration + previous optimization)
             self.calibration_results = await self._load_calibration_results(config)
             self.previous_results = await self._load_previous_results(symbol, exchange, config)
@@ -531,7 +553,55 @@ class FinalParametersOptimizer(BaseStep):
                 'execution_mode': execution_mode
             })
 
+            # Save metrics to Markdown and JSON (NEW!)
+            tprint("=" * 80, "header")
+            tprint("💾 SAVING OPTIMIZATION METRICS", "header")
+            tprint("=" * 80, "header")
+
+            try:
+                # Save metrics to Markdown
+                md_path = self.save_metrics_to_markdown(metrics, config)
+                artifacts.append(md_path)
+                tprint(f"✅ Saved metrics to Markdown: {md_path}", "success")
+            except Exception as e:
+                tprint(f"⚠️ Failed to save metrics to Markdown: {e}", "warning")
+
+            try:
+                # Save metrics to JSON
+                json_path = self.save_metrics_to_json(metrics, config)
+                artifacts.append(json_path)
+                tprint(f"✅ Saved metrics to JSON: {json_path}", "success")
+            except Exception as e:
+                tprint(f"⚠️ Failed to save metrics to JSON: {e}", "warning")
+
+            # Save config to Pickle and JSON (NEW!)
+            tprint("=" * 80, "header")
+            tprint("💾 SAVING CONFIGURATION", "header")
+            tprint("=" * 80, "header")
+
+            optimized_params = optimization_result.get('optimized_parameters', {})
+
+            try:
+                # Save config to Pickle
+                pkl_path = self.save_config_to_pickle(config, optimized_params)
+                artifacts.append(pkl_path)
+                tprint(f"✅ Saved config to Pickle: {pkl_path}", "success")
+            except Exception as e:
+                tprint(f"⚠️ Failed to save config to Pickle: {e}", "warning")
+
+            try:
+                # Save config to JSON
+                config_json_path = self.save_config_to_json(config, optimized_params)
+                artifacts.append(config_json_path)
+                tprint(f"✅ Saved config to JSON: {config_json_path}", "success")
+            except Exception as e:
+                tprint(f"⚠️ Failed to save config to JSON: {e}", "warning")
+
             self.logger.info(f'✅ Final Parameters Optimization completed: {metrics["parameters_optimized"]} parameters optimized')
+            tprint("=" * 80, "header")
+            tprint("✅ FINAL PARAMETERS OPTIMIZATION COMPLETE", "success")
+            tprint("=" * 80, "header")
+
             return {
                 'success': True,
                 'artifacts': artifacts,
@@ -4057,6 +4127,14 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 # Fallback to standard evaluation
                 return [objective_function(params) for params in parameter_batch]
 
+            # If we have a rolling optimizer, use it
+            # (Implementation would go here)
+            return [objective_function(params) for params in parameter_batch]
+
+        except Exception as e:
+            self.logger.warning(f"VectorBT rolling optimization failed: {e}")
+            return [objective_function(params) for params in parameter_batch]
+
     def _has_valid_calibration(self, calibration_results: Dict[str, Any]) -> bool:
         """
         Check if calibration results are valid for optimization.
@@ -5913,6 +5991,382 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             'optimization_method': 'fallback',
             'error': 'Grid search failed, using default parameters'
         }
+
+    async def load_hdf5_data_from_pipeline(self, config: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
+        """
+        Load HDF5 data from versioned artifacts for final parameters optimization.
+
+        This method loads data from previous pipeline steps:
+        - feature_generation_labeling_integration_step: labeled data with features and targets
+        - regime_ensemble_training: regime probabilities for each regime
+        - analyst_ensemble_training: confidence scores and disagreement features
+
+        Args:
+            config: Configuration dictionary containing symbol, exchange, timeframe, direction
+
+        Returns:
+            Dictionary with loaded DataFrames:
+            - 'labeled_data': Features and targets from labeling step
+            - 'regime_probabilities': Regime probabilities from ensemble training
+            - 'analyst_confidence': Confidence scores from analyst ensemble
+            - 'disagreement_features': Disagreement features from analyst ensemble
+        """
+        tprint("=" * 80, "header")
+        tprint("📥 LOADING HDF5 DATA FROM VERSIONED ARTIFACTS", "header")
+        tprint("=" * 80, "header")
+
+        symbol = config.get('symbol', 'ETHUSDT')
+        exchange = config.get('exchange', 'binance')
+        timeframe = config.get('timeframe', '15m')
+        direction = config.get('direction', 'long')
+
+        loaded_data = {}
+
+        try:
+            # 1. Load labeled data from feature_generation_labeling_integration_step
+            tprint("📊 Loading labeled data from feature_generation_labeling_integration_step...", "info")
+            self.set_context(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                direction=direction,
+                model='analyst'
+            )
+
+            labeled_data = self._get_artifact(
+                artifact_name=f'labeled_data_{symbol}_{timeframe}',
+                artifact_type='data',
+                data_category='features'
+            )
+
+            if labeled_data is not None:
+                tprint(f"✅ Loaded labeled data: {labeled_data.shape}", "success")
+                loaded_data['labeled_data'] = labeled_data
+            else:
+                tprint("⚠️ Labeled data not found in versioned artifacts", "warning")
+
+            # 2. Load regime probabilities from regime_ensemble_training
+            tprint("📊 Loading regime probabilities from regime_ensemble_training...", "info")
+
+            # For regime data, use regime timeframe (typically 1h)
+            regime_timeframe = config.get('regime_timeframe', '1h')
+            self.set_context(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=regime_timeframe,
+                direction='long',  # Regimes are direction-agnostic
+                model='regime'
+            )
+
+            regime_probs = self._get_artifact(
+                artifact_name='regime_ensemble_predictions',
+                artifact_type='data',
+                data_category='predictions'
+            )
+
+            if regime_probs is not None:
+                tprint(f"✅ Loaded regime probabilities: {regime_probs.shape}", "success")
+                loaded_data['regime_probabilities'] = regime_probs
+            else:
+                tprint("⚠️ Regime probabilities not found in versioned artifacts", "warning")
+
+            # 3. Load analyst ensemble confidence and disagreement features
+            tprint("📊 Loading analyst ensemble outputs (confidence + disagreement)...", "info")
+
+            # Reset context to analyst model
+            self.set_context(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                direction=direction,
+                model='analyst'
+            )
+
+            # Try to load analyst ensemble predictions which should contain confidence scores
+            analyst_predictions = self._get_artifact(
+                artifact_name='analyst_ensemble_predictions',
+                artifact_type='data',
+                data_category='predictions'
+            )
+
+            if analyst_predictions is not None:
+                tprint(f"✅ Loaded analyst ensemble predictions: {analyst_predictions.shape}", "success")
+
+                # Extract confidence scores if available
+                if 'confidence' in analyst_predictions.columns:
+                    loaded_data['analyst_confidence'] = analyst_predictions[['confidence']]
+                    tprint(f"   • Extracted confidence scores: {loaded_data['analyst_confidence'].shape}", "info")
+
+                # Extract disagreement features if available
+                disagreement_cols = [col for col in analyst_predictions.columns if 'disagreement' in col.lower()]
+                if disagreement_cols:
+                    loaded_data['disagreement_features'] = analyst_predictions[disagreement_cols]
+                    tprint(f"   • Extracted disagreement features: {loaded_data['disagreement_features'].shape}", "info")
+                    tprint(f"   • Disagreement columns: {disagreement_cols}", "info")
+            else:
+                tprint("⚠️ Analyst ensemble predictions not found in versioned artifacts", "warning")
+
+            # Summary
+            tprint("=" * 80, "header")
+            tprint(f"📦 LOADED {len(loaded_data)} DATA ARTIFACTS", "header")
+            for key, df in loaded_data.items():
+                tprint(f"   • {key}: {df.shape}", "info")
+            tprint("=" * 80, "header")
+
+            return loaded_data
+
+        except Exception as e:
+            self.logger.error(f"Failed to load HDF5 data from pipeline: {e}")
+            tprint(f"❌ Error loading HDF5 data: {e}", "error")
+            import traceback
+            tprint(traceback.format_exc(), "error")
+            return loaded_data
+
+    def save_metrics_to_markdown(self, metrics: Dict[str, Any], config: Dict[str, Any]) -> str:
+        """
+        Save optimization metrics to Markdown file.
+
+        Args:
+            metrics: Dictionary of metrics to save (HPO results, accuracy, R2, etc.)
+            config: Configuration dictionary for context
+
+        Returns:
+            Path to saved Markdown file
+        """
+        try:
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', 'binance')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+            # Create markdown content
+            md_content = f"""# Final Parameters Optimization Report
+
+## Configuration
+- **Symbol**: {symbol}
+- **Exchange**: {exchange}
+- **Timeframe**: {timeframe}
+- **Direction**: {direction}
+- **Timestamp**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+- **Execution Mode**: {config.get('execution_mode', 'light')}
+
+## Optimization Metrics
+
+### HPO Metrics
+"""
+
+            # Add HPO metrics if available
+            if 'hpo_metrics' in metrics:
+                hpo = metrics['hpo_metrics']
+                md_content += f"""
+- **Best Score**: {hpo.get('best_score', 'N/A')}
+- **N Trials**: {hpo.get('n_trials', 'N/A')}
+- **Best Trial**: {hpo.get('best_trial', 'N/A')}
+- **Optimization Time**: {hpo.get('optimization_time', 'N/A')}s
+"""
+
+            # Add performance metrics
+            md_content += "\n### Performance Metrics\n"
+
+            perf_metrics = {
+                'accuracy': 'Accuracy',
+                'r2_score': 'R² Score',
+                'sharpe_ratio': 'Sharpe Ratio',
+                'sortino_ratio': 'Sortino Ratio',
+                'max_drawdown': 'Max Drawdown',
+                'win_rate': 'Win Rate',
+                'profit_factor': 'Profit Factor',
+                'total_return': 'Total Return'
+            }
+
+            for key, label in perf_metrics.items():
+                if key in metrics:
+                    md_content += f"- **{label}**: {metrics[key]}\n"
+
+            # Add cross-validation metrics if available
+            if 'cv_metrics' in metrics:
+                md_content += "\n### Cross-Validation Metrics\n"
+                cv = metrics['cv_metrics']
+                md_content += f"""
+- **CV Mean Score**: {cv.get('mean_score', 'N/A')}
+- **CV Std Score**: {cv.get('std_score', 'N/A')}
+- **CV Folds**: {cv.get('n_folds', 'N/A')}
+"""
+
+            # Add optimized parameters summary
+            if 'optimized_parameters' in metrics:
+                md_content += "\n### Optimized Parameters\n"
+                params = metrics['optimized_parameters']
+                for param_name, param_value in params.items():
+                    md_content += f"- **{param_name}**: {param_value}\n"
+
+            # Save to file
+            outcomes_dir = Path("outcomes")
+            outcomes_dir.mkdir(exist_ok=True)
+
+            filename = f"final_parameters_optimization_metrics_{symbol}_{timeframe}_{direction}_{timestamp}.md"
+            filepath = outcomes_dir / filename
+
+            with open(filepath, 'w') as f:
+                f.write(md_content)
+
+            tprint(f"📝 Saved metrics to Markdown: {filepath}", "success")
+            return str(filepath)
+
+        except Exception as e:
+            self.logger.error(f"Failed to save metrics to Markdown: {e}")
+            tprint(f"❌ Error saving metrics to Markdown: {e}", "error")
+            raise
+
+    def save_metrics_to_json(self, metrics: Dict[str, Any], config: Dict[str, Any]) -> str:
+        """
+        Save optimization metrics to JSON file.
+
+        Args:
+            metrics: Dictionary of metrics to save
+            config: Configuration dictionary for context
+
+        Returns:
+            Path to saved JSON file
+        """
+        try:
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', 'binance')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+            # Create comprehensive metrics structure
+            metrics_data = {
+                'metadata': {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'timestamp': datetime.now().isoformat(),
+                    'execution_mode': config.get('execution_mode', 'light')
+                },
+                'metrics': metrics
+            }
+
+            # Save to file
+            outcomes_dir = Path("outcomes")
+            outcomes_dir.mkdir(exist_ok=True)
+
+            filename = f"final_parameters_optimization_metrics_{symbol}_{timeframe}_{direction}_{timestamp}.json"
+            filepath = outcomes_dir / filename
+
+            with open(filepath, 'w') as f:
+                json.dump(metrics_data, f, indent=2, default=str)
+
+            tprint(f"📊 Saved metrics to JSON: {filepath}", "success")
+            return str(filepath)
+
+        except Exception as e:
+            self.logger.error(f"Failed to save metrics to JSON: {e}")
+            tprint(f"❌ Error saving metrics to JSON: {e}", "error")
+            raise
+
+    def save_config_to_pickle(self, config: Dict[str, Any], optimized_params: Dict[str, Any]) -> str:
+        """
+        Save configuration and optimized parameters to Pickle file.
+
+        Args:
+            config: Configuration dictionary
+            optimized_params: Optimized parameters dictionary
+
+        Returns:
+            Path to saved Pickle file
+        """
+        try:
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', 'binance')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+            # Combine config and optimized params
+            full_config = {
+                'base_config': config,
+                'optimized_parameters': optimized_params,
+                'metadata': {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'timestamp': datetime.now().isoformat(),
+                    'step_name': self.step_name
+                }
+            }
+
+            # Save to file
+            artifacts_dir = Path("artifacts")
+            artifacts_dir.mkdir(exist_ok=True)
+
+            filename = f"final_parameters_config_{symbol}_{timeframe}_{direction}_{timestamp}.pkl"
+            filepath = artifacts_dir / filename
+
+            with open(filepath, 'wb') as f:
+                pickle.dump(full_config, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+            tprint(f"💾 Saved config to Pickle: {filepath}", "success")
+            return str(filepath)
+
+        except Exception as e:
+            self.logger.error(f"Failed to save config to Pickle: {e}")
+            tprint(f"❌ Error saving config to Pickle: {e}", "error")
+            raise
+
+    def save_config_to_json(self, config: Dict[str, Any], optimized_params: Dict[str, Any]) -> str:
+        """
+        Save configuration and optimized parameters to JSON file.
+
+        Args:
+            config: Configuration dictionary
+            optimized_params: Optimized parameters dictionary
+
+        Returns:
+            Path to saved JSON file
+        """
+        try:
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', 'binance')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+            # Combine config and optimized params
+            full_config = {
+                'base_config': config,
+                'optimized_parameters': optimized_params,
+                'metadata': {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'timestamp': datetime.now().isoformat(),
+                    'step_name': self.step_name
+                }
+            }
+
+            # Save to file
+            artifacts_dir = Path("artifacts")
+            artifacts_dir.mkdir(exist_ok=True)
+
+            filename = f"final_parameters_config_{symbol}_{timeframe}_{direction}_{timestamp}.json"
+            filepath = artifacts_dir / filename
+
+            with open(filepath, 'w') as f:
+                json.dump(full_config, f, indent=2, default=str)
+
+            tprint(f"📄 Saved config to JSON: {filepath}", "success")
+            return str(filepath)
+
+        except Exception as e:
+            self.logger.error(f"Failed to save config to JSON: {e}")
+            tprint(f"❌ Error saving config to JSON: {e}", "error")
+            raise
 
 # Convenience functions for easy integration
 async def optimize_final_parameters(calibration_results: Dict[str, Any],

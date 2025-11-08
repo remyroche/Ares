@@ -2231,21 +2231,31 @@ class UnifiedModelsTrainingStep(BaseStep):
                         # Convert dict of Series to DataFrame
                         all_meta_features = pd.DataFrame(disagreement_features_dict, index=base_outputs_for_stats.index)
 
-                        # Filter to keep only the 7 most important disagreement features
+                        # Filter to keep only the 6 most important disagreement features
                         # These are the most informative features for ensemble learning
                         core_features = [
                             'prediction_dispersion',    # 1. Variance of predictions across models
-                            'direction_conflict',       # 2. Directional disagreement rate
-                            'confidence_gap',           # 3. Margin between top predictions
-                            'uncertainty',              # 4. Normalized entropy (uncertainty measure)
-                            'prediction_range',         # 5. Range of predictions (max - min)
-                            'avg_divergence',           # 6. Average pairwise model divergence
-                            'max_confidence'            # 7. Highest confidence among models
+                            'confidence_gap',           # 2. Margin between top predictions
+                            'uncertainty',              # 3. Normalized entropy (uncertainty measure)
+                            'prediction_range',         # 4. Range of predictions (max - min)
+                            'avg_divergence',           # 5. Average pairwise model divergence
+                            'max_confidence'            # 6. Highest confidence among models
                         ]
 
                         # Select only core features that exist
                         available_core_features = [f for f in core_features if f in all_meta_features.columns]
                         meta_features = all_meta_features[available_core_features].copy()
+
+                        # Normalize prediction_range and avg_divergence by standard deviation
+                        features_to_normalize = ['prediction_range', 'avg_divergence']
+                        for feature in features_to_normalize:
+                            if feature in meta_features.columns:
+                                feature_std = meta_features[feature].std()
+                                if feature_std > 0:
+                                    meta_features[feature] = meta_features[feature] / feature_std
+                                    tprint_info(f"   ↪ Normalized '{feature}' by std={feature_std:.6f}")
+                                else:
+                                    tprint_warning(f"   ⚠️ Cannot normalize '{feature}' (std=0)")
 
                         tprint_success(f"✅ Calculated {len(meta_features.columns)} core disagreement meta-features:")
                         tprint_info(f"   Feature columns: {list(meta_features.columns)}")

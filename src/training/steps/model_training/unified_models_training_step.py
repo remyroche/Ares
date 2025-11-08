@@ -2825,6 +2825,7 @@ class UnifiedModelsTrainingStep(BaseStep):
             comprehensive_metrics['data_quality'] = data_quality
 
         # Add basic data stats if available
+        # Note: Top-level metrics override nested data_quality values if duplicates exist
         if 'feature_count' in metrics:
             comprehensive_metrics['data_quality']['feature_count'] = metrics['feature_count']
         if 'sample_count' in metrics:
@@ -2924,7 +2925,6 @@ class UnifiedModelsTrainingStep(BaseStep):
         """
         try:
             import json
-            from datetime import datetime
 
             report_paths = {}
 

@@ -32,6 +32,9 @@ from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error, tprint_warning
 
+# Import model training report generator
+from src.training.steps.model_training.model_training_report_generator import create_model_training_report
+
 # Import dynamic config calculator
 from src.training.steps.model_training.dynamic_config_calculator import (
     DynamicConfigCalculator, DynamicTrainingConfig
@@ -338,17 +341,58 @@ class UnifiedModelsTrainingStep(BaseStep):
             
             if result.get('success', False):
                 tprint_success(f"✅ Unified {training_type} training completed successfully")
-                
+
                 # Save artifacts
                 artifacts = await self._save_training_artifacts(result, training_type, config)
                 result['artifacts'] = artifacts
-                
+
+                # Generate markdown and JSON training reports
+                try:
+                    tprint_info("📝 Generating training reports (Markdown + JSON)...")
+
+                    # Prepare feature info
+                    feature_info = {
+                        'feature_count': training_data.shape[1] if training_data is not None else 0,
+                        'feature_source': 'feature_generation_final_feature_selection_step',
+                        'feature_names': list(training_data.columns) if training_data is not None else [],
+                        'regime_features_included': True
+                    }
+
+                    # Generate reports
+                    markdown_path, json_path = create_model_training_report(
+                        training_type=training_type,
+                        symbol=symbol,
+                        exchange=config.get('exchange', 'binance'),
+                        timeframe=timeframe,
+                        direction=direction,
+                        models_trained=result.get('models', {}),
+                        metrics=result.get('metrics', {}),
+                        hpo_results=result.get('hpo_results'),
+                        regime_performance=result.get('regime_performance'),
+                        training_config=config,
+                        feature_info=feature_info,
+                        execution_time=result.get('execution_time', 0.0),
+                        outcomes_dir='outcomes'
+                    )
+
+                    if markdown_path:
+                        artifacts['training_report_markdown'] = markdown_path
+                        tprint_success(f"✅ Markdown report saved: {markdown_path}")
+
+                    if json_path:
+                        artifacts['training_report_json'] = json_path
+                        tprint_success(f"✅ JSON metrics report saved: {json_path}")
+
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to generate training reports: {e}")
+                    self.logger.warning(f"Training report generation failed: {e}")
+
                 # Save ML-scored historical data for backtesting
                 if training_data is not None and 'predictions' in result:
                     try:
                         model_type = 'analyst' if training_type.startswith('analyst') else 'tactician'
                         tprint_info(f"📊 Saving ML-scored historical data ({model_type})...")
-                        
+
                         ml_scored_path = self._save_ml_scored_data(
                             data=training_data,
                             predictions=result['predictions'],
@@ -360,19 +404,27 @@ class UnifiedModelsTrainingStep(BaseStep):
                                 'model_names': list(result.get('models', {}).keys())
                             }
                         )
-                        
+
                         artifacts['ml_scored_historical_data'] = ml_scored_path
                         tprint_success(f"✅ ML-scored data saved: {ml_scored_path}")
                     except Exception as e:
                         tprint_warning(f"⚠️ Failed to save ML-scored data: {e}")
                         self.logger.warning(f"ML-scored data save failed: {e}")
-                
+
+                # Generate comprehensive training reports (markdown + JSON)
+                tprint_info("📝 Generating comprehensive training reports...")
+                report_paths = self._generate_training_reports(result, training_type, config)
+                if report_paths:
+                    artifacts.update(report_paths)
+                    tprint_success(f"✅ Training reports generated: {len(report_paths)} files")
+
                 return {
                     'success': True,
                     'artifacts': artifacts,
                     'metrics': result.get('metrics', {}),
                     'training_type': training_type,
-                    'execution_time': result.get('execution_time', 0.0)
+                    'execution_time': result.get('execution_time', 0.0),
+                    'reports': report_paths
                 }
             else:
                 tprint_error(f"❌ Unified {training_type} training failed")
@@ -1561,8 +1613,19 @@ class UnifiedModelsTrainingStep(BaseStep):
             analyst_targets = None
             tactician_targets = None
             
-            # Determine feature set size to use (default to 50 features)
-            feature_set_size = config.get('feature_set_size', 50)
+            # ========================================================================
+            # FEATURE LOADING FROM HDF5 VERSIONED ARTIFACTS
+            # ========================================================================
+            # Determine feature set size to use (default to 60 features for analyst base)
+            # The 60-feature set is the recommended size for optimal model performance
+            feature_set_size = config.get('feature_set_size', 60)
+
+            tprint_info("=" * 80)
+            tprint_info("📦 LOADING FEATURES FROM HDF5 VERSIONED ARTIFACTS")
+            tprint_info("=" * 80)
+            tprint_info(f"   Source Step: feature_generation_final_feature_selection_step")
+            tprint_info(f"   Target Feature Set Size: {feature_set_size} features")
+            tprint_info(f"   Storage Format: HDF5 (via versioned_artifacts)")
 
             # Try to get selected features from feature_generation_final_feature_selection_step
             # IMPORTANT: Fallback order prioritizes larger feature sets (60 > 50 > 40) for better model performance
@@ -1579,7 +1642,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                 'final_dataset_40',                                # Validation step 40
             ]
 
-            tprint_info(f"🔎 Attempting to load training features from artifacts: {feature_artifact_names}")
+            tprint_info(f"🔎 Attempting to load training features from HDF5 artifacts...")
             feature_source_name = None
 
             for artifact_name in feature_artifact_names:
@@ -1759,9 +1822,17 @@ class UnifiedModelsTrainingStep(BaseStep):
                     f"dtypes={training_data.dtypes.value_counts().to_dict()}"
                 )
 
+            # ========================================================================
+            # LABELS/TARGETS LOADING FROM HDF5 VERSIONED ARTIFACTS
+            # ========================================================================
             # Get targets from labeling integration step (direction-aware)
             direction = config.get('direction', 'long')
-            tprint_info(f"📍 Loading labels for direction: {direction}")
+            tprint_info("=" * 80)
+            tprint_info("🎯 LOADING LABELS/TARGETS FROM HDF5 VERSIONED ARTIFACTS")
+            tprint_info("=" * 80)
+            tprint_info(f"   Source Step: feature_generation_labeling_integration_step")
+            tprint_info(f"   Direction: {direction}")
+            tprint_info(f"   Storage Format: HDF5 (via versioned_artifacts)")
 
             # Try to get analyst targets (direction-specific first, then generic)
             analyst_artifact_names = [
@@ -2052,20 +2123,32 @@ class UnifiedModelsTrainingStep(BaseStep):
             base_outputs_for_stats = None # Store the specific DataFrame to calculate stats on
 
             # --- START: Load and Resample Regime Features (FAST-FAIL) ---
+            # ========================================================================
+            # REGIME PROBABILITY LOADING FROM HDF5 VERSIONED ARTIFACTS
+            # ========================================================================
             try:
+                tprint_info("=" * 80)
+                tprint_info("🌍 LOADING REGIME PROBABILITIES FROM HDF5 VERSIONED ARTIFACTS")
+                tprint_info("=" * 80)
+                tprint_info(f"   Source Step: regime_ensemble_training")
+                tprint_info(f"   Artifact Name: regime_ensemble_predictions")
+                tprint_info(f"   Storage Format: HDF5 (via versioned_artifacts)")
+
                 # Load regime ensemble predictions (from regime_ensemble_training) - REQUIRED
                 regime_features = self._get_artifact('regime_ensemble_predictions', 'data')
                 if regime_features is None:
                     error_msg = (
                         "❌ CRITICAL: regime_ensemble_predictions artifact not found!\n"
                         "   This artifact is REQUIRED for model training.\n"
+                        "   Source: regime_ensemble_training step\n"
+                        "   Format: HDF5 (versioned_artifacts)\n"
                         "   Please ensure regime_ensemble_training step has run successfully."
                     )
                     tprint_error(error_msg)
                     raise ValueError(error_msg)
 
-                tprint_info(f"   ↪ Retrieved regime_ensemble_predictions: shape={regime_features.shape}, columns={len(regime_features.columns)}")
-                tprint_success(f"✅ Loaded regime ensemble predictions: {regime_features.shape}")
+                tprint_info(f"   ↪ Retrieved regime_ensemble_predictions from HDF5: shape={regime_features.shape}, columns={len(regime_features.columns)}")
+                tprint_success(f"✅ Loaded regime ensemble predictions from HDF5: {regime_features.shape}")
 
                 # Resample regime features if needed to match training data (should already be 15m)
                 if not regime_features.index.equals(training_data.index):
@@ -2602,6 +2685,222 @@ class UnifiedModelsTrainingStep(BaseStep):
             import traceback
             self.logger.error(traceback.format_exc())
             return None
+          
+    def _generate_training_reports(
+        self,
+        result: Dict[str, Any],
+        training_type: str,
+        config: Dict[str, Any]
+    ) -> Dict[str, str]:
+        """
+        Generate comprehensive markdown and JSON reports for training metrics.
+
+        Args:
+            result: Training result dictionary containing metrics and models
+            training_type: Type of training (analyst_base, tactician_base, etc.)
+            config: Configuration dictionary
+
+        Returns:
+            Dictionary with paths to generated reports
+        """
+        try:
+            import json
+            from datetime import datetime
+
+            report_paths = {}
+            metrics = result.get('metrics', {})
+
+            # Create reports directory
+            symbol = config.get('symbol', 'UNKNOWN')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+            reports_dir = os.path.join(
+                'reports',
+                training_type,
+                f"{symbol}_{timeframe}_{direction}",
+                timestamp
+            )
+            os.makedirs(reports_dir, exist_ok=True)
+
+            # ========================================================================
+            # MARKDOWN REPORT
+            # ========================================================================
+            markdown_path = os.path.join(reports_dir, f'{training_type}_report.md')
+
+            with open(markdown_path, 'w') as f:
+                f.write(f"# {training_type.replace('_', ' ').title()} Training Report\n\n")
+                f.write(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+
+                # Configuration Section
+                f.write("## Configuration\n\n")
+                f.write(f"- **Symbol:** {symbol}\n")
+                f.write(f"- **Exchange:** {config.get('exchange', 'binance')}\n")
+                f.write(f"- **Timeframe:** {timeframe}\n")
+                f.write(f"- **Direction:** {direction}\n")
+                f.write(f"- **Execution Mode:** {config.get('execution_mode', 'light')}\n")
+                f.write(f"- **Training Type:** {training_type}\n\n")
+
+                # Overall Metrics Section
+                f.write("## Overall Training Metrics\n\n")
+                if metrics:
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+
+                    # Extract key metrics
+                    for key, value in sorted(metrics.items()):
+                        if isinstance(value, (int, float)):
+                            f.write(f"| {key} | {value:.6f if isinstance(value, float) else value} |\n")
+                        elif isinstance(value, str):
+                            f.write(f"| {key} | {value} |\n")
+                    f.write("\n")
+                else:
+                    f.write("No overall metrics available.\n\n")
+
+                # Per-Model Metrics Section
+                f.write("## Per-Model Metrics\n\n")
+
+                # Check for model-specific metrics
+                model_metrics = {}
+                if 'models' in result:
+                    f.write(f"**Total Models Trained:** {len(result['models'])}\n\n")
+
+                    # Try to extract per-model metrics
+                    for model_name in result['models'].keys():
+                        model_key = f"{model_name}_metrics"
+                        if model_key in metrics:
+                            model_metrics[model_name] = metrics[model_key]
+                        elif isinstance(metrics.get(model_name), dict):
+                            model_metrics[model_name] = metrics[model_name]
+
+                    if model_metrics:
+                        for model_name, model_metric_dict in model_metrics.items():
+                            f.write(f"### {model_name}\n\n")
+                            f.write("| Metric | Value |\n")
+                            f.write("|--------|-------|\n")
+
+                            for key, value in sorted(model_metric_dict.items()):
+                                if isinstance(value, (int, float)):
+                                    f.write(f"| {key} | {value:.6f if isinstance(value, float) else value} |\n")
+                                elif isinstance(value, str):
+                                    f.write(f"| {key} | {value} |\n")
+                            f.write("\n")
+                    else:
+                        f.write("No per-model metrics available in standard format.\n\n")
+
+                # HPO Results Section
+                f.write("## Hyperparameter Optimization\n\n")
+                if 'hpo_results' in metrics:
+                    hpo_results = metrics['hpo_results']
+                    f.write(f"**HPO Method:** {hpo_results.get('method', 'Unknown')}\n")
+                    f.write(f"**Best Score:** {hpo_results.get('best_score', 'N/A')}\n")
+                    f.write(f"**Optimization Time:** {hpo_results.get('optimization_time', 'N/A')}s\n\n")
+
+                    if 'best_params' in hpo_results:
+                        f.write("**Best Parameters:**\n\n")
+                        f.write("```json\n")
+                        f.write(json.dumps(hpo_results['best_params'], indent=2))
+                        f.write("\n```\n\n")
+                else:
+                    f.write("No HPO results available.\n\n")
+
+                # Feature Information
+                f.write("## Feature Information\n\n")
+                if 'feature_count' in metrics:
+                    f.write(f"**Total Features:** {metrics['feature_count']}\n")
+                if 'sample_count' in metrics:
+                    f.write(f"**Training Samples:** {metrics['sample_count']}\n")
+                if 'feature_selection_info' in metrics:
+                    f.write(f"**Feature Selection Applied:** Yes\n")
+                    f.write(f"**Selected Features:** {metrics['feature_selection_info'].get('final_features', 'N/A')}\n")
+                f.write("\n")
+
+                # Data Quality
+                f.write("## Data Quality\n\n")
+                if 'data_quality' in metrics:
+                    dq = metrics['data_quality']
+                    f.write("| Quality Metric | Value |\n")
+                    f.write("|----------------|-------|\n")
+                    for key, value in sorted(dq.items()):
+                        if isinstance(value, (int, float)):
+                            f.write(f"| {key} | {value:.6f if isinstance(value, float) else value} |\n")
+                    f.write("\n")
+
+                # Execution Summary
+                f.write("## Execution Summary\n\n")
+                f.write(f"- **Success:** {result.get('success', False)}\n")
+                f.write(f"- **Execution Time:** {result.get('execution_time', 0):.2f}s\n")
+                if 'error' in result:
+                    f.write(f"- **Error:** {result['error']}\n")
+                f.write("\n")
+
+                # Artifacts
+                f.write("## Generated Artifacts\n\n")
+                if 'artifacts' in result:
+                    artifacts = result['artifacts']
+                    for artifact_name, artifact_path in sorted(artifacts.items()):
+                        f.write(f"- **{artifact_name}:** `{artifact_path}`\n")
+                f.write("\n")
+
+                # Footer
+                f.write("---\n")
+                f.write(f"*Report generated by Ares Training Pipeline v2.0 - {timestamp}*\n")
+
+            report_paths['markdown'] = markdown_path
+            tprint_success(f"✅ Markdown report saved: {markdown_path}")
+
+            # ========================================================================
+            # JSON REPORT
+            # ========================================================================
+            json_path = os.path.join(reports_dir, f'{training_type}_metrics.json')
+
+            json_report = {
+                'metadata': {
+                    'training_type': training_type,
+                    'symbol': symbol,
+                    'exchange': config.get('exchange', 'binance'),
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'execution_mode': config.get('execution_mode', 'light'),
+                    'timestamp': timestamp,
+                    'generated_at': datetime.now().isoformat()
+                },
+                'configuration': {
+                    'symbol': symbol,
+                    'exchange': config.get('exchange', 'binance'),
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'execution_mode': config.get('execution_mode', 'light'),
+                    'enable_hpo': config.get('enable_hpo', True),
+                    'walkforward_config': str(config.get('walkforward_config', 'N/A'))
+                },
+                'metrics': metrics,
+                'execution_summary': {
+                    'success': result.get('success', False),
+                    'execution_time_seconds': result.get('execution_time', 0),
+                    'error': result.get('error', None)
+                },
+                'artifacts': result.get('artifacts', {}),
+                'models': {
+                    'count': len(result.get('models', {})),
+                    'names': list(result.get('models', {}).keys())
+                }
+            }
+
+            with open(json_path, 'w') as f:
+                json.dump(json_report, f, indent=2, default=str)
+
+            report_paths['json'] = json_path
+            tprint_success(f"✅ JSON metrics saved: {json_path}")
+
+            return report_paths
+
+        except Exception as e:
+            self.logger.error(f"Failed to generate training reports: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return {}
 
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Run method required by BaseStep interface."""

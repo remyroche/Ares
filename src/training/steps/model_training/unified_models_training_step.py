@@ -3058,7 +3058,11 @@ class UnifiedModelsTrainingStep(BaseStep):
             csv_rows = []
 
             # Fixed columns (metadata)
+            # NOTE: timestamp is ISO format (YYYY-MM-DDTHH:MM:SS) for sorting
+            #       training_date is YYYY-MM-DD for daily grouping
             fixed_columns = [
+                'timestamp',                # ISO format, sortable, identifies training run
+                'training_date',            # Date only (YYYY-MM-DD) for grouping by day
                 'model_name',
                 'training_type',
                 'symbol',
@@ -3066,8 +3070,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                 'direction',
                 'execution_time_seconds',
                 'success',
-                'models_trained_count',
-                'timestamp'
+                'models_trained_count'
             ]
             csv_columns.extend(fixed_columns)
 
@@ -3112,7 +3115,19 @@ class UnifiedModelsTrainingStep(BaseStep):
             for model_name in models.keys():
                 row = {}
 
-                # Add fixed metadata
+                # Add fixed metadata (timestamp fields first for easy sorting)
+                timestamp_str = comprehensive_metrics.get('timestamp', datetime.now().isoformat())
+                row['timestamp'] = timestamp_str
+
+                # Extract date part for daily grouping (YYYY-MM-DD)
+                try:
+                    if 'T' in timestamp_str:
+                        row['training_date'] = timestamp_str.split('T')[0]
+                    else:
+                        row['training_date'] = datetime.now().strftime('%Y-%m-%d')
+                except Exception:
+                    row['training_date'] = datetime.now().strftime('%Y-%m-%d')
+
                 row['model_name'] = model_name
                 row['training_type'] = training_type
                 row['symbol'] = config.get('symbol', 'UNKNOWN')
@@ -3121,7 +3136,6 @@ class UnifiedModelsTrainingStep(BaseStep):
                 row['execution_time_seconds'] = comprehensive_metrics['execution_summary'].get('execution_time_seconds', 0)
                 row['success'] = comprehensive_metrics['execution_summary'].get('success', False)
                 row['models_trained_count'] = comprehensive_metrics['execution_summary'].get('models_trained_count', 0)
-                row['timestamp'] = comprehensive_metrics.get('timestamp', '')
 
                 # Add flattened metrics from all categories
                 categories = [
@@ -3181,7 +3195,9 @@ class UnifiedModelsTrainingStep(BaseStep):
 
                 csv_rows.append(row)
 
-            # Write CSV file
+            # ========================================================================
+            # 1. Write Per-Run CSV (timestamped, one file per training run)
+            # ========================================================================
             with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=csv_columns, extrasaction='ignore')
                 writer.writeheader()
@@ -3192,6 +3208,107 @@ class UnifiedModelsTrainingStep(BaseStep):
                     writer.writerow(complete_row)
 
             tprint_success(f"✅ CSV metrics report saved: {csv_path}")
+
+            # ========================================================================
+            # 2. Append to Consolidated CSV (aggregates ALL models across ALL runs)
+            # ========================================================================
+            # This allows aggregation when running analyst/tactician base/ensemble separately
+            symbol = config.get('symbol', 'UNKNOWN')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+
+            # Consolidated CSV path (at symbol level, not timestamped)
+            consolidated_dir = os.path.join('reports', f"{symbol}_{timeframe}_{direction}")
+            os.makedirs(consolidated_dir, exist_ok=True)
+            consolidated_csv_path = os.path.join(consolidated_dir, 'all_models_metrics.csv')
+
+            # Check if consolidated CSV exists to determine if we need headers
+            file_exists = os.path.exists(consolidated_csv_path)
+
+            # If file exists, read existing headers to ensure compatibility
+            existing_columns = []
+            if file_exists:
+                try:
+                    with open(consolidated_csv_path, 'r', newline='', encoding='utf-8') as f:
+                        reader = csv.DictReader(f)
+                        existing_columns = reader.fieldnames if reader.fieldnames else []
+                except Exception as e:
+                    self.logger.warning(f"Could not read existing consolidated CSV headers: {e}")
+                    existing_columns = []
+
+            # Merge column sets (existing + new) to ensure all columns are present
+            if existing_columns:
+                # Create union of column sets, preserving order
+                all_columns = list(existing_columns)
+                for col in csv_columns:
+                    if col not in all_columns:
+                        all_columns.append(col)
+            else:
+                all_columns = csv_columns
+
+            # If columns were added, we need to rewrite the file with expanded headers
+            if file_exists and existing_columns and set(all_columns) != set(existing_columns):
+                tprint_info(f"📊 Expanding consolidated CSV with new columns...")
+
+                # Read existing data
+                existing_data = []
+                try:
+                    with open(consolidated_csv_path, 'r', newline='', encoding='utf-8') as f:
+                        reader = csv.DictReader(f)
+                        existing_data = list(reader)
+                except Exception as e:
+                    self.logger.error(f"Failed to read existing CSV for column expansion: {e}")
+                    existing_data = []
+
+                # Rewrite with expanded columns
+                if existing_data:
+                    with open(consolidated_csv_path, 'w', newline='', encoding='utf-8') as f:
+                        writer = csv.DictWriter(f, fieldnames=all_columns, extrasaction='ignore')
+                        writer.writeheader()
+                        for old_row in existing_data:
+                            complete_row = {col: old_row.get(col, None) for col in all_columns}
+                            writer.writerow(complete_row)
+                    file_exists = True  # File has been rewritten
+
+            # Append new rows to consolidated CSV
+            try:
+                # Use file locking to prevent concurrent write issues
+                import fcntl
+                has_fcntl = True
+            except ImportError:
+                # fcntl not available on Windows
+                has_fcntl = False
+
+            mode = 'a' if file_exists else 'w'
+            with open(consolidated_csv_path, mode, newline='', encoding='utf-8') as csvfile:
+                # Apply file lock if available (Unix-like systems)
+                if has_fcntl:
+                    try:
+                        fcntl.flock(csvfile.fileno(), fcntl.LOCK_EX)
+                    except Exception as e:
+                        self.logger.warning(f"Could not acquire file lock: {e}")
+
+                writer = csv.DictWriter(csvfile, fieldnames=all_columns, extrasaction='ignore')
+
+                # Write header only if file is new
+                if not file_exists:
+                    writer.writeheader()
+
+                # Append all rows from this training run
+                for row in csv_rows:
+                    complete_row = {col: row.get(col, None) for col in all_columns}
+                    writer.writerow(complete_row)
+
+                # Release lock (automatic when file closes, but explicit for clarity)
+                if has_fcntl:
+                    try:
+                        fcntl.flock(csvfile.fileno(), fcntl.LOCK_UN)
+                    except Exception:
+                        pass
+
+            tprint_success(f"✅ Consolidated CSV updated: {consolidated_csv_path}")
+            tprint_info(f"   ↪ Added {len(csv_rows)} model(s) to consolidated metrics")
+
             return csv_path
 
         except Exception as e:

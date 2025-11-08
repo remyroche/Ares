@@ -29,6 +29,9 @@ from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error, tprint_warning
 
+# Import model training report generator
+from src.training.steps.model_training.model_training_report_generator import create_model_training_report
+
 # Import dynamic config calculator
 from src.training.steps.model_training.dynamic_config_calculator import (
     DynamicConfigCalculator, DynamicTrainingConfig
@@ -335,17 +338,58 @@ class UnifiedModelsTrainingStep(BaseStep):
             
             if result.get('success', False):
                 tprint_success(f"✅ Unified {training_type} training completed successfully")
-                
+
                 # Save artifacts
                 artifacts = await self._save_training_artifacts(result, training_type, config)
                 result['artifacts'] = artifacts
-                
+
+                # Generate markdown and JSON training reports
+                try:
+                    tprint_info("📝 Generating training reports (Markdown + JSON)...")
+
+                    # Prepare feature info
+                    feature_info = {
+                        'feature_count': training_data.shape[1] if training_data is not None else 0,
+                        'feature_source': 'feature_generation_final_feature_selection_step',
+                        'feature_names': list(training_data.columns) if training_data is not None else [],
+                        'regime_features_included': True
+                    }
+
+                    # Generate reports
+                    markdown_path, json_path = create_model_training_report(
+                        training_type=training_type,
+                        symbol=symbol,
+                        exchange=config.get('exchange', 'binance'),
+                        timeframe=timeframe,
+                        direction=direction,
+                        models_trained=result.get('models', {}),
+                        metrics=result.get('metrics', {}),
+                        hpo_results=result.get('hpo_results'),
+                        regime_performance=result.get('regime_performance'),
+                        training_config=config,
+                        feature_info=feature_info,
+                        execution_time=result.get('execution_time', 0.0),
+                        outcomes_dir='outcomes'
+                    )
+
+                    if markdown_path:
+                        artifacts['training_report_markdown'] = markdown_path
+                        tprint_success(f"✅ Markdown report saved: {markdown_path}")
+
+                    if json_path:
+                        artifacts['training_report_json'] = json_path
+                        tprint_success(f"✅ JSON metrics report saved: {json_path}")
+
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to generate training reports: {e}")
+                    self.logger.warning(f"Training report generation failed: {e}")
+
                 # Save ML-scored historical data for backtesting
                 if training_data is not None and 'predictions' in result:
                     try:
                         model_type = 'analyst' if training_type.startswith('analyst') else 'tactician'
                         tprint_info(f"📊 Saving ML-scored historical data ({model_type})...")
-                        
+
                         ml_scored_path = self._save_ml_scored_data(
                             data=training_data,
                             predictions=result['predictions'],
@@ -357,13 +401,13 @@ class UnifiedModelsTrainingStep(BaseStep):
                                 'model_names': list(result.get('models', {}).keys())
                             }
                         )
-                        
+
                         artifacts['ml_scored_historical_data'] = ml_scored_path
                         tprint_success(f"✅ ML-scored data saved: {ml_scored_path}")
                     except Exception as e:
                         tprint_warning(f"⚠️ Failed to save ML-scored data: {e}")
                         self.logger.warning(f"ML-scored data save failed: {e}")
-                
+
                 return {
                     'success': True,
                     'artifacts': artifacts,
@@ -1558,8 +1602,19 @@ class UnifiedModelsTrainingStep(BaseStep):
             analyst_targets = None
             tactician_targets = None
             
-            # Determine feature set size to use (default to 50 features)
-            feature_set_size = config.get('feature_set_size', 50)
+            # ========================================================================
+            # FEATURE LOADING FROM HDF5 VERSIONED ARTIFACTS
+            # ========================================================================
+            # Determine feature set size to use (default to 60 features for analyst base)
+            # The 60-feature set is the recommended size for optimal model performance
+            feature_set_size = config.get('feature_set_size', 60)
+
+            tprint_info("=" * 80)
+            tprint_info("📦 LOADING FEATURES FROM HDF5 VERSIONED ARTIFACTS")
+            tprint_info("=" * 80)
+            tprint_info(f"   Source Step: feature_generation_final_feature_selection_step")
+            tprint_info(f"   Target Feature Set Size: {feature_set_size} features")
+            tprint_info(f"   Storage Format: HDF5 (via versioned_artifacts)")
 
             # Try to get selected features from feature_generation_final_feature_selection_step
             # IMPORTANT: Fallback order prioritizes larger feature sets (60 > 50 > 40) for better model performance
@@ -1576,7 +1631,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                 'final_dataset_40',                                # Validation step 40
             ]
 
-            tprint_info(f"🔎 Attempting to load training features from artifacts: {feature_artifact_names}")
+            tprint_info(f"🔎 Attempting to load training features from HDF5 artifacts...")
             feature_source_name = None
 
             for artifact_name in feature_artifact_names:
@@ -1756,9 +1811,17 @@ class UnifiedModelsTrainingStep(BaseStep):
                     f"dtypes={training_data.dtypes.value_counts().to_dict()}"
                 )
 
+            # ========================================================================
+            # LABELS/TARGETS LOADING FROM HDF5 VERSIONED ARTIFACTS
+            # ========================================================================
             # Get targets from labeling integration step (direction-aware)
             direction = config.get('direction', 'long')
-            tprint_info(f"📍 Loading labels for direction: {direction}")
+            tprint_info("=" * 80)
+            tprint_info("🎯 LOADING LABELS/TARGETS FROM HDF5 VERSIONED ARTIFACTS")
+            tprint_info("=" * 80)
+            tprint_info(f"   Source Step: feature_generation_labeling_integration_step")
+            tprint_info(f"   Direction: {direction}")
+            tprint_info(f"   Storage Format: HDF5 (via versioned_artifacts)")
 
             # Try to get analyst targets (direction-specific first, then generic)
             analyst_artifact_names = [
@@ -2049,20 +2112,32 @@ class UnifiedModelsTrainingStep(BaseStep):
             base_outputs_for_stats = None # Store the specific DataFrame to calculate stats on
 
             # --- START: Load and Resample Regime Features (FAST-FAIL) ---
+            # ========================================================================
+            # REGIME PROBABILITY LOADING FROM HDF5 VERSIONED ARTIFACTS
+            # ========================================================================
             try:
+                tprint_info("=" * 80)
+                tprint_info("🌍 LOADING REGIME PROBABILITIES FROM HDF5 VERSIONED ARTIFACTS")
+                tprint_info("=" * 80)
+                tprint_info(f"   Source Step: regime_ensemble_training")
+                tprint_info(f"   Artifact Name: regime_ensemble_predictions")
+                tprint_info(f"   Storage Format: HDF5 (via versioned_artifacts)")
+
                 # Load regime ensemble predictions (from regime_ensemble_training) - REQUIRED
                 regime_features = self._get_artifact('regime_ensemble_predictions', 'data')
                 if regime_features is None:
                     error_msg = (
                         "❌ CRITICAL: regime_ensemble_predictions artifact not found!\n"
                         "   This artifact is REQUIRED for model training.\n"
+                        "   Source: regime_ensemble_training step\n"
+                        "   Format: HDF5 (versioned_artifacts)\n"
                         "   Please ensure regime_ensemble_training step has run successfully."
                     )
                     tprint_error(error_msg)
                     raise ValueError(error_msg)
 
-                tprint_info(f"   ↪ Retrieved regime_ensemble_predictions: shape={regime_features.shape}, columns={len(regime_features.columns)}")
-                tprint_success(f"✅ Loaded regime ensemble predictions: {regime_features.shape}")
+                tprint_info(f"   ↪ Retrieved regime_ensemble_predictions from HDF5: shape={regime_features.shape}, columns={len(regime_features.columns)}")
+                tprint_success(f"✅ Loaded regime ensemble predictions from HDF5: {regime_features.shape}")
 
                 # Resample regime features if needed to match training data (should already be 15m)
                 if not regime_features.index.equals(training_data.index):

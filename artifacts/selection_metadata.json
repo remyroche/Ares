@@ -1,5 +1,5 @@
 {
-  "total_features_available": 473,
+  "total_features_available": 525,
   "feature_set_sizes": [
     60,
     50,
@@ -8,7 +8,7 @@
   "selection_method": "permutation",
   "scoring_threshold": 0.01,
   "use_tree_based": true,
-  "timestamp": "2025-11-08T17:25:44.737874",
+  "timestamp": "2025-11-08T19:10:44.637059",
   "symbol": "ETHUSDT",
   "execution_mode": "blank"
 }

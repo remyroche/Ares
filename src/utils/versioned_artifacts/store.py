@@ -316,15 +316,18 @@ class VersionedArtifactStore:
                         f"Failed to store column '{column}' with dtype {column_data.dtype}: {err}"
                     ) from err
 
-            # Store index
+            # Store index with consistent chunking
             tprint(f"🐛 DEBUG: Storing index (type: {type(data.index)})", "INFO")
+            index_chunk_shape = (max(1, min(chunk_rows, len(data))),)
+
             if isinstance(data.index, pd.DatetimeIndex):
                 index_data = data.index.astype(np.int64).values
                 version_group.create_dataset(
                     '_index',
                     data=index_data,
                     compression=self.compression,
-                    compression_opts=self.compression_level
+                    compression_opts=self.compression_level,
+                    chunks=index_chunk_shape
                 )
                 version_group.attrs['index_type'] = 'datetime'
             else:
@@ -332,7 +335,8 @@ class VersionedArtifactStore:
                     '_index',
                     data=data.index.values,
                     compression=self.compression,
-                    compression_opts=self.compression_level
+                    compression_opts=self.compression_level,
+                    chunks=index_chunk_shape
                 )
                 version_group.attrs['index_type'] = 'default'
 

@@ -17,7 +17,6 @@ Inherits from BaseStep for standardized artifact management and execution.
 import logging
 import time
 from typing import Dict, Any, Optional, Tuple
-from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -47,6 +46,11 @@ from .hpo_config import (
 from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
     ClusterQualityAssessor,
     ClusterQualityMetrics
+)
+
+# Import execution mode configuration
+from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import (
+    get_execution_mode_config
 )
 
 # Import hardware optimization
@@ -186,30 +190,33 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             
             # Load market data
             tprint("📥 Loading market data...", "INFO")
-            
+
             market_data = self._load_market_data(symbol, exchange, timeframe, config)
-            
+
             if market_data is None or market_data.empty:
                 tprint_error(f"❌ No market data available for {symbol} on {timeframe}")
                 raise ValueError(f"No market data available for {symbol} on {timeframe}")
-            
+
+            tprint(f"🐛 DEBUG: [STEP 1] market_data after _load_market_data: {market_data.shape}", "INFO")
+            tprint(f"🐛 DEBUG: [STEP 1] Index range: {market_data.index.min()} to {market_data.index.max()}", "INFO")
             tprint(f"✅ Loaded {len(market_data)} samples of market data", "SUCCESS")
-            
+
             # Check execution mode and if HPO is enabled
             execution_mode = config.get('execution_mode', 'full')
             enable_auto_tuning = config.get('enable_auto_tuning', True)  # Default to True
             hpo_results: Optional[Dict[str, Any]] = None
             best_params: Optional[Dict[str, Any]] = None
-            
+
             tprint_info(f"🔧 Configuration check: execution_mode={execution_mode}, enable_auto_tuning={enable_auto_tuning}")
-            
+
             # Check if manual params are provided
             has_manual_params = 'rolling_hmm_params' in config and config['rolling_hmm_params']
             if has_manual_params:
                 tprint_info(f"📋 Manual params found: {list(config['rolling_hmm_params'].keys())}")
-            
+
             # Apply execution mode data limits (blank=20d, light=20d, full=all)
             market_data = self._apply_execution_mode_filter(market_data, execution_mode, timeframe)
+            tprint(f"🐛 DEBUG: [STEP 2] market_data after _apply_execution_mode_filter: {market_data.shape}", "INFO")
             tprint(f"   → After execution mode filter ({execution_mode}): {len(market_data)} samples")
             
             # Initialize feature engineer
@@ -327,12 +334,107 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
         timeframe: str,
         config: Dict[str, Any],
     ) -> Optional[pd.DataFrame]:
-        """Load market data from config or artifacts, restoring step context afterwards."""
+        """Load market data from config, historical storage (all modes), or artifacts."""
         if 'market_data' in config and config['market_data'] is not None:
             external_data = config['market_data']
-            tprint(f"✅ Using market data from config ({len(external_data)} samples)", "SUCCESS")
-            return external_data
 
+            # CRITICAL: Validate data size to prevent truncation
+            execution_mode = config.get('execution_mode', 'full')
+
+            # Calculate expected minimum samples for this mode
+            samples_per_day_map = {'1m': 1440, '3m': 480, '5m': 288, '15m': 96, '30m': 48, '1h': 24, '4h': 6, '1d': 1}
+            samples_per_day = samples_per_day_map.get(timeframe, 24)
+
+            # Get lookback days based on execution mode
+            mode_config = get_execution_mode_config()
+            lookback_config = mode_config.get_configuration(execution_mode)
+            lookback_days = lookback_config.optimization_window_days
+            
+            # Expected samples for the configured lookback period
+            expected_min_samples = lookback_days * samples_per_day
+            actual_samples = len(external_data)
+
+            tprint(f"🔍 [REGIME_DISCOVERY] Validating config market_data:", "INFO")
+            tprint(f"   → Execution mode: {execution_mode}", "INFO")
+            tprint(f"   → Timeframe: {timeframe}", "INFO")
+            tprint(f"   → Lookback days for mode: {lookback_days}", "INFO")
+            tprint(f"   → Expected min samples ({lookback_days} days): {expected_min_samples:,}", "INFO")
+            tprint(f"   → Actual samples in config: {actual_samples:,}", "INFO")
+
+            if actual_samples < expected_min_samples * 0.3:  # Allow 30% tolerance
+                tprint(
+                    f"❌ [REGIME_DISCOVERY] CRITICAL: config['market_data'] has only {actual_samples:,} samples!\n"
+                    f"   Expected at least {int(expected_min_samples * 0.3):,} samples (30% of {lookback_days} days)\n"
+                    f"   This data appears TRUNCATED - bypassing config and loading from historical storage instead!",
+                    "ERROR"
+                )
+                # Fall through to normal loading to get full dataset
+            else:
+                tprint(f"✅ Using market data from config ({len(external_data)} samples)", "SUCCESS")
+                return external_data
+
+        # Load using KlinesParquetManager (same method as regime_models_training)
+        tprint(f"📥 [REGIME_DISCOVERY] Loading fresh data for {symbol} from historical storage", "INFO")
+
+        try:
+            from src.utils.kline_parquet import KlinesParquetManager, StorageConfig
+
+            klines_manager = KlinesParquetManager(config=StorageConfig(base_dir='historical_data'))
+
+            # Get lookback days based on execution mode
+            execution_mode = config.get('execution_mode', 'full')
+            mode_config = get_execution_mode_config()
+            lookback_config = mode_config.get_configuration(execution_mode)
+            lookback_days = lookback_config.optimization_window_days
+            
+            # Use the smart last_n_days parameter to load only the period we need
+            # This automatically finds the latest available data and loads the configured lookback period
+            tprint(f"📥 [REGIME_DISCOVERY] Loading last {lookback_days} days from latest available data (mode: {execution_mode})", "INFO")
+            
+            fresh_data = klines_manager.load_klines(
+                symbol=symbol,
+                exchange=exchange,
+                interval=timeframe,
+                last_n_days=lookback_days  # Dynamic based on execution mode
+            )
+            
+            if fresh_data is None or len(fresh_data) == 0:
+                tprint(f"❌ [REGIME_DISCOVERY] No data found in historical storage", "ERROR")
+                raise ValueError(f"No historical data found for {symbol} {exchange} {timeframe}")
+
+            tprint(f"🐛 DEBUG: KlinesParquetManager returned data: {fresh_data.shape if fresh_data is not None else 'None'}", "INFO")
+
+            if fresh_data is not None and len(fresh_data) > 0:
+                tprint(f"✅ [REGIME_DISCOVERY] Loaded {len(fresh_data):,} rows from historical storage (last {lookback_days} days)", "SUCCESS")
+
+                # Check for and remove duplicate index labels
+                if fresh_data.index.duplicated().any():
+                    n_duplicates = fresh_data.index.duplicated().sum()
+                    tprint(f"⚠️ [REGIME_DISCOVERY] Found {n_duplicates} duplicate timestamps, removing duplicates", "WARNING")
+                    fresh_data = fresh_data[~fresh_data.index.duplicated(keep='first')]
+                    tprint(f"✅ [REGIME_DISCOVERY] After deduplication: {len(fresh_data):,} rows", "SUCCESS")
+
+                # Validate sample count
+                expected_samples_per_day = 24 if timeframe == '1h' else (24 * 4 if timeframe == '15m' else 24)
+                expected_samples = lookback_days * expected_samples_per_day
+                actual_samples = len(fresh_data)
+
+                tprint(f"📊 [REGIME_DISCOVERY] Data validation: Expected ~{expected_samples:,} samples for {lookback_days} days of {timeframe} data", "INFO")
+                tprint(f"📊 [REGIME_DISCOVERY] Data validation: Actual samples: {actual_samples:,}", "INFO")
+
+                if actual_samples < expected_samples * 0.5:
+                    tprint(f"⚠️ [REGIME_DISCOVERY] WARNING: Only {actual_samples:,} samples available (expected ~{expected_samples:,})", "WARNING")
+
+                tprint(f"📅 [REGIME_DISCOVERY] Date range: {fresh_data.index.min()} to {fresh_data.index.max()}", "INFO")
+                return fresh_data
+
+        except Exception as e:
+            tprint(f"❌ [REGIME_DISCOVERY] Failed to load from KlinesParquetManager: {e}", "ERROR")
+            import traceback
+            tprint(f"❌ [REGIME_DISCOVERY] Traceback: {traceback.format_exc()}", "ERROR")
+            self.logger.error(f"Failed to load from KlinesParquetManager: {e}", exc_info=True)
+
+        # Fall back to artifact sources
         artifact_sources = [
             ('klines_downloading_processing', 'klines_data'),
             ('data_collection', 'market_data'),
@@ -355,12 +457,27 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                         artifact_name=artifact_name,
                         artifact_type='data',
                     )
+                    
+                    tprint(f"🐛 DEBUG: Artifact {step_name}/{artifact_name} returned: {market_data.shape if market_data is not None and hasattr(market_data, 'shape') else 'None/Invalid'}", "INFO")
 
                     if market_data is not None and not market_data.empty:
-                        tprint(
-                            f"✅ Loaded market data from {step_name}/{artifact_name}",
-                            "SUCCESS",
-                        )
+                        # Log data size but don't reject it - let the pipeline handle insufficient data
+                        actual_samples = len(market_data)
+                        tprint(f"✅ Loaded market data from {step_name}/{artifact_name} ({actual_samples:,} samples)", "SUCCESS")
+                        
+                        # Warn if data seems insufficient but still use it
+                        samples_per_day_map = {'1m': 1440, '3m': 480, '5m': 288, '15m': 96, '30m': 48, '1h': 24, '4h': 6, '1d': 1}
+                        samples_per_day = samples_per_day_map.get(timeframe, 24)
+                        expected_min_samples = 180 * samples_per_day
+                        
+                        if actual_samples < expected_min_samples * 0.5:
+                            tprint(
+                                f"⚠️ [REGIME_DISCOVERY] WARNING: Only {actual_samples:,} samples available\n"
+                                f"   (expected ~{expected_min_samples:,} for 180 days of {timeframe} data)\n"
+                                f"   Proceeding anyway - results may be suboptimal",
+                                "WARNING"
+                            )
+                        
                         return market_data
                 except Exception as load_error:
                     self.logger.debug(
@@ -524,10 +641,16 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             tprint_info(f"  → Using EWMA config: {ewma_config.name}")
 
             # Generate features
+            tprint(f"🐛 DEBUG: [STEP 3] market_data before feature generation: {market_data.shape}", "INFO")
             features = feature_engineer.generate_features(market_data, ewma_config)
+            tprint(f"🐛 DEBUG: [STEP 4] features after generation: {features.shape}", "INFO")
+            tprint(f"🐛 DEBUG: [STEP 4] features index range: {features.index.min()} to {features.index.max()}", "INFO")
 
             if len(features) < 50:
                 raise ValueError(f"Insufficient data after feature engineering: {len(features)} samples")
+
+            # Store original datetime index before PCA (to preserve timestamps)
+            original_timestamps = features.index.copy()
 
             # Apply PCA
             pca_components = params.get('pca_components', 4)
@@ -535,6 +658,13 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 features,
                 n_components=int(pca_components)
             )
+            tprint(f"🐛 DEBUG: [STEP 5] features_pca after PCA: {features_pca.shape}", "INFO")
+            tprint(f"🐛 DEBUG: [STEP 5] features_pca index range: {features_pca.index.min()} to {features_pca.index.max()}", "INFO")
+
+            # Ensure PCA features have the correct datetime index
+            if not isinstance(features_pca.index, pd.DatetimeIndex) or len(features_pca) != len(original_timestamps):
+                tprint_warning(f"⚠️ PCA corrupted index, restoring from original (PCA len={len(features_pca)}, orig len={len(original_timestamps)})")
+                features_pca.index = original_timestamps[:len(features_pca)]
 
             # Create HMM config
             n_components = params.get('n_components', 5)
@@ -563,6 +693,8 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             # Predict regime labels
             regime_labels = hmm_model.predict(features_pca.values)
             regime_probs = hmm_model.predict_proba(features_pca.values)
+            tprint(f"🐛 DEBUG: [STEP 6] regime_labels after HMM predict: shape={regime_labels.shape}, unique={np.unique(regime_labels)}", "INFO")
+            tprint(f"🐛 DEBUG: [STEP 6] regime_probs after HMM predict: {regime_probs.shape}", "INFO")
 
             # Get model summary
             model_summary = hmm_model.get_model_summary()
@@ -629,32 +761,71 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Save clustering results as artifacts."""
         try:
+            tprint(f"🐛 DEBUG: [STEP 7] _save_results called", "INFO")
+            tprint(f"🐛 DEBUG: [STEP 7] result['timestamps'] length: {len(result['timestamps'])}", "INFO")
+            tprint(f"🐛 DEBUG: [STEP 7] result['regime_labels'] length: {len(result['regime_labels'])}", "INFO")
+            tprint(f"🐛 DEBUG: [STEP 7] result['regime_probs'] shape: {result['regime_probs'].shape}", "INFO")
+
             # Create labels DataFrame
             labels_df = pd.DataFrame({
                 'timestamp': result['timestamps'],
                 'regime_label': result['regime_labels']
             })
             labels_df.set_index('timestamp', inplace=True)
+            tprint(f"🐛 DEBUG: [STEP 8] labels_df shape after creation: {labels_df.shape}", "INFO")
+            tprint(f"🐛 DEBUG: [STEP 8] labels_df index range: {labels_df.index.min()} to {labels_df.index.max()}", "INFO")
 
             # Create probabilities DataFrame
             probs_columns = [f'regime_{i}_prob' for i in range(result['n_regimes'])]
+            
+            # Ensure timestamps is a proper DatetimeIndex
+            timestamps = result['timestamps']
+            if not isinstance(timestamps, pd.DatetimeIndex):
+                timestamps = pd.to_datetime(timestamps)
+            
+            # Debug: Check timestamps before creating DataFrame
+            tprint_info(f"  → Creating probs_df with {len(timestamps)} timestamps")
+            tprint_info(f"  → Timestamp type: {type(timestamps)}, dtype: {timestamps.dtype if hasattr(timestamps, 'dtype') else 'N/A'}")
+            tprint_info(f"  → Timestamp range: {timestamps.min()} to {timestamps.max()}")
+            tprint_info(f"  → Regime probs shape: {result['regime_probs'].shape}")
+            
             probs_df = pd.DataFrame(
                 result['regime_probs'],
-                index=result['timestamps'],
+                index=timestamps,
                 columns=pd.Index(probs_columns)
             )
+            
+            # Debug: Verify DataFrame after creation
+            tprint_info(f"  → probs_df shape: {probs_df.shape}")
+            tprint_info(f"  → probs_df index type: {type(probs_df.index)}")
+            tprint_info(f"  → probs_df index range: {probs_df.index.min()} to {probs_df.index.max()}")
 
             # Save labels
+            # CRITICAL: Reset index to ensure it's saved correctly in HDF5 (same as probs_df)
+            labels_df_to_save = labels_df.reset_index()
+            labels_df_to_save.rename(columns={'index': 'timestamp'}, inplace=True)
+            
+            tprint(f"🐛 DEBUG: [STEP 9] About to save labels_df to HDF5: {labels_df_to_save.shape}", "INFO")
+            tprint(f"🐛 DEBUG: [STEP 9] labels_df columns: {list(labels_df_to_save.columns)}", "INFO")
             self._save_artifact(
-                data=labels_df,
+                data=labels_df_to_save,
                 artifact_name='rolling_hmm_regime_labels',
                 artifact_type='data',
                 metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
             )
+            tprint(f"✅ DEBUG: [STEP 9] Successfully saved rolling_hmm_regime_labels", "SUCCESS")
 
             # Save probabilities
+            # CRITICAL: Reset index to ensure it's saved correctly in HDF5
+            # HDF5 can have issues with certain DatetimeIndex formats
+            probs_df_to_save = probs_df.reset_index()
+            probs_df_to_save.rename(columns={'index': 'timestamp'}, inplace=True)
+            
+            tprint_info(f"  → Saving probs_df with {len(probs_df_to_save)} rows")
+            tprint_info(f"  → Columns: {list(probs_df_to_save.columns)}")
+            
             self._save_artifact(
-                data=probs_df,
+                data=probs_df_to_save,
                 artifact_name='rolling_hmm_regime_probabilities',
                 artifact_type='data',
                 metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
@@ -837,10 +1008,10 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             else:
                 tprint("⚠️ No HPO results found in result or config", "WARNING")
                 # Debug: check what keys are available
-                available_keys = list(result.keys()) if isinstance(result, dict) else []
+                available_keys = list(result.keys()) if result else []
                 if available_keys:
                     tprint(f"📋 Available result keys: {available_keys}", "INFO")
-                config_keys = list(config.keys()) if isinstance(config, dict) else []
+                config_keys = list(config.keys()) if config else []
                 if config_keys:
                     tprint(f"📋 Available config keys: {config_keys}", "INFO")
 
@@ -923,9 +1094,11 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
 
         # Determine days limit based on execution mode
         if execution_mode == 'blank':
-            days_limit = 20  # 20 days for blank mode
+            days_limit = 180  # 180 days for blank mode (full training data)
+            tprint_info(f"  → Blank mode: Using {days_limit} days of data (as per BLANK_MODE_CONFIG)")
         elif execution_mode == 'light':
             days_limit = 180  # 180 days (6 months) for light mode
+            tprint_info(f"  → Light mode: Using {days_limit} days of data")
         else:  # 'full'
             tprint_info("  → Full mode: Using all available data (no filtering)")
             return data  # No filtering for full mode
@@ -933,14 +1106,18 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
         # Calculate sample limit
         samples_per_day = samples_per_day_map.get(timeframe, 24)
         limit = days_limit * samples_per_day
+        
+        tprint_info(f"  → Data filtering: {days_limit} days × {samples_per_day} samples/day = {limit} samples limit")
 
         # Apply filter
         if len(data) > limit:
             filtered = data.tail(limit).copy()  # Keep most recent data
             tprint_info(f"  → {execution_mode.capitalize()} mode: Filtered to {days_limit} days ({limit} samples)")
+            tprint_info(f"  → Filtered data range: {filtered.index.min()} to {filtered.index.max()}")
             return filtered
 
         tprint_info(f"  → {execution_mode.capitalize()} mode: Data size ({len(data)}) within limit ({limit} samples)")
+        tprint_info(f"  → Data range: {data.index.min()} to {data.index.max()}")
         return data
 
     def _validate_config(self, config: Dict[str, Any]):

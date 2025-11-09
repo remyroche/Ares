@@ -58,6 +58,7 @@ def adjust_hpo_params_for_mode(
         adjusted_folds = 2
         logger.info(f"⚡ LIGHT mode: Reducing HPO trials {n_trials} → {adjusted_trials} (10%)")
         logger.info(f"⚡ LIGHT mode: Reducing CV folds {cv_folds} → {adjusted_folds}")
+        logger.warning(f"🔍 LIGHT MODE DIAGNOSTIC: Very small CV folds ({adjusted_folds}) may cause score variance issues")
         
     elif execution_mode == 'blank':
         # Blank mode: 25% iterations, 3 CV folds
@@ -65,6 +66,8 @@ def adjust_hpo_params_for_mode(
         adjusted_folds = 3
         logger.info(f"⚡ BLANK mode: Reducing HPO trials {n_trials} → {adjusted_trials} (25%)")
         logger.info(f"⚡ BLANK mode: Reducing CV folds {cv_folds} → {adjusted_folds}")
+        logger.warning(f"🔍 BLANK MODE DIAGNOSTIC: Reduced CV folds ({adjusted_folds}) may cause score variance issues")
+        logger.warning(f"🔍 BLANK MODE IMPACT: Each CV fold will have ~33% of data instead of 20% (5-fold)")
         
     elif execution_mode == 'small_dataset':
         # Small dataset mode: 5% iterations, 2 CV folds (aggressive optimization for very small datasets)

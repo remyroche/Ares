@@ -345,24 +345,25 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             DataFrame with regime model predictions
         """
         try:
-            tprint("📥 [REGIME_ENSEMBLE] Loading regime_models_predictions", color="cyan")
+            tprint("📥 [REGIME_ENSEMBLE] Loading regime_models_predictions from versioned artifacts", color="cyan")
 
             predictions = base_step._get_artifact(
                 'regime_models_predictions',
-                artifact_type='data'
+                artifact_type='data',
+                data_category='features'
             )
 
             if predictions is None:
-                tprint("⚠️ [REGIME_ENSEMBLE] No regime_models_predictions found", color="yellow")
+                tprint("⚠️ [REGIME_ENSEMBLE] No regime_models_predictions found in versioned artifacts", color="yellow")
                 return None
 
-            tprint(f"✅ [REGIME_ENSEMBLE] Loaded predictions: {predictions.shape}", color="green")
+            tprint(f"✅ [REGIME_ENSEMBLE] Loaded predictions from versioned artifacts: {predictions.shape}", color="green")
             tprint(f"📊 [REGIME_ENSEMBLE] Columns: {list(predictions.columns)}", color="blue")
 
             return predictions
 
         except Exception as e:
-            tprint(f"❌ [REGIME_ENSEMBLE] Failed to load predictions: {e}", color="red")
+            tprint(f"❌ [REGIME_ENSEMBLE] Failed to load predictions from versioned artifacts: {e}", color="red")
             self.logger.error(f"Failed to load predictions: {e}", exc_info=True)
             return None
 
@@ -524,7 +525,22 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 else:
                     all_features = regime_models_preds
 
-                # Add to protected_data
+                # Add to protected_data - ensure timezone compatibility before joining
+                # Check if indexes have different timezone awareness
+                if isinstance(protected_data.index, pd.DatetimeIndex) and isinstance(all_features.index, pd.DatetimeIndex):
+                    protected_tz = protected_data.index.tz
+                    features_tz = all_features.index.tz
+                    
+                    if (protected_tz is None) != (features_tz is None):
+                        tprint("🔧 [REGIME_ENSEMBLE] Normalizing timezone differences before joining DataFrames", color="yellow")
+                        # Make both indexes timezone-naive to avoid join issues
+                        if protected_tz is not None:
+                            protected_data.index = protected_data.index.tz_localize(None)
+                            tprint("   Converted protected_data index to timezone-naive", color="blue")
+                        if features_tz is not None:
+                            all_features.index = all_features.index.tz_localize(None)
+                            tprint("   Converted all_features index to timezone-naive", color="blue")
+                
                 protected_data = protected_data.join(all_features, how='left')
                 tprint(f"📊 [REGIME_ENSEMBLE] Enhanced data shape: {protected_data.shape}", color="blue")
 
@@ -878,6 +894,17 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 
                 # Save individual artifacts for better downstream access
                 await self._save_individual_artifacts(results, save_report.correlation_id)
+                # Generate and save temporal regime analysis report
+                try:
+                    tprint("📊 [REGIME_ENSEMBLE] Generating temporal regime analysis report", color="cyan")
+                    temporal_report = await self._generate_temporal_regime_analysis(
+                        results, protected_data, X_processed, feature_names
+                    )
+                    if temporal_report:
+                        results['temporal_regime_analysis'] = temporal_report
+                        tprint("✅ [REGIME_ENSEMBLE] Temporal regime analysis completed", color="green")
+                except Exception as e:
+                    tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to generate temporal regime analysis: {e}", color="yellow")
                 
             except Exception as e:
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to save artifacts persistently: {e}", color="yellow")
@@ -2865,14 +2892,138 @@ except ImportError:
                     lines.append(f"  Confidence Distribution:")
                     lines.append(f"    High (>0.8): {conf_dist.get('high_confidence', 0)}")
                     lines.append(f"    Medium (0.5-0.8): {conf_dist.get('medium_confidence', 0)}")
-                    lines.append(f"    Low (≤0.5): {conf_dist.get('low_confidence', 0)}")
+                    lines.append(f"    Low (<0.5): {conf_dist.get('low_confidence', 0)}")
                     lines.append("")
-
-            lines.append("=" * 80)
-            lines.append("END OF REGIME ENSEMBLE PROBABILITY REPORT")
-            lines.append("=" * 80)
 
             return "\n".join(lines)
 
         except Exception as e:
-            return f"Error generating text report: {e}"
+            self.logger.error(f"Failed to generate text report: {e}", exc_info=True)
+            return f"Error generating report: {str(e)}"
+
+    async def _generate_temporal_regime_analysis(
+        self,
+        results: Dict[str, Any],
+        data: pd.DataFrame,
+        X: np.ndarray,
+        feature_names: List[str]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Generate comprehensive temporal regime analysis using TemporalRegimeAnalyzer.
+        
+        Args:
+            results: Results from ensemble training
+            data: Market data DataFrame
+            X: Feature matrix
+            feature_names: List of feature names
+            
+        Returns:
+            Dictionary containing temporal regime analysis results
+        """
+        try:
+            tprint("📊 [REGIME_ENSEMBLE] Starting temporal regime analysis", color="cyan")
+            
+            # Import temporal analyzer
+            from src.analysis.temporal_regime_analyzer_simple import TemporalRegimeAnalyzer
+            
+            # Get regime labels from ensemble results
+            ensemble_result = results.get('regime_ensemble_training_result', {})
+            stacker_result = ensemble_result.get('stacker_lgbm_calibrated', {})
+            
+            if not stacker_result:
+                tprint("⚠️ [REGIME_ENSEMBLE] No stacker result found for temporal analysis", color="yellow")
+                return None
+            
+            # Extract regime labels from tagged dataset if available
+            regime_labels = None
+            tagged_dataset = results.get('tagged_dataset', {})
+            if tagged_dataset and 'tagged_dataset' in tagged_dataset:
+                tagged_data = tagged_dataset['tagged_dataset']
+                if 'ensemble_regime_label' in tagged_data.columns:
+                    regime_labels = tagged_data['ensemble_regime_label'].values
+                    tprint(f"✅ [REGIME_ENSEMBLE] Extracted regime labels from tagged dataset: {len(regime_labels)} samples", color="green")
+            
+            # Fallback: use predictions if no labels available
+            if regime_labels is None:
+                tprint("⚠️ [REGIME_ENSEMBLE] No regime labels found, using predictions", color="yellow")
+                if hasattr(stacker_result.get('meta_learner'), 'predict'):
+                    meta_learner = stacker_result['meta_learner']
+                    # Generate meta-features for prediction
+                    base_models = stacker_result.get('base_models', {})
+                    if base_models:
+                        from .ensemble_meta_features import EnsembleMetaFeaturesGenerator
+                        meta_generator = EnsembleMetaFeaturesGenerator("REGIME_ENSEMBLE")
+                        meta_features, _ = meta_generator.generate_meta_features(
+                            base_models=base_models,
+                            X=X,
+                            y=np.zeros(len(X)),  # Dummy y for feature generation
+                            include_uncertainty=True,
+                            include_confidence=True,
+                            include_disagreement=True
+                        )
+                        regime_labels = meta_learner.predict(meta_features)
+                        tprint(f"✅ [REGIME_ENSEMBLE] Generated regime labels from predictions: {len(regime_labels)} samples", color="green")
+            
+            if regime_labels is None:
+                tprint("❌ [REGIME_ENSEMBLE] Cannot generate temporal analysis without regime labels", color="red")
+                return None
+            
+            # Calculate returns from data
+            returns = None
+            if 'close' in data.columns:
+                returns = data['close'].pct_change().dropna().values
+                tprint(f"✅ [REGIME_ENSEMBLE] Calculated returns: {len(returns)} samples", color="green")
+            
+            # Create features DataFrame for analysis
+            features_df = None
+            if X is not None and feature_names:
+                features_df = pd.DataFrame(X, columns=feature_names, index=data.index[:len(X)])
+                tprint(f"✅ [REGIME_ENSEMBLE] Created features DataFrame: {features_df.shape}", color="green")
+            
+            # Initialize temporal analyzer
+            analyzer = TemporalRegimeAnalyzer()
+            
+            # Perform comprehensive analysis
+            tprint("🔍 [REGIME_ENSEMBLE] Performing comprehensive temporal analysis", color="blue")
+            analysis_results = analyzer.analyze_regimes(
+                regime_labels=regime_labels,
+                returns=returns,
+                features=features_df
+            )
+            
+            # Export to CSV
+            try:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                csv_filename = f"temporal_regime_analysis_{self.config.symbol}_{timestamp}.csv"
+                analyzer.export_to_csv(analysis_results, csv_filename)
+                tprint(f"✅ [REGIME_ENSEMBLE] Temporal analysis exported to {csv_filename}", color="green")
+                
+                # Save CSV as artifact
+                import os
+                if os.path.exists(csv_filename):
+                    csv_artifact = {
+                        'temporal_regime_analysis_csv': {
+                            'file_path': csv_filename,
+                            'file_size': os.path.getsize(csv_filename),
+                            'n_regimes': len(np.unique(regime_labels)),
+                            'n_samples': len(regime_labels),
+                            'analysis_timestamp': datetime.now().isoformat(),
+                            'component': 'regime_ensemble_training'
+                        }
+                    }
+                    await self.save_artifacts(csv_artifact, {
+                        'artifact_type': 'temporal_regime_analysis_csv',
+                        'component': 'regime_ensemble_training'
+                    })
+                    tprint("✅ [REGIME_ENSEMBLE] Temporal analysis CSV saved as artifact", color="green")
+                
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to export temporal analysis to CSV: {e}", color="yellow")
+            
+            tprint("✅ [REGIME_ENSEMBLE] Temporal regime analysis completed successfully", color="green")
+            return analysis_results
+            
+        except Exception as e:
+            tprint(f"❌ [REGIME_ENSEMBLE] Failed to generate temporal regime analysis: {e}", color="red")
+            self.logger.error(f"Failed to generate temporal regime analysis: {e}", exc_info=True)
+            return None

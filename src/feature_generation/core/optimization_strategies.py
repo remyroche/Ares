@@ -113,28 +113,35 @@ class ConservativeOptimizationStrategy(OptimizationStrategy):
     def _clean_non_finite_values(self, data: pd.DataFrame) -> pd.DataFrame:
         """Clean non-finite values from the DataFrame."""
         import numpy as np
-        
+
+        # Columns to exclude from cleaning (they are generated elsewhere)
+        excluded_patterns = ['regime_', '_prob']
+
         # Check for non-finite values in numeric columns
         numeric_columns = data.select_dtypes(include=[np.number]).columns
-        
+
         for col in numeric_columns:
+            # Skip regime probability columns - they should be loaded from regime models, not from data
+            if any(pattern in col for pattern in excluded_patterns):
+                continue
+
             if col in data.columns:
                 # Count non-finite values
                 non_finite_mask = ~np.isfinite(data[col])
                 non_finite_count = non_finite_mask.sum()
-                
+
                 if non_finite_count > 0:
                     # Log the issue
                     if hasattr(self, 'logger'):
                         self.logger.warning(f"⚠️ Found {non_finite_count} non-finite values in column '{col}' after optimization")
-                    
+
                     # Replace non-finite values with the last valid value (forward fill)
                     data[col] = data[col].replace([np.inf, -np.inf], np.nan)
                     data[col] = data[col].ffill()  # Use modern pandas syntax
-                    
+
                     # If there are still NaN values at the beginning, fill with 0
                     data[col] = data[col].fillna(0)
-        
+
         return data
 
 class BalancedOptimizationStrategy(OptimizationStrategy):
@@ -148,6 +155,14 @@ class BalancedOptimizationStrategy(OptimizationStrategy):
                 pass  # tprint statement removed
                 self._optimization_logged = True
             start_time = time.time()
+
+            # Drop regime probability columns - they should come from regime models, not from data
+            regime_prob_cols = [col for col in data.columns if 'regime_' in col and '_prob' in col]
+            if regime_prob_cols:
+                if hasattr(self, 'logger'):
+                    self.logger.info(f"🗑️ Dropping {len(regime_prob_cols)} regime probability columns (loaded from regime models instead)")
+                data = data.drop(columns=regime_prob_cols)
+
             optimized_data = data
 
             # Memory optimization
@@ -243,28 +258,35 @@ class BalancedOptimizationStrategy(OptimizationStrategy):
     def _clean_non_finite_values(self, data: pd.DataFrame) -> pd.DataFrame:
         """Clean non-finite values from the DataFrame."""
         import numpy as np
-        
+
+        # Columns to exclude from cleaning (they are generated elsewhere)
+        excluded_patterns = ['regime_', '_prob']
+
         # Check for non-finite values in numeric columns
         numeric_columns = data.select_dtypes(include=[np.number]).columns
-        
+
         for col in numeric_columns:
+            # Skip regime probability columns - they should be loaded from regime models, not from data
+            if any(pattern in col for pattern in excluded_patterns):
+                continue
+
             if col in data.columns:
                 # Count non-finite values
                 non_finite_mask = ~np.isfinite(data[col])
                 non_finite_count = non_finite_mask.sum()
-                
+
                 if non_finite_count > 0:
                     # Log the issue
                     if hasattr(self, 'logger'):
                         self.logger.warning(f"⚠️ Found {non_finite_count} non-finite values in column '{col}' after optimization")
-                    
+
                     # Replace non-finite values with the last valid value (forward fill)
                     data[col] = data[col].replace([np.inf, -np.inf], np.nan)
                     data[col] = data[col].ffill()  # Use modern pandas syntax
-                    
+
                     # If there are still NaN values at the beginning, fill with 0
                     data[col] = data[col].fillna(0)
-        
+
         return data
 
 class AggressiveOptimizationStrategy(OptimizationStrategy):
@@ -362,26 +384,33 @@ class AggressiveOptimizationStrategy(OptimizationStrategy):
     def _clean_non_finite_values(self, data: pd.DataFrame) -> pd.DataFrame:
         """Clean non-finite values from the DataFrame."""
         import numpy as np
-        
+
+        # Columns to exclude from cleaning (they are generated elsewhere)
+        excluded_patterns = ['regime_', '_prob']
+
         # Check for non-finite values in numeric columns
         numeric_columns = data.select_dtypes(include=[np.number]).columns
-        
+
         for col in numeric_columns:
+            # Skip regime probability columns - they should be loaded from regime models, not from data
+            if any(pattern in col for pattern in excluded_patterns):
+                continue
+
             if col in data.columns:
                 # Count non-finite values
                 non_finite_mask = ~np.isfinite(data[col])
                 non_finite_count = non_finite_mask.sum()
-                
+
                 if non_finite_count > 0:
                     # Log the issue
                     if hasattr(self, 'logger'):
                         self.logger.warning(f"⚠️ Found {non_finite_count} non-finite values in column '{col}' after optimization")
-                    
+
                     # Replace non-finite values with the last valid value (forward fill)
                     data[col] = data[col].replace([np.inf, -np.inf], np.nan)
                     data[col] = data[col].ffill()  # Use modern pandas syntax
-                    
+
                     # If there are still NaN values at the beginning, fill with 0
                     data[col] = data[col].fillna(0)
-        
+
         return data

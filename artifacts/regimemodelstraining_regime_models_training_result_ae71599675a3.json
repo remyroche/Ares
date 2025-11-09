@@ -1,0 +1,259 @@
+{
+  "models": {
+    "catboost": {
+      "_init_params": {
+        "iterations": 1140,
+        "learning_rate": 0.1,
+        "depth": 6,
+        "l2_leaf_reg": 9.624762200933926,
+        "random_seed": 42,
+        "verbose": false,
+        "bootstrap_type": "Bernoulli",
+        "subsample": 1.0,
+        "colsample_bylevel": 1.0
+      },
+      "_object": "<_catboost._CatBoost object at 0x35e4d1a80>",
+      "_is_fitted_": true,
+      "_random_seed": 42,
+      "_learning_rate": 0.10000000149011612,
+      "_tree_count": 1140,
+      "_n_features_in": 60,
+      "_prediction_values_change": [
+        3.376644983202494,
+        1.1434975076945573,
+        0.9242646271429761,
+        1.291157796763852,
+        2.9835393803043413,
+        0.0,
+        1.0228449476226376,
+        2.008053686805919,
+        0.6135514300749526,
+        1.2164767744868874,
+        1.2359284193653848,
+        2.4435949521681706,
+        0.681278609997659,
+        2.580250749146824,
+        0.6506263234369069,
+        0.29733213305573225,
+        2.3133780645101645,
+        1.0576606877437957,
+        1.5980158220112757,
+        0.6909460508738567,
+        2.6558395720515873,
+        1.0018252116195863,
+        0.8895062584199268,
+        1.0892066709288692,
+        0.14458591725925507,
+        3.9916248577490223,
+        1.4577943325214446,
+        0.48857235554711764,
+        0.5760091746613638,
+        0.6226349019442949,
+        0.834918913434256,
+        1.050443491778774,
+        1.1428630745903117,
+        5.614480595922831,
+        3.3390937021857003,
+        3.0797552834483715,
+        1.0065139607578255,
+        2.906601482489258,
+        1.958961727514951,
+        2.803886373455763,
+        1.4086938749094606,
+        3.161123590318697,
+        1.2261583928173247,
+        4.842560299080275,
+        1.1331884413804911,
+        0.1927621811580856,
+        0.9086698702616184,
+        3.1546712641361405,
+        5.164594071187589,
+        4.869300787654614,
+        0.8386203003102706,
+        1.2663600181635102,
+        0.5858938577048165,
+        0.615343414798963,
+        0.948500427016572,
+        0.9713808851842635,
+        0.42836169861835516,
+        0.9354708651690625,
+        1.4151492876121379,
+        1.1490356678288658
+      ]
+    }
+  },
+  "model_metrics": {
+    "catboost": {
+      "accuracy": 0.1958041958041958,
+      "precision": 0.06167813165095774,
+      "recall": 0.1958041958041958,
+      "f1_score": 0.093169947336614,
+      "classification_report": {
+        "0": {
+          "precision": 0.265625,
+          "recall": 1.0,
+          "f1-score": 0.41975308641975306,
+          "support": 17.0
+        },
+        "1": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1-score": 0.0,
+          "support": 23.0
+        },
+        "2": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1-score": 0.0,
+          "support": 76.0
+        },
+        "3": {
+          "precision": 0.15942028985507245,
+          "recall": 0.4074074074074074,
+          "f1-score": 0.22916666666666666,
+          "support": 27.0
+        },
+        "accuracy": 0.1958041958041958,
+        "macro avg": {
+          "precision": 0.10626132246376811,
+          "recall": 0.35185185185185186,
+          "f1-score": 0.16222993827160492,
+          "support": 143.0
+        },
+        "weighted avg": {
+          "precision": 0.06167813165095774,
+          "recall": 0.1958041958041958,
+          "f1-score": 0.093169947336614,
+          "support": 143.0
+        }
+      }
+    }
+  },
+  "training_time": 224.16525602340698,
+  "success": true,
+  "validation_report": {
+    "temporal_order_valid": true,
+    "leakage_detected": false,
+    "validation_score": 0.85,
+    "warnings": [],
+    "recommendations": [
+      "Models trained successfully with enhanced validation"
+    ]
+  },
+  "hardware_optimization": {
+    "enabled": true,
+    "workload_type": "ML_TRAINING",
+    "optimization_applied": true
+  },
+  "lookahead_protection": {
+    "enabled": true,
+    "protection_applied": true
+  },
+  "metadata": {
+    "component_type": "regime_models_training",
+    "data_shape": [
+      480,
+      60
+    ],
+    "train_shape": [
+      268,
+      60
+    ],
+    "test_shape": [
+      143,
+      60
+    ],
+    "n_regimes": 4,
+    "feature_names": [
+      "volatility_enhanced_volatility_100",
+      "volatility_vectorbt_atr_50",
+      "volatility_vectorbt_rogers_satchell_volatility_50",
+      "volume_volume_vwap_50",
+      "volume_volume_price_trend",
+      "volume_volume_zscore_60_252",
+      "volume_volume_volatility_elasticity_20",
+      "volume_vectorbt_enhanced_obv_20",
+      "trend_vectorbt_trend_comprehensive_100",
+      "trend_vectorbt_sma_100",
+      "returns_returns_skewness_20_price_returns",
+      "volume_vectorbt_smoothed_obv_10",
+      "volume_vectorbt_smoothed_obv_20",
+      "volatility_enhanced_volatility_50_ma3",
+      "volatility_vectorbt_parkinson_volatility_50_ma3",
+      "volume_volume_trend_strength_10_30_ma3",
+      "volume_volume_vwap_50_ma3",
+      "volume_vwap_deviations_20_ma3",
+      "volume_volume_volatility_elasticity_20_ma3",
+      "volume_vectorbt_enhanced_obv_10_ma3",
+      "volume_volume_ratio_50_std3",
+      "oscillator_ultimate_oscillator_7_14_28_returns_vwap_std3",
+      "volatility_enhanced_volatility_20_ma5",
+      "volatility_vectorbt_garman_klass_volatility_30_ma5",
+      "volume_volume_percentile_100_ma5",
+      "volume_order_flow_imbalance_20_ma5",
+      "volume_volume_volatility_elasticity_20_ma5",
+      "trend_vectorbt_ema_10_ma5",
+      "oscillator_ultimate_oscillator_7_14_28_returns_vwap_ma5",
+      "microstructure_analyst_tick_imbalance_ma5",
+      "momentum_vectorbt_momentum_comprehensive_21_std5",
+      "momentum_macd_12_26_9_returns_vwap_std5",
+      "momentum_stochastic_14_3_price_returns_std5",
+      "microstructure_amihud_illiquidity_vwap_distance_std5",
+      "momentum_williams_r_14_price_returns_ma7",
+      "momentum_rsi_zscore_14_20_ma7",
+      "momentum_analyst_momentum_alignment_ma7",
+      "volatility_enhanced_volatility_10_ma7",
+      "volatility_vectorbt_volatility_comprehensive_30_ma7",
+      "volatility_vectorbt_parkinson_volatility_30_ma7",
+      "volume_volume_percentile_50_ma7",
+      "volume_volume_vwap_10_ma7",
+      "volume_vwap_deviations_20_ma7",
+      "volume_order_flow_imbalance_20_ma7",
+      "trend_directional_signal_ma7",
+      "oscillator_aroon_25_returns_vwap_ma7",
+      "oscillator_apo_12_26_returns_vwap_ma7",
+      "returns_rolling_returns_10_price_returns_ma7",
+      "microstructure_microstructure_features_ma7",
+      "microstructure_bid_ask_spread_ma7",
+      "microstructure_market_depth_ma7",
+      "momentum_rsi_14_returns_vwap_std7",
+      "momentum_macd_12_26_9_returns_vwap_std7",
+      "volatility_enhanced_volatility_20_std7",
+      "volatility_vectorbt_rogers_satchell_volatility_20_std7",
+      "volatility_vectorbt_garman_klass_volatility_20_std7",
+      "trend_sma_20_returns_vwap_std7",
+      "oscillator_cci_20_returns_vwap_std7",
+      "returns_log_returns_10_price_returns_std7",
+      "returns_simple_returns_5_price_returns_std7"
+    ],
+    "timestamp": "2025-11-08T19:39:11.029372",
+    "centralized_config_used": true,
+    "walk_forward_validation": {
+      "validation_completed": true,
+      "n_folds": 4,
+      "model_rankings": [
+        {
+          "model_name": "catboost",
+          "composite_score": 0.8771142521414635,
+          "accuracy": 0.8223684210526316,
+          "f1_score": 0.7764320506729746,
+          "precision": 0.7707284713863661,
+          "recall": 0.8223684210526316,
+          "mel": 12.402777777777779,
+          "sfpr": 0.1527777777777778,
+          "accuracy_ci": [
+            0.46849554107282104,
+            1.1762413010324422
+          ],
+          "f1_ci": [
+            0.34177988026264533,
+            1.211084221083304
+          ]
+        }
+      ],
+      "selected_models": [
+        "catboost"
+      ]
+    }
+  }
+}

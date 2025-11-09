@@ -386,6 +386,31 @@ class RollingHMMOptimizer:
                 # Predict regime labels
                 regime_labels = hmm_model.predict(features_pca.values)
 
+                # Calculate regime distribution and apply constraints
+                unique_regimes, regime_counts = np.unique(regime_labels, return_counts=True)
+                regime_distribution = regime_counts / len(regime_labels)
+
+                # 5% minimum regime size constraint
+                min_regime_size = 0.05
+                violates_constraint = np.any(regime_distribution < min_regime_size)
+
+                # Size penalty for tiny regimes
+                size_penalty = 0.0
+                if violates_constraint:
+                    violations = regime_distribution[regime_distribution < min_regime_size]
+                    size_penalty = np.sum((min_regime_size - violations) / min_regime_size) * 2.0
+                    tprint_debug(f"  ⚠️  Regime size violation: {len(violations)} regimes below 5%, penalty={size_penalty:.4f}")
+
+                # Balance penalty using entropy (penalizes extreme imbalances)
+                n_regimes = len(unique_regimes)
+                current_entropy = -np.sum(regime_distribution * np.log(regime_distribution + 1e-9))
+                max_entropy = np.log(n_regimes)
+                balance_score = current_entropy / max_entropy if max_entropy > 0 else 1.0
+                balance_penalty = (1.0 - balance_score) * 1.5
+
+                tprint_debug(f"  📊 Regime distribution: {dict(zip(unique_regimes, regime_distribution))}")
+                tprint_debug(f"  📊 Balance score: {balance_score:.3f}, penalty: {balance_penalty:.4f}")
+
                 # Get transition matrix
                 transition_matrix = hmm_model.get_transition_matrix()
 
@@ -533,12 +558,14 @@ class RollingHMMOptimizer:
                     normalized_persistence = min(1.0, metrics.regime_persistence / 30.0)
                     persistence_penalty += normalized_persistence * 0.2
 
-                
+
                 objective_score = (
                     score_statistical
                     + score_temporal
                     + score_economic
                     - persistence_penalty * self.config.weight_temporal
+                    - size_penalty * 0.3  # Penalize tiny regimes (< 5%)
+                    - balance_penalty * 0.2  # Penalize imbalanced distributions
                 )
 
                 return objective_score, metrics

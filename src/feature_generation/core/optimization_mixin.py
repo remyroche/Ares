@@ -111,16 +111,30 @@ class OptimizationMixin:
                         pd.to_numeric(sample, errors='coerce')
                         # If no NaN introduced, proceed with conversion
                         converted = pd.to_numeric(non_null_values, errors='coerce')
-                        if not converted.isna().any():
+                        if not pd.isna(converted).any():
                             # Use copy=False when possible for string→numeric conversions
-                            optimized_data[column] = pd.to_numeric(col_data, downcast='integer', copy=False)
+                            # DEBUG: Log before conversion
+                            self.logger.debug(f"OPTIMIZATION DEBUG: Converting column '{column}' from object to numeric with downcast='integer'")
+                            self.logger.debug(f"OPTIMIZATION DEBUG: Before conversion - non-null count: {len(non_null_values)}, NaN count: {col_data.isna().sum()}")
+                            optimized_data[column] = pd.to_numeric(col_data, downcast='integer')
+                            # DEBUG: Log after conversion
+                            self.logger.debug(f"OPTIMIZATION DEBUG: After integer conversion - NaN count: {optimized_data[column].isna().sum()}")
                         else:
                             # Try float conversion if integer fails
                             converted_float = pd.to_numeric(non_null_values, errors='coerce')
-                            if not converted_float.isna().any():
-                                optimized_data[column] = pd.to_numeric(col_data, downcast='float', copy=False)
+                            if not pd.isna(converted_float).any():
+                                # DEBUG: Log before conversion
+                                self.logger.debug(f"OPTIMIZATION DEBUG: Converting column '{column}' from object to numeric with downcast='float'")
+                                self.logger.debug(f"OPTIMIZATION DEBUG: Before conversion - non-null count: {len(non_null_values)}, NaN count: {col_data.isna().sum()}")
+                                optimized_data[column] = pd.to_numeric(col_data, downcast='float')
+                                # DEBUG: Log after conversion
+                                self.logger.debug(f"OPTIMIZATION DEBUG: After float conversion - NaN count: {optimized_data[column].isna().sum()}")
+                            else:
+                                # FIX: Don't convert if both integer and float fail - keep original
+                                self.logger.warning(f"OPTIMIZATION: Skipping conversion for column '{column}' - both integer and float downcast failed, keeping original data")
                 except (ValueError, TypeError):
                     # Keep as object if conversion fails
+                    self.logger.debug(f"OPTIMIZATION DEBUG: Keeping column '{column}' as object due to conversion error")
                     pass
 
             elif col_data.dtype == 'int64':

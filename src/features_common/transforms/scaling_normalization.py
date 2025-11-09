@@ -487,6 +487,29 @@ class ScalingNormalizer:
                 tprint_warning(f"⚠️ No valid data for feature {feature_name}")
                 return None
 
+            # Handle infinities
+            inf_mask = np.isinf(data_clean.values)
+            if inf_mask.any():
+                inf_count = int(np.count_nonzero(inf_mask))
+                tprint_warning(f"⚠️ Feature {feature_name} contains {inf_count} infinity values; replacing with finite min/max")
+                
+                # Get finite values
+                finite_mask = np.isfinite(data_clean.values)
+                if finite_mask.any():
+                    finite_values = data_clean.values[finite_mask]
+                    finite_max = np.max(finite_values)
+                    finite_min = np.min(finite_values)
+                    
+                    # Replace infinities
+                    clean_values = data_clean.values.copy()
+                    clean_values[np.isposinf(clean_values)] = finite_max
+                    clean_values[np.isneginf(clean_values)] = finite_min
+                    data_clean = pd.Series(clean_values, index=data_clean.index)
+                else:
+                    # All values are inf, replace with 0
+                    tprint_warning(f"⚠️ Feature {feature_name} has only infinity values; replacing with 0")
+                    data_clean = pd.Series(0.0, index=data_clean.index)
+
             # Fit and transform
             if fit:
                 scaled_values = scaler.fit_transform(data_clean.values.reshape(-1, 1)).flatten()

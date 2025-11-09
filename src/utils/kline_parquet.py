@@ -231,7 +231,8 @@ class KlinesParquetManager:
         interval: str,
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
-        batch_id: Optional[str] = None
+        batch_id: Optional[str] = None,
+        last_n_days: Optional[int] = None
     ) -> pd.DataFrame:
         """Load klines data from parquet files.
 
@@ -242,11 +243,85 @@ class KlinesParquetManager:
             start_time: Optional start time filter
             end_time: Optional end time filter
             batch_id: Optional specific batch to load
+            last_n_days: Optional number of days to load from the latest available data
+                        (overrides start_time/end_time if provided)
 
         Returns:
             DataFrame containing klines data
         """
         try:
+            tprint(f"🐛 DEBUG [load_klines]: last_n_days={last_n_days}, start_time={start_time}, end_time={end_time}", "INFO")
+            
+            # If last_n_days is specified, load all data first to find the latest date
+            if last_n_days is not None:
+                tprint_info(f"📅 Loading last {last_n_days} days from latest available data")
+                
+                # Load all files without time filtering to find the latest date
+                files = self._find_klines_files(symbol, exchange, interval, batch_id, None, None)
+                if not files:
+                    tprint_warning(f"⚠️ No klines files found for {symbol} {exchange} {interval}")
+                    return pd.DataFrame()
+                
+                # Load and combine all data
+                combined_df = self._load_and_combine_files(files, None, None)
+                
+                if combined_df.empty:
+                    tprint_warning(f"⚠️ No data found for {symbol} {exchange} {interval}")
+                    return pd.DataFrame()
+                
+                # Find the latest timestamp in the data
+                if isinstance(combined_df.index, pd.DatetimeIndex):
+                    latest_date = pd.Timestamp(combined_df.index.max())  # type: ignore
+                elif 'timestamp' in combined_df.columns:
+                    latest_date = pd.Timestamp(pd.to_datetime(combined_df['timestamp']).max())  # type: ignore
+                else:
+                    tprint_error("❌ Cannot determine latest date - no timestamp found")
+                    return pd.DataFrame()
+                
+                # Calculate start date as latest_date - last_n_days
+                start_date = latest_date - pd.Timedelta(days=last_n_days)  # type: ignore
+                
+                tprint_info(f"📊 Latest available data: {latest_date}")
+                tprint_info(f"📊 Filtering to last {last_n_days} days: {start_date} to {latest_date}")
+                
+                # Filter the data to the last N days
+                if isinstance(combined_df.index, pd.DatetimeIndex):
+                    # Add timezone normalization before comparison
+                    tprint(f"🔧 TIMEZONE: Index timezone: {getattr(combined_df.index, 'tz', 'NAIVE')}", "INFO")
+                    tprint(f"🔧 TIMEZONE: Start date timezone: {getattr(start_date, 'tz', 'NAIVE')}", "INFO")
+                    
+                    if hasattr(combined_df.index, 'tz') and combined_df.index.tz is not None:
+                        # Convert all timestamps to UTC naive for consistent comparison
+                        combined_df.index = combined_df.index.tz_convert('UTC').tz_localize(None)
+                        tprint("🔧 TIMEZONE: Converted timezone-aware index to UTC naive", "INFO")
+                    elif hasattr(start_date, 'tz') and start_date.tz is not None:
+                        # Convert start_date to UTC naive for consistent comparison
+                        start_date = start_date.tz_convert('UTC').tz_localize(None)
+                        tprint("🔧 TIMEZONE: Converted start_date to UTC naive", "INFO")
+                    
+                    combined_df = combined_df[combined_df.index >= start_date]
+                elif 'timestamp' in combined_df.columns:
+                    timestamp_col = pd.to_datetime(combined_df['timestamp'])
+                    
+                    # Add timezone normalization before comparison
+                    tprint(f"🔧 TIMEZONE: Timestamp column timezone: {getattr(timestamp_col, 'tz', 'NAIVE')}", "INFO")
+                    tprint(f"🔧 TIMEZONE: Start date timezone: {getattr(start_date, 'tz', 'NAIVE')}", "INFO")
+                    
+                    if hasattr(timestamp_col, 'tz') and timestamp_col.tz is not None:
+                        # Convert all timestamps to UTC naive for consistent comparison
+                        timestamp_col = timestamp_col.tz_convert('UTC').tz_localize(None)
+                        tprint("🔧 TIMEZONE: Converted timezone-aware timestamps to UTC naive", "INFO")
+                    elif hasattr(start_date, 'tz') and start_date.tz is not None:
+                        # Convert start_date to UTC naive for consistent comparison
+                        start_date = start_date.tz_convert('UTC').tz_localize(None)
+                        tprint("🔧 TIMEZONE: Converted start_date to UTC naive", "INFO")
+                    
+                    combined_df = combined_df[timestamp_col >= start_date]
+                
+                tprint_success(f"✅ Loaded {len(combined_df)} klines records for {symbol} {interval} (last {last_n_days} days)")
+                return combined_df
+            
+            # Original behavior: use start_time/end_time filters
             # Find relevant files (with pre-filtering by date range if provided)
             files = self._find_klines_files(symbol, exchange, interval, batch_id, start_time, end_time)
             if not files:
@@ -803,31 +878,68 @@ class KlinesParquetManager:
         end_time: Optional[datetime] = None
     ) -> pd.DataFrame:
         """Load and combine multiple parquet files."""
+        tprint(f"🐛 DEBUG [KlinesParquetManager]: Loading {len(files)} parquet files", "INFO")
         dataframes = []
 
-        for file_path in files:
+        for i, file_path in enumerate(files):
             try:
                 df = self.parquet_utils.safe_read_parquet(str(file_path))
                 if df is not None and not df.empty:
                     dataframes.append(df)
+                    if i < 3 or i >= len(files) - 3:  # Log first and last 3 files
+                        tprint(f"🐛 DEBUG [KlinesParquetManager]: File {i+1}/{len(files)}: {file_path.name} - {len(df)} rows", "INFO")
+                elif i < 3:
+                    tprint(f"🐛 DEBUG [KlinesParquetManager]: File {i+1}/{len(files)}: {file_path.name} - EMPTY/NONE", "WARNING")
             except Exception as e:
                 tprint_warning(f"⚠️ Failed to load {file_path}: {e}")
                 continue
 
         if not dataframes:
+            tprint(f"🐛 DEBUG [KlinesParquetManager]: No dataframes loaded! All files failed or empty", "ERROR")
             return pd.DataFrame()
+
+        tprint(f"🐛 DEBUG [KlinesParquetManager]: Successfully loaded {len(dataframes)} dataframes, combining...", "INFO")
 
         # Combine dataframes
         combined_df = pd.concat(dataframes, ignore_index=False)  # Keep index if timestamp is in index
+        tprint(f"🐛 DEBUG [KlinesParquetManager]: Combined shape before filtering: {combined_df.shape}", "INFO")
 
         # Check if timestamp is in the index or as a column
         has_timestamp_index = combined_df.index.name == 'timestamp' or isinstance(combined_df.index, pd.DatetimeIndex)
         has_timestamp_column = 'timestamp' in combined_df.columns
         
         if has_timestamp_index:
-            # Timestamp is in the index
-            combined_df = combined_df.sort_index()
+            # CRITICAL FIX: Normalize timezone before sorting to prevent comparison errors
+            # Convert all timezone-aware timestamps to timezone-naive (UTC)
+            if isinstance(combined_df.index, pd.DatetimeIndex) and combined_df.index.tz is not None:
+                tprint(f"🐛 DEBUG [KlinesParquetManager]: Converting timezone-aware index to timezone-naive", "INFO")
+                combined_df.index = combined_df.index.tz_localize(None)
+            
+            # Also check for mixed timezone awareness in the index
+            # This can happen when concatenating dataframes with different timezone settings
+            tprint(f"🔧 TIMEZONE: Index timezone: {getattr(combined_df.index, 'tz', 'NAIVE')}", "INFO")
+            
+            try:
+                # Try to sort - if it fails, we need to normalize
+                combined_df = combined_df.sort_index()
+            except TypeError as e:
+                if "tz-naive and tz-aware" in str(e):
+                    tprint(f"🔧 TIMEZONE: Detected mixed timezone awareness, normalizing...", "WARNING")
+                    tprint(f"🔧 TIMEZONE: Before timezone fix: {len(combined_df)} rows", "INFO")
+                    # Convert index to timezone-naive by forcing conversion
+                    combined_df.index = pd.to_datetime(combined_df.index, utc=True).tz_localize(None)
+                    tprint(f"🔧 TIMEZONE: After timezone fix: {len(combined_df)} rows", "INFO")
+                    combined_df = combined_df.sort_index()
+                    tprint(f"🔧 TIMEZONE: After sort: {len(combined_df)} rows", "INFO")
+                else:
+                    raise
+            
+            tprint(f"🐛 DEBUG [KlinesParquetManager]: Before duplicate removal: {len(combined_df)} rows", "INFO")
+            tprint(f"🐛 DEBUG [KlinesParquetManager]: Duplicated timestamps: {combined_df.index.duplicated().sum()}", "INFO")
+            tprint(f"🐛 DEBUG [KlinesParquetManager]: Unique timestamps: {combined_df.index.nunique()}", "INFO")
             combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+            tprint(f"🐛 DEBUG [KlinesParquetManager]: After duplicate removal: {len(combined_df)} rows", "INFO")
+            tprint(f"🐛 DEBUG [KlinesParquetManager]: start_time={start_time}, end_time={end_time}", "INFO")
             
             # Apply time filters - handle timezone awareness
             if start_time:
@@ -835,12 +947,40 @@ class KlinesParquetManager:
                 start_ts = pd.Timestamp(start_time)
                 if hasattr(combined_df.index, 'tz') and combined_df.index.tz is not None:
                     if start_ts.tz is None:
+                        # Add timezone normalization before comparison
+                        tprint(f"🔧 TIMEZONE: Index timezone: {getattr(combined_df.index, 'tz', 'NAIVE')}", "INFO")
+                        tprint(f"🔧 TIMEZONE: Start timestamp timezone: {getattr(start_ts, 'tz', 'NAIVE')}", "INFO")
+                        
+                        if hasattr(combined_df.index, 'tz') and combined_df.index.tz is not None:
+                            # Convert all timestamps to UTC naive for consistent comparison
+                            combined_df.index = combined_df.index.tz_convert('UTC').tz_localize(None)
+                            tprint("🔧 TIMEZONE: Converted timezone-aware index to UTC naive", "INFO")
+                        elif hasattr(start_ts, 'tz') and start_ts.tz is not None:
+                            # Convert start_ts to UTC naive for consistent comparison
+                            start_ts = start_ts.tz_convert('UTC').tz_localize(None)
+                            tprint("🔧 TIMEZONE: Converted start_ts to UTC naive", "INFO")
+                        else:
+                            start_ts = start_ts.tz_localize('UTC').tz_convert(combined_df.index.tz)
+                    else:
                         start_ts = start_ts.tz_localize('UTC').tz_convert(combined_df.index.tz)
                 combined_df = combined_df[combined_df.index >= start_ts]
             if end_time:
                 # Convert to pandas Timestamp and localize if needed
                 end_ts = pd.Timestamp(end_time)
+                
+                # Add timezone normalization before comparison
+                tprint(f"🔧 TIMEZONE: Index timezone: {getattr(combined_df.index, 'tz', 'NAIVE')}", "INFO")
+                tprint(f"🔧 TIMEZONE: End timestamp timezone: {getattr(end_ts, 'tz', 'NAIVE')}", "INFO")
+                
                 if hasattr(combined_df.index, 'tz') and combined_df.index.tz is not None:
+                    # Convert all timestamps to UTC naive for consistent comparison
+                    combined_df.index = combined_df.index.tz_convert('UTC').tz_localize(None)
+                    tprint("🔧 TIMEZONE: Converted timezone-aware index to UTC naive", "INFO")
+                elif hasattr(end_ts, 'tz') and end_ts.tz is not None:
+                    # Convert end_ts to UTC naive for consistent comparison
+                    end_ts = end_ts.tz_convert('UTC').tz_localize(None)
+                    tprint("🔧 TIMEZONE: Converted end_ts to UTC naive", "INFO")
+                else:
                     if end_ts.tz is None:
                         end_ts = end_ts.tz_localize('UTC').tz_convert(combined_df.index.tz)
                 combined_df = combined_df[combined_df.index <= end_ts]
@@ -867,12 +1007,23 @@ class KlinesParquetManager:
                 # Ensure start_time is timezone-aware if timestamp is
                 if combined_df['timestamp'].dt.tz is not None and start_time.tzinfo is None:
                     start_time = start_time.replace(tzinfo=pd.Timestamp.utcnow().tz)
+                before_filter = len(combined_df)
                 combined_df = combined_df[combined_df['timestamp'] >= start_time]
+                tprint(f"🐛 DEBUG [KlinesParquetManager]: After start_time filter: {before_filter} → {len(combined_df)} rows", "INFO")
             if end_time:
                 # Ensure end_time is timezone-aware if timestamp is
                 if combined_df['timestamp'].dt.tz is not None and end_time.tzinfo is None:
                     end_time = end_time.replace(tzinfo=pd.Timestamp.utcnow().tz)
+                before_filter = len(combined_df)
                 combined_df = combined_df[combined_df['timestamp'] <= end_time]
+                tprint(f"🐛 DEBUG [KlinesParquetManager]: After end_time filter: {before_filter} → {len(combined_df)} rows", "INFO")
+
+        tprint(f"🐛 DEBUG [KlinesParquetManager]: Final combined_df shape: {combined_df.shape}", "INFO")
+        if not combined_df.empty:
+            if has_timestamp_index:
+                tprint(f"🐛 DEBUG [KlinesParquetManager]: Date range: {combined_df.index.min()} to {combined_df.index.max()}", "INFO")
+            elif has_timestamp_column:
+                tprint(f"🐛 DEBUG [KlinesParquetManager]: Date range: {combined_df['timestamp'].min()} to {combined_df['timestamp'].max()}", "INFO")
 
         return combined_df
 

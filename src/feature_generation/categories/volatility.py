@@ -339,7 +339,7 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
                 self.performance_stats['fallback_operations'] += 1
 
         # Fallback to VectorBT direct operations
-        elif VECTORBT_AVAILABLE:
+        elif VECTORBT_AVAILABLE and rolling_std is not None:
             try:
                 volatility = rolling_std(returns, window=self.period)
                 self.performance_stats['optimized_operations'] += 1
@@ -831,7 +831,7 @@ class VectorBTVolatilityFeatureGenerator(VectorBTFeatureGenerator):
                     self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
 
             # Fallback to VectorBT direct operations
-            if VECTORBT_AVAILABLE:
+            if VECTORBT_AVAILABLE and rolling_std is not None and rolling_var is not None:
                 try:
                     volatility_std = rolling_std(returns, window=self.period)
                     volatility_var = rolling_var(returns, window=self.period)
@@ -980,7 +980,7 @@ class VectorBTGarmanKlassVolatilityGenerator(VectorBTFeatureGenerator):
                     self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
 
             # Fallback to VectorBT direct operations
-            if VECTORBT_AVAILABLE:
+            if VECTORBT_AVAILABLE and rolling_mean is not None:
                 try:
                     volatility = rolling_mean(gk_volatility, window=self.period)
                     volatility = np.sqrt(volatility)  # Convert variance to volatility
@@ -1048,7 +1048,7 @@ class VectorBTParkinsonVolatilityGenerator(VectorBTFeatureGenerator):
                     self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
 
             # Fallback to VectorBT direct operations
-            if VECTORBT_AVAILABLE:
+            if VECTORBT_AVAILABLE and rolling_mean is not None:
                 try:
                     volatility = rolling_mean(parkinson_volatility, window=self.period)
                     volatility = np.sqrt(volatility)  # Convert variance to volatility
@@ -1121,7 +1121,7 @@ class VectorBTRogersSatchellVolatilityGenerator(VectorBTFeatureGenerator):
                     self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
 
             # Fallback to VectorBT direct operations
-            if VECTORBT_AVAILABLE:
+            if VECTORBT_AVAILABLE and rolling_mean is not None:
                 try:
                     volatility = rolling_mean(rs_volatility, window=self.period)
                     volatility = np.sqrt(volatility)  # Convert variance to volatility
@@ -1204,7 +1204,7 @@ class VectorBTYangZhangVolatilityGenerator(VectorBTFeatureGenerator):
                     self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
 
             # Fallback to VectorBT direct operations
-            if VECTORBT_AVAILABLE:
+            if VECTORBT_AVAILABLE and rolling_mean is not None:
                 try:
                     volatility = rolling_mean(yz_volatility, window=self.period)
                     volatility = np.sqrt(volatility)  # Convert variance to volatility
@@ -1687,7 +1687,7 @@ class OptimizedVolatilityFeatureGenerator(VectorizedFeatureGenerator):
             returns = data['close'].pct_change().dropna()
 
             # Use VectorBT if available for better performance
-            if VECTORBT_AVAILABLE:
+            if VECTORBT_AVAILABLE and rolling_std is not None:
                 volatility = rolling_std(returns, window=self.window)
             else:
                 volatility = returns.rolling(window=self.window).std()
@@ -1792,7 +1792,7 @@ class AdvancedVolatilityFeatures(VectorBTFeatureGenerator):
             volatility_measures = []
 
             for window in self.volatility_config.volatility_windows:
-                if VECTORBT_AVAILABLE:
+                if VECTORBT_AVAILABLE and rolling_std is not None:
                     vol = rolling_std(returns, window=window)
                 else:
                     vol = returns.rolling(window=window).std()

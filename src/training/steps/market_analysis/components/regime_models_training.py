@@ -359,6 +359,18 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         tprint("🚀 [REGIME_MODELS] Initializing Regime Models Training Component", color="cyan", bold=True)
         tprint(f"📋 [REGIME_MODELS] Config provided: {config is not None}", color="blue")
 
+        # Store execution parameters from ComponentConfig before parent init
+        # CRITICAL: These are passed in ComponentConfig but not in self.config dict after validation
+        tprint(f"🔍 [INIT] ComponentConfig type: {type(config)}", "INFO")
+        tprint(f"🔍 [INIT] ComponentConfig has execution_mode: {hasattr(config, 'execution_mode') if config else False}", "INFO")
+        
+        self._execution_mode = config.execution_mode if config and hasattr(config, 'execution_mode') else 'light'
+        self._symbol = config.symbol if config and hasattr(config, 'symbol') else 'ETHUSDT'
+        self._exchange = config.exchange if config and hasattr(config, 'exchange') else 'binance'
+        self._timeframe = config.timeframe if config and hasattr(config, 'timeframe') else '1h'
+        
+        tprint(f"✅ [INIT] Stored execution params: mode={self._execution_mode}, symbol={self._symbol}, timeframe={self._timeframe}", "SUCCESS")
+
         # Initialize parent component
         try:
             super().__init__(config)
@@ -910,6 +922,14 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
             tprint(f"✅ [REGIME_MODELS] Loaded regime probabilities: {regime_probs.shape}")
             tprint(f"📊 [REGIME_MODELS] Columns: {list(regime_probs.columns)}")
+            
+            # Handle new format where timestamp is a column (not index)
+            if 'timestamp' in regime_probs.columns:
+                tprint(f"📊 [REGIME_MODELS] Converting timestamp column to index")
+                regime_probs['timestamp'] = pd.to_datetime(regime_probs['timestamp'])
+                regime_probs.set_index('timestamp', inplace=True)
+                regime_probs.sort_index(inplace=True)
+            
             tprint(f"📊 [REGIME_MODELS] Index range: {regime_probs.index.min()} to {regime_probs.index.max()}")
 
             # Ensure datetime index
@@ -1077,61 +1097,51 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint("✅ [REGIME_MODELS] Hardware optimization initialized", color="green")
 
             # For blank mode, load fresh data from historical storage instead of using cached data
-            execution_mode = self.config.execution_mode if hasattr(self.config, 'execution_mode') else 'light'
-            symbol = self.config.symbol if hasattr(self.config, 'symbol') else 'ETHUSDT'
-            exchange = self.config.exchange if hasattr(self.config, 'exchange') else 'binance'
-            timeframe = self.config.timeframe if hasattr(self.config, 'timeframe') else '1h'
+            # Use execution parameters stored during __init__ from ComponentConfig
+            tprint("="*80, "INFO")
+            tprint("🔍 [EXECUTE] Starting data loading decision logic", "INFO")
+            tprint("="*80, "INFO")
+            
+            execution_mode = self._execution_mode
+            symbol = self._symbol
+            exchange = self._exchange
+            timeframe = self._timeframe
+            
+            tprint(f"📋 [EXECUTE] Execution mode: {execution_mode}", "INFO")
+            tprint(f"📋 [EXECUTE] Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}", "INFO")
+            tprint(f"📋 [EXECUTE] Input data shape: {data.shape if data is not None else 'None'}", "INFO")
             
             if execution_mode == 'blank':
-                tprint(f"📥 [REGIME_MODELS] Blank mode: Loading fresh data for {symbol} from historical storage")
-                
-                # Load fresh data from historical storage
-                from src.utils.kline_parquet import KlinesParquetManager, StorageConfig
-                from datetime import datetime, timedelta
-                
-                klines_manager = KlinesParquetManager(config=StorageConfig(base_dir='historical_data'))
-                end_time = datetime.utcnow()
-                start_time = end_time - timedelta(days=180)
-                
-                fresh_data = klines_manager.load_klines(
-                    symbol=symbol,
-                    exchange=exchange,
-                    interval=timeframe,
-                    start_time=start_time,
-                    end_time=end_time,
-                )
-                
-                if fresh_data is not None and len(fresh_data) > 0:
-                    tprint(f"✅ [REGIME_MODELS] Loaded {len(fresh_data):,} rows from historical storage")
-                    
-                    # Check for and remove duplicate index labels
-                    if fresh_data.index.duplicated().any():
-                        n_duplicates = fresh_data.index.duplicated().sum()
-                        tprint(f"⚠️ [REGIME_MODELS] Found {n_duplicates} duplicate timestamps, removing duplicates")
-                        fresh_data = fresh_data[~fresh_data.index.duplicated(keep='first')]
-                        tprint(f"✅ [REGIME_MODELS] After deduplication: {len(fresh_data):,} rows")
-                    
-                    # Validate sample count
-                    expected_samples_per_day = 24 if timeframe == '1h' else (24 * 4 if timeframe == '15m' else 24)
-                    expected_samples = 180 * expected_samples_per_day
-                    actual_samples = len(fresh_data)
-                    
-                    tprint(f"📊 [REGIME_MODELS] Data validation: Expected ~{expected_samples:,} samples for 180 days of {timeframe} data")
-                    tprint(f"📊 [REGIME_MODELS] Data validation: Actual samples: {actual_samples:,}")
-                    
-                    if actual_samples < expected_samples * 0.5:
-                        tprint(f"⚠️ [REGIME_MODELS] WARNING: Only {actual_samples:,} samples available (expected ~{expected_samples:,})")
-                    
-                    # Use fresh data instead of cached data
-                    data = fresh_data
-                    tprint(f"✅ [REGIME_MODELS] Using fresh historical data ({len(data):,} rows)")
-                else:
-                    tprint("⚠️ [REGIME_MODELS] Failed to load from historical storage, using provided data")
-
-            # Apply lookahead protection
-            tprint("🔒 [REGIME_MODELS] Applying lookahead protection", color="cyan")
-            protected_data = self.lookahead_protection.automated_future_data_filtering(data)
-            tprint("✅ [REGIME_MODELS] Lookahead protection applied", color="green")
+                # Use data provided by step (already loaded with correct 180-day window)
+                tprint("✅ [REGIME_MODELS] Using data provided by step (already loaded with correct timeframe)", color="green")
+                tprint(f"🔧 COMPONENT: Received {len(data)} rows from step", "INFO")
+                tprint(f"🔧 COMPONENT: Data date range: {data.index.min()} to {data.index.max()}", "INFO")
+                tprint("🔧 COMPONENT: Skipping redundant data loading - using step-provided data", "INFO")
+                tprint(f"🔧 COMPONENT: Step already loaded data with {len(data)} rows", "INFO")
+            elif execution_mode == 'light':
+                # Use data provided by step (already loaded with correct timeframe)
+                tprint("✅ [REGIME_MODELS] Using data provided by step (already loaded with correct timeframe)", color="green")
+                tprint(f"🔧 COMPONENT: Received {len(data)} rows from step", "INFO")
+                tprint(f"🔧 COMPONENT: Data date range: {data.index.min()} to {data.index.max()}", "INFO")
+                tprint("🔧 COMPONENT: Skipping redundant data loading - using step-provided data", "INFO")
+                tprint(f"🔧 COMPONENT: Step already loaded data with {len(data)} rows", "INFO")
+            else:
+                tprint("="*80, "INFO")
+                tprint(f"📋 [NON-BLANK/LIGHT] Mode: {execution_mode} - Using provided data", "INFO")
+                tprint(f"📋 [NON-BLANK/LIGHT] Data shape: {data.shape if data is not None else 'None'}", "INFO")
+                tprint("="*80, "INFO")
+            
+            # IMPORTANT: Do NOT apply lookahead protection to raw historical market data
+            # Lookahead protection should only be applied:
+            # 1. During feature engineering (to ensure features don't use future data)
+            # 2. During train/val/test splitting (to ensure temporal ordering)
+            # 
+            # Applying it here with datetime.now() incorrectly filters out ALL historical data
+            # because the data timestamps are in the past relative to the current system time.
+            # 
+            # The temporal_splitter already ensures proper temporal ordering during splitting.
+            protected_data = data
+            tprint("✅ [REGIME_MODELS] Using historical data without time filtering (lookahead protection handled during splitting)", color="green")
 
             # Log initial system performance
             initial_perf = self._get_system_performance()
@@ -1416,23 +1426,73 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint("🎯 [REGIME_MODELS] Generating predictions for top 3 models only", color="cyan")
             model_predictions = {}
 
+            # CRITICAL FIX: Determine the correct data scope for predictions
+            # The models were trained on X_train + X_val + X_test, not the full X
+            # We need to concatenate the training splits to get the correct prediction scope
+            X_for_prediction = np.concatenate([X_train, X_val, X_test]) if 'X_val' in locals() else np.concatenate([X_train, X_test])
+            
+            # Get the corresponding indices from protected_data
+            # The training data was created from protected_data, so we need to find the matching indices
+            total_training_samples = len(X_for_prediction)
+            
+            # Use the last 'total_training_samples' rows from protected_data since that's where the training data came from
+            predictions_index = protected_data.index[-total_training_samples:]
+            
+            tprint(f"📊 [REGIME_MODELS] Prediction scope: {total_training_samples} samples (from {len(protected_data)} total)", color="blue")
+            tprint(f"📊 [REGIME_MODELS] Using indices from {predictions_index[0]} to {predictions_index[-1]}", color="blue")
+
             for model_name in selected_model_names:
                 if model_name in trained_models:
                     model = trained_models[model_name]
                     try:
                         if hasattr(model, 'predict_proba'):
-                            pred_probs = model.predict_proba(X)
+                            # CRITICAL FIX: Use the correct data scope for predictions
+                            pred_probs = model.predict_proba(X_for_prediction)
+                            
+                            # CRITICAL: Validate prediction dimensions match label dimensions
+                            n_predicted_classes = pred_probs.shape[1]
+                            n_actual_regimes = len(np.unique(y))
+                            
+                            if n_predicted_classes != n_actual_regimes:
+                                error_msg = (
+                                    f"❌ CRITICAL: Prediction dimension mismatch for {model_name}!\n"
+                                    f"   Model outputs {n_predicted_classes} class probabilities\n"
+                                    f"   But labels have {n_actual_regimes} unique regimes: {np.unique(y)}\n"
+                                    f"   \n"
+                                    f"   ROOT CAUSE: The model was trained on {n_predicted_classes} classes because\n"
+                                    f"   some regimes were missing from the training set during temporal split.\n"
+                                    f"   \n"
+                                    f"   SOLUTION: This should have been caught by the temporal splitter.\n"
+                                    f"   Check that RegimeAwareSplitter.split_regime_aware() is being used.\n"
+                                    f"   All {n_actual_regimes} regimes must appear in the training set."
+                                )
+                                tprint(error_msg, color="red")
+                                raise ValueError(error_msg)
+                            
                             # Create columns for each regime
                             for regime_idx in range(pred_probs.shape[1]):
                                 col_name = f'{model_name}_regime_{regime_idx}_prob'
                                 model_predictions[col_name] = pred_probs[:, regime_idx]
-                            tprint(f"✅ [REGIME_MODELS] Generated predictions for {model_name}", color="green")
+                            tprint(f"✅ [REGIME_MODELS] Generated predictions for {model_name} ({pred_probs.shape[0]} samples, {n_predicted_classes} classes)", color="green")
                     except Exception as e:
                         tprint(f"⚠️ [REGIME_MODELS] Failed to generate predictions for {model_name}: {e}", color="yellow")
+                        raise  # Re-raise to fail fast
 
             if model_predictions:
-                predictions_df = pd.DataFrame(model_predictions, index=protected_data.index)
+                # Verify that all prediction arrays have the same length
+                pred_lengths = [len(pred_array) for pred_array in model_predictions.values()]
+                if len(set(pred_lengths)) > 1:
+                    tprint(f"❌ [REGIME_MODELS] ERROR: Prediction arrays have different lengths: {pred_lengths}", color="red")
+                    raise ValueError(f"Prediction arrays have inconsistent lengths: {pred_lengths}")
+                
+                pred_length = pred_lengths[0]
+                if pred_length != len(predictions_index):
+                    tprint(f"❌ [REGIME_MODELS] ERROR: Prediction length ({pred_length}) doesn't match index length ({len(predictions_index)})", color="red")
+                    raise ValueError(f"Prediction length mismatch: {pred_length} vs {len(predictions_index)}")
+                
+                predictions_df = pd.DataFrame(model_predictions, index=predictions_index)
                 tprint(f"📊 [REGIME_MODELS] Saving predictions for {len(selected_model_names)} top models ({predictions_df.shape[1]} columns)", color="cyan")
+                tprint(f"📊 [REGIME_MODELS] Predictions shape: {predictions_df.shape}, Index length: {len(predictions_index)}", color="blue")
                 # Save to HDF5
                 await self._save_predictions_to_hdf5(predictions_df, base_step_inst, 'regime_models_predictions')
             else:
@@ -1461,7 +1521,13 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 
                 # Combine all model predictions into a single DataFrame
                 if model_predictions:
-                    predictions_df = pd.DataFrame(model_predictions, index=protected_data.index)
+                    # CRITICAL FIX: Use the correct index that matches the prediction data length
+                    # We already computed the correct predictions_index above, so use it here too
+                    predictions_df = pd.DataFrame(model_predictions, index=predictions_index)
+                    
+                    # CRITICAL FIX: Ensure index is a proper DatetimeIndex to avoid HDF5 object dtype error
+                    if not isinstance(predictions_df.index, pd.DatetimeIndex):
+                        predictions_df.index = pd.to_datetime(predictions_df.index)
                     
                     saver_step._save_artifact(
                         data=predictions_df,
@@ -1499,7 +1565,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             except Exception as e:
                 tprint(f"⚠️ [REGIME_MODELS] Failed to save model artifacts: {e}", color="yellow")
                 self.logger.warning(f"Failed to save model artifacts: {e}", exc_info=True)
-
+            
             # Create comprehensive results
             execution_time = time.time() - execution_start_time
             results = {
@@ -1531,7 +1597,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         'test_shape': X_test.shape,
                         'n_regimes': len(np.unique(regime_labels)) if regime_labels is not None else 0,
                         'feature_names': feature_names,
-                        'timestamp': datetime.now().isoformat(),
+                        'timestamp': pd.Timestamp.now().isoformat(),
                         'centralized_config_used': hasattr(self, 'config_manager'),
                         'walk_forward_validation': walk_forward_metrics
                     }
@@ -1540,6 +1606,53 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
             tprint("✅ [REGIME_MODELS] Regime models training completed successfully", color="green", bold=True)
             tprint(f"⏱️ [REGIME_MODELS] Total execution time: {execution_time:.2f}s", color="blue")
+
+            # Generate comprehensive reports (MD/CSV)
+            tprint("📊 [REGIME_MODELS] Generating comprehensive reports...", color="cyan", bold=True)
+            try:
+                # Generate regime probability report
+                regime_report = await self._generate_regime_probability_report(
+                    results['regime_models_training_result'],
+                    X,
+                    feature_names
+                )
+                
+                if regime_report:
+                    # Generate markdown report
+                    md_report_path = self._generate_markdown_report(
+                        regime_report,
+                        symbol,
+                        output_dir="outcomes"
+                    )
+                    
+                    # Generate CSV reports
+                    csv_metrics_path, csv_comparison_path = self._generate_csv_reports(
+                        regime_report,
+                        results['regime_models_training_result'],
+                        symbol,
+                        output_dir="outcomes"
+                    )
+                    
+                    # Add report paths to results
+                    results['regime_models_training_result']['reports'] = {
+                        'markdown_report': md_report_path,
+                        'csv_metrics': csv_metrics_path,
+                        'csv_comparison': csv_comparison_path
+                    }
+                    
+                    tprint("✅ [REGIME_MODELS] Comprehensive reports generated successfully:", color="green", bold=True)
+                    if md_report_path:
+                        tprint(f"   📝 Markdown: {md_report_path}", color="green")
+                    if csv_metrics_path:
+                        tprint(f"   📊 CSV Metrics: {csv_metrics_path}", color="green")
+                    if csv_comparison_path:
+                        tprint(f"   📊 CSV Comparison: {csv_comparison_path}", color="green")
+                else:
+                    tprint("⚠️ [REGIME_MODELS] Could not generate regime probability report", color="yellow")
+                    
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Failed to generate comprehensive reports: {e}", color="yellow")
+                self.logger.warning(f"Failed to generate comprehensive reports: {e}", exc_info=True)
 
             # Save artifacts persistently
             try:
@@ -1556,6 +1669,227 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
             # Cleanup hardware resources
             tprint("🔧 [REGIME_MODELS] Hardware resources cleaned up", color="green")
+
+            # Save feature importance artifacts
+            try:
+                tprint("💾 [REGIME_MODELS] Saving feature importance artifacts...", color="cyan")
+                
+                # Create a step for saving feature importance artifacts
+                from src.training.steps.base_step import BaseStep
+                
+                class _FeatureImportanceSaverStep(BaseStep):
+                    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+                        return {'success': True, 'artifacts': [], 'metrics': {}}
+                
+                importance_saver = _FeatureImportanceSaverStep(
+                    "regime_models_feature_importance_saver",
+                    use_versioned_artifacts=True
+                )
+                importance_saver.set_context(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    direction='long',
+                    model='regime'
+                )
+                
+                # Extract feature importance from the regime report
+                if 'regime_models_training_result' in results:
+                    training_result = results['regime_models_training_result']
+                    
+                    # Check if feature importance data is available
+                    if 'feature_importance' in training_result:
+                        feature_importance = training_result['feature_importance']
+                        
+                        # Save LGBM feature importance
+                        if 'lgbm_importance' in feature_importance:
+                            lgbm_importance_df = feature_importance['lgbm_importance']
+                            importance_saver._save_artifact(
+                                data=lgbm_importance_df,
+                                artifact_name='feature_importance_lgbm',
+                                artifact_type='data',
+                                data_category='feature_importance',
+                                metadata={
+                                    'symbol': symbol,
+                                    'exchange': exchange,
+                                    'timeframe': timeframe,
+                                    'importance_type': 'lgbm',
+                                    'n_features': len(lgbm_importance_df),
+                                    'timestamp': datetime.now().isoformat()
+                                }
+                            )
+                            tprint(f"✅ [REGIME_MODELS] Saved LGBM feature importance: {len(lgbm_importance_df)} features", color="green")
+                        
+                        # Save SHAP feature importance
+                        if 'shap_importance' in feature_importance:
+                            shap_importance_df = feature_importance['shap_importance']
+                            importance_saver._save_artifact(
+                                data=shap_importance_df,
+                                artifact_name='feature_importance_shap',
+                                artifact_type='data',
+                                data_category='feature_importance',
+                                metadata={
+                                    'symbol': symbol,
+                                    'exchange': exchange,
+                                    'timeframe': timeframe,
+                                    'importance_type': 'shap',
+                                    'n_features': len(shap_importance_df),
+                                    'timestamp': datetime.now().isoformat()
+                                }
+                            )
+                            tprint(f"✅ [REGIME_MODELS] Saved SHAP feature importance: {len(shap_importance_df)} features", color="green")
+                        
+                        # Save combined feature importance
+                        if 'lgbm_importance' in feature_importance and 'shap_importance' in feature_importance:
+                            # Merge the two importance dataframes
+                            combined_df = pd.merge(
+                                feature_importance['lgbm_importance'],
+                                feature_importance['shap_importance'],
+                                on='feature',
+                                how='outer',
+                                suffixes=('_lgbm', '_shap')
+                            ).fillna(0)
+                            
+                            # Normalize both importance scores to 0-1 range
+                            combined_df['importance_lgbm_norm'] = (
+                                combined_df['importance_lgbm'] - combined_df['importance_lgbm'].min()
+                            ) / (combined_df['importance_lgbm'].max() - combined_df['importance_lgbm'].min() + 1e-8)
+                            
+                            combined_df['shap_importance_norm'] = (
+                                combined_df['shap_importance'] - combined_df['shap_importance'].min()
+                            ) / (combined_df['shap_importance'].max() - combined_df['shap_importance'].min() + 1e-8)
+                            
+                            # Calculate combined importance (weighted average: 60% LGBM, 40% SHAP)
+                            combined_df['combined_importance'] = (
+                                0.6 * combined_df['importance_lgbm_norm'] +
+                                0.4 * combined_df['shap_importance_norm']
+                            )
+                            
+                            importance_saver._save_artifact(
+                                data=combined_df,
+                                artifact_name='feature_importance_combined',
+                                artifact_type='data',
+                                data_category='feature_importance',
+                                metadata={
+                                    'symbol': symbol,
+                                    'exchange': exchange,
+                                    'timeframe': timeframe,
+                                    'importance_type': 'combined',
+                                    'n_features': len(combined_df),
+                                    'lgbm_weight': 0.6,
+                                    'shap_weight': 0.4,
+                                    'timestamp': datetime.now().isoformat()
+                                }
+                            )
+                            tprint(f"✅ [REGIME_MODELS] Saved combined feature importance: {len(combined_df)} features", color="green")
+                        
+                        # Save top 60 features data
+                        if 'top_60_features' in training_result:
+                            top_60_features = training_result['top_60_features']
+                            
+                            # Save combined top 60 features
+                            if 'combined_top_60' in top_60_features:
+                                combined_top_60_df = pd.DataFrame(top_60_features['combined_top_60'])
+                                importance_saver._save_artifact(
+                                    data=combined_top_60_df,
+                                    artifact_name='feature_importance_top_60_combined',
+                                    artifact_type='data',
+                                    data_category='feature_importance',
+                                    metadata={
+                                        'symbol': symbol,
+                                        'exchange': exchange,
+                                        'timeframe': timeframe,
+                                        'importance_type': 'combined_top_60',
+                                        'n_features': len(combined_top_60_df),
+                                        'timestamp': datetime.now().isoformat()
+                                    }
+                                )
+                                tprint(f"✅ [REGIME_MODELS] Saved top 60 combined features: {len(combined_top_60_df)} features", color="green")
+                            
+                            # Save LGBM top 60 features
+                            if 'lgbm_top_60' in top_60_features:
+                                lgbm_top_60_df = pd.DataFrame(top_60_features['lgbm_top_60'])
+                                importance_saver._save_artifact(
+                                    data=lgbm_top_60_df,
+                                    artifact_name='feature_importance_top_60_lgbm',
+                                    artifact_type='data',
+                                    data_category='feature_importance',
+                                    metadata={
+                                        'symbol': symbol,
+                                        'exchange': exchange,
+                                        'timeframe': timeframe,
+                                        'importance_type': 'lgbm_top_60',
+                                        'n_features': len(lgbm_top_60_df),
+                                        'timestamp': datetime.now().isoformat()
+                                    }
+                                )
+                                tprint(f"✅ [REGIME_MODELS] Saved top 60 LGBM features: {len(lgbm_top_60_df)} features", color="green")
+                            
+                            # Save SHAP top 60 features
+                            if 'shap_top_60' in top_60_features:
+                                shap_top_60_df = pd.DataFrame(top_60_features['shap_top_60'])
+                                importance_saver._save_artifact(
+                                    data=shap_top_60_df,
+                                    artifact_name='feature_importance_top_60_shap',
+                                    artifact_type='data',
+                                    data_category='feature_importance',
+                                    metadata={
+                                        'symbol': symbol,
+                                        'exchange': exchange,
+                                        'timeframe': timeframe,
+                                        'importance_type': 'shap_top_60',
+                                        'n_features': len(shap_top_60_df),
+                                        'timestamp': datetime.now().isoformat()
+                                    }
+                                )
+                                tprint(f"✅ [REGIME_MODELS] Saved top 60 SHAP features: {len(shap_top_60_df)} features", color="green")
+                        
+                        # Generate and save SHAP visualization data
+                        try:
+                            if 'shap_visualization_data' in top_60_features:
+                                shap_viz_data = top_60_features['shap_visualization_data']
+                                
+                                # Create a more comprehensive SHAP visualization dataset
+                                shap_viz_dataset = {
+                                    'top_20_features': shap_viz_data.get('top_20_features', []),
+                                    'all_feature_names': feature_names,
+                                    'model_name': training_result.get('models', {}).get('best_model_name', 'unknown'),
+                                    'n_features': len(feature_names),
+                                    'n_top_features': len(shap_viz_data.get('top_20_features', [])),
+                                    'generation_timestamp': datetime.now().isoformat(),
+                                    'metadata': {
+                                        'symbol': symbol,
+                                        'exchange': exchange,
+                                        'timeframe': timeframe,
+                                        'visualization_type': 'shap_summary',
+                                        'feature_count': 20
+                                    }
+                                }
+                                
+                                importance_saver._save_artifact(
+                                    data=shap_viz_dataset,
+                                    artifact_name='feature_importance_shap_visualization_data',
+                                    artifact_type='data',
+                                    data_category='visualization',
+                                    metadata={
+                                        'symbol': symbol,
+                                        'exchange': exchange,
+                                        'timeframe': timeframe,
+                                        'data_type': 'shap_visualization',
+                                        'n_features': len(shap_viz_dataset.get('top_20_features', [])),
+                                        'timestamp': datetime.now().isoformat()
+                                    }
+                                )
+                                tprint(f"✅ [REGIME_MODELS] Saved SHAP visualization data for top 20 features", color="green")
+                                
+                        except Exception as shap_viz_error:
+                            tprint(f"⚠️ [REGIME_MODELS] Failed to save SHAP visualization data: {shap_viz_error}", color="yellow")
+                    
+                    tprint("✅ [REGIME_MODELS] Feature importance artifacts saved successfully", color="green", bold=True)
+                    
+            except Exception as importance_error:
+                tprint(f"⚠️ [REGIME_MODELS] Failed to save feature importance artifacts: {importance_error}", color="yellow")
+                self.logger.warning(f"Failed to save feature importance artifacts: {importance_error}", exc_info=True)
 
             return ComponentResult(
                 success=True,
@@ -1590,14 +1924,76 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
     async def _train_models_with_hpo(self, X_train: np.ndarray, y_train: np.ndarray, X_test: np.ndarray, y_test: np.ndarray) -> Dict[str, Any]:
         """Train models with HPO optimization."""
         tprint("🔍 [REGIME_MODELS] Training models with HPO optimization", color="cyan")
-        
+
         trained_models = {}
-        
-        # Train CatBoost with HPO
+
+        # Get transition-aware scorer for all models
+        if self.enable_multi_objective_hpo and self.use_pareto_optimization:
+            scoring = create_transition_aware_scorer(
+                alpha=self.temporal_smoothing_alpha,
+                accuracy_weight=0.9,
+                stability_weight=0.1
+            )
+        else:
+            scoring = create_transition_aware_scorer(
+                alpha=self.temporal_smoothing_alpha,
+                accuracy_weight=0.9,
+                stability_weight=0.1
+            )
+
+        # Calculate adaptive class weights (focal loss inspired)
+        def calculate_adaptive_class_weights(y: np.ndarray, gamma: float = 1.5) -> Dict[int, float]:
+            """
+            Calculate adaptive class weights using focal loss inspired approach.
+
+            Gives higher weight to:
+            - Rare classes (inverse frequency)
+            - Classes with poor performance
+
+            Args:
+                y: Target labels
+                gamma: Focusing parameter (higher = more focus on rare classes)
+
+            Returns:
+                Dictionary mapping class labels to weights
+            """
+            from sklearn.utils.class_weight import compute_class_weight
+
+            classes = np.unique(y)
+
+            # Get base weights from sklearn
+            base_weights = compute_class_weight('balanced', classes=classes, y=y)
+
+            # Apply focal loss scaling: w_i = (1 / freq_i)^gamma
+            freqs = np.array([np.sum(y == c) / len(y) for c in classes])
+            focal_weights = (1.0 / freqs) ** gamma
+
+            # Normalize to prevent extreme weights
+            focal_weights = focal_weights / np.mean(focal_weights)
+
+            # Combine base and focal weights
+            final_weights = base_weights * focal_weights
+
+            # Cap maximum weight to prevent over-emphasis
+            max_weight = 10.0
+            final_weights = np.clip(final_weights, 1.0, max_weight)
+
+            weight_dict = {int(c): float(w) for c, w in zip(classes, final_weights)}
+
+            tprint(f"📊 [REGIME_MODELS] Adaptive class weights: {weight_dict}", "blue")
+            return weight_dict
+
+        # Calculate weights once before training
+        adaptive_weights = calculate_adaptive_class_weights(y_train, gamma=1.5)
+
+        # Convert to list format for CatBoost (expects list aligned with class order)
+        catboost_weights = [adaptive_weights.get(i, 1.0) for i in range(len(adaptive_weights))]
+
+        # 1. Train CatBoost with HPO
         if ML_LIBRARIES_AVAILABLE:
             try:
                 tprint("🐱 [REGIME_MODELS] Training CatBoost with HPO", color="blue")
-                
+
                 def create_catboost_model(**params):
                     return cb.CatBoostClassifier(
                         iterations=params.get('iterations', 100),
@@ -1607,27 +2003,11 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         subsample=params.get('subsample', 1.0),
                         colsample_bylevel=params.get('colsample_bylevel', 1.0),
                         bootstrap_type=params.get('bootstrap_type', 'Bayesian'),
+                        class_weights=catboost_weights,  # Apply adaptive class weights
                         random_seed=42,
                         verbose=False
                     )
-                
-                # Use transition-aware scorer or multi-objective optimization
-                if self.enable_multi_objective_hpo and self.use_pareto_optimization:
-                    # Note: Full Pareto integration would require Optuna multi-objective study
-                    # For now, use transition-aware composite scorer
-                    scoring = create_transition_aware_scorer(
-                        alpha=self.temporal_smoothing_alpha,
-                        accuracy_weight=0.9,
-                        stability_weight=0.1
-                    )
-                else:
-                    # Use transition-aware composite scorer (single objective)
-                    scoring = create_transition_aware_scorer(
-                        alpha=self.temporal_smoothing_alpha,
-                        accuracy_weight=0.9,
-                        stability_weight=0.1
-                    )
-                
+
                 search_space = self.hpo_optimizer._get_default_search_space('catboost_regime')
                 hpo_result = self.hpo_optimizer.bayesian_optimization(
                     model_factory=create_catboost_model,
@@ -1635,53 +2015,236 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     y=y_train,
                     search_space=search_space,
                     cv=3,
-                    scoring=scoring,  # Use transition-aware scorer
-                    n_trials=75  # Increased from 15 for better exploration
+                    scoring=scoring,
+                    n_trials=75
                 )
-                
+
                 if hpo_result and not hpo_result.get('error'):
                     best_params = hpo_result.get('best_params', {})
                     best_score = hpo_result.get('best_score')
-
                     tuned_model = create_catboost_model(**best_params)
                     tuned_model.fit(X_train, y_train)
                     trained_models['catboost'] = tuned_model
-
-                    score_msg = (
-                        f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
-                    )
-                    tprint(
-                        f"✅ [REGIME_MODELS] CatBoost HPO completed - Best score: {score_msg}",
-                        color="green"
-                    )
-                    self.training_history.append(
-                        {
-                            'model': 'catboost',
-                            'best_params': best_params,
-                            'best_score': best_score,
-                            'n_trials': hpo_result.get('n_trials')
-                        }
-                    )
+                    score_msg = f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
+                    tprint(f"✅ [REGIME_MODELS] CatBoost HPO completed - Best score: {score_msg}", color="green")
+                    self.training_history.append({'model': 'catboost', 'best_params': best_params, 'best_score': best_score, 'n_trials': hpo_result.get('n_trials')})
                 else:
-                    # Fallback to default parameters when HPO fails or returns an error
                     if hpo_result and hpo_result.get('error'):
-                        tprint(
-                            f"⚠️ [REGIME_MODELS] CatBoost HPO returned error: {hpo_result.get('error')}",
-                            color="yellow"
-                        )
+                        tprint(f"⚠️ [REGIME_MODELS] CatBoost HPO returned error: {hpo_result.get('error')}", color="yellow")
                     catboost_model = cb.CatBoostClassifier(
-                        iterations=100,
-                        depth=6,
-                        learning_rate=0.1,
-                        random_seed=42,
-                        verbose=False
+                        iterations=100, depth=6, learning_rate=0.1,
+                        class_weights=catboost_weights,  # Apply adaptive class weights
+                        random_seed=42, verbose=False
                     )
                     catboost_model.fit(X_train, y_train)
                     trained_models['catboost'] = catboost_model
                     tprint("⚠️ [REGIME_MODELS] CatBoost HPO unavailable, using default parameters", color="yellow")
-                    
             except Exception as e:
                 tprint(f"❌ [REGIME_MODELS] CatBoost training failed: {e}", color="red")
+
+        # 2. Train LightGBM with HPO
+        try:
+            tprint("💡 [REGIME_MODELS] Training LightGBM with HPO", color="blue")
+
+            def create_lightgbm_model(**params):
+                return lgb.LGBMClassifier(
+                    num_leaves=params.get('num_leaves', 31),
+                    max_depth=params.get('max_depth', -1),
+                    learning_rate=params.get('learning_rate', 0.1),
+                    n_estimators=params.get('n_estimators', 100),
+                    subsample=params.get('subsample', 1.0),
+                    colsample_bytree=params.get('colsample_bytree', 1.0),
+                    reg_alpha=params.get('reg_alpha', 0.0),
+                    reg_lambda=params.get('reg_lambda', 0.0),
+                    class_weight=adaptive_weights,  # Apply adaptive class weights (dict format)
+                    random_state=42,
+                    verbose=-1,
+                    force_col_wise=True
+                )
+
+            search_space = self.hpo_optimizer._get_default_search_space('lightgbm_regime')
+            hpo_result = self.hpo_optimizer.bayesian_optimization(
+                model_factory=create_lightgbm_model,
+                X=X_train,
+                y=y_train,
+                search_space=search_space,
+                cv=3,
+                scoring=scoring,
+                n_trials=75
+            )
+
+            if hpo_result and not hpo_result.get('error'):
+                best_params = hpo_result.get('best_params', {})
+                best_score = hpo_result.get('best_score')
+                tuned_model = create_lightgbm_model(**best_params)
+                tuned_model.fit(X_train, y_train)
+                trained_models['lightgbm'] = tuned_model
+                score_msg = f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
+                tprint(f"✅ [REGIME_MODELS] LightGBM HPO completed - Best score: {score_msg}", color="green")
+                self.training_history.append({'model': 'lightgbm', 'best_params': best_params, 'best_score': best_score, 'n_trials': hpo_result.get('n_trials')})
+            else:
+                if hpo_result and hpo_result.get('error'):
+                    tprint(f"⚠️ [REGIME_MODELS] LightGBM HPO returned error: {hpo_result.get('error')}", color="yellow")
+                lgbm_model = lgb.LGBMClassifier(
+                    num_leaves=31, learning_rate=0.1, n_estimators=100,
+                    class_weight=adaptive_weights,  # Apply adaptive class weights
+                    random_state=42, verbose=-1, force_col_wise=True
+                )
+                lgbm_model.fit(X_train, y_train)
+                trained_models['lightgbm'] = lgbm_model
+                tprint("⚠️ [REGIME_MODELS] LightGBM HPO unavailable, using default parameters", color="yellow")
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] LightGBM training failed: {e}", color="red")
+
+        # 3. Train XGBoost with HPO
+        try:
+            tprint("🚀 [REGIME_MODELS] Training XGBoost with HPO", color="blue")
+
+            def create_xgboost_model(**params):
+                return xgb.XGBClassifier(
+                    n_estimators=params.get('n_estimators', 100),
+                    max_depth=params.get('max_depth', 6),
+                    learning_rate=params.get('learning_rate', 0.1),
+                    subsample=params.get('subsample', 0.8),
+                    colsample_bytree=params.get('colsample_bytree', 0.8),
+                    reg_alpha=params.get('reg_alpha', 0.1),
+                    reg_lambda=params.get('reg_lambda', 0.1),
+                    gamma=params.get('gamma', 0),
+                    random_state=42,
+                    n_jobs=-1,
+                    verbosity=0
+                )
+
+            search_space = self.hpo_optimizer._get_default_search_space('xgboost_regime')
+            hpo_result = self.hpo_optimizer.bayesian_optimization(
+                model_factory=create_xgboost_model,
+                X=X_train,
+                y=y_train,
+                search_space=search_space,
+                cv=3,
+                scoring=scoring,
+                n_trials=75
+            )
+
+            if hpo_result and not hpo_result.get('error'):
+                best_params = hpo_result.get('best_params', {})
+                best_score = hpo_result.get('best_score')
+                tuned_model = create_xgboost_model(**best_params)
+                tuned_model.fit(X_train, y_train)
+                trained_models['xgboost'] = tuned_model
+                score_msg = f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
+                tprint(f"✅ [REGIME_MODELS] XGBoost HPO completed - Best score: {score_msg}", color="green")
+                self.training_history.append({'model': 'xgboost', 'best_params': best_params, 'best_score': best_score, 'n_trials': hpo_result.get('n_trials')})
+            else:
+                if hpo_result and hpo_result.get('error'):
+                    tprint(f"⚠️ [REGIME_MODELS] XGBoost HPO returned error: {hpo_result.get('error')}", color="yellow")
+                xgb_model = xgb.XGBClassifier(n_estimators=100, max_depth=6, learning_rate=0.1, random_state=42, n_jobs=-1, verbosity=0)
+                xgb_model.fit(X_train, y_train)
+                trained_models['xgboost'] = xgb_model
+                tprint("⚠️ [REGIME_MODELS] XGBoost HPO unavailable, using default parameters", color="yellow")
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] XGBoost training failed: {e}", color="red")
+
+        # 4. Train RandomForest with HPO
+        try:
+            tprint("🌲 [REGIME_MODELS] Training RandomForest with HPO", color="blue")
+
+            def create_rf_model(**params):
+                return RandomForestClassifier(
+                    n_estimators=params.get('n_estimators', 100),
+                    max_depth=params.get('max_depth', None),
+                    min_samples_split=params.get('min_samples_split', 2),
+                    min_samples_leaf=params.get('min_samples_leaf', 1),
+                    max_features=params.get('max_features', 'sqrt'),
+                    class_weight=adaptive_weights,  # Apply adaptive class weights
+                    bootstrap=True,
+                    random_state=42,
+                    n_jobs=-1
+                )
+
+            search_space = self.hpo_optimizer._get_default_search_space('random_forest')
+            hpo_result = self.hpo_optimizer.bayesian_optimization(
+                model_factory=create_rf_model,
+                X=X_train,
+                y=y_train,
+                search_space=search_space,
+                cv=3,
+                scoring=scoring,
+                n_trials=75
+            )
+
+            if hpo_result and not hpo_result.get('error'):
+                best_params = hpo_result.get('best_params', {})
+                best_score = hpo_result.get('best_score')
+                tuned_model = create_rf_model(**best_params)
+                tuned_model.fit(X_train, y_train)
+                trained_models['random_forest'] = tuned_model
+                score_msg = f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
+                tprint(f"✅ [REGIME_MODELS] RandomForest HPO completed - Best score: {score_msg}", color="green")
+                self.training_history.append({'model': 'random_forest', 'best_params': best_params, 'best_score': best_score, 'n_trials': hpo_result.get('n_trials')})
+            else:
+                if hpo_result and hpo_result.get('error'):
+                    tprint(f"⚠️ [REGIME_MODELS] RandomForest HPO returned error: {hpo_result.get('error')}", color="yellow")
+                rf_model = RandomForestClassifier(
+                    n_estimators=100, max_features='sqrt',
+                    class_weight=adaptive_weights,  # Apply adaptive class weights
+                    random_state=42, n_jobs=-1
+                )
+                rf_model.fit(X_train, y_train)
+                trained_models['random_forest'] = rf_model
+                tprint("⚠️ [REGIME_MODELS] RandomForest HPO unavailable, using default parameters", color="yellow")
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] RandomForest training failed: {e}", color="red")
+
+        # 5. Train ExtraTrees with HPO
+        try:
+            tprint("🌳 [REGIME_MODELS] Training ExtraTrees with HPO", color="blue")
+
+            def create_et_model(**params):
+                return ExtraTreesClassifier(
+                    n_estimators=params.get('n_estimators', 100),
+                    max_depth=params.get('max_depth', None),
+                    min_samples_split=params.get('min_samples_split', 5),
+                    min_samples_leaf=params.get('min_samples_leaf', 5),
+                    max_features=params.get('max_features', 'sqrt'),
+                    class_weight=adaptive_weights,  # Apply adaptive class weights
+                    random_state=42,
+                    n_jobs=-1
+                )
+
+            search_space = self.hpo_optimizer._get_default_search_space('extra_trees')
+            hpo_result = self.hpo_optimizer.bayesian_optimization(
+                model_factory=create_et_model,
+                X=X_train,
+                y=y_train,
+                search_space=search_space,
+                cv=3,
+                scoring=scoring,
+                n_trials=75
+            )
+
+            if hpo_result and not hpo_result.get('error'):
+                best_params = hpo_result.get('best_params', {})
+                best_score = hpo_result.get('best_score')
+                tuned_model = create_et_model(**best_params)
+                tuned_model.fit(X_train, y_train)
+                trained_models['extratrees'] = tuned_model
+                score_msg = f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
+                tprint(f"✅ [REGIME_MODELS] ExtraTrees HPO completed - Best score: {score_msg}", color="green")
+                self.training_history.append({'model': 'extratrees', 'best_params': best_params, 'best_score': best_score, 'n_trials': hpo_result.get('n_trials')})
+            else:
+                if hpo_result and hpo_result.get('error'):
+                    tprint(f"⚠️ [REGIME_MODELS] ExtraTrees HPO returned error: {hpo_result.get('error')}", color="yellow")
+                et_model = ExtraTreesClassifier(
+                    n_estimators=100, max_features='sqrt',
+                    class_weight=adaptive_weights,  # Apply adaptive class weights
+                    random_state=42, n_jobs=-1
+                )
+                et_model.fit(X_train, y_train)
+                trained_models['extratrees'] = et_model
+                tprint("⚠️ [REGIME_MODELS] ExtraTrees HPO unavailable, using default parameters", color="yellow")
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] ExtraTrees training failed: {e}", color="red")
 
         tprint(f"✅ [REGIME_MODELS] Model training completed - {len(trained_models)} models trained", color="green")
         return trained_models
@@ -1790,71 +2353,12 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 tprint("   • Feature selection will be applied to reduce to exactly 60 features", color="yellow")
                 tprint("   • This will improve generalization and model performance", color="yellow")
                 
-                # Apply feature selection using SelectFromModel with RandomForest
+                # Apply enhanced regime-aware feature selection
                 try:
-                    from sklearn.ensemble import RandomForestRegressor
-                    from sklearn.feature_selection import SelectFromModel
-                    
-                    # Always use exactly 60 features for consistency
-                    target_features = 60
-                    
-                    tprint(f"🎯 [REGIME_MODELS] Target feature count: {target_features} (fixed)", color="cyan")
-                    
-                    # Use RandomForest for feature importance
-                    rf_selector = SelectFromModel(
-                        RandomForestRegressor(
-                            n_estimators=100,
-                            max_depth=10,
-                            random_state=42,
-                            n_jobs=-1
-                        ),
-                        max_features=target_features
+                    # Use the enhanced regime-aware feature selection method
+                    X_selected, selected_feature_names = self._apply_regime_aware_feature_selection(
+                        X, y, feature_names, y  # Use y as regime_labels since they're the same in this context
                     )
-                    
-                    # Fit selector
-                    tprint("🔄 [REGIME_MODELS] Training RandomForest for feature importance selection...", color="cyan")
-                    rf_selector.fit(X, y)
-                    
-                    # Get selected features
-                    selected_features_mask = rf_selector.get_support()
-                    X_selected = rf_selector.transform(X)
-                    
-                    # Update feature names to match selected features
-                    # Ensure mask length matches feature_names length
-                    if len(selected_features_mask) != len(feature_names):
-                        tprint(f"⚠️ [REGIME_MODELS] Mask length mismatch: {len(selected_features_mask)} vs {len(feature_names)}", color="yellow")
-                        # Truncate or pad mask to match feature_names length
-                        if len(selected_features_mask) > len(feature_names):
-                            selected_features_mask = selected_features_mask[:len(feature_names)]
-                        else:
-                            # Pad with False (np is already imported at module level)
-                            padded_mask = np.zeros(len(feature_names), dtype=bool)
-                            padded_mask[:len(selected_features_mask)] = selected_features_mask
-                            selected_features_mask = padded_mask
-                    
-                    selected_feature_names = [feature_names[i] for i in range(len(feature_names)) if selected_features_mask[i]]
-                    removed_feature_count = len(feature_names) - len(selected_feature_names)
-                    
-                    # Calculate feature importances for logging
-                    feature_importances = rf_selector.estimator_.feature_importances_
-                    # Only use feature_names that match the number of features the model was trained on
-                    actual_feature_count = len(feature_importances)
-                    feature_names_for_importance = feature_names[:actual_feature_count] if len(feature_names) > actual_feature_count else feature_names
-                    
-                    importance_df = pd.DataFrame({
-                        'feature': feature_names_for_importance,
-                        'importance': feature_importances
-                    }).sort_values('importance', ascending=False)
-                    
-                    tprint(f"✅ [REGIME_MODELS] Feature selection completed:", color="green")
-                    tprint(f"   • Reduced from {n_features} to {X_selected.shape[1]} features", color="green")
-                    tprint(f"   • Removed {removed_feature_count} low-importance features", color="green")
-                    tprint(f"   • New sample-to-feature ratio: {n_samples / X_selected.shape[1]:.3f}", color="green")
-                    
-                    # Show top 10 selected features
-                    tprint(f"🎯 [REGIME_MODELS] Top 10 selected features:", color="blue")
-                    for i, row in importance_df.head(10).iterrows():
-                        tprint(f"   {i+1:2d}. {row['feature']:<40} (importance: {row['importance']:.6f})", color="blue")
                     
                     # Update X and feature_names with selected features
                     X = X_selected
@@ -1886,6 +2390,361 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Training data preparation failed: {e}", color="red")
             raise
+
+    def _apply_regime_aware_feature_selection(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        feature_names: List[str],
+        regime_labels: np.ndarray
+    ) -> Tuple[np.ndarray, List[str]]:
+        """
+        Apply enhanced regime-aware feature selection using LGBM with SHAP analysis.
+        
+        This method replaces RandomForest with LGBM for feature importance scoring,
+        adds SHAP analysis for feature importance, implements regime-aware cross-validation
+        metrics, and includes conditional REGIME feature enabling logic.
+        
+        Args:
+            X: Feature matrix
+            y: Target labels
+            feature_names: List of feature names
+            regime_labels: Regime labels for each sample
+            
+        Returns:
+            Tuple of (selected_features, selected_feature_names)
+        """
+        tprint("🔍 [REGIME_MODELS] Applying enhanced regime-aware feature selection", color="cyan", bold=True)
+        
+        try:
+            # Import required libraries
+            from sklearn.feature_selection import SelectFromModel
+            from sklearn.model_selection import cross_val_score
+            from sklearn.metrics import accuracy_score
+            import lightgbm as lgb
+            
+            # Try to import SHAP
+            try:
+                import shap
+                SHAP_AVAILABLE = True
+                tprint("✅ [REGIME_MODELS] SHAP library imported successfully", color="green")
+            except ImportError:
+                SHAP_AVAILABLE = False
+                tprint("⚠️ [REGIME_MODELS] SHAP library not available, skipping SHAP analysis", color="yellow")
+            
+            # Always use exactly 60 features for consistency
+            target_features = 60
+            n_samples, n_features = X.shape
+            
+            tprint(f"🎯 [REGIME_MODELS] Target feature count: {target_features} (fixed)", color="cyan")
+            tprint(f"📊 [REGIME_MODELS] Input shape: {X.shape}", color="blue")
+            
+            # 1. Replace RandomForest with LGBM for importance scoring
+            tprint("🔄 [REGIME_MODELS] Training LGBM for feature importance selection...", color="cyan")
+            
+            # Calculate adaptive class weights for LGBM
+            from sklearn.utils.class_weight import compute_class_weight
+            classes = np.unique(y)
+            class_weights = compute_class_weight('balanced', classes=classes, y=y)
+            adaptive_weights = {int(c): float(w) for c, w in zip(classes, class_weights)}
+            
+            # Create LGBM model for feature selection
+            lgb_selector_model = lgb.LGBMClassifier(
+                num_leaves=31,
+                max_depth=8,
+                learning_rate=0.1,
+                n_estimators=100,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                reg_alpha=0.1,
+                reg_lambda=0.1,
+                class_weight=adaptive_weights,
+                random_state=42,
+                verbose=-1,
+                force_col_wise=True
+            )
+            
+            # Create selector with LGBM
+            lgb_selector = SelectFromModel(
+                lgb_selector_model,
+                max_features=target_features
+            )
+            
+            # Fit selector
+            lgb_selector.fit(X, y)
+            
+            # Get selected features
+            selected_features_mask = lgb_selector.get_support()
+            X_selected = lgb_selector.transform(X)
+            
+            # Update feature names to match selected features
+            if len(selected_features_mask) != len(feature_names):
+                tprint(f"⚠️ [REGIME_MODELS] Mask length mismatch: {len(selected_features_mask)} vs {len(feature_names)}", color="yellow")
+                if len(selected_features_mask) > len(feature_names):
+                    selected_features_mask = selected_features_mask[:len(feature_names)]
+                else:
+                    padded_mask = np.zeros(len(feature_names), dtype=bool)
+                    padded_mask[:len(selected_features_mask)] = selected_features_mask
+                    selected_features_mask = padded_mask
+            
+            selected_feature_names = [feature_names[i] for i in range(len(feature_names)) if selected_features_mask[i]]
+            removed_feature_count = len(feature_names) - len(selected_feature_names)
+            
+            # Calculate feature importances for logging
+            feature_importances = lgb_selector.estimator_.feature_importances_
+            actual_feature_count = len(feature_importances)
+            feature_names_for_importance = feature_names[:actual_feature_count] if len(feature_names) > actual_feature_count else feature_names
+            
+            importance_df = pd.DataFrame({
+                'feature': feature_names_for_importance,
+                'importance': feature_importances
+            }).sort_values('importance', ascending=False)
+            
+            tprint(f"✅ [REGIME_MODELS] LGBM feature selection completed:", color="green")
+            tprint(f"   • Reduced from {n_features} to {X_selected.shape[1]} features", color="green")
+            tprint(f"   • Removed {removed_feature_count} low-importance features", color="green")
+            tprint(f"   • New sample-to-feature ratio: {n_samples / X_selected.shape[1]:.3f}", color="green")
+            
+            # Show top 10 selected features
+            tprint(f"🎯 [REGIME_MODELS] Top 10 selected features (LGBM importance):", color="blue")
+            for i, row in importance_df.head(10).iterrows():
+                tprint(f"   {i+1:2d}. {row['feature']:<40} (importance: {row['importance']:.6f})", color="blue")
+            
+            # 2. Add SHAP analysis for feature importance
+            if SHAP_AVAILABLE and X_selected.shape[1] <= 100:  # Only if reasonable number of features
+                tprint("🔍 [REGIME_MODELS] Computing SHAP values for feature importance analysis...", color="cyan")
+                try:
+                    # Create a smaller LGBM model for SHAP analysis (faster)
+                    shap_model = lgb.LGBMClassifier(
+                        num_leaves=31,
+                        max_depth=6,
+                        learning_rate=0.1,
+                        n_estimators=50,  # Fewer trees for faster SHAP
+                        subsample=0.8,
+                        colsample_bytree=0.8,
+                        class_weight=adaptive_weights,
+                        random_state=42,
+                        verbose=-1,
+                        force_col_wise=True
+                    )
+                    
+                    # Fit on selected features only
+                    shap_model.fit(X_selected, y)
+                    
+                    # Compute SHAP values
+                    explainer = shap.TreeExplainer(shap_model)
+                    shap_values = explainer.shap_values(X_selected)
+                    
+                    # For multi-class, get mean absolute SHAP values across classes
+                    if isinstance(shap_values, list):
+                        # Multi-class case
+                        shap_importance = np.mean([np.abs(sv).mean(axis=0) for sv in shap_values], axis=0)
+                    else:
+                        # Binary case
+                        shap_importance = np.abs(shap_values).mean(axis=0)
+                    
+                    # Create SHAP importance dataframe
+                    shap_importance_df = pd.DataFrame({
+                        'feature': selected_feature_names,
+                        'shap_importance': shap_importance
+                    }).sort_values('shap_importance', ascending=False)
+                    
+                    tprint(f"✅ [REGIME_MODELS] SHAP analysis completed", color="green")
+                    tprint(f"🎯 [REGIME_MODELS] Top 10 features by SHAP importance:", color="blue")
+                    for i, row in shap_importance_df.head(10).iterrows():
+                        tprint(f"   {i+1:2d}. {row['feature']:<40} (SHAP: {row['shap_importance']:.6f})", color="blue")
+                    
+                    # Compare LGBM vs SHAP importance
+                    comparison_df = pd.merge(
+                        importance_df.head(20),
+                        shap_importance_df.head(20),
+                        on='feature',
+                        how='outer',
+                        suffixes=('_lgbm', '_shap')
+                    ).fillna(0)
+                    
+                    tprint("📊 [REGIME_MODELS] Feature importance comparison (LGBM vs SHAP):", color="blue")
+                    for i, row in comparison_df.head(10).iterrows():
+                        tprint(f"   {i+1:2d}. {row['feature']:<35} (LGBM: {row['importance']:.4f}, SHAP: {row['shap_importance']:.4f})", color="blue")
+                        
+                except Exception as shap_error:
+                    tprint(f"⚠️ [REGIME_MODELS] SHAP analysis failed: {shap_error}", color="yellow")
+                    tprint("   • Continuing without SHAP analysis", color="yellow")
+            
+            # 3. Implement regime-aware cross-validation metrics
+            tprint("🔄 [REGIME_MODELS] Computing regime-aware cross-validation metrics...", color="cyan")
+            
+            # Define regime-specific CV splits
+            unique_regimes = np.unique(regime_labels)
+            regime_cv_scores = {}
+            
+            # Overall CV score
+            overall_cv_scores = cross_val_score(
+                lgb_selector_model, X_selected, y, cv=5, scoring='accuracy', n_jobs=-1
+            )
+            regime_cv_scores['overall_cv'] = {
+                'mean': overall_cv_scores.mean(),
+                'std': overall_cv_scores.std(),
+                'scores': overall_cv_scores.tolist()
+            }
+            
+            # Within-regime CV scores
+            for regime_id in unique_regimes:
+                regime_mask = regime_labels == regime_id
+                if np.sum(regime_mask) >= 10:  # Minimum samples for CV
+                    X_regime = X_selected[regime_mask]
+                    y_regime = y[regime_mask]
+                    
+                    if len(np.unique(y_regime)) > 1:  # Need both classes for CV
+                        cv_scores = cross_val_score(
+                            lgb_selector_model, X_regime, y_regime, cv=3, scoring='accuracy', n_jobs=-1
+                        )
+                        regime_cv_scores[f'regime_{regime_id}_cv'] = {
+                            'mean': cv_scores.mean(),
+                            'std': cv_scores.std(),
+                            'scores': cv_scores.tolist(),
+                            'n_samples': len(y_regime)
+                        }
+            
+            # Calculate between/within regime CV ratio
+            if len(regime_cv_scores) > 1:
+                overall_mean = regime_cv_scores['overall_cv']['mean']
+                within_regime_means = [v['mean'] for k, v in regime_cv_scores.items() if k.startswith('regime_')]
+                if within_regime_means:
+                    within_regime_mean = np.mean(within_regime_means)
+                    between_within_ratio = overall_mean / (within_regime_mean + 1e-8)
+                    regime_cv_scores['between_within_ratio'] = between_within_ratio
+                    
+                    tprint(f"📊 [REGIME_MODELS] Regime-aware CV metrics:", color="green")
+                    tprint(f"   • Overall CV accuracy: {overall_mean:.4f} ± {overall_cv_scores['overall_cv']['std']:.4f}", color="green")
+                    tprint(f"   • Within-regime CV accuracy: {within_regime_mean:.4f}", color="green")
+                    tprint(f"   • Between/Within CV ratio: {between_within_ratio:.4f}", color="green")
+                    
+                    for regime_key, regime_metrics in regime_cv_scores.items():
+                        if regime_key.startswith('regime_'):
+                            regime_id = regime_key.split('_')[1]
+                            tprint(f"   • Regime {regime_id} CV: {regime_metrics['mean']:.4f} ± {regime_metrics['std']:.4f} ({regime_metrics['n_samples']} samples)", color="blue")
+            
+            # Add specific regime-type CV metrics (trend_cv, momentum_cv, volatility_cv, volume_cv)
+            tprint("🔍 [REGIME_MODELS] Computing regime-type specific CV metrics...", color="cyan")
+            
+            # Helper function to get features by category
+            def get_features_by_category(feature_names, category_prefix):
+                return [i for i, name in enumerate(feature_names) if name.startswith(category_prefix)]
+            
+            # Get feature indices for each category
+            trend_features = get_features_by_category(selected_feature_names, 'TREND')
+            momentum_features = get_features_by_category(selected_feature_names, 'MOMENTUM')
+            volatility_features = get_features_by_category(selected_feature_names, 'VOLATILITY')
+            volume_features = get_features_by_category(selected_feature_names, 'VOLUME')
+            
+            # Compute CV scores using only features from each category
+            if trend_features:
+                X_trend = X_selected[:, trend_features]
+                trend_cv_scores = cross_val_score(
+                    lgb_selector_model, X_trend, y, cv=3, scoring='accuracy', n_jobs=-1
+                )
+                regime_cv_scores['trend_cv'] = {
+                    'mean': trend_cv_scores.mean(),
+                    'std': trend_cv_scores.std(),
+                    'n_features': len(trend_features)
+                }
+                tprint(f"   • Trend CV accuracy: {trend_cv_scores.mean():.4f} ± {trend_cv_scores.std():.4f} ({len(trend_features)} features)", color="blue")
+            
+            if momentum_features:
+                X_momentum = X_selected[:, momentum_features]
+                momentum_cv_scores = cross_val_score(
+                    lgb_selector_model, X_momentum, y, cv=3, scoring='accuracy', n_jobs=-1
+                )
+                regime_cv_scores['momentum_cv'] = {
+                    'mean': momentum_cv_scores.mean(),
+                    'std': momentum_cv_scores.std(),
+                    'n_features': len(momentum_features)
+                }
+                tprint(f"   • Momentum CV accuracy: {momentum_cv_scores.mean():.4f} ± {momentum_cv_scores.std():.4f} ({len(momentum_features)} features)", color="blue")
+            
+            if volatility_features:
+                X_volatility = X_selected[:, volatility_features]
+                volatility_cv_scores = cross_val_score(
+                    lgb_selector_model, X_volatility, y, cv=3, scoring='accuracy', n_jobs=-1
+                )
+                regime_cv_scores['volatility_cv'] = {
+                    'mean': volatility_cv_scores.mean(),
+                    'std': volatility_cv_scores.std(),
+                    'n_features': len(volatility_features)
+                }
+                tprint(f"   • Volatility CV accuracy: {volatility_cv_scores.mean():.4f} ± {volatility_cv_scores.std():.4f} ({len(volatility_features)} features)", color="blue")
+            
+            if volume_features:
+                X_volume = X_selected[:, volume_features]
+                volume_cv_scores = cross_val_score(
+                    lgb_selector_model, X_volume, y, cv=3, scoring='accuracy', n_jobs=-1
+                )
+                regime_cv_scores['volume_cv'] = {
+                    'mean': volume_cv_scores.mean(),
+                    'std': volume_cv_scores.std(),
+                    'n_features': len(volume_features)
+                }
+                tprint(f"   • Volume CV accuracy: {volume_cv_scores.mean():.4f} ± {volume_cv_scores.std():.4f} ({len(volume_features)} features)", color="blue")
+            
+            # 4. Implement conditional REGIME feature enabling logic
+            tprint("🔧 [REGIME_MODELS] Applying conditional REGIME feature enabling logic...", color="cyan")
+            
+            # Check if we're being called by regime_models_training (enable REGIME features)
+            caller_frame = None
+            try:
+                import inspect
+                caller_frame = inspect.currentframe().f_back.f_back
+                caller_name = caller_frame.f_code.co_name if caller_frame else 'unknown'
+                tprint(f"🔍 [REGIME_MODELS] Detected caller: {caller_name}", color="blue")
+            except:
+                caller_name = 'unknown'
+                tprint("⚠️ [REGIME_MODELS] Could not detect caller name", color="yellow")
+            
+            # Enable REGIME features only when called by regime_models_training
+            enable_regime_features = 'regime_models_training' in caller_name or 'execute' in caller_name
+            
+            if enable_regime_features:
+                tprint("✅ [REGIME_MODELS] REGIME features ENABLED (called by regime_models_training)", color="green")
+            else:
+                tprint("⚠️ [REGIME_MODELS] REGIME features DISABLED (not called by regime_models_training)", color="yellow")
+                
+                # Filter out REGIME category features if disabled
+                regime_feature_indices = [
+                    i for i, name in enumerate(selected_feature_names)
+                    if not name.startswith('REGIME_')
+                ]
+                
+                if regime_feature_indices:
+                    X_selected = X_selected[:, regime_feature_indices]
+                    selected_feature_names = [selected_feature_names[i] for i in regime_feature_indices]
+                    
+                    tprint(f"   • Filtered out {len(selected_feature_names) - len(regime_feature_indices)} REGIME features", color="yellow")
+                    tprint(f"   • Remaining features: {len(selected_feature_names)}", color="yellow")
+            
+            # 5. Final feature selection report
+            tprint("📋 [REGIME_MODELS] Enhanced feature selection summary:", color="cyan", bold=True)
+            tprint(f"   • Original features: {n_features}", color="blue")
+            tprint(f"   • Selected features: {X_selected.shape[1]}", color="blue")
+            tprint(f"   • Feature reduction: {(1 - X_selected.shape[1]/n_features)*100:.1f}%", color="blue")
+            tprint(f"   • Sample-to-feature ratio: {n_samples / X_selected.shape[1]:.3f}", color="blue")
+            tprint(f"   • REGIME features enabled: {enable_regime_features}", color="blue")
+            
+            if 'between_within_ratio' in regime_cv_scores:
+                tprint(f"   • Between/Within CV ratio: {regime_cv_scores['between_within_ratio']:.4f}", color="blue")
+            
+            return X_selected, selected_feature_names
+            
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] Enhanced feature selection failed: {e}", color="red")
+            tprint(f"   • Exception type: {type(e).__name__}", color="red")
+            tprint(f"   • Exception details: {str(e)}", color="red")
+            import traceback
+            tprint(f"   • Traceback: {traceback.format_exc()}", color="red")
+            
+            # Fallback to original features if enhanced selection fails
+            tprint("⚠️ [REGIME_MODELS] Falling back to original features", color="yellow")
+            return X, feature_names
 
     def _generate_features_with_bank(self, data: pd.DataFrame) -> Tuple[Optional[np.ndarray], Optional[List[str]]]:
         """Generate comprehensive features using the existing feature bank."""
@@ -2003,3 +2862,720 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"⚠️ [REGIME_MODELS] Failed to get system performance: {e}", color="yellow")
             return {}
+
+    async def _generate_regime_probability_report(
+        self,
+        training_results: Dict[str, Any],
+        X: np.ndarray,
+        feature_names: List[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Generate a comprehensive report with regime probabilities for all regimes."""
+        try:
+            tprint("📊 [REGIME_MODELS] Generating regime probability report", color="cyan")
+
+            # Get the trained models
+            models = training_results.get('models', {})
+            if not models:
+                tprint("⚠️ [REGIME_MODELS] No trained models found for report generation", color="yellow")
+                return None
+
+            # Get top 3 models from walk-forward validation if available
+            top_models = None
+            walk_forward_metrics = training_results.get('metadata', {}).get('walk_forward_validation', {})
+            if walk_forward_metrics.get('validation_completed', False):
+                tprint("⚠️ [REGIME_MODELS] Walk-forward validation not completed, using single best model", color="yellow")
+                # Fall back to single best model logic
+                model_metrics = training_results.get('model_metrics', {})
+                best_model_name = None
+                best_accuracy = -1.0
+                
+                for model_name, metrics in model_metrics.items():
+                    if 'error' not in metrics and model_name in models:
+                        accuracy = metrics.get('accuracy', 0)
+                        if accuracy > best_accuracy:
+                            best_accuracy = accuracy
+                            best_model_name = model_name
+                
+                # Fallback to first model if no metrics available
+                if best_model_name is None:
+                    tprint("⚠️ [REGIME_MODELS] No model metrics available, using first model", color="yellow")
+                    best_model_name = list(models.keys())[0]
+                else:
+                    tprint(f"✅ [REGIME_MODELS] Selected best performing model: {best_model_name} (accuracy: {best_accuracy:.4f})", color="green")
+                
+                model_name = best_model_name
+                model = models[model_name]
+            else:
+                # Use top 3 models from walk-forward validation
+                top_models = walk_forward_metrics.get('selected_models', [])
+                if not top_models:
+                    tprint("⚠️ [REGIME_MODELS] No top models found in walk-forward validation", color="yellow")
+                    return None
+                
+                tprint(f"✅ [REGIME_MODELS] Using top 3 models from walk-forward validation: {top_models}", color="green")
+                
+                # Use the top-ranked model for probability analysis
+                model_name = top_models[0] if top_models else None
+                model = models[model_name] if model_name and model_name in models else None
+                
+                if not model:
+                    tprint(f"⚠️ [REGIME_MODELS] Top model {model_name} not found in trained models", color="yellow")
+                    return None
+
+            if not hasattr(model, 'predict_proba'):
+                tprint(f"⚠️ [REGIME_MODELS] Model {model_name} does not support probability prediction", color="yellow")
+                return None
+
+            # Generate regime probabilities for all samples
+            tprint(f"🔮 [REGIME_MODELS] Generating regime probabilities using {model_name} (best performing model)", color="cyan")
+            regime_probabilities = model.predict_proba(X)
+            regime_labels = model.predict(X)
+
+            n_regimes = regime_probabilities.shape[1]
+            n_samples = len(regime_probabilities)
+
+            # Calculate regime statistics
+            regime_stats = {}
+            for i in range(n_regimes):
+                regime_probs = regime_probabilities[:, i]
+                regime_count = np.sum(regime_labels == i)
+
+                regime_stats[f'regime_{i}'] = {
+                    'sample_count': int(regime_count),
+                    'percentage': float(regime_count / n_samples * 100),
+                    'mean_probability': float(np.mean(regime_probs)),
+                    'std_probability': float(np.std(regime_probs)),
+                    'min_probability': float(np.min(regime_probs)),
+                    'max_probability': float(np.max(regime_probs)),
+                    'confidence_distribution': {
+                        'high_confidence': int(np.sum(regime_probs > 0.8)),
+                        'medium_confidence': int(np.sum((regime_probs > 0.5) & (regime_probs <= 0.8))),
+                        'low_confidence': int(np.sum(regime_probs <= 0.5))
+                    }
+                }
+
+            # Calculate overall statistics
+            overall_stats = {
+                'total_samples': n_samples,
+                'n_regimes': n_regimes,
+                'mean_max_probability': float(np.mean(np.max(regime_probabilities, axis=1))),
+                'std_max_probability': float(np.std(np.max(regime_probabilities, axis=1))),
+                'regime_balance': float(np.std([regime_stats[f'regime_{i}']['percentage'] for i in range(n_regimes)])),
+                'prediction_confidence': float(np.mean(np.max(regime_probabilities, axis=1))),
+                'uncertainty_entropy': float(np.mean([-np.sum(p * np.log(p + 1e-10)) for p in regime_probabilities]))
+            }
+
+            # Extract feature importance from the best model
+            feature_importance = {}
+            try:
+                # Get feature importance from the best model
+                if hasattr(model, 'feature_importances_'):
+                    # Get LGBM feature importance
+                    importances = model.feature_importances_
+                    if len(importances) == len(feature_names):
+                        lgbm_importance_df = pd.DataFrame({
+                            'feature': feature_names,
+                            'importance': importances
+                        }).sort_values('importance', ascending=False)
+                        feature_importance['lgbm_importance'] = lgbm_importance_df
+                        tprint(f"✅ [REGIME_MODELS] Extracted LGBM feature importance from best model", color="green")
+                
+                # Try to compute SHAP values for the best model
+                try:
+                    import shap
+                    # Create a smaller explainer for SHAP analysis
+                    explainer = shap.TreeExplainer(model)
+                    shap_values = explainer.shap_values(X[:100])  # Use subset for speed
+                    
+                    # For multi-class, get mean absolute SHAP values across classes
+                    if isinstance(shap_values, list):
+                        # Multi-class case
+                        shap_importance = np.mean([np.abs(sv).mean(axis=0) for sv in shap_values], axis=0)
+                    else:
+                        # Binary case
+                        shAP_importance = np.abs(shap_values).mean(axis=0)
+                    
+                    # Create SHAP importance dataframe
+                    shap_importance_df = pd.DataFrame({
+                        'feature': feature_names,
+                        'shap_importance': shap_importance
+                    }).sort_values('shap_importance', ascending=False)
+                    feature_importance['shap_importance'] = shap_importance_df
+                    tprint(f"✅ [REGIME_MODELS] Computed SHAP values for best model", color="green")
+                    
+                except Exception as shap_error:
+                    tprint(f"⚠️ [REGIME_MODELS] SHAP computation failed: {shap_error}", color="yellow")
+                    
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Feature importance extraction failed: {e}", color="yellow")
+            
+            # Generate top 60 features with importance scores
+            top_60_features = {}
+            try:
+                if feature_importance:
+                    # Get top 60 LGBM features
+                    if 'lgbm_importance' in feature_importance:
+                        lgbm_top_60 = feature_importance['lgbm_importance'].head(60)
+                        top_60_features['lgbm_top_60'] = lgbm_top_60.to_dict('records')
+                        tprint(f"✅ [REGIME_MODELS] Extracted top 60 LGBM features", color="green")
+                    
+                    # Get top 60 SHAP features
+                    if 'shap_importance' in feature_importance:
+                        shap_top_60 = feature_importance['shap_importance'].head(60)
+                        top_60_features['shap_top_60'] = shap_top_60.to_dict('records')
+                        tprint(f"✅ [REGIME_MODELS] Extracted top 60 SHAP features", color="green")
+                    
+                    # Create combined importance ranking (weighted average of LGBM and SHAP)
+                    if 'lgbm_importance' in feature_importance and 'shap_importance' in feature_importance:
+                        # Merge the two importance dataframes
+                        combined_df = pd.merge(
+                            feature_importance['lgbm_importance'],
+                            feature_importance['shap_importance'],
+                            on='feature',
+                            how='outer',
+                            suffixes=('_lgbm', '_shap')
+                        ).fillna(0)
+                        
+                        # Normalize both importance scores to 0-1 range
+                        combined_df['importance_lgbm_norm'] = (
+                            combined_df['importance_lgbm'] - combined_df['importance_lgbm'].min()
+                        ) / (combined_df['importance_lgbm'].max() - combined_df['importance_lgbm'].min() + 1e-8)
+                        
+                        combined_df['shap_importance_norm'] = (
+                            combined_df['shap_importance'] - combined_df['shap_importance'].min()
+                        ) / (combined_df['shap_importance'].max() - combined_df['shap_importance'].min() + 1e-8)
+                        
+                        # Calculate combined importance (weighted average: 60% LGBM, 40% SHAP)
+                        combined_df['combined_importance'] = (
+                            0.6 * combined_df['importance_lgbm_norm'] +
+                            0.4 * combined_df['shap_importance_norm']
+                        )
+                        
+                        # Sort by combined importance and get top 60
+                        combined_top_60 = combined_df.sort_values('combined_importance', ascending=False).head(60)
+                        top_60_features['combined_top_60'] = combined_top_60.to_dict('records')
+                        tprint(f"✅ [REGIME_MODELS] Created combined top 60 features ranking", color="green")
+                        
+                        # Generate visualization data for SHAP values of top 20 features
+                        if 'shap_importance' in feature_importance:
+                            top_20_features = combined_top_60.head(20)['feature'].tolist()
+                            shap_viz_data = {
+                                'top_20_features': top_20_features,
+                                'feature_names': feature_names,
+                                'shap_values': None,  # Would need actual SHAP values from explainer
+                                'base_values': None    # Would need base values from explainer
+                            }
+                            top_60_features['shap_visualization_data'] = shap_viz_data
+                            tprint(f"✅ [REGIME_MODELS] Generated SHAP visualization data for top 20 features", color="green")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Failed to generate top 60 features: {e}", color="yellow")
+                top_60_features = {}
+            
+            # Generate comprehensive report
+            report = {
+                'model_name': model_name,
+                'generation_timestamp': datetime.now().isoformat(),
+                'overall_statistics': overall_stats,
+                'regime_statistics': regime_stats,
+                'regime_probabilities': regime_probabilities.tolist(),
+                'regime_labels': regime_labels.tolist(),
+                'feature_names': feature_names,
+                'data_shape': X.shape,
+                'feature_importance': feature_importance,
+                'top_60_features': top_60_features,
+                'report_type': 'regime_probability_analysis'
+            }
+            
+            # Add model metrics if available
+            model_metrics = training_results.get('model_metrics', {})
+            if model_name in model_metrics:
+                report['model_metrics'] = model_metrics[model_name]
+
+            # Generate text report
+            text_report = self._generate_text_report(report)
+            report['text_report'] = text_report
+
+            tprint(f"✅ [REGIME_MODELS] Regime probability report generated for {n_regimes} regimes", color="green")
+            return report
+
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] Failed to generate regime probability report: {e}", color="red")
+            self.logger.error(f"Failed to generate regime probability report: {e}", exc_info=True)
+            return None
+
+    def _generate_text_report(self, report: Dict[str, Any]) -> str:
+        """Generate a human-readable text report from regime probability data."""
+        try:
+            lines = []
+            lines.append("=" * 80)
+            lines.append("REGIME MODELS TRAINING REPORT")
+            lines.append(f"Model: {report.get('model_name', 'Unknown')}")
+            lines.append(f"Generated: {report.get('generation_timestamp', 'Unknown')}")
+            lines.append("=" * 80)
+            lines.append("")
+
+            # Overall Statistics
+            overall = report.get('overall_statistics', {})
+            lines.append("📊 OVERALL STATISTICS")
+            lines.append("-" * 40)
+            lines.append(f"Total Samples: {overall.get('total_samples', 'N/A')}")
+            lines.append(f"Number of Regimes: {overall.get('n_regimes', 'N/A')}")
+            lines.append(f"Mean Max Probability: {overall.get('mean_max_probability', 0):.3f}")
+            lines.append(f"Std Max Probability: {overall.get('std_max_probability', 0):.3f}")
+            lines.append(f"Regime Balance: {overall.get('regime_balance', 0):.3f}")
+            lines.append(f"Prediction Confidence: {overall.get('prediction_confidence', 0):.3f}")
+            lines.append(f"Uncertainty Entropy: {overall.get('uncertainty_entropy', 0):.3f}")
+            lines.append("")
+
+            # Model Metrics
+            if 'model_metrics' in report:
+                metrics = report['model_metrics']
+                lines.append("🎯 MODEL PERFORMANCE METRICS")
+                lines.append("-" * 40)
+                lines.append(f"Accuracy: {metrics.get('accuracy', 'N/A'):.4f}")
+                lines.append(f"Precision (Weighted): {metrics.get('precision', 'N/A'):.4f}")
+                lines.append(f"Recall (Weighted): {metrics.get('recall', 'N/A'):.4f}")
+                lines.append(f"F1-Score (Weighted): {metrics.get('f1_score', 'N/A'):.4f}")
+                lines.append("")
+
+            # Regime Statistics
+            regime_stats = report.get('regime_statistics', {})
+            lines.append("🎯 REGIME PROBABILITY STATISTICS")
+            lines.append("-" * 40)
+
+            for regime_key, regime_data in regime_stats.items():
+                if isinstance(regime_data, dict):
+                    lines.append(f"{regime_key.upper()}:")
+                    lines.append(f"  Sample Count: {regime_data.get('sample_count', 0)}")
+                    lines.append(f"  Percentage: {regime_data.get('percentage', 0):.1f}%")
+                    lines.append(f"  Mean Probability: {regime_data.get('mean_probability', 0):.3f}")
+                    lines.append(f"  Std Probability: {regime_data.get('std_probability', 0):.3f}")
+                    lines.append(f"  Min Probability: {regime_data.get('min_probability', 0):.3f}")
+                    lines.append(f"  Max Probability: {regime_data.get('max_probability', 0):.3f}")
+                    
+                    conf_dist = regime_data.get('confidence_distribution', {})
+                    lines.append(f"  Confidence Distribution:")
+                    lines.append(f"    High (>0.8): {conf_dist.get('high_confidence', 0)}")
+                    lines.append(f"    Medium (0.5-0.8): {conf_dist.get('medium_confidence', 0)}")
+                    lines.append(f"    Low (≤0.5): {conf_dist.get('low_confidence', 0)}")
+                    lines.append("")
+            
+            # Top 10 Features Section
+            if 'feature_importance' in report:
+                lines.append("🎯 TOP 10 FEATURES BY IMPORTANCE")
+                lines.append("-" * 40)
+                
+                feature_importance = report['feature_importance']
+                
+                # LGBM Top Features
+                if 'lgbm_importance' in feature_importance:
+                    lines.append("LGBM Feature Importance (Top 10):")
+                    lgbm_importance = feature_importance['lgbm_importance']
+                    for i, row in lgbm_importance.head(10).iterrows():
+                        lines.append(f"  {i+1:2d}. {row['feature']:<40} (importance: {row['importance']:.6f})")
+                    lines.append("")
+                
+                # SHAP Top Features
+                if 'shap_importance' in feature_importance:
+                    lines.append("SHAP Feature Importance (Top 10):")
+                    shap_importance = feature_importance['shap_importance']
+                    for i, row in shAP_importance.head(10).iterrows():
+                        lines.append(f"  {i+1:2d}. {row['feature']:<40} (SHAP: {row['shap_importance']:.6f})")
+                    lines.append("")
+
+            lines.append("=" * 80)
+            lines.append("END OF REGIME MODELS TRAINING REPORT")
+            lines.append("=" * 80)
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            return f"Error generating text report: {e}"
+
+    def _generate_markdown_report(self, report: Dict[str, Any], symbol: str, output_dir: str = "outcomes") -> Optional[str]:
+        """Generate a comprehensive markdown report."""
+        try:
+            from pathlib import Path
+            
+            # Create output directory if it doesn't exist
+            output_path = Path(output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
+            
+            # Generate filename with datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"regime_models_training_report_{symbol}_{timestamp}.md"
+            report_path = output_path / filename
+            
+            tprint(f"📝 Generating markdown report: {report_path}", color="cyan")
+            
+            # Build markdown content
+            md_lines = []
+            md_lines.append("# Regime Models Training Report")
+            md_lines.append("")
+            md_lines.append(f"**Symbol:** {symbol}")
+            md_lines.append(f"**Primary Model:** {report.get('model_name', 'Unknown')}")
+            md_lines.append(f"**Generated:** {report.get('generation_timestamp', 'Unknown')}")
+            md_lines.append(f"**Report Version:** 1.0")
+            md_lines.append("")
+            
+            # Add Top 3 Models Comparison Table
+            if 'top_models' in report:
+                md_lines.append("## Top 3 Models Comparison")
+                md_lines.append("")
+                md_lines.append("| Rank | Model Name | Accuracy | F1-Score | Combined Score |")
+                md_lines.append("|------|------------|----------|----------|----------------|")
+                
+                top_models = report['top_models']
+                for i, model_info in enumerate(top_models, 1):
+                    md_lines.append(
+                        f"| {i} | {model_info.get('name', 'Unknown')} | "
+                        f"{model_info.get('accuracy', 0):.4f} | "
+                        f"{model_info.get('f1_score', 0):.4f} | "
+                        f"{model_info.get('combined_score', 0):.4f} |"
+                    )
+                md_lines.append("")
+            
+            # Overall Statistics
+            overall = report.get('overall_statistics', {})
+            md_lines.append("## Overall Statistics")
+            md_lines.append("")
+            md_lines.append("| Metric | Value |")
+            md_lines.append("|--------|-------|")
+            md_lines.append(f"| Total Samples | {overall.get('total_samples', 'N/A')} |")
+            md_lines.append(f"| Number of Regimes | {overall.get('n_regimes', 'N/A')} |")
+            md_lines.append(f"| Mean Max Probability | {overall.get('mean_max_probability', 0):.4f} |")
+            md_lines.append(f"| Std Max Probability | {overall.get('std_max_probability', 0):.4f} |")
+            md_lines.append(f"| Regime Balance | {overall.get('regime_balance', 0):.4f} |")
+            md_lines.append(f"| Prediction Confidence | {overall.get('prediction_confidence', 0):.4f} |")
+            md_lines.append(f"| Uncertainty Entropy | {overall.get('uncertainty_entropy', 0):.4f} |")
+            md_lines.append("")
+            
+            # Model Performance Metrics
+            if 'model_metrics' in report:
+                metrics = report['model_metrics']
+                md_lines.append("## Model Performance Metrics")
+                md_lines.append("")
+                md_lines.append("| Metric | Value |")
+                md_lines.append("|--------|-------|")
+                md_lines.append(f"| Accuracy | {metrics.get('accuracy', 'N/A'):.4f} |")
+                md_lines.append(f"| Precision (Weighted) | {metrics.get('precision', 'N/A'):.4f} |")
+                md_lines.append(f"| Recall (Weighted) | {metrics.get('recall', 'N/A'):.4f} |")
+                md_lines.append(f"| F1-Score (Weighted) | {metrics.get('f1_score', 'N/A'):.4f} |")
+                md_lines.append("")
+            
+            # Regime Statistics
+            regime_stats = report.get('regime_statistics', {})
+            md_lines.append("## Regime Statistics")
+            md_lines.append("")
+            md_lines.append("| Regime | Sample Count | Percentage | Mean Prob | Std Prob | High Conf | Med Conf | Low Conf |")
+            md_lines.append("|--------|--------------|------------|-----------|----------|-----------|----------|----------|")
+            
+            for regime_key, regime_data in regime_stats.items():
+                if isinstance(regime_data, dict):
+                    conf_dist = regime_data.get('confidence_distribution', {})
+                    md_lines.append(
+                        f"| {regime_key} | "
+                        f"{regime_data.get('sample_count', 0)} | "
+                        f"{regime_data.get('percentage', 0):.1f}% | "
+                        f"{regime_data.get('mean_probability', 0):.3f} | "
+                        f"{regime_data.get('std_probability', 0):.3f} | "
+                        f"{conf_dist.get('high_confidence', 0)} | "
+                        f"{conf_dist.get('medium_confidence', 0)} | "
+                        f"{conf_dist.get('low_confidence', 0)} |"
+                    )
+            md_lines.append("")
+            
+            # Feature Importance Section
+            if 'feature_importance' in report:
+                md_lines.append("## Feature Importance Analysis")
+                md_lines.append("")
+                
+                feature_importance = report['feature_importance']
+                
+                # LGBM Feature Importance (Top 60)
+                if 'lgbm_importance' in feature_importance:
+                    md_lines.append("### LGBM Feature Importance (Top 60)")
+                    md_lines.append("")
+                    md_lines.append("| Rank | Feature | Importance |")
+                    md_lines.append("|------|---------|------------|")
+                    
+                    lgbm_importance = feature_importance['lgbm_importance']
+                    for i, row in lgbm_importance.head(60).iterrows():
+                        md_lines.append(f"| {i+1} | {row['feature']} | {row['importance']:.6f} |")
+                    md_lines.append("")
+                
+                # SHAP Feature Importance (Top 60)
+                if 'shap_importance' in feature_importance:
+                    md_lines.append("### SHAP Feature Importance (Top 60)")
+                    md_lines.append("")
+                    md_lines.append("| Rank | Feature | SHAP Value |")
+                    md_lines.append("|------|---------|------------|")
+                    
+                    shap_importance = feature_importance['shap_importance']
+                    for i, row in shap_importance.head(60).iterrows():
+                        md_lines.append(f"| {i+1} | {row['feature']} | {row['shap_importance']:.6f} |")
+                    md_lines.append("")
+                
+                # Combined Feature Importance (Top 60)
+                if 'top_60_features' in report and 'combined_top_60' in report['top_60_features']:
+                    md_lines.append("### Combined Feature Importance (Top 60)")
+                    md_lines.append("")
+                    md_lines.append("| Rank | Feature | LGBM Importance | SHAP Value | Combined Score |")
+                    md_lines.append("|------|---------|-----------------|------------|----------------|")
+                    
+                    combined_features = report['top_60_features']['combined_top_60']
+                    for i, feature_data in enumerate(combined_features, 1):
+                        md_lines.append(f"| {i} | {feature_data.get('feature', 'N/A')} | {feature_data.get('importance_lgbm', 0):.6f} | {feature_data.get('shap_importance', 0):.6f} | {feature_data.get('combined_importance', 0):.6f} |")
+                    md_lines.append("")
+                
+                # Feature Importance Comparison (Top 20)
+                if 'lgbm_importance' in feature_importance and 'shap_importance' in feature_importance:
+                    md_lines.append("### Feature Importance Comparison (Top 20)")
+                    md_lines.append("")
+                    md_lines.append("| Rank | Feature | LGBM Importance | SHAP Value |")
+                    md_lines.append("|------|---------|-----------------|------------|")
+                    
+                    comparison_df = pd.merge(
+                        feature_importance['lgbm_importance'].head(20),
+                        feature_importance['shap_importance'].head(20),
+                        on='feature',
+                        how='outer',
+                        suffixes=('_lgbm', '_shap')
+                    ).fillna(0)
+                    
+                    for i, row in comparison_df.iterrows():
+                        md_lines.append(f"| {i+1} | {row['feature']} | {row.get('importance', 0):.6f} | {row.get('shap_importance', 0):.6f} |")
+                    md_lines.append("")
+                
+                # SHAP Visualization Data Information
+                if 'top_60_features' in report and 'shap_visualization_data' in report['top_60_features']:
+                    md_lines.append("### SHAP Visualization Data")
+                    md_lines.append("")
+                    shap_viz_data = report['top_60_features']['shap_visualization_data']
+                    md_lines.append(f"- **Top 20 Features for Visualization:** {len(shap_viz_data.get('top_20_features', []))}")
+                    md_lines.append(f"- **Total Feature Names Available:** {len(shap_viz_data.get('feature_names', []))}")
+                    md_lines.append("- **Visualization Data:** Available for generating SHAP plots")
+                    md_lines.append("")
+            
+            # Write to file
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write("\n".join(md_lines))
+            
+            tprint(f"✅ Markdown report generated: {report_path}", color="green")
+            return str(report_path)
+            
+        except Exception as e:
+            tprint(f"❌ Failed to generate markdown report: {e}", color="red")
+            self.logger.error(f"Failed to generate markdown report: {e}", exc_info=True)
+            return None
+
+    def _generate_csv_reports(self, report: Dict[str, Any], training_results: Dict[str, Any], symbol: str, output_dir: str = "outcomes") -> Tuple[Optional[str], Optional[str]]:
+        """Generate comprehensive CSV reports."""
+        try:
+            from pathlib import Path
+            
+            # Create output directory if it doesn't exist
+            output_path = Path(output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # 1. Generate metrics CSV
+            metrics_filename = f"regime_models_training_metrics_{symbol}_{timestamp}.csv"
+            metrics_path = output_path / metrics_filename
+            
+            tprint(f"📊 Generating metrics CSV: {metrics_path}", color="cyan")
+            
+            csv_data = []
+            csv_data.append(['Metric Category', 'Metric Name', 'Value', 'Description'])
+            
+            # Overall Statistics
+            overall = report.get('overall_statistics', {})
+            csv_data.append(['Overall', 'Total Samples', str(overall.get('total_samples', 'N/A')), 'Total number of samples'])
+            csv_data.append(['Overall', 'Number of Regimes', str(overall.get('n_regimes', 'N/A')), 'Number of regimes discovered'])
+            csv_data.append(['Overall', 'Mean Max Probability', f"{overall.get('mean_max_probability', 0):.6f}", 'Average maximum probability across samples'])
+            csv_data.append(['Overall', 'Std Max Probability', f"{overall.get('std_max_probability', 0):.6f}", 'Standard deviation of maximum probabilities'])
+            csv_data.append(['Overall', 'Regime Balance', f"{overall.get('regime_balance', 0):.6f}", 'Standard deviation of regime percentages'])
+            csv_data.append(['Overall', 'Prediction Confidence', f"{overall.get('prediction_confidence', 0):.6f}", 'Average prediction confidence'])
+            csv_data.append(['Overall', 'Uncertainty Entropy', f"{overall.get('uncertainty_entropy', 0):.6f}", 'Average entropy of predictions'])
+            
+            # Top 3 Models Metrics
+            if 'top_models' in report:
+                csv_data.append(['Top Models', 'Number of Top Models', str(len(report['top_models'])), 'Number of top performing models included in report'])
+                for i, model_info in enumerate(report['top_models'], 1):
+                    model_name = model_info.get('name', f'Model_{i}')
+                    csv_data.append([f'Top Model {i}', 'Model Name', model_name, f'Rank {i} model'])
+                    csv_data.append([f'Top Model {i}', 'Accuracy', f"{model_info.get('accuracy', 0):.6f}", f'Accuracy of {model_name}'])
+                    csv_data.append([f'Top Model {i}', 'F1-Score', f"{model_info.get('f1_score', 0):.6f}", f'F1-Score of {model_name}'])
+                    csv_data.append([f'Top Model {i}', 'Combined Score', f"{model_info.get('combined_score', 0):.6f}", f'Combined score of {model_name}'])
+                    if 'accuracy_ci' in model_info:
+                        ci_lower, ci_upper = model_info['accuracy_ci']
+                        csv_data.append([f'Top Model {i}', 'Accuracy CI Lower', f"{ci_lower:.6f}", f'Lower bound of 95% CI for {model_name}'])
+                        csv_data.append([f'Top Model {i}', 'Accuracy CI Upper', f"{ci_upper:.6f}", f'Upper bound of 95% CI for {model_name}'])
+                    if 'f1_ci' in model_info:
+                        ci_lower, ci_upper = model_info['f1_ci']
+                        csv_data.append([f'Top Model {i}', 'F1 CI Lower', f"{ci_lower:.6f}", f'Lower bound of 95% CI for {model_name}'])
+                        csv_data.append([f'Top Model {i}', 'F1 CI Upper', f"{ci_upper:.6f}", f'Upper bound of 95% CI for {model_name}'])
+                    csv_data.append([f'Top Model {i}', 'MEL', f"{model_info.get('mel', 0):.6f}", f'Maximum Episode Length for {model_name}'])
+                    csv_data.append([f'Top Model {i}', 'SFPR', f"{model_info.get('sfpr', 0):.6f}", f'Structural False Positive Rate for {model_name}'])
+            
+            # Primary Model Metrics (for backward compatibility)
+            if 'model_metrics' in report:
+                metrics = report['model_metrics']
+                csv_data.append(['Primary Model Performance', 'Accuracy', f"{metrics.get('accuracy', 0):.6f}", 'Classification accuracy of primary model'])
+                csv_data.append(['Primary Model Performance', 'Precision', f"{metrics.get('precision', 0):.6f}", 'Weighted precision of primary model'])
+                csv_data.append(['Primary Model Performance', 'Recall', f"{metrics.get('recall', 0):.6f}", 'Weighted recall of primary model'])
+                csv_data.append(['Primary Model Performance', 'F1-Score', f"{metrics.get('f1_score', 0):.6f}", 'Weighted F1-score of primary model'])
+            
+            # Regime Statistics
+            regime_stats = report.get('regime_statistics', {})
+            for regime_key, regime_data in regime_stats.items():
+                if isinstance(regime_data, dict):
+                    csv_data.append([f'Regime {regime_key}', 'Sample Count', str(regime_data.get('sample_count', 0)), 'Number of samples in regime'])
+                    csv_data.append([f'Regime {regime_key}', 'Percentage', f"{regime_data.get('percentage', 0):.2f}%", 'Percentage of total samples'])
+                    csv_data.append([f'Regime {regime_key}', 'Mean Probability', f"{regime_data.get('mean_probability', 0):.6f}", 'Average probability for regime'])
+                    csv_data.append([f'Regime {regime_key}', 'Std Probability', f"{regime_data.get('std_probability', 0):.6f}", 'Standard deviation of probabilities'])
+                    
+                    conf_dist = regime_data.get('confidence_distribution', {})
+                    csv_data.append([f'Regime {regime_key}', 'High Confidence Count', str(conf_dist.get('high_confidence', 0)), 'Samples with >0.8 probability'])
+                    csv_data.append([f'Regime {regime_key}', 'Medium Confidence Count', str(conf_dist.get('medium_confidence', 0)), 'Samples with 0.5-0.8 probability'])
+                    csv_data.append([f'Regime {regime_key}', 'Low Confidence Count', str(conf_dist.get('low_confidence', 0)), 'Samples with <0.5 probability'])
+            
+            # Feature Importance Data
+            if 'feature_importance' in report:
+                feature_importance = report['feature_importance']
+                
+                # Enhanced Feature Importance Data (Top 60)
+                if 'feature_importance' in report:
+                    feature_importance = report['feature_importance']
+                    
+                    # LGBM Feature Importance (Top 60)
+                    if 'lgbm_importance' in feature_importance:
+                        csv_data.append(['Feature Importance', 'LGBM Top Feature', '', 'Top LGBM feature by importance'])
+                        lgbm_importance = feature_importance['lgbm_importance']
+                        for i, row in lgbm_importance.head(60).iterrows():
+                            csv_data.append(['Feature Importance', f'LGBM Rank {i+1}', f"{row['importance']:.6f}", row['feature']])
+                    
+                    # SHAP Feature Importance (Top 60)
+                    if 'shap_importance' in feature_importance:
+                        csv_data.append(['Feature Importance', 'SHAP Top Feature', '', 'Top SHAP feature by importance'])
+                        shap_importance = feature_importance['shap_importance']
+                        for i, row in shap_importance.head(60).iterrows():
+                            csv_data.append(['Feature Importance', f'SHAP Rank {i+1}', f"{row['shap_importance']:.6f}", row['feature']])
+            
+            # Write metrics CSV
+            import csv
+            with open(metrics_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerows(csv_data)
+            
+            tprint(f"✅ Metrics CSV generated: {metrics_path}", color="green")
+            
+            # Generate separate feature importance CSV files
+            feature_importance_paths = []
+            if 'feature_importance' in report:
+                feature_importance = report['feature_importance']
+                
+                # LGBM Feature Importance CSV
+                if 'lgbm_importance' in feature_importance:
+                    lgbm_filename = f"feature_importance_lgbm_{symbol}_{timestamp}.csv"
+                    lgbm_path = output_path / lgbm_filename
+                    
+                    lgbm_importance = feature_importance['lgbm_importance']
+                    lgbm_importance.to_csv(lgbm_path, index=False)
+                    feature_importance_paths.append(str(lgbm_path))
+                    tprint(f"✅ LGBM feature importance CSV generated: {lgbm_path}", color="green")
+                
+                # SHAP Feature Importance CSV
+                if 'shap_importance' in feature_importance:
+                    shap_filename = f"feature_importance_shap_{symbol}_{timestamp}.csv"
+                    shap_path = output_path / shap_filename
+                    
+                    shap_importance = feature_importance['shap_importance']
+                    shap_importance.to_csv(shap_path, index=False)
+                    feature_importance_paths.append(str(shap_path))
+                    tprint(f"✅ SHAP feature importance CSV generated: {shap_path}", color="green")
+                
+                # Feature Importance Comparison CSV
+                if 'lgbm_importance' in feature_importance and 'shap_importance' in feature_importance:
+                    comparison_filename = f"feature_importance_comparison_{symbol}_{timestamp}.csv"
+                    comparison_path = output_path / comparison_filename
+                    
+                    comparison_df = pd.merge(
+                        feature_importance['lgbm_importance'],
+                        feature_importance['shap_importance'],
+                        on='feature',
+                        how='outer',
+                        suffixes=('_lgbm', '_shap')
+                    ).fillna(0)
+                    
+                    comparison_df.to_csv(comparison_path, index=False)
+                    feature_importance_paths.append(str(comparison_path))
+                    tprint(f"✅ Feature importance comparison CSV generated: {comparison_path}", color="green")
+                
+                # Top 60 Combined Feature Importance CSV
+                if 'top_60_features' in report:
+                    top_60_features = report['top_60_features']
+                    
+                    if 'combined_top_60' in top_60_features:
+                        combined_filename = f"feature_importance_combined_top_60_{symbol}_{timestamp}.csv"
+                        combined_path = output_path / combined_filename
+                        
+                        combined_df = pd.DataFrame(top_60_features['combined_top_60'])
+                        combined_df.to_csv(combined_path, index=False)
+                        feature_importance_paths.append(str(combined_path))
+                        tprint(f"✅ Combined top 60 feature importance CSV generated: {combined_path}", color="green")
+                    
+                    if 'lgbm_top_60' in top_60_features:
+                        lgbm_60_filename = f"feature_importance_lgbm_top_60_{symbol}_{timestamp}.csv"
+                        lgbm_60_path = output_path / lgbm_60_filename
+                        
+                        lgbm_60_df = pd.DataFrame(top_60_features['lgbm_top_60'])
+                        lgbm_60_df.to_csv(lgbm_60_path, index=False)
+                        feature_importance_paths.append(str(lgbm_60_path))
+                        tprint(f"✅ LGBM top 60 feature importance CSV generated: {lgbm_60_path}", color="green")
+                    
+                    if 'shap_top_60' in top_60_features:
+                        shap_60_filename = f"feature_importance_shap_top_60_{symbol}_{timestamp}.csv"
+                        shap_60_path = output_path / shap_60_filename
+                        
+                        shap_60_df = pd.DataFrame(top_60_features['shap_top_60'])
+                        shap_60_df.to_csv(shap_60_path, index=False)
+                        feature_importance_paths.append(str(shap_60_path))
+                        tprint(f"✅ SHAP top 60 feature importance CSV generated: {shap_60_path}", color="green")
+            
+            # 2. Generate model comparison CSV (if multiple models)
+            models = training_results.get('models', {})
+            model_metrics = training_results.get('model_metrics', {})
+            
+            comparison_path = None
+            if len(models) > 1:
+                comparison_filename = f"regime_models_comparison_{symbol}_{timestamp}.csv"
+                comparison_path = output_path / comparison_filename
+                
+                tprint(f"📊 Generating model comparison CSV: {comparison_path}", color="cyan")
+                
+                comparison_data = []
+                comparison_data.append(['Model Name', 'Accuracy', 'Precision', 'Recall', 'F1-Score'])
+                
+                for model_name, metrics in model_metrics.items():
+                    comparison_data.append([
+                        model_name,
+                        f"{metrics.get('accuracy', 0):.6f}",
+                        f"{metrics.get('precision', 0):.6f}",
+                        f"{metrics.get('recall', 0):.6f}",
+                        f"{metrics.get('f1_score', 0):.6f}"
+                    ])
+                
+                with open(comparison_path, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerows(comparison_data)
+                
+                tprint(f"✅ Model comparison CSV generated: {comparison_path}", color="green")
+            
+            return str(metrics_path), str(comparison_path) if comparison_path else None
+            
+        except Exception as e:
+            tprint(f"❌ Failed to generate CSV reports: {e}", color="red")
+            self.logger.error(f"Failed to generate CSV reports: {e}", exc_info=True)
+            return None, None

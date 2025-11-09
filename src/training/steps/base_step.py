@@ -336,11 +336,29 @@ class BaseStep(ABC):
             timeframe = self._current_context.get('timeframe', timeframe)
 
             if start_date is None:
+                # Add validation for mode-specific days
+                tprint(f"🔧 BASESTEP: Using execution_mode={execution_mode}", "INFO")
+                tprint(f"🔧 BASESTEP: blank_mode_days in context: {self._current_context.get('blank_mode_days', 'NOT FOUND')}", "INFO")
+                tprint(f"🔧 BASESTEP: light_mode_days in context: {self._current_context.get('light_mode_days', 'NOT FOUND')}", "INFO")
+                tprint(f"🔧 BASESTEP: Context keys available: {list(self._current_context.keys())}", "INFO")
+                
                 mode_days_defaults = {
                     'light': self._current_context.get('light_mode_days', 20),
                     'blank': self._current_context.get('blank_mode_days', 180),
                 }
                 days_limit = mode_days_defaults.get(execution_mode)
+                
+                # Add fallback logic with warnings when context values are missing
+                if execution_mode == 'blank' and days_limit is None:
+                    # Fallback if blank_mode_days not in context
+                    days_limit = 180
+                    tprint("⚠️ Using fallback blank_mode_days=180 (not found in context)", "WARNING")
+                    tprint(f"🔧 BASESTEP: Context keys available: {list(self._current_context.keys())}", "INFO")
+                elif execution_mode == 'light' and days_limit is None:
+                    # Fallback if light_mode_days not in context
+                    days_limit = 20
+                    tprint("⚠️ Using fallback light_mode_days=20 (not found in context)", "WARNING")
+                    tprint(f"🔧 BASESTEP: Context keys available: {list(self._current_context.keys())}", "INFO")
 
                 if days_limit is not None:
                     effective_end = end_date or end_dt or datetime.utcnow()
@@ -351,6 +369,7 @@ class BaseStep(ABC):
                         f"{message_prefix} mode pre-filter: loading data window "
                         f"{start_dt.date()} → {end_dt.date()} ({days_limit} days, timeframe {timeframe})"
                     )
+                    tprint(f"🔧 BASESTEP: Using execution_mode={execution_mode} with days_limit={days_limit}", "INFO")
 
             market_data = klines_manager.load_klines(
                 symbol=symbol,

@@ -1,165 +1,85 @@
-# Regime Models Training Fixes
+# Regime Models Training Dimensional Mismatch Fix
 
-## Issues Fixed
+## Problem Description
+The regime models training pipeline was failing with a critical dimensional mismatch error:
+```
+Length of values (480) does not match length of index (44381)
+```
 
-### 1. ✅ Feature Selection - Always Return 60 Features
-**Problem**: Feature selection was using adaptive feature count (50-150 features based on dataset size)
-**Solution**: Changed to always return exactly **60 features** for consistency
+This error occurred during the prediction generation phase where:
+- Models were trained on 480 samples (X_train + X_val + X_test)
+- But predictions were being generated for the full dataset of 44,381 rows
+- When creating the predictions DataFrame, pandas tried to align 480 prediction values with 44,381 index labels
 
-**Files Modified**:
-- `src/training/steps/market_analysis/components/regime_models_training.py`
-  - Line 1651: Set `target_features = 60` (fixed value)
-  - Line 1642: Updated warning message to reflect "exactly 60 features"
+## Root Cause Analysis
+The issue was in the prediction generation logic in `src/training/steps/market_analysis/components/regime_models_training.py` around lines 1415-1437:
 
-**Code Changes**:
+1. **Incorrect Data Scope**: Models were trained on `X_train`, `X_val`, and `X_test` (combined 480 samples)
+2. **Wrong Prediction Input**: Code was using `model.predict_proba(X)` where `X` was the full feature matrix (44,381 samples)
+3. **Mismatched Indexing**: The predictions DataFrame was created using `protected_data.index` (44,381 rows) but prediction arrays only had 480 values
+
+## Solution Implemented
+
+### 1. Fixed Prediction Data Scope
 ```python
-# OLD (adaptive):
-if n_samples < 500:
-    target_features = min(80, max(50, n_samples // 3))
-elif n_samples < 1000:
-    target_features = min(100, max(60, n_samples // 5))
-else:
-    target_features = min(150, max(80, n_samples // 10))
-
-# NEW (fixed):
-target_features = 60  # Always use exactly 60 features for consistency
+# CRITICAL FIX: Determine the correct data scope for predictions
+# The models were trained on X_train + X_val + X_test, not the full X
+# We need to concatenate the training splits to get the correct prediction scope
+X_for_prediction = np.concatenate([X_train, X_val, X_test]) if 'X_val' in locals() else np.concatenate([X_train, X_test])
 ```
 
-### 2. ✅ Feature Selection Bug Fix - Index Out of Bounds
-**Problem**: Feature selection was failing with "index 1637 is out of bounds" error
-**Root Cause**: Mismatch between `selected_features_mask` length and `feature_names` length
-
-**Solution**: Added validation and padding/truncation logic to handle mask length mismatches
-
-**Files Modified**:
-- `src/training/steps/market_analysis/components/regime_models_training.py`
-  - Lines 1681-1691: Added mask length validation and correction
-
-**Code Changes**:
+### 2. Fixed Index Alignment
 ```python
-# Ensure mask length matches feature_names length
-if len(selected_features_mask) != len(feature_names):
-    tprint(f"⚠️ [REGIME_MODELS] Mask length mismatch: {len(selected_features_mask)} vs {len(feature_names)}", color="yellow")
-    # Truncate or pad mask to match feature_names length
-    if len(selected_features_mask) > len(feature_names):
-        selected_features_mask = selected_features_mask[:len(feature_names)]
-    else:
-        # Pad with False
-        padded_mask = np.zeros(len(feature_names), dtype=bool)
-        padded_mask[:len(selected_features_mask)] = selected_features_mask
-        selected_features_mask = padded_mask
+# Get the corresponding indices from protected_data
+# The training data was created from protected_data, so we need to find the matching indices
+total_training_samples = len(X_for_prediction)
+
+# Use the last 'total_training_samples' rows from protected_data since that's where the training data came from
+predictions_index = protected_data.index[-total_training_samples:]
 ```
 
-### 3. ⚠️ Sample Count Issue - Root Cause Identified
-**Problem**: Only 268 samples available instead of expected 4,320 samples (180 days × 24 hours)
-
-**Root Cause**: 
-1. System is loading **cached BTCUSDT data** instead of fresh **ETHUSDT data**
-2. The cached artifact is from Nov 3, 2024 and only contains 268 samples
-3. When running `regime_models_training` as a standalone step, it falls back to cached artifacts
-
-**Evidence from logs**:
-```
-Nov 08, 2025 15:43:26 - System.ArtifactManager - INFO - ✅ Retrieved artifact from fallback search: 
-artifacts/klines_downloading_processing_klines_data_BTCUSDT_binance_long_Analyst_20251103_194632.parquet
-```
-
-**Solution Implemented**:
-- Added data validation in `regime_models_training_step.py` to warn when sample count is insufficient
-- Lines 112-126: Added validation logic to check expected vs actual sample count
-
-**Code Changes**:
+### 3. Added Validation
 ```python
-# Check if we have enough data for blank mode (180 days)
-if execution_mode == 'blank' and market_data is not None:
-    expected_samples_per_day = 24 if timeframe == '1h' else (24 * 4 if timeframe == '15m' else 24)
-    expected_samples = 180 * expected_samples_per_day
-    actual_samples = len(market_data)
-    
-    tprint(f"📊 Data validation: Expected ~{expected_samples:,} samples for 180 days of {timeframe} data", "INFO")
-    tprint(f"📊 Data validation: Actual samples: {actual_samples:,}", "INFO")
-    
-    # If we have significantly less data than expected, warn the user
-    if actual_samples < expected_samples * 0.5:  # Less than 50% of expected
-        tprint(f"⚠️ WARNING: Only {actual_samples:,} samples available (expected ~{expected_samples:,})", "WARNING")
-        tprint(f"⚠️ This may indicate:", "WARNING")
-        tprint(f"   • Cached data from wrong symbol (check if {symbol} data exists)", "WARNING")
-        tprint(f"   • Incomplete historical data", "WARNING")
-        tprint(f"   • Need to run klines_downloading_processing first", "WARNING")
+# Verify that all prediction arrays have the same length
+pred_lengths = [len(pred_array) for pred_array in model_predictions.values()]
+if len(set(pred_lengths)) > 1:
+    tprint(f"❌ [REGIME_MODELS] ERROR: Prediction arrays have different lengths: {pred_lengths}", color="red")
+    raise ValueError(f"Prediction arrays have inconsistent lengths: {pred_lengths}")
+
+pred_length = pred_lengths[0]
+if pred_length != len(predictions_index):
+    tprint(f"❌ [REGIME_MODELS] ERROR: Prediction length ({pred_length}) doesn't match index length ({len(predictions_index)})", color="red")
+    raise ValueError(f"Prediction length mismatch: {pred_length} vs {len(predictions_index)}")
 ```
 
-### 4. ✅ Blank Mode Data Filtering
-**Problem**: Blank mode should use 180 days of data but was not filtering correctly
-**Solution**: Added execution mode data filtering in `regime_models_training_step.py`
-
-**Files Modified**:
-- `src/training/steps/market_analysis/regime_models_training_step.py`
-  - Lines 138-151: Added blank mode filtering (180 days)
-  - Lines 152-165: Added light mode filtering (20 days)
-
-## How to Fix the Sample Count Issue
-
-To get the correct 4,320 samples for ETHUSDT, you need to:
-
-### Option 1: Run Full Pipeline
-```bash
-python3 src/launcher/ares_launcher.py --symbol ETHUSDT --execution-mode blank
+### 4. Fixed Artifact Saving
+```python
+# CRITICAL FIX: Use the correct index that matches the prediction data length
+# We already computed the correct predictions_index above, so use it here too
+predictions_df = pd.DataFrame(model_predictions, index=predictions_index)
 ```
-This will run all steps including `klines_downloading_processing` which will download fresh ETHUSDT data.
-
-### Option 2: Run klines_downloading_processing First
-```bash
-# Step 1: Download fresh ETHUSDT data
-python3 src/launcher/ares_launcher.py klines_downloading_processing --symbol ETHUSDT --execution-mode blank
-
-# Step 2: Run regime_models_training
-python3 src/launcher/ares_launcher.py regime_models_training --symbol ETHUSDT --execution-mode blank
-```
-
-### Option 3: Clear Cached Artifacts
-```bash
-# Remove old cached artifacts
-rm -rf artifacts/klines_downloading_processing_klines_data_BTCUSDT_*
-
-# Then run regime_models_training
-python3 src/launcher/ares_launcher.py regime_models_training --symbol ETHUSDT --execution-mode blank
-```
-
-## Testing the Fixes
-
-After clearing Python cache, run:
-```bash
-# Clear Python bytecode cache
-rm -rf src/training/steps/market_analysis/components/__pycache__/regime_models_training.cpython-311.pyc
-rm -rf src/training/steps/market_analysis/__pycache__/regime_models_training_step.cpython-311.pyc
-
-# Run the command
-python3 src/launcher/ares_launcher.py regime_models_training --symbol ETHUSDT --execution-mode blank
-```
-
-## Expected Output
-
-After fixes, you should see:
-1. ✅ Feature selection reduces from 1637 to exactly **60 features**
-2. ✅ Warning if sample count is insufficient
-3. ✅ Blank mode filters to 180 days of data
-4. ✅ No "index out of bounds" errors
 
 ## Files Modified
+- `src/training/steps/market_analysis/components/regime_models_training.py`
+  - Lines 1415-1460: Fixed prediction generation logic
+  - Line 1488: Fixed artifact saving logic
 
-1. `src/training/steps/market_analysis/components/regime_models_training.py`
-   - Fixed feature selection to always return 60 features
-   - Fixed index out of bounds error
-   - Added better error logging
+## Expected Outcome
+With these changes:
+1. Models will generate predictions for the correct data scope (480 samples)
+2. Predictions will be properly indexed to match the training data
+3. No dimensional mismatch errors will occur
+4. The training pipeline should complete successfully
 
-2. `src/training/steps/market_analysis/regime_models_training_step.py`
-   - Added data validation for sample count
-   - Added execution mode data filtering
-   - Added warnings for insufficient data
+## Testing
+To verify the fix works correctly:
+1. Run the regime models training pipeline
+2. Verify no "Length of values does not match length of index" errors occur
+3. Check that predictions are saved with the correct shape and index
+4. Ensure the training pipeline completes without errors
 
-## Summary
-
-- ✅ Feature selection now works correctly and returns exactly 60 features
-- ✅ Index out of bounds error fixed
-- ✅ Data validation added to warn about insufficient samples
-- ⚠️ Sample count issue is due to cached BTCUSDT data - need to download fresh ETHUSDT data
+## Additional Notes
+- The fix maintains the existing training logic and only addresses the prediction generation phase
+- All predictions are now properly aligned with the training data scope
+- Enhanced error checking helps catch similar issues in the future
+- The solution is backward compatible and doesn't affect other parts of the pipeline

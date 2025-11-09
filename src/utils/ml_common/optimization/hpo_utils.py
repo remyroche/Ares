@@ -1041,6 +1041,48 @@ class HyperparameterOptimization:
                             if unique_preds == 1:
                                 self.logger.warning("   🚨 CRITICAL: Model predicting ONLY ONE CLASS - definite data leakage!")
 
+                        # ENHANCED DIAGNOSTIC LOGGING FOR LOW VARIANCE
+                        if len(fold_scores) > 1:
+                            score_variance = np.var(fold_scores)
+                            score_range = max(fold_scores) - min(fold_scores)
+                            score_mean = np.mean(fold_scores)
+                            
+                            # LOG DETAILED VARIANCE ANALYSIS
+                            self.logger.info(f"🔍 SCORE VARIANCE DIAGNOSTICS:")
+                            self.logger.info(f"   • Fold scores: {[f'{s:.6f}' for s in fold_scores]}")
+                            self.logger.info(f"   • Score variance: {score_variance:.8f}")
+                            self.logger.info(f"   • Score range: {score_range:.6f}")
+                            self.logger.info(f"   • Score mean: {score_mean:.6f}")
+                            self.logger.info(f"   • CV folds: {len(fold_scores)}")
+                            self.logger.info(f"   • Dataset size: {n_samples}")
+                            self.logger.info(f"   • Feature count: {n_features}")
+                            
+                            # ANALYZE SEARCH SPACE CONSTRAINTS
+                            if hasattr(self, 'current_search_space'):
+                                space = self.current_search_space
+                                self.logger.info(f"   🔍 SEARCH SPACE ANALYSIS:")
+                                for param_name, param_config in space.items():
+                                    if isinstance(param_config, dict):
+                                        if 'low' in param_config and 'high' in param_config:
+                                            low, high = param_config['low'], param_config['high']
+                                            if isinstance(low, (int, float)) and isinstance(high, (int, float)):
+                                                range_width = high - low
+                                                relative_width = range_width / abs(low) if low != 0 else float('inf')
+                                                self.logger.info(f"      • {param_name}: [{low}, {high}] (range: {range_width}, relative: {relative_width:.3f})")
+                                                if relative_width < 0.1:  # Very narrow range
+                                                    self.logger.warning(f"      ⚠️ VERY NARROW RANGE for {param_name} - may cause similar results")
+                            
+                            # CHECK CLASS DISTRIBUTION
+                            if len(np.unique(y)) <= 10:  # Classification task
+                                class_counts = np.bincount(y)
+                                class_percentages = class_counts / len(y) * 100
+                                majority_class_pct = max(class_percentages)
+                                self.logger.info(f"   🔍 CLASS DISTRIBUTION:")
+                                for i, (count, pct) in enumerate(zip(class_counts, class_percentages)):
+                                    self.logger.info(f"      • Class {i}: {count} samples ({pct:.1f}%)")
+                                if majority_class_pct > 70:
+                                    self.logger.warning(f"      ⚠️ SEVERE CLASS IMBALANCE: Majority class {majority_class_pct:.1f}% - may cause constant predictions")
+
                         return mean_score
                 except optuna.TrialPruned:
                     # Trial pruning is expected behavior - not an error
@@ -1425,6 +1467,18 @@ class HyperparameterOptimization:
                 # Bayesian bootstrap does not support subsample < 1.0.
                 # Restrict search to supported strategies when subsample is tuned.
                 'bootstrap_type': {'type': 'categorical', 'choices': ['Bernoulli']}
+            },
+            # EXPANDED CatBoost search space for better exploration
+            'catboost_regime_expanded': {
+                'depth': {'type': 'int', 'low': 3, 'high': 10},
+                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.2},
+                'l2_leaf_reg': {'type': 'float', 'low': 1, 'high': 20},
+                'iterations': {'type': 'int', 'low': 100, 'high': 2000},
+                'subsample': {'type': 'float', 'low': 0.3, 'high': 1.0},
+                'colsample_bylevel': {'type': 'float', 'low': 0.3, 'high': 1.0},
+                'bootstrap_type': {'type': 'categorical', 'choices': ['Bernoulli', 'Bayesian']},
+                'random_strength': {'type': 'float', 'low': 0.0, 'high': 2.0},
+                'border_count': {'type': 'int', 'low': 32, 'high': 255}
             },
             'extratrees_regime': {
                 'n_estimators': {'type': 'int', 'low': 300, 'high': 800},

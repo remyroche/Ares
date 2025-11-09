@@ -1,0 +1,259 @@
+{
+  "models": {
+    "catboost": {
+      "_init_params": {
+        "iterations": 1081,
+        "learning_rate": 0.1,
+        "depth": 6,
+        "l2_leaf_reg": 7.3289199928298,
+        "random_seed": 42,
+        "verbose": false,
+        "bootstrap_type": "Bernoulli",
+        "subsample": 1.0,
+        "colsample_bylevel": 1.0
+      },
+      "_object": "<_catboost._CatBoost object at 0x37712b970>",
+      "_is_fitted_": true,
+      "_random_seed": 42,
+      "_learning_rate": 0.10000000149011612,
+      "_tree_count": 1081,
+      "_n_features_in": 60,
+      "_prediction_values_change": [
+        2.3276855106076364,
+        0.9214833211129482,
+        0.5554218510242782,
+        1.988675953446345,
+        1.7054388840830772,
+        0.01796817871528921,
+        0.4103138152458851,
+        0.4480669449196499,
+        2.181207162425194,
+        2.4976628641752585,
+        2.924713981967942,
+        0.9605614353238643,
+        0.15872008435921095,
+        0.6252527878146201,
+        1.794899406866659,
+        0.9685928754029862,
+        1.7811134762174603,
+        0.9057093096502601,
+        2.7619368378156617,
+        0.2960785990807695,
+        1.784382112901259,
+        0.2930439423459195,
+        0.40469782796489095,
+        2.949715949696772,
+        0.5010128871089015,
+        0.7602325618301004,
+        0.7840427168731476,
+        2.222057703883195,
+        1.4548362721225931,
+        2.2432269379127097,
+        0.7293094434557049,
+        0.6090407311958055,
+        2.376375075740124,
+        4.019063639211628,
+        0.3560427304820183,
+        2.747201009728456,
+        1.2010366614441943,
+        2.69379465385584,
+        1.4831311165176657,
+        2.6322623333965613,
+        1.4065556362768648,
+        3.6488017293969226,
+        5.212902789859753,
+        0.6336169315279386,
+        0.49773202354839646,
+        0.618638678939592,
+        1.8593153283839852,
+        1.2063394532028915,
+        1.3678926918526673,
+        7.220417543292361,
+        4.914457696105149,
+        0.21825003685184502,
+        2.5979832990031713,
+        1.1657034988048778,
+        0.8811650913953036,
+        3.095589051610647,
+        2.276477900832717,
+        1.363369039678826,
+        0.4256772135024729,
+        0.9131047780111372
+      ]
+    }
+  },
+  "model_metrics": {
+    "catboost": {
+      "accuracy": 0.11888111888111888,
+      "precision": 0.015666504038597064,
+      "recall": 0.11888111888111888,
+      "f1_score": 0.027684644123000285,
+      "classification_report": {
+        "0": {
+          "precision": 0.13178294573643412,
+          "recall": 1.0,
+          "f1-score": 0.2328767123287671,
+          "support": 17.0
+        },
+        "1": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1-score": 0.0,
+          "support": 23.0
+        },
+        "2": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1-score": 0.0,
+          "support": 76.0
+        },
+        "3": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1-score": 0.0,
+          "support": 27.0
+        },
+        "accuracy": 0.11888111888111888,
+        "macro avg": {
+          "precision": 0.03294573643410853,
+          "recall": 0.25,
+          "f1-score": 0.05821917808219178,
+          "support": 143.0
+        },
+        "weighted avg": {
+          "precision": 0.015666504038597064,
+          "recall": 0.11888111888111888,
+          "f1-score": 0.027684644123000285,
+          "support": 143.0
+        }
+      }
+    }
+  },
+  "training_time": 322.0030038356781,
+  "success": true,
+  "validation_report": {
+    "temporal_order_valid": true,
+    "leakage_detected": false,
+    "validation_score": 0.85,
+    "warnings": [],
+    "recommendations": [
+      "Models trained successfully with enhanced validation"
+    ]
+  },
+  "hardware_optimization": {
+    "enabled": true,
+    "workload_type": "ML_TRAINING",
+    "optimization_applied": true
+  },
+  "lookahead_protection": {
+    "enabled": true,
+    "protection_applied": true
+  },
+  "metadata": {
+    "component_type": "regime_models_training",
+    "data_shape": [
+      480,
+      60
+    ],
+    "train_shape": [
+      268,
+      60
+    ],
+    "test_shape": [
+      143,
+      60
+    ],
+    "n_regimes": 4,
+    "feature_names": [
+      "volatility_enhanced_volatility_100",
+      "volatility_vectorbt_atr_50",
+      "volatility_vectorbt_rogers_satchell_volatility_50",
+      "volume_volume_vwap_50",
+      "volume_volume_price_trend",
+      "volume_volume_zscore_60_252",
+      "trend_vectorbt_trend_comprehensive_100",
+      "trend_vectorbt_sma_100",
+      "returns_returns_skewness_20_price_returns",
+      "volume_vectorbt_smoothed_obv_10",
+      "volume_vectorbt_smoothed_obv_20",
+      "volatility_enhanced_volatility_50_ma3",
+      "volatility_vectorbt_parkinson_volatility_50_ma3",
+      "volume_volume_trend_strength_10_30_ma3",
+      "volume_volume_vwap_50_ma3",
+      "volume_vwap_deviations_20_ma3",
+      "volume_volume_volatility_elasticity_20_ma3",
+      "volume_vectorbt_enhanced_obv_10_ma3",
+      "volume_volume_ratio_50_std3",
+      "oscillator_ultimate_oscillator_7_14_28_returns_vwap_std3",
+      "volatility_enhanced_volatility_20_ma5",
+      "volatility_vectorbt_garman_klass_volatility_30_ma5",
+      "volume_volume_percentile_100_ma5",
+      "volume_order_flow_imbalance_20_ma5",
+      "volume_volume_volatility_elasticity_20_ma5",
+      "trend_vectorbt_ema_10_ma5",
+      "trend_vectorbt_zigzag_5.0_3_ma5",
+      "microstructure_analyst_tick_imbalance_ma5",
+      "momentum_vectorbt_momentum_comprehensive_21_std5",
+      "momentum_macd_12_26_9_returns_vwap_std5",
+      "momentum_stochastic_14_3_price_returns_std5",
+      "trend_vectorbt_zigzag_5.0_2_std5",
+      "microstructure_amihud_illiquidity_vwap_distance_std5",
+      "momentum_williams_r_14_price_returns_ma7",
+      "momentum_williams_r_21_price_returns_ma7",
+      "volatility_enhanced_volatility_10_ma7",
+      "volatility_vectorbt_volatility_comprehensive_30_ma7",
+      "volatility_vectorbt_parkinson_volatility_30_ma7",
+      "volume_volume_percentile_50_ma7",
+      "volume_volume_vwap_10_ma7",
+      "volume_vwap_deviations_20_ma7",
+      "volume_order_flow_imbalance_20_ma7",
+      "volume_volume_volatility_elasticity_20_ma7",
+      "trend_vectorbt_sma_10_ma7",
+      "trend_directional_signal_ma7",
+      "oscillator_aroon_25_returns_vwap_ma7",
+      "oscillator_apo_12_26_returns_vwap_ma7",
+      "returns_simple_returns_5_price_returns_ma7",
+      "returns_rolling_returns_10_price_returns_ma7",
+      "microstructure_microstructure_features_ma7",
+      "microstructure_bid_ask_spread_ma7",
+      "microstructure_market_depth_ma7",
+      "momentum_rsi_14_returns_vwap_std7",
+      "volatility_vectorbt_rogers_satchell_volatility_20_std7",
+      "volatility_vectorbt_garman_klass_volatility_20_std7",
+      "trend_vectorbt_parabolic_sar_0.05_0.3_std7",
+      "trend_vectorbt_zigzag_5.0_5_std7",
+      "trend_vectorbt_zigzag_7.0_3_std7",
+      "trend_sma_20_returns_vwap_std7",
+      "oscillator_cci_20_returns_vwap_std7"
+    ],
+    "timestamp": "2025-11-08T19:56:14.683715",
+    "centralized_config_used": true,
+    "walk_forward_validation": {
+      "validation_completed": true,
+      "n_folds": 4,
+      "model_rankings": [
+        {
+          "model_name": "catboost",
+          "composite_score": 0.9799690436612118,
+          "accuracy": 0.7861842105263158,
+          "f1_score": 0.7299112290331491,
+          "precision": 0.7216924585876199,
+          "recall": 0.7861842105263158,
+          "mel": 16.36111111111111,
+          "sfpr": 0.09027777777777778,
+          "accuracy_ci": [
+            0.3305506535497129,
+            1.2418177675029187
+          ],
+          "f1_ci": [
+            0.1682962614096858,
+            1.2915261966566125
+          ]
+        }
+      ],
+      "selected_models": [
+        "catboost"
+      ]
+    }
+  }
+}

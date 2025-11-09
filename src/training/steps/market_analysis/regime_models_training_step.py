@@ -101,6 +101,22 @@ class RegimeModelsTrainingStep(BaseStep):
             # For blank mode, prioritize loading fresh data from historical storage
             execution_mode = config.get('execution_mode', 'light')
             symbol = config.get('symbol', 'UNKNOWN')
+
+            # CRITICAL: Set execution_mode in context so BaseStep uses correct mode
+            self.set_context(execution_mode=execution_mode)
+            tprint(f"🔧 STEP CONTEXT: Set execution_mode={execution_mode} in context", "INFO")
+
+            # Ensure blank_mode_days is in context for BaseStep to use
+            if execution_mode == 'blank' and 'blank_mode_days' not in self._current_context:
+                self.set_context(blank_mode_days=config.get('blank_mode_days', 180))
+                tprint(f"🔧 STEP CONTEXT: Set blank_mode_days={config.get('blank_mode_days', 180)} in context", "INFO")
+            elif execution_mode == 'light' and 'light_mode_days' not in self._current_context:
+                self.set_context(light_mode_days=config.get('light_mode_days', 20))
+                tprint(f"🔧 STEP CONTEXT: Set light_mode_days={config.get('light_mode_days', 20)} in context", "INFO")
+            
+            # Show current context after setting
+            tprint(f"🔧 STEP CONTEXT: Current context keys: {list(self._current_context.keys())}", "INFO")
+            tprint(f"🔧 STEP CONTEXT: blank_mode_days in context: {self._current_context.get('blank_mode_days', 'NOT FOUND')}", "INFO")
             
             if execution_mode == 'blank':
                 tprint(f"📥 Blank mode: Loading fresh data for {symbol} from historical storage", "INFO")
@@ -166,33 +182,10 @@ class RegimeModelsTrainingStep(BaseStep):
                     tprint("❌ Cannot convert market data to DataFrame", "ERROR")
                     raise ValueError("Market data must be a pandas DataFrame or convertible dict")
 
-            # Apply execution mode data filtering for blank mode (180 days)
-            if (execution_mode == 'blank' and 
-                market_data is not None and
-                hasattr(market_data, 'index') and 
-                hasattr(market_data.index, 'max') and
-                isinstance(market_data.index, pd.DatetimeIndex)):  # type: ignore
-                original_size = len(market_data)
-                end_date = market_data.index.max()
-                if end_date is not None:
-                    start_date = end_date - pd.Timedelta(days=180)  # type: ignore
-                    market_data = market_data.loc[market_data.index >= start_date]
-                    filtered_size = len(market_data)
-                    # Simple string conversion for logging
-                    tprint(f"📅 Blank mode: Filtered data from {original_size:,} to {filtered_size:,} rows (180 days)", "INFO")
-            elif (execution_mode == 'light' and 
-                  market_data is not None and
-                  hasattr(market_data, 'index') and 
-                  hasattr(market_data.index, 'max') and
-                  isinstance(market_data.index, pd.DatetimeIndex)):  # type: ignore
-                original_size = len(market_data)
-                end_date = market_data.index.max()
-                if end_date is not None:
-                    start_date = end_date - pd.Timedelta(days=20)  # type: ignore
-                    market_data = market_data.loc[market_data.index >= start_date]
-                    filtered_size = len(market_data)
-                    # Simple string conversion for logging
-                    tprint(f"📅 Light mode: Filtered data from {original_size:,} to {filtered_size:,} rows (20 days)", "INFO")
+            # NOTE: Data filtering for execution modes is now handled by the component itself
+            # The component loads fresh data directly from historical storage in blank/light modes
+            # This ensures we get the correct amount of data (180 days for blank, 20 days for light)
+            # without relying on potentially stale data from pipeline_state
 
             tprint(f"📊 Market data shape: {market_data.shape}", "INFO")
             tprint(f"📊 Market data columns: {list(market_data.columns)}", "INFO")

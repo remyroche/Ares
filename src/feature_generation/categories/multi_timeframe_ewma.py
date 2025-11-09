@@ -118,11 +118,15 @@ class MultiTimeframeEWMAVolatilityGenerator(VectorizedFeatureGenerator):
         high = data['high']
         low = data['low']
 
-        # Calculate returns
+        # Calculate returns with safe division
         if self.use_log_returns:
-            returns = np.log(close / close.shift(1))
+            # Safe log returns calculation with division by zero protection
+            close_shifted = close.shift(1)
+            returns = np.where(close_shifted > 0, np.log(close / close_shifted), 0.0)
         else:
-            returns = close.pct_change()
+            # Safe percentage change with division by zero protection
+            close_shifted = close.shift(1)
+            returns = np.where(close_shifted > 0, (close - close_shifted) / close_shifted, 0.0)
 
         # EWMA volatility for each window
         for window in self.windows:

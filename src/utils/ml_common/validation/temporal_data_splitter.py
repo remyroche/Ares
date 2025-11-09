@@ -6,10 +6,8 @@ data leakage in financial time series machine learning tasks.
 """
 
 import numpy as np
-import pandas as pd
-from typing import Tuple, Optional, Union
+from typing import Tuple
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.base import BaseEstimator
 import logging
 
 logger = logging.getLogger(__name__)
@@ -40,7 +38,7 @@ class TemporalDataSplitter:
         self.gap_size = gap_size
         self.validation_size = validation_size
         
-    def split_temporal(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def split_temporal(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Split data temporally to prevent data leakage.
         
@@ -128,9 +126,12 @@ class RegimeAwareSplitter(TemporalDataSplitter):
         super().__init__(test_size, gap_size, validation_size)
         self.min_regime_samples = min_regime_samples
     
-    def split_regime_aware(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def split_regime_aware(self, X: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
-        Split data temporally while ensuring each regime has sufficient samples.
+        Split data temporally while ensuring ALL regimes appear in training set.
+        
+        This is critical for classification models that need to see all classes during training.
+        If any regime is missing from training set, we fail fast with a clear error.
         
         Args:
             X: Feature matrix
@@ -138,31 +139,67 @@ class RegimeAwareSplitter(TemporalDataSplitter):
             
         Returns:
             X_train, X_val, X_test, y_train, y_val, y_test
+            
+        Raises:
+            ValueError: If any regime is missing from training set or has insufficient samples
         """
         # First, do temporal split
         X_train, X_val, X_test, y_train, y_val, y_test = self.split_temporal(X, y)
         
-        # Check regime distribution in each split
+        # Get all unique regimes in the full dataset
+        all_regimes = np.unique(y)
         train_regimes = np.unique(y_train)
         val_regimes = np.unique(y_val)
         test_regimes = np.unique(y_test)
         
+        logger.info(f"All regimes in dataset: {all_regimes}")
         logger.info(f"Train regimes: {train_regimes}")
         logger.info(f"Val regimes: {val_regimes}")
         logger.info(f"Test regimes: {test_regimes}")
         
-        # Check if all regimes have sufficient samples
-        for regime in np.unique(y):
+        # CRITICAL: Check if all regimes appear in training set
+        missing_from_train = set(all_regimes) - set(train_regimes)
+        if missing_from_train:
+            error_msg = (
+                f"❌ CRITICAL: Regimes {missing_from_train} are missing from training set!\n"
+                f"   This will cause the model to only learn {len(train_regimes)} classes instead of {len(all_regimes)}.\n"
+                f"   The model will then output {len(train_regimes)} probabilities but labels have {len(all_regimes)} classes.\n"
+                f"   \n"
+                f"   SOLUTION: Adjust temporal split ratios to ensure all regimes appear in training.\n"
+                f"   Current split: test_size={self.test_size}, validation_size={self.validation_size}\n"
+                f"   Try reducing test_size or validation_size to keep more data in training."
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        # Check if all regimes have sufficient samples in training set
+        insufficient_regimes = []
+        for regime in all_regimes:
             train_count = np.sum(y_train == regime)
             val_count = np.sum(y_val == regime)
             test_count = np.sum(y_test == regime)
             
+            logger.info(f"Regime {regime}: train={train_count}, val={val_count}, test={test_count}")
+            
             if train_count < self.min_regime_samples:
-                logger.warning(f"Regime {regime} has only {train_count} samples in training set")
-            if val_count < self.min_regime_samples:
-                logger.warning(f"Regime {regime} has only {val_count} samples in validation set")
-            if test_count < self.min_regime_samples:
-                logger.warning(f"Regime {regime} has only {test_count} samples in test set")
+                insufficient_regimes.append((regime, train_count))
+                logger.warning(f"⚠️ Regime {regime} has only {train_count} samples in training set (min: {self.min_regime_samples})")
+        
+        # Fail fast if any regime has insufficient samples in training
+        if insufficient_regimes:
+            error_msg = (
+                f"❌ CRITICAL: Some regimes have insufficient samples in training set:\n"
+                + "\n".join([f"   Regime {r}: {count} samples (min required: {self.min_regime_samples})" 
+                            for r, count in insufficient_regimes])
+                + f"\n\n   SOLUTION: Either:\n"
+                f"   1. Reduce min_regime_samples (current: {self.min_regime_samples})\n"
+                f"   2. Adjust temporal split ratios to keep more samples in training\n"
+                f"   3. Use more data (increase lookback period)"
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        logger.info(f"✅ All {len(all_regimes)} regimes present in training set with sufficient samples")
         
         return X_train, X_val, X_test, y_train, y_val, y_test
 

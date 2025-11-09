@@ -86,6 +86,19 @@ class KlinesParquetManager:
                     # Calculate start date for last x days
                     start_date = max_date - timedelta(days=x_days)
 
+                    # Add timezone normalization before comparison
+                    tprint(f"🔧 TIMEZONE: Timestamp column timezone: {getattr(timestamp_col, 'tz', 'NAIVE')}", "INFO")
+                    tprint(f"🔧 TIMEZONE: Start date timezone: {getattr(start_date, 'tz', 'NAIVE')}", "INFO")
+                    
+                    if hasattr(timestamp_col, 'tz') and timestamp_col.tz is not None:
+                        # Convert all timestamps to UTC naive for consistent comparison
+                        timestamp_col = timestamp_col.tz_convert('UTC').tz_localize(None)
+                        tprint("🔧 TIMEZONE: Converted timezone-aware timestamps to UTC naive", "INFO")
+                    elif hasattr(start_date, 'tz') and start_date.tz is not None:
+                        # Convert start_date to UTC naive for consistent comparison
+                        start_date = start_date.tz_convert('UTC').tz_localize(None)
+                        tprint("🔧 TIMEZONE: Converted start_date to UTC naive", "INFO")
+                    
                     # Apply the filter
                     mask = timestamp_col >= start_date
                     filtered_df = df[mask]
@@ -190,6 +203,24 @@ class KlinesParquetManager:
                         timestamp_col = pd.to_datetime(timestamp_int, unit='ms')
 
             if timestamp_col is not None and len(timestamp_col) > 0:
+                # Add timezone normalization before comparison
+                tprint(f"🔧 TIMEZONE: Timestamp column timezone: {getattr(timestamp_col, 'tz', 'NAIVE')}", "INFO")
+                tprint(f"🔧 TIMEZONE: Start date timezone: {getattr(start_date, 'tz', 'NAIVE')}", "INFO")
+                tprint(f"🔧 TIMEZONE: End date timezone: {getattr(end_date, 'tz', 'NAIVE')}", "INFO")
+                
+                if hasattr(timestamp_col, 'tz') and timestamp_col.tz is not None:
+                    # Convert all timestamps to UTC naive for consistent comparison
+                    timestamp_col = timestamp_col.tz_convert('UTC').tz_localize(None)
+                    tprint("🔧 TIMEZONE: Converted timezone-aware timestamps to UTC naive", "INFO")
+                elif hasattr(start_date, 'tz') and start_date.tz is not None:
+                    # Convert start_date to UTC naive for consistent comparison
+                    start_date = start_date.tz_convert('UTC').tz_localize(None)
+                    tprint("🔧 TIMEZONE: Converted start_date to UTC naive", "INFO")
+                elif hasattr(end_date, 'tz') and end_date.tz is not None:
+                    # Convert end_date to UTC naive for consistent comparison
+                    end_date = end_date.tz_convert('UTC').tz_localize(None)
+                    tprint("🔧 TIMEZONE: Converted end_date to UTC naive", "INFO")
+                
                 # Apply the date filtering
                 mask = (timestamp_col >= start_date) & (timestamp_col <= end_date)
                 df = df[mask]
@@ -562,18 +593,22 @@ class KlinesParquetManager:
                                         partition_files[partition_dir] = []
                                     partition_files[partition_dir].append(os.path.join(root, file))
 
-                        # Load only the first file from each partition (they're duplicates)
+                        # CRITICAL FIX: Load ALL files from each partition, not just the first one
+                        # The previous assumption that files in a partition are duplicates was incorrect
                         for partition_dir, files_in_partition in sorted(partition_files.items()):
-                            pf = sorted(files_in_partition)[0]  # Use first file alphabetically
-                            df = self.parquet_utils.safe_read_parquet(pf, columns=columns)
-                            if df is not None and not df.empty:
-                                # Apply date filtering to each partitioned file
-                                if start_date is not None or end_date is not None:
-                                    df = self._apply_date_filter_to_dataframe(df, start_date, end_date)
-                                    if df is not None and not df.empty:
+                            self.logger.info(f"🔍 Loading {len(files_in_partition)} files from partition: {partition_dir}")
+                            
+                            # Load ALL files from this partition
+                            for pf in sorted(files_in_partition):
+                                df = self.parquet_utils.safe_read_parquet(pf, columns=columns)
+                                if df is not None and not df.empty:
+                                    # Apply date filtering to each partitioned file
+                                    if start_date is not None or end_date is not None:
+                                        df = self._apply_date_filter_to_dataframe(df, start_date, end_date)
+                                        if df is not None and not df.empty:
+                                            dataframes.append(df)
+                                    else:
                                         dataframes.append(df)
-                                else:
-                                    dataframes.append(df)
                     except Exception as e:
                         self.logger.warning(f"Could not read partitioned directory {dir_path}: {e}")
 
@@ -600,6 +635,10 @@ class KlinesParquetManager:
                 end_date_str = end_date.date() if hasattr(end_date, 'date') else str(end_date)
                 period_info = f"from {start_date_str} to {end_date_str}" if start_date and end_date else "full period"
                 self.logger.info(f"✅ Combining {len(dataframes)} dataframes for {symbol} {interval} {period_info} -> {total_records_before_combine} records")
+                
+                # DEBUG: Log detailed information about each dataframe
+                for i, df in enumerate(dataframes):
+                    self.logger.info(f"🔍 DEBUG: DataFrame {i+1}/{len(dataframes)}: {len(df)} records, index range: {df.index.min()} to {df.index.max()}")
             combined_df = pd.concat(dataframes, ignore_index=False)
 
             # Normalize index types before sorting to prevent Timestamp vs int comparison errors
@@ -899,6 +938,24 @@ class KlinesParquetManager:
                     final_end_str = end_date.date() if hasattr(end_date, 'date') else str(end_date)
                     tprint(f"📅 Final date range: {final_start_str} to {final_end_str}")
 
+                    # Add timezone normalization before comparison
+                    tprint(f"🔧 TIMEZONE: Timestamp column timezone: {getattr(timestamp_col, 'tz', 'NAIVE')}", "INFO")
+                    tprint(f"🔧 TIMEZONE: Start date timezone: {getattr(start_date, 'tz', 'NAIVE')}", "INFO")
+                    tprint(f"🔧 TIMEZONE: End date timezone: {getattr(end_date, 'tz', 'NAIVE')}", "INFO")
+                    
+                    if hasattr(timestamp_col, 'tz') and timestamp_col.tz is not None:
+                        # Convert all timestamps to UTC naive for consistent comparison
+                        timestamp_col = timestamp_col.tz_convert('UTC').tz_localize(None)
+                        tprint("🔧 TIMEZONE: Converted timezone-aware timestamps to UTC naive", "INFO")
+                    elif hasattr(start_date, 'tz') and start_date.tz is not None:
+                        # Convert start_date to UTC naive for consistent comparison
+                        start_date = start_date.tz_convert('UTC').tz_localize(None)
+                        tprint("🔧 TIMEZONE: Converted start_date to UTC naive", "INFO")
+                    elif hasattr(end_date, 'tz') and end_date.tz is not None:
+                        # Convert end_date to UTC naive for consistent comparison
+                        end_date = end_date.tz_convert('UTC').tz_localize(None)
+                        tprint("🔧 TIMEZONE: Converted end_date to UTC naive", "INFO")
+                    
                     # Apply the date filtering
                     mask = (timestamp_col >= start_date) & (timestamp_col <= end_date)
                     combined_df = combined_df[mask]

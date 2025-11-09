@@ -292,13 +292,46 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
         
         try:
             # Generate features using FeatureBank but with optimized pipeline disabled
-            generated_features = feature_bank.generate_features(
-                data=market_data,
-                categories=feature_categories,
-                use_optimized_pipeline=False,  # Disable optimized pipeline to fix identical values bug
-                progressive_loading=True,
-                auto_normalize=False  # Disable automatic normalization to prevent zero-mean issue
-            )
+            # Add minimum data validation to prevent all-NaN columns
+            data_length = len(market_data)
+            
+            # Adjust lookback periods based on available data to prevent all-NaN columns
+            max_lookback = min(20, data_length // 3) if data_length < 60 else 20
+            
+            if data_length < 50:
+                tprint(f"⚠️ Warning: Only {data_length} rows of data available. Some indicators may produce all-NaN columns.")
+                tprint("💡 Consider increasing data size or using shorter lookback periods")
+            elif data_length < 100:
+                tprint(f"⚠️ Limited data: {data_length} rows. Adjusting lookback periods to prevent all-NaN columns.")
+                tprint(f"🔧 Using maximum lookback period of {max_lookback} instead of 20")
+            
+            # Override lookback periods in FeatureBank configuration if needed
+            if data_length < 100:
+                # Create a custom configuration with adjusted lookback periods
+                custom_config = {
+                    'lookback_periods': {
+                        'short': min(5, data_length // 10),
+                        'medium': min(10, data_length // 6),
+                        'long': max_lookback
+                    }
+                }
+                
+                generated_features = feature_bank.generate_features(
+                    data=market_data,
+                    categories=feature_categories,
+                    use_optimized_pipeline=False,  # Disable optimized pipeline to fix identical values bug
+                    progressive_loading=True,
+                    auto_normalize=False,  # Disable automatic normalization to prevent zero-mean issue
+                    custom_config=custom_config  # Pass custom configuration
+                )
+            else:
+                generated_features = feature_bank.generate_features(
+                    data=market_data,
+                    categories=feature_categories,
+                    use_optimized_pipeline=False,  # Disable optimized pipeline to fix identical values bug
+                    progressive_loading=True,
+                    auto_normalize=False  # Disable automatic normalization to prevent zero-mean issue
+                )
             
             tprint(f"✅ Generated {len(generated_features.columns)} features from FeatureBank (standard mode)")
             return generated_features
@@ -702,14 +735,28 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
                     if len(valid_data) < 10:
                         continue
                     
-                    # Pearson correlation
-                    pearson_corr = abs(pearsonr(valid_data[col], valid_data[target_col])[0])
-                    if np.isnan(pearson_corr):
+                    # Pearson correlation with robust error handling
+                    try:
+                        pearson_result = pearsonr(valid_data[col], valid_data[target_col])
+                        if pearson_result and len(pearson_result) >= 1 and pearson_result[0] is not None:
+                            pearson_corr = abs(float(pearson_result[0]))
+                            if np.isnan(pearson_corr):
+                                pearson_corr = 0.0
+                        else:
+                            pearson_corr = 0.0
+                    except (ValueError, TypeError, IndexError):
                         pearson_corr = 0.0
                     
-                    # Spearman correlation (rank correlation)
-                    spearman_corr = abs(spearmanr(valid_data[col], valid_data[target_col])[0])
-                    if np.isnan(spearman_corr):
+                    # Spearman correlation (rank correlation) with robust error handling
+                    try:
+                        spearman_result = spearmanr(valid_data[col], valid_data[target_col])
+                        if spearman_result and len(spearman_result) >= 1 and spearman_result[0] is not None:
+                            spearman_corr = abs(float(spearman_result[0]))
+                            if np.isnan(spearman_corr):
+                                spearman_corr = 0.0
+                        else:
+                            spearman_corr = 0.0
+                    except (ValueError, TypeError, IndexError):
                         spearman_corr = 0.0
                     
                     # Feature stability (coefficient of variation)

@@ -544,6 +544,27 @@ async def main():
         'execution_mode': args.execution_mode
     }
     
+    # Import tprint for troubleshooting output
+    try:
+        from src.utils.tprint import tprint
+    except ImportError:
+        # Fallback if tprint is not available
+        def tprint(*args, **kwargs):
+            print(*args)
+    
+    # Add mode-specific days configuration for regime models training
+    tprint(f"🔧 CONFIG: Setting execution_mode={args.execution_mode} with mode-specific days", "INFO")
+    if args.execution_mode == 'blank':
+        config['blank_mode_days'] = 180
+        tprint(f"🔧 CONFIG: Setting blank_mode_days=180", "INFO")
+    elif args.execution_mode == 'light':
+        config['light_mode_days'] = 20
+        tprint(f"🔧 CONFIG: Setting light_mode_days=20", "INFO")
+    
+    # Add both as defaults for all modes (can be overridden by mode-specific values above)
+    config.setdefault('blank_mode_days', 180)
+    config.setdefault('light_mode_days', 20)
+    
     # Set execution mode for HPO optimizations
     from src.utils.ml_common.optimization import set_execution_mode
     set_execution_mode(args.execution_mode)

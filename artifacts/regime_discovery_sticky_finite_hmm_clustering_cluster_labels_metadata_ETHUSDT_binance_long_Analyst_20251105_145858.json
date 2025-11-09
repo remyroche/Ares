@@ -1,8 +1,0 @@
-{
-  "artifact_name": "cluster_labels",
-  "artifact_type": "data",
-  "file_path": "artifacts/pre_training/ETHUSDT/binance/long/Analyst/sticky_finite_hmm_clustering/regime_discovery_sticky_finite_hmm_clustering_cluster_labels_ETHUSDT_binance_long_Analyst_20251105_145858.parquet",
-  "file_size": 14273,
-  "timestamp": "2025-11-05T16:09:13.842057",
-  "compression": "auto"
-}

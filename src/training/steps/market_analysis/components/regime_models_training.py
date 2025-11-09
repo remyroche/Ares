@@ -51,21 +51,21 @@ except ImportError:
 
 def _fallback_default_regime_training_config() -> Dict[str, Any]:
     base_config: Dict[str, Any] = {
-        "test_size": 0.3,
-        "gap_size": 1,
-        "validation_size": 0.2,
-        "min_regime_samples": 10,
+        "test_size": 0.15,  # Reduced from 0.2 to keep more training data
+        "gap_size": 2,  # Increased from 1 to prevent leakage
+        "validation_size": 0.1,  # Reduced from 0.15 to keep more training data
+        "min_regime_samples": 5,  # Reduced from 50 to handle rare regimes
         "regime_aware": True,
         "temporal_validation": {
             "enabled": True,
             "strict_temporal_order": True,
-            "initial_train_size": 0.6,
+            "initial_train_size": 0.75,  # Increased from 0.65
             "step_size": 0.1,
             "min_test_size": 0.1,
             "enable_leakage_detection": True,
-            "n_splits": 5,
-            "test_size": 0.2,
-            "gap_size": 1,
+            "n_splits": 7,  # Increased from 5 for better CV estimates
+            "test_size": 0.1,  # Reduced from 0.15 to keep more training data
+            "gap_size": 2,  # Increased from 1 to prevent leakage
         },
         "model_validation": {
             "enabled": True,
@@ -86,15 +86,15 @@ def _fallback_default_regime_training_config() -> Dict[str, Any]:
         "regime_extraction": {
             "min_regimes": 2,
             "max_regimes": 10,
-            "min_samples_per_regime": 5,
+            "min_samples_per_regime": 50,  # Increased from 5 to ensure sufficient samples
             "extraction_method": "standardized",
             "fallback_to_synthetic": True,
         },
         "hpo": {
             "enabled": True,
             "method": "bayesian",
-            "max_trials": 50,
-            "timeout_seconds": 300,
+            "max_trials": 150,  # Increased from 50 for better hyperparameter search
+            "timeout_seconds": 600,  # Increased from 300 to allow more thorough search
             "early_stopping": True,
             "enable_pruning": True,
         },
@@ -866,7 +866,12 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         tprint("🔧 [REGIME_MODELS] Initializing improved components", color="cyan")
         
         # Initialize temporal splitter
+        tprint(f"🔍 [DEBUG] Config being passed to temporal splitter: min_regime_samples={self.validated_config.get('min_regime_samples', 'NOT_SET')}", color="yellow")
         self.temporal_splitter = create_temporal_splitter(self.validated_config)
+        # Workaround: Directly set min_regime_samples to handle rare regimes
+        if hasattr(self.temporal_splitter, 'min_regime_samples'):
+            self.temporal_splitter.min_regime_samples = 5
+            tprint(f"🔧 [REGIME_MODELS] Temporal splitter min_regime_samples set to {self.temporal_splitter.min_regime_samples}", color="cyan")
         tprint("✅ [REGIME_MODELS] Temporal splitter initialized", color="green")
 
         # Initialize walk-forward validator for OOS model selection
@@ -1927,6 +1932,16 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
         trained_models = {}
 
+        # Create validation split for early stopping (15% of training data)
+        from sklearn.model_selection import train_test_split
+        X_train_fit, X_val, y_train_fit, y_val = train_test_split(
+            X_train, y_train,
+            test_size=0.15,
+            random_state=42,
+            stratify=y_train  # Stratified split to preserve class distribution
+        )
+        tprint(f"📊 [REGIME_MODELS] Created validation split: Train={len(X_train_fit)}, Val={len(X_val)}, Test={len(X_test)}", color="cyan")
+
         # Get transition-aware scorer for all models
         if self.enable_multi_objective_hpo and self.use_pareto_optimization:
             scoring = create_transition_aware_scorer(
@@ -2014,16 +2029,27 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     X=X_train,
                     y=y_train,
                     search_space=search_space,
-                    cv=3,
+                    cv=5,  # Increased from 3 for better validation
                     scoring=scoring,
-                    n_trials=75
+                    n_trials=150,  # Increased from 75 for better hyperparameter search
+                    # Early stopping for efficiency
+                    early_stopping_patience=15,  # Stop if no improvement for 15 trials
+                    early_stopping_threshold=0.001,  # 0.1% minimum improvement required
+                    enable_pruner=True,
+                    pruner_type='hyperband'  # Aggressive pruning for speed
                 )
 
                 if hpo_result and not hpo_result.get('error'):
                     best_params = hpo_result.get('best_params', {})
                     best_score = hpo_result.get('best_score')
                     tuned_model = create_catboost_model(**best_params)
-                    tuned_model.fit(X_train, y_train)
+                    # Train with early stopping on validation set
+                    tuned_model.fit(
+                        X_train_fit, y_train_fit,
+                        eval_set=(X_val, y_val),
+                        early_stopping_rounds=50,
+                        verbose=False
+                    )
                     trained_models['catboost'] = tuned_model
                     score_msg = f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
                     tprint(f"✅ [REGIME_MODELS] CatBoost HPO completed - Best score: {score_msg}", color="green")
@@ -2036,7 +2062,13 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         class_weights=catboost_weights,  # Apply adaptive class weights
                         random_seed=42, verbose=False
                     )
-                    catboost_model.fit(X_train, y_train)
+                    # Train with early stopping
+                    catboost_model.fit(
+                        X_train_fit, y_train_fit,
+                        eval_set=(X_val, y_val),
+                        early_stopping_rounds=50,
+                        verbose=False
+                    )
                     trained_models['catboost'] = catboost_model
                     tprint("⚠️ [REGIME_MODELS] CatBoost HPO unavailable, using default parameters", color="yellow")
             except Exception as e:
@@ -2068,16 +2100,26 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 X=X_train,
                 y=y_train,
                 search_space=search_space,
-                cv=3,
+                cv=5,  # Increased from 3 for better validation
                 scoring=scoring,
-                n_trials=75
+                n_trials=150,  # Increased from 75 for better hyperparameter search
+                # Early stopping for efficiency
+                early_stopping_patience=15,
+                early_stopping_threshold=0.001,
+                enable_pruner=True,
+                pruner_type='hyperband'
             )
 
             if hpo_result and not hpo_result.get('error'):
                 best_params = hpo_result.get('best_params', {})
                 best_score = hpo_result.get('best_score')
                 tuned_model = create_lightgbm_model(**best_params)
-                tuned_model.fit(X_train, y_train)
+                # Train with early stopping on validation set
+                tuned_model.fit(
+                    X_train_fit, y_train_fit,
+                    eval_set=[(X_val, y_val)],
+                    callbacks=[early_stopping(50), log_evaluation(0)]
+                )
                 trained_models['lightgbm'] = tuned_model
                 score_msg = f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
                 tprint(f"✅ [REGIME_MODELS] LightGBM HPO completed - Best score: {score_msg}", color="green")
@@ -2090,7 +2132,12 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     class_weight=adaptive_weights,  # Apply adaptive class weights
                     random_state=42, verbose=-1, force_col_wise=True
                 )
-                lgbm_model.fit(X_train, y_train)
+                # Train with early stopping
+                lgbm_model.fit(
+                    X_train_fit, y_train_fit,
+                    eval_set=[(X_val, y_val)],
+                    callbacks=[early_stopping(50), log_evaluation(0)]
+                )
                 trained_models['lightgbm'] = lgbm_model
                 tprint("⚠️ [REGIME_MODELS] LightGBM HPO unavailable, using default parameters", color="yellow")
         except Exception as e:
@@ -2121,16 +2168,26 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 X=X_train,
                 y=y_train,
                 search_space=search_space,
-                cv=3,
+                cv=5,  # Increased from 3 for better validation
                 scoring=scoring,
-                n_trials=75
+                n_trials=150,  # Increased from 75 for better hyperparameter search
+                # Early stopping for efficiency
+                early_stopping_patience=15,
+                early_stopping_threshold=0.001,
+                enable_pruner=True,
+                pruner_type='hyperband'
             )
 
             if hpo_result and not hpo_result.get('error'):
                 best_params = hpo_result.get('best_params', {})
                 best_score = hpo_result.get('best_score')
                 tuned_model = create_xgboost_model(**best_params)
-                tuned_model.fit(X_train, y_train)
+                # Train with early stopping on validation set
+                tuned_model.fit(
+                    X_train_fit, y_train_fit,
+                    eval_set=[(X_val, y_val)],
+                    verbose=False
+                )
                 trained_models['xgboost'] = tuned_model
                 score_msg = f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
                 tprint(f"✅ [REGIME_MODELS] XGBoost HPO completed - Best score: {score_msg}", color="green")
@@ -2139,7 +2196,12 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 if hpo_result and hpo_result.get('error'):
                     tprint(f"⚠️ [REGIME_MODELS] XGBoost HPO returned error: {hpo_result.get('error')}", color="yellow")
                 xgb_model = xgb.XGBClassifier(n_estimators=100, max_depth=6, learning_rate=0.1, random_state=42, n_jobs=-1, verbosity=0)
-                xgb_model.fit(X_train, y_train)
+                # Train with early stopping
+                xgb_model.fit(
+                    X_train_fit, y_train_fit,
+                    eval_set=[(X_val, y_val)],
+                    verbose=False
+                )
                 trained_models['xgboost'] = xgb_model
                 tprint("⚠️ [REGIME_MODELS] XGBoost HPO unavailable, using default parameters", color="yellow")
         except Exception as e:
@@ -2168,15 +2230,21 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 X=X_train,
                 y=y_train,
                 search_space=search_space,
-                cv=3,
+                cv=5,  # Increased from 3 for better validation
                 scoring=scoring,
-                n_trials=75
+                n_trials=150,  # Increased from 75 for better hyperparameter search
+                # Early stopping for efficiency
+                early_stopping_patience=15,
+                early_stopping_threshold=0.001,
+                enable_pruner=True,
+                pruner_type='hyperband'
             )
 
             if hpo_result and not hpo_result.get('error'):
                 best_params = hpo_result.get('best_params', {})
                 best_score = hpo_result.get('best_score')
                 tuned_model = create_rf_model(**best_params)
+                # RandomForest doesn't support early stopping, use full training data
                 tuned_model.fit(X_train, y_train)
                 trained_models['random_forest'] = tuned_model
                 score_msg = f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
@@ -2218,15 +2286,21 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 X=X_train,
                 y=y_train,
                 search_space=search_space,
-                cv=3,
+                cv=5,  # Increased from 3 for better validation
                 scoring=scoring,
-                n_trials=75
+                n_trials=150,  # Increased from 75 for better hyperparameter search
+                # Early stopping for efficiency
+                early_stopping_patience=15,
+                early_stopping_threshold=0.001,
+                enable_pruner=True,
+                pruner_type='hyperband'
             )
 
             if hpo_result and not hpo_result.get('error'):
                 best_params = hpo_result.get('best_params', {})
                 best_score = hpo_result.get('best_score')
                 tuned_model = create_et_model(**best_params)
+                # ExtraTrees doesn't support early stopping, use full training data
                 tuned_model.fit(X_train, y_train)
                 trained_models['extratrees'] = tuned_model
                 score_msg = f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
@@ -2247,7 +2321,33 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"❌ [REGIME_MODELS] ExtraTrees training failed: {e}", color="red")
 
         tprint(f"✅ [REGIME_MODELS] Model training completed - {len(trained_models)} models trained", color="green")
-        return trained_models
+
+        # Apply probability calibration to all models
+        tprint("🎯 [REGIME_MODELS] Applying probability calibration to all models", color="cyan")
+        calibrated_models = {}
+        from sklearn.calibration import CalibratedClassifierCV
+
+        for model_name, model in trained_models.items():
+            try:
+                tprint(f"📊 [REGIME_MODELS] Calibrating {model_name}", color="blue")
+                # Use isotonic calibration (better for tree-based models)
+                # Train calibrator on validation set
+                calibrated = CalibratedClassifierCV(
+                    estimator=model,
+                    method='isotonic',  # Isotonic regression (non-parametric)
+                    cv='prefit',  # Model is already fitted
+                    ensemble=False
+                )
+                # Calibrate using validation set
+                calibrated.fit(X_val, y_val)
+                calibrated_models[model_name] = calibrated
+                tprint(f"✅ [REGIME_MODELS] {model_name} calibrated successfully", color="green")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Failed to calibrate {model_name}: {e}, using uncalibrated model", color="yellow")
+                calibrated_models[model_name] = model  # Fallback to uncalibrated
+
+        tprint(f"✅ [REGIME_MODELS] Probability calibration completed - {len(calibrated_models)} models calibrated", color="green")
+        return calibrated_models
 
     async def _evaluate_models_enhanced(self, models: Dict[str, Any], X_test: np.ndarray, y_test: np.ndarray) -> Dict[str, Any]:
         """Evaluate models with enhanced evaluation utilities."""
@@ -2340,6 +2440,51 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 tprint(f"⚠️ [REGIME_MODELS] Still have {nan_after} NaN values after imputation", color="yellow")
             else:
                 tprint("✅ [REGIME_MODELS] NaN values handled successfully", color="green")
+
+            # Apply robust feature scaling (better for outliers than StandardScaler)
+            tprint("🔧 [REGIME_MODELS] Applying robust feature scaling", color="cyan")
+            from sklearn.preprocessing import RobustScaler
+
+            # Check feature statistics before scaling
+            feature_stds = np.std(X, axis=0)
+            low_variance_features = feature_stds < 1e-6
+            
+            # Debug: Check lengths before filtering
+            if feature_names is not None:
+                tprint(f"🔍 [DEBUG] X shape: {X.shape}, feature_names length: {len(feature_names)}", color="yellow")
+            tprint(f"🔍 [DEBUG] low_variance_features length: {len(low_variance_features)}", color="yellow")
+
+            if np.any(low_variance_features):
+                n_low_var = np.sum(low_variance_features)
+                tprint(f"⚠️ [REGIME_MODELS] Removing {n_low_var} low-variance features (std < 1e-6)", color="yellow")
+                X = X[:, ~low_variance_features]
+                
+                # Ensure we don't index out of bounds - only filter if feature_names is available
+                if feature_names is not None:
+                    # Ensure we don't index out of bounds
+                    if len(low_variance_features) != len(feature_names):
+                        tprint(f"⚠️ [DEBUG] Length mismatch: low_variance_features={len(low_variance_features)}, feature_names={len(feature_names)}", color="red")
+                        # Truncate or pad to match
+                        if len(low_variance_features) > len(feature_names):
+                            low_variance_features = low_variance_features[:len(feature_names)]
+                        else:
+                            # This shouldn't happen but let's handle it gracefully
+                            tprint(f"⚠️ [DEBUG] Unexpected: feature_names longer than low_variance_features", color="red")
+                            extra_features = len(feature_names) - len(low_variance_features)
+                            low_variance_features = np.concatenate([low_variance_features, [False] * extra_features])
+                    
+                    feature_names = [fn for i, fn in enumerate(feature_names) if not low_variance_features[i]]
+
+            # Apply RobustScaler (uses median and IQR, robust to outliers)
+            self.feature_scaler = RobustScaler()
+            X_scaled = self.feature_scaler.fit_transform(X)
+
+            # Verify scaling
+            scaled_means = np.mean(X_scaled, axis=0)
+            scaled_stds = np.std(X_scaled, axis=0)
+            tprint(f"✅ [REGIME_MODELS] Feature scaling completed - Mean range: [{scaled_means.min():.3f}, {scaled_means.max():.3f}], Std range: [{scaled_stds.min():.3f}, {scaled_stds.max():.3f}]", color="green")
+
+            X = X_scaled  # Use scaled features
 
             # Apply feature selection if high dimensionality detected
             n_samples, n_features = X.shape
@@ -2755,9 +2900,9 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 tprint("❌ [REGIME_MODELS] Feature generation system not available", color="red")
                 return None, None
 
-            # Get feature bank
-            feature_bank = get_feature_bank()
-            tprint("✅ [REGIME_MODELS] Feature bank retrieved successfully", color="green")
+            # Get feature bank with REGIME features ENABLED (critical for regime classification)
+            feature_bank = get_feature_bank(config={'enable_regime_features': True})
+            tprint("✅ [REGIME_MODELS] Feature bank retrieved with REGIME features ENABLED", color="green")
 
             # Define feature categories to generate - prioritize REGIME category for core regime features
             categories = [
@@ -2829,6 +2974,35 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 
                 tprint(f"✅ [REGIME_MODELS] Feature bank generated {X.shape[1]} features from {len(categories)} categories", color="green")
                 tprint(f"📊 [REGIME_MODELS] Feature matrix shape: {X.shape}", color="blue")
+
+                # Validate regime features were actually generated (CRITICAL for accuracy)
+                regime_feature_count = sum(1 for fn in feature_names if 'regime' in fn.lower())
+                tprint(f"🔍 [REGIME_MODELS] Generated {regime_feature_count} regime-specific features", color="cyan")
+
+                if regime_feature_count < 10:
+                    tprint(f"⚠️ [REGIME_MODELS] WARNING: Only {regime_feature_count} regime features found! Expected 20+", color="yellow")
+                    tprint("   This may significantly impact model accuracy (regime features are critical)", color="yellow")
+                    tprint("   Check that FeatureCategory.REGIME is enabled in feature_bank.py", color="yellow")
+                else:
+                    tprint(f"✅ [REGIME_MODELS] Sufficient regime features generated ({regime_feature_count})", color="green")
+
+                # Log feature categories breakdown
+                category_counts = {}
+                for fn in feature_names:
+                    fn_lower = fn.lower()
+                    if 'regime' in fn_lower:
+                        category_counts['regime'] = category_counts.get('regime', 0) + 1
+                    elif 'momentum' in fn_lower or 'rsi' in fn_lower or 'macd' in fn_lower:
+                        category_counts['momentum'] = category_counts.get('momentum', 0) + 1
+                    elif 'volatility' in fn_lower or 'atr' in fn_lower or 'bollinger' in fn_lower:
+                        category_counts['volatility'] = category_counts.get('volatility', 0) + 1
+                    elif 'volume' in fn_lower or 'obv' in fn_lower:
+                        category_counts['volume'] = category_counts.get('volume', 0) + 1
+                    else:
+                        category_counts['other'] = category_counts.get('other', 0) + 1
+
+                tprint(f"📊 [REGIME_MODELS] Feature breakdown: {category_counts}", color="blue")
+
                 return X, feature_names
             else:
                 tprint("❌ [REGIME_MODELS] Feature bank generated no features", color="red")
@@ -3544,35 +3718,140 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         feature_importance_paths.append(str(shap_60_path))
                         tprint(f"✅ SHAP top 60 feature importance CSV generated: {shap_60_path}", color="green")
             
-            # 2. Generate model comparison CSV (if multiple models)
+            # 2. Generate comprehensive model comparison CSV (all models)
             models = training_results.get('models', {})
             model_metrics = training_results.get('model_metrics', {})
-            
+
             comparison_path = None
-            if len(models) > 1:
+            if len(model_metrics) >= 1:  # Generate even for single model
                 comparison_filename = f"regime_models_comparison_{symbol}_{timestamp}.csv"
                 comparison_path = output_path / comparison_filename
-                
-                tprint(f"📊 Generating model comparison CSV: {comparison_path}", color="cyan")
-                
+
+                tprint(f"📊 Generating comprehensive model comparison CSV: {comparison_path}", color="cyan")
+
                 comparison_data = []
-                comparison_data.append(['Model Name', 'Accuracy', 'Precision', 'Recall', 'F1-Score'])
-                
+                # Enhanced header with more metrics
+                comparison_data.append([
+                    'Model Name',
+                    'Accuracy',
+                    'Precision (Weighted)',
+                    'Recall (Weighted)',
+                    'F1-Score (Weighted)',
+                    'Training Status'
+                ])
+
                 for model_name, metrics in model_metrics.items():
-                    comparison_data.append([
-                        model_name,
-                        f"{metrics.get('accuracy', 0):.6f}",
-                        f"{metrics.get('precision', 0):.6f}",
-                        f"{metrics.get('recall', 0):.6f}",
-                        f"{metrics.get('f1_score', 0):.6f}"
-                    ])
-                
+                    if 'error' in metrics:
+                        # Model failed
+                        comparison_data.append([
+                            model_name,
+                            'ERROR',
+                            'ERROR',
+                            'ERROR',
+                            'ERROR',
+                            f"Failed: {metrics['error']}"
+                        ])
+                    else:
+                        comparison_data.append([
+                            model_name,
+                            f"{metrics.get('accuracy', 0):.6f}",
+                            f"{metrics.get('precision', 0):.6f}",
+                            f"{metrics.get('recall', 0):.6f}",
+                            f"{metrics.get('f1_score', 0):.6f}",
+                            'Success'
+                        ])
+
                 with open(comparison_path, 'w', newline='', encoding='utf-8') as f:
                     writer = csv.writer(f)
                     writer.writerows(comparison_data)
-                
-                tprint(f"✅ Model comparison CSV generated: {comparison_path}", color="green")
-            
+
+                tprint(f"✅ Comprehensive model comparison CSV generated: {comparison_path}", color="green")
+
+            # 3. Generate detailed per-model metrics CSV
+            detailed_path = None
+            if len(model_metrics) >= 1:
+                detailed_filename = f"regime_models_detailed_all_{symbol}_{timestamp}.csv"
+                detailed_path = output_path / detailed_filename
+
+                tprint(f"📊 Generating detailed per-model metrics CSV: {detailed_path}", color="cyan")
+
+                detailed_data = []
+                detailed_data.append([
+                    'Model Name',
+                    'Metric Type',
+                    'Metric Name',
+                    'Value',
+                    'Description'
+                ])
+
+                for model_name, metrics in model_metrics.items():
+                    if 'error' not in metrics:
+                        # Overall metrics
+                        detailed_data.append([model_name, 'Overall', 'Accuracy', f"{metrics.get('accuracy', 0):.6f}", 'Classification accuracy'])
+                        detailed_data.append([model_name, 'Overall', 'Precision (Weighted)', f"{metrics.get('precision', 0):.6f}", 'Weighted average precision'])
+                        detailed_data.append([model_name, 'Overall', 'Recall (Weighted)', f"{metrics.get('recall', 0):.6f}", 'Weighted average recall'])
+                        detailed_data.append([model_name, 'Overall', 'F1-Score (Weighted)', f"{metrics.get('f1_score', 0):.6f}", 'Weighted average F1-score'])
+
+                        # Support
+                        if 'support' in metrics:
+                            detailed_data.append([model_name, 'Overall', 'Total Support', str(metrics.get('support')), 'Total number of samples'])
+
+                        # Per-class metrics if available
+                        if 'classification_report' in metrics:
+                            report_dict = metrics['classification_report']
+                            if isinstance(report_dict, dict):
+                                for class_label, class_metrics in report_dict.items():
+                                    if isinstance(class_metrics, dict) and class_label not in ['accuracy', 'macro avg', 'weighted avg']:
+                                        detailed_data.append([model_name, f'Class {class_label}', 'Precision', f"{class_metrics.get('precision', 0):.6f}", f'Precision for class {class_label}'])
+                                        detailed_data.append([model_name, f'Class {class_label}', 'Recall', f"{class_metrics.get('recall', 0):.6f}", f'Recall for class {class_label}'])
+                                        detailed_data.append([model_name, f'Class {class_label}', 'F1-Score', f"{class_metrics.get('f1-score', 0):.6f}", f'F1-score for class {class_label}'])
+                                        detailed_data.append([model_name, f'Class {class_label}', 'Support', str(class_metrics.get('support', 0)), f'Number of samples in class {class_label}'])
+
+                with open(detailed_path, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerows(detailed_data)
+
+                tprint(f"✅ Detailed per-model metrics CSV generated: {detailed_path}", color="green")
+
+            # 4. Generate per-regime performance CSV
+            regime_perf_path = None
+            if len(model_metrics) >= 1:
+                regime_perf_filename = f"regime_performance_by_model_{symbol}_{timestamp}.csv"
+                regime_perf_path = output_path / regime_perf_filename
+
+                tprint(f"📊 Generating per-regime performance CSV: {regime_perf_path}", color="cyan")
+
+                regime_data = []
+                regime_data.append([
+                    'Model Name',
+                    'Regime',
+                    'Precision',
+                    'Recall',
+                    'F1-Score',
+                    'Support'
+                ])
+
+                for model_name, metrics in model_metrics.items():
+                    if 'error' not in metrics and 'classification_report' in metrics:
+                        report_dict = metrics['classification_report']
+                        if isinstance(report_dict, dict):
+                            for class_label, class_metrics in report_dict.items():
+                                if isinstance(class_metrics, dict) and class_label not in ['accuracy', 'macro avg', 'weighted avg']:
+                                    regime_data.append([
+                                        model_name,
+                                        class_label,
+                                        f"{class_metrics.get('precision', 0):.6f}",
+                                        f"{class_metrics.get('recall', 0):.6f}",
+                                        f"{class_metrics.get('f1-score', 0):.6f}",
+                                        str(class_metrics.get('support', 0))
+                                    ])
+
+                with open(regime_perf_path, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerows(regime_data)
+
+                tprint(f"✅ Per-regime performance CSV generated: {regime_perf_path}", color="green")
+
             return str(metrics_path), str(comparison_path) if comparison_path else None
             
         except Exception as e:

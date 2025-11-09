@@ -309,6 +309,19 @@ class AnalystEnsembleTrainingStep(BaseStep):
 
         # Add regime probabilities if available
         if regime_probs is not None:
+            # Ensure regime_probs has datetime index if common_index is datetime
+            if hasattr(common_index, 'dtype') and 'datetime' in str(common_index.dtype):
+                if not hasattr(regime_probs.index, 'dtype') or 'datetime' not in str(regime_probs.index.dtype):
+                    tprint("🔄 Converting regime probabilities index to datetime...", "INFO")
+                    # If regime_probs has int index, use common_index directly
+                    if len(regime_probs) == len(common_index):
+                        regime_probs.index = common_index
+                    else:
+                        tprint(f"⚠️ Regime probs length ({len(regime_probs)}) != features length ({len(common_index)}), using ffill alignment", "WARNING")
+                        # Create a mapping - this is a fallback
+                        regime_probs = regime_probs.reindex(range(len(common_index)), method='ffill')
+                        regime_probs.index = common_index
+            
             # Align regime probs to analyst timeframe if needed
             if not regime_probs.index.equals(common_index):
                 tprint("🔄 Aligning regime probabilities to analyst timeframe...", "INFO")
@@ -317,19 +330,31 @@ class AnalystEnsembleTrainingStep(BaseStep):
             else:
                 combined = combined.join(regime_probs, how='left', rsuffix='_regime')
 
-        # Add base predictions
+        # Add base predictions (remove duplicates first)
+        if base_predictions.index.duplicated().any():
+            self.logger.warning(f"⚠️ Removing {base_predictions.index.duplicated().sum()} duplicate indices from base_predictions")
+            base_predictions = base_predictions[~base_predictions.index.duplicated(keep='first')]
+        
         if not base_predictions.index.equals(common_index):
             base_predictions = base_predictions.reindex(common_index)
         combined = combined.join(base_predictions, how='left', rsuffix='_base')
 
-        # Add base confidence if available
+        # Add base confidence if available (remove duplicates first)
         if base_confidence is not None:
+            if base_confidence.index.duplicated().any():
+                self.logger.warning(f"⚠️ Removing {base_confidence.index.duplicated().sum()} duplicate indices from base_confidence")
+                base_confidence = base_confidence[~base_confidence.index.duplicated(keep='first')]
+            
             if not base_confidence.index.equals(common_index):
                 base_confidence = base_confidence.reindex(common_index)
             combined = combined.join(base_confidence, how='left', rsuffix='_conf')
 
-        # Add disagreement features
+        # Add disagreement features (remove duplicates first)
         if not disagreement_features.empty:
+            if disagreement_features.index.duplicated().any():
+                self.logger.warning(f"⚠️ Removing {disagreement_features.index.duplicated().sum()} duplicate indices from disagreement_features")
+                disagreement_features = disagreement_features[~disagreement_features.index.duplicated(keep='first')]
+            
             if not disagreement_features.index.equals(common_index):
                 disagreement_features = disagreement_features.reindex(common_index)
             combined = combined.join(disagreement_features, how='left')

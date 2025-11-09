@@ -1,8 +1,0 @@
-{
-  "artifact_name": "hdp_hmm_quality_metrics",
-  "artifact_type": "metadata",
-  "file_path": "artifacts/market_analysis/ETHUSDT/binance/long/Analyst/sticky_finite_hmm_regime_discovery/regime_discovery_sticky_finite_hmm_regime_discovery_hdp_hmm_quality_metrics_ETHUSDT_binance_long_Analyst_20251103_234233.parquet",
-  "file_size": 447049,
-  "timestamp": "2025-11-03T23:42:33.945036",
-  "compression": "auto"
-}

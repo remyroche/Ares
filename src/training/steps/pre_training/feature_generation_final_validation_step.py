@@ -777,7 +777,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
                     top_outlier_features = sorted(outlier_counts.items(), key=lambda x: x[1], reverse=True)[:5]
                     outlier_details = ', '.join([f'{col}({count})' for col, count in top_outlier_features])
                     assessment['warnings'].append(f"   Top outlier features: {outlier_details}")
-                    assessment['recommendations'].append("✅ Using 3-sigma outlier detection (more lenient than IQR) for financial data")
+                    assessment['recommendations'].append("✅ Using 2.5-sigma outlier detection (more appropriate for heavy-tailed financial data)")
                 
             # Data type analysis
             numeric_cols = dq.get('numeric_columns', 0)

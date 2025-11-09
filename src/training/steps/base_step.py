@@ -94,7 +94,11 @@ class BaseStep(ABC):
         if self._artifact_manager is None:
             self._artifact_manager = ArtifactManager(config={})
             # Apply deferred context
-            self._artifact_manager.set_context(**self._current_context)
+            if self._current_context:
+                self._artifact_manager.set_context(
+                    step_name=self.step_name,
+                    **{k: v for k, v in self._current_context.items() if k != 'step_name'}
+                )
         return self._artifact_manager
 
     @property
@@ -799,14 +803,20 @@ class BaseStep(ABC):
                 adjusted_context = original_artifact_context.copy()
                 adjusted_context['timeframe'] = timeframe
                 try:
-                    self.artifact_manager.set_context(**adjusted_context)
+                    self.artifact_manager.set_context(
+                        step_name=self.step_name,
+                        **{k: v for k, v in adjusted_context.items() if k != 'step_name'}
+                    )
                     data, resolved_path = self.artifact_manager.get_artifact(
                         artifact_name=artifact_name,
                         artifact_type=artifact_type,
                         return_path=True
                     )
                 finally:
-                    self.artifact_manager.set_context(**original_artifact_context)
+                    self.artifact_manager.set_context(
+                        step_name=self.step_name,
+                        **{k: v for k, v in original_artifact_context.items() if k != 'step_name'}
+                    )
 
                 if data is not None and resolved_path:
                     tprint(f"✅ Retrieved artifact '{artifact_name}' from fallback | {context_str}")

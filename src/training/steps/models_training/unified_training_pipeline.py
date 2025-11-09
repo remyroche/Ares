@@ -963,6 +963,10 @@ class UnifiedTrainingPipeline:
                 if hasattr(result, 'ensemble_performance'):
                     result.ensemble_result['ensemble_performance'] = result.ensemble_performance
                 
+                # Ensure success flag is set
+                if 'success' not in result.ensemble_result:
+                    result.ensemble_result['success'] = True
+                
                 tprint_success("✅ Ensemble models training completed with explanations")
                 return result.ensemble_result
             else:

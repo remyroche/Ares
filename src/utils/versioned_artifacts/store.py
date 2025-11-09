@@ -446,7 +446,12 @@ class VersionedArtifactStore:
             else:
                 columns_to_load = all_columns
 
-            tprint(f"📂 Loading {len(columns_to_load)}/{len(all_columns)} columns from '{version_name}' | {context_str}")
+            # CRITICAL FIX: Wrap tprint in try-except to prevent I/O errors from breaking data loading
+            try:
+                tprint(f"📂 Loading {len(columns_to_load)}/{len(all_columns)} columns from '{version_name}' | {context_str}")
+            except (ValueError, OSError):
+                # Silently ignore logging errors - data loading is more important
+                pass
 
             # Load data efficiently using dict comprehension
             data_dict = {col: version_group[col][:] for col in columns_to_load}
@@ -458,7 +463,12 @@ class VersionedArtifactStore:
             if mask.row_mask is not None:
                 original_len = len(df)
                 df = df[mask.row_mask]
-                tprint(f"✂️ Row mask applied: {len(df)}/{original_len} rows retained | {context_str}")
+                # CRITICAL FIX: Wrap tprint in try-except to prevent I/O errors from breaking data loading
+                try:
+                    tprint(f"✂️ Row mask applied: {len(df)}/{original_len} rows retained | {context_str}")
+                except (ValueError, OSError):
+                    # Silently ignore logging errors - data loading is more important
+                    pass
 
             return df
 

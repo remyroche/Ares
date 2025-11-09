@@ -1289,9 +1289,552 @@
       "direction": "long",
       "model": "regime",
       "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_regime_labels_20251109_102220_104": {
+      "created_at": "2025-11-09T10:22:20.104998",
+      "num_rows": 33898,
+      "num_columns": 2,
+      "columns": [
+        "timestamp",
+        "regime_label"
+      ],
+      "artifact_name": "rolling_hmm_regime_labels",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_regime_probabilities_20251109_102220_139": {
+      "created_at": "2025-11-09T10:22:20.139314",
+      "num_rows": 33898,
+      "num_columns": 5,
+      "columns": [
+        "timestamp",
+        "regime_0_prob",
+        "regime_1_prob",
+        "regime_2_prob",
+        "regime_3_prob"
+      ],
+      "artifact_name": "rolling_hmm_regime_probabilities",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_transition_matrix_20251109_102220_178": {
+      "created_at": "2025-11-09T10:22:20.178208",
+      "num_rows": 4,
+      "num_columns": 4,
+      "columns": [
+        "to_regime_0",
+        "to_regime_1",
+        "to_regime_2",
+        "to_regime_3"
+      ],
+      "artifact_name": "rolling_hmm_transition_matrix",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "regime_models_predictions_20251109_105522_893": {
+      "created_at": "2025-11-09T10:55:22.893309",
+      "num_rows": 3305,
+      "num_columns": 9,
+      "columns": [
+        "catboost_regime_0_prob",
+        "catboost_regime_1_prob",
+        "catboost_regime_2_prob",
+        "extratrees_regime_0_prob",
+        "extratrees_regime_1_prob",
+        "extratrees_regime_2_prob",
+        "lightgbm_regime_0_prob",
+        "lightgbm_regime_1_prob",
+        "lightgbm_regime_2_prob"
+      ],
+      "artifact_name": "regime_models_predictions",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "regime_models_training_saver",
+      "model_names": [
+        "catboost_regime_0_prob",
+        "catboost_regime_1_prob",
+        "catboost_regime_2_prob",
+        "extratrees_regime_0_prob",
+        "extratrees_regime_1_prob",
+        "extratrees_regime_2_prob",
+        "lightgbm_regime_0_prob",
+        "lightgbm_regime_1_prob",
+        "lightgbm_regime_2_prob"
+      ],
+      "n_samples": 3305,
+      "n_models": 9
+    },
+    "rolling_hmm_regime_labels_20251109_105743_109": {
+      "created_at": "2025-11-09T10:57:43.109737",
+      "num_rows": 3508,
+      "num_columns": 2,
+      "columns": [
+        "timestamp",
+        "regime_label"
+      ],
+      "artifact_name": "rolling_hmm_regime_labels",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_regime_probabilities_20251109_105743_119": {
+      "created_at": "2025-11-09T10:57:43.119548",
+      "num_rows": 3508,
+      "num_columns": 7,
+      "columns": [
+        "timestamp",
+        "regime_0_prob",
+        "regime_1_prob",
+        "regime_2_prob",
+        "regime_3_prob",
+        "regime_4_prob",
+        "regime_5_prob"
+      ],
+      "artifact_name": "rolling_hmm_regime_probabilities",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_transition_matrix_20251109_105743_130": {
+      "created_at": "2025-11-09T10:57:43.130447",
+      "num_rows": 6,
+      "num_columns": 6,
+      "columns": [
+        "to_regime_0",
+        "to_regime_1",
+        "to_regime_2",
+        "to_regime_3",
+        "to_regime_4",
+        "to_regime_5"
+      ],
+      "artifact_name": "rolling_hmm_transition_matrix",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_regime_labels_20251109_111150_082": {
+      "created_at": "2025-11-09T11:11:50.082964",
+      "num_rows": 3508,
+      "num_columns": 2,
+      "columns": [
+        "timestamp",
+        "regime_label"
+      ],
+      "artifact_name": "rolling_hmm_regime_labels",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_regime_probabilities_20251109_111150_095": {
+      "created_at": "2025-11-09T11:11:50.095211",
+      "num_rows": 3508,
+      "num_columns": 7,
+      "columns": [
+        "timestamp",
+        "regime_0_prob",
+        "regime_1_prob",
+        "regime_2_prob",
+        "regime_3_prob",
+        "regime_4_prob",
+        "regime_5_prob"
+      ],
+      "artifact_name": "rolling_hmm_regime_probabilities",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_transition_matrix_20251109_111150_106": {
+      "created_at": "2025-11-09T11:11:50.106032",
+      "num_rows": 6,
+      "num_columns": 6,
+      "columns": [
+        "to_regime_0",
+        "to_regime_1",
+        "to_regime_2",
+        "to_regime_3",
+        "to_regime_4",
+        "to_regime_5"
+      ],
+      "artifact_name": "rolling_hmm_transition_matrix",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_regime_labels_20251109_112330_282": {
+      "created_at": "2025-11-09T11:23:30.282309",
+      "num_rows": 3508,
+      "num_columns": 2,
+      "columns": [
+        "timestamp",
+        "regime_label"
+      ],
+      "artifact_name": "rolling_hmm_regime_labels",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_regime_probabilities_20251109_112330_295": {
+      "created_at": "2025-11-09T11:23:30.295054",
+      "num_rows": 3508,
+      "num_columns": 7,
+      "columns": [
+        "timestamp",
+        "regime_0_prob",
+        "regime_1_prob",
+        "regime_2_prob",
+        "regime_3_prob",
+        "regime_4_prob",
+        "regime_5_prob"
+      ],
+      "artifact_name": "rolling_hmm_regime_probabilities",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_transition_matrix_20251109_112330_305": {
+      "created_at": "2025-11-09T11:23:30.305558",
+      "num_rows": 6,
+      "num_columns": 6,
+      "columns": [
+        "to_regime_0",
+        "to_regime_1",
+        "to_regime_2",
+        "to_regime_3",
+        "to_regime_4",
+        "to_regime_5"
+      ],
+      "artifact_name": "rolling_hmm_transition_matrix",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_regime_labels_20251109_114912_884": {
+      "created_at": "2025-11-09T11:49:12.884691",
+      "num_rows": 3508,
+      "num_columns": 2,
+      "columns": [
+        "timestamp",
+        "regime_label"
+      ],
+      "artifact_name": "rolling_hmm_regime_labels",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_regime_probabilities_20251109_114912_896": {
+      "created_at": "2025-11-09T11:49:12.896680",
+      "num_rows": 3508,
+      "num_columns": 7,
+      "columns": [
+        "timestamp",
+        "regime_0_prob",
+        "regime_1_prob",
+        "regime_2_prob",
+        "regime_3_prob",
+        "regime_4_prob",
+        "regime_5_prob"
+      ],
+      "artifact_name": "rolling_hmm_regime_probabilities",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_transition_matrix_20251109_114912_908": {
+      "created_at": "2025-11-09T11:49:12.908285",
+      "num_rows": 6,
+      "num_columns": 6,
+      "columns": [
+        "to_regime_0",
+        "to_regime_1",
+        "to_regime_2",
+        "to_regime_3",
+        "to_regime_4",
+        "to_regime_5"
+      ],
+      "artifact_name": "rolling_hmm_transition_matrix",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_regime_labels_20251109_115547_840": {
+      "created_at": "2025-11-09T11:55:47.840465",
+      "num_rows": 3508,
+      "num_columns": 2,
+      "columns": [
+        "timestamp",
+        "regime_label"
+      ],
+      "artifact_name": "rolling_hmm_regime_labels",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_regime_probabilities_20251109_115547_856": {
+      "created_at": "2025-11-09T11:55:47.856353",
+      "num_rows": 3508,
+      "num_columns": 7,
+      "columns": [
+        "timestamp",
+        "regime_0_prob",
+        "regime_1_prob",
+        "regime_2_prob",
+        "regime_3_prob",
+        "regime_4_prob",
+        "regime_5_prob"
+      ],
+      "artifact_name": "rolling_hmm_regime_probabilities",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_transition_matrix_20251109_115547_870": {
+      "created_at": "2025-11-09T11:55:47.870371",
+      "num_rows": 6,
+      "num_columns": 6,
+      "columns": [
+        "to_regime_0",
+        "to_regime_1",
+        "to_regime_2",
+        "to_regime_3",
+        "to_regime_4",
+        "to_regime_5"
+      ],
+      "artifact_name": "rolling_hmm_transition_matrix",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_regime_labels_20251109_122438_852": {
+      "created_at": "2025-11-09T12:24:38.852939",
+      "num_rows": 3508,
+      "num_columns": 2,
+      "columns": [
+        "timestamp",
+        "regime_label"
+      ],
+      "artifact_name": "rolling_hmm_regime_labels",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_regime_probabilities_20251109_122438_863": {
+      "created_at": "2025-11-09T12:24:38.863332",
+      "num_rows": 3508,
+      "num_columns": 7,
+      "columns": [
+        "timestamp",
+        "regime_0_prob",
+        "regime_1_prob",
+        "regime_2_prob",
+        "regime_3_prob",
+        "regime_4_prob",
+        "regime_5_prob"
+      ],
+      "artifact_name": "rolling_hmm_regime_probabilities",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_transition_matrix_20251109_122438_873": {
+      "created_at": "2025-11-09T12:24:38.873935",
+      "num_rows": 6,
+      "num_columns": 6,
+      "columns": [
+        "to_regime_0",
+        "to_regime_1",
+        "to_regime_2",
+        "to_regime_3",
+        "to_regime_4",
+        "to_regime_5"
+      ],
+      "artifact_name": "rolling_hmm_transition_matrix",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_regime_labels_20251109_144040_357": {
+      "created_at": "2025-11-09T14:40:40.357164",
+      "num_rows": 63,
+      "num_columns": 2,
+      "columns": [
+        "timestamp",
+        "regime_label"
+      ],
+      "artifact_name": "rolling_hmm_regime_labels",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_regime_probabilities_20251109_144040_525": {
+      "created_at": "2025-11-09T14:40:40.525937",
+      "num_rows": 63,
+      "num_columns": 6,
+      "columns": [
+        "timestamp",
+        "regime_0_prob",
+        "regime_1_prob",
+        "regime_2_prob",
+        "regime_3_prob",
+        "regime_4_prob"
+      ],
+      "artifact_name": "rolling_hmm_regime_probabilities",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_transition_matrix_20251109_144040_587": {
+      "created_at": "2025-11-09T14:40:40.587538",
+      "num_rows": 5,
+      "num_columns": 5,
+      "columns": [
+        "to_regime_0",
+        "to_regime_1",
+        "to_regime_2",
+        "to_regime_3",
+        "to_regime_4"
+      ],
+      "artifact_name": "rolling_hmm_transition_matrix",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_regime_labels_20251109_181115_340": {
+      "created_at": "2025-11-09T18:11:15.340475",
+      "num_rows": 33898,
+      "num_columns": 2,
+      "columns": [
+        "timestamp",
+        "regime_label"
+      ],
+      "artifact_name": "rolling_hmm_regime_labels",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_regime_probabilities_20251109_181115_378": {
+      "created_at": "2025-11-09T18:11:15.378285",
+      "num_rows": 33898,
+      "num_columns": 7,
+      "columns": [
+        "timestamp",
+        "regime_0_prob",
+        "regime_1_prob",
+        "regime_2_prob",
+        "regime_3_prob",
+        "regime_4_prob",
+        "regime_5_prob"
+      ],
+      "artifact_name": "rolling_hmm_regime_probabilities",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
+    },
+    "rolling_hmm_transition_matrix_20251109_181115_460": {
+      "created_at": "2025-11-09T18:11:15.461027",
+      "num_rows": 6,
+      "num_columns": 6,
+      "columns": [
+        "to_regime_0",
+        "to_regime_1",
+        "to_regime_2",
+        "to_regime_3",
+        "to_regime_4",
+        "to_regime_5"
+      ],
+      "artifact_name": "rolling_hmm_transition_matrix",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "regime",
+      "step_name": "rolling_hmm_regime_discovery"
     }
   },
-  "current_version": "rolling_hmm_transition_matrix_20251109_011730_801",
+  "current_version": "rolling_hmm_transition_matrix_20251109_181115_460",
   "created_at": "2025-11-08T17:28:44.346126",
-  "updated_at": "2025-11-09T01:17:30.804133"
+  "updated_at": "2025-11-09T18:11:15.466759"
 }

@@ -1,9 +1,20 @@
 [
+  "final_dataset_60: \u26a0\ufe0f High outlier count: 107.3% (322 outliers)",
+  "final_dataset_60:    Top outlier features: cycle_length_base_27x_ratio_log_ratio_vwma_20_price_returns_vwap(24), returns_volatility_20_price_returns_base_log_ratio_fibonacci_0.618_20_price_returns_vwap_x_27x(15), returns_volatility_20_price_returns_vwap(15), vectorbt_enhanced_ad_line_20_base_27x_ratio_log_ratio_enhanced_volatility_20_vwap(15), vectorbt_enhanced_ad_line_20_base_27x_ratio_log_ratio_fibonacci_0.786_10_price_returns_base_x_27x(15)",
+  "final_dataset_60: \u26a0\ufe0f Low normality: only 0.0% (0/20) features are normally distributed",
+  "final_dataset_60:    Most skewed features: directional_signal_vwap(skew=2.16)",
+  "final_dataset_60: \u26a0\ufe0f No strong correlations: 23 features tested, none with |corr| > 0.8",
   "final_dataset_60: \u26a0\ufe0f No filter grades found - advanced filters may not be generating normalized outputs",
+  "final_dataset_50: \u26a0\ufe0f High outlier count: 103.7% (311 outliers)",
+  "final_dataset_50:    Top outlier features: fractal_dimension_vwap_9x_ratio(24), wavelet_energy_base_6x_ratio_log_ratio_fibonacci_0.618_20_price_returns_vwap_x_27x(24), returns_volatility_20_price_returns_base_log_ratio_fibonacci_0.786_10_price_returns_vwap_x_9x(18), vectorbt_enhanced_ad_line_20_base_27x_ratio_log_ratio_directional_signal_vwap(15), vwma_20_price_returns_vwap_log_candlestick_harami_cross_pattern_base_6x_ratio(15)",
+  "final_dataset_50: \u26a0\ufe0f No strong correlations: 23 features tested, none with |corr| > 0.8",
   "final_dataset_50: \u26a0\ufe0f No filter grades found - advanced filters may not be generating normalized outputs",
+  "final_dataset_40: \u26a0\ufe0f High outlier count: 86.7% (260 outliers)",
+  "final_dataset_40:    Top outlier features: fractal_dimension_vwap_9x_ratio(24), wavelet_energy_base_6x_ratio_log_ratio_fibonacci_0.618_20_price_returns_vwap_x_27x(24), returns_volatility_20_price_returns_base_log_ratio_fibonacci_0.786_10_price_returns_vwap_x_9x(18), vectorbt_enhanced_ad_line_20_base_27x_ratio_log_ratio_directional_signal_vwap(15), vwma_20_price_returns_vwap_log_candlestick_harami_cross_pattern_base_6x_ratio(15)",
+  "final_dataset_40: \u26a0\ufe0f Low normality: only 0.0% (0/20) features are normally distributed",
+  "final_dataset_40:    Most skewed features: target_short(skew=1.35), target_long(skew=1.28)",
+  "final_dataset_40: \u26a0\ufe0f No strong correlations: 18 features tested, none with |corr| > 0.8",
   "final_dataset_40: \u26a0\ufe0f No filter grades found - advanced filters may not be generating normalized outputs",
-  "labeled_dataframe: \u26a0\ufe0f Low normality: only 0.0% (0/20) features are normally distributed",
-  "labeled_dataframe:    Most skewed features: day(skew=0.01), hour(skew=0.00), day_of_week(skew=-0.00)",
   "labeled_dataframe: \u26a0\ufe0f No strong correlations: 17 features tested, none with |corr| > 0.8",
   "labeled_dataframe: \u26a0\ufe0f No filter grades found - advanced filters may not be generating normalized outputs"
 ]

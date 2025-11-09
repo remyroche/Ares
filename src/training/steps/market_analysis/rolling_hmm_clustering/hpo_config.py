@@ -253,20 +253,14 @@ class RollingHMMOptimizer:
                 params={
                     "n_components": {
                         "type": "int",
-                        "low": 4,
+                        "low": 3,
                         "high": 7,
-                        "step": 1
-                    },
-                    "pca_components": {
-                        "type": "int",
-                        "low": 5,
-                        "high": 10,
                         "step": 1
                     }
                 },
                 priority=2,
                 depends_on=["feature_engineering"],
-                description="HMM states and PCA components"
+                description="HMM states (no PCA - using economic features)"
             )
         )
 
@@ -336,7 +330,6 @@ class RollingHMMOptimizer:
                 # Extract parameters
                 ewma_config_idx = int(params.get('ewma_config_idx', 0))
                 n_components = int(params.get('n_components', 5))
-                pca_components = int(params.get('pca_components', 7))
                 min_covar = float(params.get('min_covar', 1e-3))
                 kappa = float(params.get('kappa', 10.0))
 
@@ -358,33 +351,172 @@ class RollingHMMOptimizer:
                     # Not enough data
                     return -1e6, None
 
-                # Apply PCA
-                features_pca, pca_model, explained_var = feature_engineer.apply_pca(
+                # Extract economic features instead of PCA
+                # This maintains economic interpretability for regime identification
+                features_economic = feature_engineer.extract_economic_features(
                     features,
-                    n_components=pca_components
+                    market_data,
+                    ewma_config
                 )
 
-                # Create HMM config
+                # Create HMM config with reduced n_iter for HPO speed
                 hmm_config = StickyHMMConfig(
                     n_components=n_components,
                     min_covar=min_covar,
                     kappa=kappa,
+                    n_iter=75,  # Reduced from 200 for faster HPO trials
                     covariance_type='diag',
                     kmeans_init=True,
                     use_sticky_priors=True,
-                    post_fit_regularization=True
+                    post_fit_regularization=True,
+                    early_stopping_enabled=True,
+                    early_stopping_patience=3  # Stop after 3 iterations without improvement
                 )
 
-                # Fit HMM model
+                # Fit HMM model with resource-aware timeout and optimization
+                import threading
+                import time
+                import traceback
+                import ctypes
+                
+                # RESOURCE-AWARE OPTIMIZATION: Dynamic timeout and optimization based on system resources
+                try:
+                    from src.utils.hardware.unified_hardware_manager import get_unified_hardware_manager
+                    hw_manager = get_unified_hardware_manager()
+                    cpu_usage = hw_manager.get_cpu_usage()
+                    memory_pressure = hw_manager.get_memory_pressure()
+                    
+                    # Dynamic timeout based on resource pressure
+                    base_timeout = 60
+                    if cpu_usage > 90 or memory_pressure > 0.8:
+                        timeout_seconds = 90  # Extend timeout under high pressure
+                        tprint_warning(f"  ⚠️ High resource pressure (CPU: {cpu_usage:.1f}%, Memory: {memory_pressure:.2f}) - Extending HMM timeout to {timeout_seconds}s")
+                        # Reduce model complexity under pressure
+                        hmm_config.n_iter = min(hmm_config.n_iter, 50)  # Further reduce iterations
+                        hmm_config.early_stopping_patience = 2  # More aggressive early stopping
+                    elif cpu_usage > 70 or memory_pressure > 0.6:
+                        timeout_seconds = 75  # Moderate extension
+                        tprint_warning(f"  ⚠️ Moderate resource pressure (CPU: {cpu_usage:.1f}%, Memory: {memory_pressure:.2f}) - Extending HMM timeout to {timeout_seconds}s")
+                        hmm_config.n_iter = min(hmm_config.n_iter, 60)  # Reduce iterations
+                    else:
+                        timeout_seconds = base_timeout
+                        tprint_debug(f"  ✅ Normal resource levels (CPU: {cpu_usage:.1f}%, Memory: {memory_pressure:.2f}) - Using standard {timeout_seconds}s timeout")
+                except Exception as e:
+                    timeout_seconds = 60  # Fallback to default
+                    tprint_debug(f"  ⚠️ Could not check hardware resources, using default timeout: {e}")
+                
+                tprint_debug(f"  🔧 Trial {self.current_trial}: Creating HMM model with config: n_components={n_components}, min_covar={min_covar}, kappa={kappa}")
                 hmm_model = hmm_model_class(hmm_config)
-                hmm_model.fit(
-                    features_pca.values,
-                    ewma_config_name=ewma_config.name,
-                    pca_components=pca_components
-                )
+                
+                fit_completed = threading.Event()
+                fit_result = {'success': False, 'error': None, 'traceback': None}
+                
+                def fit_with_monitoring():
+                    """Fit in thread with resource monitoring."""
+                    try:
+                        tprint_debug(f"  🔧 Trial {self.current_trial}: Starting HMM fit on {features_economic.values.shape} features")
+                        
+                        # RESOURCE-AWARE: Reduce data size under pressure
+                        fit_data = features_economic.values
+                        if 'memory_pressure' in locals() and memory_pressure > 0.8:
+                            # Use subset of data for fitting under extreme memory pressure
+                            subset_size = min(5000, len(fit_data) // 2)
+                            indices = np.random.choice(len(fit_data), subset_size, replace=False)
+                            fit_data = fit_data[indices]
+                            tprint_warning(f"  ⚠️ Using reduced dataset ({subset_size} samples) due to memory pressure")
+                        
+                        hmm_model.fit(
+                            fit_data,
+                            ewma_config_name=ewma_config.name,
+                            pca_components=None
+                        )
+                        fit_result['success'] = True
+                        tprint_debug(f"  ✅ Trial {self.current_trial}: HMM fit completed successfully")
+                    except Exception as e:
+                        fit_result['error'] = str(e)
+                        fit_result['traceback'] = traceback.format_exc()
+                        tprint_error(f"  ❌ Trial {self.current_trial}: HMM fit failed with error: {str(e)}")
+                    finally:
+                        fit_completed.set()
+                
+                # Start fitting in background thread
+                fit_thread = threading.Thread(target=fit_with_monitoring, daemon=True)
+                start_time = time.time()
+                fit_thread.start()
+                tprint_debug(f"  🔧 Trial {self.current_trial}: HMM fitting thread started")
+                
+                # Monitor with periodic checks and resource-aware timeout
+                check_interval = 5  # Check every 5 seconds
+                elapsed = 0
+                resource_warnings_sent = False
+                
+                while elapsed < timeout_seconds:
+                    if fit_completed.wait(timeout=check_interval):
+                        # Fitting completed successfully
+                        tprint_debug(f"  ✅ Trial {self.current_trial}: Fit completed after {elapsed:.1f}s")
+                        break
+                    
+                    elapsed = time.time() - start_time
+                    
+                    # RESOURCE-AWARE: Check resource status during fitting
+                    if elapsed > 20 and not resource_warnings_sent:  # Only check after 20s
+                        try:
+                            current_cpu = hw_manager.get_cpu_usage()
+                            current_memory = hw_manager.get_memory_pressure()
+                            if current_cpu > 95 or current_memory > 0.9:
+                                tprint_warning(f"  🚨 CRITICAL: Resources during fitting - CPU: {current_cpu:.1f}%, Memory: {current_memory:.2f}")
+                                resource_warnings_sent = True
+                        except Exception:
+                            pass
+                    
+                    if elapsed >= timeout_seconds:
+                        # Timeout exceeded - try forceful termination
+                        tprint_warning(f"  ⏱️  Trial {self.current_trial} TIMEOUT after {elapsed:.0f}s - ATTEMPTING FORCEFUL TERMINATION")
+                        tprint_warning(f"  🔍 Thread is alive: {fit_thread.is_alive()}")
+                        
+                        # Forceful thread termination using ctypes
+                        try:
+                            thread_id = fit_thread.ident
+                            if thread_id:
+                                res = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+                                    ctypes.c_ulong(thread_id),
+                                    ctypes.py_object(SystemError("HMM fitting timeout"))
+                                )
+                                if res == 0:
+                                    tprint_warning("  ⚠️ Thread termination signal sent")
+                                elif res == 1:
+                                    tprint_warning("  ⚠️ Thread already terminated")
+                                else:
+                                    tprint_warning("  ⚠️ Thread termination failed")
+                        except Exception as e:
+                            tprint_warning(f"  ⚠️ Thread termination failed: {e}")
+                        
+                        return -1e6, None
+                    
+                    # Still running, print progress with resource info
+                    if elapsed % 15 == 0:  # Every 15 seconds
+                        try:
+                            current_cpu = hw_manager.get_cpu_usage()
+                            current_memory = hw_manager.get_memory_pressure()
+                            tprint_debug(f"  ⏳ Trial {self.current_trial} still fitting... {elapsed:.0f}s elapsed (CPU: {current_cpu:.1f}%, Memory: {current_memory:.2f})")
+                        except Exception:
+                            tprint_debug(f"  ⏳ Trial {self.current_trial} still fitting... {elapsed:.0f}s elapsed")
+                
+                # Check if fitting succeeded
+                if not fit_result['success']:
+                    error_msg = fit_result['error'] or 'Unknown error'
+                    tprint_warning(f"  ⚠️  Trial {self.current_trial} HMM fit failed: {error_msg[:80]}")
+                    return -1e6, None
+
+                # Log trial progress
+                if self.total_trials_estimate > 0:
+                    progress_pct = (self.current_trial / self.total_trials_estimate) * 100
+                    tprint_info(f"📊 HPO Progress: Trial {self.current_trial}/{self.total_trials_estimate} ({progress_pct:.1f}%) - {self.current_stage}")
+                else:
+                    tprint_info(f"📊 HPO Progress: Trial {self.current_trial} - {self.current_stage}")
 
                 # Predict regime labels
-                regime_labels = hmm_model.predict(features_pca.values)
+                regime_labels = hmm_model.predict(features_economic.values)
 
                 # Calculate regime distribution and apply constraints
                 unique_regimes, regime_counts = np.unique(regime_labels, return_counts=True)
@@ -419,16 +551,16 @@ class RollingHMMOptimizer:
                     market_data['close'].pct_change(FORWARD_RETURN_HORIZON)
                     .shift(-FORWARD_RETURN_HORIZON)
                 )
-                forward_returns = forward_returns.loc[features_pca.index]
+                forward_returns = forward_returns.loc[features_economic.index]
 
                 # Assess quality with fast mode enabled (skip expensive O(n²) calculations)
                 metrics = quality_assessor.assess_hmm_regime_quality(
                     regime_labels=regime_labels,
-                    feature_data=features_pca,
+                    feature_data=features_economic,
                     transition_matrix=transition_matrix,
                     hmm_model=None,  # Pass None to avoid recomputation
                     forward_returns=forward_returns,
-                    timestamps=features_pca.index,
+                    timestamps=features_economic.index,
                     timeframe='1h',
                     min_regime_size=10,
                     run_validators=False,  # Skip validators during HPO
@@ -507,7 +639,7 @@ class RollingHMMOptimizer:
                         if series is None:
                             continue
                         series_forward = series.pct_change(horizon).shift(-horizon)
-                        series_forward = series_forward.loc[features_pca.index]
+                        series_forward = series_forward.loc[features_economic.index]
                         horizon_ratio = _compute_cv_ratio_for_horizon(series_forward, regime_labels)
                         if horizon_ratio is not None and horizon_ratio > 0:
                             normalized_ratio = float(
@@ -529,7 +661,7 @@ class RollingHMMOptimizer:
                     if series is None:
                         continue
                     series_forward = series.pct_change(tail_horizon).shift(-tail_horizon)
-                    series_forward = series_forward.loc[features_pca.index]
+                    series_forward = series_forward.loc[features_economic.index]
                     tail_ratio = _compute_tail_separation_score(series_forward, regime_labels)
                     if tail_ratio is not None and tail_ratio > 0:
                         tail_components.append(tail_ratio)
@@ -558,14 +690,63 @@ class RollingHMMOptimizer:
                     normalized_persistence = min(1.0, metrics.regime_persistence / 30.0)
                     persistence_penalty += normalized_persistence * 0.2
 
+                # Economic constraint penalties (linear, not threshold-based)
+                economic_penalty = 0.0
+
+                # 1. Reward volatility separation between regimes (linear)
+                if hasattr(metrics, 'economic_validation') and metrics.economic_validation:
+                    volatilities = [
+                        regime_data.get('volatility')
+                        for regime_data in metrics.economic_validation.values()
+                        if isinstance(regime_data, dict) and regime_data.get('volatility') is not None
+                    ]
+                    if len(volatilities) >= 2:
+                        vol_std = float(np.std(volatilities))
+                        vol_mean = float(np.mean(volatilities))
+                        # Linear penalty: higher CV = better separation
+                        vol_cv = vol_std / (vol_mean + 1e-8)
+                        # Invert CV to penalty: lower CV = higher penalty
+                        economic_penalty += max(0.0, 1.0 - vol_cv * 2.0)  # Linear penalty from 0-1
+
+                # 2. Reward return differentiation between regimes (linear)
+                if hasattr(metrics, 'economic_validation') and metrics.economic_validation:
+                    mean_returns = [
+                        regime_data.get('mean_return')
+                        for regime_data in metrics.economic_validation.values()
+                        if isinstance(regime_data, dict) and regime_data.get('mean_return') is not None
+                    ]
+                    if len(mean_returns) >= 2:
+                        return_range = float(np.max(mean_returns) - np.min(mean_returns))
+                        # Linear penalty: higher range = better differentiation
+                        # Target range: 0.02 (2%), penalty scales inversely
+                        normalized_range = min(1.0, return_range / 0.02)
+                        economic_penalty += (1.0 - normalized_range) * 2.0  # Linear penalty from 0-2
+
+                # 3. Reward economic diversity (linear)
+                if hasattr(metrics, 'economic_validation') and metrics.economic_validation:
+                    sharpe_proxies = []
+                    for regime_data in metrics.economic_validation.values():
+                        if isinstance(regime_data, dict):
+                            mean_ret = regime_data.get('mean_return')
+                            vol = regime_data.get('volatility')
+                            if mean_ret is not None and vol is not None and vol > 1e-8:
+                                sharpe_proxies.append(mean_ret / vol)
+
+                    if len(sharpe_proxies) >= 2:
+                        sharpe_std = float(np.std(sharpe_proxies))
+                        # Linear penalty: higher std = better diversity
+                        # Target std: 1.0, penalty scales inversely
+                        normalized_diversity = min(1.0, sharpe_std / 1.0)
+                        economic_penalty += (1.0 - normalized_diversity) * 1.5  # Linear penalty from 0-1.5
 
                 objective_score = (
                     score_statistical
                     + score_temporal
                     + score_economic
                     - persistence_penalty * self.config.weight_temporal
-                    - size_penalty * 0.3  # Penalize tiny regimes (< 5%)
-                    - balance_penalty * 0.2  # Penalize imbalanced distributions
+                    - size_penalty * 0.4  # Penalize tiny regimes (< 5%) - slightly increased
+                    - balance_penalty * 0.2  # Penalize imbalanced distributions - some small regimes is normal
+                    - economic_penalty * 0.4  # Penalize poor economic differentiation - important
                 )
 
                 return objective_score, metrics
@@ -615,7 +796,6 @@ class RollingHMMOptimizer:
         param_str = (
             f"EWMA={ewma_config.name}, "
             f"n_states={params.get('n_components', 5)}, "
-            f"pca={params.get('pca_components', 6)}, "  # Broadened PCA search range
             f"kappa={params.get('kappa', 10.0):.1f}, "
             f"min_cov={params.get('min_covar', 1e-3):.1e}"
         )
@@ -694,11 +874,10 @@ class RollingHMMOptimizer:
         tprint_info("Running custom hierarchical optimization with successive halving")
 
         coarse_grid = {
-            'ewma_config_idx': [0, 2, 4],
-            'n_components': [4, 5, 6, 7],
-            'pca_components': [5, 6, 7, 8, 9, 10],
-            'min_covar': [1e-5, 1e-4, 1e-3, 1e-2],  # Reduced from 5 to 4 values (removed 2e-2)
-            'kappa': [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0]  # Reduced from 17 to 15 values (removed 25.0, 30.0)
+            'ewma_config_idx': [0, 1, 2, 3, 4],  # Test all EWMA configs
+            'n_components': [4, 5, 6],  # Reduced to focus on clearer regime separation
+            'min_covar': [1e-3, 2.5e-3, 5e-3, 1e-2],  # Higher floor for stability
+            'kappa': [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0]
         }
 
         best_score = -np.inf
@@ -710,12 +889,21 @@ class RollingHMMOptimizer:
 
         # Stage 1 – coarse sampling with successive halving
         n_initial_candidates = min(60, int(np.prod([len(v) for v in coarse_grid.values()])))
+        
+        # Estimate total trials across all stages
+        # Stage 1: Successive halving evaluates ~60% of initial candidates
+        # Stage 2: Fine grid ~20 trials
+        # Stage 3: Refinement ~15 trials  
+        # Stage 4: Round 2 ~10 trials
+        self.total_trials_estimate = int(n_initial_candidates * 0.6) + 20 + 15 + 10
+        
         self.current_stage = "Coarse Grid with Successive Halving"
         self.stage_trials_total = n_initial_candidates
         self.stage_trials_completed = 0
 
         tprint("")
         tprint(f"🔍 Stage 1/3: {self.current_stage} ({n_initial_candidates} initial candidates)")
+        tprint(f"📊 Estimated total trials across all stages: ~{self.total_trials_estimate}")
 
         # Generate initial candidates
         initial_candidates = []
@@ -1097,21 +1285,18 @@ class RollingHMMOptimizer:
         # Generate candidates around best parameters
         best_ewma = best_params.get('ewma_config_idx', 0)
         best_n_comp = best_params.get('n_components', 5)
-        best_pca_comp = best_params.get('pca_components', 7)
         best_min_cov = best_params.get('min_covar', 1e-3)
         best_kappa = best_params.get('kappa', 10.0)
 
         # Create fine-tuned ranges around best values
         ewma_candidates = [max(0, best_ewma - 1), best_ewma, min(5, best_ewma + 1)]
-        n_comp_candidates = [max(4, best_n_comp - 1), best_n_comp, min(7, best_n_comp + 1)]
-        pca_comp_candidates = [max(5, best_pca_comp - 1), best_pca_comp, min(10, best_pca_comp + 1)]
+        n_comp_candidates = [max(3, best_n_comp - 1), best_n_comp, min(5, best_n_comp + 1)]
         min_cov_candidates = [best_min_cov * 0.5, best_min_cov, best_min_cov * 2.0]
         kappa_candidates = [best_kappa * 0.5, best_kappa, best_kappa * 1.5]
 
         all_combinations = list(itertools.product(
             ewma_candidates,
             n_comp_candidates,
-            pca_comp_candidates,
             min_cov_candidates,
             kappa_candidates
         ))
@@ -1121,9 +1306,8 @@ class RollingHMMOptimizer:
             fine_grid.append({
                 'ewma_config_idx': int(combo[0]),
                 'n_components': int(combo[1]),
-                'pca_components': int(combo[2]),
-                'min_covar': float(combo[3]),
-                'kappa': float(combo[4])
+                'min_covar': float(combo[2]),
+                'kappa': float(combo[3])
             })
 
         return fine_grid
@@ -1192,9 +1376,7 @@ class RollingHMMOptimizer:
             if key == 'ewma_config_idx':
                 params[key] = int(np.clip(params[key] + np.random.randint(-1, 2), 0, 5))
             elif key == 'n_components':
-                params[key] = int(np.clip(params[key] + np.random.randint(-1, 2), 4, 7))
-            elif key == 'pca_components':
-                params[key] = int(np.clip(params[key] + np.random.randint(-1, 2), 5, 10))
+                params[key] = int(np.clip(params[key] + np.random.randint(-1, 2), 3, 5))
             elif key == 'min_covar':
                 log_val = np.log10(params[key])
                 log_val += np.random.uniform(-0.5, 0.5)
@@ -1288,13 +1470,11 @@ class RollingHMMOptimizer:
 
         ewma_idx = int(base_params.get('ewma_config_idx', 0))
         n_comp = int(base_params.get('n_components', 5))
-        pca_comp = int(base_params.get('pca_components', 7))
         min_covar = float(base_params.get('min_covar', 1e-3))
         kappa = float(base_params.get('kappa', 10.0))
 
         ewma_candidates = list(range(max(0, ewma_idx - 2), min(5, ewma_idx + 2) + 1))
-        n_comp_candidates = list(range(max(4, n_comp - 2), min(6, n_comp + 2) + 1))
-        pca_comp_candidates = list(range(max(5, pca_comp - 2), min(10, pca_comp + 2) + 1))
+        n_comp_candidates = list(range(max(3, n_comp - 2), min(5, n_comp + 2) + 1))
 
         min_covar_multipliers = [0.25, 0.5, 1.0, 2.0, 4.0]
         min_covar_candidates = sorted({
@@ -1313,7 +1493,6 @@ class RollingHMMOptimizer:
         all_combinations = list(itertools.product(
             ewma_candidates,
             n_comp_candidates,
-            pca_comp_candidates,
             min_covar_candidates,
             kappa_candidates
         ))
@@ -1331,9 +1510,8 @@ class RollingHMMOptimizer:
             candidate_params.append({
                 'ewma_config_idx': int(combo[0]),
                 'n_components': int(combo[1]),
-                'pca_components': int(combo[2]),
-                'min_covar': float(combo[3]),
-                'kappa': float(combo[4])
+                'min_covar': float(combo[2]),
+                'kappa': float(combo[3])
             })
 
         return candidate_params
@@ -1403,9 +1581,9 @@ DEFAULT_HPO_CONFIG = HPOConfig(
     enable_final_refinement=True,
     final_refinement_trials=50,
     cv_folds=5,
-    weight_between_within_cv=0.40,
-    weight_temporal=0.20,
-    weight_economic=0.40,
+    weight_between_within_cv=0.30,  # Reduced statistical weight
+    weight_temporal=0.25,            # Increased temporal (persistence)
+    weight_economic=0.45,            # Increased economic (profitability)
     direction='maximize',
     use_custom_balanced_score=True,
     verbose=True

@@ -12,7 +12,7 @@ analyst_config:
       n_estimators: 500
       learning_rate: 0.01
       max_depth: 3
-      num_leaves: 7
+      num_leaves: 9
       subsample: 0.6
       colsample_bytree: 0.6
       random_state: 42
@@ -73,14 +73,14 @@ analyst_config:
         reg_lambda: 0.0
         sampling_rate: 0.6
         min_child_samples: 10
-        num_leaves: 7
+        num_leaves: 9
         subsample: 0.6
         colsample_bytree: 0.6
       last_optimization:
-        timestamp: '2025-11-04T00:00:32.918792'
+        timestamp: '2025-11-09T17:24:21.288215'
         best_score: 0.0
         total_trials: 12
-        total_time_seconds: 0.0060427188873291016
+        total_time_seconds: 0.004496097564697266
         n_rounds: 2
   base_model_outputs:
     lgbm_output: analyst_base_lgbm_predictions
@@ -108,13 +108,34 @@ analyst_config:
     generate_reports: true
     output_dir: ./analyst_ensemble_models
 feature_engineering:
-  # Raw OHLCV exclusion
   exclude_raw_ohlcv:
     enabled: true
-    excluded_patterns: ['volume', 'close', 'high', 'open', 'low']
-    technical_indicators: ['rsi', 'sma', 'ema', 'bb_', 'macd', 'atr', 'roc', 'mom', 
-                          'return', 'pct', 'ratio', 'std', 'volatility', 'trend',
-                          'momentum', 'oscillator', 'signal', 'cross', 'divergence']
+    excluded_patterns:
+    - volume
+    - close
+    - high
+    - open
+    - low
+    technical_indicators:
+    - rsi
+    - sma
+    - ema
+    - bb_
+    - macd
+    - atr
+    - roc
+    - mom
+    - return
+    - pct
+    - ratio
+    - std
+    - volatility
+    - trend
+    - momentum
+    - oscillator
+    - signal
+    - cross
+    - divergence
   primary_features:
     source: feature_generation_final_feature_selection_step
     artifact_name: analyst_features

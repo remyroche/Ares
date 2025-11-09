@@ -1,30 +1,30 @@
 {
   "final_dataset_60": {
-    "overall_score": 0.3,
+    "overall_score": 0.2,
     "quality_level": "poor",
-    "issues_count": 4,
-    "warnings_count": 1,
-    "recommendations_count": 10
+    "issues_count": 1,
+    "warnings_count": 6,
+    "recommendations_count": 11
   },
   "final_dataset_50": {
-    "overall_score": 0.3,
+    "overall_score": 0.2,
     "quality_level": "poor",
-    "issues_count": 4,
-    "warnings_count": 1,
-    "recommendations_count": 10
+    "issues_count": 1,
+    "warnings_count": 4,
+    "recommendations_count": 11
   },
   "final_dataset_40": {
-    "overall_score": 0.3,
+    "overall_score": 0.2,
     "quality_level": "poor",
-    "issues_count": 4,
-    "warnings_count": 1,
-    "recommendations_count": 10
+    "issues_count": 1,
+    "warnings_count": 6,
+    "recommendations_count": 11
   },
   "labeled_dataframe": {
-    "overall_score": 0.1,
+    "overall_score": 0.3,
     "quality_level": "poor",
     "issues_count": 3,
-    "warnings_count": 4,
+    "warnings_count": 2,
     "recommendations_count": 10
   }
 }

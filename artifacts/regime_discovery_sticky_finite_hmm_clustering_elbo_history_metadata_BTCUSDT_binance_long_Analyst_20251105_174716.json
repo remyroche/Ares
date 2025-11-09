@@ -1,8 +1,0 @@
-{
-  "artifact_name": "elbo_history",
-  "artifact_type": "metadata",
-  "file_path": "artifacts/pre_training/BTCUSDT/binance/long/Analyst/sticky_finite_hmm_clustering/regime_discovery_sticky_finite_hmm_clustering_elbo_history_BTCUSDT_binance_long_Analyst_20251105_174716.parquet",
-  "file_size": 1786,
-  "timestamp": "2025-11-05T18:51:36.798325",
-  "compression": "auto"
-}

@@ -87,23 +87,23 @@ class ExecutionModeLookbackConfig:
 
             ExecutionMode.LIGHT: LookbackConfiguration(
                 # Feature lookback optimization - Light intensity
-                optimization_window_days=10,  # 10 days for quick optimization
+                optimization_window_days=20,  # 20 days for quick optimization
                 optimization_sample_size=1000,  # Reduced sample size
                 optimization_max_features=80,  # Keep all features
 
                 # PID-based feature generation - Light complexity
-                pid_generation_window_days=10,  # 10 days
+                pid_generation_window_days=20,  # 20 days
                 pid_interaction_features=100,  # Keep all interaction features
                 pid_polynomial_features=50,  # Keep all polynomial features
                 pid_cross_timeframe_features=50,  # Keep all cross-timeframe features
 
                 # Multi-horizon profit labeling - Light analysis
-                labeling_window_days=10,  # 10 days for quick labeling
+                labeling_window_days=20,  # 20 days for quick labeling
                 labeling_horizons_count=5,  # Reduced horizons
                 labeling_sample_size=1000,  # Reduced sample size
 
                 # Final feature selection - Light pipeline
-                selection_window_days=10,  # 10 days for quick selection
+                selection_window_days=20,  # 20 days for quick selection
                 selection_stage_targets=(120, 100, 80, 60),  # Keep consistent stage targets
 
                 # General parameters

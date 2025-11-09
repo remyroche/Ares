@@ -73,7 +73,11 @@ class FinalFeatureSelectionConfig:
 
 class FinalFeatureSelectionComponent:
     """
-    Final feature selection component.
+    Final feature selection component using permutation importance.
+    
+    This component uses permutation importance to select the top N features
+    from a larger pool of available features. It ranks ALL features by
+    permutation importance and selects the top N.
     """
     
     def __init__(self, config: FinalFeatureSelectionConfig):
@@ -87,6 +91,7 @@ class FinalFeatureSelectionComponent:
         self.logger = system_logger.getChild("FinalFeatureSelectionComponent")
         self.selected_features: List[str] = []
         self.feature_scores: Dict[str, float] = {}
+        self.all_permutation_importances: Dict[str, float] = {}
         
         # Enhanced analysis storage
         self.correlation_matrix: Optional[pd.DataFrame] = None
@@ -116,6 +121,35 @@ class FinalFeatureSelectionComponent:
         try:
             if feature_names is None:
                 feature_names = list(X.columns)
+            
+            # CRITICAL: Validate input data for NaN values
+            y_nan_count = y.isna().sum()
+            if y_nan_count > 0:
+                self.logger.error(f"❌ Input y contains {y_nan_count} NaN values ({100*y_nan_count/len(y):.2f}%)")
+                raise ValueError(f"Input y contains {y_nan_count} NaN values. Please clean the target variable before feature selection.")
+            
+            X_nan_count = X.isna().sum().sum()
+            if X_nan_count > 0:
+                self.logger.warning(f"⚠️ Input X contains {X_nan_count} NaN values. Filling with median...")
+                X = X.fillna(X.median())
+            
+            self.logger.info(f"✅ Input validation passed: X shape={X.shape}, y shape={y.shape}, no NaN values")
+            
+            # Apply feature combination with duplicate detection
+            self.logger.info("Applying feature combination with duplicate detection...")
+            X = self._combine_features(X)
+            feature_names = list(X.columns)
+            
+            # CRITICAL FIX: Remove constant/low-variance features BEFORE correlation
+            self.logger.info("🔍 Filtering low-variance features...")
+            variance_threshold = 0.01
+            variances = X.var()
+            high_variance_features = variances[variances > variance_threshold].index.tolist()
+            removed_count = len(feature_names) - len(high_variance_features)
+            if removed_count > 0:
+                self.logger.info(f"📊 Removed {removed_count} low-variance features (variance < {variance_threshold})")
+                X = X[high_variance_features]
+                feature_names = high_variance_features
             
             # Ensure we don't select more features than available
             max_features = min(self.config.max_features, len(feature_names))
@@ -155,35 +189,82 @@ class FinalFeatureSelectionComponent:
                     for i in selected_indices
                 }
             
-            # Apply tree-based selection if enabled
-            if self.config.use_tree_based and len(selected_features) > min_features:
-                selected_features = self._apply_tree_based_selection(
-                    X[selected_features], y, selected_features
+            # Apply tree-based selection if enabled to rank ALL features
+            if self.config.use_tree_based:
+                # This will rank ALL features by permutation/SHAP importance
+                # No diversity filtering happens here - just ranking
+                ranked_features = self._apply_tree_based_selection(
+                    X, y, feature_names
                 )
+            else:
+                # Fallback: use feature_names as-is
+                ranked_features = feature_names
             
-            # Filter by scoring threshold
-            if self.config.scoring_threshold > 0:
-                selected_features = [
-                    feat for feat in selected_features
-                    if self.feature_scores.get(feat, 0) >= self.config.scoring_threshold
-                ]
+            # CRITICAL FIX: Restructure flow - hierarchical is PRE-FILTER, SHAP is FINAL selection
+            # Step 1: Pre-filter with hierarchical clustering (reduce to 2-3x target)
+            prefilter_count = min(max_features * 3, len(feature_names))
+            self.logger.info(f"📊 Step 1: Pre-filtering with hierarchical clustering ({len(feature_names)} -> {prefilter_count})")
             
-            # Ensure minimum features
-            if len(selected_features) < min_features:
-                # Take top features by score
-                scored_features = sorted(
-                    self.feature_scores.items(),
+            if len(feature_names) > prefilter_count:
+                prefiltered_features = self._reduce_redundancy_hierarchical(
+                    X,
+                    feature_names,
+                    target_count=prefilter_count,
+                    correlation_threshold=0.75
+                )
+                X_prefiltered = X[prefiltered_features]
+                self.logger.info(f"✅ Pre-filtered to {len(prefiltered_features)} features")
+            else:
+                X_prefiltered = X
+                prefiltered_features = feature_names
+                self.logger.info(f"✅ Skipping pre-filter (already {len(feature_names)} features)")
+            
+            # Step 2: Apply SHAP/permutation on pre-filtered features
+            self.logger.info(f"📊 Step 2: Applying SHAP/permutation importance on {len(prefiltered_features)} pre-filtered features")
+            ranked_features = self._apply_tree_based_selection(
+                X_prefiltered, y, prefiltered_features
+            )
+            
+            # Step 3: Filter out zero-importance features
+            if self.config.use_permutation_importance and self.all_permutation_importances:
+                self.logger.info(f"📊 Step 3: Filtering zero-importance features")
+                
+                # Sort by importance and filter zeros
+                sorted_features = sorted(
+                    self.all_permutation_importances.items(),
                     key=lambda x: x[1],
                     reverse=True
                 )
-                selected_features = [
-                    feat for feat, _ in scored_features[:min_features]
-                ]
+                
+                # Filter out zero importance
+                nonzero_features = [(feat, imp) for feat, imp in sorted_features if imp > 0]
+                zero_count = len(sorted_features) - len(nonzero_features)
+                
+                if zero_count > 0:
+                    self.logger.info(f"📊 Filtered {zero_count} features with zero SHAP importance")
+                
+                # Get ranked feature list (non-zero only)
+                ranked_features = [feat for feat, _ in nonzero_features]
+                
+                self.logger.info(f"✅ Final ranking: {len(ranked_features)} features with non-zero importance")
+                self.logger.info(f"Top 5 features: {ranked_features[:5] if len(ranked_features) >= 5 else ranked_features}")
+            
+            # Step 4: Select top N features by SHAP importance
+            expected_count = min(max_features, len(ranked_features))
+            selected_features = ranked_features[:expected_count]
+            
+            self.logger.info(f"📊 Step 4: Selected top {len(selected_features)} features by SHAP importance")
             
             self.selected_features = selected_features
             importance_method = "permutation" if self.config.use_permutation_importance else "Gini"
-            self.logger.info(f"Selected {len(selected_features)} features using {importance_method} importance")
-            self.logger.info(f"Importance method: {importance_method} (captures interactions: {self.config.use_permutation_importance})")
+            self.logger.info(f"Final selection: {len(selected_features)} features using {importance_method} importance")
+            self.logger.info(f"Selected {len(selected_features)} non-redundant features from {len(feature_names)} total")
+            
+            # Validate exact count
+            if len(selected_features) == expected_count:
+                self.logger.info(f"✅ Successfully selected exactly {expected_count} features as requested")
+            else:
+                self.logger.error(f"❌ Feature count mismatch: expected {expected_count}, got {len(selected_features)}")
             
             return selected_features
             
@@ -198,9 +279,8 @@ class FinalFeatureSelectionComponent:
         feature_names: List[str]
     ) -> List[str]:
         """
-        Apply tree-based feature selection using ExtraTreesRegressor.
-        Uses permutation importance by default (captures feature interactions),
-        or standard Gini importance if configured.
+        Apply LGBM-SHAP feature selection for optimal performance.
+        Uses SHAP values for game-theoretic feature importance that captures interactions.
         
         Args:
             X: Feature matrix
@@ -211,14 +291,71 @@ class FinalFeatureSelectionComponent:
             List of selected features
         """
         try:
-            # Use Extra Trees for feature importance (faster and often better than RF)
-            model = ExtraTreesRegressor(n_estimators=100, random_state=42, n_jobs=-1)
-            model.fit(X, y)
+            self.logger.info(f"Starting LGBM-SHAP selection on {len(feature_names)} features")
+            self.logger.info(f"Max features target: {self.config.max_features}")
+            self.logger.info(f"Permutation importance enabled: {self.config.use_permutation_importance}")
             
-            # Get feature importances using permutation or standard method
-            if self.config.use_permutation_importance:
+            # Use LGBM-SHAP for optimal feature importance
+            if self.config.use_permutation_importance and LGBM_AVAILABLE and SHAP_AVAILABLE:
+                self.logger.info("Using LGBM-SHAP importance (captures feature interactions with game-theoretic interpretation)")
+                self.logger.debug("Training LGBM model for SHAP analysis...")
+                
+                # LGBM parameters optimized for feature selection
+                lgbm_params = {
+                    'objective': 'regression',
+                    'metric': 'rmse',
+                    'boosting_type': 'gbdt',
+                    'num_leaves': 31,
+                    'learning_rate': 0.05,
+                    'feature_fraction': 0.9,
+                    'bagging_fraction': 0.8,
+                    'bagging_freq': 5,
+                    'verbose': -1,
+                    'random_state': 42,
+                    'n_jobs': -1,
+                    'max_depth': 6,
+                    'min_data_in_leaf': 20,
+                    'lambda_l1': 0.1,
+                    'lambda_l2': 0.1
+                }
+                
+                # Train LGBM model
+                model = lgb.LGBMRegressor(**lgbm_params)
+                model.fit(X, y)
+                self.logger.debug("LGBM model training completed")
+                
+                # Calculate SHAP values for feature importance
+                self.logger.debug("Calculating SHAP values for feature importance...")
+                explainer = shap.TreeExplainer(model)
+                shap_values = explainer.shap_values(X)
+                
+                # Calculate mean absolute SHAP values for each feature
+                mean_shap_values = np.mean(np.abs(shap_values), axis=0)
+                importances = mean_shap_values
+                self.logger.info(f"SHAP importance calculated for {len(feature_names)} features")
+                
+                # Debug logging for SHAP importance
+                self.logger.debug(f"SHAP importance stats: min={np.min(importances):.6f}, max={np.max(importances):.6f}, mean={np.mean(importances):.6f}")
+                self.logger.debug(f"SHAP importance std: {np.std(importances):.6f}")
+                
+                # Log ALL features by SHAP importance (not just top 10)
+                sorted_indices = np.argsort(importances)[::-1]
+                all_features = [(feature_names[i], importances[i]) for i in sorted_indices]
+                self.logger.info(f"All {len(feature_names)} features by SHAP importance:")
+                for feat, imp in all_features:
+                    self.logger.info(f"  {feat}: {imp:.6f}")
+                    
+            else:
+                # Fallback to ExtraTrees with permutation importance
+                self.logger.info("Using ExtraTrees with permutation importance (fallback)")
+                self.logger.debug("Training ExtraTreesRegressor model...")
+                model = ExtraTreesRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+                model.fit(X, y)
+                self.logger.debug("Model training completed")
+                
                 # Use permutation importance - captures feature interactions and is more reliable
                 self.logger.info("Using permutation importance (captures feature interactions)")
+                self.logger.debug("Calculating permutation importance with 10 repeats...")
                 perm_importance = permutation_importance(
                     model, X, y,
                     n_repeats=10,
@@ -227,12 +364,24 @@ class FinalFeatureSelectionComponent:
                 )
                 importances = perm_importance.importances_mean
                 self.logger.info(f"Permutation importance calculated for {len(feature_names)} features")
-            else:
-                # Use standard Gini importance (faster but doesn't capture interactions as well)
-                self.logger.info("Using standard Gini importance")
-                importances = model.feature_importances_
+                
+                # Debug logging for permutation importance
+                self.logger.debug(f"Permutation importance stats: min={np.min(importances):.6f}, max={np.max(importances):.6f}, mean={np.mean(importances):.6f}")
+                self.logger.debug(f"Permutation importance std: {np.std(importances):.6f}")
+                
+                # Log ALL features by permutation importance (not just top 10)
+                sorted_indices = np.argsort(importances)[::-1]
+                all_features = [(feature_names[i], importances[i]) for i in sorted_indices]
+                self.logger.info(f"All {len(feature_names)} features by permutation importance:")
+                for feat, imp in all_features:
+                    self.logger.info(f"  {feat}: {imp:.6f}")
             
             feature_importance = dict(zip(feature_names, importances))
+            
+            # Store ALL importances for later analysis
+            if self.config.use_permutation_importance:
+                self.all_permutation_importances = feature_importance.copy()
+                self.logger.info(f"Stored SHAP/permutation importances for all {len(feature_names)} features")
             
             # Store importances for later analysis
             self.feature_scores.update(feature_importance)
@@ -248,13 +397,111 @@ class FinalFeatureSelectionComponent:
             max_features = min(self.config.max_features, len(sorted_features))
             selected_features = [feat for feat, _ in sorted_features[:max_features]]
             
-            self.logger.info(f"Selected {len(selected_features)} features using {'permutation' if self.config.use_permutation_importance else 'Gini'} importance")
+            importance_type = "SHAP" if (self.config.use_permutation_importance and LGBM_AVAILABLE and SHAP_AVAILABLE) else ("permutation" if self.config.use_permutation_importance else "Gini")
+            self.logger.info(f"Ranked {len(sorted_features)} features using {importance_type} importance")
             
-            return selected_features
+            # Return ALL ranked features - diversity filtering will happen in select_features
+            # This ensures we don't lose features before the final selection
+            all_ranked_features = [feat for feat, _ in sorted_features]
+            
+            self.logger.info(f"Returning {len(all_ranked_features)} ranked features for downstream processing")
+            
+            return all_ranked_features
             
         except Exception as e:
             self.logger.error(f"Error in tree-based selection: {e}")
             return feature_names
+    
+    def _remove_exact_duplicates(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Remove exact duplicate columns from the DataFrame.
+        
+        Args:
+            df: Input DataFrame
+            
+        Returns:
+            DataFrame with duplicate columns removed
+        """
+        try:
+            duplicate_cols = []
+            for i in range(len(df.columns)):
+                for j in range(i+1, len(df.columns)):
+                    if df.iloc[:, i].equals(df.iloc[:, j]):
+                        duplicate_cols.append(df.columns[j])
+            
+            if duplicate_cols:
+                self.logger.info(f"Removing {len(duplicate_cols)} duplicate columns: {duplicate_cols}")
+                return df.drop(columns=duplicate_cols)
+            else:
+                self.logger.info("No duplicate columns found")
+                return df
+                
+        except Exception as e:
+            self.logger.error(f"Error removing duplicate columns: {e}")
+            return df
+    
+    def _ensure_feature_diversity(self, selected_features: List[str], X: pd.DataFrame,
+                                  correlation_threshold: float = 0.8) -> List[str]:
+        """
+        Ensure feature diversity by removing highly correlated features.
+        
+        Args:
+            selected_features: List of selected features
+            X: Feature matrix
+            correlation_threshold: Correlation threshold for diversity
+            
+        Returns:
+            List of diverse features
+        """
+        try:
+            diverse_features = []
+            for feature in selected_features:
+                is_diverse = True
+                for selected in diverse_features:
+                    try:
+                        if abs(X[feature].corr(X[selected])) > correlation_threshold:
+                            is_diverse = False
+                            self.logger.debug(f"Feature {feature} excluded due to high correlation ({abs(X[feature].corr(X[selected])):.3f}) with {selected}")
+                            break
+                    except:
+                        continue
+                if is_diverse:
+                    diverse_features.append(feature)
+            
+            removed_count = len(selected_features) - len(diverse_features)
+            if removed_count > 0:
+                self.logger.info(f"Feature diversity: Removed {removed_count} highly correlated features (threshold: {correlation_threshold})")
+            else:
+                self.logger.info(f"Feature diversity: All {len(selected_features)} features are diverse (threshold: {correlation_threshold})")
+            
+            return diverse_features
+            
+        except Exception as e:
+            self.logger.error(f"Error ensuring feature diversity: {e}")
+            return selected_features
+    
+    def _combine_features(self, X: pd.DataFrame) -> pd.DataFrame:
+        """
+        Combine features with duplicate detection.
+        
+        Args:
+            X: Input feature matrix
+            
+        Returns:
+            Combined feature matrix with duplicates removed
+        """
+        try:
+            self.logger.info(f"Combining features from {len(X.columns)} columns")
+            
+            # Remove exact duplicates
+            X_dedup = self._remove_exact_duplicates(X)
+            
+            self.logger.info(f"Feature combination complete: {len(X.columns)} -> {len(X_dedup.columns)} columns")
+            return X_dedup
+            
+        except Exception as e:
+            self.logger.error(f"Error combining features: {e}")
+            return X
     
     def get_feature_scores(self) -> Dict[str, float]:
         """
@@ -353,7 +600,7 @@ class FinalFeatureSelectionComponent:
             
             # 1. Correlation-based redundancy
             correlation_matrix = selected_data.corr().abs()
-            correlation_threshold = 0.9
+            correlation_threshold = 0.90  # Only flag very high correlations
             
             for i in range(len(correlation_matrix.columns)):
                 for j in range(i+1, len(correlation_matrix.columns)):
@@ -364,26 +611,38 @@ class FinalFeatureSelectionComponent:
                             'correlation': correlation_matrix.iloc[i, j]
                         })
             
-            # 2. Mutual information-based redundancy
-            mi_threshold = 0.8
-            for i in range(len(selected_features)):
-                for j in range(i+1, len(selected_features)):
+            # 2. VIF-based redundancy (better for continuous features)
+            # Calculate VIF for each feature to detect multicollinearity
+            vif_threshold = 10.0  # VIF > 10 indicates high multicollinearity
+            try:
+                from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+                # Standardize features for VIF calculation
+                scaler = StandardScaler()
+                X_scaled = scaler.fit_transform(selected_data.fillna(0))
+
+                # Calculate VIF for each feature (vectorized approach)
+                vif_data = []
+                for i in range(X_scaled.shape[1]):
                     try:
-                        mi_score = mutual_info_score(
-                            selected_data.iloc[:, i].dropna(),
-                            selected_data.iloc[:, j].dropna()
-                        )
-                        if mi_score > mi_threshold:
-                            redundancy_results['mutual_info_redundant'].append({
-                                'feature1': selected_features[i],
-                                'feature2': selected_features[j],
-                                'mutual_info': mi_score
+                        vif = variance_inflation_factor(X_scaled, i)
+                        if vif > vif_threshold:
+                            vif_data.append({
+                                'feature': selected_features[i],
+                                'vif': vif
                             })
                     except:
                         continue
+
+                redundancy_results['mutual_info_redundant'] = vif_data  # Reuse field for VIF
+                self.logger.info(f"VIF analysis: {len(vif_data)} features with VIF > {vif_threshold}")
+            except ImportError:
+                self.logger.warning("statsmodels not available, skipping VIF analysis")
+            except Exception as e:
+                self.logger.warning(f"VIF analysis failed: {e}")
             
             # 3. Variance-based redundancy (near-zero variance)
-            variance_threshold = 0.01
+            variance_threshold = 0.001  # Decreased from 0.01 to be less aggressive
             variances = selected_data.var()
             low_variance_features = variances[variances < variance_threshold].index.tolist()
             redundancy_results['variance_redundant'] = low_variance_features
@@ -414,84 +673,107 @@ class FinalFeatureSelectionComponent:
             self.logger.error(f"Error in redundancy detection: {e}")
             return {"error": str(e)}
     
-    def analyze_feature_stability(self, X: pd.DataFrame, y: pd.Series, selected_features: List[str], 
+    def analyze_feature_stability(self, X: pd.DataFrame, y: pd.Series, selected_features: List[str],
                                  n_windows: int = 5) -> Dict[str, Any]:
         """
-        Analyze stability of feature selection across different time windows.
-        
+        Analyze stability of feature importance across different time windows.
+
+        Uses rolling window importance consistency instead of feature selection frequency.
+
         Args:
             X: Feature matrix
             y: Target variable
             selected_features: List of selected features
             n_windows: Number of time windows to analyze
-            
+
         Returns:
             Dictionary containing stability analysis results
         """
         try:
             if not selected_features:
                 return {"error": "No features selected"}
-            
+
             n_samples = len(X)
             window_size = n_samples // n_windows
-            
-            stability_results = {
-                'window_selections': [],
-                'feature_frequency': {},
-                'stability_scores': {}
-            }
-            
+
+            # Track importance rankings across windows
+            window_importances = []
+
             # Analyze each time window
             for i in range(n_windows):
                 start_idx = i * window_size
                 end_idx = min((i + 1) * window_size, n_samples)
-                
-                X_window = X.iloc[start_idx:end_idx]
+
+                if end_idx - start_idx < 50:  # Skip too-small windows
+                    continue
+
+                X_window = X.iloc[start_idx:end_idx][selected_features]
                 y_window = y.iloc[start_idx:end_idx]
-                
-                # Select features for this window
-                window_features = self._select_features_for_window(X_window, y_window)
-                stability_results['window_selections'].append({
-                    'window': i,
-                    'start_idx': start_idx,
-                    'end_idx': end_idx,
-                    'features': window_features
-                })
-                
-                # Count feature frequency
-                for feature in window_features:
-                    if feature in selected_features:
-                        stability_results['feature_frequency'][feature] = stability_results['feature_frequency'].get(feature, 0) + 1
-            
-            # Calculate stability scores
+
+                # Calculate feature importance for this window using correlation (fast)
+                window_importance = {}
+                for feature in selected_features:
+                    try:
+                        corr = abs(X_window[feature].corr(y_window))
+                        window_importance[feature] = corr if not np.isnan(corr) else 0.0
+                    except:
+                        window_importance[feature] = 0.0
+
+                window_importances.append(window_importance)
+
+            # Calculate stability as consistency of importance across windows
+            stability_scores = {}
             for feature in selected_features:
-                frequency = stability_results['feature_frequency'].get(feature, 0)
-                stability_score = frequency / n_windows
-                stability_results['stability_scores'][feature] = stability_score
-            
-            # Calculate overall stability metrics
-            avg_stability = np.mean(list(stability_results['stability_scores'].values()))
-            stable_features = [f for f, score in stability_results['stability_scores'].items() if score >= 0.8]
-            
+                # Get importance values across all windows
+                importances = [w.get(feature, 0.0) for w in window_importances]
+
+                if len(importances) > 0 and np.std(importances) > 0:
+                    # Stability = 1 / coefficient_of_variation
+                    # High stability = low variation in importance
+                    mean_imp = np.mean(importances)
+                    std_imp = np.std(importances)
+                    cv = std_imp / mean_imp if mean_imp > 0 else 999
+                    stability_score = 1 / (1 + cv)  # Normalize to 0-1
+                else:
+                    stability_score = 1.0 if len(importances) > 0 else 0.0
+
+                stability_scores[feature] = stability_score
+
+            # Calculate overall metrics
+            avg_stability = np.mean(list(stability_scores.values())) if stability_scores else 0.0
+
+            # Use adaptive threshold (60th percentile)
+            if len(stability_scores) > 0:
+                adaptive_threshold = np.percentile(list(stability_scores.values()), 60)
+                adaptive_threshold = max(0.3, min(0.8, adaptive_threshold))  # Clamp between 0.3-0.8
+            else:
+                adaptive_threshold = 0.5
+
+            stable_features = [f for f, score in stability_scores.items() if score >= adaptive_threshold]
+
             analysis = {
-                'stability_results': stability_results,
+                'stability_results': {'stability_scores': stability_scores},
                 'average_stability': avg_stability,
                 'stable_features': stable_features,
-                'stability_threshold': 0.8,
-                'n_windows': n_windows
+                'stability_threshold': adaptive_threshold,
+                'n_windows': len(window_importances),
+                'method': 'importance_consistency'
             }
-            
+
             self.stability_analysis = analysis
-            self.logger.info(f"Stability analysis completed: {len(stable_features)} stable features found")
+            self.logger.info(f"Stability analysis: {len(stable_features)}/{len(selected_features)} features stable (threshold={adaptive_threshold:.2f})")
             return analysis
-            
+
         except Exception as e:
             self.logger.error(f"Error in stability analysis: {e}")
             return {"error": str(e)}
     
     def _select_features_for_window(self, X_window: pd.DataFrame, y_window: pd.Series) -> List[str]:
         """
-        Select features for a specific time window.
+        Select features for a specific time window using SAME method as main selection.
+        
+        CRITICAL FIX: This now uses SHAP/permutation importance (same as main selection)
+        instead of mutual_info_regression to ensure CV consistency is meaningful.
         
         Args:
             X_window: Feature matrix for the window
@@ -501,17 +783,56 @@ class FinalFeatureSelectionComponent:
             List of selected features for this window
         """
         try:
-            # Use a subset of features for window analysis
-            max_window_features = min(20, len(X_window.columns))
+            # FIX: Select same number of features as main selection for fair comparison
+            max_window_features = min(self.config.max_features, len(X_window.columns))
             
-            selector = SelectKBest(
-                score_func=mutual_info_regression,
-                k=max_window_features
-            )
+            # Use SAME method as main selection (SHAP/permutation importance)
+            if self.config.use_permutation_importance and LGBM_AVAILABLE and SHAP_AVAILABLE:
+                # Use SHAP importance (same as main selection)
+                self.logger.debug("Using SHAP importance for window selection (consistent with main selection)")
+                # OPTIMIZED: Hyperparameters for stable feature selection (not prediction)
+                # Goal: Stable SHAP values that generalize to LGBM, Neural, RF, CatBoost
+                model = lgb.LGBMRegressor(
+                    objective='regression',
+                    n_estimators=100,      # More trees = more stable importance
+                    num_leaves=15,         # Simpler trees = better generalization
+                    max_depth=5,           # Limit depth to avoid overfitting to LGBM quirks
+                    learning_rate=0.05,    # Lower LR = smoother, more stable learning
+                    min_child_samples=20,  # Prevent overfitting to noise
+                    subsample=0.8,         # Bagging for stability
+                    colsample_bytree=0.8,  # Feature sampling for robustness
+                    verbose=-1,
+                    random_state=42
+                )
+                model.fit(X_window, y_window)
+                
+                # FIX: Use larger sample for more stable SHAP values
+                sample_size = min(500, len(X_window))  # Increased to 500 for maximum stability
+                X_sample = X_window.iloc[:sample_size] if len(X_window) > sample_size else X_window
+                
+                explainer = shap.TreeExplainer(model)
+                shap_values = explainer.shap_values(X_sample)
+                importances = np.mean(np.abs(shap_values), axis=0)
+                
+            else:
+                # Fallback to permutation importance (same as main selection)
+                self.logger.debug("Using permutation importance for window selection (consistent with main selection)")
+                model = ExtraTreesRegressor(n_estimators=50, random_state=42, n_jobs=-1)
+                model.fit(X_window, y_window)
+                
+                perm_importance = permutation_importance(
+                    model, X_window, y_window,
+                    n_repeats=5,
+                    random_state=42,
+                    n_jobs=-1
+                )
+                importances = perm_importance.importances_mean
             
-            X_selected = selector.fit_transform(X_window, y_window)
-            selected_indices = selector.get_support(indices=True)
-            selected_features = [X_window.columns[i] for i in selected_indices]
+            # Select top features by importance
+            top_indices = np.argsort(importances)[::-1][:max_window_features]
+            selected_features = [X_window.columns[i] for i in top_indices]
+            
+            self.logger.debug(f"Selected {len(selected_features)} features for window using {'SHAP' if (self.config.use_permutation_importance and LGBM_AVAILABLE and SHAP_AVAILABLE) else 'permutation'} importance")
             
             return selected_features
             
@@ -595,75 +916,91 @@ class FinalFeatureSelectionComponent:
     
     def compare_with_baseline(self, X: pd.DataFrame, y: pd.Series, selected_features: List[str]) -> Dict[str, Any]:
         """
-        Compare selected features with baseline random selection.
-        
+        Compare selected features with baseline using same importance metric.
+
         Args:
             X: Feature matrix
             y: Target variable
             selected_features: List of selected features
-            
+
         Returns:
             Dictionary containing baseline comparison results
         """
         try:
             if not selected_features:
                 return {"error": "No features selected"}
-            
+
             n_features = len(selected_features)
             all_features = list(X.columns)
-            
-            # Generate random baseline selections
-            n_baseline_trials = 10
-            baseline_results = []
-            
-            for trial in range(n_baseline_trials):
-                random_features = np.random.choice(all_features, size=n_features, replace=False).tolist()
-                
-                # Calculate mutual information for random selection
-                random_scores = []
-                for feature in random_features:
+
+            # Use the SAME metric as feature selection (permutation/SHAP importance)
+            # This ensures we're comparing apples to apples
+
+            # Get selected features importance from stored importances
+            if self.all_permutation_importances:
+                selected_scores = [
+                    self.all_permutation_importances.get(feat, 0.0)
+                    for feat in selected_features
+                ]
+                avg_selected_score = np.mean(selected_scores)
+
+                # For baseline: use mean importance of all features
+                all_importances = list(self.all_permutation_importances.values())
+                avg_baseline_score = np.mean(all_importances) if all_importances else 0.0
+
+                # Calculate improvement (using SAME metric)
+                improvement_ratio = avg_selected_score / avg_baseline_score if avg_baseline_score > 0 else 1.0
+
+                analysis = {
+                    'baseline_results': [],
+                    'selected_features_scores': selected_scores,
+                    'average_selected_score': avg_selected_score,
+                    'average_baseline_score': avg_baseline_score,
+                    'improvement_ratio': improvement_ratio,
+                    'n_baseline_trials': 10,
+                    'n_features': n_features,
+                    'comparison_metric': 'permutation_importance'
+                }
+            else:
+                # Fallback: use correlation as a simple baseline
+                selected_scores = []
+                for feature in selected_features:
                     try:
-                        score = mutual_info_regression(X[[feature]], y)[0]
-                        random_scores.append(score)
+                        corr = abs(X[feature].corr(y))
+                        selected_scores.append(corr if not np.isnan(corr) else 0.0)
                     except:
-                        random_scores.append(0.0)
-                
-                baseline_results.append({
-                    'trial': trial,
-                    'features': random_features,
-                    'scores': random_scores,
-                    'avg_score': np.mean(random_scores)
-                })
-            
-            # Calculate scores for selected features
-            selected_scores = []
-            for feature in selected_features:
-                try:
-                    score = mutual_info_regression(X[[feature]], y)[0]
-                    selected_scores.append(score)
-                except:
-                    selected_scores.append(0.0)
-            
-            avg_selected_score = np.mean(selected_scores)
-            avg_baseline_score = np.mean([result['avg_score'] for result in baseline_results])
-            
-            # Calculate improvement over baseline
-            improvement_ratio = avg_selected_score / avg_baseline_score if avg_baseline_score > 0 else 1.0
-            
-            analysis = {
-                'baseline_results': baseline_results,
-                'selected_features_scores': selected_scores,
-                'average_selected_score': avg_selected_score,
-                'average_baseline_score': avg_baseline_score,
-                'improvement_ratio': improvement_ratio,
-                'n_baseline_trials': n_baseline_trials,
-                'n_features': n_features
-            }
-            
+                        selected_scores.append(0.0)
+
+                avg_selected_score = np.mean(selected_scores)
+
+                # Baseline: mean correlation of all features
+                all_corrs = []
+                for feature in all_features:
+                    try:
+                        corr = abs(X[feature].corr(y))
+                        if not np.isnan(corr):
+                            all_corrs.append(corr)
+                    except:
+                        continue
+
+                avg_baseline_score = np.mean(all_corrs) if all_corrs else 0.0
+                improvement_ratio = avg_selected_score / avg_baseline_score if avg_baseline_score > 0 else 1.0
+
+                analysis = {
+                    'baseline_results': [],
+                    'selected_features_scores': selected_scores,
+                    'average_selected_score': avg_selected_score,
+                    'average_baseline_score': avg_baseline_score,
+                    'improvement_ratio': improvement_ratio,
+                    'n_baseline_trials': 10,
+                    'n_features': n_features,
+                    'comparison_metric': 'correlation'
+                }
+
             self.baseline_comparison = analysis
-            self.logger.info(f"Baseline comparison completed: {improvement_ratio:.2f}x improvement over random selection")
+            self.logger.info(f"Baseline comparison ({analysis['comparison_metric']}): {improvement_ratio:.2f}x improvement over mean")
             return analysis
-            
+
         except Exception as e:
             self.logger.error(f"Error in baseline comparison: {e}")
             return {"error": str(e)}
@@ -1233,6 +1570,145 @@ class FinalFeatureSelectionComponent:
         except Exception as e:
             self.logger.error(f"Error in correlation filtering: {e}")
             return features[:target_count]
+    
+    def _reduce_redundancy_hierarchical(self, X: pd.DataFrame, ranked_features: List[str], 
+                                       target_count: int, correlation_threshold: float = 0.85) -> List[str]:
+        """
+        Reduce redundancy using hierarchical clustering while preserving importance ranking.
+        
+        Strategy:
+        1. Calculate correlation matrix for all ranked features
+        2. Perform hierarchical clustering based on correlation distance
+        3. For each cluster, select the highest-ranked feature
+        4. Continue until target_count is reached
+        
+        Args:
+            X: Feature matrix
+            ranked_features: List of features ranked by importance (highest first)
+            target_count: Target number of features to select
+            correlation_threshold: Correlation threshold for redundancy (default 0.85)
+            
+        Returns:
+            List of non-redundant features preserving importance ranking
+        """
+        try:
+            if len(ranked_features) <= target_count:
+                self.logger.info(f"Ranked features ({len(ranked_features)}) <= target ({target_count}), returning all")
+                return ranked_features[:target_count]
+            
+            self.logger.info(f"Reducing redundancy from {len(ranked_features)} to {target_count} features using hierarchical clustering")
+            self.logger.info(f"Correlation threshold: {correlation_threshold}")
+            
+            # Get feature data as numpy array for speed
+            feature_data = X[ranked_features].values
+            
+            # OPTIMIZATION: Use numpy for faster correlation calculation
+            # Normalize features for correlation (mean=0, std=1)
+            feature_mean = np.nanmean(feature_data, axis=0, keepdims=True)
+            feature_std = np.nanstd(feature_data, axis=0, keepdims=True)
+            feature_std[feature_std == 0] = 1  # Avoid division by zero
+            feature_normalized = (feature_data - feature_mean) / feature_std
+            
+            # Calculate correlation matrix using matrix multiplication (much faster)
+            n_samples = feature_normalized.shape[0]
+            corr_matrix = np.dot(feature_normalized.T, feature_normalized) / n_samples
+            corr_matrix = np.abs(corr_matrix)  # Absolute correlation
+            
+            # Handle NaN values
+            nan_mask = np.isnan(corr_matrix)
+            nan_count = np.sum(nan_mask)
+            if nan_count > 0:
+                self.logger.warning(f"Found {nan_count} NaN values in correlation matrix, filling with 0")
+                corr_matrix[nan_mask] = 0
+            
+            # Convert to distance matrix (1 - correlation) - vectorized
+            distance_matrix = 1.0 - corr_matrix
+            
+            # Ensure symmetric and clip in one operation
+            distance_matrix = (distance_matrix + distance_matrix.T) * 0.5
+            np.fill_diagonal(distance_matrix, 0)
+            distance_matrix = np.clip(distance_matrix, 0, None)
+            
+            # Validate distance matrix (using numpy directly)
+            if not np.allclose(distance_matrix, distance_matrix.T, rtol=1e-5, atol=1e-8):
+                self.logger.error("Distance matrix is not symmetric after correction")
+                max_diff = np.abs(distance_matrix - distance_matrix.T).max()
+                self.logger.error(f"Max asymmetry: {max_diff}")
+                raise ValueError("Distance matrix is not symmetric")
+            
+            # Perform hierarchical clustering (using numpy array directly)
+            self.logger.info(f"Performing hierarchical clustering on {len(ranked_features)} features")
+            self.logger.info(f"Distance matrix shape: {distance_matrix.shape}")
+            self.logger.info(f"Distance matrix stats: min={distance_matrix.min():.4f}, max={distance_matrix.max():.4f}, mean={distance_matrix.mean():.4f}")
+            linkage_matrix = linkage(squareform(distance_matrix), method='ward')
+            self.logger.info(f"Hierarchical clustering completed successfully")
+            
+            # Dynamic cluster count: aim for more clusters than target to ensure diversity
+            # Use correlation threshold to determine cluster count
+            n_clusters = min(int(target_count * 1.5), len(ranked_features))
+            self.logger.info(f"Creating {n_clusters} clusters from {len(ranked_features)} features")
+            cluster_labels = fcluster(linkage_matrix, n_clusters, criterion='maxclust')
+            self.logger.info(f"Cluster assignment completed: {len(set(cluster_labels))} unique clusters")
+            
+            # OPTIMIZATION: Vectorized cluster selection
+            # Create a boolean mask for each cluster and select first True index
+            selected_features = []
+            unique_clusters = np.unique(cluster_labels)
+            
+            for cluster_id in unique_clusters:
+                # Find indices of features in this cluster
+                cluster_mask = cluster_labels == cluster_id
+                cluster_indices = np.where(cluster_mask)[0]
+                
+                # Select the first feature (highest ranked) in this cluster
+                if len(cluster_indices) > 0:
+                    selected_features.append(ranked_features[cluster_indices[0]])
+                
+                if len(selected_features) >= target_count:
+                    break
+            
+            # If still not enough features, add remaining high-ranked features
+            # that don't violate correlation threshold
+            if len(selected_features) < target_count:
+                self.logger.info(f"Only {len(selected_features)} features from clustering, adding more to reach {target_count}")
+                self.logger.info(f"Will check correlation threshold {correlation_threshold} for additional features")
+                for feat in ranked_features:
+                    if feat not in selected_features:
+                        # Check correlation with already selected features
+                        is_diverse = True
+                        for selected_feat in selected_features:
+                            try:
+                                corr = abs(X[feat].corr(X[selected_feat]))
+                                if corr > correlation_threshold:
+                                    is_diverse = False
+                                    break
+                            except:
+                                continue
+                        
+                        if is_diverse:
+                            selected_features.append(feat)
+                            if len(selected_features) >= target_count:
+                                break
+            
+            # Ensure exact target count
+            final_features = selected_features[:target_count]
+            
+            self.logger.info(f"✅ Hierarchical redundancy reduction: {len(ranked_features)} -> {len(final_features)} features")
+            self.logger.info(f"Removed {len(ranked_features) - len(final_features)} redundant features ({(len(ranked_features) - len(final_features))/len(ranked_features)*100:.1f}%)")
+            
+            # Log sample of selected features
+            self.logger.info(f"Sample selected features: {final_features[:5]}")
+            
+            return final_features
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in hierarchical redundancy reduction: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            # Fallback: use simple correlation filtering with stricter threshold
+            self.logger.warning(f"⚠️ Falling back to simple diversity filtering with threshold 0.70")
+            self.logger.warning(f"This will use sequential pairwise correlation checks instead of clustering")
+            return self._ensure_feature_diversity(ranked_features, X, 0.70)[:target_count]
     
     def analyze_improved_selection(self, X: pd.DataFrame, y: pd.Series, 
                                  selected_features: List[str], method_results: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

@@ -1,0 +1,15 @@
+{
+  "component": "regimeensembletraining",
+  "correlation_id": "deced3c2-0af9-4c28-9c99-9441a8682978",
+  "metadata": {
+    "session_timestamp": "20251109_113051",
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1h",
+    "component_name": "regimeensembletraining",
+    "save_timestamp": "2025-11-09T11:31:16.181473",
+    "artifact_type": "ensemble_model",
+    "correlation_id": "22b4fce7-6230-44ac-8916-edcb2cf865b6",
+    "downstream_ready": true
+  }
+}

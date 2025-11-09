@@ -315,7 +315,7 @@ class TrainingPipelineOrchestrator:
             # Default analyst configuration
             analyst_config = TrainingConfig(
                 role=TrainingRole.ANALYST,
-                model_types=[ModelType.LIGHTGBM, ModelType.TCN, ModelType.CATBOOST],
+                model_types=[ModelType.LIGHTGBM, ModelType.DEPTHWISE_CNN, ModelType.CATBOOST],
                 timeframe=self.config.timeframe,
                 symbol=self.config.symbol,
                 enable_ensemble=False,  # Individual models only
@@ -476,6 +476,7 @@ class TrainingPipelineOrchestrator:
                 analyst_ensemble_result = await self._execute_analyst_ensemble_training(
                     data, analyst_targets, artifacts['analyst_base_models'], artifacts['analyst_predictions']
                 )
+                result.ensemble_result = analyst_ensemble_result  # Store ensemble result in PipelineResult
                 
                 if analyst_ensemble_result.get('success', False):
                     artifacts['analyst_ensemble_model'] = analyst_ensemble_result.get('model', None)
@@ -557,34 +558,123 @@ class TrainingPipelineOrchestrator:
             result = await self._analyst_trainer.train(data, targets)
 
             if result.success:
-                # Generate predictions on training data
-                predictions = await self._generate_predictions(result.model, data)
+                # CRITICAL: Models were trained on 104 features (60 base + analyst engineered features)
+                # We need to use the SAME feature set for predictions
+                # The training data flow is: base features (60) -> analyst feature engineering -> 104 features
+                # So for prediction, we need to apply the same analyst feature engineering
+                
+                # Use the original 60 selected features as input
+                data_for_prediction = data
+                
+                # Get all trained models for per-model predictions
+                models_to_predict = {}
+                if hasattr(result, 'metadata') and 'trained_models' in result.metadata:
+                    models_to_predict = result.metadata['trained_models']
+                elif hasattr(result, 'metadata') and 'model_instances' in result.metadata:
+                    models_to_predict = result.metadata['model_instances']
+                else:
+                    # Fallback to single best model
+                    models_to_predict = {'best_model': result.model}
+                
+                # CRITICAL: Use the EXACT same features that models were trained on
+                # Models expect: base features (~60) + regime probabilities (3-7) = ~63-67 features
+                # We should NOT apply analyst feature engineering here - that happens inside model_trainer
+                # We just need to ensure we have the same features that were used for training
+                
+                tprint_info("🔧 Preparing prediction features (base + regime probabilities)...")
+                tprint_info(f"   Input data shape: {data_for_prediction.shape}")
+                tprint_info(f"   Input columns (first 10): {list(data_for_prediction.columns[:10])}")
+                tprint_info(f"   Input columns (last 10): {list(data_for_prediction.columns[-10:])}")
+                
+                # The data_for_prediction should already have regime probabilities if they were loaded
+                # Just verify we have reasonable feature count
+                expected_min = 63  # ~60 base + 3 regime
+                expected_max = 67  # ~60 base + 7 regime
+                if data_for_prediction.shape[1] < expected_min:
+                    tprint_warning(f"⚠️ Expected {expected_min}-{expected_max} features, got {data_for_prediction.shape[1]}")
+                    tprint_warning("   This may cause prediction failures for some models")
+                elif data_for_prediction.shape[1] > expected_max:
+                    tprint_warning(f"⚠️ More features than expected: {data_for_prediction.shape[1]} > {expected_max}")
+                else:
+                    tprint_success(f"✅ Prediction data has {data_for_prediction.shape[1]} features (within expected range)")
+                
+                # Step 2: Select ONLY the features that models were trained on (from metadata)
+                if hasattr(result, 'metadata') and 'trained_feature_columns' in result.metadata:
+                    trained_features = result.metadata['trained_feature_columns']
+                    tprint_info(f"📊 Using stored feature columns from training: {len(trained_features)} features")
+                    
+                    # Ensure all required features are available
+                    missing_features = set(trained_features) - set(data_for_prediction.columns)
+                    if missing_features:
+                        tprint_error(f"❌ Missing required features ({len(missing_features)}): {list(missing_features)[:10]}...")
+                        tprint_error("   Cannot generate predictions without all training features!")
+                        predictions = None
+                    else:
+                        # Select ONLY the features used during training
+                        data_for_prediction = data_for_prediction[trained_features]
+                        tprint_success(f"✅ Selected {len(trained_features)} features for prediction (matches training)")
+                        predictions = await self._generate_predictions(models_to_predict, data_for_prediction)
+                else:
+                    # Fallback: try to infer from model
+                    tprint_warning("⚠️ No stored feature columns found, trying to infer from models...")
+                    for model_name, model_obj in models_to_predict.items():
+                        if hasattr(model_obj, 'feature_names_in_'):
+                            expected_features = list(model_obj.feature_names_in_)
+                            tprint_info(f"📊 {model_name} expects {len(expected_features)} features")
+                            
+                            missing_features = set(expected_features) - set(data_for_prediction.columns)
+                            if missing_features:
+                                tprint_error(f"❌ Missing features: {missing_features}")
+                                predictions = None
+                            else:
+                                data_for_prediction = data_for_prediction[expected_features]
+                                tprint_success(f"✅ Selected {len(expected_features)} features for prediction")
+                                predictions = await self._generate_predictions(models_to_predict, data_for_prediction)
+                            break
+                        else:
+                            tprint_error(f"❌ Model {model_name} has no feature_names_in_ attribute")
+                            predictions = None
 
-                # Save predictions to HDF5 as analyst_base_outputs
+                # Store predictions for ensemble training (will be saved by calling step)
                 if predictions is not None:
-                    try:
-                        from src.utils.ml_common.artifact_manager import get_artifact_manager
-                        artifact_mgr = get_artifact_manager()
-                        artifact_mgr.save_artifact(
-                            predictions,
-                            'analyst_base_outputs',
-                            artifact_type='data',
-                            metadata={
-                                'phase': 'analyst_base',
-                                'shape': predictions.shape,
-                                'columns': list(predictions.columns) if hasattr(predictions, 'columns') else []
-                            }
-                        )
-                        tprint_success(f"✅ Saved analyst_base_outputs: {predictions.shape}")
-                    except Exception as e:
-                        tprint_warning(f"⚠️ Failed to save analyst_base_outputs: {e}")
+                    tprint_info("=" * 80)
+                    tprint_info("📊 PREDICTION GENERATION SUMMARY")
+                    tprint_info("=" * 80)
+                    tprint_info(f"✅ Generated predictions from {len(models_to_predict)} models")
+                    tprint_info(f"   Prediction shape: {predictions.shape}")
+                    tprint_info(f"   Prediction columns: {list(predictions.columns)}")
+                    tprint_info(f"   Models used: {list(models_to_predict.keys())}")
+                    
+                    # Verify we have predictions from all models
+                    if predictions.shape[1] != len(models_to_predict):
+                        tprint_error(f"❌ MISMATCH: Expected {len(models_to_predict)} prediction columns, got {predictions.shape[1]}")
+                        tprint_error(f"   Missing models: {set(models_to_predict.keys()) - set(predictions.columns)}")
+                    else:
+                        tprint_success(f"✅ All {len(models_to_predict)} models have predictions")
+                    
+                    # Also compute confidence scores
+                    confidence = predictions.abs()
+                    tprint_info(f"   Confidence shape: {confidence.shape}")
+                    tprint_info("=" * 80)
+                else:
+                    tprint_error("❌ No predictions generated!")
 
                 tprint_success("✅ Analyst base models trained successfully")
+                # Extract models from metadata if not available as attribute
+                trained_models = {}
+                if hasattr(result, 'models'):
+                    trained_models = result.models
+                elif hasattr(result, 'metadata') and 'trained_models' in result.metadata:
+                    trained_models = result.metadata['trained_models']
+                elif hasattr(result, 'metadata') and 'model_instances' in result.metadata:
+                    trained_models = result.metadata['model_instances']
+                
                 return {
                     'success': True,
                     'model': result.model,
-                    'models': result.models if hasattr(result, 'models') else {},
+                    'models': trained_models,
                     'predictions': predictions,
+                    'confidence': confidence if predictions is not None else None,
                     'metrics': result.metrics,
                     'training_time': result.training_time,
                     'validation_metrics': result.validation_metrics,
@@ -607,42 +697,18 @@ class TrainingPipelineOrchestrator:
 
             tprint_info("📊 Starting analyst ensemble training...")
 
-            # Prepare data with base model predictions + disagreement features
-            enhanced_data = self._enhance_data_with_predictions(data, base_predictions)
-
-            # Add disagreement features for ensemble
-            if base_predictions is not None and not base_predictions.empty:
-                disagreement_features = self._calculate_disagreement_features(base_predictions)
-                if disagreement_features is not None:
-                    enhanced_data = pd.concat([enhanced_data, disagreement_features], axis=1)
-                    tprint_info(f"📊 Added {len(disagreement_features.columns)} disagreement features")
-
-            # Train analyst ensemble
-            result = await self._ensemble_trainer.train(enhanced_data, targets)
+            # CRITICAL: Pass base_predictions directly to ensemble trainer
+            # The ensemble trainer will use these predictions for meta-learning
+            # Do NOT add them as features - they are the input to the meta-learner
+            
+            # Train analyst ensemble with base predictions
+            result = await self._ensemble_trainer.train(data, targets, base_predictions=base_predictions)
 
             if result.success:
                 # Generate ensemble predictions
-                predictions = result.predictions if hasattr(result, 'predictions') and result.predictions is not None else await self._generate_predictions(result.model, enhanced_data)
+                predictions = result.predictions if hasattr(result, 'predictions') and result.predictions is not None else await self._generate_predictions(result.model, data)
 
-                # Save predictions to HDF5 as analyst_ensemble_outputs
-                if predictions is not None:
-                    try:
-                        from src.utils.ml_common.artifact_manager import get_artifact_manager
-                        artifact_mgr = get_artifact_manager()
-                        artifact_mgr.save_artifact(
-                            predictions,
-                            'analyst_ensemble_outputs',
-                            artifact_type='data',
-                            metadata={
-                                'phase': 'analyst_ensemble',
-                                'shape': predictions.shape,
-                                'columns': list(predictions.columns) if hasattr(predictions, 'columns') else []
-                            }
-                        )
-                        tprint_success(f"✅ Saved analyst_ensemble_outputs: {predictions.shape}")
-                    except Exception as e:
-                        tprint_warning(f"⚠️ Failed to save analyst_ensemble_outputs: {e}")
-
+                # Note: analyst_ensemble_outputs will be saved by unified_models_training_step
                 tprint_success("✅ Analyst ensemble trained successfully")
                 return {
                     'success': True,
@@ -1073,12 +1139,15 @@ class TrainingPipelineOrchestrator:
 
             # Handle dict of models (base models)
             if isinstance(model, dict):
+                tprint_info(f"🔮 Generating predictions from {len(model)} models...")
                 predictions_dict = {}
                 for model_name, model_obj in model.items():
                     try:
+                        tprint_info(f"   → Predicting with {model_name}...")
                         if hasattr(model_obj, 'predict'):
                             pred = model_obj.predict(data)
                             predictions_dict[model_name] = pred
+                            tprint_success(f"   ✅ {model_name}: {len(pred)} predictions")
                         elif hasattr(model_obj, 'predict_proba'):
                             pred = model_obj.predict_proba(data)
                             # Use probability of positive class if binary
@@ -1086,13 +1155,17 @@ class TrainingPipelineOrchestrator:
                                 predictions_dict[model_name] = pred[:, 1]
                             else:
                                 predictions_dict[model_name] = pred
+                            tprint_success(f"   ✅ {model_name}: {len(pred)} predictions (proba)")
                     except Exception as e:
                         tprint_warning(f"⚠️ Failed to get predictions from {model_name}: {e}")
                         continue
 
                 if predictions_dict:
-                    return pd.DataFrame(predictions_dict, index=data.index)
+                    result_df = pd.DataFrame(predictions_dict, index=data.index)
+                    tprint_success(f"✅ Combined predictions: {result_df.shape} with columns {list(result_df.columns)}")
+                    return result_df
                 else:
+                    tprint_error("❌ No predictions generated from any model!")
                     return None
 
             # Handle single model

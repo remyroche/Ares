@@ -1140,6 +1140,113 @@ class RollingHMMFeatureEngineer:
 
         return features_pca_df, pca, explained_variance
 
+    def extract_economic_features(
+        self,
+        features: pd.DataFrame,
+        market_data: pd.DataFrame,
+        ewma_config: EWMAConfig
+    ) -> pd.DataFrame:
+        """
+        Extract key economic features for HMM clustering instead of using PCA.
+
+        This method selects economically interpretable features that are useful for
+        identifying market regimes:
+        - returns: mean returns over short/long windows
+        - volatility: realized volatility over short/long windows
+        - volume_ratio: normalized volume relative to moving average
+        - trend_strength: momentum indicator
+        - RSI: relative strength index
+        - ATR: average true range
+        - sharpe: rolling Sharpe ratio
+
+        Args:
+            features: Normalized feature DataFrame from generate_features()
+            market_data: Original market data DataFrame
+            ewma_config: EWMA configuration used for feature generation
+
+        Returns:
+            DataFrame with selected economic features
+        """
+        tprint_info(f"  → Extracting economic features for HMM (EWMA: {ewma_config.name})")
+
+        economic_features = {}
+
+        # 1. Returns features
+        if f'ewma_returns_{ewma_config.short_window}' in features.columns:
+            economic_features['mean_return_short'] = features[f'ewma_returns_{ewma_config.short_window}']
+        if f'ewma_returns_{ewma_config.long_window}' in features.columns:
+            economic_features['mean_return_long'] = features[f'ewma_returns_{ewma_config.long_window}']
+        if f'ewma_returns_diff_{ewma_config.name}' in features.columns:
+            economic_features['return_momentum'] = features[f'ewma_returns_diff_{ewma_config.name}']
+
+        # 2. Volatility features
+        if f'volatility_{ewma_config.short_window}' in features.columns:
+            economic_features['volatility_short'] = features[f'volatility_{ewma_config.short_window}']
+        if f'volatility_{ewma_config.long_window}' in features.columns:
+            economic_features['volatility_long'] = features[f'volatility_{ewma_config.long_window}']
+        if f'volatility_ratio_{ewma_config.name}' in features.columns:
+            economic_features['volatility_regime'] = features[f'volatility_ratio_{ewma_config.name}']
+
+        # 3. Volume features (if available)
+        volume_cols = [col for col in features.columns if 'volume' in col.lower()]
+        if volume_cols:
+            # Use first volume feature as proxy for volume regime
+            if 'volume_zscore_5' in features.columns:
+                economic_features['volume_ratio'] = features['volume_zscore_5']
+            elif len(volume_cols) > 0:
+                economic_features['volume_ratio'] = features[volume_cols[0]]
+
+        # 4. Trend strength (using EWMA crossover)
+        if 'return_momentum' in economic_features:
+            # Already have this from ewma_returns_diff
+            economic_features['trend_strength'] = economic_features['return_momentum']
+
+        # 5. RSI-like feature (use normalized returns as proxy)
+        if 'log_returns' in features.columns:
+            # Calculate RSI from returns
+            returns = features['log_returns']
+            # Simple RSI calculation: ratio of average gains to average losses
+            gains = returns.clip(lower=0)
+            losses = (-returns).clip(lower=0)
+            avg_gain = gains.rolling(14, min_periods=1).mean()
+            avg_loss = losses.rolling(14, min_periods=1).mean()
+            rs = avg_gain / (avg_loss + 1e-8)
+            rsi = 100 - (100 / (1 + rs))
+            # Normalize RSI to [-1, 1] range
+            economic_features['rsi'] = (rsi - 50) / 50
+
+        # 6. ATR (Average True Range) - use realized_range as proxy
+        if 'realized_range' in features.columns:
+            economic_features['atr'] = features['realized_range']
+        elif f'volatility_{ewma_config.short_window}' in features.columns:
+            # Use short-term volatility as ATR proxy
+            economic_features['atr'] = features[f'volatility_{ewma_config.short_window}']
+
+        # 7. Sharpe ratio (rolling)
+        if ('mean_return_short' in economic_features and
+            'volatility_short' in economic_features):
+            # Rolling Sharpe = mean return / volatility
+            sharpe = economic_features['mean_return_short'] / (economic_features['volatility_short'] + 1e-8)
+            # Clip extreme values
+            economic_features['sharpe'] = sharpe.clip(-5, 5)
+
+        # Create DataFrame
+        economic_df = pd.DataFrame(economic_features, index=features.index)
+
+        # Fill any remaining NaNs
+        nan_mask = economic_df.isna().any(axis=1)
+        nan_rows = int(np.count_nonzero(nan_mask.to_numpy()))
+        if nan_rows > 0:
+            tprint_warning(
+                f"  ⚠️  Economic features contain {nan_rows} NaN rows; filling with column means"
+            )
+            economic_df = economic_df.fillna(economic_df.mean())
+            economic_df = economic_df.fillna(0)
+
+        tprint_info(f"    ✅ Extracted {len(economic_df.columns)} economic features: {list(economic_df.columns)}")
+
+        return economic_df
+
 
 # Default EWMA configurations
 DEFAULT_EWMA_CONFIGS = [

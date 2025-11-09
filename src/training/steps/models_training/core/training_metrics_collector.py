@@ -309,6 +309,11 @@ class TrainingMetricsCollector:
             # Perform cross-validation with optimized model
             fold_metrics_list = []
             
+            # Ensure n_folds is at least 2 for cross-validation
+            if n_folds < 2:
+                self.logger.warning(f"⚠️ n_folds={n_folds} is too small, using n_folds=2")
+                n_folds = 2
+            
             # Always use KFold to avoid "Unknown label type: continuous" error
             kf = KFold(n_splits=n_folds, shuffle=True, random_state=42)
             

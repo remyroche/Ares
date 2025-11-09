@@ -178,50 +178,59 @@ class ArtifactManager:
         Returns:
             JSON-serializable representation
         """
-        if NUMPY_AVAILABLE and isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif NUMPY_AVAILABLE and isinstance(obj, np.integer):
-            return int(obj)
-        elif NUMPY_AVAILABLE and isinstance(obj, np.floating):
-            return float(obj)
-        elif PANDAS_AVAILABLE and isinstance(obj, pd.Timestamp):
+        # Handle numpy types first
+        if NUMPY_AVAILABLE:
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.bool_):
+                return bool(obj)
+        
+        # Handle pandas types
+        if PANDAS_AVAILABLE and isinstance(obj, pd.Timestamp):
             return obj.isoformat()
-        elif isinstance(obj, datetime):
+        
+        # Handle datetime
+        if isinstance(obj, datetime):
             return obj.isoformat()
-        elif isinstance(obj, Exception):
+        
+        # Handle exceptions
+        if isinstance(obj, Exception):
             return {
                 "type": obj.__class__.__name__,
                 "message": str(obj)
             }
-        elif hasattr(obj, '__dict__'):
-            return obj.__dict__
-        elif isinstance(obj, dict):
-            # Handle dictionaries with numpy int64 keys
-            if NUMPY_AVAILABLE:
-                new_dict = {}
-                for key, value in obj.items():
-                    # Convert numpy int64 keys to regular Python int
-                    if isinstance(key, np.integer):
-                        key = int(key)
-                    elif isinstance(key, (str, int, float, bool)):
-                        pass  # Keep as-is
-                    else:
-                        # Convert other non-JSON-serializable keys to string
-                        key = str(key)
-
-                    # Recursively handle nested structures
-                    if isinstance(value, (dict, list, tuple)):
-                        value = self._json_serializer(value)
-                    new_dict[key] = value
-                return new_dict
-            return obj
-        elif isinstance(obj, (list, tuple)):
-            # Handle lists/tuples with numpy types
-            if NUMPY_AVAILABLE:
-                return [self._json_serializer(item) for item in obj]
+        
+        # Handle dictionaries - convert all keys to JSON-serializable types
+        if isinstance(obj, dict):
+            new_dict = {}
+            for key, value in obj.items():
+                # Convert keys to JSON-serializable types
+                if NUMPY_AVAILABLE and isinstance(key, np.integer):
+                    key = int(key)
+                elif NUMPY_AVAILABLE and isinstance(key, np.floating):
+                    key = float(key)
+                elif not isinstance(key, (str, int, float, bool, type(None))):
+                    # Convert other non-JSON-serializable keys to string
+                    key = str(key)
+                
+                # Recursively serialize values
+                new_dict[key] = value
+            return new_dict
+        
+        # Handle lists/tuples
+        if isinstance(obj, (list, tuple)):
             return list(obj)
-        else:
-            return str(obj)
+        
+        # Handle objects with __dict__
+        if hasattr(obj, '__dict__'):
+            return obj.__dict__
+        
+        # Fallback to string representation
+        return str(obj)
 
     def get_artifact_summary(self) -> Dict[str, Any]:
         """

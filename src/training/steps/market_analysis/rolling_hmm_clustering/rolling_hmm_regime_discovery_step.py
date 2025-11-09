@@ -296,6 +296,14 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             # Generate reports
             await self._generate_reports(result, symbol, exchange, timeframe, config)
             
+            # Cleanup quality assessor to prevent resource leaks
+            if self._quality_assessor is not None:
+                try:
+                    del self._quality_assessor
+                    self._quality_assessor = None
+                except Exception:
+                    pass  # Ignore cleanup errors
+            
             # Calculate execution time
             execution_time = time.time() - start_time
             
@@ -649,22 +657,15 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             if len(features) < 50:
                 raise ValueError(f"Insufficient data after feature engineering: {len(features)} samples")
 
-            # Store original datetime index before PCA (to preserve timestamps)
-            original_timestamps = features.index.copy()
-
-            # Apply PCA
-            pca_components = params.get('pca_components', 4)
-            features_pca, pca_model, explained_var = feature_engineer.apply_pca(
+            # Extract economic features instead of PCA for better economic interpretability
+            features_economic = feature_engineer.extract_economic_features(
                 features,
-                n_components=int(pca_components)
+                market_data,
+                ewma_config
             )
-            tprint(f"🐛 DEBUG: [STEP 5] features_pca after PCA: {features_pca.shape}", "INFO")
-            tprint(f"🐛 DEBUG: [STEP 5] features_pca index range: {features_pca.index.min()} to {features_pca.index.max()}", "INFO")
-
-            # Ensure PCA features have the correct datetime index
-            if not isinstance(features_pca.index, pd.DatetimeIndex) or len(features_pca) != len(original_timestamps):
-                tprint_warning(f"⚠️ PCA corrupted index, restoring from original (PCA len={len(features_pca)}, orig len={len(original_timestamps)})")
-                features_pca.index = original_timestamps[:len(features_pca)]
+            tprint(f"🐛 DEBUG: [STEP 5] features_economic after extraction: {features_economic.shape}", "INFO")
+            tprint(f"🐛 DEBUG: [STEP 5] features_economic index range: {features_economic.index.min()} to {features_economic.index.max()}", "INFO")
+            tprint(f"🐛 DEBUG: [STEP 5] Economic features: {list(features_economic.columns)}", "INFO")
 
             # Create HMM config
             n_components = params.get('n_components', 5)
@@ -686,13 +687,13 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
 
             tprint_info(f"  → HMM config: n_components={n_components}, kappa={kappa}, min_covar={min_covar}")
 
-            # Fit HMM model
+            # Fit HMM model using economic features
             hmm_model = StickyHMMModel(hmm_config)
-            hmm_model.fit(features_pca.values)
+            hmm_model.fit(features_economic.values)
 
             # Predict regime labels
-            regime_labels = hmm_model.predict(features_pca.values)
-            regime_probs = hmm_model.predict_proba(features_pca.values)
+            regime_labels = hmm_model.predict(features_economic.values)
+            regime_probs = hmm_model.predict_proba(features_economic.values)
             tprint(f"🐛 DEBUG: [STEP 6] regime_labels after HMM predict: shape={regime_labels.shape}, unique={np.unique(regime_labels)}", "INFO")
             tprint(f"🐛 DEBUG: [STEP 6] regime_probs after HMM predict: {regime_probs.shape}", "INFO")
 
@@ -701,7 +702,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
 
             # Calculate forward returns for quality assessment
             forward_returns = market_data['close'].pct_change().shift(-1)
-            forward_returns = forward_returns.loc[features_pca.index]
+            forward_returns = forward_returns.loc[features_economic.index]
 
             # Assess quality
             tprint_info("  → Assessing regime quality")
@@ -713,11 +714,11 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
 
             metrics = self.quality_assessor.assess_hmm_regime_quality(
                 regime_labels=regime_labels,
-                feature_data=features_pca,
+                feature_data=features_economic,
                 transition_matrix=model_summary['transition_matrix'],
                 hmm_model=None,
                 forward_returns=forward_returns,
-                timestamps=features_pca.index,
+                timestamps=features_economic.index,
                 timeframe=timeframe,
                 min_regime_size=10,
                 run_validators=True,
@@ -728,10 +729,9 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             result = {
                 'regime_labels': regime_labels,
                 'regime_probs': regime_probs,
-                'features': features_pca,
+                'features': features_economic,
                 'original_features': features,
-                'pca_model': pca_model,
-                'pca_explained_variance': explained_var,
+                'economic_feature_names': list(features_economic.columns),  # Store economic feature names
                 'hmm_model': hmm_model,
                 'transition_matrix': model_summary['transition_matrix'],
                 'stationary_distribution': model_summary['stationary_distribution'],
@@ -739,7 +739,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 'model_summary': model_summary,
                 'quality_metrics': metrics.to_dict() if hasattr(metrics, 'to_dict') else metrics,
                 'n_regimes': n_components,
-                'timestamps': features_pca.index,
+                'timestamps': features_economic.index,
                 'hpo_results': hpo_results,  # Include HPO results in the output
                 'best_params': best_params   # Include best params for reference
             }
@@ -886,7 +886,9 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             tprint("=" * 80, "INFO")
             tprint(f"Symbol: {symbol} | Exchange: {exchange} | Timeframe: {timeframe}", "INFO")
             tprint(f"Number of Regimes: {result['n_regimes']}", "INFO")
-            tprint(f"PCA Explained Variance: {result['pca_explained_variance']:.2%}", "INFO")
+            # Note: Rolling HMM uses economic features, not PCA
+            if 'pca_explained_variance' in result:
+                tprint(f"PCA Explained Variance: {result['pca_explained_variance']:.2%}", "INFO")
             tprint("", "INFO")
             tprint("Quality Metrics:", "INFO")
             tprint(f"  - Quality Score: {metrics.get('quality_score', 0):.4f}", "INFO")

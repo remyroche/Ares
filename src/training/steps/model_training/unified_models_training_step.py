@@ -98,6 +98,16 @@ class UnifiedModelsTrainingStep(BaseStep):
         symbol = config.get('symbol', 'UNKNOWN')
         timeframe = config.get('timeframe', '15m')
         direction = config.get('direction', 'long')
+        exchange = config.get('exchange', 'binance')
+        
+        # Set artifact context for proper artifact retrieval
+        self._current_context = {
+            'symbol': symbol,
+            'exchange': exchange,
+            'timeframe': timeframe,
+            'direction': direction,
+            'model': 'Analyst' if 'analyst' in training_type else 'Tactician'
+        }
         
         tprint_info(f"🚀 Starting unified {training_type} training for {symbol} {timeframe} {direction}")
 
@@ -212,8 +222,8 @@ class UnifiedModelsTrainingStep(BaseStep):
                 tprint_warning("⚠️ No training data available for temporal splitting")
                 self._walkforward_config = None
 
-            # --- MODIFIED: Retrieve and merge additional features for ensemble/tactician models ---
-            if training_type.endswith('ensemble') or training_type == 'tactician_base':
+            # --- MODIFIED: Retrieve and merge additional features for all training types (regime probs needed for all) ---
+            if training_type in ['analyst_base', 'tactician_base', 'analyst_ensemble', 'tactician_ensemble']:
                 tprint_info(f"Retrieving additional model outputs for {training_type}...")
                 # --- FIX 5: Pass training_data for index alignment ---
                 additional_outputs = await self._get_additional_model_outputs(training_type, config, training_data)
@@ -393,20 +403,23 @@ class UnifiedModelsTrainingStep(BaseStep):
                         model_type = 'analyst' if training_type.startswith('analyst') else 'tactician'
                         tprint_info(f"📊 Saving ML-scored historical data ({model_type})...")
 
-                        ml_scored_path = self._save_ml_scored_data(
-                            data=training_data,
-                            predictions=result['predictions'],
-                            model_type=model_type,
-                            config=config,
-                            metadata={
-                                'training_type': training_type,
-                                'metrics': result.get('metrics', {}),
-                                'model_names': list(result.get('models', {}).keys())
-                            }
+                        # Combine training data with predictions
+                        ml_scored_data = training_data.copy()
+                        predictions_df = result['predictions']
+                        if isinstance(predictions_df, pd.DataFrame):
+                            ml_scored_data = pd.concat([ml_scored_data, predictions_df], axis=1)
+                        
+                        # Save using artifact system
+                        artifact_name = f"ml_scored_historical_data_{model_type}_{direction}"
+                        self._save_artifact(
+                            ml_scored_data,
+                            artifact_name,
+                            artifact_type='data',
+                            data_category='predictions'
                         )
 
-                        artifacts['ml_scored_historical_data'] = ml_scored_path
-                        tprint_success(f"✅ ML-scored data saved: {ml_scored_path}")
+                        artifacts['ml_scored_historical_data'] = artifact_name
+                        tprint_success(f"✅ ML-scored data saved: {artifact_name}")
                     except Exception as e:
                         tprint_warning(f"⚠️ Failed to save ML-scored data: {e}")
                         self.logger.warning(f"ML-scored data save failed: {e}")
@@ -747,6 +760,10 @@ class UnifiedModelsTrainingStep(BaseStep):
             tprint_info(f"   Sample-to-Feature Ratio: {sample_to_feature_ratio:.3f}")
             tprint_info(f"   Memory Usage: {original_memory:.2f} MB")
             
+            # DEBUG: Log feature names before selection
+            tprint_info(f"🔍 [DEBUG] Feature names BEFORE selection (first 20): {list(training_data.columns[:20])}")
+            tprint_info(f"🔍 [DEBUG] Total feature names BEFORE selection: {len(training_data.columns)}")
+            
             feature_selection_info = {
                 'original_shape': original_shape,
                 'original_memory_mb': original_memory,
@@ -824,17 +841,31 @@ class UnifiedModelsTrainingStep(BaseStep):
             
             # Fit selector
             tprint_info("🔄 Training RandomForest for feature importance...")
-            rf_selector.fit(training_data, targets)
+            
+            # Ensure training_data and targets are aligned
+            training_data_aligned = training_data
+            targets_aligned = targets
+            if len(training_data) != len(targets):
+                tprint_warning(f"⚠️ Data/target length mismatch: data={len(training_data)}, targets={len(targets)}")
+                # Align by index
+                common_index = training_data.index.intersection(targets.index)
+                if len(common_index) == 0:
+                    raise ValueError(f"No common indices between training_data and targets!")
+                training_data_aligned = training_data.loc[common_index]
+                targets_aligned = targets.loc[common_index]
+                tprint_info(f"   ✓ Aligned to {len(common_index)} common samples")
+            
+            rf_selector.fit(training_data_aligned, targets_aligned)
             
             # Get selected features
             selected_features_mask = rf_selector.get_support()
-            selected_feature_names = training_data.columns[selected_features_mask].tolist()
-            removed_feature_names = training_data.columns[~selected_features_mask].tolist()
+            selected_feature_names = training_data_aligned.columns[selected_features_mask].tolist()
+            removed_feature_names = training_data_aligned.columns[~selected_features_mask].tolist()
             
             # Calculate feature importances
             feature_importances = rf_selector.estimator_.feature_importances_
             importance_df = pd.DataFrame({
-                'feature': training_data.columns,
+                'feature': training_data_aligned.columns,
                 'importance': feature_importances
             }).sort_values('importance', ascending=False)
             
@@ -853,8 +884,9 @@ class UnifiedModelsTrainingStep(BaseStep):
                 'low_importance_count': int((importance_df['importance'] <= 0.001).sum())
             }
             
-            # Apply feature selection
-            training_data_selected = training_data[selected_feature_names]
+            # Apply feature selection (use aligned data)
+            training_data_selected = training_data_aligned[selected_feature_names]
+            targets_selected = targets_aligned
             
             feature_selection_info['removed_features']['low_importance'] = removed_feature_names
             
@@ -908,11 +940,26 @@ class UnifiedModelsTrainingStep(BaseStep):
                 'actual_features': len(selected_feature_names)
             })
             
+            # DEBUG: Log feature names after selection
+            tprint_info(f"🔍 [DEBUG] Feature names AFTER selection (first 20): {list(training_data_selected.columns[:20])}")
+            # DEBUG: Log feature selection results
+            tprint_info("=" * 80)
+            tprint_info("🔍 [DEBUG] FEATURE SELECTION RESULTS")
+            tprint_info("=" * 80)
+            tprint_info(f"🔍 [DEBUG] Original feature count: {original_shape[1]}")
+            tprint_info(f"🔍 [DEBUG] Final feature count: {final_shape[1]}")
+            tprint_info(f"🔍 [DEBUG] Features removed: {original_shape[1] - final_shape[1]}")
+            tprint_info(f"🔍 [DEBUG] Feature reduction: {feature_reduction:.1f}%")
+            tprint_info(f"🔍 [DEBUG] Selected features (first 20): {list(training_data_selected.columns[:20])}")
+            tprint_info(f"🔍 [DEBUG] Selected features (last 20): {list(training_data_selected.columns[-20:])}")
+            tprint_info("=" * 80)
+            tprint_info(f"🔍 [DEBUG] Total feature names AFTER selection: {len(training_data_selected.columns)}")
+            
             tprint_info("=" * 80)
             tprint_success(f"✅ Feature selection complete: {original_shape[1]:,} → {final_shape[1]:,} features")
             tprint_info("=" * 80)
             
-            return training_data_selected, targets, feature_selection_info
+            return training_data_selected, targets_selected, feature_selection_info
             
         except Exception as e:
             tprint_error(f"❌ Feature selection failed: {e}")
@@ -1592,11 +1639,40 @@ class UnifiedModelsTrainingStep(BaseStep):
         try:
             execution_mode = config.get('execution_mode', 'light')
             
+            # DEBUG: Log original data information
+            if training_data is not None:
+                tprint_info(f"🔍 [DEBUG] Original training data shape: {training_data.shape}")
+                tprint_info(f"🔍 [DEBUG] Original data index range: {training_data.index.min()} to {training_data.index.max()}")
+                tprint_info(f"🔍 [DEBUG] Timeframe: {timeframe}")
+                tprint_info(f"🔍 [DEBUG] Execution mode: {execution_mode}")
+                
+                # Calculate expected samples based on timeframe and date range
+                if hasattr(training_data.index, 'min') and hasattr(training_data.index, 'max'):
+                    date_range = training_data.index.max() - training_data.index.min()
+                    tprint_info(f"🔍 [DEBUG] Date range: {date_range}")
+                    
+                    # Estimate expected samples based on timeframe
+                    if timeframe == '15m':
+                        expected_samples_per_day = 24 * 4  # 24 hours * 4 quarters per hour
+                        total_days = date_range.days + (date_range.seconds / (24 * 3600))
+                        expected_total_samples = int(total_days * expected_samples_per_day)
+                        tprint_info(f"🔍 [DEBUG] Expected samples: {expected_total_samples} (based on {total_days:.1f} days × {expected_samples_per_day} samples/day)")
+                        
+                        # Check if we have significantly fewer samples than expected
+                        if len(training_data) < expected_total_samples * 0.5:
+                            tprint_warning(f"⚠️ [DEBUG] Sample count anomaly: Have {len(training_data)} samples but expected ~{expected_total_samples}")
+                            tprint_warning(f"   This suggests missing data or data quality issues")
+            
             if execution_mode == 'light' and training_data is not None:
                 # Limit to 1000 samples in light mode
                 if len(training_data) > 1000:
                     tprint_info(f"Light mode: Limiting training data from {len(training_data)} to 1000 samples")
                     training_data = training_data.tail(1000)
+            
+            # Log final data shape after filtering
+            if training_data is not None:
+                tprint_info(f"🔍 [DEBUG] Final training data shape after filtering: {training_data.shape}")
+                tprint_info(f"🔍 [DEBUG] Final data index range: {training_data.index.min()} to {training_data.index.max()}")
             
             return training_data
             
@@ -1628,18 +1704,21 @@ class UnifiedModelsTrainingStep(BaseStep):
             tprint_info(f"   Storage Format: HDF5 (via versioned_artifacts)")
 
             # Try to get selected features from feature_generation_final_feature_selection_step
-            # IMPORTANT: Fallback order prioritizes larger feature sets (60 > 50 > 40) for better model performance
+            # IMPORTANT: We need SELECTED features (60), not generated features (327)
+            timeframe = config.get('timeframe', '15m')
             feature_artifact_names = [
-                f'selected_feature_dataframe_{feature_set_size}',  # Specific size
+                f'selected_feature_dataframe_{feature_set_size}',  # Primary: selected features
                 f'selected_features_{feature_set_size}',           # Alternative name
                 f'final_dataset_{feature_set_size}',               # Validation step generic alias
                 f'final_analyst_dataset_{feature_set_size}',       # Analyst-specific validation alias
-                'selected_feature_dataframe_60',                   # Fallback to 60 (try largest first)
+                'selected_feature_dataframe_60',                   # Fallback to 60
                 'selected_feature_dataframe_50',                   # Fallback to 50
                 'selected_feature_dataframe_40',                   # Fallback to 40
                 'final_dataset_60',                                # Validation step 60
                 'final_dataset_50',                                # Validation step 50
                 'final_dataset_40',                                # Validation step 40
+                f'generated_features_{timeframe}',                 # LAST RESORT: all generated features (327)
+                f'generated_features',                             # LAST RESORT: generic name
             ]
 
             tprint_info(f"🔎 Attempting to load training features from HDF5 artifacts...")
@@ -1696,12 +1775,34 @@ class UnifiedModelsTrainingStep(BaseStep):
             
             # Normalize training_data to DataFrame for downstream processing
             if training_data is not None and not isinstance(training_data, pd.DataFrame):
-                try:
-                    training_data = pd.DataFrame(training_data)
-                    tprint_warning(f"⚠️ Converted training data from type '{type(training_data)}' to DataFrame")
-                except Exception as e:
-                    tprint_error(f"❌ Failed to convert training data to DataFrame: {e}")
-                    raise
+                # Check if we got a list of feature names instead of actual data
+                if isinstance(training_data, list):
+                    tprint_warning(f"⚠️ Got list of {len(training_data)} feature names, need to load actual feature data")
+                    # Try to load the actual labeled data with these features
+                    try:
+                        labeled_data = self._get_artifact('labeled_data', 'data')
+                        if labeled_data is not None and isinstance(labeled_data, pd.DataFrame):
+                            # Select only the features from the list
+                            available_features = [f for f in training_data if f in labeled_data.columns]
+                            if available_features:
+                                training_data = labeled_data[available_features].copy()
+                                tprint_success(f"✅ Loaded {len(available_features)} features from labeled_data")
+                            else:
+                                tprint_error(f"❌ None of the {len(training_data)} feature names found in labeled_data")
+                                raise ValueError(f"Feature names from {feature_source_name} not found in labeled_data")
+                        else:
+                            tprint_error("❌ Could not load labeled_data to get actual feature values")
+                            raise ValueError("Got feature names but no labeled_data available")
+                    except Exception as e:
+                        tprint_error(f"❌ Failed to load feature data: {e}")
+                        raise
+                else:
+                    try:
+                        training_data = pd.DataFrame(training_data)
+                        tprint_warning(f"⚠️ Converted training data from type '{type(training_data)}' to DataFrame")
+                    except Exception as e:
+                        tprint_error(f"❌ Failed to convert training data to DataFrame: {e}")
+                        raise
 
             if training_data is not None and isinstance(training_data, pd.DataFrame):
                 # Comprehensive feature loading verification and logging
@@ -1786,14 +1887,16 @@ class UnifiedModelsTrainingStep(BaseStep):
                     tprint_info("✅ No boolean columns required conversion")
 
                 # Remove obvious target columns that might have slipped into the feature frame
+                # BUT preserve regime probabilities (target_regime_*) which are legitimate features
                 potential_target_cols = [
                     col for col in training_data.columns
-                    if col.lower() in {'target', 'label'}
-                    or col.lower().endswith('_target')
-                    or col.lower().endswith('_label')
+                    if (col.lower() in {'target', 'label', 'target_long', 'target_short'}
+                        or col.lower().endswith('_target')
+                        or col.lower().endswith('_label'))
+                    and not col.lower().startswith('target_regime')  # Preserve regime probabilities
                 ]
                 if potential_target_cols:
-                    tprint_warning(f"⚠️ Dropping target-like columns from features: {potential_target_cols}")
+                    tprint_warning(f"⚠️ DATA LEAKAGE PREVENTION: Dropping target-like columns from features: {potential_target_cols}")
                     training_data = training_data.drop(columns=potential_target_cols)
                 else:
                     tprint_info("✅ No target-like columns detected in feature frame")
@@ -1853,24 +1956,28 @@ class UnifiedModelsTrainingStep(BaseStep):
                     self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
                     continue
 
-            # Try to get tactician targets (direction-specific first, then generic)
-            tactician_artifact_names = [
-                f'tactician_targets_{direction}',  # Direction-specific
-                f'{direction}_tactician_targets',  # Alternative naming
-                f'{direction}_targets',             # Generic direction-specific
-                'tactician_targets',                # Generic tactician targets
-                'targets'                           # Fallback to generic targets
-            ]
+            # Try to get tactician targets ONLY if training tactician models
+            training_type = config.get('training_type', 'analyst_base')
+            if 'tactician' in training_type.lower():
+                tactician_artifact_names = [
+                    f'tactician_targets_{direction}',  # Direction-specific
+                    f'{direction}_tactician_targets',  # Alternative naming
+                    f'{direction}_targets',             # Generic direction-specific
+                    'tactician_targets',                # Generic tactician targets
+                    'targets'                           # Fallback to generic targets
+                ]
 
-            for artifact_name in tactician_artifact_names:
-                try:
-                    tactician_targets = self._get_artifact(artifact_name, 'data')
-                    if tactician_targets is not None:
-                        tprint_success(f"✅ Retrieved tactician targets from '{artifact_name}': {len(tactician_targets)} samples")
-                        break
-                except Exception as e:
-                    self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
-                    continue
+                for artifact_name in tactician_artifact_names:
+                    try:
+                        tactician_targets = self._get_artifact(artifact_name, 'data')
+                        if tactician_targets is not None:
+                            tprint_success(f"✅ Retrieved tactician targets from '{artifact_name}': {len(tactician_targets)} samples")
+                            break
+                    except Exception as e:
+                        self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
+                        continue
+            else:
+                tprint_info("ℹ️ Skipping tactician targets (analyst mode)")
             
             # FALLBACK: Try to extract targets from labeled_data if separate targets not found
             if analyst_targets is None and tactician_targets is None:
@@ -2077,6 +2184,148 @@ class UnifiedModelsTrainingStep(BaseStep):
             self.logger.error(f"Failed to retrieve training data: {e}")
             raise
 
+    def _prepare_analyst_base_features(self, training_data: pd.DataFrame, regime_features: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+        """
+        Prepare consistent feature set for Analyst base training and prediction.
+        
+        This creates the EXACT feature set that models will be trained on:
+        - Final selected features (~60 from feature_generation_final_feature_selection_step)
+        - Regime probabilities (3-7 features, typically 4)
+        
+        This same feature set MUST be used for both training and prediction.
+        
+        Args:
+            training_data: Base features from feature selection (~60 features)
+            regime_features: Regime probability features (optional, 3-7 columns)
+            
+        Returns:
+            Combined feature DataFrame ready for training/prediction
+        """
+        try:
+            tprint_info("=" * 80)
+            tprint_info("🔧 PREPARING ANALYST BASE FEATURE SET")
+            tprint_info("=" * 80)
+            tprint_info(f"📊 Input base features: {training_data.shape}")
+            tprint_info(f"   Base feature columns (first 10): {list(training_data.columns[:10])}")
+            
+            # Start with the base selected features
+            analyst_features = training_data.copy()
+            
+            # Add regime probabilities if available
+            if regime_features is not None and not regime_features.empty:
+                tprint_info(f"📊 Regime probabilities provided: {regime_features.shape}")
+                tprint_info(f"   Regime columns: {list(regime_features.columns)}")
+                
+                # Align regime features to training data index
+                common_index = analyst_features.index.intersection(regime_features.index)
+                if len(common_index) > 0:
+                    regime_aligned = regime_features.loc[common_index]
+                    analyst_features = analyst_features.loc[common_index]
+                    
+                    # Concatenate features
+                    analyst_features = pd.concat([analyst_features, regime_aligned], axis=1)
+                    tprint_success(f"✅ Added {regime_aligned.shape[1]} regime probability features")
+                    tprint_info(f"   Regime features: {list(regime_aligned.columns)}")
+                else:
+                    tprint_warning("⚠️ No common indices with regime features, skipping")
+            else:
+                tprint_warning("⚠️ No regime features available - models will use uniform distribution")
+            
+            tprint_success(f"✅ Final analyst base feature set: {analyst_features.shape}")
+            tprint_info(f"   Total features: {analyst_features.shape[1]} = {training_data.shape[1]} base + {analyst_features.shape[1] - training_data.shape[1]} regime")
+            tprint_info(f"   Feature columns (last 10): {list(analyst_features.columns[-10:])}")
+            tprint_info("=" * 80)
+            
+            return analyst_features
+            
+        except Exception as e:
+            self.logger.error(f"Error preparing analyst base features: {e}")
+            raise
+
+    def _prepare_tactician_base_features(
+        self, 
+        training_data: pd.DataFrame, 
+        regime_features: Optional[pd.DataFrame] = None,
+        analyst_predictions: Optional[pd.DataFrame] = None
+    ) -> pd.DataFrame:
+        """
+        Prepare consistent feature set for Tactician base training and prediction.
+        
+        This creates the EXACT feature set that Tactician models will be trained on:
+        - Final selected features (60 from feature_generation_final_feature_selection_step)
+        - Regime probabilities (if available)
+        - Analyst ensemble predictions (REQUIRED for Tactician)
+        
+        This same feature set MUST be used for both training and prediction.
+        
+        Args:
+            training_data: Base features from feature selection (60 features)
+            regime_features: Regime probability features (optional)
+            analyst_predictions: Analyst ensemble model predictions (required for Tactician)
+            
+        Returns:
+            Combined feature DataFrame ready for training/prediction
+        """
+        try:
+            tprint_info("=" * 80)
+            tprint_info("🔧 PREPARING TACTICIAN BASE FEATURE SET")
+            tprint_info("=" * 80)
+            tprint_info(f"📊 Input features: {training_data.shape}")
+            
+            # Start with the base selected features
+            tactician_features = training_data.copy()
+            
+            # Add regime probabilities if available
+            if regime_features is not None and not regime_features.empty:
+                tprint_info(f"📊 Adding regime probabilities: {regime_features.shape}")
+                
+                # Align regime features to training data index
+                common_index = tactician_features.index.intersection(regime_features.index)
+                if len(common_index) > 0:
+                    regime_aligned = regime_features.loc[common_index]
+                    tactician_features = tactician_features.loc[common_index]
+                    
+                    # Concatenate features
+                    tactician_features = pd.concat([tactician_features, regime_aligned], axis=1)
+                    tprint_success(f"✅ Added {regime_aligned.shape[1]} regime features")
+                else:
+                    tprint_warning("⚠️ No common indices with regime features, skipping")
+            else:
+                tprint_warning("⚠️ No regime features available")
+            
+            # Add analyst ensemble predictions (CRITICAL for Tactician)
+            if analyst_predictions is not None and not analyst_predictions.empty:
+                tprint_info(f"📊 Adding analyst ensemble predictions: {analyst_predictions.shape}")
+                
+                # Align analyst predictions to training data index
+                common_index = tactician_features.index.intersection(analyst_predictions.index)
+                if len(common_index) > 0:
+                    analyst_aligned = analyst_predictions.loc[common_index]
+                    tactician_features = tactician_features.loc[common_index]
+                    
+                    # Rename columns to avoid conflicts
+                    analyst_aligned = analyst_aligned.add_prefix('analyst_')
+                    
+                    # Concatenate features
+                    tactician_features = pd.concat([tactician_features, analyst_aligned], axis=1)
+                    tprint_success(f"✅ Added {analyst_aligned.shape[1]} analyst prediction features")
+                else:
+                    tprint_warning("⚠️ No common indices with analyst predictions, skipping")
+            else:
+                tprint_error("❌ CRITICAL: No analyst ensemble predictions provided for Tactician!")
+                tprint_error("   Tactician models REQUIRE analyst predictions as input features")
+                raise ValueError("Analyst ensemble predictions are required for Tactician training")
+            
+            tprint_success(f"✅ Final tactician base feature set: {tactician_features.shape}")
+            tprint_info(f"   Features: {list(tactician_features.columns[:20])}{'...' if len(tactician_features.columns) > 20 else ''}")
+            tprint_info("=" * 80)
+            
+            return tactician_features
+            
+        except Exception as e:
+            self.logger.error(f"Error preparing tactician base features: {e}")
+            raise
+
     async def _get_primary_features(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """Get primary features from feature generation step."""
         try:
@@ -2103,17 +2352,31 @@ class UnifiedModelsTrainingStep(BaseStep):
             return None
 
     async def _get_regime_features(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
-        """Get regime probability features."""
+        """Get regime probability features from regime_ensemble_training artifact."""
         try:
-            regime_features = await self._get_artifact('regime_probabilities', config)
+            tprint_info("🌍 Loading regime probabilities for feature preparation...")
+            
+            # Load regime ensemble predictions (from regime_ensemble_training)
+            regime_features = self._get_artifact('regime_ensemble_predictions', 'data')
+            
             if regime_features is None:
                 # Try alternative artifact names
-                regime_features = await self._get_artifact('regime_ml_outputs', config)
+                tprint_warning("⚠️ regime_ensemble_predictions not found, trying alternatives...")
+                regime_features = await self._get_artifact('regime_probabilities', config)
+                if regime_features is None:
+                    regime_features = await self._get_artifact('regime_ml_outputs', config)
+            
+            if regime_features is not None:
+                tprint_success(f"✅ Loaded regime features: {regime_features.shape}")
+                tprint_info(f"   Columns: {list(regime_features.columns)}")
+            else:
+                tprint_warning("⚠️ No regime features found - will use uniform distribution")
             
             return regime_features
             
         except Exception as e:
             self.logger.error(f"Error retrieving regime features: {e}")
+            tprint_warning(f"⚠️ Failed to load regime features: {e}")
             return None
 
     async def _get_additional_model_outputs(self, training_type: str, config: Dict[str, Any], training_data: pd.DataFrame) -> Optional[pd.DataFrame]:
@@ -2134,11 +2397,43 @@ class UnifiedModelsTrainingStep(BaseStep):
                 tprint_info(f"   Artifact Name: regime_ensemble_predictions")
                 tprint_info(f"   Storage Format: HDF5 (via versioned_artifacts)")
 
-                # Load regime ensemble predictions (from regime_ensemble_training) - REQUIRED
-                regime_features = self._get_artifact('regime_ensemble_predictions', 'data')
+                # Load regime model predictions (from regime_ensemble_training) - REQUIRED
+                # Try multiple artifact names
+                regime_features = None
+                for artifact_name in ['regime_ensemble_predictions', 'regime_models_predictions', 'regime_ml_outputs']:
+                    try:
+                        regime_features = self._get_artifact(artifact_name, 'data')
+                        if regime_features is not None:
+                            tprint_success(f"✅ Found regime features in '{artifact_name}'")
+                            # DEBUG: Print first few rows of regime data
+                            tprint_info(f"🔍 [DEBUG] Regime features shape: {regime_features.shape}")
+                            tprint_info(f"🔍 [DEBUG] Regime features columns: {list(regime_features.columns)}")
+                            tprint_info(f"🔍 [DEBUG] Regime features index range: {regime_features.index.min()} to {regime_features.index.max()}")
+                            tprint_info(f"🔍 [DEBUG] First 5 rows of regime features:")
+                            tprint_info(f"{regime_features.head().to_string()}")
+                            
+                            # Check for non-finite values in regime features
+                            non_finite_mask = ~np.isfinite(regime_features.select_dtypes(include=[np.number]))
+                            if non_finite_mask.any().any():
+                                non_finite_counts = non_finite_mask.sum()
+                                tprint_warning(f"🔍 [DEBUG] Non-finite values found in regime features:")
+                                for col in regime_features.columns:
+                                    col_non_finite = non_finite_mask[col].sum()
+                                    if col_non_finite > 0:
+                                        tprint_warning(f"   - {col}: {col_non_finite} non-finite values ({col_non_finite/len(regime_features)*100:.1f}%)")
+                                        # Show actual non-finite values
+                                        non_finite_indices = regime_features.index[non_finite_mask[col]]
+                                        non_finite_values = regime_features.loc[non_finite_indices, col]
+                                        tprint_info(f"     Sample non-finite values: {non_finite_values.head().to_dict()}")
+                            break
+                    except Exception as e:
+                        self.logger.debug(f"   Artifact '{artifact_name}' not found: {e}")
+                        continue
+                
                 if regime_features is None:
                     error_msg = (
-                        "❌ CRITICAL: regime_ensemble_predictions artifact not found!\n"
+                        "❌ CRITICAL: No regime predictions artifact found!\n"
+                        "   Tried: regime_ensemble_predictions, regime_models_predictions, regime_ml_outputs\n"
                         "   This artifact is REQUIRED for model training.\n"
                         "   Source: regime_ensemble_training step\n"
                         "   Format: HDF5 (versioned_artifacts)\n"
@@ -2148,6 +2443,14 @@ class UnifiedModelsTrainingStep(BaseStep):
                     raise ValueError(error_msg)
 
                 tprint_info(f"   ↪ Retrieved regime_ensemble_predictions from HDF5: shape={regime_features.shape}, columns={len(regime_features.columns)}")
+                    # DEBUG: Log regime features before adding
+                    tprint_info("=" * 80)
+                    tprint_info("🔍 [DEBUG] REGIME FEATURES ANALYSIS")
+                    tprint_info("=" * 80)
+                    tprint_info(f"🔍 [DEBUG] Regime features shape: {regime_features.shape}")
+                    tprint_info(f"🔍 [DEBUG] Regime features columns: {list(regime_features.columns)}")
+                    tprint_info(f"🔍 [DEBUG] Regime features count: {len(regime_features.columns)}")
+                    tprint_info("=" * 80)
                 tprint_success(f"✅ Loaded regime ensemble predictions from HDF5: {regime_features.shape}")
 
                 # Resample regime features if needed to match training data (should already be 15m)
@@ -2163,6 +2466,10 @@ class UnifiedModelsTrainingStep(BaseStep):
                 else:
                     tprint_info("   ↪ Regime features already aligned with training index")
                     additional_features_list.append(regime_features)
+                    
+                    # DEBUG: Log regime features
+                    tprint_info(f"🔍 [DEBUG] Regime features shape: {regime_features.shape}")
+                    tprint_info(f"🔍 [DEBUG] Regime features columns: {list(regime_features.columns)}")
             except ValueError:
                 # Re-raise ValueError for fast-fail
                 raise
@@ -2331,6 +2638,14 @@ class UnifiedModelsTrainingStep(BaseStep):
 
                         # Normalize prediction_range and avg_divergence by standard deviation
                         features_to_normalize = ['prediction_range', 'avg_divergence']
+                        # DEBUG: Log disagreement features before adding
+                        tprint_info("=" * 80)
+                        tprint_info("🔍 [DEBUG] DISAGREEMENT FEATURES ANALYSIS")
+                        tprint_info("=" * 80)
+                        tprint_info(f"🔍 [DEBUG] Meta features shape: {meta_features.shape}")
+                        tprint_info(f"🔍 [DEBUG] Meta features columns: {list(meta_features.columns)}")
+                        tprint_info(f"🔍 [DEBUG] Meta features count: {len(meta_features.columns)}")
+                        tprint_info("=" * 80)
                         for feature in features_to_normalize:
                             if feature in meta_features.columns:
                                 feature_std = meta_features[feature].std()
@@ -2362,6 +2677,12 @@ class UnifiedModelsTrainingStep(BaseStep):
                     # Continue without disagreement features rather than failing
 
             if additional_features_list:
+                # DEBUG: Log before concatenation
+                total_additional_cols = sum(df.shape[1] for df in additional_features_list)
+                tprint_info(f"🔍 [DEBUG] Total additional features before concatenation: {total_additional_cols}")
+                for i, df in enumerate(additional_features_list):
+                    tprint_info(f"🔍 [DEBUG] Additional feature set {i}: shape={df.shape}, columns={list(df.columns)}")
+                
                 # Concatenate all features (base outputs + meta-features)
                 # Use safe concatenation with temporal alignment validation
                 try:
@@ -2371,11 +2692,17 @@ class UnifiedModelsTrainingStep(BaseStep):
                         operation_name="concatenate_additional_features",
                         validate_alignment=True
                     )
+                    
+                    # DEBUG: Log after concatenation
+                    tprint_info(f"🔍 [DEBUG] Final additional features shape after concatenation: {final_additional_features.shape}")
+                    tprint_info(f"🔍 [DEBUG] Final additional features columns (first 20): {list(final_additional_features.columns[:20])}")
+                    
                     return final_additional_features
                 except ValueError as e:
                     tprint_error(f"❌ Temporal alignment error in additional features: {e}")
                     return None
             else:
+                tprint_warning("🔍 [DEBUG] No additional features to add")
                 return None
 
         except Exception as e:
@@ -2403,8 +2730,42 @@ class UnifiedModelsTrainingStep(BaseStep):
         config: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Execute training based on the specified type."""
+            # DEBUG: Log detailed feature information before training
+            tprint_info("=" * 80)
+            tprint_info("🔍 [DEBUG] FEATURE ANALYSIS BEFORE TRAINING")
+            tprint_info("=" * 80)
+            tprint_info(f"🔍 [DEBUG] Training type: {training_type}")
+            tprint_info(f"🔍 [DEBUG] Training data shape: {training_data.shape}")
+            tprint_info(f"🔍 [DEBUG] Training data columns (first 20): {list(training_data.columns[:20])}")
+            tprint_info(f"🔍 [DEBUG] Training data columns (last 20): {list(training_data.columns[-20:])}")
+            tprint_info(f"🔍 [DEBUG] Total feature count: {len(training_data.columns)}")
+            
+            # Count regime features
+            regime_features = [col for col in training_data.columns if 'regime' in col.lower()]
+            tprint_info(f"🔍 [DEBUG] Regime features count: {len(regime_features)}")
+            tprint_info(f"🔍 [DEBUG] Regime features: {regime_features}")
+            
+            # Count disagreement features
+            disagreement_features = [col for col in training_data.columns if any(term in col.lower() for term in ['dispersion', 'disagreement', 'uncertainty', 'confidence_gap', 'prediction_range'])]
+            tprint_info(f"🔍 [DEBUG] Disagreement features count: {len(disagreement_features)}")
+            tprint_info(f"🔍 [DEBUG] Disagreement features: {disagreement_features}")
+            
+            # Count model-specific features
+            model_specific_features = [col for col in training_data.columns if any(term in col.lower() for term in ['catboost', 'lgbm', 'lightgbm', 'depthwise', 'cnn', 'gru'])]
+            tprint_info(f"🔍 [DEBUG] Model-specific features count: {len(model_specific_features)}")
+            tprint_info(f"🔍 [DEBUG] Model-specific features: {model_specific_features}")
+            
+            # Save feature list for comparison during prediction
+            self._training_features = list(training_data.columns)
+            self._training_feature_count = len(training_data.columns)
+            tprint_info(f"🔍 [DEBUG] Saved training feature list ({len(self._training_features)} features) for prediction comparison")
+            tprint_info("=" * 80)
         try:
             if training_type == 'analyst_base':
+                # Regime probabilities are already added by _get_additional_model_outputs
+                # Just pass the training_data directly to the pipeline
+                tprint_info(f"🔧 Training analyst base models with {training_data.shape[1]} features...")
+                
                 return await self.unified_pipeline.train_analyst_models(
                     data=training_data,
                     targets=analyst_targets,
@@ -2461,6 +2822,163 @@ class UnifiedModelsTrainingStep(BaseStep):
                         }
                     )
                     artifacts[f"{training_type}_{model_name}"] = artifact_path
+            
+            # Save predictions for ensemble training (analyst_base only)
+            # CRITICAL: Accumulate predictions from ALL base models into a single DataFrame
+            if training_type == 'analyst_base':
+                try:
+                    all_predictions = {}
+                    all_confidence = {}
+                    
+                    # Check if we have models dict with multiple models
+                    if 'models' in result and result['models']:
+                        tprint_info(f"📊 Accumulating predictions from {len(result['models'])} base models...")
+                        
+                        # Get predictions from each model
+                        for model_name, model in result['models'].items():
+                            # Try to get model-specific predictions
+                            if f'{model_name}_predictions' in result:
+                                all_predictions[model_name] = result[f'{model_name}_predictions']
+                                tprint_info(f"  ✓ Got predictions from {model_name}")
+                            elif 'predictions' in result and isinstance(result['predictions'], pd.DataFrame):
+                                # If predictions is a DataFrame, check if it has model-specific columns
+                                if model_name in result['predictions'].columns:
+                                    all_predictions[model_name] = result['predictions'][model_name]
+                                    tprint_info(f"  ✓ Got predictions from {model_name} (from DataFrame)")
+                            
+                            # Get confidence scores
+                            if f'{model_name}_confidence' in result:
+                                all_confidence[model_name] = result[f'{model_name}_confidence']
+                    
+                    # Fallback: use result['predictions'] if it's already a multi-column DataFrame
+                    if not all_predictions and 'predictions' in result and result['predictions'] is not None:
+                        if isinstance(result['predictions'], pd.DataFrame) and result['predictions'].shape[1] > 1:
+                            # Already a multi-column DataFrame
+                            all_predictions = {col: result['predictions'][col] for col in result['predictions'].columns}
+                            tprint_info(f"📊 Using existing multi-column predictions: {result['predictions'].shape}")
+                        else:
+                            # Single prediction - this is the problem we're fixing!
+                            tprint_warning(f"⚠️ Only single prediction column found, expected multiple base models!")
+                            all_predictions = {'model_0': result['predictions']}
+                    
+                    # Save combined predictions as DataFrame
+                    if all_predictions:
+                        tprint_info("=" * 80)
+                        tprint_info("💾 SAVING ANALYST BASE PREDICTIONS")
+                        tprint_info("=" * 80)
+                        tprint_info(f"📊 Accumulated predictions from {len(all_predictions)} models:")
+                        for model_name in all_predictions.keys():
+                            tprint_info(f"   ✓ {model_name}")
+                        
+                        predictions_df = pd.DataFrame(all_predictions)
+                        tprint_success(f"✅ Combined predictions DataFrame: {predictions_df.shape}")
+                        tprint_info(f"   Columns: {list(predictions_df.columns)}")
+                        tprint_info("=" * 80)
+                        
+                        # Calculate and add disagreement features
+                        disagreement_features = None
+                        if len(all_predictions) >= 2:
+                            try:
+                                tprint_info("🔍 Calculating disagreement features for base predictions...")
+                                from src.feature_engineering_roadmap.disagreement_meta_features import DisagreementMetaFeatures
+                                
+                                disagreement_calc = DisagreementMetaFeatures(logger=self.logger)
+                                
+                                # Prepare model predictions dict
+                                model_predictions = {name: preds.values if isinstance(preds, pd.Series) else preds 
+                                                    for name, preds in all_predictions.items()}
+                                
+                                # Calculate disagreement features
+                                disagreement_dict = disagreement_calc.calculate_all_disagreement_features(
+                                    model_predictions=model_predictions,
+                                    model_probabilities=None,  # We don't have probabilities for base predictions
+                                    model_confidences=all_confidence if all_confidence else None
+                                )
+                                
+                                # Convert to DataFrame
+                                disagreement_features = pd.DataFrame(disagreement_dict, index=predictions_df.index)
+                                
+                                # Keep only core features
+                                core_features = [
+                                    'prediction_dispersion',
+                                    'prediction_range',
+                                    'prediction_std',
+                                    'prediction_entropy',
+                                    'pairwise_disagreement_mean',
+                                    'confidence_weighted_disagreement'
+                                ]
+                                available_features = [f for f in core_features if f in disagreement_features.columns]
+                                if available_features:
+                                    disagreement_features = disagreement_features[available_features]
+                                    tprint_success(f"✅ Calculated {len(available_features)} disagreement features")
+                                    
+                                    # Combine predictions and disagreement features
+                                    combined_df = pd.concat([predictions_df, disagreement_features], axis=1)
+                                    predictions_df = combined_df
+                                    tprint_info(f"   Combined shape: {predictions_df.shape}")
+                                    
+                            except Exception as e:
+                                tprint_warning(f"⚠️ Failed to calculate disagreement features: {e}")
+                                import traceback
+                                traceback.print_exc()
+                        
+                        predictions_path = self._save_artifact(
+                            data=predictions_df,
+                            artifact_name='analyst_base_predictions',
+                            artifact_type='data',
+                            data_category='predictions'
+                        )
+                        artifacts['analyst_base_predictions'] = predictions_path
+                        tprint_success(f"✅ Saved analyst_base_predictions: {predictions_df.shape} ({len(all_predictions)} models)")
+                        tprint_info(f"   Models: {list(all_predictions.keys())}")
+                        if disagreement_features is not None:
+                            tprint_info(f"   Disagreement features: {list(disagreement_features.columns)}")
+                    
+                    # Save combined confidence scores
+                    if all_confidence:
+                        confidence_df = pd.DataFrame(all_confidence)
+                        confidence_path = self._save_artifact(
+                            data=confidence_df,
+                            artifact_name='analyst_base_confidence',
+                            artifact_type='data',
+                            data_category='predictions'
+                        )
+                        artifacts['analyst_base_confidence'] = confidence_path
+                        tprint_success(f"✅ Saved analyst_base_confidence: {confidence_df.shape} ({len(all_confidence)} models)")
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to save predictions/confidence: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            # Save predictions for tactician training (analyst_ensemble only)
+            if training_type == 'analyst_ensemble' and 'predictions' in result and result['predictions'] is not None:
+                try:
+                    predictions_path = self._save_artifact(
+                        data=result['predictions'],
+                        artifact_name='analyst_ensemble_outputs',
+                        artifact_type='data',
+                        data_category='predictions'
+                    )
+                    artifacts['analyst_ensemble_outputs'] = predictions_path
+                    tprint_success(f"✅ Saved analyst_ensemble_outputs: {result['predictions'].shape}")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to save analyst_ensemble_outputs: {e}")
+                
+                # Save the ensemble model
+                try:
+                    if 'model' in result and result['model'] is not None:
+                        model_path = self._save_artifact(
+                            data=result['model'],
+                            artifact_name='analyst_ensemble_model',
+                            artifact_type='model',
+                            data_category='models'
+                        )
+                        artifacts['analyst_ensemble_model'] = model_path
+                        result['model_path'] = model_path  # Add to result for downstream use
+                        tprint_success(f"✅ Saved analyst_ensemble_model: {model_path}")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to save analyst_ensemble_model: {e}")
 
             # Save performance metrics (JSON + Markdown report)
             if 'metrics' in result:
@@ -2755,7 +3273,20 @@ class UnifiedModelsTrainingStep(BaseStep):
                 comprehensive_metrics['overall_performance'][key] = metrics[key]
 
         # ===== PER-MODEL METRICS =====
+        # Try to extract from metadata['individual_results'] first
+        if 'individual_results' in result.get('metadata', {}):
+            individual_results = result['metadata']['individual_results']
+            for model_name, model_result in individual_results.items():
+                if hasattr(model_result, 'metrics'):
+                    comprehensive_metrics['per_model_metrics'][model_name] = model_result.metrics
+                elif isinstance(model_result, dict) and 'metrics' in model_result:
+                    comprehensive_metrics['per_model_metrics'][model_name] = model_result['metrics']
+        
+        # Fallback to searching in metrics dict
         for model_name in models.keys():
+            if model_name in comprehensive_metrics['per_model_metrics']:
+                continue  # Already extracted from individual_results
+                
             model_metrics = {}
 
             # Standard metrics per model
@@ -2873,7 +3404,7 @@ class UnifiedModelsTrainingStep(BaseStep):
             wf_metrics = {
                 'n_folds': len(self._walkforward_config.folds),
                 'strategy': self._walkforward_config.strategy,
-                'embargo_days': self._walkforward_config.embargo_days,
+                'embargo_days': getattr(self._walkforward_config, 'embargo_days', 0),
                 'per_fold_metrics': {}
             }
 

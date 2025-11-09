@@ -1,8 +1,0 @@
-{
-  "artifact_name": "hdbscan_cluster_quality_metrics",
-  "artifact_type": "data",
-  "file_path": "artifacts/market_analysis/long/Analyst/hdbscan_regime_discovery/hdbscan_regime_discovery_hdbscan_cluster_quality_metrics_long_Analyst_20251029_203143.parquet",
-  "file_size": 177957,
-  "timestamp": "2025-10-29T20:32:00.140654",
-  "compression": "auto"
-}

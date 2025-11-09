@@ -12,7 +12,7 @@ analyst_config:
         n_estimators: 1000
         learning_rate: 0.01
         max_depth: 3
-        num_leaves: 8
+        num_leaves: 10
         subsample: 0.6
         colsample_bytree: 0.6
         random_state: 42
@@ -70,51 +70,53 @@ analyst_config:
           reg_lambda: 0.0
           sampling_rate: 0.6
           min_child_samples: 10
-          num_leaves: 8
+          num_leaves: 10
           subsample: 0.6
           colsample_bytree: 0.6
         last_optimization:
-          timestamp: '2025-11-08T22:42:03.759562'
+          timestamp: '2025-11-09T23:41:12.191069'
           best_score: 0.0
           total_trials: 12
-          total_time_seconds: 0.12460589408874512
+          total_time_seconds: 0.2593240737915039
           n_rounds: 2
     depthwise_cnn:
       model_type: DepthwiseSeparableCNNRegressor
       params:
-        filters: 64
+        filters: 128
         kernel_size: 3
-        dropout: 0.2
+        dropout: 0.3
         learning_rate: 0.001
-        batch_size: 64
-        epochs: 50
+        batch_size: 32
+        epochs: 100
         validation_split: 0.2
-        early_stopping_patience: 7
-        reduce_lr_patience: 5
+        early_stopping_patience: 15
+        reduce_lr_patience: 7
         verbose: 0
-        use_batch_norm: false
+        use_batch_norm: true
       hpo:
         enabled: true
-        n_rounds: 2
+        n_rounds: 3
         enable_final_refinement: true
-        final_refinement_trials: 50
+        final_refinement_trials: 100
         search_space:
           filters:
             type: categorical
             choices:
-            - 32
             - 64
             - 128
+            - 256
+            - 512
           kernel_size:
             type: categorical
             choices:
             - 2
             - 3
             - 5
+            - 7
           dropout:
             type: float
             low: 0.1
-            high: 0.5
+            high: 0.6
           learning_rate:
             type: float
             low: 0.0001
@@ -123,15 +125,23 @@ analyst_config:
           batch_size:
             type: categorical
             choices:
+            - 16
             - 32
             - 64
             - 128
-            - 256
+          epochs:
+            type: int
+            low: 50
+            high: 200
           use_batch_norm:
             type: categorical
             choices:
             - false
             - true
+          early_stopping_patience:
+            type: int
+            low: 10
+            high: 25
         optimal_params: {}
     catboost:
       model_type: CatBoostRegressor
@@ -197,10 +207,10 @@ analyst_config:
           subsample: 0.6
           colsample_bylevel: 0.6
         last_optimization:
-          timestamp: '2025-11-08T22:42:23.384804'
+          timestamp: '2025-11-09T23:41:19.590137'
           best_score: 0.0
           total_trials: 12
-          total_time_seconds: 9.333069086074829
+          total_time_seconds: 2.7957098484039307
           n_rounds: 2
   training:
     training_samples: 50000

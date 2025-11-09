@@ -792,7 +792,11 @@ class HyperparameterOptimization:
                             timeout: Optional[int] = None,
                             use_enhanced_search_space: bool = True,
                             enable_diagnostics: bool = True,
-                            optimization_context: Optional[str] = None) -> Dict[str, Any]:
+                            optimization_context: Optional[str] = None,
+                            early_stopping_patience: Optional[int] = None,
+                            early_stopping_threshold: Optional[float] = None,
+                            enable_pruner: bool = True,
+                            pruner_type: str = 'hyperband') -> Dict[str, Any]:
         """
         Perform enhanced Bayesian hyperparameter optimization with non-linear transformations.
 
@@ -1099,14 +1103,30 @@ class HyperparameterOptimization:
             # Create study with TPE sampler (Bayesian optimization) and pruner/storage
             sampler = TPESampler()
             pruner_obj = None
-            if pruner == 'median':
+
+            # Use new pruner parameters if provided, otherwise fall back to old parameter
+            actual_pruner_type = pruner_type if enable_pruner else 'none'
+            if not enable_pruner or actual_pruner_type == 'none':
+                pruner_obj = None
+                self.logger.info("🔓 Pruning disabled - all trials will complete")
+            elif actual_pruner_type == 'median':
                 # Configure MedianPruner to be less aggressive
                 pruner_obj = MedianPruner(
                     n_startup_trials=5,  # Allow 5 trials before starting pruning
                     n_warmup_steps=3,    # Wait 3 steps before pruning
                     interval_steps=1     # Check for pruning every step
                 )
-            elif pruner == 'hyperband':
+                self.logger.info("📊 Using MedianPruner (conservative)")
+            elif actual_pruner_type == 'hyperband':
+                pruner_obj = HyperbandPruner()
+                self.logger.info("⚡ Using HyperbandPruner (aggressive)")
+            elif pruner == 'median':  # Backward compatibility with old parameter
+                pruner_obj = MedianPruner(
+                    n_startup_trials=5,
+                    n_warmup_steps=3,
+                    interval_steps=1
+                )
+            elif pruner == 'hyperband':  # Backward compatibility
                 pruner_obj = HyperbandPruner()
             elif pruner == 'none' or pruner is None:
                 # No pruning - let all trials complete
@@ -1128,10 +1148,38 @@ class HyperparameterOptimization:
                 self.logger.info(f"   Smart params: {smart_params}")
                 study.enqueue_trial(smart_params)
 
-            # Enhanced optimization with early stopping for low variance
-            self.logger.info(f"🎲 Starting Bayesian optimization with {n_trials} trials...")
-            study.optimize(objective, n_trials=n_trials, timeout=timeout,
-                         callbacks=[self._early_stopping_callback])
+            # Configure early stopping callback
+            callbacks = []
+
+            # Add configurable early stopping if parameters provided
+            if early_stopping_patience is not None:
+                patience = early_stopping_patience
+                threshold = early_stopping_threshold or 0.001
+                self.logger.info(f"⏱️ Early stopping enabled: patience={patience}, threshold={threshold}")
+
+                # Create custom early stopping callback
+                def early_stopping_callback(study, trial):
+                    """Stop if no improvement for patience trials."""
+                    if len(study.trials) < patience:
+                        return  # Not enough trials yet
+
+                    recent_trials = study.trials[-patience:]
+                    best_in_recent = max(t.value for t in recent_trials if t.value is not None)
+                    overall_best = study.best_value
+
+                    improvement = best_in_recent - overall_best
+                    if improvement < threshold:
+                        self.logger.info(f"🛑 Early stopping triggered: No improvement > {threshold} in last {patience} trials")
+                        study.stop()
+
+                callbacks.append(early_stopping_callback)
+            else:
+                # Use default variance-based early stopping
+                callbacks.append(self._early_stopping_callback)
+
+            # Enhanced optimization with early stopping
+            self.logger.info(f"🎲 Starting Bayesian optimization with {n_trials} trials (max)...")
+            study.optimize(objective, n_trials=n_trials, timeout=timeout, callbacks=callbacks)
 
             results = {
                 'best_params': study.best_params,

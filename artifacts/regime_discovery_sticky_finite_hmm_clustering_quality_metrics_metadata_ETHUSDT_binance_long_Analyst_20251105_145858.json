@@ -1,8 +1,0 @@
-{
-  "artifact_name": "quality_metrics",
-  "artifact_type": "metadata",
-  "file_path": "artifacts/pre_training/ETHUSDT/binance/long/Analyst/sticky_finite_hmm_clustering/regime_discovery_sticky_finite_hmm_clustering_quality_metrics_ETHUSDT_binance_long_Analyst_20251105_145858.parquet",
-  "file_size": 5424,
-  "timestamp": "2025-11-05T16:09:13.876555",
-  "compression": "auto"
-}

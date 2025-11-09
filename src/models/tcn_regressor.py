@@ -437,3 +437,12 @@ if __name__ == "__main__":
         plt.tight_layout()
         plt.savefig('tcn_training_history.png')
         print("\n📊 Training history saved to tcn_training_history.png")
+
+
+# Backward compatibility alias
+TCNRegressor = DepthwiseSeparableCNNRegressor
+
+
+def create_tcn_regressor(**kwargs):
+    """Factory function to create a TCN regressor with custom parameters."""
+    return DepthwiseSeparableCNNRegressor(**kwargs)

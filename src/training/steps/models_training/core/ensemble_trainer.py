@@ -80,13 +80,19 @@ class EnsembleTrainer(BaseTrainer):
         default_return=TrainingResult(success=False, error_message="Ensemble training failed"),
         context="ensemble training"
     )
-    async def train(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> TrainingResult:
+    async def train(
+        self, 
+        data: pd.DataFrame, 
+        targets: pd.Series,
+        base_predictions: Optional[pd.DataFrame] = None
+    ) -> TrainingResult:
         """
-        Train ensemble models with multiple strategies and comprehensive metrics collection.
+        Train ensemble model with comprehensive metrics collection.
         
         Args:
             data: Training data
-            targets: Target variables
+            targets: Target values
+            base_predictions: Pre-computed predictions from base models (REQUIRED for stacking)
             
         Returns:
             Training result with ensemble model and comprehensive metrics
@@ -94,6 +100,14 @@ class EnsembleTrainer(BaseTrainer):
         try:
             self.logger.info(f"🚀 Starting {self.config.role.value} ensemble training with comprehensive metrics...")
             start_time = time.time()
+            
+            # CRITICAL: Base predictions are REQUIRED for proper stacking
+            if base_predictions is None or base_predictions.empty:
+                error_msg = "Base predictions are required for ensemble training. Cannot re-train on tiny subsets."
+                self.logger.error(f"❌ {error_msg}")
+                return TrainingResult(success=False, error_message=error_msg)
+            
+            tprint_info(f"✅ Using base model predictions: {base_predictions.shape}")
             
             # Start metrics collection session
             training_type = f"{self.config.role.value}_ensemble"
@@ -106,16 +120,18 @@ class EnsembleTrainer(BaseTrainer):
             # Preprocess data
             processed_data, processed_targets = self._preprocess_data(data, targets)
             
-            # Phase 1: Train individual models
-            tprint_info("📊 Phase 1: Training individual base models...")
-            individual_results = await self._train_individual_models(processed_data, processed_targets)
+            # Align base predictions with processed targets (remove duplicates first)
+            if base_predictions.index.duplicated().any():
+                tprint_warning(f"⚠️ Removing {base_predictions.index.duplicated().sum()} duplicate indices from base_predictions")
+                base_predictions = base_predictions[~base_predictions.index.duplicated(keep='first')]
             
-            if not individual_results:
-                return TrainingResult(success=False, error_message="No individual models trained successfully")
+            if not base_predictions.index.equals(processed_targets.index):
+                tprint_warning("⚠️ Aligning base predictions to processed targets index...")
+                base_predictions = base_predictions.reindex(processed_targets.index)
             
-            # Phase 2: Generate out-of-fold predictions
-            tprint_info("🔄 Phase 2: Generating out-of-fold predictions...")
-            oof_predictions = await self._generate_oof_predictions(processed_data, processed_targets)
+            # Use base predictions as OOF predictions for meta-learner
+            oof_predictions = base_predictions.values
+            tprint_info(f"📊 Using {oof_predictions.shape[1]} base model predictions for meta-learning")
             
             # Phase 3: Collect pre-HPO metrics for meta-learner
             tprint_info("📈 Phase 3: Collecting pre-HPO metrics for meta-learner...")
@@ -154,7 +170,7 @@ class EnsembleTrainer(BaseTrainer):
             # Calculate ensemble metrics
             tprint_info("📈 Phase 6: Calculating ensemble metrics...")
             ensemble_metrics = await self._calculate_ensemble_metrics(
-                individual_results, meta_result, processed_data, processed_targets
+                base_predictions, meta_result, processed_data, processed_targets
             )
             
             training_time = time.time() - start_time
@@ -192,9 +208,8 @@ class EnsembleTrainer(BaseTrainer):
                 training_time=training_time,
                 metadata={
                     'ensemble_strategy': self.ensemble_strategy,
-                    'individual_models': len(individual_results),
+                    'base_models_count': base_predictions.shape[1] if base_predictions is not None else 0,
                     'meta_learner_type': self.meta_learner_type,
-                    'individual_results': individual_results,
                     'oof_predictions_shape': oof_predictions.shape if oof_predictions is not None else None,
                     'comprehensive_metrics': meta_model_metrics,
                     'report_path': str(report_path)
@@ -202,7 +217,7 @@ class EnsembleTrainer(BaseTrainer):
             )
             
             self.logger.info(f"✅ Ensemble training completed successfully in {training_time:.2f}s")
-            tprint_success(f"✅ Trained ensemble with {len(individual_results)} base models and comprehensive metrics")
+            tprint_success(f"✅ Trained ensemble with {base_predictions.shape[1]} base models and comprehensive metrics")
             tprint_success(f"📄 Report saved to: {report_path}")
             
             return result
@@ -431,23 +446,22 @@ class EnsembleTrainer(BaseTrainer):
             # Calculate meta-learner metrics
             meta_predictions = meta_model.predict(oof_predictions)
             
-            if self.config.role == TrainingRole.ANALYST:
-                from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-                binary_predictions = (meta_predictions > 0.5).astype(int)
-                metrics = {
-                    'meta_accuracy': accuracy_score(targets, binary_predictions),
-                    'meta_precision': precision_score(targets, binary_predictions),
-                    'meta_recall': recall_score(targets, binary_predictions),
-                    'meta_f1_score': f1_score(targets, binary_predictions)
-                }
-            else:
-                from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-                metrics = {
-                    'meta_mse': mean_squared_error(targets, meta_predictions),
-                    'meta_mae': mean_absolute_error(targets, meta_predictions),
-                    'meta_r2': r2_score(targets, meta_predictions),
-                    'meta_rmse': np.sqrt(mean_squared_error(targets, meta_predictions))
-                }
+            # Both ANALYST and TACTICIAN use regression metrics (both predict continuous targets)
+            from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+            metrics = {
+                'meta_mse': mean_squared_error(targets, meta_predictions),
+                'meta_mae': mean_absolute_error(targets, meta_predictions),
+                'meta_r2': r2_score(targets, meta_predictions),
+                'meta_rmse': np.sqrt(mean_squared_error(targets, meta_predictions))
+            }
+            
+            # Also calculate comparison to simple average of base models
+            if oof_predictions.shape[1] > 1:
+                base_avg_predictions = oof_predictions.mean(axis=1)
+                metrics['base_avg_r2'] = r2_score(targets, base_avg_predictions)
+                metrics['base_avg_mse'] = mean_squared_error(targets, base_avg_predictions)
+                metrics['improvement_over_avg'] = metrics['meta_r2'] - metrics['base_avg_r2']
+                tprint_info(f"📊 Meta-learner R²: {metrics['meta_r2']:.4f} vs Base Average R²: {metrics['base_avg_r2']:.4f} (Δ: {metrics['improvement_over_avg']:+.4f})")
             
             # Store meta-learner
             self._meta_learner = meta_model
@@ -464,7 +478,7 @@ class EnsembleTrainer(BaseTrainer):
     
     async def _calculate_ensemble_metrics(
         self,
-        individual_results: Dict[str, TrainingResult],
+        base_predictions: pd.DataFrame,
         meta_result: TrainingResult,
         data: pd.DataFrame,
         targets: pd.Series
@@ -472,12 +486,6 @@ class EnsembleTrainer(BaseTrainer):
         """Calculate comprehensive ensemble metrics."""
         try:
             ensemble_metrics = {}
-            
-            # Individual model metrics
-            for model_name, result in individual_results.items():
-                if result.success and result.metrics:
-                    for metric, value in result.metrics.items():
-                        ensemble_metrics[f'{model_name}_{metric}'] = value
             
             # Meta-learner metrics
             if meta_result.success and meta_result.metrics:
@@ -487,26 +495,17 @@ class EnsembleTrainer(BaseTrainer):
             ensemble_predictions = await self._get_ensemble_predictions(data)
             
             if ensemble_predictions is not None and targets is not None:
-                if self.config.role == TrainingRole.ANALYST:
-                    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-                    binary_predictions = (ensemble_predictions > 0.5).astype(int)
-                    ensemble_metrics.update({
-                        'ensemble_accuracy': accuracy_score(targets, binary_predictions),
-                        'ensemble_precision': precision_score(targets, binary_predictions),
-                        'ensemble_recall': recall_score(targets, binary_predictions),
-                        'ensemble_f1_score': f1_score(targets, binary_predictions)
-                    })
-                else:
-                    from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-                    ensemble_metrics.update({
-                        'ensemble_mse': mean_squared_error(targets, ensemble_predictions),
-                        'ensemble_mae': mean_absolute_error(targets, ensemble_predictions),
-                        'ensemble_r2': r2_score(targets, ensemble_predictions),
-                        'ensemble_rmse': np.sqrt(mean_squared_error(targets, ensemble_predictions))
-                    })
+                # Both ANALYST and TACTICIAN use regression metrics
+                from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+                ensemble_metrics.update({
+                    'ensemble_mse': mean_squared_error(targets, ensemble_predictions),
+                    'ensemble_mae': mean_absolute_error(targets, ensemble_predictions),
+                    'ensemble_r2': r2_score(targets, ensemble_predictions),
+                    'ensemble_rmse': np.sqrt(mean_squared_error(targets, ensemble_predictions))
+                })
             
-            # Diversity metrics
-            diversity_metrics = self._calculate_diversity_metrics(individual_results)
+            # Diversity metrics from base predictions
+            diversity_metrics = self._calculate_diversity_metrics_from_predictions(base_predictions)
             ensemble_metrics.update(diversity_metrics)
             
             return ensemble_metrics
@@ -515,25 +514,23 @@ class EnsembleTrainer(BaseTrainer):
             self.logger.error(f"Ensemble metrics calculation failed: {e}")
             return {}
     
-    def _calculate_diversity_metrics(self, individual_results: Dict[str, TrainingResult]) -> Dict[str, float]:
-        """Calculate diversity metrics for ensemble."""
+    def _calculate_diversity_metrics_from_predictions(self, base_predictions: pd.DataFrame) -> Dict[str, float]:
+        """Calculate diversity metrics from base model predictions DataFrame."""
         try:
             diversity_metrics = {}
             
-            # Get predictions from all models
-            all_predictions = []
-            for result in individual_results.values():
-                if result.success and hasattr(result, 'predictions'):
-                    all_predictions.append(result.predictions)
-            
-            if len(all_predictions) < 2:
+            if base_predictions is None or base_predictions.empty or base_predictions.shape[1] < 2:
                 return diversity_metrics
             
-            # Calculate pairwise correlations
+            # Calculate pairwise correlations between base model predictions
             correlations = []
-            for i in range(len(all_predictions)):
-                for j in range(i + 1, len(all_predictions)):
-                    corr = np.corrcoef(all_predictions[i], all_predictions[j])[0, 1]
+            n_models = base_predictions.shape[1]
+            
+            for i in range(n_models):
+                for j in range(i + 1, n_models):
+                    pred_i = base_predictions.iloc[:, i].values
+                    pred_j = base_predictions.iloc[:, j].values
+                    corr = np.corrcoef(pred_i, pred_j)[0, 1]
                     correlations.append(corr)
             
             if correlations:

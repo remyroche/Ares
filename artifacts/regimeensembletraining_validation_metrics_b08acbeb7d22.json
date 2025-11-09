@@ -1,0 +1,33 @@
+{
+  "ensemble_metrics": {
+    "error": "Feature dimension mismatch: expected 36, got 45"
+  },
+  "validation_report": {
+    "temporal_order_valid": true,
+    "leakage_detected": true,
+    "validation_score": 0.5,
+    "warnings": [
+      "🚨 1 identical samples found"
+    ],
+    "recommendations": [
+      "Investigate and fix data leakage",
+      "Use walk-forward validation for time series",
+      "Enable strict temporal ordering",
+      "Implement proper data preprocessing"
+    ]
+  },
+  "hardware_optimization": {
+    "enabled": true,
+    "workload_type": "ML_TRAINING",
+    "optimization_applied": true
+  },
+  "lookahead_protection": {
+    "enabled": true,
+    "protection_applied": true
+  },
+  "performance_summary": {
+    "training_time": 16.230854,
+    "execution_mode": "light",
+    "success": true
+  }
+}

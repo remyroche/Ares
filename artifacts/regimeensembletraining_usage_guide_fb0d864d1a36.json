@@ -1,0 +1,23 @@
+{
+  "description": "Regime Ensemble Training Artifacts",
+  "artifacts_available": [
+    "ensemble_training_results",
+    "timeframe_artifacts",
+    "ensemble_model",
+    "validation_metrics",
+    "configuration"
+  ],
+  "downstream_usage": {
+    "tagged_dataset": "Use for further analysis and model training",
+    "ensemble_model": "Load for prediction on new data",
+    "timeframe_artifacts": "Use for timeframe-specific analysis",
+    "validation_metrics": "Use for model evaluation and comparison",
+    "feature_info": "Use for feature engineering in downstream steps"
+  },
+  "loading_examples": {
+    "load_tagged_data": "artifacts[\"tagged_dataset\"][\"data\"]",
+    "load_ensemble_model": "artifacts[\"ensemble_model\"]",
+    "get_feature_names": "artifacts[\"feature_info\"][\"feature_names\"]",
+    "get_validation_metrics": "artifacts[\"validation_metrics\"]"
+  }
+}

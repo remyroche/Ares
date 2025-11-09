@@ -36,7 +36,7 @@ from dataclasses import dataclass, asdict
 
 from .model_explanations import ModelExplainer, explain_model_with_shap_lime
 from ..models.model_registry import ModelRegistry
-from ..common_operations import create_fallback_logger, safe_json_dump, safe_json_load
+from src.utils.common_operations import create_fallback_logger, safe_json_dump, safe_json_load
 
 # Enhanced dependency management with fast fail
 try:
@@ -111,7 +111,7 @@ class ModelExplainabilityManager:
             model_registry: Optional ModelRegistry instance for persistence
         """
         self.config = config or {}
-        self.logger = create_fallback_logger()
+        self.logger = create_fallback_logger('ModelExplainabilityManager')
 
         _LOGGER.info("🚀 Initializing ModelExplainabilityManager...")
 

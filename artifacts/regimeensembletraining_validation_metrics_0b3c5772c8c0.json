@@ -1,0 +1,36 @@
+{
+  "ensemble_metrics": {
+    "stacker_lgbm_calibrated": {
+      "error": "Number of features of the model must match the input. Model n_features_ is 44 and input n_features is 53"
+    }
+  },
+  "validation_report": {
+    "temporal_order_valid": true,
+    "leakage_detected": true,
+    "validation_score": 0.5,
+    "warnings": [
+      "⚠️ 24086 highly correlated features in training",
+      "⚠️ 42524 highly correlated features in test"
+    ],
+    "recommendations": [
+      "Investigate and fix data leakage",
+      "Use walk-forward validation for time series",
+      "Enable strict temporal ordering",
+      "Implement proper data preprocessing"
+    ]
+  },
+  "hardware_optimization": {
+    "enabled": true,
+    "workload_type": "ML_TRAINING",
+    "optimization_applied": true
+  },
+  "lookahead_protection": {
+    "enabled": true,
+    "protection_applied": true
+  },
+  "performance_summary": {
+    "training_time": 21.557051,
+    "execution_mode": "light",
+    "success": true
+  }
+}

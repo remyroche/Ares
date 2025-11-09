@@ -90,7 +90,7 @@ class DataValidator:
         self.price_tolerance: float = config.get('price_tolerance', 0.1)  # 10%
         self.volume_tolerance: float = config.get('volume_tolerance', 5.0)  # 500%
         self.missing_data_threshold: float = config.get('missing_data_threshold', 0.05)  # 5%
-        self.outlier_threshold: float = config.get('outlier_threshold', 3.0)  # 3 std devs
+        self.outlier_threshold: float = config.get('outlier_threshold', 2.5)  # 2.5 std devs (more appropriate for financial data)
         self.freshness_threshold_minutes: int = config.get('freshness_threshold_minutes', 5)
 
         # Quality scoring weights

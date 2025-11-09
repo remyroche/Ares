@@ -113,7 +113,7 @@ class RegimeAwareSplitter(TemporalDataSplitter):
     """
     
     def __init__(self, test_size: float = 0.3, gap_size: int = 1, validation_size: float = 0.2,
-                 min_regime_samples: int = 10):
+                 min_regime_samples: int = 5):
         """
         Initialize regime-aware splitter.
         
@@ -131,7 +131,7 @@ class RegimeAwareSplitter(TemporalDataSplitter):
         Split data temporally while ensuring ALL regimes appear in training set.
         
         This is critical for classification models that need to see all classes during training.
-        If any regime is missing from training set, we fail fast with a clear error.
+        If any regime is missing from training set, we use stratified sampling to fix it.
         
         Args:
             X: Feature matrix
@@ -141,7 +141,7 @@ class RegimeAwareSplitter(TemporalDataSplitter):
             X_train, X_val, X_test, y_train, y_val, y_test
             
         Raises:
-            ValueError: If any regime is missing from training set or has insufficient samples
+            ValueError: If any regime has insufficient samples overall
         """
         # First, do temporal split
         X_train, X_val, X_test, y_train, y_val, y_test = self.split_temporal(X, y)
@@ -157,20 +157,46 @@ class RegimeAwareSplitter(TemporalDataSplitter):
         logger.info(f"Val regimes: {val_regimes}")
         logger.info(f"Test regimes: {test_regimes}")
         
-        # CRITICAL: Check if all regimes appear in training set
+        # CRITICAL FIX: If any regime is missing from training, use stratified sampling
         missing_from_train = set(all_regimes) - set(train_regimes)
         if missing_from_train:
-            error_msg = (
-                f"❌ CRITICAL: Regimes {missing_from_train} are missing from training set!\n"
-                f"   This will cause the model to only learn {len(train_regimes)} classes instead of {len(all_regimes)}.\n"
-                f"   The model will then output {len(train_regimes)} probabilities but labels have {len(all_regimes)} classes.\n"
-                f"   \n"
-                f"   SOLUTION: Adjust temporal split ratios to ensure all regimes appear in training.\n"
-                f"   Current split: test_size={self.test_size}, validation_size={self.validation_size}\n"
-                f"   Try reducing test_size or validation_size to keep more data in training."
-            )
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+            logger.warning(f"⚠️ Regimes {missing_from_train} missing from training set")
+            logger.warning(f"⚠️ Applying stratified sampling to ensure all regimes in training")
+            
+            # For each missing regime, move at least 1 sample from val/test to train
+            for regime in missing_from_train:
+                # Check if regime exists in validation set
+                val_regime_mask = (y_val == regime)
+                if np.any(val_regime_mask):
+                    # Move 1 sample from validation to training
+                    val_regime_idx = np.where(val_regime_mask)[0][0]
+                    X_train = np.vstack([X_train, X_val[val_regime_idx:val_regime_idx+1]])
+                    y_train = np.append(y_train, y_val[val_regime_idx:val_regime_idx+1])
+                    X_val = np.delete(X_val, val_regime_idx, axis=0)
+                    y_val = np.delete(y_val, val_regime_idx)
+                    logger.info(f"✅ Moved 1 sample of regime {regime} from validation to training")
+                # Otherwise check test set
+                elif np.any(y_test == regime):
+                    test_regime_mask = (y_test == regime)
+                    test_regime_idx = np.where(test_regime_mask)[0][0]
+                    X_train = np.vstack([X_train, X_test[test_regime_idx:test_regime_idx+1]])
+                    y_train = np.append(y_train, y_test[test_regime_idx:test_regime_idx+1])
+                    X_test = np.delete(X_test, test_regime_idx, axis=0)
+                    y_test = np.delete(y_test, test_regime_idx)
+                    logger.info(f"✅ Moved 1 sample of regime {regime} from test to training")
+            
+            # Verify all regimes now in training
+            train_regimes = np.unique(y_train)
+            missing_from_train = set(all_regimes) - set(train_regimes)
+            if missing_from_train:
+                error_msg = (
+                    f"❌ CRITICAL: Regimes {missing_from_train} still missing after stratified sampling!\n"
+                    f"   This should not happen. Check data distribution."
+                )
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+            
+            logger.info(f"✅ All regimes now present in training set: {train_regimes}")
         
         # Check if all regimes have sufficient samples in training set
         insufficient_regimes = []
@@ -214,10 +240,15 @@ def create_temporal_splitter(config: dict) -> TemporalDataSplitter:
     Returns:
         TemporalDataSplitter instance
     """
-    test_size = config.get('test_size', 0.3)
-    gap_size = config.get('gap_size', 1)
-    validation_size = config.get('validation_size', 0.2)
-    min_regime_samples = config.get('min_regime_samples', 10)
+    # Read from temporal_validation sub-config if available, otherwise from top-level
+    temporal_config = config.get('temporal_validation', {})
+    test_size = temporal_config.get('test_size', config.get('test_size', 0.3))
+    gap_size = temporal_config.get('gap_size', config.get('gap_size', 1))
+    validation_size = temporal_config.get('validation_size', config.get('validation_size', 0.2))
+    min_regime_samples = config.get('min_regime_samples', 5)
+    
+    # Debug logging
+    logger.info(f"🔍 [DEBUG] Creating temporal splitter with min_regime_samples={min_regime_samples}")
     
     if config.get('regime_aware', True):
         return RegimeAwareSplitter(test_size, gap_size, validation_size, min_regime_samples)

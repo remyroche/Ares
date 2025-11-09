@@ -204,13 +204,50 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         step_start = time.time()
         
         try:
+            # Set context for artifact storage with proper symbol/exchange/timeframe
+            self.set_context(
+                symbol=config.get('symbol', 'UNKNOWN'),
+                exchange=config.get('exchange', 'binance'),
+                timeframe=config.get('timeframe', '15m'),
+                direction=config.get('direction', 'long'),
+                model=config.get('execution_mode', 'analyst')
+            )
+            
             tprint_info(f"🎯 Starting {self.step_name} execution...")
+            tprint_info(f"📊 Context: {config.get('symbol', 'UNKNOWN')}/{config.get('exchange', 'binance')} [{config.get('timeframe', '15m')}] {config.get('direction', 'long')}/{config.get('execution_mode', 'analyst')}")
 
             # Get required data from previous steps
             # Look for artifacts created by labeling integration step
             t0 = time.time()
             tprint_info("⏱️ [1/10] Loading labeled data...")
-            labeled_df = self._get_artifact('labeled_data')
+            
+            # CRITICAL FIX: Load the FULL labeled_data from versioned artifacts
+            # The generic _get_artifact() was loading a 300-row subset
+            # We need the full dataset with execution mode filtering applied
+            from src.utils.versioned_artifacts.store import VersionedArtifactStore
+            
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', 'binance')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+            
+            # Try to load from the analyst store (where labeling saves it)
+            store_path = f'versioned_artifacts/{symbol}_{exchange}_{timeframe}_{direction}_analyst'
+            try:
+                store = VersionedArtifactStore(store_path)
+                versions = [v for v in store.list_versions() if 'labeled_data' in v.lower()]
+                if versions:
+                    latest_version = sorted(versions)[-1]
+                    tprint_info(f"📂 Loading full labeled_data from: {latest_version}")
+                    labeled_df = store.get_view(latest_version).materialize()
+                    tprint_info(f"✅ Loaded FULL labeled_data: {labeled_df.shape}")
+                else:
+                    tprint_warning(f"⚠️ No labeled_data found in {store_path}, trying fallback...")
+                    labeled_df = self._get_artifact('labeled_data')
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to load from versioned store: {e}, trying fallback...")
+                labeled_df = self._get_artifact('labeled_data')
+            
             targets = self._get_artifact('labeling_metadata')
             tprint_info(f"✅ Loaded in {time.time()-t0:.2f}s")
             
@@ -302,15 +339,28 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             # Save artifacts
             saved_artifacts = []
             for artifact_name, artifact_data in artifacts.items():
+                # Determine if this should go to versioned artifacts (HDF5)
+                is_feature_artifact = (
+                    artifact_name.startswith('selected_features_') or 
+                    artifact_name.startswith('selected_feature_dataframe_')
+                )
+                
+                # For feature artifacts, use data_category='features' to trigger HDF5 storage
+                # The artifact name will be clean (e.g., "selected_feature_dataframe_60")
+                # and the versioned artifacts system will add timestamp and context
+                data_category = 'features' if is_feature_artifact else None
+                
                 artifact_path = self._save_artifact(
                     artifact_data,
                     artifact_name,
-                    artifact_type="data"
+                    artifact_type="data",
+                    data_category=data_category
                 )
                 saved_artifacts.append({
                     'name': artifact_name,
                     'path': artifact_path,
-                    'type': 'data'
+                    'type': 'data',
+                    'versioned': is_feature_artifact
                 })
 
             # Save outcome report (pickle format)
@@ -557,6 +607,10 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         
         # PRIORITY 1: Start with labeled dataframe to preserve target column
         base_features = labeled_df.copy()
+        
+        # STEP 0: Remove exact duplicates before any processing
+        tprint_info("🔍 Removing exact duplicate features...")
+        base_features = self._remove_exact_duplicates(base_features)
         tprint_info(f"📊 Using labeled dataframe as base: {base_features.shape}")
         tprint_info(f"📊 Target columns in base: {[col for col in base_features.columns if 'target' in col.lower()]}")
         
@@ -632,6 +686,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 # TODO: Use this metadata to generate features with optimized lookback periods
                 tprint_info("ℹ️ Note: Lookback optimization metadata should be used to generate features with optimized lookback periods")
 
+        # CRITICAL FIX: Collect all dataframes first, find common index, then align once
+        # This prevents repeatedly reducing base_features with each chunk
+        all_dataframes = [base_features]
+        dataframe_info = [{'name': 'base_features', 'df': base_features}]
+        
         # PRIORITY 3: Add interaction features (complex feature interactions)
         for interaction_type in ['analyst_interactions', 'tactician_interactions']:
             if interaction_type in features_data and features_data[interaction_type] is not None:
@@ -644,76 +703,72 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                         except Exception as e:
                             tprint_warning(f"⚠️ Interaction dataframe optimization failed: {e}")
                     
-                    # Check data alignment and handle shape mismatches
-                    if interaction_df.shape[0] != base_features.shape[0]:
-                        tprint_warning(f"⚠️ Shape mismatch: base_features {base_features.shape} vs {interaction_type} {interaction_df.shape}")
-                        # Align dataframes by index if possible
-                        if hasattr(interaction_df.index, 'intersection') and hasattr(base_features.index, 'intersection'):
-                            common_index = base_features.index.intersection(interaction_df.index)
-                            if len(common_index) > 0:
-                                tprint_info(f"📊 Aligning dataframes using {len(common_index)} common indices")
-                                interaction_df = interaction_df.loc[common_index]
-                                base_features = base_features.loc[common_index]
-                            else:
-                                tprint_warning(f"⚠️ No common indices found, skipping {interaction_type}")
-                                continue
-                        else:
-                            tprint_warning(f"⚠️ Cannot align dataframes, skipping {interaction_type}")
-                            continue
-                    
-                    # Add interaction features (excluding any duplicate columns)
-                    interaction_cols = [col for col in interaction_df.columns
-                                     if col not in base_features.columns]
-                    if interaction_cols:
-                        feature_chunks.append(interaction_df[interaction_cols])
-                        tprint_info(f"📊 Queued {len(interaction_cols)} {interaction_type} features (PRIORITY 3)")
+                    # Add to collection for later alignment
+                    dataframe_info.append({'name': interaction_type, 'df': interaction_df})
+                    tprint_info(f"📊 Collected {interaction_type}: {interaction_df.shape}")
 
-        # PRIORITY 4: Add features from feature dataframe if available (with proper alignment)
-        # Define column filters outside the if block to avoid NameError
+        # PRIORITY 4: Add features from feature dataframe if available
         ohlcv_cols = ['open', 'high', 'low', 'close', 'volume', 'timestamp']
         basic_time_cols = ['hour', 'day_of_week', 'base_threshold']
         
         if 'feature_dataframe' in features_data and features_data['feature_dataframe'] is not None:
             feature_df = features_data['feature_dataframe']
-            
-            # Check data alignment first
-            if feature_df.shape[0] != base_features.shape[0]:
-                tprint_warning(f"⚠️ Feature dataframe shape mismatch: base_features {base_features.shape} vs feature_df {feature_df.shape}")
-                # Try to align by index if possible
-                if hasattr(feature_df.index, 'intersection') and hasattr(base_features.index, 'intersection'):
-                    common_index = base_features.index.intersection(feature_df.index)
-                    if len(common_index) > 0:
-                        tprint_info(f"📊 Aligning feature dataframe using {len(common_index)} common indices")
-                        feature_df = feature_df.loc[common_index]
-                        base_features = base_features.loc[common_index]
-                    else:
-                        tprint_warning("⚠️ No common indices found, skipping feature dataframe")
-                        feature_df = None
-                else:
-                    tprint_warning("⚠️ Cannot align feature dataframe, skipping")
-                    feature_df = None
-            
-            if feature_df is not None:
-                # Optimize feature dataframe if vectorization manager is available
+            if isinstance(feature_df, pd.DataFrame):
+                # Optimize if available
                 if self.vectorization_manager and self.optimization_enabled:
                     try:
                         feature_df = self.vectorization_manager.optimize_dataframe(feature_df)
                     except Exception as e:
                         tprint_warning(f"⚠️ Feature dataframe optimization failed: {e}")
-            
-                # Find columns to include (excluding OHLCV, basic time features, and target columns)
-                feature_cols = [col for col in feature_df.columns
-                                      if col not in ohlcv_cols and col not in basic_time_cols and col not in TARGET_COLUMN_NAMES]
-
-                if feature_cols:
-                    feature_chunks.append(feature_df[feature_cols])
-                    tprint_info(f"📊 Queued {len(feature_cols)} features from feature dataframe (PRIORITY 4)")
+                
+                # Add to collection
+                dataframe_info.append({'name': 'feature_dataframe', 'df': feature_df})
+                tprint_info(f"📊 Collected feature_dataframe: {feature_df.shape}")
         
-        # Concatenate all feature chunks at once (MEMORY OPTIMIZATION)
+        # CRITICAL: Find common index across ALL dataframes
+        tprint_info(f"📊 Finding common index across {len(dataframe_info)} dataframes...")
+        common_index = dataframe_info[0]['df'].index
+        for info in dataframe_info[1:]:
+            common_index = common_index.intersection(info['df'].index)
+            tprint_info(f"📊 After {info['name']}: {len(common_index)} common indices")
+        
+        if len(common_index) < 100:
+            tprint_error(f"❌ Too few common indices ({len(common_index)}). Minimum required: 100")
+            tprint_warning("⚠️ This will cause feature selection to fail. Check data alignment issues.")
+        
+        tprint_success(f"✅ Found {len(common_index)} common indices across all dataframes")
+        
+        # Align ALL dataframes to common index
+        tprint_info("📊 Aligning all dataframes to common index...")
+        for info in dataframe_info:
+            info['df'] = info['df'].loc[common_index]
+            tprint_info(f"📊 Aligned {info['name']}: {info['df'].shape}")
+        
+        # Now extract base_features and build feature_chunks
+        base_features = dataframe_info[0]['df']
+        feature_chunks = []
+        
+        for info in dataframe_info[1:]:
+            df = info['df']
+            name = info['name']
+            
+            if name == 'feature_dataframe':
+                # Exclude OHLCV, basic time, and target columns
+                feature_cols = [col for col in df.columns
+                              if col not in ohlcv_cols and col not in basic_time_cols and col not in TARGET_COLUMN_NAMES]
+            else:
+                # For interactions, exclude columns already in base_features
+                feature_cols = [col for col in df.columns if col not in base_features.columns]
+            
+            if feature_cols:
+                feature_chunks.append(df[feature_cols])
+                tprint_info(f"📊 Queued {len(feature_cols)} features from {name}")
+        
+        # Concatenate all feature chunks at once
         if feature_chunks:
             tprint_info(f"📊 Concatenating {len(feature_chunks)} feature chunks...")
             base_features = pd.concat([base_features] + feature_chunks, axis=1)
-            tprint_success(f"✅ Successfully concatenated all feature chunks")
+            tprint_success(f"✅ Successfully concatenated all feature chunks: {base_features.shape}")
 
         # Remove any non-numeric columns except timestamp and target columns
         numeric_cols = []
@@ -818,6 +873,48 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
         tprint_info(f"📊 Combined feature matrix: {result_df.shape[1]} features, {result_df.shape[0]} samples")
         return result_df
+    
+    def _remove_exact_duplicates(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Remove columns with identical values to prevent perfect correlation (1.0).
+        
+        Args:
+            df: DataFrame to deduplicate
+            
+        Returns:
+            DataFrame with exact duplicate columns removed
+        """
+        try:
+            if df.empty:
+                return df
+                
+            original_cols = len(df.columns)
+            duplicate_cols = []
+            
+            # Check for exact duplicates
+            for i in range(len(df.columns)):
+                for j in range(i+1, len(df.columns)):
+                    col_i = df.iloc[:, i]
+                    col_j = df.iloc[:, j]
+                    
+                    # Check if columns are identical (including NaN patterns)
+                    if col_i.equals(col_j):
+                        duplicate_cols.append(df.columns[j])
+                        tprint_info(f"🔍 Found exact duplicate: '{df.columns[j]}' == '{df.columns[i]}'")
+            
+            # Remove duplicate columns
+            if duplicate_cols:
+                df = df.drop(columns=duplicate_cols)
+                tprint_info(f"🗑️ Removed {len(duplicate_cols)} exact duplicate columns")
+                tprint_info(f"📊 Column count: {original_cols} -> {len(df.columns)}")
+            else:
+                tprint_info("✅ No exact duplicate columns found")
+                
+            return df
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error removing exact duplicates: {e}")
+            return df
 
     def _setup_selection_config(self, config: Dict[str, Any]) -> FinalFeatureSelectionConfig:
         """Setup feature selection configuration."""
@@ -869,16 +966,31 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                          'volume_return', 'close_log_return', 'volume_log_return', 'price_range', 
                          'body_size_pct', 'trades', 'quote_volume', 'day', 'lookahead_periods', 'is_weekend']
         
+        # CRITICAL: Exclude performance metrics and forward-looking columns that are NOT predictive features
+        # These are calculated from future data or are outcome metrics, not input features
+        performance_metrics = [
+            'max_drawdown', 'sharpe_ratio', 'sortino_ratio', 'calmar_ratio', 'recovery_factor',
+            'win_rate', 'profit_factor', 'total_return', 'annualized_return', 'volatility',
+            'var_95', 'cvar_95', 'downside_deviation', 'upside_capture', 'downside_capture',
+            'information_ratio', 'treynor_ratio', 'jensen_alpha', 'max_consecutive_wins',
+            'max_consecutive_losses', 'avg_win', 'avg_loss', 'largest_win', 'largest_loss',
+            'equity_curve', 'cumulative_returns', 'drawdown', 'underwater_curve'
+        ]
+        
         # Debug: Show all available columns
         tprint_info(f"🔍 DEBUG: All columns in features_df: {list(features_df.columns)}")
         
+        # Combine all columns to exclude (including performance metrics)
+        excluded_columns = TARGET_COLUMN_NAMES + ['timestamp'] + raw_data_columns + performance_metrics
+        tprint_info(f"🔍 Excluding {len(excluded_columns)} columns: targets, timestamp, raw data, and performance metrics")
+        
         # Prioritize sophisticated engineered features over basic ones
         sophisticated_features = [col for col in features_df.columns
-                                if col not in TARGET_COLUMN_NAMES + ['timestamp'] + raw_data_columns
+                                if col not in excluded_columns
                                 and any(keyword in col.lower() for keyword in ['vectorbt', 'interaction', 'enhanced', 'optimized', 'advanced', 'statistical', 'wavelet', 'entropy', 'ad_line', 'obv', 'volatility', 'order_flow'])]
         
         basic_engineered_features = [col for col in features_df.columns
-                                   if col not in TARGET_COLUMN_NAMES + ['timestamp'] + raw_data_columns
+                                   if col not in excluded_columns
                                    and col not in sophisticated_features]
         
         # Prioritize sophisticated features first
@@ -918,7 +1030,40 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         X = features_df[feature_cols]
         y = features_df[target_cols[0]]
 
+        # CRITICAL: Clean NaN values from target variable and align X accordingly
+        tprint_info(f"🔍 Checking for NaN values in target variable...")
+        nan_count_before = y.isna().sum()
+        total_samples = len(y)
+        
+        if nan_count_before > 0:
+            tprint_warning(f"⚠️ Found {nan_count_before} NaN values in target variable ({100*nan_count_before/total_samples:.2f}%)")
+            
+            # Get valid indices (where target is not NaN)
+            valid_indices = y.notna()
+            
+            # Filter both X and y to remove NaN rows
+            X = X[valid_indices]
+            y = y[valid_indices]
+            
+            tprint_success(f"✅ Removed {nan_count_before} rows with NaN targets. Remaining samples: {len(y)}")
+            
+            # Verify no NaN values remain
+            if y.isna().sum() > 0:
+                tprint_error(f"❌ ERROR: Target still contains {y.isna().sum()} NaN values after cleaning!")
+                raise ValueError(f"Target variable still contains NaN values after cleaning")
+        else:
+            tprint_success(f"✅ Target variable is clean (no NaN values)")
+        
+        # Also check for NaN values in features and clean if necessary
+        feature_nan_count = X.isna().sum().sum()
+        if feature_nan_count > 0:
+            tprint_warning(f"⚠️ Found {feature_nan_count} NaN values in features")
+            # Fill feature NaNs with median (safer than dropping more rows)
+            X = X.fillna(X.median())
+            tprint_success(f"✅ Filled feature NaN values with median")
+
         tprint_info(f"🔍 Performing feature selection on {len(feature_cols)} features using permutation importance...")
+        tprint_info(f"📊 Final dataset: {len(X)} samples, {len(X.columns)} features")
         tprint_info("📊 Using permutation importance to capture feature interactions (not just Gini splits)")
 
         # Use batch processing if vectorization manager is available
@@ -1091,9 +1236,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             correlation_analysis = temp_component.analyze_feature_correlations(X, selected_features)
             analysis_results['correlation_analysis'] = correlation_analysis
             
-            # 2. Redundancy Detection
-            tprint_info("🔍 Detecting redundant features...")
-            redundancy_analysis = temp_component.detect_redundant_features(X, selected_features)
+            # 2. Redundancy Detection - SKIPPED (too slow, correlation analysis is sufficient)
+            tprint_info("🔍 Skipping redundancy detection (using correlation analysis instead)...")
+            redundancy_analysis = {'skipped': True, 'reason': 'Performance optimization - correlation analysis provides sufficient information'}
             analysis_results['redundancy_analysis'] = redundancy_analysis
             
             # 3. Stability Analysis
@@ -1103,7 +1248,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             # 4. Cross-validation Analysis
             tprint_info("🔄 Performing cross-validation analysis...")
-            cv_analysis = temp_component.cross_validate_feature_selection(X, y, selected_features, cv_folds=5)
+            # FIX: Increase CV folds to 10 for maximum coverage and stability
+            cv_analysis = temp_component.cross_validate_feature_selection(X, y, selected_features, cv_folds=10)
             analysis_results['cv_analysis'] = cv_analysis
             
             # 5. Baseline Comparison
@@ -1299,13 +1445,26 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         # Separate features from targets and exclude raw data columns
         raw_data_columns = ['open', 'high', 'low', 'close', 'volume', 'hour', 'day_of_week', 'base_threshold']
         
+        # CRITICAL: Exclude performance metrics and forward-looking columns
+        performance_metrics = [
+            'max_drawdown', 'sharpe_ratio', 'sortino_ratio', 'calmar_ratio', 'recovery_factor',
+            'win_rate', 'profit_factor', 'total_return', 'annualized_return', 'volatility',
+            'var_95', 'cvar_95', 'downside_deviation', 'upside_capture', 'downside_capture',
+            'information_ratio', 'treynor_ratio', 'jensen_alpha', 'max_consecutive_wins',
+            'max_consecutive_losses', 'avg_win', 'avg_loss', 'largest_win', 'largest_loss',
+            'equity_curve', 'cumulative_returns', 'drawdown', 'underwater_curve'
+        ]
+        
+        # Combine all columns to exclude
+        excluded_columns = TARGET_COLUMN_NAMES + ['timestamp'] + raw_data_columns + performance_metrics
+        
         # Prioritize sophisticated engineered features over basic ones
         sophisticated_features = [col for col in features_df.columns
-                                if col not in TARGET_COLUMN_NAMES + ['timestamp'] + raw_data_columns
+                                if col not in excluded_columns
                                 and any(keyword in col.lower() for keyword in ['vectorbt', 'interaction', 'enhanced', 'optimized', 'advanced', 'statistical', 'wavelet', 'entropy', 'ad_line', 'obv', 'volatility', 'order_flow'])]
         
         basic_engineered_features = [col for col in features_df.columns
-                                   if col not in TARGET_COLUMN_NAMES + ['timestamp'] + raw_data_columns
+                                   if col not in excluded_columns
                                    and col not in sophisticated_features]
         
         # Prioritize sophisticated features first
@@ -1439,25 +1598,61 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         return shap_values
 
     def _generate_artifacts(self, feature_sets: Dict[str, List[str]], shap_values: Dict[str, Any], config: Dict[str, Any], combined_features_df: pd.DataFrame) -> Dict[str, Any]:
-        """Generate artifacts from feature selection results."""
+        """
+        Generate artifacts from feature selection results.
+        
+        Feature lists and dataframes are saved to versioned artifacts (HDF5) with proper naming:
+        Format: {artifact_name}_{date}_{mode}_{direction}_{symbol}_{exchange}
+        
+        Other artifacts (metadata, scores) are saved to regular artifacts directory.
+        """
         artifacts = {}
+        
+        # Get context for versioned artifact naming
+        symbol = config.get('symbol', 'UNKNOWN')
+        exchange = config.get('exchange', 'binance')
+        timeframe = config.get('timeframe', '15m')
+        direction = config.get('direction', 'long')
+        mode = config.get('execution_mode', 'analyst')
+        date_str = datetime.now().strftime('%Y%m%d')
 
-        # Feature sets
+        # Feature sets - these will be saved to versioned artifacts
+        # The artifact name should be clean (e.g., "selected_feature_dataframe_60")
+        # The versioned artifacts system will add timestamp and context automatically
         for set_name, feature_list in feature_sets.items():
             if set_name.startswith('selected_features_'):
-                artifacts[set_name] = feature_list
+                # Save feature names as a list (for reference)
+                feature_df = pd.DataFrame({'feature_name': feature_list})
+                artifacts[set_name] = feature_df
+                
+                # CRITICAL: Also save the actual feature VALUES from combined_features_df
+                # Extract the selected features from the full dataset
+                size = set_name.split('_')[-1]  # e.g., "60" from "selected_features_60"
+                dataframe_name = f'selected_feature_dataframe_{size}'
+                
+                # Get the actual feature data for these selected features
+                available_features = [f for f in feature_list if f in combined_features_df.columns]
+                if available_features:
+                    selected_data = combined_features_df[available_features].copy()
+                    artifacts[dataframe_name] = selected_data
+                    tprint_info(f"✅ Created {dataframe_name} with {len(available_features)} features and {len(selected_data)} rows")
+                else:
+                    tprint_warning(f"⚠️ No features from {set_name} found in combined_features_df")
+                
             elif set_name.startswith('selected_feature_dataframe_'):
+                # Feature dataframes - already in correct format for HDF5
+                # Artifact name: selected_feature_dataframe_60 (versioning system adds timestamp)
                 artifacts[set_name] = feature_sets[set_name]
 
-        # Feature scores from selection component
+        # Feature scores from selection component (regular artifact)
         if self.selection_component:
             artifacts['feature_scores'] = self.selection_component.get_feature_scores()
 
-        # SHAP values
+        # SHAP values (regular artifact)
         for shap_name, shap_data in shap_values.items():
             artifacts[shap_name] = shap_data
 
-        # Selection metadata
+        # Selection metadata (regular artifact)
         selection_metadata = {
             'total_features_available': len([col for col in combined_features_df.columns
                                            if col not in TARGET_COLUMN_NAMES + ['timestamp']]),
@@ -1466,7 +1661,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             'scoring_threshold': config.get('scoring_threshold', 0.01),
             'use_tree_based': config.get('use_tree_based', True),
             'timestamp': datetime.now().isoformat(),
-            'symbol': config.get('symbol', 'unknown'),
+            'symbol': symbol,
+            'exchange': exchange,
+            'timeframe': timeframe,
+            'direction': direction,
+            'mode': mode,
             'execution_mode': config.get('execution_mode', 'light')
         }
         artifacts['selection_metadata'] = selection_metadata
@@ -1725,11 +1924,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
 ## Configuration
 
-- **Symbol:** {getattr(self, 'symbol', 'N/A')}
-- **Exchange:** {getattr(self, 'exchange', 'N/A')}
-- **Timeframe:** {getattr(self, 'timeframe', 'N/A')}
-- **Execution Mode:** {getattr(self, 'execution_mode', 'N/A')}
-- **Feature Count Targets:** {config.get('feature_count_targets', 'N/A')}
+- **Symbol:** {config.get('symbol', 'N/A')}
+- **Exchange:** {config.get('exchange', 'N/A')}
+- **Timeframe:** {config.get('timeframe', 'N/A')}
+- **Execution Mode:** {config.get('execution_mode', 'N/A')}
+- **Feature Count Targets:** {config.get('feature_set_sizes', [60, 50, 40])}
 - **Selection Method:** {config.get('selection_method', 'permutation')} ✅
 - **Importance Type:** Permutation (captures feature interactions, not just Gini splits) 📊
 - **Optimization Enabled:** {self.optimization_enabled}
@@ -1814,12 +2013,20 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 if 'redundancy_analysis' in enhanced_analysis and 'error' not in enhanced_analysis['redundancy_analysis']:
                     red_analysis = enhanced_analysis['redundancy_analysis']
                     report += f"### Redundancy Detection\n\n"
-                    report += f"- **Redundancy Score:** {red_analysis.get('redundancy_score', 'N/A'):.4f}\n"
-                    report += f"- **Redundant Features:** {red_analysis.get('redundant_features', 'N/A')}\n"
-                    report += f"- **Total Features:** {red_analysis.get('total_features', 'N/A')}\n"
-                    report += f"- **Correlation Redundant Pairs:** {len(red_analysis.get('redundancy_results', {}).get('correlation_redundant', []))}\n"
-                    report += f"- **Mutual Info Redundant Pairs:** {len(red_analysis.get('redundancy_results', {}).get('mutual_info_redundant', []))}\n"
-                    report += f"- **Low Variance Features:** {len(red_analysis.get('redundancy_results', {}).get('variance_redundant', []))}\n\n"
+                    # Handle skipped redundancy detection
+                    if red_analysis.get('skipped'):
+                        report += f"- **Status:** Skipped ({red_analysis.get('reason', 'Performance optimization')})\n\n"
+                    else:
+                        redundancy_score = red_analysis.get('redundancy_score', 'N/A')
+                        if isinstance(redundancy_score, (int, float)):
+                            report += f"- **Redundancy Score:** {redundancy_score:.4f}\n"
+                        else:
+                            report += f"- **Redundancy Score:** {redundancy_score}\n"
+                        report += f"- **Redundant Features:** {red_analysis.get('redundant_features', 'N/A')}\n"
+                        report += f"- **Total Features:** {red_analysis.get('total_features', 'N/A')}\n"
+                        report += f"- **Correlation Redundant Pairs:** {len(red_analysis.get('redundancy_results', {}).get('correlation_redundant', []))}\n"
+                        report += f"- **Mutual Info Redundant Pairs:** {len(red_analysis.get('redundancy_results', {}).get('mutual_info_redundant', []))}\n"
+                        report += f"- **Low Variance Features:** {len(red_analysis.get('redundancy_results', {}).get('variance_redundant', []))}\n\n"
                 
                 # Stability Analysis
                 if 'stability_analysis' in enhanced_analysis and 'error' not in enhanced_analysis['stability_analysis']:

@@ -4287,7 +4287,20 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 if feature_name in features:
                     # Try to get the feature info from registry
                     try:
-                        feature_info = self.feature_bank.registry.get_feature(feature_name)
+                        # DEBUG: Log the registry type and available methods
+                        tprint_warning(f"🔍 DEBUG: FeatureRegistry type: {type(self.feature_bank.registry)}")
+                        tprint_warning(f"🔍 DEBUG: Available methods: {[method for method in dir(self.feature_bank.registry) if not method.startswith('_')]}")
+                        
+                        # Try the correct method name
+                        if hasattr(self.feature_bank.registry, 'get_by_name'):
+                            feature_info = self.feature_bank.registry.get_by_name(feature_name)
+                        else:
+                            # Note: get_feature() method doesn't exist in FeatureRegistry
+                            # The correct method is get_by_name() which we already tried above
+                            tprint_warning(f"🔍 DEBUG: get_feature() method not available, using fallback")
+                            tprint_error(f"🔍 DEBUG: No suitable method found on FeatureRegistry")
+                            feature_info = None
+                            
                         if feature_info and hasattr(feature_info, 'category'):
                             return feature_info.category.value if hasattr(feature_info.category, 'value') else str(feature_info.category)
                     except Exception as e:

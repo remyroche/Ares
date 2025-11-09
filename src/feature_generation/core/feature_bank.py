@@ -55,6 +55,9 @@ class FeatureBankConfig:
     default_optimization_level: str = "balanced"  # "conservative", "balanced", "aggressive"
     auto_optimization_config: Optional[AutoOptimizationConfig] = None
 
+    # Regime feature settings (ONLY enable for regime-specific training)
+    enable_regime_features: bool = False  # Disabled by default, enable only for regime models training
+
 class FeatureBank:
     """
     Central feature bank that manages all feature generators and provides
@@ -262,7 +265,18 @@ class FeatureBank:
             # List of categories to auto-register
             # NOTE: CUSTOM_SUPPORT_RESISTANCE is intentionally excluded (disabled by default)
             # Enable it manually by registering custom SR generators explicitly
-            categories_to_register = [
+            # Build categories list - REGIME only if explicitly enabled
+            categories_to_register = []
+
+            # Add REGIME category ONLY if explicitly enabled (for regime models training)
+            if self.config.enable_regime_features:
+                categories_to_register.append(FeatureCategory.REGIME)
+                tprint("🎯 [FEATURE_BANK] REGIME features ENABLED (regime models training mode)", color="green")
+            else:
+                tprint("ℹ️ [FEATURE_BANK] REGIME features DISABLED (standard mode)", color="cyan")
+
+            # Add standard categories (always enabled)
+            categories_to_register.extend([
                 FeatureCategory.MOMENTUM,
                 FeatureCategory.VOLATILITY,
                 FeatureCategory.TREND,
@@ -280,7 +294,7 @@ class FeatureBank:
                 FeatureCategory.MICROSTRUCTURE,
                 FeatureCategory.ADVANCED_STATISTICAL,
                 FeatureCategory.SPECTRAL_WAVELET
-            ]
+            ])
 
             registered_count = 0
             total_categories = len(categories_to_register)
@@ -344,6 +358,7 @@ class FeatureBank:
         try:
             # Map categories to their creation functions
             category_creators = {
+                FeatureCategory.REGIME: self._create_regime_generators,  # CRITICAL: Added for regime classification
                 FeatureCategory.MOMENTUM: self._create_momentum_generators,
                 FeatureCategory.VOLATILITY: self._create_volatility_generators,
                 FeatureCategory.TREND: self._create_trend_generators,

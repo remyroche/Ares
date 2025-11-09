@@ -586,6 +586,28 @@ class ClusterQualityAssessor:
                 tprint_warning(f"⚠️ Vectorization initialization failed: {e}")
                 self.vectorization_manager = None
     
+    def __del__(self):
+        """Cleanup resources to prevent semaphore leaks."""
+        try:
+            if hasattr(self, 'hardware_manager') and self.hardware_manager is not None:
+                # Close hardware manager if it has a cleanup method
+                if hasattr(self.hardware_manager, 'cleanup'):
+                    self.hardware_manager.cleanup()
+                elif hasattr(self.hardware_manager, 'close'):
+                    self.hardware_manager.close()
+        except Exception:
+            pass  # Ignore errors during cleanup
+        
+        try:
+            if hasattr(self, 'vectorization_manager') and self.vectorization_manager is not None:
+                # Close vectorization manager if it has a cleanup method
+                if hasattr(self.vectorization_manager, 'cleanup'):
+                    self.vectorization_manager.cleanup()
+                elif hasattr(self.vectorization_manager, 'close'):
+                    self.vectorization_manager.close()
+        except Exception:
+            pass  # Ignore errors during cleanup
+    
     def _ensure_aligned_data(self,
                              regime_labels: np.ndarray,
                              feature_data: pd.DataFrame,
@@ -872,161 +894,278 @@ class ClusterQualityAssessor:
         Returns:
             ClusterQualityMetrics with all enhanced metrics
         """
-        if fast_mode:
-            tprint_info("🔍 Starting FAST HMM regime quality assessment (HPO mode)")
-        else:
-            tprint_info("🔍 Starting ENHANCED HMM regime quality assessment")
+        # ROBUST TIMEOUT PROTECTION: Add timeout mechanism for HMM quality assessment
+        import threading
+        import time
+        import traceback
+        import ctypes
+        
+        timeout_seconds = 45  # 45 second timeout for HMM quality assessment
+        check_interval = 5   # Check every 5 seconds
+        
+        # Resource-aware timeout adjustment
+        if HARDWARE_AVAILABLE:
+            try:
+                from src.utils.hardware.unified_hardware_manager import get_unified_hardware_manager
+                hw_manager = get_unified_hardware_manager()
+                cpu_usage = hw_manager.get_cpu_usage()
+                memory_pressure = hw_manager.get_memory_pressure()
+                
+                # Increase timeout under high resource pressure
+                if cpu_usage > 90 or memory_pressure > 0.8:
+                    timeout_seconds = 60  # Extend timeout under high pressure
+                    tprint_warning(f"⚠️ High resource pressure detected (CPU: {cpu_usage:.1f}%, Memory: {memory_pressure:.2f}) - Extending timeout to {timeout_seconds}s")
+            except Exception:
+                pass  # Fallback to default timeout
+        
+        # Strategy: Run HMM quality assessment in background thread with monitoring
+        result_container = {'metrics': None, 'exception': None, 'completed': False}
+        
+        def assess_with_timeout():
+            try:
+                if fast_mode:
+                    tprint_info("🔍 Starting FAST HMM regime quality assessment (HPO mode)")
+                else:
+                    tprint_info("🔍 Starting ENHANCED HMM regime quality assessment")
 
-        # First, run standard quality assessment with fast mode if requested
-        metrics = self.assess_quality(
-            regime_labels=regime_labels,
-            feature_data=feature_data,
-            forward_returns=forward_returns,
-            timestamps=timestamps,
-            min_regime_size=min_regime_size,
-            temporal_sensitivity_mode=temporal_sensitivity_mode,
-            fast_mode=fast_mode
-        )
-        
-        # If validators disabled, return standard metrics
-        if not run_validators:
-            return metrics
-        
-        # Initialize HMM validator
-        try:
-            from .hmm_regime_validators import create_hmm_regime_validator
-            validator = create_hmm_regime_validator(timeframe=timeframe)
-            tprint_success("✅ HMM regime validator initialized")
-        except Exception as e:
-            tprint_warning(f"⚠️ Could not initialize HMM validator: {e}")
-            return metrics
-        
-        tprint_info("="*70)
-        tprint_info("🔬 Running COMPREHENSIVE HMM regime validators...")
-        tprint_info("="*70)
-        
-        # Prepare data
-        data_array = feature_data.select_dtypes(include=[np.number]).values
-        
-        # III. REGIME OCCUPANCY & PERSISTENCE
-        try:
-            occupancy_results = validator.regime_occupancy_persistence_validation(
-                labels=regime_labels,
-                transition_matrix=transition_matrix
-            )
-            metrics.state_occupancy = occupancy_results.get('state_occupancy', {})
-            metrics.tiny_state_count = occupancy_results.get('tiny_state_count', 0)
-            metrics.expected_state_durations = occupancy_results.get('expected_durations', {})
-            metrics.min_expected_duration = occupancy_results.get('min_expected_duration_days')
-            metrics.max_expected_duration = occupancy_results.get('max_expected_duration_days')
-            metrics.duration_quality_flag = occupancy_results.get('duration_quality_flag', 'unknown')
-            # DIAGNOSTIC: Occupancy distribution
-            metrics.occupancy_distribution = occupancy_results.get('occupancy_distribution', [])
-            metrics.occupancy_entropy = occupancy_results.get('occupancy_entropy')
-            metrics.min_occupancy_pct = occupancy_results.get('min_occupancy_pct')
-            metrics.max_occupancy_pct = occupancy_results.get('max_occupancy_pct')
-        except Exception as e:
-            tprint_error(f"❌ Occupancy validation failed: {e}")
-        
-        # IV. TRANSITION MATRIX SENSIBILITY
-        if transition_matrix is not None:
-            try:
-                transition_results = validator.transition_matrix_validation(
-                    transition_matrix=transition_matrix,
-                    labels=regime_labels
+                # First, run standard quality assessment with fast mode if requested
+                metrics = self.assess_quality(
+                    regime_labels=regime_labels,
+                    feature_data=feature_data,
+                    forward_returns=forward_returns,
+                    timestamps=timestamps,
+                    min_regime_size=min_regime_size,
+                    temporal_sensitivity_mode=temporal_sensitivity_mode,
+                    fast_mode=fast_mode
                 )
-                metrics.transition_matrix_checks = transition_results
-                metrics.unrealistic_oscillation_detected = transition_results.get('unrealistic_oscillation', False)
-                metrics.transition_interpretability_score = transition_results.get('interpretability_score', 0.0)
+                
+                # If validators disabled, return standard metrics
+                if not run_validators:
+                    result_container['metrics'] = metrics
+                    result_container['completed'] = True
+                    return
+                
+                # Initialize HMM validator
+                try:
+                    from .hmm_regime_validators import create_hmm_regime_validator
+                    validator = create_hmm_regime_validator(timeframe=timeframe)
+                    tprint_success("✅ HMM regime validator initialized")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Could not initialize HMM validator: {e}")
+                    result_container['metrics'] = metrics
+                    result_container['completed'] = True
+                    return
+                
+                tprint_info("="*70)
+                tprint_info("🔬 Running COMPREHENSIVE HMM regime validators...")
+                tprint_info("="*70)
+                
+                # Prepare data
+                data_array = feature_data.select_dtypes(include=[np.number]).values
+                
+                # III. REGIME OCCUPANCY & PERSISTENCE
+                try:
+                    occupancy_results = validator.regime_occupancy_persistence_validation(
+                        labels=regime_labels,
+                        transition_matrix=transition_matrix
+                    )
+                    metrics.state_occupancy = occupancy_results.get('state_occupancy', {})
+                    metrics.tiny_state_count = occupancy_results.get('tiny_state_count', 0)
+                    metrics.expected_state_durations = occupancy_results.get('expected_durations', {})
+                    metrics.min_expected_duration = occupancy_results.get('min_expected_duration_days')
+                    metrics.max_expected_duration = occupancy_results.get('max_expected_duration_days')
+                    metrics.duration_quality_flag = occupancy_results.get('duration_quality_flag', 'unknown')
+                    # DIAGNOSTIC: Occupancy distribution
+                    metrics.occupancy_distribution = occupancy_results.get('occupancy_distribution', [])
+                    metrics.occupancy_entropy = occupancy_results.get('occupancy_entropy')
+                    metrics.min_occupancy_pct = occupancy_results.get('min_occupancy_pct')
+                    metrics.max_occupancy_pct = occupancy_results.get('max_occupancy_pct')
+                except Exception as e:
+                    tprint_error(f"❌ Occupancy validation failed: {e}")
+                
+                # IV. TRANSITION MATRIX SENSIBILITY
+                if transition_matrix is not None:
+                    try:
+                        transition_results = validator.transition_matrix_validation(
+                            transition_matrix=transition_matrix,
+                            labels=regime_labels
+                        )
+                        metrics.transition_matrix_checks = transition_results
+                        metrics.unrealistic_oscillation_detected = transition_results.get('unrealistic_oscillation', False)
+                        metrics.transition_interpretability_score = transition_results.get('interpretability_score', 0.0)
+                    except Exception as e:
+                        tprint_error(f"❌ Transition matrix validation failed: {e}")
+                
+                # V. EMISSION/GEOMETRIC DIAGNOSTICS
+                try:
+                    emission_results = validator.emission_diagnostics(
+                        data=feature_data,
+                        labels=regime_labels
+                    )
+                    metrics.state_conditioned_stats = emission_results.get('state_conditioned_stats', {})
+                    metrics.emission_distinctiveness = emission_results.get('emission_distinctiveness', 0.0)
+                except Exception as e:
+                    tprint_error(f"❌ Emission diagnostics failed: {e}")
+                
+                # VII. ECONOMIC UTILITY & ROBUSTNESS
+                if forward_returns is not None and len(forward_returns) > 0:
+                    try:
+                        economic_results = validator.economic_utility_validation(
+                            labels=regime_labels,
+                            returns=forward_returns
+                        )
+                        metrics.out_of_sample_sharpe = economic_results.get('out_of_sample_sharpe')
+                        metrics.out_of_sample_max_drawdown = economic_results.get('out_of_sample_max_drawdown')
+                        metrics.strategy_turnover = economic_results.get('strategy_turnover')
+                        metrics.sharpe_uplift_vs_baseline = economic_results.get('sharpe_uplift')
+                        metrics.economic_utility_score = economic_results.get('economic_utility_score')
+                        metrics.bootstrap_significance = {
+                            'sharpe_ci': economic_results.get('bootstrap_sharpe_ci'),
+                            'significant': economic_results.get('sharpe_significant')
+                        }
+                        # DIAGNOSTIC: Sharpe & Turnover across folds (median & IQR)
+                        metrics.sharpe_across_folds = economic_results.get('sharpe_across_folds')
+                        metrics.sharpe_median = economic_results.get('sharpe_median')
+                        metrics.sharpe_iqr = economic_results.get('sharpe_iqr')
+                        metrics.sharpe_q25 = economic_results.get('sharpe_q25')
+                        metrics.sharpe_q75 = economic_results.get('sharpe_q75')
+                        metrics.turnover_across_folds = economic_results.get('turnover_across_folds')
+                        metrics.turnover_median = economic_results.get('turnover_median')
+                        metrics.turnover_iqr = economic_results.get('turnover_iqr')
+                        metrics.turnover_q25 = economic_results.get('turnover_q25')
+                        metrics.turnover_q75 = economic_results.get('turnover_q75')
+                    except Exception as e:
+                        tprint_error(f"❌ Economic utility validation failed: {e}")
+                
+                # I. PREDICTIVE/GENERALIZATION (requires model)
+                if hmm_model is not None:
+                    try:
+                        predictive_results = validator.rolling_predictive_ll_validation(
+                            model=hmm_model,
+                            data=data_array
+                        )
+                        metrics.rolling_predictive_ll = predictive_results
+                        metrics.delta_ll_across_folds = predictive_results.get('delta_ll_across_folds', [])
+                        metrics.predictive_ll_effect_size = predictive_results.get('effect_size')
+                        metrics.baseline_comparison = {
+                            'mean_delta_ll': predictive_results.get('mean_delta_ll'),
+                            'positive_ratio': predictive_results.get('positive_ratio')
+                            }
+                        # DIAGNOSTIC: Median & IQR
+                        metrics.predictive_ll_median = predictive_results.get('predictive_ll_median')
+                        metrics.predictive_ll_iqr = predictive_results.get('predictive_ll_iqr')
+                        metrics.predictive_ll_q25 = predictive_results.get('predictive_ll_q25')
+                        metrics.predictive_ll_q75 = predictive_results.get('predictive_ll_q75')
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Predictive validation skipped: {e}")
+                
+                # VI. POSTERIOR PREDICTIVE CHECKS (requires model with sampling)
+                if hmm_model is not None and hasattr(hmm_model, 'sample'):
+                    try:
+                        posterior_results = validator.posterior_predictive_check(
+                            model=hmm_model,
+                            data=data_array
+                        )
+                        metrics.simulated_vs_empirical_moments = posterior_results
+                        metrics.probability_calibration_score = posterior_results.get('calibration_score')
+                        metrics.predictive_density_calibration = posterior_results.get('calibration_flag', 'unknown')
+                        # DIAGNOSTIC: CRPS, PIT, Tail quantiles
+                        metrics.crps_score = posterior_results.get('crps_score')
+                        metrics.pit_uniformity_pvalue = posterior_results.get('pit_uniformity_pvalue')
+                        metrics.tail_quantile_comparison = posterior_results.get('tail_quantile_comparison', {})
+                        metrics.tail_coverage_score = posterior_results.get('tail_coverage_score')
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Posterior predictive check skipped: {e}")
+                
+                tprint_info("="*70)
+                tprint_success("✅ COMPREHENSIVE HMM validation complete!")
+                tprint_info("="*70)
+                
+                result_container['metrics'] = metrics
+                result_container['completed'] = True
+                
             except Exception as e:
-                tprint_error(f"❌ Transition matrix validation failed: {e}")
+                result_container['exception'] = e
+                result_container['completed'] = True
+                tprint_error(f"❌ HMM quality assessment failed: {e}")
+                tprint_debug(f"Full traceback: {traceback.format_exc()}")
         
-        # V. EMISSION/GEOMETRIC DIAGNOSTICS
-        try:
-            emission_results = validator.emission_diagnostics(
-                data=feature_data,
-                labels=regime_labels
-            )
-            metrics.state_conditioned_stats = emission_results.get('state_conditioned_stats', {})
-            metrics.emission_distinctiveness = emission_results.get('emission_distinctiveness', 0.0)
-        except Exception as e:
-            tprint_error(f"❌ Emission diagnostics failed: {e}")
+        # Start quality assessment in background thread
+        quality_thread = threading.Thread(target=assess_with_timeout, daemon=True)
+        quality_thread.start()
         
-        # VII. ECONOMIC UTILITY & ROBUSTNESS
-        if forward_returns is not None and len(forward_returns) > 0:
+        # Monitor thread with timeout
+        start_time = time.time()
+        while not result_container['completed']:
+            if time.time() - start_time > timeout_seconds:
+                tprint_error(f"🚨 TIMEOUT: HMM quality assessment exceeded {timeout_seconds}s")
+                
+                # Try to terminate thread forcefully
+                try:
+                    # Force thread termination using ctypes
+                    thread_id = quality_thread.ident
+                    if thread_id:
+                        res = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+                            ctypes.c_ulong(thread_id),
+                            ctypes.py_object(SystemError("HMM quality assessment timeout"))
+                        )
+                        if res == 0:
+                            tprint_warning("⚠️ Thread termination signal sent")
+                        elif res == 1:
+                            tprint_warning("⚠️ Thread already terminated")
+                        else:
+                            tprint_warning("⚠️ Thread termination failed")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Thread termination failed: {e}")
+                
+                # Return default metrics on timeout
+                if fast_mode:
+                    tprint_info("🔍 Starting FAST cluster quality assessment (HPO mode)")
+                else:
+                    tprint_info("🔍 Starting comprehensive cluster quality assessment")
+                
+                # Return basic quality assessment without HMM validators
+                try:
+                    default_metrics = self.assess_quality(
+                        regime_labels=regime_labels,
+                        feature_data=feature_data,
+                        forward_returns=forward_returns,
+                        timestamps=timestamps,
+                        min_regime_size=min_regime_size,
+                        temporal_sensitivity_mode=temporal_sensitivity_mode,
+                        fast_mode=fast_mode
+                    )
+                    tprint_warning(f"⚠️ Returned default quality metrics due to timeout")
+                    return default_metrics
+                except Exception as e:
+                    tprint_error(f"❌ Even default quality assessment failed: {e}")
+                    # Return empty metrics as last resort
+                    return ClusterQualityMetrics()
+            
+            # Small delay to prevent busy waiting
+            time.sleep(check_interval)
+        
+        # Check if assessment completed successfully
+        if result_container['exception'] is not None:
+            tprint_error(f"❌ HMM quality assessment failed with exception: {result_container['exception']}")
+            # Return basic quality assessment as fallback
             try:
-                economic_results = validator.economic_utility_validation(
-                    labels=regime_labels,
-                    returns=forward_returns
+                fallback_metrics = self.assess_quality(
+                    regime_labels=regime_labels,
+                    feature_data=feature_data,
+                    forward_returns=forward_returns,
+                    timestamps=timestamps,
+                    min_regime_size=min_regime_size,
+                    temporal_sensitivity_mode=temporal_sensitivity_mode,
+                    fast_mode=fast_mode
                 )
-                metrics.out_of_sample_sharpe = economic_results.get('out_of_sample_sharpe')
-                metrics.out_of_sample_max_drawdown = economic_results.get('out_of_sample_max_drawdown')
-                metrics.strategy_turnover = economic_results.get('strategy_turnover')
-                metrics.sharpe_uplift_vs_baseline = economic_results.get('sharpe_uplift')
-                metrics.economic_utility_score = economic_results.get('economic_utility_score')
-                metrics.bootstrap_significance = {
-                    'sharpe_ci': economic_results.get('bootstrap_sharpe_ci'),
-                    'significant': economic_results.get('sharpe_significant')
-                }
-                # DIAGNOSTIC: Sharpe & Turnover across folds (median & IQR)
-                metrics.sharpe_across_folds = economic_results.get('sharpe_across_folds')
-                metrics.sharpe_median = economic_results.get('sharpe_median')
-                metrics.sharpe_iqr = economic_results.get('sharpe_iqr')
-                metrics.sharpe_q25 = economic_results.get('sharpe_q25')
-                metrics.sharpe_q75 = economic_results.get('sharpe_q75')
-                metrics.turnover_across_folds = economic_results.get('turnover_across_folds')
-                metrics.turnover_median = economic_results.get('turnover_median')
-                metrics.turnover_iqr = economic_results.get('turnover_iqr')
-                metrics.turnover_q25 = economic_results.get('turnover_q25')
-                metrics.turnover_q75 = economic_results.get('turnover_q75')
+                tprint_warning("⚠️ Returned fallback quality metrics due to exception")
+                return fallback_metrics
             except Exception as e:
-                tprint_error(f"❌ Economic utility validation failed: {e}")
+                tprint_error(f"❌ Fallback quality assessment also failed: {e}")
+                return ClusterQualityMetrics()
         
-        # I. PREDICTIVE/GENERALIZATION (requires model)
-        if hmm_model is not None:
-            try:
-                predictive_results = validator.rolling_predictive_ll_validation(
-                    model=hmm_model,
-                    data=data_array
-                )
-                metrics.rolling_predictive_ll = predictive_results
-                metrics.delta_ll_across_folds = predictive_results.get('delta_ll_across_folds', [])
-                metrics.predictive_ll_effect_size = predictive_results.get('effect_size')
-                metrics.baseline_comparison = {
-                    'mean_delta_ll': predictive_results.get('mean_delta_ll'),
-                    'positive_ratio': predictive_results.get('positive_ratio')
-                    }
-                # DIAGNOSTIC: Median & IQR
-                metrics.predictive_ll_median = predictive_results.get('predictive_ll_median')
-                metrics.predictive_ll_iqr = predictive_results.get('predictive_ll_iqr')
-                metrics.predictive_ll_q25 = predictive_results.get('predictive_ll_q25')
-                metrics.predictive_ll_q75 = predictive_results.get('predictive_ll_q75')
-            except Exception as e:
-                tprint_warning(f"⚠️ Predictive validation skipped: {e}")
-        
-        # VI. POSTERIOR PREDICTIVE CHECKS (requires model with sampling)
-        if hmm_model is not None and hasattr(hmm_model, 'sample'):
-            try:
-                posterior_results = validator.posterior_predictive_check(
-                    model=hmm_model,
-                    data=data_array
-                )
-                metrics.simulated_vs_empirical_moments = posterior_results
-                metrics.probability_calibration_score = posterior_results.get('calibration_score')
-                metrics.predictive_density_calibration = posterior_results.get('calibration_flag', 'unknown')
-                # DIAGNOSTIC: CRPS, PIT, Tail quantiles
-                metrics.crps_score = posterior_results.get('crps_score')
-                metrics.pit_uniformity_pvalue = posterior_results.get('pit_uniformity_pvalue')
-                metrics.tail_quantile_comparison = posterior_results.get('tail_quantile_comparison', {})
-                metrics.tail_coverage_score = posterior_results.get('tail_coverage_score')
-            except Exception as e:
-                tprint_warning(f"⚠️ Posterior predictive check skipped: {e}")
-        
-        tprint_info("="*70)
-        tprint_success("✅ COMPREHENSIVE HMM validation complete!")
-        tprint_info("="*70)
-        
-        return metrics
+        return result_container['metrics']
     
     def _calculate_silhouette_scores(self,
                                       regime_labels: np.ndarray,
@@ -3078,7 +3217,8 @@ class ClusterQualityAssessor:
             csv_data = []
             
             # Header
-            header = ['Trial', 'Rank', 'K', 'Base_Alpha', 'Kappa', 'N_Mixtures', 'PCA_Components', 
+            # NOTE: PCA_Components column disabled per user request
+            header = ['Trial', 'Rank', 'K', 'Base_Alpha', 'Kappa', 'N_Mixtures', 
                      'Learning_Rate', 'SVI_Iterations', 'ELBO', 'Quality_Score', 'Silhouette_Score', 
                      'Davies_Bouldin_Index', 'Calinski_Harabasz_Index', 'Within_CV', 'Between_CV', 
                      'Within_CV_Std', 'Between_CV_Std', 'Temporal_Smoothness', 'Regime_Persistence', 
@@ -3121,7 +3261,7 @@ class ClusterQualityAssessor:
                     params.get('base_alpha', 'N/A'),
                     params.get('kappa', 'N/A'),
                     params.get('n_mixtures', 'N/A'),
-                    params.get('pca_components', 'N/A'),
+                    # params.get('pca_components', 'N/A'),  # Disabled per user request
                     params.get('learning_rate', 'N/A'),
                     params.get('svi_iterations', 'N/A'),
                     trial.get('final_elbo', 'N/A'),

@@ -121,7 +121,17 @@ class ModelTrainer(BaseTrainer):
             )
             
             # Preprocess data
+            tprint_info("=" * 80)
+            tprint_info("📊 PREPROCESSING DATA FOR MODEL TRAINING")
+            tprint_info("=" * 80)
+            tprint_info(f"Input data shape: {data.shape}")
+            tprint_info(f"Input columns (first 20): {list(data.columns[:20])}")
+            
             processed_data, processed_targets = self._preprocess_data(data, targets)
+            
+            tprint_info(f"After preprocessing: {processed_data.shape}")
+            tprint_info(f"Processed columns (first 20): {list(processed_data.columns[:20])}")
+            tprint_info("=" * 80)
             
             # Train each model type with comprehensive metrics
             training_results = {}
@@ -134,8 +144,8 @@ class ModelTrainer(BaseTrainer):
                 
                 # Create model for pre-HPO baseline
                 model = self._create_model(model_type)
-                # Allow None for models that are created during training (TCN, Neural Networks)
-                if model is None and model_type not in [ModelType.TCN, ModelType.NEURAL_NETWORK]:
+                # Allow None for models that are created during training (DEPTHWISE_CNN, Neural Networks)
+                if model is None and model_type not in [ModelType.DEPTHWISE_CNN, ModelType.NEURAL_NETWORK]:
                     self.logger.error(f"Failed to create {model_type.value} model")
                     continue
                 
@@ -177,12 +187,14 @@ class ModelTrainer(BaseTrainer):
                 )
                 
                 if model_result.success:
-                    # Collect post-HPO metrics
+                    # Collect post-HPO metrics using engineered data
                     tprint_info(f"📈 Phase 4: Collecting post-HPO metrics for {model_type.value}...")
+                    # Use engineered data if available, otherwise use processed_data
+                    data_for_metrics = model_result.metadata.get('engineered_data', processed_data)
                     model_metrics = self._metrics_collector.collect_post_hpo_metrics(
                         model_metrics=model_metrics,
                         model=model_result.model,
-                        X=processed_data,
+                        X=data_for_metrics,
                         y=processed_targets,
                         best_params=best_params,
                         hpo_n_trials=hpo_n_trials,
@@ -229,6 +241,13 @@ class ModelTrainer(BaseTrainer):
             self._training_state['training_started'] = True
             self._update_performance_metrics('training', training_time)
             
+            # Extract trained models dict for reporting
+            trained_models = {
+                model_type.value: self._model_instances.get(model_type.value)
+                for model_type in self.config.model_types
+                if model_type.value in self._model_instances
+            }
+            
             result = TrainingResult(
                 success=len(training_results) > 0,
                 model=best_model,
@@ -240,7 +259,10 @@ class ModelTrainer(BaseTrainer):
                     'timeframe': self.config.timeframe,
                     'individual_results': training_results,
                     'comprehensive_metrics': all_model_metrics,
-                    'report_path': str(report_path)
+                    'report_path': str(report_path),
+                    'trained_models': trained_models,  # Add models dict for reporting
+                    'model_instances': self._model_instances,  # Store all model instances
+                    'trained_feature_columns': list(processed_data.columns)  # CRITICAL: Store feature columns for prediction
                 }
             )
             
@@ -276,22 +298,66 @@ class ModelTrainer(BaseTrainer):
             start_time = time.time()
             
             # Role-specific feature engineering
+            tprint_info(f"🔧 Training {model_type.value} - Feature engineering for {self.config.role.value}")
+            tprint_info(f"   Input data: {data.shape}")
+            
+            engineered_data = data
             if self.config.role == TrainingRole.ANALYST:
-                data = self._engineer_analyst_features(data, targets)
+                engineered_data = self._engineer_analyst_features(data, targets)
+                tprint_info(f"   After ANALYST engineering: {engineered_data.shape}")
+                tprint_info(f"   Engineered columns (first 20): {list(engineered_data.columns[:20])}")
             elif self.config.role == TrainingRole.TACTICIAN:
-                data = self._engineer_tactician_features(data, targets)
+                engineered_data = self._engineer_tactician_features(data, targets)
+                tprint_info(f"   After TACTICIAN engineering: {engineered_data.shape}")
+            
+            # CRITICAL: Align targets with engineered data if shape changed
+            aligned_targets = targets
+            if len(engineered_data) != len(targets):
+                tprint_warning(f"⚠️ Feature engineering changed data shape: {len(data)} → {len(engineered_data)}")
+                tprint_info(f"   Engineered data has {engineered_data.index.duplicated().sum()} duplicate indices")
+                tprint_info(f"   Targets has {targets.index.duplicated().sum()} duplicate indices")
+                
+                # Remove duplicates from both engineered_data and targets
+                if engineered_data.index.duplicated().any():
+                    tprint_warning(f"   Removing {engineered_data.index.duplicated().sum()} duplicate indices from engineered_data")
+                    engineered_data = engineered_data[~engineered_data.index.duplicated(keep='first')]
+                
+                if targets.index.duplicated().any():
+                    tprint_warning(f"   Removing {targets.index.duplicated().sum()} duplicate indices from targets")
+                    targets = targets[~targets.index.duplicated(keep='first')]
+                
+                # Align targets by index
+                common_index = engineered_data.index.intersection(targets.index)
+                if len(common_index) > 0:
+                    aligned_targets = targets.loc[common_index]
+                    engineered_data = engineered_data.loc[common_index]
+                    tprint_success(f"✅ Aligned to {len(common_index)} common samples")
+                    tprint_info(f"   After alignment: data shape={engineered_data.shape}, targets shape={aligned_targets.shape}")
+                else:
+                    raise ValueError("No common indices between engineered data and targets!")
+            
+            # Verify alignment before passing to model
+            if len(engineered_data) != len(aligned_targets):
+                raise ValueError(f"CRITICAL: Alignment failed! data={len(engineered_data)}, targets={len(aligned_targets)}")
             
             # Model-specific training
+            result = None
             if model_type == ModelType.LIGHTGBM:
-                return await self._train_lightgbm_model(model, data, targets)
-            elif model_type == ModelType.TCN:
-                return await self._train_tcn_model(model, data, targets)
+                result = await self._train_lightgbm_model(model, engineered_data, aligned_targets)
+            elif model_type == ModelType.DEPTHWISE_CNN:
+                result = await self._train_depthwise_cnn_model(model, engineered_data, aligned_targets)
             elif model_type == ModelType.CATBOOST:
-                return await self._train_catboost_model(model, data, targets)
+                result = await self._train_catboost_model(model, engineered_data, aligned_targets)
             elif model_type == ModelType.NEURAL_NETWORK:
-                return await self._train_neural_network_model(model, data, targets)
+                result = await self._train_neural_network_model(model, engineered_data, aligned_targets)
             else:
                 raise ValueError(f"Unsupported model type: {model_type}")
+            
+            # Store engineered data in result metadata for post-HPO metrics
+            if result and result.success:
+                result.metadata['engineered_data'] = engineered_data
+            
+            return result
                 
         except Exception as e:
             self.logger.error(f"Single model training failed: {e}")
@@ -343,6 +409,15 @@ class ModelTrainer(BaseTrainer):
             # Use BayesianTPEOptimizer
             optimizer = BayesianTPEOptimizer()
             
+            # Validate dataset size for cross-validation
+            min_samples_required = 10  # Minimum samples needed for meaningful CV
+            if len(data) < min_samples_required:
+                self.logger.warning(f"⚠️ Dataset too small for HPO ({len(data)} samples < {min_samples_required}), skipping optimization")
+                return model, {}
+            
+            # Adjust CV folds based on dataset size
+            cv_folds = min(3, max(2, len(data) // 5))  # At least 5 samples per fold
+            
             # Define objective function
             def objective(params):
                 try:
@@ -354,16 +429,29 @@ class ModelTrainer(BaseTrainer):
                         from catboost import CatBoostRegressor
                         test_model = CatBoostRegressor(**params, verbose=False)
                     
-                    # Cross-validate
-                    from sklearn.model_selection import cross_val_score
+                    # Cross-validate with adjusted folds
+                    from sklearn.model_selection import cross_val_score, KFold
+                    
+                    # Use KFold with shuffle to avoid empty folds
+                    kfold = KFold(n_splits=cv_folds, shuffle=True, random_state=42)
+                    
                     scores = cross_val_score(
                         test_model, data, targets, 
-                        cv=3, scoring='r2', n_jobs=-1
+                        cv=kfold, scoring='r2', n_jobs=-1
                     )
                     
-                    return np.mean(scores)
+                    # Filter out any invalid scores
+                    valid_scores = [s for s in scores if not np.isnan(s) and not np.isinf(s)]
+                    if not valid_scores:
+                        return -999999  # No valid scores
+                    
+                    return np.mean(valid_scores)
                 except Exception as e:
-                    self.logger.warning(f"HPO trial failed: {e}")
+                    # Log specific error types for debugging
+                    if "0 sample" in str(e) or "empty" in str(e).lower():
+                        self.logger.warning(f"⚠️ HPO trial failed due to empty fold: {e}")
+                    else:
+                        self.logger.warning(f"⚠️ HPO trial failed: {e}")
                     return -999999  # Very bad score
             
             # Run optimization
@@ -471,6 +559,16 @@ class ModelTrainer(BaseTrainer):
             reg_lambda = model_params.get('reg_lambda', 0.0)
             min_child_samples = model_params.get('min_child_samples', 20)
             
+            # Adjust parameters for small datasets to avoid "no more leaves" warning
+            n_samples = len(X_train)
+            if n_samples < 100:
+                # For very small datasets, use more conservative parameters
+                min_child_samples = max(1, min(min_child_samples, n_samples // 10))
+                num_leaves = min(num_leaves, max(7, n_samples // 3))
+                max_depth = min(max_depth, 5)
+                self.logger.info(f"📊 Adjusted LightGBM params for small dataset ({n_samples} samples): "
+                               f"num_leaves={num_leaves}, max_depth={max_depth}, min_child_samples={min_child_samples}")
+            
             # Build parameters dictionary
             params = {
                 # Task configuration
@@ -496,6 +594,9 @@ class ModelTrainer(BaseTrainer):
             }
             
             tprint_info(f"Training LightGBM: depth={max_depth}, leaves={num_leaves}, lr={learning_rate}")
+            tprint_info(f"📊 LightGBM training data: {data.shape}")
+            tprint_info(f"   Feature columns (first 20): {list(data.columns[:20])}")
+            tprint_info(f"   Feature columns (last 10): {list(data.columns[-10:])}")
             
             # Create datasets
             train_data = lgb.Dataset(X_train, label=y_train)
@@ -547,17 +648,9 @@ class ModelTrainer(BaseTrainer):
         try:
             import numpy as np
             
-            # CRITICAL: Validate shape alignment
+            # Validate shape alignment (should already be aligned by _train_single_model)
             if len(data) != len(targets):
-                error_msg = f"❌ CRITICAL SHAPE MISMATCH: Features={len(data)}, Targets={len(targets)}"
-                tprint_error(error_msg)
-                tprint_error(f"   Aligning by truncating to min length...")
-                
-                # Align by taking common indices
-                min_len = min(len(data), len(targets))
-                data = data.iloc[:min_len].copy()
-                targets = targets.iloc[:min_len].copy()
-                tprint_success(f"✅ Aligned to {min_len} samples")
+                raise ValueError(f"Shape mismatch: data={len(data)}, targets={len(targets)}. This should have been fixed upstream!")
             
             # CRITICAL: Keep ONLY numeric columns for CatBoost (drop datetime, string, categorical)
             original_cols = data.columns.tolist()
@@ -650,6 +743,9 @@ class ModelTrainer(BaseTrainer):
             model = CatBoostRegressor(**all_params)
             
             tprint_info(f"Training CatBoost: depth={depth}, iterations={iterations}, lr={learning_rate}")
+            tprint_info(f"📊 CatBoost training data: {data.shape}")
+            tprint_info(f"   Feature columns (first 20): {list(data.columns[:20])}")
+            tprint_info(f"   Feature columns (last 10): {list(data.columns[-10:])}")
             
             # Train model with validation set
             model.fit(
@@ -690,6 +786,108 @@ class ModelTrainer(BaseTrainer):
             self.logger.error(f"CatBoost training failed: {e}")
             import traceback
             self.logger.error(traceback.format_exc())
+            return TrainingResult(success=False, error_message=str(e))
+    
+    async def _train_depthwise_cnn_model(self, model: Any, data: pd.DataFrame, targets: pd.Series) -> TrainingResult:
+        """Train DepthwiseSeparableCNN model with role-specific parameters."""
+        try:
+            # Import DepthwiseCNN model
+            from src.models.tcn_regressor import DepthwiseSeparableCNNRegressor
+            import numpy as np
+            
+            self.logger.info("🔷 Training DepthwiseSeparableCNN model...")
+            
+            # Note: We don't need to split here - the model handles validation_split internally
+            # Just use the full dataset for training
+            
+            # Get model parameters from config
+            model_params = self.config.custom_params.get('depthwise_cnn', {})
+            if isinstance(model_params, dict) and 'params' in model_params:
+                model_params = model_params['params']
+            
+            # Extract hyperparameters (with defaults)
+            filters = model_params.get('filters', 64)
+            kernel_size = model_params.get('kernel_size', 3)
+            dropout = model_params.get('dropout', 0.2)
+            learning_rate = model_params.get('learning_rate', 0.001)
+            batch_size = model_params.get('batch_size', 64)
+            epochs = model_params.get('epochs', 50)
+            validation_split = model_params.get('validation_split', 0.2)
+            early_stopping_patience = model_params.get('early_stopping_patience', 7)
+            reduce_lr_patience = model_params.get('reduce_lr_patience', 5)
+            use_batch_norm = model_params.get('use_batch_norm', False)
+            verbose = model_params.get('verbose', 0)
+            
+            tprint_info(f"🔷 DepthwiseCNN: filters={filters}, kernel_size={kernel_size}, dropout={dropout}")
+            tprint_info(f"📊 DepthwiseCNN training data: {data.shape}")
+            tprint_info(f"   Feature columns (first 20): {list(data.columns[:20])}")
+            tprint_info(f"   Feature columns (last 10): {list(data.columns[-10:])}")
+            
+            # Create model
+            cnn_model = DepthwiseSeparableCNNRegressor(
+                filters=filters,
+                kernel_size=kernel_size,
+                dropout=dropout,
+                learning_rate=learning_rate,
+                batch_size=batch_size,
+                epochs=epochs,
+                validation_split=validation_split,
+                early_stopping_patience=early_stopping_patience,
+                reduce_lr_patience=reduce_lr_patience,
+                use_batch_norm=use_batch_norm,
+                verbose=verbose
+            )
+            
+            # Train model
+            start_time = time.time()
+            cnn_model.fit(
+                data.values if isinstance(data, pd.DataFrame) else data,
+                targets.values if isinstance(targets, pd.Series) else targets
+            )
+            training_time = time.time() - start_time
+            
+            # Make predictions
+            predictions = cnn_model.predict(
+                data.values if isinstance(data, pd.DataFrame) else data
+            )
+            
+            # Calculate metrics
+            from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+            mse = mean_squared_error(targets, predictions)
+            mae = mean_absolute_error(targets, predictions)
+            r2 = r2_score(targets, predictions)
+            rmse = np.sqrt(mse)
+            
+            metrics = {
+                'mse': mse,
+                'mae': mae,
+                'r2': r2,
+                'rmse': rmse,
+                'training_time': training_time
+            }
+            
+            tprint_success(f"✅ DepthwiseCNN trained: R²={r2:.4f}, RMSE={rmse:.4f}, Time={training_time:.2f}s")
+            
+            return TrainingResult(
+                success=True,
+                model=cnn_model,
+                predictions=predictions,
+                metrics=metrics,
+                training_time=training_time,
+                metadata={
+                    'model_type': 'DepthwiseSeparableCNNRegressor',
+                    'filters': filters,
+                    'kernel_size': kernel_size,
+                    'dropout': dropout,
+                    'epochs': epochs
+                }
+            )
+            
+        except Exception as e:
+            self.logger.error(f"DepthwiseCNN training failed: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            traceback.print_exc()
             return TrainingResult(success=False, error_message=str(e))
     
     async def _train_tcn_model(self, model: Any, data: pd.DataFrame, targets: pd.Series) -> TrainingResult:
@@ -970,7 +1168,7 @@ class ModelTrainer(BaseTrainer):
                 import lightgbm as lgb
                 # Always use Regressor for trading models (predicting continuous values like directional_confidence)
                 return lgb.LGBMRegressor()
-            elif model_type == ModelType.TCN:
+            elif model_type == ModelType.DEPTHWISE_CNN:
                 # Return None, will be created in training method
                 return None
             elif model_type == ModelType.CATBOOST:

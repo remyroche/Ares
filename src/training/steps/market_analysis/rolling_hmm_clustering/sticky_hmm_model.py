@@ -22,6 +22,7 @@ import pandas as pd
 from typing import Dict, Any, Optional, Union, TypeVar, Literal
 import logging
 import warnings
+import traceback
 
 import numpy.typing as npt
 from hmmlearn import hmm
@@ -291,7 +292,12 @@ class StickyHMMModel:
             x: Input data array
             lengths: Lengths of individual sequences
         """
+        import time
+        start_time = time.time()
+        
         try:
+            logger.debug(f"🔧 Starting HMM fit with early stopping: data shape={x.shape}, n_iter={self.config.n_iter}")
+            
             # Use hmmlearn's built-in monitor for efficient convergence tracking
             from hmmlearn.base import ConvergenceMonitor
 
@@ -313,17 +319,29 @@ class StickyHMMModel:
             remaining_iters = self.config.n_iter
             iteration = 0
 
+            logger.debug(f"🔧 Starting iterative fitting with {remaining_iters} remaining iterations")
+
             while remaining_iters > 0:
+                chunk_start_time = time.time()
+                
                 # Fit for next chunk of iterations
                 chunk_size = min(check_interval, remaining_iters)
                 self.model.n_iter = chunk_size
+                
+                logger.debug(f"🔧 Fitting chunk of {chunk_size} iterations ({iteration}-{iteration+chunk_size})")
                 self.model.fit(x, lengths=lengths)
+                
+                chunk_time = time.time() - chunk_start_time
+                logger.debug(f"🔧 Chunk completed in {chunk_time:.2f}s")
 
                 iteration += chunk_size
                 remaining_iters -= chunk_size
 
                 # Check convergence every chunk
+                score_start_time = time.time()
                 current_log_likelihood = self.model.score(x, lengths=lengths)
+                score_time = time.time() - score_start_time
+                logger.debug(f"🔧 Score calculation completed in {score_time:.2f}s: {current_log_likelihood:.4f}")
 
                 if current_log_likelihood > best_log_likelihood:
                     best_log_likelihood = current_log_likelihood
@@ -337,10 +355,13 @@ class StickyHMMModel:
                         best_params['means_'] = self.model.means_.copy()
                     if hasattr(self.model, 'covars_') and self.model.covars_ is not None:
                         best_params['covars_'] = self.model.covars_.copy()
+                    logger.debug(f"🔧 New best log-likelihood: {best_log_likelihood:.4f}")
                 else:
                     patience_counter += 1
+                    logger.debug(f"🔧 No improvement, patience: {patience_counter}/{self.config.early_stopping_patience}")
 
                     if patience_counter >= self.config.early_stopping_patience:
+                        logger.debug(f"🔧 Early stopping triggered, restoring best parameters")
                         # Restore best parameters
                         for param_name, param_value in best_params.items():
                             setattr(self.model, param_name, param_value)
@@ -348,15 +369,27 @@ class StickyHMMModel:
 
                 # Check if converged via monitor
                 if hasattr(self.model, 'monitor_') and self.model.monitor_.converged:
+                    logger.debug(f"🔧 Model converged after {iteration} iterations")
                     break
+                
+                # Log progress every 50 iterations
+                if iteration % 50 == 0:
+                    elapsed = time.time() - start_time
+                    logger.debug(f"🔧 Progress: {iteration}/{self.config.n_iter} iterations in {elapsed:.1f}s")
 
             # Restore original n_iter
             self.model.n_iter = self.config.n_iter
             self._is_fitted = True
+            
+            total_time = time.time() - start_time
+            logger.debug(f"🔧 HMM fitting completed in {total_time:.2f}s")
 
         except Exception as e:
-            logger.error(f"❌ Early stopping failed: {e}")
+            total_time = time.time() - start_time
+            logger.error(f"❌ Early stopping failed after {total_time:.2f}s: {e}")
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
             # Fallback to standard fit
+            logger.debug(f"🔧 Falling back to standard fit")
             self.model.n_iter = self.config.n_iter
             self.model.fit(x, lengths=lengths)
             self._is_fitted = True

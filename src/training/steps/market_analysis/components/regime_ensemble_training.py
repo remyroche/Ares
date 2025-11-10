@@ -492,36 +492,82 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             artifact_name: Name for the HDF5 artifact
         """
         try:
-            tprint(f"💾 [REGIME_ENSEMBLE] Saving ensemble predictions to HDF5: {artifact_name}", color="cyan")
+            tprint("─" * 80, color="cyan")
+            tprint(f"💾 [REGIME_ENSEMBLE] HDF5 SAVE OPERATION STARTING", color="cyan", bold=True)
+            tprint(f"   Artifact name: {artifact_name}", color="cyan")
+            tprint(f"   Data shape: {predictions.shape}", color="cyan")
+            tprint(f"   Columns: {list(predictions.columns)}", color="cyan")
+            tprint("─" * 80, color="cyan")
 
             # Ensure datetime index and 15m timeframe
+            tprint("🔍 [REGIME_ENSEMBLE] Validating index type...", color="cyan")
             if not isinstance(predictions.index, pd.DatetimeIndex):
+                tprint(f"   ⚠️  Converting index from {type(predictions.index).__name__} to DatetimeIndex", color="yellow")
                 predictions.index = pd.to_datetime(predictions.index)
+                tprint(f"   ✅ Index converted to DatetimeIndex", color="green")
+            else:
+                tprint(f"   ✅ Index is already DatetimeIndex", color="green")
 
+            tprint("🔍 [REGIME_ENSEMBLE] Checking timeframe frequency...", color="cyan")
             if predictions.index.freq != '15T':
+                original_len = len(predictions)
+                tprint(f"   ⚠️  Resampling from freq={predictions.index.freq} to 15T (15 minutes)", color="yellow")
                 predictions = predictions.resample('15T').ffill()
+                tprint(f"   ✅ Resampled: {original_len} → {len(predictions)} rows", color="green")
+            else:
+                tprint(f"   ✅ Frequency already 15T", color="green")
 
-            # Save to HDF5
-            base_step._save_artifact(
+            # Prepare metadata
+            n_regimes = len([c for c in predictions.columns if 'regime' in c.lower()])
+            metadata = {
+                'timeframe': '15m',
+                'ensemble_type': 'stacker_lgbm_calibrated',
+                'n_regimes': n_regimes,
+                'columns': list(predictions.columns),
+                'shape': predictions.shape,
+                'timestamp': datetime.now().isoformat()
+            }
+
+            tprint("📋 [REGIME_ENSEMBLE] Metadata prepared:", color="cyan")
+            tprint(f"   ├─ timeframe: {metadata['timeframe']}", color="cyan")
+            tprint(f"   ├─ ensemble_type: {metadata['ensemble_type']}", color="cyan")
+            tprint(f"   ├─ n_regimes: {metadata['n_regimes']}", color="cyan")
+            tprint(f"   ├─ shape: {metadata['shape']}", color="cyan")
+            tprint(f"   └─ timestamp: {metadata['timestamp']}", color="cyan")
+
+            # Save to HDF5 via BaseStep
+            tprint("🚀 [REGIME_ENSEMBLE] Calling base_step._save_artifact()...", color="cyan", bold=True)
+            tprint(f"   ├─ data type: {type(predictions).__name__}", color="cyan")
+            tprint(f"   ├─ artifact_name: {artifact_name}", color="cyan")
+            tprint(f"   ├─ artifact_type: data", color="cyan")
+            tprint(f"   ├─ compression: auto", color="cyan")
+            tprint(f"   └─ use_versioned_artifacts: {base_step.use_versioned_artifacts}", color="cyan")
+
+            saved_path = base_step._save_artifact(
                 data=predictions,
                 artifact_name=artifact_name,
                 artifact_type='data',
                 compression='auto',
-                metadata={
-                    'timeframe': '15m',
-                    'ensemble_type': 'stacker_lgbm_calibrated',
-                    'n_regimes': len([c for c in predictions.columns if 'regime' in c.lower()]),
-                    'columns': list(predictions.columns),
-                    'shape': predictions.shape,
-                    'timestamp': datetime.now().isoformat()
-                }
+                metadata=metadata
             )
 
-            tprint(f"✅ [REGIME_ENSEMBLE] Saved ensemble predictions to HDF5: {predictions.shape}", color="green")
+            tprint("─" * 80, color="green")
+            tprint(f"✅ [REGIME_ENSEMBLE] HDF5 SAVE SUCCESSFUL!", color="green", bold=True)
+            tprint(f"   ├─ Saved path: {saved_path}", color="green")
+            tprint(f"   ├─ Shape: {predictions.shape}", color="green")
+            tprint(f"   ├─ Columns: {len(predictions.columns)} regime probability columns", color="green")
+            tprint(f"   └─ Rows: {len(predictions)} time points", color="green")
+            tprint("─" * 80, color="green")
 
         except Exception as e:
-            tprint(f"❌ [REGIME_ENSEMBLE] Failed to save ensemble predictions to HDF5: {e}", color="red")
+            tprint("=" * 80, color="red")
+            tprint(f"❌ [REGIME_ENSEMBLE] HDF5 SAVE FAILED!", color="red", bold=True)
+            tprint(f"   Error: {e}", color="red")
+            tprint("=" * 80, color="red")
             self.logger.error(f"Failed to save ensemble predictions to HDF5: {e}", exc_info=True)
+            import traceback
+            tprint(f"Traceback:\n{traceback.format_exc()}", color="red")
+            raise
 
     async def execute(self, data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
@@ -930,26 +976,49 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 walk_forward_metrics = {'validation_completed': False, 'error': str(e)}
 
             # Generate ensemble predictions and save to HDF5
-            tprint("🎯 [REGIME_ENSEMBLE] Generating ensemble predictions for HDF5 storage", color="cyan")
+            tprint("=" * 80, color="cyan", bold=True)
+            tprint("🎯 [REGIME_ENSEMBLE] GENERATING ENSEMBLE PREDICTIONS FOR HDF5 STORAGE", color="cyan", bold=True)
+            tprint("=" * 80, color="cyan", bold=True)
             try:
                 ensemble_model = stacker_result.get('model')
+                tprint(f"📊 [REGIME_ENSEMBLE] Ensemble model retrieved: {ensemble_model is not None}", color="cyan")
+                tprint(f"📊 [REGIME_ENSEMBLE] Has predict_proba: {hasattr(ensemble_model, 'predict_proba') if ensemble_model else False}", color="cyan")
+
                 if ensemble_model is not None and hasattr(ensemble_model, 'predict_proba'):
+                    tprint(f"🔮 [REGIME_ENSEMBLE] Generating predictions for {len(X_processed)} samples...", color="cyan")
                     pred_probs = ensemble_model.predict_proba(X_processed)
+                    tprint(f"✅ [REGIME_ENSEMBLE] Predictions generated: shape={pred_probs.shape}", color="green")
+
                     # Create columns for each regime
                     ensemble_predictions = {}
-                    for regime_idx in range(pred_probs.shape[1]):
+                    n_regimes = pred_probs.shape[1]
+                    tprint(f"📋 [REGIME_ENSEMBLE] Creating probability columns for {n_regimes} regimes...", color="cyan")
+
+                    for regime_idx in range(n_regimes):
                         # CRITICAL FIX: Convert to Python int to avoid JSON serialization errors
                         col_name = f'ensemble_regime_{int(regime_idx)}_prob'
                         ensemble_predictions[col_name] = pred_probs[:, regime_idx]
+                        tprint(f"   ├─ Column '{col_name}': min={pred_probs[:, regime_idx].min():.4f}, max={pred_probs[:, regime_idx].max():.4f}, mean={pred_probs[:, regime_idx].mean():.4f}", color="cyan")
 
                     predictions_df = pd.DataFrame(ensemble_predictions, index=protected_data.index)
+                    tprint(f"✅ [REGIME_ENSEMBLE] Predictions DataFrame created: shape={predictions_df.shape}", color="green")
+                    tprint(f"📊 [REGIME_ENSEMBLE] Columns: {list(predictions_df.columns)}", color="cyan")
+                    tprint(f"📊 [REGIME_ENSEMBLE] Index type: {type(predictions_df.index).__name__}, length: {len(predictions_df.index)}", color="cyan")
+                    tprint(f"📊 [REGIME_ENSEMBLE] First 3 rows preview:", color="cyan")
+                    tprint(f"{predictions_df.head(3)}", color="cyan")
+
                     # Save to HDF5
+                    tprint("💾 [REGIME_ENSEMBLE] Initiating HDF5 save operation...", color="cyan", bold=True)
                     await self._save_ensemble_predictions_to_hdf5(predictions_df, base_step_inst, 'regime_ensemble_predictions')
-                    tprint("✅ [REGIME_ENSEMBLE] Ensemble predictions saved to HDF5", color="green")
+                    tprint("=" * 80, color="green", bold=True)
+                    tprint("✅ [REGIME_ENSEMBLE] ENSEMBLE PREDICTIONS SUCCESSFULLY SAVED TO HDF5", color="green", bold=True)
+                    tprint("=" * 80, color="green", bold=True)
                 else:
                     tprint("⚠️ [REGIME_ENSEMBLE] Ensemble model not found or no predict_proba method", color="yellow")
             except Exception as e:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to save ensemble predictions: {e}", color="yellow")
+                tprint(f"❌ [REGIME_ENSEMBLE] Failed to save ensemble predictions: {e}", color="red")
+                import traceback
+                tprint(f"❌ [REGIME_ENSEMBLE] Traceback:\n{traceback.format_exc()}", color="red")
 
             # Create comprehensive results
             tprint("📦 [REGIME_ENSEMBLE] Creating comprehensive results", color="yellow")

@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Union, Callable, Awaitable
 from dataclasses import dataclass
 from enum import Enum
 
+from src.utils.tprint import tprint
 from src.utils.logger import system_logger
 from src.interfaces.base_interfaces import MarketData
 
@@ -93,22 +94,26 @@ class ExchangeDispatcher:
     def set_simulator_callback(self, callback: Callable) -> None:
         """
         Set simulator callback for paper trading mode.
-        
+
         Args:
             callback: Async function that simulates order execution
                      Signature: async def(symbol, side, order_type, quantity, price, order_book, metadata)
         """
+        tprint(f"Setting simulator callback for paper trading mode", "INFO")
         self._simulator_callback = callback
         self.logger.info("Simulator callback configured for paper trading")
+        tprint(f"Simulator callback configured successfully", "SUCCESS")
         
     async def initialize(self) -> bool:
         """
         Initialize the exchange dispatcher and underlying exchange.
-        
+
         Returns:
             True if initialization successful, False otherwise
         """
+        tprint(f"Initializing exchange dispatcher for {self.config.exchange_type.value}", "INFO")
         if self._initialized:
+            tprint(f"Exchange dispatcher already initialized", "WARNING")
             return True
             
         if self._initializing:
@@ -122,26 +127,33 @@ class ExchangeDispatcher:
         try:
             # Validate paper trading requirements
             if self.config.mode == TradingMode.PAPER and self._simulator_callback is None:
+                tprint(f"Paper trading mode requires simulator callback", "ERROR")
                 self.logger.error("❌ Paper trading mode requires simulator callback. Call set_simulator_callback() first.")
                 return False
 
             # Create exchange instance
+            tprint(f"Creating exchange instance for {self.config.exchange_type.value}", "INFO")
             self.exchange = await self._create_exchange()
             if not self.exchange:
+                tprint(f"Failed to create exchange instance", "ERROR")
                 self.logger.error("Failed to create exchange instance")
                 return False
 
             # Initialize exchange
+            tprint(f"Initializing exchange {self.config.exchange_type.value}", "INFO")
             await self.exchange._initialize_exchange()
 
             # Initialize shared utilities
+            tprint(f"Initializing shared utilities", "INFO")
             await self._initialize_shared_utilities()
 
             self._initialized = True
             self.logger.info(f"✅ Exchange dispatcher initialized for {self.config.exchange_type.value}")
+            tprint(f"Exchange dispatcher initialized successfully for {self.config.exchange_type.value}", "SUCCESS")
             return True
             
         except Exception as e:
+            tprint(f"Failed to initialize exchange dispatcher: {e}", "ERROR")
             self.logger.error(f"❌ Failed to initialize exchange dispatcher: {e}")
             return False
         finally:
@@ -149,6 +161,7 @@ class ExchangeDispatcher:
     
     async def _create_exchange(self) -> Optional[BaseExchange]:
         """Create the appropriate exchange instance."""
+        tprint(f"Creating exchange instance: type={self.config.exchange_type.value}, testnet={self.config.use_testnet}", "INFO")
         try:
             if self.config.exchange_type == ExchangeType.OKX:
                 return create_okx_exchange(
@@ -206,10 +219,12 @@ class ExchangeDispatcher:
                     password=self.config.password
                 )
             else:
+                tprint(f"Unsupported exchange type: {self.config.exchange_type}", "ERROR")
                 self.logger.error(f"Unsupported exchange type: {self.config.exchange_type}")
                 return None
-                
+
         except Exception as e:
+            tprint(f"Error creating exchange instance: {e}", "ERROR")
             self.logger.error(f"Error creating exchange instance: {e}")
             return None
     
@@ -231,17 +246,24 @@ class ExchangeDispatcher:
     # Market Data Operations
     async def get_price(self, symbol: str) -> Optional[float]:
         """Get current price for symbol."""
+        tprint(f"Getting price for symbol: {symbol}", "INFO")
         if not self._ensure_initialized():
             return None
             
         if self.price_manager:
             price_data = await self.price_manager.get_price(symbol)
+            if price_data:
+                tprint(f"Price retrieved for {symbol}: {price_data.price}", "SUCCESS")
             return price_data.price if price_data else None
-        
+
         # Fallback to exchange method
         if hasattr(self.exchange, 'get_price'):
-            return await self.exchange.get_price(symbol)
-        
+            price = await self.exchange.get_price(symbol)
+            if price:
+                tprint(f"Price retrieved for {symbol}: {price}", "SUCCESS")
+            return price
+
+        tprint(f"Failed to get price for {symbol}", "WARNING")
         return None
     
     async def get_ohlcv(
@@ -301,12 +323,16 @@ class ExchangeDispatcher:
     # Account Operations
     async def get_balance(self, currency: str = "USDT") -> float:
         """Get balance for currency."""
+        tprint(f"Getting balance for currency: {currency}", "INFO")
         if not self._ensure_initialized():
             return 0.0
-            
+
         if hasattr(self.exchange, 'get_balance'):
-            return await self.exchange.get_balance(currency)
-        
+            balance = await self.exchange.get_balance(currency)
+            tprint(f"Balance retrieved for {currency}: {balance}", "SUCCESS")
+            return balance
+
+        tprint(f"Get balance not supported by exchange", "WARNING")
         return 0.0
     
     async def get_account_info(self) -> Optional[Dict[str, Any]]:
@@ -333,20 +359,23 @@ class ExchangeDispatcher:
     ) -> Optional[Dict[str, Any]]:
         """
         Create order.
-        
+
         In PAPER mode, routes to simulator. In TRADE mode, executes on exchange.
         """
+        tprint(f"Creating order: symbol={symbol}, side={side}, type={order_type}, quantity={quantity}, price={price}, mode={self.config.mode.value}", "INFO")
         if not self._ensure_initialized():
             return None
-        
+
         # Check if we're in paper trading mode with simulator
         if self.config.mode == TradingMode.PAPER and self._simulator_callback:
+            tprint(f"Routing order to simulator (PAPER mode)", "INFO")
             # Fetch order book for simulation
             order_book = await self.get_order_book(symbol, limit=20)
             if not order_book:
+                tprint(f"Failed to fetch order book for {symbol}", "ERROR")
                 self.logger.error(f"Failed to fetch order book for {symbol}")
                 return None
-            
+
             # Call simulator
             try:
                 result = await self._simulator_callback(
@@ -358,31 +387,48 @@ class ExchangeDispatcher:
                     order_book=order_book,
                     trading_signal_metadata=trading_signal_metadata
                 )
+                tprint(f"Order simulated successfully: {symbol}", "SUCCESS")
                 return result
             except Exception as e:
+                tprint(f"Simulator error: {e}", "ERROR")
                 self.logger.error(f"Simulator error: {e}")
                 return None
         
         # TRADE mode - execute on real exchange
+        tprint(f"Executing order on real exchange (TRADE mode)", "INFO")
         if hasattr(self.exchange, 'create_order_enhanced'):
-            return await self.exchange.create_order_enhanced(
+            result = await self.exchange.create_order_enhanced(
                 symbol, side, order_type, quantity, price, stop_price, client_order_id
             )
+            if result:
+                tprint(f"Order created successfully on exchange: {symbol}", "SUCCESS")
+            return result
         elif hasattr(self.exchange, 'create_order'):
-            return await self.exchange.create_order(
+            result = await self.exchange.create_order(
                 symbol, side, quantity, price, order_type
             )
-        
+            if result:
+                tprint(f"Order created successfully on exchange: {symbol}", "SUCCESS")
+            return result
+
+        tprint(f"Failed to create order - no suitable method available", "ERROR")
         return None
     
     async def cancel_order(self, symbol: str, order_id: str) -> bool:
         """Cancel order."""
+        tprint(f"Cancelling order: symbol={symbol}, order_id={order_id}", "INFO")
         if not self._ensure_initialized():
             return False
-            
+
         if hasattr(self.exchange, 'cancel_order'):
-            return await self.exchange.cancel_order(symbol, order_id)
-        
+            result = await self.exchange.cancel_order(symbol, order_id)
+            if result:
+                tprint(f"Order cancelled successfully: {order_id}", "SUCCESS")
+            else:
+                tprint(f"Failed to cancel order: {order_id}", "ERROR")
+            return result
+
+        tprint(f"Cancel order not supported by exchange", "WARNING")
         return False
     
     async def get_order_status(self, symbol: str, order_id: str) -> Optional[Dict[str, Any]]:
@@ -708,11 +754,13 @@ class ExchangeDispatcher:
     
     async def close(self) -> None:
         """Close the exchange dispatcher."""
+        tprint(f"Closing exchange dispatcher", "INFO")
         if self.exchange and hasattr(self.exchange, 'close'):
             await self.exchange.close()
-        
+
         self._initialized = False
         self.logger.info("Exchange dispatcher closed")
+        tprint(f"Exchange dispatcher closed successfully", "SUCCESS")
 
 
 # Factory function for creating exchange dispatchers

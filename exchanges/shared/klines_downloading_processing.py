@@ -25,6 +25,7 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 from src.utils.data.quality.comprehensive_duplicate_analyzer import (
     ComprehensiveDuplicateAnalyzer,
     analyze_duplicates_comprehensive
@@ -44,6 +45,7 @@ class KlinesDataProcessingPipeline:
             exchange: Exchange name (binance, bingx, mexc, okx, gateio, phemex, etc.)
             data_dir: Base directory for historical data
         """
+        tprint(f"Initializing KlinesDataProcessingPipeline: exchange={exchange}, data_dir={data_dir}", "INFO")
         self.exchange = exchange.lower()
         self.data_dir = data_dir
         self.logger = system_logger.getChild(f"KlinesDataProcessingPipeline-{self.exchange.upper()}")
@@ -61,84 +63,101 @@ class KlinesDataProcessingPipeline:
         # Columns to remove (exchange-agnostic)
         self.columns_to_remove = ['taker_buy_base', 'taker_buy_quote', 'year']
 
+        tprint(f"KlinesDataProcessingPipeline initialized successfully for {exchange}", "SUCCESS")
+
     def standardize_data_format(self, df: pd.DataFrame, symbol: str, interval: str) -> pd.DataFrame:
         """Standardize data format using centralized standardizer.
-        
+
         Args:
             df: Raw DataFrame from exchange
             symbol: Trading symbol
             interval: Data interval
-            
+
         Returns:
             Standardized DataFrame
         """
+        tprint(f"Standardizing data format: symbol={symbol}, interval={interval}, records={len(df)}", "INFO")
         try:
             standardized_df = self.data_standardizer.standardize_to_dataframe(
                 df, ExchangeType(self.exchange.upper()), symbol, interval
             )
-            
+
             self.logger.info(f"✅ Data standardized: {len(standardized_df)} records for {symbol} {interval}")
-            
+            tprint(f"Data standardized successfully: {len(standardized_df)} records", "SUCCESS")
+
             return standardized_df
             
         except Exception as e:
             self.logger.error(f"❌ Failed to standardize data format: {e}")
+            tprint(f"Failed to standardize data format: {e}", "ERROR")
             return df
 
     def save_standardized_data(self, df: pd.DataFrame, symbol: str, interval: str, data_type: str = "raw") -> bool:
         """Save data using standardized KlinesParquetManager.
-        
+
         Args:
             df: DataFrame to save
             symbol: Trading symbol
             interval: Data interval
             data_type: 'raw' or 'processed'
-            
+
         Returns:
             True if successful, False otherwise
         """
+        tprint(f"Saving standardized data: symbol={symbol}, interval={interval}, type={data_type}, records={len(df)}", "INFO")
         try:
-            return self.parquet_manager.write_data(df, symbol, interval, data_type)
+            result = self.parquet_manager.write_data(df, symbol, interval, data_type)
+            if result:
+                tprint(f"Data saved successfully: {symbol} {interval}", "SUCCESS")
+            return result
         except Exception as e:
             self.logger.error(f"❌ Failed to save standardized data: {e}")
+            tprint(f"Failed to save standardized data: {e}", "ERROR")
             return False
 
-    def load_standardized_data(self, symbol: str, interval: str, data_type: str = "raw", 
+    def load_standardized_data(self, symbol: str, interval: str, data_type: str = "raw",
                              start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> Optional[pd.DataFrame]:
         """Load data using standardized KlinesParquetManager.
-        
+
         Args:
             symbol: Trading symbol
             interval: Data interval
             data_type: 'raw' or 'processed'
             start_date: Start date for filtering
             end_date: End date for filtering
-            
+
         Returns:
             DataFrame with data or None if not found
         """
+        tprint(f"Loading standardized data: symbol={symbol}, interval={interval}, type={data_type}", "INFO")
         try:
-            return self.parquet_manager.read_data(symbol, interval, start_date, end_date, data_type)
+            df = self.parquet_manager.read_data(symbol, interval, start_date, end_date, data_type)
+            if df is not None:
+                tprint(f"Data loaded successfully: {len(df)} records", "SUCCESS")
+            return df
         except Exception as e:
             self.logger.error(f"❌ Failed to load standardized data: {e}")
+            tprint(f"Failed to load standardized data: {e}", "ERROR")
             return None
 
     def validate_data_quality(self, df: pd.DataFrame, context: str = "") -> Dict[str, Any]:
         """Validate data quality using centralized standardizer.
-        
+
         Args:
             df: DataFrame to validate
             context: Context for validation
-            
+
         Returns:
             Validation results
         """
+        tprint(f"Validating data quality: records={len(df)}, context={context}", "INFO")
         try:
             # Use the standardizer's quality validation
             _ = self.data_standardizer.standardize_to_dataframe(
                 df, ExchangeType(self.exchange.upper()), "VALIDATION", "1m"
             )
-            
+
+            tprint("Data quality validation passed", "SUCCESS")
             return {
                 'passed': True,
                 'quality_score': 100.0,
@@ -149,38 +168,42 @@ class KlinesDataProcessingPipeline:
             }
         except Exception as e:
             self.logger.error(f"❌ Failed to validate data quality: {e}")
+            tprint(f"Data quality validation failed: {e}", "ERROR")
             return {'passed': False, 'error': str(e)}
 
     def process_klines_data(
-        self, 
-        df: pd.DataFrame, 
-        symbol: str, 
-        interval: str, 
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        interval: str,
         save_data: bool = True
     ) -> pd.DataFrame:
         """Process klines data using the shared pipeline.
-        
+
         Args:
             df: Raw DataFrame from exchange
             symbol: Trading symbol
             interval: Data interval
             save_data: Whether to save processed data
-            
+
         Returns:
             Processed DataFrame
         """
+        tprint(f"Processing klines data: symbol={symbol}, interval={interval}, records={len(df)}, save={save_data}", "INFO")
         try:
             # Standardize data format
             standardized_df = self.standardize_data_format(df, symbol, interval)
-            
+
             if save_data:
                 # Save standardized data
                 self.save_standardized_data(standardized_df, symbol, interval, "raw")
-            
+
+            tprint(f"Klines data processed successfully: {len(standardized_df)} records", "SUCCESS")
             return standardized_df
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to process klines data: {e}")
+            tprint(f"Failed to process klines data: {e}", "ERROR")
             return df
 
     def get_processed_data(

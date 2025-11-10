@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 
 class InstrumentType(Enum):
@@ -80,20 +81,22 @@ class MarketMetadataManager:
     """
     
     def __init__(self, exchange_name: str):
+        tprint(f"Initializing MarketMetadataManager for exchange={exchange_name}", "INFO")
         self.exchange_name = exchange_name
         self.logger = system_logger.getChild(f"MarketMetadataManager.{exchange_name}")
-        
+
         # Data storage
         self.instruments: Dict[str, InstrumentSpec] = {}
         self.market_data: Dict[str, Dict[str, Any]] = {}
         self.symbol_cache: Dict[str, str] = {}  # symbol -> exchange_symbol mapping
-        
+
         # Cache settings
         self.cache_ttl = timedelta(minutes=5)
         self.last_refresh: Optional[datetime] = None
-        
+
         # Refresh functions
         self.refresh_functions: Dict[str, callable] = {}
+        tprint(f"MarketMetadataManager initialized successfully for {exchange_name}", "SUCCESS")
         
     def register_refresh_functions(
         self,
@@ -104,38 +107,44 @@ class MarketMetadataManager:
     ) -> None:
         """
         Register exchange-specific refresh functions.
-        
+
         Args:
             get_instruments: Function to get instrument specifications
             get_ticker: Function to get ticker data
             get_orderbook: Optional function to get order book data
             get_funding_rate: Optional function to get funding rate data
         """
+        tprint("Registering market data refresh functions", "INFO")
         self.refresh_functions = {
             "get_instruments": get_instruments,
             "get_ticker": get_ticker,
             "get_orderbook": get_orderbook,
             "get_funding_rate": get_funding_rate
         }
-        
+
         self.logger.info("Registered market data refresh functions")
+        tprint("Successfully registered refresh functions", "SUCCESS")
     
     async def refresh_instruments(self) -> bool:
         """Refresh instrument specifications from exchange."""
+        tprint("Starting instruments refresh", "INFO")
         try:
             if "get_instruments" not in self.refresh_functions:
                 self.logger.warning("No instruments refresh function registered")
+                tprint("No instruments refresh function registered", "WARNING")
                 return False
-                
+
             instruments_data = await self.refresh_functions["get_instruments"]()
             if not instruments_data:
                 self.logger.warning("No instruments data received")
+                tprint("No instruments data received from exchange", "WARNING")
                 return False
-                
+
             # Clear existing instruments
             self.instruments.clear()
-            
+
             # Process instruments data
+            failed_count = 0
             for instrument_data in instruments_data:
                 try:
                     spec = self._parse_instrument_data(instrument_data)
@@ -143,17 +152,23 @@ class MarketMetadataManager:
                         self.instruments[spec.symbol] = spec
                         # Cache symbol mapping
                         self.symbol_cache[spec.symbol.upper()] = spec.symbol
-                        
+
                 except Exception as e:
                     self.logger.warning(f"Failed to parse instrument data: {e}")
+                    failed_count += 1
                     continue
-            
+
             self.last_refresh = datetime.now()
             self.logger.info(f"Refreshed {len(self.instruments)} instruments")
+            if failed_count > 0:
+                tprint(f"Refreshed {len(self.instruments)} instruments ({failed_count} failed)", "SUCCESS")
+            else:
+                tprint(f"Successfully refreshed {len(self.instruments)} instruments", "SUCCESS")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error refreshing instruments: {e}")
+            tprint(f"Error refreshing instruments: {e}", "ERROR")
             return False
     
     def _parse_instrument_data(self, data: Dict[str, Any]) -> Optional[InstrumentSpec]:
@@ -233,14 +248,17 @@ class MarketMetadataManager:
     
     async def refresh_market_data(self, symbols: Optional[List[str]] = None) -> bool:
         """Refresh market data for specified symbols."""
+        tprint(f"Starting market data refresh for symbols={symbols if symbols else 'all'}", "INFO")
         try:
             if "get_ticker" not in self.refresh_functions:
                 self.logger.warning("No ticker refresh function registered")
+                tprint("No ticker refresh function registered", "WARNING")
                 return False
-                
+
             if symbols is None:
                 symbols = list(self.instruments.keys())
-                
+
+            failed_symbols = []
             for symbol in symbols:
                 try:
                     ticker_data = await self.refresh_functions["get_ticker"](symbol)
@@ -249,16 +267,22 @@ class MarketMetadataManager:
                             "ticker": ticker_data,
                             "last_updated": datetime.now()
                         }
-                        
+
                 except Exception as e:
                     self.logger.warning(f"Failed to refresh market data for {symbol}: {e}")
+                    failed_symbols.append(symbol)
                     continue
-            
+
             self.logger.info(f"Refreshed market data for {len(symbols)} symbols")
+            if failed_symbols:
+                tprint(f"Refreshed market data for {len(symbols) - len(failed_symbols)}/{len(symbols)} symbols", "SUCCESS")
+            else:
+                tprint(f"Successfully refreshed market data for all {len(symbols)} symbols", "SUCCESS")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error refreshing market data: {e}")
+            tprint(f"Error refreshing market data: {e}", "ERROR")
             return False
     
     def get_instrument(self, symbol: str) -> Optional[InstrumentSpec]:
@@ -388,30 +412,32 @@ class MarketMetadataManager:
         max_leverage: Optional[float] = None
     ) -> List[InstrumentSpec]:
         """Search instruments with filters."""
+        tprint(f"Searching instruments: base={base_currency}, quote={quote_currency}, type={instrument_type}", "INFO")
         results = []
-        
+
         for spec in self.instruments.values():
             if not spec.is_active:
                 continue
-                
+
             # Apply filters
             if base_currency and spec.base_currency.upper() != base_currency.upper():
                 continue
-                
+
             if quote_currency and spec.quote_currency.upper() != quote_currency.upper():
                 continue
-                
+
             if instrument_type and spec.instrument_type != instrument_type:
                 continue
-                
+
             if min_leverage and (not spec.max_leverage or spec.max_leverage < min_leverage):
                 continue
-                
+
             if max_leverage and spec.max_leverage and spec.max_leverage > max_leverage:
                 continue
-                
+
             results.append(spec)
-            
+
+        tprint(f"Search completed: found {len(results)} matching instruments", "SUCCESS")
         return results
     
     def get_statistics(self) -> Dict[str, Any]:
@@ -437,20 +463,24 @@ class MarketMetadataManager:
     
     def cleanup_old_data(self, max_age_hours: int = 24) -> int:
         """Clean up old market data."""
+        tprint(f"Starting cleanup of old market data (max_age_hours={max_age_hours})", "INFO")
         cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
         cleaned_count = 0
-        
+
         # Clean up old market data
         symbols_to_remove = []
         for symbol, data in self.market_data.items():
             if data.get("last_updated", datetime.min) < cutoff_time:
                 symbols_to_remove.append(symbol)
-                
+
         for symbol in symbols_to_remove:
             del self.market_data[symbol]
             cleaned_count += 1
-            
+
         if cleaned_count > 0:
             self.logger.info(f"Cleaned up {cleaned_count} old market data entries")
-            
+            tprint(f"Successfully cleaned up {cleaned_count} old market data entries", "SUCCESS")
+        else:
+            tprint("No old market data to clean up", "INFO")
+
         return cleaned_count

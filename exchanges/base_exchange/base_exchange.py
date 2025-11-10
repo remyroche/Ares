@@ -3,6 +3,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 
 from src.interfaces.base_interfaces import IExchangeClient, MarketData
+from src.utils.tprint import tprint
 
 from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 
@@ -66,9 +67,10 @@ class OrderIdMapper:
         metadata: Optional[Dict[str, Any]] = None
     ) -> str:
         """Create a new order mapping"""
+        tprint(f"🔧 OrderIdMapper.create_mapping called with exchange={exchange_name}, symbol={symbol}, side={side}, quantity={quantity}", "INFO")
         async with self._lock:
             internal_id = str(uuid.uuid4())
-            
+
             mapping = OrderMapping(
                 internal_id=internal_id,
                 exchange_id="",  # Will be set when exchange responds
@@ -80,37 +82,41 @@ class OrderIdMapper:
                 price=price,
                 metadata=metadata or {}
             )
-            
+
             self._order_mappings[internal_id] = mapping
-            
+
             # Initialize exchange mapping if needed
             if exchange_name not in self._exchange_mappings:
                 self._exchange_mappings[exchange_name] = {}
-            
+
             self.logger.debug(f"Created order mapping: {internal_id} for {exchange_name}")
+            tprint(f"✅ Order mapping created successfully: internal_id={internal_id}", "SUCCESS")
             return internal_id
     
     async def update_exchange_id(self, internal_id: str, exchange_id: str) -> bool:
         """Update the exchange-specific ID for an order"""
+        tprint(f"🔧 OrderIdMapper.update_exchange_id called with internal_id={internal_id}, exchange_id={exchange_id}", "INFO")
         async with self._lock:
             if internal_id not in self._order_mappings:
                 self.logger.warning(f"Order mapping not found: {internal_id}")
+                tprint(f"⚠️ Order mapping not found: {internal_id}", "WARNING")
                 return False
-            
+
             mapping = self._order_mappings[internal_id]
             old_exchange_id = mapping.exchange_id
-            
+
             # Update mapping
             mapping.exchange_id = exchange_id
             mapping.updated_at = datetime.now()
-            
+
             # Update exchange mapping
             if old_exchange_id:
                 self._exchange_mappings[mapping.exchange_name].pop(old_exchange_id, None)
-            
+
             self._exchange_mappings[mapping.exchange_name][exchange_id] = internal_id
-            
+
             self.logger.debug(f"Updated exchange ID: {internal_id} -> {exchange_id}")
+            tprint(f"✅ Exchange ID updated successfully: {internal_id} -> {exchange_id}", "SUCCESS")
             return True
     
     async def update_order_status(
@@ -120,19 +126,22 @@ class OrderIdMapper:
         exchange_response: Optional[Dict[str, Any]] = None
     ) -> bool:
         """Update order status"""
+        tprint(f"🔧 OrderIdMapper.update_order_status called with internal_id={internal_id}, status={status.value}", "INFO")
         async with self._lock:
             if internal_id not in self._order_mappings:
                 self.logger.warning(f"Order mapping not found: {internal_id}")
+                tprint(f"⚠️ Order mapping not found: {internal_id}", "WARNING")
                 return False
-            
+
             mapping = self._order_mappings[internal_id]
             mapping.status = status
             mapping.updated_at = datetime.now()
-            
+
             if exchange_response:
                 mapping.exchange_response = exchange_response
-            
+
             self.logger.debug(f"Updated order status: {internal_id} -> {status.value}")
+            tprint(f"✅ Order status updated successfully: {internal_id} -> {status.value}", "SUCCESS")
             return True
     
     async def get_mapping_by_internal_id(self, internal_id: str) -> Optional[OrderMapping]:
@@ -167,20 +176,23 @@ class OrderIdMapper:
     
     async def remove_mapping(self, internal_id: str) -> bool:
         """Remove an order mapping"""
+        tprint(f"🔧 OrderIdMapper.remove_mapping called with internal_id={internal_id}", "INFO")
         async with self._lock:
             if internal_id not in self._order_mappings:
+                tprint(f"⚠️ Order mapping not found for removal: {internal_id}", "WARNING")
                 return False
-            
+
             mapping = self._order_mappings[internal_id]
-            
+
             # Remove from exchange mapping
             if mapping.exchange_id and mapping.exchange_name in self._exchange_mappings:
                 self._exchange_mappings[mapping.exchange_name].pop(mapping.exchange_id, None)
-            
+
             # Remove from main mapping
             del self._order_mappings[internal_id]
-            
+
             self.logger.debug(f"Removed order mapping: {internal_id}")
+            tprint(f"✅ Order mapping removed successfully: {internal_id}", "SUCCESS")
             return True
     
     async def get_statistics(self) -> Dict[str, Any]:
@@ -224,19 +236,23 @@ class ExchangeRegistry:
         config: Optional[Dict[str, Any]] = None
     ) -> None:
         """Register an exchange"""
+        tprint(f"🔧 ExchangeRegistry.register_exchange called with name={name}", "INFO")
         async with self._lock:
             self._exchanges[name] = exchange
             self._exchange_configs[name] = config or {}
             self._active_exchanges.add(name)
-            
+
             self.logger.info(f"Registered exchange: {name}")
+            tprint(f"✅ Exchange registered successfully: {name}", "SUCCESS")
     
     async def unregister_exchange(self, name: str) -> bool:
         """Unregister an exchange"""
+        tprint(f"🔧 ExchangeRegistry.unregister_exchange called with name={name}", "INFO")
         async with self._lock:
             if name not in self._exchanges:
+                tprint(f"⚠️ Exchange not found for unregistration: {name}", "WARNING")
                 return False
-            
+
             # Close exchange connection if possible
             exchange = self._exchanges[name]
             if hasattr(exchange, 'close'):
@@ -244,12 +260,14 @@ class ExchangeRegistry:
                     await exchange.close()
                 except Exception as e:
                     self.logger.error(f"Error closing exchange {name}: {e}")
-            
+                    tprint(f"❌ Error closing exchange {name}: {e}", "ERROR")
+
             del self._exchanges[name]
             self._exchange_configs.pop(name, None)
             self._active_exchanges.discard(name)
-            
+
             self.logger.info(f"Unregistered exchange: {name}")
+            tprint(f"✅ Exchange unregistered successfully: {name}", "SUCCESS")
             return True
     
     async def get_exchange(self, name: str) -> Optional["BaseExchange"]:
@@ -498,6 +516,7 @@ class BaseExchange(IExchangeClient, ABC):
         metadata: Optional[Dict[str, Any]] = None,
     ) -> dict[str, Any]:
         """Create an order with order ID mapping"""
+        tprint(f"🔧 BaseExchange.create_order called with symbol={symbol}, side={side}, quantity={quantity}, type={order_type}", "INFO")
         try:
             # Create internal order mapping
             internal_id = await self.order_mapper.create_mapping(
@@ -509,37 +528,39 @@ class BaseExchange(IExchangeClient, ABC):
                 price=price,
                 metadata=metadata
             )
-            
+
             # Create the order on the exchange
             exchange_response = await self._create_order_raw(symbol, side, order_type, quantity, price, None)
-            
+
             # Extract exchange order ID from response
             exchange_order_id = self._extract_order_id_from_response(exchange_response)
-            
+
             if exchange_order_id:
                 # Update mapping with exchange order ID
                 await self.order_mapper.update_exchange_id(internal_id, exchange_order_id)
                 await self.order_mapper.update_order_status(
-                    internal_id, 
-                    OrderStatus.SUBMITTED, 
+                    internal_id,
+                    OrderStatus.SUBMITTED,
                     exchange_response
                 )
-            
+                tprint(f"✅ Order created successfully: internal_id={internal_id}, exchange_order_id={exchange_order_id}", "SUCCESS")
+
             # Add internal ID to response
             response = exchange_response.copy() if isinstance(exchange_response, dict) else {}
             response['internal_order_id'] = internal_id
             response['exchange_order_id'] = exchange_order_id
             response['exchange_name'] = self.exchange_name
-            
+
             return response
-            
+
         except Exception as e:
             self.logger.error(f"Error creating order: {e}")
+            tprint(f"❌ Error creating order: {e}", "ERROR")
             # Update order status to rejected if mapping exists
             if 'internal_id' in locals():
                 await self.order_mapper.update_order_status(
-                    internal_id, 
-                    OrderStatus.REJECTED, 
+                    internal_id,
+                    OrderStatus.REJECTED,
                     {"error": str(e)}
                 )
             raise
@@ -663,42 +684,45 @@ class BaseExchange(IExchangeClient, ABC):
 
     async def cancel_order(self, symbol: str, order_id: Any) -> dict[str, Any]:
         """Cancel order with mapping support"""
+        tprint(f"🔧 BaseExchange.cancel_order called with symbol={symbol}, order_id={order_id}", "INFO")
         try:
             # Check if this is an internal order ID
             mapping = await self.order_mapper.get_mapping_by_internal_id(str(order_id))
-            
+
             if mapping:
                 # Use exchange order ID for the actual cancellation
                 exchange_order_id = mapping.exchange_id
                 if not exchange_order_id:
+                    tprint(f"⚠️ Exchange order ID not available for internal_id={order_id}", "WARNING")
                     return {
                         "status": "error",
                         "internal_order_id": order_id,
                         "error": "Exchange order ID not available"
                     }
-                
+
                 # Cancel order on exchange
                 exchange_response = await self._cancel_order_raw(symbol, exchange_order_id)
-                
+
                 # Update mapping status
                 await self.order_mapper.update_order_status(
                     str(order_id),
                     OrderStatus.CANCELLED,
                     exchange_response
                 )
-                
+
                 # Add mapping info to response
                 response = exchange_response.copy() if isinstance(exchange_response, dict) else {}
                 response['internal_order_id'] = order_id
                 response['exchange_order_id'] = exchange_order_id
                 response['exchange_name'] = self.exchange_name
                 response['mapped_status'] = OrderStatus.CANCELLED.value
-                
+
+                tprint(f"✅ Order cancelled successfully: internal_id={order_id}, exchange_id={exchange_order_id}", "SUCCESS")
                 return response
             else:
                 # Assume it's an exchange order ID
                 exchange_response = await self._cancel_order_raw(symbol, order_id)
-                
+
                 # Try to find mapping by exchange ID
                 mapping = await self.order_mapper.get_mapping_by_exchange_id(self.exchange_name, str(order_id))
                 if mapping:
@@ -707,13 +731,14 @@ class BaseExchange(IExchangeClient, ABC):
                         OrderStatus.CANCELLED,
                         exchange_response
                     )
-                    
+
                     response = exchange_response.copy() if isinstance(exchange_response, dict) else {}
                     response['internal_order_id'] = mapping.internal_id
                     response['exchange_order_id'] = order_id
                     response['exchange_name'] = self.exchange_name
                     response['mapped_status'] = OrderStatus.CANCELLED.value
-                    
+
+                    tprint(f"✅ Order cancelled successfully: exchange_id={order_id}", "SUCCESS")
                     return response
                 else:
                     # No mapping found, return raw response
@@ -721,11 +746,13 @@ class BaseExchange(IExchangeClient, ABC):
                     response['exchange_order_id'] = order_id
                     response['exchange_name'] = self.exchange_name
                     response['mapped_status'] = 'unknown'
-                    
+
+                    tprint(f"⚠️ Order cancelled but no mapping found: order_id={order_id}", "WARNING")
                     return response
-                    
+
         except Exception as e:
             self.logger.error(f"Error cancelling order: {e}")
+            tprint(f"❌ Error cancelling order {order_id}: {e}", "ERROR")
             return {
                 "status": "error",
                 "error": str(e),
@@ -837,12 +864,14 @@ class BaseExchange(IExchangeClient, ABC):
 
     async def set_leverage(self, symbol: str, leverage: float) -> bool:
         """Best-effort leverage setter using underlying client if supported."""
+        tprint(f"🔧 BaseExchange.set_leverage called with symbol={symbol}, leverage={leverage}", "INFO")
         try:
             market_id = await self._get_market_id(symbol)
         except Exception:
             market_id = symbol
 
         if not self.exchange:
+            tprint(f"⚠️ No exchange client available for set_leverage", "WARNING")
             return False
 
         attempts: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = [
@@ -855,9 +884,11 @@ class BaseExchange(IExchangeClient, ABC):
             if hasattr(self.exchange, method):
                 try:
                     await getattr(self.exchange, method)(*args, **kwargs)
+                    tprint(f"✅ Leverage set successfully: {symbol}={leverage}x", "SUCCESS")
                     return True
                 except Exception:
                     continue
+        tprint(f"⚠️ Failed to set leverage for {symbol}", "WARNING")
         return False
 
     async def set_margin_mode(self, symbol: str, mode: str) -> bool:
@@ -1323,12 +1354,14 @@ class MultiExchangeBase:
         Returns:
             Dict mapping exchange names to their responses
         """
+        tprint(f"🔧 MultiExchangeBase.broadcast_to_all_exchanges called with operation={operation}, exchanges={list(self.exchanges.keys())}", "INFO")
         results = {}
 
         for exchange_name, exchange in self.exchanges.items():
             try:
                 if not exchange:
                     self.logger.warning(f"Exchange {exchange_name} is not initialized")
+                    tprint(f"⚠️ Exchange {exchange_name} is not initialized", "WARNING")
                     results[exchange_name] = {"error": "Exchange not initialized"}
                     continue
 
@@ -1336,6 +1369,7 @@ class MultiExchangeBase:
                 method = getattr(exchange, operation, None)
                 if not method:
                     self.logger.warning(f"Exchange {exchange_name} does not support operation {operation}")
+                    tprint(f"⚠️ Exchange {exchange_name} does not support operation {operation}", "WARNING")
                     results[exchange_name] = {"error": f"Operation {operation} not supported"}
                     continue
 
@@ -1349,8 +1383,10 @@ class MultiExchangeBase:
 
             except Exception as e:
                 self.logger.error(f"Error calling {operation} on {exchange_name}: {e}")
+                tprint(f"❌ Error calling {operation} on {exchange_name}: {e}", "ERROR")
                 results[exchange_name] = {"error": str(e)}
 
+        tprint(f"✅ Broadcast completed: {len([r for r in results.values() if r.get('success')])}/{len(results)} exchanges succeeded", "SUCCESS")
         return results
 
     async def route_to_primary_exchange(

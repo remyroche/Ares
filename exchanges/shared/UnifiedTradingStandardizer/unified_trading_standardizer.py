@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 from exchanges.exchange_types import ExchangeType
 from exchanges.base_exchange.exchange_interface import OrderSide, OrderType, OrderStatus
@@ -73,6 +74,8 @@ class UnifiedTradingStandardizer:
             strict_mode: If True (default), raise exceptions on standardization errors.
                         If False, return invalid objects with validation errors.
         """
+        tprint(f"UnifiedTradingStandardizer.__init__ called with quality_level={quality_level.value}, strict_mode={strict_mode}", "INFO")
+
         self.quality_level = quality_level
         self.strict_mode = strict_mode
         self.logger = system_logger.getChild("UnifiedTradingStandardizer")
@@ -82,6 +85,7 @@ class UnifiedTradingStandardizer:
         self.position_mappings = POSITION_FIELD_MAPPINGS
         self.balance_mappings = BALANCE_FIELD_MAPPINGS
         self.trade_mappings = TRADE_FIELD_MAPPINGS
+        tprint(f"Loaded field mappings for {len(self.order_mappings)} exchanges", "INFO")
 
         # Telemetry
         self.failure_counts = {
@@ -97,6 +101,7 @@ class UnifiedTradingStandardizer:
 
         mode_str = "strict (exceptions on errors)" if strict_mode else "lenient (invalid objects on errors)"
         self.logger.info(f"✅ UnifiedTradingStandardizer initialized with {quality_level.value} quality level, {mode_str}")
+        tprint(f"UnifiedTradingStandardizer initialized successfully with {quality_level.value} quality level, {mode_str}", "SUCCESS")
     
     # ============================================================================
     # ORDER STANDARDIZATION
@@ -110,15 +115,16 @@ class UnifiedTradingStandardizer:
     ) -> StandardizedOrder:
         """
         Standardize order response from exchange to unified format.
-        
+
         Args:
             raw_order: Raw order data from exchange
             exchange: Exchange source
             symbol: Trading symbol (optional, will try to extract from raw_order)
-            
+
         Returns:
             StandardizedOrder object
         """
+        tprint(f"standardize_order called for exchange={exchange.value}, symbol={symbol}", "INFO")
         try:
             mapping = self.order_mappings.get(exchange)
             if not mapping:
@@ -206,13 +212,15 @@ class UnifiedTradingStandardizer:
             # Apply quality processing
             if self.quality_level != DataQualityLevel.BASIC:
                 order = self._apply_order_quality_processing(order)
-            
+
+            tprint(f"Order standardization successful: order_id={order.order_id}, symbol={order.symbol}, status={order.status}", "SUCCESS")
             return order
-            
+
         except Exception as e:
             self.failure_counts['orders'] += 1
             error_msg = f"Failed to standardize order from {exchange.value}: {e}"
             self.logger.error(error_msg)
+            tprint(f"Order standardization failed for {exchange.value}: {e}", "ERROR")
 
             # In strict mode, re-raise the exception
             if self.strict_mode:
@@ -240,9 +248,11 @@ class UnifiedTradingStandardizer:
         symbol: Optional[str] = None
     ) -> List[StandardizedOrder]:
         """Standardize multiple orders"""
+        tprint(f"standardize_orders called for exchange={exchange.value}, count={len(raw_orders) if hasattr(raw_orders, '__len__') else 'unknown'}", "INFO")
+
         if isinstance(raw_orders, pd.DataFrame):
             raw_orders = raw_orders.to_dict('records')
-        
+
         standardized = []
         for raw_order in raw_orders:
             try:
@@ -250,8 +260,10 @@ class UnifiedTradingStandardizer:
                 standardized.append(order)
             except Exception as e:
                 self.logger.warning(f"Failed to standardize order: {e}")
+                tprint(f"Skipped order due to standardization error: {e}", "WARNING")
                 continue
-        
+
+        tprint(f"Standardized {len(standardized)} orders from {exchange.value}", "SUCCESS")
         return standardized
     
     def standardize_orders_to_dataframe(
@@ -287,6 +299,7 @@ class UnifiedTradingStandardizer:
         symbol: Optional[str] = None
     ) -> StandardizedPosition:
         """Standardize position response from exchange"""
+        tprint(f"standardize_position called for exchange={exchange.value}, symbol={symbol}", "INFO")
         try:
             mapping = self.position_mappings.get(exchange)
             if not mapping:
@@ -352,13 +365,15 @@ class UnifiedTradingStandardizer:
             # Apply quality processing
             if self.quality_level != DataQualityLevel.BASIC:
                 position = self._apply_position_quality_processing(position)
-            
+
+            tprint(f"Position standardization successful: symbol={position.symbol}, side={position.side}, size={position.size}", "SUCCESS")
             return position
-            
+
         except Exception as e:
             self.failure_counts['positions'] += 1
             error_msg = f"Failed to standardize position from {exchange.value}: {e}"
             self.logger.error(error_msg)
+            tprint(f"Position standardization failed for {exchange.value}: {e}", "ERROR")
 
             # In strict mode, re-raise the exception
             if self.strict_mode:
@@ -384,6 +399,8 @@ class UnifiedTradingStandardizer:
         symbol: Optional[str] = None
     ) -> List[StandardizedPosition]:
         """Standardize multiple positions"""
+        tprint(f"standardize_positions called for exchange={exchange.value}", "INFO")
+
         # Handle dict of positions (keyed by symbol)
         if isinstance(raw_positions, dict):
             positions_list = []
@@ -393,7 +410,7 @@ class UnifiedTradingStandardizer:
                 else:
                     positions_list.append({'symbol': pos_symbol, **pos_data})
             raw_positions = positions_list
-        
+
         standardized = []
         for raw_position in raw_positions:
             try:
@@ -401,8 +418,10 @@ class UnifiedTradingStandardizer:
                 standardized.append(position)
             except Exception as e:
                 self.logger.warning(f"Failed to standardize position: {e}")
+                tprint(f"Skipped position due to standardization error: {e}", "WARNING")
                 continue
-        
+
+        tprint(f"Standardized {len(standardized)} positions from {exchange.value}", "SUCCESS")
         return standardized
     
     def standardize_positions_to_dataframe(
@@ -433,6 +452,7 @@ class UnifiedTradingStandardizer:
         currency: str
     ) -> StandardizedBalance:
         """Standardize balance response from exchange"""
+        tprint(f"standardize_balance called for exchange={exchange.value}, currency={currency}", "INFO")
         try:
             mapping = self.balance_mappings.get(exchange)
             if not mapping:
@@ -483,13 +503,15 @@ class UnifiedTradingStandardizer:
             # Apply quality processing
             if self.quality_level != DataQualityLevel.BASIC:
                 balance = self._apply_balance_quality_processing(balance)
-            
+
+            tprint(f"Balance standardization successful: currency={balance.currency}, total={balance.total}", "SUCCESS")
             return balance
-            
+
         except Exception as e:
             self.failure_counts['balances'] += 1
             error_msg = f"Failed to standardize balance from {exchange.value}: {e}"
             self.logger.error(error_msg)
+            tprint(f"Balance standardization failed for {exchange.value}, currency={currency}: {e}", "ERROR")
 
             # In strict mode, re-raise the exception
             if self.strict_mode:
@@ -513,6 +535,8 @@ class UnifiedTradingStandardizer:
         exchange: ExchangeType
     ) -> List[StandardizedBalance]:
         """Standardize all balances from account"""
+        tprint(f"standardize_balances called for exchange={exchange.value}", "INFO")
+
         # Handle dict of balances (keyed by currency)
         if isinstance(raw_balances, dict):
             balances_list = []
@@ -523,7 +547,7 @@ class UnifiedTradingStandardizer:
                 else:
                     balances_list.append({'currency': currency})
             raw_balances = balances_list
-        
+
         standardized = []
         for raw_balance in raw_balances:
             try:
@@ -532,8 +556,10 @@ class UnifiedTradingStandardizer:
                 standardized.append(balance)
             except Exception as e:
                 self.logger.warning(f"Failed to standardize balance: {e}")
+                tprint(f"Skipped balance due to standardization error: {e}", "WARNING")
                 continue
-        
+
+        tprint(f"Standardized {len(standardized)} balances from {exchange.value}", "SUCCESS")
         return standardized
     
     def standardize_balances_to_dataframe(
@@ -562,6 +588,7 @@ class UnifiedTradingStandardizer:
         exchange: ExchangeType
     ) -> StandardizedAccountInfo:
         """Standardize account information response"""
+        tprint(f"standardize_account_info called for exchange={exchange.value}", "INFO")
         try:
             # Extract account info fields
             account_type = raw_account.get('accountType') or raw_account.get('account_type', 'SPOT')
@@ -614,11 +641,13 @@ class UnifiedTradingStandardizer:
             # Apply quality processing
             if self.quality_level != DataQualityLevel.BASIC:
                 account_info = self._apply_account_quality_processing(account_info)
-            
+
+            tprint(f"Account info standardization successful: exchange={account_info.exchange}, account_type={account_info.account_type}, balances={len(account_info.balances)}", "SUCCESS")
             return account_info
-            
+
         except Exception as e:
             self.logger.error(f"Failed to standardize account info from {exchange.value}: {e}")
+            tprint(f"Account info standardization failed for {exchange.value}: {e}", "ERROR")
             return StandardizedAccountInfo(
                 exchange=exchange.value,
                 account_type='SPOT',
@@ -642,6 +671,7 @@ class UnifiedTradingStandardizer:
         order_id: Optional[str] = None
     ) -> StandardizedTrade:
         """Standardize trade/execution response"""
+        tprint(f"standardize_trade called for exchange={exchange.value}, symbol={symbol}, order_id={order_id}", "INFO")
         try:
             mapping = self.trade_mappings.get(exchange)
             if not mapping:
@@ -705,13 +735,15 @@ class UnifiedTradingStandardizer:
             # Apply quality processing
             if self.quality_level != DataQualityLevel.BASIC:
                 trade = self._apply_trade_quality_processing(trade)
-            
+
+            tprint(f"Trade standardization successful: trade_id={trade.trade_id}, symbol={trade.symbol}, quantity={trade.quantity}@{trade.price}", "SUCCESS")
             return trade
-            
+
         except Exception as e:
             self.failure_counts['trades'] += 1
             error_msg = f"Failed to standardize trade from {exchange.value}: {e}"
             self.logger.error(error_msg)
+            tprint(f"Trade standardization failed for {exchange.value}: {e}", "ERROR")
 
             # In strict mode, re-raise the exception
             if self.strict_mode:
@@ -741,9 +773,11 @@ class UnifiedTradingStandardizer:
         symbol: str
     ) -> List[StandardizedTrade]:
         """Standardize multiple trades"""
+        tprint(f"standardize_trades called for exchange={exchange.value}, symbol={symbol}, count={len(raw_trades) if hasattr(raw_trades, '__len__') else 'unknown'}", "INFO")
+
         if isinstance(raw_trades, pd.DataFrame):
             raw_trades = raw_trades.to_dict('records')
-        
+
         standardized = []
         for raw_trade in raw_trades:
             try:
@@ -751,8 +785,10 @@ class UnifiedTradingStandardizer:
                 standardized.append(trade)
             except Exception as e:
                 self.logger.warning(f"Failed to standardize trade: {e}")
+                tprint(f"Skipped trade due to standardization error: {e}", "WARNING")
                 continue
-        
+
+        tprint(f"Standardized {len(standardized)} trades from {exchange.value}", "SUCCESS")
         return standardized
     
     def standardize_trades_to_dataframe(
@@ -1009,6 +1045,8 @@ class UnifiedTradingStandardizer:
 
     def _validate_field_mappings(self) -> None:
         """Validate that all exchange type mappings are configured correctly"""
+        tprint("Validating field mappings for all exchanges", "INFO")
+
         required_exchanges = [
             ExchangeType.BINANCE,
             ExchangeType.OKX,
@@ -1033,17 +1071,22 @@ class UnifiedTradingStandardizer:
         if missing_mappings:
             error_msg = f"Missing field mappings: {', '.join(missing_mappings)}"
             self.logger.error(f"❌ {error_msg}")
+            tprint(f"Field mapping validation failed: {error_msg}", "ERROR")
             if self.strict_mode:
                 raise ValueError(error_msg)
             else:
                 self.logger.warning(f"⚠️ Continuing in lenient mode despite missing mappings")
-
-        self.logger.info(f"✅ Field mappings validated for {len(required_exchanges)} exchanges")
+                tprint("Continuing in lenient mode despite missing mappings", "WARNING")
+        else:
+            self.logger.info(f"✅ Field mappings validated for {len(required_exchanges)} exchanges")
+            tprint(f"Field mappings validated successfully for {len(required_exchanges)} exchanges", "SUCCESS")
 
     def get_telemetry(self) -> Dict[str, Any]:
         """Get standardization telemetry and failure statistics"""
+        tprint("Getting standardization telemetry", "INFO")
         total_failures = sum(self.failure_counts.values())
-        return {
+
+        telemetry = {
             'total_failures': total_failures,
             'failure_counts': dict(self.failure_counts),
             'quality_level': self.quality_level.value,
@@ -1054,8 +1097,13 @@ class UnifiedTradingStandardizer:
             }
         }
 
+        tprint(f"Telemetry retrieved: total_failures={total_failures}, quality_level={self.quality_level.value}", "SUCCESS")
+        return telemetry
+
     def reset_telemetry(self) -> None:
         """Reset telemetry counters"""
+        tprint("Resetting telemetry counters", "INFO")
+
         self.failure_counts = {
             'orders': 0,
             'positions': 0,
@@ -1063,7 +1111,9 @@ class UnifiedTradingStandardizer:
             'trades': 0,
             'account_info': 0
         }
+
         self.logger.info("Telemetry counters reset")
+        tprint("Telemetry counters reset successfully", "SUCCESS")
 
 
 # Global instance for easy access (with strict mode enabled by default)

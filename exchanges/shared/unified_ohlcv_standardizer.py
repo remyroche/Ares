@@ -34,6 +34,7 @@ from src.utils.data import (
     check_dataframe_health
 )
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +182,7 @@ class UnifiedOHLCVStandardizer:
     
     def __init__(self, quality_level: DataQualityLevel = DataQualityLevel.STANDARD):
         """Initialize the unified standardizer"""
+        tprint(f"Initializing UnifiedOHLCVStandardizer with quality_level={quality_level.value}", "INFO")
         self.quality_level = quality_level
         self.logger = system_logger.getChild("UnifiedOHLCVStandardizer")
         
@@ -316,8 +318,9 @@ class UnifiedOHLCVStandardizer:
             ('interval', ['interval', 'timeframe', 'period']),
             ('exchange', ['exchange', 'source']),
         ]
-        
+
         self.logger.info(f"✅ UnifiedOHLCVStandardizer initialized with {quality_level.value} quality level")
+        tprint("UnifiedOHLCVStandardizer initialized successfully", "SUCCESS")
     
     def _normalize_column_names(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -552,16 +555,17 @@ class UnifiedOHLCVStandardizer:
     ) -> List[StandardizedOHLCVData]:
         """
         Standardize raw exchange data to unified format.
-        
+
         Args:
             raw_data: Raw data from exchange (list of dicts, list of lists, or DataFrame)
             exchange: Exchange source
             symbol: Trading symbol
             interval: Data interval
-            
+
         Returns:
             List of standardized OHLCV data objects
         """
+        tprint(f"Standardizing data: exchange={exchange.value}, symbol={symbol}, interval={interval}", "INFO")
         try:
             # Convert to list of dictionaries for consistent processing
             data_list = self._normalize_input_format(raw_data)
@@ -602,12 +606,14 @@ class UnifiedOHLCVStandardizer:
             
             # Apply quality validation and cleaning
             standardized_data = self._apply_quality_processing(standardized_data)
-            
+
             self.logger.info(f"✅ Standardized {len(standardized_data)} data points from {exchange.value}")
+            tprint(f"Data standardized successfully: {len(standardized_data)} points from {exchange.value}", "SUCCESS")
             return standardized_data
-            
+
         except Exception as e:
             self.logger.error(f"Failed to standardize data from {exchange.value}: {e}")
+            tprint(f"Failed to standardize data from {exchange.value}: {e}", "ERROR")
             raise
     
     def standardize(
@@ -617,14 +623,14 @@ class UnifiedOHLCVStandardizer:
     ) -> pd.DataFrame:
         """
         Standardize an already-formatted DataFrame to ensure consistency.
-        
+
         This method performs comprehensive normalization:
         1. Column name normalization (MOST IMPORTANT) - converts all column name variations to standard format
         2. Timestamp format normalization - ensures UTC datetime index with automatic detection
         3. Data type validation and conversion
         4. OHLCV relationship validation
         5. Data optimizations
-        
+
         Args:
             df: DataFrame with OHLCV data (can have any column names)
             exchange: Optional exchange type or name for context
@@ -636,8 +642,10 @@ class UnifiedOHLCVStandardizer:
             - Validated data types
             - Corrected OHLC relationships
         """
+        tprint(f"Standardizing DataFrame: shape={df.shape}, exchange={exchange}", "INFO")
         try:
             if df.empty:
+                tprint("Empty DataFrame provided, returning as-is", "WARNING")
                 return df
             
             # Step 1: Normalize column names (MOST IMPORTANT)
@@ -725,12 +733,14 @@ class UnifiedOHLCVStandardizer:
             # Step 9: Validate with src/utils/data/ framework
             context = f"{exchange.value if hasattr(exchange, 'value') else exchange}" if exchange else "dataframe"
             self._validate_with_data_framework(df, f"{context} standardization")
-            
+
             self.logger.info(f"✅ Standardization complete: {df.shape}, columns: {list(df.columns)}, index type: {type(df.index).__name__}")
+            tprint(f"DataFrame standardization complete: shape={df.shape}", "SUCCESS")
             return df
-            
+
         except Exception as e:
             self.logger.error(f"Failed to standardize DataFrame: {e}")
+            tprint(f"Failed to standardize DataFrame: {e}", "ERROR")
             raise
 
     def standardize_to_dataframe(
@@ -742,9 +752,9 @@ class UnifiedOHLCVStandardizer:
     ) -> pd.DataFrame:
         """
         Standardize raw exchange data to unified DataFrame format.
-        
+
         This method ensures full compatibility with src/utils/data/ utilities.
-        
+
         Args:
             raw_data: Raw data from exchange
             exchange: Exchange source
@@ -754,6 +764,7 @@ class UnifiedOHLCVStandardizer:
         Returns:
             Standardized DataFrame compatible with src/utils/data/
         """
+        tprint(f"Standardizing to DataFrame: exchange={exchange.value}, symbol={symbol}, interval={interval}", "INFO")
         try:
             # Get standardized data objects
             standardized_objects = self.standardize_data(raw_data, exchange, symbol, interval)
@@ -772,12 +783,14 @@ class UnifiedOHLCVStandardizer:
             
             # Validate with src/utils/data/ framework
             self._validate_with_data_framework(df, f"{exchange.value} standardization")
-            
+
             self.logger.info(f"✅ Standardized DataFrame created: {df.shape} with {len(standardized_objects)} records")
+            tprint(f"DataFrame created successfully: {len(standardized_objects)} records", "SUCCESS")
             return df
-            
+
         except Exception as e:
             self.logger.error(f"Failed to create standardized DataFrame: {e}")
+            tprint(f"Failed to create standardized DataFrame: {e}", "ERROR")
             raise
     
     def _normalize_input_format(

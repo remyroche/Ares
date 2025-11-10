@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from src.utils.tprint import tprint
 from .standardized_balance import StandardizedBalance
 
 
@@ -46,55 +47,75 @@ class StandardizedAccountInfo:
     
     def __post_init__(self):
         """Validate data after initialization"""
+        tprint(f"StandardizedAccountInfo.__post_init__ called for exchange={self.exchange}, account_type={self.account_type}", "INFO")
+
         if not self.timestamp:
             self.timestamp = datetime.now(timezone.utc)
-        
+            tprint(f"Set default timestamp for account info: {self.timestamp}", "INFO")
+
         self._validate_data()
+        tprint(f"Account info post-initialization complete, is_valid={self.is_valid}", "SUCCESS" if self.is_valid else "WARNING")
     
     def _validate_data(self) -> None:
         """Validate the account info data for consistency and quality"""
+        tprint(f"Validating account info for exchange={self.exchange}", "INFO")
         errors = []
-        
+
         # Validate required fields
         if not self.exchange or not isinstance(self.exchange, str):
             errors.append("exchange must be a non-empty string")
-        
+            tprint("Validation error: exchange must be a non-empty string", "ERROR")
+
         # Validate account type
         valid_types = ["SPOT", "MARGIN", "FUTURES", "OPTIONS", "UNIFIED"]
         if self.account_type.upper() not in valid_types:
             errors.append(f"account_type should be one of {valid_types}")
-        
+            tprint(f"Validation error: Invalid account_type={self.account_type}", "ERROR")
+
         if not isinstance(self.can_trade, bool):
             errors.append("can_trade must be a boolean")
-        
+            tprint("Validation error: can_trade must be a boolean", "ERROR")
+
         if not isinstance(self.can_withdraw, bool):
             errors.append("can_withdraw must be a boolean")
-        
+            tprint("Validation error: can_withdraw must be a boolean", "ERROR")
+
         if not isinstance(self.can_deposit, bool):
             errors.append("can_deposit must be a boolean")
-        
+            tprint("Validation error: can_deposit must be a boolean", "ERROR")
+
         # Validate margin ratio if margin fields are present
         if self.used_margin is not None and self.available_margin is not None:
             if self.used_margin > 0 and self.margin_ratio is None:
                 # Could calculate it, but it's optional
                 pass
-        
+
         self.validation_errors = errors
         self.is_valid = len(errors) == 0
-        
+
         if not self.is_valid:
             self.quality_score = max(0.0, self.quality_score - len(errors) * 10.0)
+            tprint(f"Account info validation failed with {len(errors)} errors, quality_score={self.quality_score}", "ERROR")
+        else:
+            tprint(f"Account info validation successful, quality_score={self.quality_score}", "SUCCESS")
     
     def get_balance(self, currency: str) -> Optional[StandardizedBalance]:
         """Get balance for a specific currency"""
+        tprint(f"Getting balance for currency={currency} from {len(self.balances)} balances", "INFO")
+
         for balance in self.balances:
             if balance.currency.upper() == currency.upper():
+                tprint(f"Found balance for {currency}: free={balance.free}, used={balance.used}, total={balance.total}", "SUCCESS")
                 return balance
+
+        tprint(f"No balance found for currency={currency}", "WARNING")
         return None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization"""
-        return {
+        tprint(f"Converting account info to dict for exchange={self.exchange}", "INFO")
+
+        result = {
             'exchange': self.exchange,
             'account_type': self.account_type,
             'can_trade': self.can_trade,
@@ -112,6 +133,9 @@ class StandardizedAccountInfo:
             'validation_errors': self.validation_errors,
             'quality_score': self.quality_score,
         }
+
+        tprint(f"Account info converted to dict with {len(self.balances)} balances", "SUCCESS")
+        return result
     
     def to_dataframe_row(self) -> Dict[str, Any]:
         """Convert to single-row dictionary for DataFrame creation"""

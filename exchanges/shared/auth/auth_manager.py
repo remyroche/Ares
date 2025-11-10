@@ -14,6 +14,7 @@ from .time_sync import TimeSyncManager
 from .subaccount_manager import SubaccountManager, SubaccountInfo
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 
 @dataclass
@@ -40,19 +41,21 @@ class AuthenticationManager:
     """
     
     def __init__(self, exchange_name: str):
+        tprint(f"Initializing AuthenticationManager for exchange={exchange_name}", "INFO")
         self.exchange_name = exchange_name
         self.logger = system_logger.getChild(f"AuthManager.{exchange_name}")
-        
+
         # Initialize managers
         self.api_key_manager = APIKeyManager(exchange_name)
         self.time_sync_manager = TimeSyncManager(exchange_name)
         self.subaccount_manager = SubaccountManager(exchange_name)
-        
+
         # Current authentication state
         self.current_key_id: Optional[str] = None
         self.is_authenticated: bool = False
         self.last_auth_check: Optional[datetime] = None
         self.auth_functions: Dict[str, Callable] = {}
+        tprint(f"AuthenticationManager initialized for {exchange_name}", "SUCCESS")
         
     def register_auth_functions(
         self,
@@ -62,32 +65,35 @@ class AuthenticationManager:
     ) -> None:
         """
         Register exchange-specific authentication functions.
-        
+
         Args:
             get_server_time: Function to get server time in milliseconds
             test_connection: Function to test API connection
             get_account_info: Optional function to get account information
         """
+        tprint(f"Registering authentication functions for {self.exchange_name}", "INFO")
         self.auth_functions = {
             "get_server_time": get_server_time,
             "test_connection": test_connection,
             "get_account_info": get_account_info
         }
-        
+
         self.logger.info("Registered authentication functions")
+        tprint(f"Authentication functions registered successfully", "SUCCESS")
     
     async def authenticate(self, config: AuthConfig) -> bool:
         """
         Authenticate with the exchange using the provided configuration.
-        
+
         Args:
             config: Authentication configuration
-            
+
         Returns:
             True if authentication successful
         """
+        tprint(f"Authenticating with {self.exchange_name}, permissions={[p.value for p in config.permissions]}", "INFO")
         try:
-            # Add API key to manager
+            # Add API key to manager (don't log sensitive data)
             key_id = f"{self.exchange_name}_{int(datetime.now().timestamp())}"
             key_info = self.api_key_manager.add_api_key(
                 key_id=key_id,
@@ -97,63 +103,75 @@ class AuthenticationManager:
                 permissions=config.permissions,
                 ip_allowlist=config.ip_allowlist
             )
-            
+
             self.current_key_id = key_id
-            
+
             # Test connection
             if "test_connection" in self.auth_functions:
+                tprint(f"Testing connection to {self.exchange_name}", "INFO")
                 connection_ok = await self.auth_functions["test_connection"]()
                 if not connection_ok:
                     self.logger.error("Connection test failed")
+                    tprint(f"Connection test failed for {self.exchange_name}", "ERROR")
                     return False
             
             # Sync time if enabled
             if config.auto_sync_time and "get_server_time" in self.auth_functions:
+                tprint(f"Syncing time with {self.exchange_name} server", "INFO")
                 await self.time_sync_manager.sync_time(self.auth_functions["get_server_time"])
                 if config.auto_sync_time:
                     await self.time_sync_manager.start_auto_sync(self.auth_functions["get_server_time"])
-            
+
             # Set subaccount if provided
             if config.subaccount_id:
+                tprint(f"Setting subaccount ID: {config.subaccount_id}", "INFO")
                 self.subaccount_manager.set_parent_account(config.subaccount_id)
-            
+
             self.is_authenticated = True
             self.last_auth_check = datetime.now()
-            
+
             self.logger.info(f"Successfully authenticated with {self.exchange_name}")
+            tprint(f"Successfully authenticated with {self.exchange_name}", "SUCCESS")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Authentication failed: {e}")
+            tprint(f"Authentication failed for {self.exchange_name}: {e}", "ERROR")
             self.is_authenticated = False
             return False
     
     async def reauthenticate(self) -> bool:
         """Re-authenticate using current configuration."""
+        tprint(f"Re-authenticating with {self.exchange_name}", "INFO")
         if not self.current_key_id:
             self.logger.error("No current key ID for re-authentication")
+            tprint(f"Re-authentication failed: no current key ID", "ERROR")
             return False
-            
+
         key_info = self.api_key_manager.get_api_key(self.current_key_id)
         if not key_info:
             self.logger.error("Current API key not found")
+            tprint(f"Re-authentication failed: current API key not found", "ERROR")
             return False
-            
+
         # Test connection
         if "test_connection" in self.auth_functions:
+            tprint(f"Testing connection for re-authentication", "INFO")
             connection_ok = await self.auth_functions["test_connection"]()
             if not connection_ok:
                 self.logger.error("Re-authentication failed: connection test failed")
+                tprint(f"Re-authentication failed: connection test failed", "ERROR")
                 return False
-        
+
         # Sync time
         if "get_server_time" in self.auth_functions:
             await self.time_sync_manager.sync_time(self.auth_functions["get_server_time"])
-        
+
         self.is_authenticated = True
         self.last_auth_check = datetime.now()
-        
+
         self.logger.info("Successfully re-authenticated")
+        tprint(f"Successfully re-authenticated with {self.exchange_name}", "SUCCESS")
         return True
     
     def get_auth_headers(
@@ -239,10 +257,12 @@ class AuthenticationManager:
         import hmac
         import hashlib
         from urllib.parse import urlencode
-        
+
+        tprint(f"Generating Binance headers for {method} {endpoint}", "INFO")
         # Check if we have valid API credentials
         if not key_info or not key_info.api_secret or not key_info.api_key:
             self.logger.debug("No API credentials available for Binance (public data access)")
+            tprint(f"No API credentials for Binance (public data access)", "WARNING")
             return headers
         
         # Add timestamp
@@ -286,6 +306,8 @@ class AuthenticationManager:
         import hmac
         import hashlib
         import base64
+
+        tprint(f"Generating OKX headers for {method} {endpoint}", "INFO")
         
         # OKX uses timestamp in ISO format
         timestamp = time.strftime('%Y-%m-%dT%H:%M:%S.%fZ', time.gmtime())
@@ -325,6 +347,8 @@ class AuthenticationManager:
         import hmac
         import hashlib
         from urllib.parse import urlencode
+
+        tprint(f"Generating MEXC headers for {method} {endpoint}", "INFO")
         
         # MEXC uses timestamp in milliseconds
         timestamp = int(time.time() * 1000)
@@ -367,6 +391,8 @@ class AuthenticationManager:
         import hmac
         import hashlib
         import base64
+
+        tprint(f"Generating BingX headers for {method} {endpoint}", "INFO")
         
         # BingX uses timestamp in milliseconds
         timestamp = int(time.time() * 1000)
@@ -420,27 +446,35 @@ class AuthenticationManager:
     
     def is_authenticated_and_valid(self) -> bool:
         """Check if authentication is valid and not expired."""
+        tprint(f"Checking if authentication is valid for {self.exchange_name}", "INFO")
         if not self.is_authenticated:
+            tprint(f"Not authenticated with {self.exchange_name}", "WARNING")
             return False
-            
+
         # Check if auth is recent (within 1 hour)
         if self.last_auth_check:
             time_since_check = datetime.now() - self.last_auth_check
             if time_since_check > timedelta(hours=1):
+                tprint(f"Authentication expired (last check: {time_since_check} ago)", "WARNING")
                 return False
-                
+
         # Check if time is synced
         if not self.time_sync_manager.is_time_synced():
+            tprint(f"Time not synced with {self.exchange_name}", "WARNING")
             return False
-            
+
+        tprint(f"Authentication is valid for {self.exchange_name}", "SUCCESS")
         return True
     
     async def validate_authentication(self) -> bool:
         """Validate current authentication status."""
+        tprint(f"Validating authentication for {self.exchange_name}", "INFO")
         if not self.is_authenticated_and_valid():
             self.logger.warning("Authentication invalid, attempting re-authentication")
+            tprint(f"Authentication invalid, attempting re-authentication", "WARNING")
             return await self.reauthenticate()
-            
+
+        tprint(f"Authentication validated successfully", "SUCCESS")
         return True
     
     def get_current_permissions(self) -> Set[APIKeyPermission]:
@@ -511,31 +545,50 @@ class AuthenticationManager:
     
     async def cleanup_expired_keys(self) -> int:
         """Clean up expired API keys."""
-        return self.api_key_manager.cleanup_expired_keys()
+        tprint(f"Cleaning up expired API keys for {self.exchange_name}", "INFO")
+        count = self.api_key_manager.cleanup_expired_keys()
+        if count > 0:
+            tprint(f"Cleaned up {count} expired API keys", "SUCCESS")
+        else:
+            tprint(f"No expired API keys to clean up", "INFO")
+        return count
     
     async def stop_auto_sync(self) -> None:
         """Stop automatic time synchronization."""
+        tprint(f"Stopping auto time sync for {self.exchange_name}", "INFO")
         await self.time_sync_manager.stop_auto_sync()
+        tprint(f"Auto time sync stopped", "SUCCESS")
     
     async def force_time_sync(self) -> bool:
         """Force immediate time synchronization."""
+        tprint(f"Forcing time sync for {self.exchange_name}", "INFO")
         if "get_server_time" in self.auth_functions:
-            return await self.time_sync_manager.force_sync(self.auth_functions["get_server_time"])
+            result = await self.time_sync_manager.force_sync(self.auth_functions["get_server_time"])
+            if result:
+                tprint(f"Time sync forced successfully", "SUCCESS")
+            else:
+                tprint(f"Time sync failed", "ERROR")
+            return result
+        tprint(f"No server time function available", "WARNING")
         return False
     
     def logout(self) -> None:
         """Logout and clear authentication state."""
+        tprint(f"Logging out from {self.exchange_name}", "INFO")
         self.is_authenticated = False
         self.current_key_id = None
         self.last_auth_check = None
-        
+
         # Stop auto sync
         asyncio.create_task(self.stop_auto_sync())
-        
+
         self.logger.info("Logged out from authentication manager")
+        tprint(f"Logged out successfully from {self.exchange_name}", "SUCCESS")
     
     async def close(self) -> None:
         """Close authentication manager and cleanup resources."""
+        tprint(f"Closing authentication manager for {self.exchange_name}", "INFO")
         await self.stop_auto_sync()
         self.logout()
         self.logger.info("Authentication manager closed")
+        tprint(f"Authentication manager closed for {self.exchange_name}", "SUCCESS")

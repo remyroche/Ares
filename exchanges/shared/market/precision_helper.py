@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 
 @dataclass
@@ -30,16 +31,20 @@ class PrecisionHelper:
     """
     
     def __init__(self):
+        tprint("Initializing PrecisionHelper", "INFO")
         self.logger = system_logger.getChild("PrecisionHelper")
         self.precision_configs: Dict[str, PrecisionConfig] = {}
-        
+
         # Set high precision for decimal calculations
         decimal.getcontext().prec = 28
+        tprint("PrecisionHelper initialized successfully", "SUCCESS")
     
     def set_precision_config(self, config: PrecisionConfig) -> None:
         """Set precision configuration for a symbol."""
+        tprint(f"Setting precision config for symbol={config.symbol}, tick={config.tick_size}, lot={config.lot_size}", "INFO")
         self.precision_configs[config.symbol] = config
         self.logger.debug(f"Set precision config for {config.symbol}")
+        tprint(f"Successfully set precision config for {config.symbol}", "SUCCESS")
     
     def get_precision_config(self, symbol: str) -> Optional[PrecisionConfig]:
         """Get precision configuration for a symbol."""
@@ -48,171 +53,201 @@ class PrecisionHelper:
     def round_price(self, price: Union[float, str, Decimal], symbol: str) -> float:
         """
         Round price to appropriate precision for symbol.
-        
+
         Args:
             price: Price to round
             symbol: Trading symbol
-            
+
         Returns:
             Rounded price
         """
+        tprint(f"Rounding price for symbol={symbol}, price={price}", "INFO")
         config = self.get_precision_config(symbol)
         if not config:
             # Default to 8 decimal places
-            return round(float(price), 8)
-        
+            result = round(float(price), 8)
+            tprint(f"Price rounded using default precision: {result}", "INFO")
+            return result
+
         # Convert to Decimal for precise calculation
         price_decimal = Decimal(str(price))
         tick_size = Decimal(str(config.tick_size))
-        
+
         # Round to tick size
         rounded = (price_decimal / tick_size).quantize(Decimal('1'), rounding=ROUND_HALF_UP) * tick_size
-        
+
         # Round to price precision
         precision = Decimal('0.1') ** config.price_precision
         rounded = rounded.quantize(precision, rounding=ROUND_HALF_UP)
-        
-        return float(rounded)
+
+        result = float(rounded)
+        tprint(f"Price rounded successfully: {price} -> {result}", "SUCCESS")
+        return result
     
     def round_quantity(self, quantity: Union[float, str, Decimal], symbol: str) -> float:
         """
         Round quantity to appropriate precision for symbol.
-        
+
         Args:
             quantity: Quantity to round
             symbol: Trading symbol
-            
+
         Returns:
             Rounded quantity
         """
+        tprint(f"Rounding quantity for symbol={symbol}, quantity={quantity}", "INFO")
         config = self.get_precision_config(symbol)
         if not config:
             # Default to 8 decimal places
-            return round(float(quantity), 8)
-        
+            result = round(float(quantity), 8)
+            tprint(f"Quantity rounded using default precision: {result}", "INFO")
+            return result
+
         # Convert to Decimal for precise calculation
         quantity_decimal = Decimal(str(quantity))
         lot_size = Decimal(str(config.lot_size))
-        
+
         # Round to lot size
         rounded = (quantity_decimal / lot_size).quantize(Decimal('1'), rounding=ROUND_DOWN) * lot_size
-        
+
         # Round to quantity precision
         precision = Decimal('0.1') ** config.quantity_precision
         rounded = rounded.quantize(precision, rounding=ROUND_DOWN)
-        
-        return float(rounded)
+
+        result = float(rounded)
+        tprint(f"Quantity rounded successfully: {quantity} -> {result}", "SUCCESS")
+        return result
     
     def validate_price(self, price: Union[float, str, Decimal], symbol: str) -> Tuple[bool, str]:
         """
         Validate price for symbol.
-        
+
         Args:
             price: Price to validate
             symbol: Trading symbol
-            
+
         Returns:
             (is_valid, error_message)
         """
+        tprint(f"Validating price for symbol={symbol}, price={price}", "INFO")
         try:
             price_decimal = Decimal(str(price))
             config = self.get_precision_config(symbol)
-            
+
             if not config:
+                tprint(f"Price validation passed (no config): {symbol}", "SUCCESS")
                 return True, ""
-            
+
             # Check if price is positive
             if price_decimal <= 0:
+                tprint(f"Price validation failed: non-positive price {price}", "ERROR")
                 return False, "Price must be positive"
-            
+
             # Check if price is multiple of tick size
             tick_size = Decimal(str(config.tick_size))
             if price_decimal % tick_size != 0:
+                tprint(f"Price validation failed: not multiple of tick size {config.tick_size}", "ERROR")
                 return False, f"Price must be multiple of tick size {config.tick_size}"
-            
+
             # Check precision
             expected_precision = Decimal('0.1') ** config.price_precision
             if price_decimal.quantize(expected_precision) != price_decimal:
+                tprint(f"Price validation failed: incorrect precision", "ERROR")
                 return False, f"Price precision must be {config.price_precision} decimal places"
-            
+
+            tprint(f"Price validation successful for {symbol}", "SUCCESS")
             return True, ""
-            
+
         except (ValueError, TypeError, decimal.InvalidOperation) as e:
+            tprint(f"Price validation failed: {e}", "ERROR")
             return False, f"Invalid price format: {e}"
     
     def validate_quantity(self, quantity: Union[float, str, Decimal], symbol: str) -> Tuple[bool, str]:
         """
         Validate quantity for symbol.
-        
+
         Args:
             quantity: Quantity to validate
             symbol: Trading symbol
-            
+
         Returns:
             (is_valid, error_message)
         """
+        tprint(f"Validating quantity for symbol={symbol}, quantity={quantity}", "INFO")
         try:
             quantity_decimal = Decimal(str(quantity))
             config = self.get_precision_config(symbol)
-            
+
             if not config:
+                tprint(f"Quantity validation passed (no config): {symbol}", "SUCCESS")
                 return True, ""
-            
+
             # Check if quantity is positive
             if quantity_decimal <= 0:
+                tprint(f"Quantity validation failed: non-positive quantity {quantity}", "ERROR")
                 return False, "Quantity must be positive"
-            
+
             # Check if quantity is multiple of lot size
             lot_size = Decimal(str(config.lot_size))
             if quantity_decimal % lot_size != 0:
+                tprint(f"Quantity validation failed: not multiple of lot size {config.lot_size}", "ERROR")
                 return False, f"Quantity must be multiple of lot size {config.lot_size}"
-            
+
             # Check precision
             expected_precision = Decimal('0.1') ** config.quantity_precision
             if quantity_decimal.quantize(expected_precision) != quantity_decimal:
+                tprint(f"Quantity validation failed: incorrect precision", "ERROR")
                 return False, f"Quantity precision must be {config.quantity_precision} decimal places"
-            
+
+            tprint(f"Quantity validation successful for {symbol}", "SUCCESS")
             return True, ""
-            
+
         except (ValueError, TypeError, decimal.InvalidOperation) as e:
+            tprint(f"Quantity validation failed: {e}", "ERROR")
             return False, f"Invalid quantity format: {e}"
     
-    def validate_notional(self, price: Union[float, str, Decimal], 
+    def validate_notional(self, price: Union[float, str, Decimal],
                          quantity: Union[float, str, Decimal], symbol: str) -> Tuple[bool, str]:
         """
         Validate notional value (price * quantity) for symbol.
-        
+
         Args:
             price: Price
             quantity: Quantity
             symbol: Trading symbol
-            
+
         Returns:
             (is_valid, error_message)
         """
+        tprint(f"Validating notional for symbol={symbol}, price={price}, quantity={quantity}", "INFO")
         try:
             price_decimal = Decimal(str(price))
             quantity_decimal = Decimal(str(quantity))
             notional = price_decimal * quantity_decimal
-            
+
             config = self.get_precision_config(symbol)
             if not config:
+                tprint(f"Notional validation passed (no config): {symbol}", "SUCCESS")
                 return True, ""
-            
+
             # Check minimum notional
             min_notional = Decimal(str(config.min_notional))
             if notional < min_notional:
+                tprint(f"Notional validation failed: {notional} < {min_notional}", "ERROR")
                 return False, f"Notional value {notional} is below minimum {min_notional}"
-            
+
             # Check maximum notional
             if config.max_notional:
                 max_notional = Decimal(str(config.max_notional))
                 if notional > max_notional:
+                    tprint(f"Notional validation failed: {notional} > {max_notional}", "ERROR")
                     return False, f"Notional value {notional} exceeds maximum {max_notional}"
-            
+
+            tprint(f"Notional validation successful for {symbol}", "SUCCESS")
             return True, ""
-            
+
         except (ValueError, TypeError, decimal.InvalidOperation) as e:
+            tprint(f"Notional validation failed: {e}", "ERROR")
             return False, f"Invalid notional calculation: {e}"
     
     def calculate_minimum_quantity(self, price: Union[float, str, Decimal], symbol: str) -> float:
@@ -371,29 +406,30 @@ class PrecisionHelper:
         config = self.get_precision_config(symbol)
         return config.max_notional if config else None
     
-    def validate_order(self, symbol: str, side: str, order_type: str, 
-                      price: Optional[Union[float, str, Decimal]], 
+    def validate_order(self, symbol: str, side: str, order_type: str,
+                      price: Optional[Union[float, str, Decimal]],
                       quantity: Union[float, str, Decimal]) -> Tuple[bool, List[str]]:
         """
         Validate complete order parameters.
-        
+
         Args:
             symbol: Trading symbol
             side: Order side (buy/sell)
             order_type: Order type (market/limit)
             price: Order price (optional for market orders)
             quantity: Order quantity
-            
+
         Returns:
             (is_valid, list_of_errors)
         """
+        tprint(f"Validating order: symbol={symbol}, side={side}, type={order_type}, price={price}, quantity={quantity}", "INFO")
         errors = []
-        
+
         # Validate quantity
         is_valid_qty, qty_error = self.validate_quantity(quantity, symbol)
         if not is_valid_qty:
             errors.append(f"Quantity: {qty_error}")
-        
+
         # Validate price for limit orders
         if order_type.lower() == "limit":
             if price is None:
@@ -402,19 +438,24 @@ class PrecisionHelper:
                 is_valid_price, price_error = self.validate_price(price, symbol)
                 if not is_valid_price:
                     errors.append(f"Price: {price_error}")
-                
+
                 # Validate notional
                 if is_valid_qty and is_valid_price:
                     is_valid_notional, notional_error = self.validate_notional(price, quantity, symbol)
                     if not is_valid_notional:
                         errors.append(f"Notional: {notional_error}")
-        
+
         # Validate notional for market orders (using current price estimate)
         elif order_type.lower() == "market":
             # For market orders, we can only validate quantity
             # Notional validation would require current market price
             pass
-        
+
+        if len(errors) == 0:
+            tprint(f"Order validation successful for {symbol}", "SUCCESS")
+        else:
+            tprint(f"Order validation failed for {symbol}: {len(errors)} errors", "ERROR")
+
         return len(errors) == 0, errors
     
     def get_precision_summary(self, symbol: str) -> Dict[str, Any]:
@@ -436,13 +477,14 @@ class PrecisionHelper:
     def bulk_validate_orders(self, orders: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Validate multiple orders in bulk.
-        
+
         Args:
             orders: List of order dictionaries
-            
+
         Returns:
             Validation results
         """
+        tprint(f"Starting bulk order validation for {len(orders)} orders", "INFO")
         results = {
             "valid_orders": [],
             "invalid_orders": [],
@@ -450,16 +492,16 @@ class PrecisionHelper:
             "valid_count": 0,
             "invalid_count": 0
         }
-        
+
         for i, order in enumerate(orders):
             symbol = order.get("symbol", "")
             side = order.get("side", "")
             order_type = order.get("order_type", "")
             price = order.get("price")
             quantity = order.get("quantity")
-            
+
             is_valid, errors = self.validate_order(symbol, side, order_type, price, quantity)
-            
+
             order_result = {
                 "index": i,
                 "symbol": symbol,
@@ -470,12 +512,13 @@ class PrecisionHelper:
                 "is_valid": is_valid,
                 "errors": errors
             }
-            
+
             if is_valid:
                 results["valid_orders"].append(order_result)
                 results["valid_count"] += 1
             else:
                 results["invalid_orders"].append(order_result)
                 results["invalid_count"] += 1
-        
+
+        tprint(f"Bulk validation completed: {results['valid_count']}/{len(orders)} valid, {results['invalid_count']}/{len(orders)} invalid", "SUCCESS")
         return results

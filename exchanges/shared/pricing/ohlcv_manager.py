@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 # Import the enhanced OHLCV manager
 from .enhanced_ohlcv_manager import (
@@ -67,6 +68,7 @@ class OHLCVManager:
     """
     
     def __init__(self, exchange_name: str):
+        tprint(f"🔧 OHLCVManager.__init__ called with exchange_name={exchange_name}", "INFO")
         self.exchange_name = exchange_name
         self.logger = system_logger.getChild(f"OHLCVManager.{exchange_name}")
         
@@ -79,6 +81,8 @@ class OHLCVManager:
         self.fetch_functions = {}  # Deprecated, use enhanced_manager.fetch_functions
         self.max_candles_per_request = 1000
         self.max_cached_candles = 5000
+
+        tprint(f"✅ OHLCVManager initialized successfully for {exchange_name}", "SUCCESS")
         
     def register_fetch_functions(
         self,
@@ -87,11 +91,12 @@ class OHLCVManager:
     ) -> None:
         """
         Register exchange-specific OHLCV fetching functions.
-        
+
         Args:
             get_klines: Function to get recent klines
             get_historical_klines: Optional function to get historical klines
         """
+        tprint(f"🔧 register_fetch_functions called for {self.exchange_name}", "INFO")
         # Delegate to enhanced manager
         self.enhanced_manager.register_fetch_functions(get_klines, get_historical_klines)
         
@@ -100,8 +105,9 @@ class OHLCVManager:
             "get_klines": get_klines,
             "get_historical_klines": get_historical_klines
         }
-        
+
         self.logger.info("Registered OHLCV fetching functions")
+        tprint(f"✅ register_fetch_functions: registered successfully", "SUCCESS")
     
     async def get_ohlcv(
         self,
@@ -112,16 +118,17 @@ class OHLCVManager:
     ) -> List[OHLCVData]:
         """
         Get OHLCV data for symbol and timeframe.
-        
+
         Args:
             symbol: Trading symbol
             timeframe: Timeframe
             limit: Number of candles to fetch
             use_cache: Whether to use cached data
-            
+
         Returns:
             List of OHLCVData
         """
+        tprint(f"🔧 get_ohlcv called with symbol={symbol}, timeframe={timeframe.value}, limit={limit}, use_cache={use_cache}", "INFO")
         # Convert to enhanced timeframe
         enhanced_timeframe = self._convert_timeframe(timeframe)
         
@@ -129,9 +136,11 @@ class OHLCVManager:
         enhanced_data = await self.enhanced_manager.get_ohlcv(
             symbol, enhanced_timeframe, limit, use_cache
         )
-        
+
         # Convert back to legacy format for backward compatibility
-        return [self._convert_to_legacy_ohlcv(data) for data in enhanced_data]
+        result = [self._convert_to_legacy_ohlcv(data) for data in enhanced_data]
+        tprint(f"✅ get_ohlcv: returning {len(result)} candles", "SUCCESS")
+        return result
     
     def _convert_timeframe(self, timeframe: Timeframe) -> EnhancedTimeframe:
         """Convert legacy timeframe to enhanced timeframe."""
@@ -165,17 +174,18 @@ class OHLCVManager:
     ) -> List[OHLCVData]:
         """
         Get historical OHLCV data for symbol and timeframe.
-        
+
         Args:
             symbol: Trading symbol
             timeframe: Timeframe
             start_time: Start time
             end_time: End time
             limit: Maximum number of candles
-            
+
         Returns:
             List of OHLCVData
         """
+        tprint(f"🔧 get_historical_ohlcv called with symbol={symbol}, timeframe={timeframe.value}, start_time={start_time}, end_time={end_time}, limit={limit}", "INFO")
         # Convert to enhanced timeframe
         enhanced_timeframe = self._convert_timeframe(timeframe)
         
@@ -183,9 +193,11 @@ class OHLCVManager:
         enhanced_data = await self.enhanced_manager.get_historical_ohlcv(
             symbol, enhanced_timeframe, start_time, end_time, limit
         )
-        
+
         # Convert back to legacy format for backward compatibility
-        return [self._convert_to_legacy_ohlcv(data) for data in enhanced_data]
+        result = [self._convert_to_legacy_ohlcv(data) for data in enhanced_data]
+        tprint(f"✅ get_historical_ohlcv: returning {len(result)} candles", "SUCCESS")
+        return result
     
     def get_cache_statistics(self) -> Dict[str, Any]:
         """Get OHLCV cache statistics."""
@@ -197,21 +209,31 @@ class OHLCVManager:
     
     def invalidate_cache(self, symbol: Optional[str] = None, timeframe: Optional[Timeframe] = None) -> None:
         """Invalidate OHLCV cache."""
+        tprint(f"🔧 invalidate_cache called with symbol={symbol}, timeframe={timeframe.value if timeframe else None}", "INFO")
         if timeframe:
             enhanced_timeframe = self._convert_timeframe(timeframe)
             self.enhanced_manager.cache.invalidate(symbol, enhanced_timeframe)
         else:
             self.enhanced_manager.cache.invalidate(symbol)
+        tprint(f"✅ invalidate_cache: cache invalidated successfully", "SUCCESS")
     
     def cleanup(self) -> None:
         """Clean up resources and connections."""
+        tprint(f"🔧 cleanup called for {self.exchange_name}", "INFO")
         self.enhanced_manager.cleanup()
+        tprint(f"✅ cleanup: OHLCVManager cleaned up successfully", "SUCCESS")
     
     # Legacy methods for backward compatibility
     async def get_latest_candle(self, symbol: str, timeframe: Timeframe) -> Optional[OHLCVData]:
         """Get the latest candle for symbol and timeframe."""
+        tprint(f"🔧 get_latest_candle called for symbol={symbol}, timeframe={timeframe.value}", "INFO")
         data = await self.get_ohlcv(symbol, timeframe, limit=1)
-        return data[0] if data else None
+        result = data[0] if data else None
+        if result:
+            tprint(f"✅ get_latest_candle: returning latest candle", "SUCCESS")
+        else:
+            tprint(f"⚠️ get_latest_candle: no candle data available", "WARNING")
+        return result
     
     async def get_candles_in_range(
         self,
@@ -221,17 +243,22 @@ class OHLCVManager:
         end_time: datetime
     ) -> List[OHLCVData]:
         """Get candles within a time range."""
+        tprint(f"🔧 get_candles_in_range called for symbol={symbol}, timeframe={timeframe.value}, start_time={start_time}, end_time={end_time}", "INFO")
         all_data = await self.get_ohlcv(symbol, timeframe, limit=1000)
-        
+
         filtered_data = [
             candle for candle in all_data
             if start_time <= candle.timestamp <= end_time
         ]
-        
+
+        tprint(f"✅ get_candles_in_range: returning {len(filtered_data)} candles in range", "SUCCESS")
         return filtered_data
     
     def get_cached_candles(self, symbol: str, timeframe: Timeframe) -> List[OHLCVData]:
         """Get cached candles without fetching."""
+        tprint(f"🔧 get_cached_candles called for symbol={symbol}, timeframe={timeframe.value}", "INFO")
         enhanced_timeframe = self._convert_timeframe(timeframe)
         enhanced_data = self.enhanced_manager.cache.get(symbol, enhanced_timeframe)
-        return [self._convert_to_legacy_ohlcv(data) for data in enhanced_data]
+        result = [self._convert_to_legacy_ohlcv(data) for data in enhanced_data]
+        tprint(f"✅ get_cached_candles: returning {len(result)} cached candles", "SUCCESS")
+        return result

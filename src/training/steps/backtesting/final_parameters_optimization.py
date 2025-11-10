@@ -6053,11 +6053,22 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 model='analyst'
             )
 
+            # Try to load labeled data from feature_generation_labeling_integration_step
+            # This is the artifact name used by the feature generation step
             labeled_data = self._get_artifact(
-                artifact_name=f'labeled_data_{symbol}_{timeframe}',
+                artifact_name='feature_generation_labeling_integration',
                 artifact_type='data',
                 data_category='features'
             )
+
+            # Fallback to legacy naming pattern if not found
+            if labeled_data is None:
+                tprint(f"⚠️ 'feature_generation_labeling_integration' not found, trying legacy 'labeled_data_{symbol}_{timeframe}'...", "warning")
+                labeled_data = self._get_artifact(
+                    artifact_name=f'labeled_data_{symbol}_{timeframe}',
+                    artifact_type='data',
+                    data_category='features'
+                )
 
             if labeled_data is not None:
                 tprint(f"✅ Loaded labeled data: {labeled_data.shape}", "success")
@@ -6067,6 +6078,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 loaded_data['labeled_data'] = labeled_data
             else:
                 tprint("⚠️ Labeled data not found in versioned artifacts", "warning")
+                tprint("   Tried artifact names: 'feature_generation_labeling_integration', f'labeled_data_{symbol}_{timeframe}'", "info")
 
             # 2. Load regime probabilities from regime_ensemble_training
             tprint("📊 Loading regime probabilities from regime_ensemble_training...", "info")
@@ -6081,11 +6093,21 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 model='regime'
             )
 
+            # Try to load regime ensemble predictions (saved as 'regime_ensemble_predictions' by regime training step)
             regime_probs = self._get_artifact(
                 artifact_name='regime_ensemble_predictions',
                 artifact_type='data',
                 data_category='predictions'
             )
+
+            # Fallback to rolling_hmm_regime_probabilities if not found
+            if regime_probs is None:
+                tprint("⚠️ 'regime_ensemble_predictions' not found, trying 'rolling_hmm_regime_probabilities'...", "warning")
+                regime_probs = self._get_artifact(
+                    artifact_name='rolling_hmm_regime_probabilities',
+                    artifact_type='data',
+                    data_category='features'
+                )
 
             if regime_probs is not None:
                 tprint(f"✅ Loaded regime probabilities: {regime_probs.shape}", "success")
@@ -6095,6 +6117,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 loaded_data['regime_probabilities'] = regime_probs
             else:
                 tprint("⚠️ Regime probabilities not found in versioned artifacts", "warning")
+                tprint("   Tried artifact names: 'regime_ensemble_predictions', 'rolling_hmm_regime_probabilities'", "info")
 
             # 3. Load analyst ensemble confidence and disagreement features
             tprint("📊 Loading analyst ensemble outputs (confidence + disagreement)...", "info")
@@ -6108,12 +6131,22 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 model='analyst'
             )
 
-            # Try to load analyst ensemble predictions which should contain confidence scores
+            # Try to load analyst ensemble outputs (saved as 'analyst_ensemble_outputs' by unified training step)
+            # First try the actual artifact name used by the training step
             analyst_predictions = self._get_artifact(
-                artifact_name='analyst_ensemble_predictions',
+                artifact_name='analyst_ensemble_outputs',
                 artifact_type='data',
                 data_category='predictions'
             )
+
+            # Fallback to legacy name if not found
+            if analyst_predictions is None:
+                tprint("⚠️ 'analyst_ensemble_outputs' not found, trying legacy 'analyst_ensemble_predictions'...", "warning")
+                analyst_predictions = self._get_artifact(
+                    artifact_name='analyst_ensemble_predictions',
+                    artifact_type='data',
+                    data_category='predictions'
+                )
 
             if analyst_predictions is not None:
                 tprint(f"✅ Loaded analyst ensemble predictions: {analyst_predictions.shape}", "success")
@@ -6121,11 +6154,27 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 tprint_data_preview(analyst_predictions, name="Analyst Ensemble Predictions", max_rows=5, max_cols=10)
                 tprint_data_format(analyst_predictions, name="Analyst Ensemble Predictions", check_compatibility=True)
 
-                # Extract confidence scores if available
+                # The analyst_ensemble_outputs contains the predictions DataFrame
+                # Typically it has columns like 'prediction', 'confidence', etc.
+                # We'll use the entire DataFrame as analyst_confidence for now
+                # and extract specific columns if they exist
+
+                # Check for confidence column
                 if 'confidence' in analyst_predictions.columns:
                     loaded_data['analyst_confidence'] = analyst_predictions[['confidence']]
                     tprint(f"   • Extracted confidence scores: {loaded_data['analyst_confidence'].shape}", "info")
                     tprint_data_preview(loaded_data['analyst_confidence'], name="Analyst Confidence Scores", max_rows=5, max_cols=10)
+                elif 'prediction' in analyst_predictions.columns:
+                    # Use predictions as proxy for confidence if confidence column doesn't exist
+                    tprint("⚠️ No 'confidence' column found, using 'prediction' column as proxy", "warning")
+                    loaded_data['analyst_confidence'] = analyst_predictions[['prediction']]
+                    tprint(f"   • Using prediction as confidence: {loaded_data['analyst_confidence'].shape}", "info")
+                    tprint_data_preview(loaded_data['analyst_confidence'], name="Analyst Predictions (as confidence)", max_rows=5, max_cols=10)
+                else:
+                    # Use all columns as analyst_confidence if no specific column found
+                    tprint(f"⚠️ No 'confidence' or 'prediction' column found, using all columns: {list(analyst_predictions.columns)}", "warning")
+                    loaded_data['analyst_confidence'] = analyst_predictions
+                    tprint_data_preview(loaded_data['analyst_confidence'], name="Analyst Predictions (all columns)", max_rows=5, max_cols=10)
 
                 # Extract disagreement features if available
                 disagreement_cols = [col for col in analyst_predictions.columns if 'disagreement' in col.lower()]
@@ -6135,7 +6184,8 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                     tprint(f"   • Disagreement columns: {disagreement_cols}", "info")
                     tprint_data_preview(loaded_data['disagreement_features'], name="Disagreement Features", max_rows=5, max_cols=10)
             else:
-                tprint("⚠️ Analyst ensemble predictions not found in versioned artifacts", "warning")
+                tprint("⚠️ Analyst ensemble outputs not found in versioned artifacts", "warning")
+                tprint("   Tried artifact names: 'analyst_ensemble_outputs', 'analyst_ensemble_predictions'", "info")
 
             # Summary
             tprint("=" * 80, "header")

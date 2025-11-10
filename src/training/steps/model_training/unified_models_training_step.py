@@ -1707,8 +1707,10 @@ class UnifiedModelsTrainingStep(BaseStep):
             # IMPORTANT: We need SELECTED features (e.g., 60), not generated features (327)
             # No fallback to larger feature sets - only use features from final selection step
             feature_artifact_names = [
-                f'selected_feature_dataframe_{feature_set_size}',  # Primary: selected features
-                f'selected_features_{feature_set_size}',           # Alternative name
+                f'selected_feature_dataframe_{feature_set_size}',  # Primary: selected features DataFrame (with size from config)
+                'selected_feature_dataframe_60',                   # Standard 60-feature DataFrame
+                f'selected_features_{feature_set_size}',           # Feature names list (with size from config)
+                'selected_features_60',                            # Standard 60-feature names list
                 f'final_dataset_{feature_set_size}',               # Validation step generic alias
                 f'final_analyst_dataset_{feature_set_size}',       # Analyst-specific validation alias
             ]
@@ -1735,10 +1737,14 @@ class UnifiedModelsTrainingStep(BaseStep):
                 error_msg = (
                     "❌ CRITICAL: No training data found in artifacts!\n"
                     f"   Expected artifacts from 'feature_generation_final_feature_selection_step':\n"
-                    f"   - selected_feature_dataframe_{feature_set_size}\n"
-                    f"   - selected_features_{feature_set_size}\n"
+                    f"   - selected_feature_dataframe_{feature_set_size} (DataFrame with selected features)\n"
+                    f"   - selected_feature_dataframe_60 (standard 60-feature DataFrame)\n"
+                    f"   - selected_features_{feature_set_size} (list of feature names)\n"
+                    f"   - selected_features_60 (standard 60-feature names list)\n"
                     f"   - final_dataset_{feature_set_size}\n"
                     f"   - final_analyst_dataset_{feature_set_size}\n"
+                    f"   \n"
+                    f"   Note: If artifact contains feature names list, labeled_data is also required.\n"
                     f"   \n"
                     f"   Please ensure feature_generation_final_feature_selection_step has run successfully\n"
                     f"   and generated the selected feature set with {feature_set_size} features.\n"
@@ -1747,18 +1753,43 @@ class UnifiedModelsTrainingStep(BaseStep):
                 tprint_error(error_msg)
                 raise ValueError(error_msg)
             
-            # Validate that training_data is a DataFrame
+            # Handle case where artifact contains feature names list instead of DataFrame
             if training_data is not None and not isinstance(training_data, pd.DataFrame):
-                error_msg = (
-                    f"❌ CRITICAL: Training data from '{feature_source_name}' is not a DataFrame!\n"
-                    f"   Expected: pandas.DataFrame\n"
-                    f"   Got: {type(training_data)}\n"
-                    f"   \n"
-                    f"   Please ensure feature_generation_final_feature_selection_step returns\n"
-                    f"   a properly formatted DataFrame, not a list of feature names or other types."
-                )
-                tprint_error(error_msg)
-                raise ValueError(error_msg)
+                # Check if we got a list of feature names instead of actual data
+                if isinstance(training_data, list):
+                    tprint_info(f"📋 Artifact '{feature_source_name}' contains {len(training_data)} feature names")
+                    tprint_info(f"   Loading labeled_data to get actual feature values...")
+
+                    # Load labeled_data to get the actual feature values
+                    try:
+                        labeled_data = self._get_artifact('labeled_data', 'data')
+                        if labeled_data is not None and isinstance(labeled_data, pd.DataFrame):
+                            tprint_success(f"✅ Loaded labeled_data: {labeled_data.shape}")
+
+                            # Select only the features from the list
+                            available_features = [f for f in training_data if f in labeled_data.columns]
+                            if available_features:
+                                training_data = labeled_data[available_features].copy()
+                                tprint_success(f"✅ Selected {len(available_features)} features from labeled_data")
+                            else:
+                                tprint_error(f"❌ None of the {len(training_data)} feature names found in labeled_data")
+                                tprint_error(f"   Feature names sample: {training_data[:5]}")
+                                tprint_error(f"   labeled_data columns sample: {list(labeled_data.columns[:5])}")
+                                raise ValueError(f"Feature names from {feature_source_name} not found in labeled_data")
+                        else:
+                            tprint_error("❌ Could not load labeled_data to get actual feature values")
+                            raise ValueError("Got feature names but no labeled_data available")
+                    except Exception as e:
+                        tprint_error(f"❌ Failed to load feature data from labeled_data: {e}")
+                        raise
+                else:
+                    error_msg = (
+                        f"❌ CRITICAL: Training data from '{feature_source_name}' has unexpected type!\n"
+                        f"   Expected: pandas.DataFrame or list of feature names\n"
+                        f"   Got: {type(training_data)}\n"
+                    )
+                    tprint_error(error_msg)
+                    raise ValueError(error_msg)
 
             if training_data is not None and isinstance(training_data, pd.DataFrame):
                 # Comprehensive feature loading verification and logging

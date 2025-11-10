@@ -324,56 +324,92 @@ class ArtifactRouter:
         """
         from src.utils.tprint import tprint
 
+        tprint("┌" + "─" * 78 + "┐", color="blue")
+        tprint("│  🔀 ARTIFACT ROUTER: SAVE OPERATION                                         │", color="blue", bold=True)
+        tprint("└" + "─" * 78 + "┘", color="blue")
+
         # Get input data type information
         data_type_name = type(data).__name__
         if isinstance(data, pd.DataFrame):
             input_info = f"DataFrame ({len(data)} rows × {len(data.columns)} cols)"
+            tprint(f"📊 [ROUTER] Data Details:", color="blue")
+            tprint(f"   ├─ Type: DataFrame", color="blue")
+            tprint(f"   ├─ Shape: {data.shape}", color="blue")
+            tprint(f"   ├─ Columns: {list(data.columns)[:5]}{'...' if len(data.columns) > 5 else ''}", color="blue")
+            tprint(f"   └─ Index: {type(data.index).__name__}", color="blue")
         elif isinstance(data, (list, tuple)):
             input_info = f"{data_type_name} ({len(data)} items)"
+            tprint(f"📦 [ROUTER] Data Details:", color="blue")
+            tprint(f"   ├─ Type: {data_type_name}", color="blue")
+            tprint(f"   └─ Length: {len(data)} items", color="blue")
         elif hasattr(data, '__array__'):  # NumPy array
             input_info = f"ndarray (shape: {data.shape})"
+            tprint(f"📐 [ROUTER] Data Details:", color="blue")
+            tprint(f"   ├─ Type: ndarray", color="blue")
+            tprint(f"   └─ Shape: {data.shape}", color="blue")
         else:
             input_info = data_type_name
+            tprint(f"📄 [ROUTER] Data Details:", color="blue")
+            tprint(f"   └─ Type: {data_type_name}", color="blue")
 
-        tprint(f"🐛 DEBUG: ArtifactRouter.save() called with artifact_name={artifact_name}, data_category={data_category}", "INFO")
-        tprint(f"🐛 DEBUG: Input data info: {input_info}", "INFO")
+        tprint(f"🏷️  [ROUTER] Artifact: '{artifact_name}'", color="blue")
+        if artifact_type:
+            tprint(f"🔖 [ROUTER] Type hint: {artifact_type}", color="blue")
+        if data_category:
+            tprint(f"📂 [ROUTER] Category: {data_category}", color="blue")
+
+        if context:
+            tprint(f"🌍 [ROUTER] Context:", color="blue")
+            for key, value in context.items():
+                tprint(f"   ├─ {key}: {value}", color="blue")
 
         # Detect format
+        tprint(f"🔍 [ROUTER] Detecting optimal storage format...", color="blue")
         format_type = self._detect_format(data, artifact_name, artifact_type, data_category)
-        tprint(f"🐛 DEBUG: Detected format type: {format_type}", "INFO")
 
-        # Log routing decision
-        self.logger.info(f"Routing '{artifact_name}' ({input_info}) to {format_type} storage")
-        tprint(f"🔀 Router: {input_info} → {format_type.upper()}")
+        format_icons = {
+            'json': '📋',
+            'pickle': '🥒',
+            'parquet': '📊',
+            'hdf5_versioned': '🗄️'
+        }
+        icon = format_icons.get(format_type, '📦')
+
+        tprint(f"✅ [ROUTER] Format detected: {icon} {format_type.upper()}", color="green", bold=True)
+        tprint(f"   └─ Routing {input_info} → {format_type.upper()} storage", color="green")
 
         # Route to appropriate storage
         if format_type == 'json':
-            tprint("🐛 DEBUG: Routing to JSON storage", "INFO")
             path = self._save_json(data, artifact_name, metadata)
 
         elif format_type == 'pickle':
-            tprint("🐛 DEBUG: Routing to Pickle storage", "INFO")
             path = self._save_pickle(data, artifact_name, metadata)
 
         elif format_type == 'parquet':
-            tprint("🐛 DEBUG: Routing to Parquet storage", "INFO")
             path = self._save_parquet(data, artifact_name, context, metadata)
 
         elif format_type == 'hdf5_versioned':
-            tprint("🐛 DEBUG: Routing to HDF5 Versioned storage", "INFO")
             path = self._save_hdf5_versioned(data, artifact_name, context, metadata)
 
         else:
             raise ValueError(f"Unknown format type: {format_type}")
 
         # Log final path
-        tprint(f"🐛 DEBUG: Final saved path: {path}", "INFO")
-        tprint(f"💾 Saved '{artifact_name}' → {path}")
+        tprint("┌" + "─" * 78 + "┐", color="green")
+        tprint("│  ✅ ARTIFACT ROUTER: SAVE COMPLETED                                         │", color="green", bold=True)
+        tprint(f"│  Path: {path[:70]:<70} │", color="green")
+        tprint("└" + "─" * 78 + "┘", color="green")
+
+        self.logger.info(f"Routing '{artifact_name}' ({input_info}) to {format_type} storage")
         return path
 
     def _save_json(self, data: Any, artifact_name: str, metadata: Optional[Dict] = None) -> str:
         """Save data as JSON."""
+        from src.utils.tprint import tprint
+
+        tprint("  ┌─ 📋 JSON SAVE", color="blue")
         filepath = self.base_dir / f"{artifact_name}.json"
+        tprint(f"  │  Path: {filepath}", color="blue")
 
         # Combine data and metadata if needed
         if metadata:
@@ -382,19 +418,31 @@ class ArtifactRouter:
                 'metadata': metadata,
                 'saved_at': datetime.now().isoformat()
             }
+            tprint(f"  │  Including metadata with {len(metadata)} keys", color="blue")
         else:
             save_data = data
 
+        tprint(f"  │  Writing JSON...", color="blue")
         success = save_json(save_data, str(filepath))
+
         if success:
+            file_size = filepath.stat().st_size
+            tprint(f"  │  ✅ Success! Size: {file_size / 1024:.2f} KB", color="green")
+            tprint(f"  └─ {filepath}", color="green")
             self.logger.info(f"Saved JSON: {filepath}")
             return str(filepath)
         else:
+            tprint(f"  │  ❌ Failed to write JSON", color="red")
+            tprint(f"  └─ {filepath}", color="red")
             raise IOError(f"Failed to save JSON to {filepath}")
 
     def _save_pickle(self, data: Any, artifact_name: str, metadata: Optional[Dict] = None) -> str:
         """Save data as Pickle."""
+        from src.utils.tprint import tprint
+
+        tprint("  ┌─ 🥒 PICKLE SAVE", color="blue")
         filepath = self.base_dir / f"{artifact_name}.pkl"
+        tprint(f"  │  Path: {filepath}", color="blue")
 
         # Combine data and metadata if needed
         if metadata:
@@ -403,14 +451,22 @@ class ArtifactRouter:
                 'metadata': metadata,
                 'saved_at': datetime.now().isoformat()
             }
+            tprint(f"  │  Including metadata with {len(metadata)} keys", color="blue")
         else:
             save_data = data
 
+        tprint(f"  │  Writing Pickle...", color="blue")
         success = save_pickle(save_data, str(filepath))
+
         if success:
+            file_size = filepath.stat().st_size
+            tprint(f"  │  ✅ Success! Size: {file_size / 1024:.2f} KB", color="green")
+            tprint(f"  └─ {filepath}", color="green")
             self.logger.info(f"Saved Pickle: {filepath}")
             return str(filepath)
         else:
+            tprint(f"  │  ❌ Failed to write Pickle", color="red")
+            tprint(f"  └─ {filepath}", color="red")
             raise IOError(f"Failed to save Pickle to {filepath}")
 
     def _save_parquet(
@@ -421,6 +477,10 @@ class ArtifactRouter:
         metadata: Optional[Dict] = None
     ) -> str:
         """Save DataFrame as Parquet using KlinesParquetManager."""
+        from src.utils.tprint import tprint
+
+        tprint("  ┌─ 📊 PARQUET SAVE", color="blue")
+
         if not isinstance(data, pd.DataFrame):
             raise TypeError(f"Parquet storage requires DataFrame, got {type(data)}")
 
@@ -428,6 +488,10 @@ class ArtifactRouter:
         symbol = context.get('symbol', 'UNKNOWN')
         exchange = context.get('exchange', 'binance')
         interval = context.get('timeframe', '15m')
+
+        tprint(f"  │  Symbol: {symbol}, Exchange: {exchange}, Interval: {interval}", color="blue")
+        tprint(f"  │  Data shape: {data.shape}", color="blue")
+        tprint(f"  │  Using KlinesParquetManager...", color="blue")
 
         success = self.klines_manager.store_klines(
             df=data,
@@ -443,9 +507,18 @@ class ArtifactRouter:
                 symbol, exchange, interval,
                 self.klines_manager._generate_batch_id(symbol, exchange, interval)
             )
+            from pathlib import Path
+            if Path(filepath).exists():
+                file_size = Path(filepath).stat().st_size
+                tprint(f"  │  ✅ Success! Size: {file_size / 1024:.2f} KB", color="green")
+            else:
+                tprint(f"  │  ✅ Success! (file path pending)", color="green")
+            tprint(f"  └─ {filepath}", color="green")
             self.logger.info(f"Saved Parquet: {filepath}")
             return str(filepath)
         else:
+            tprint(f"  │  ❌ Failed to write Parquet", color="red")
+            tprint(f"  └─ KlinesParquetManager returned failure", color="red")
             raise IOError(f"Failed to save Parquet for {artifact_name}")
 
     def _save_hdf5_versioned(
@@ -603,86 +676,167 @@ class ArtifactRouter:
         Returns:
             Loaded data
         """
+        from src.utils.tprint import tprint
+
+        tprint("┌" + "─" * 78 + "┐", color="magenta")
+        tprint("│  📥 ARTIFACT ROUTER: LOAD OPERATION                                         │", color="magenta", bold=True)
+        tprint("└" + "─" * 78 + "┘", color="magenta")
+
+        tprint(f"🏷️  [ROUTER] Artifact: '{artifact_name}'", color="magenta")
+        if artifact_type:
+            tprint(f"🔖 [ROUTER] Type hint: {artifact_type}", color="magenta")
+        if data_category:
+            tprint(f"📂 [ROUTER] Category: {data_category}", color="magenta")
+        if context:
+            tprint(f"🌍 [ROUTER] Context:", color="magenta")
+            for key, value in context.items():
+                tprint(f"   ├─ {key}: {value}", color="magenta")
+
         # Try to detect format from file extension or name
         json_path = self.base_dir / f"{artifact_name}.json"
         pickle_path = self.base_dir / f"{artifact_name}.pkl"
 
+        tprint(f"🔍 [ROUTER] Searching for artifact...", color="magenta")
+
+        # Try JSON
         if json_path.exists():
+            tprint(f"  ┌─ 📋 JSON LOAD", color="magenta")
+            tprint(f"  │  Path: {json_path}", color="magenta")
+            file_size = json_path.stat().st_size
+            tprint(f"  │  Size: {file_size / 1024:.2f} KB", color="magenta")
+            tprint(f"  │  Loading JSON...", color="magenta")
+
             data = load_json(str(json_path))
+
             # Extract data from wrapper if present
             if isinstance(data, dict) and 'data' in data and 'metadata' in data:
+                tprint(f"  │  ✅ Loaded (with metadata wrapper)", color="green")
+                tprint(f"  └─ Type: {type(data['data']).__name__}", color="green")
+                tprint("┌" + "─" * 78 + "┐", color="green")
+                tprint("│  ✅ ARTIFACT ROUTER: LOAD COMPLETED (JSON)                                  │", color="green", bold=True)
+                tprint("└" + "─" * 78 + "┘", color="green")
                 return data['data']
+
+            tprint(f"  │  ✅ Loaded", color="green")
+            tprint(f"  └─ Type: {type(data).__name__}", color="green")
+            tprint("┌" + "─" * 78 + "┐", color="green")
+            tprint("│  ✅ ARTIFACT ROUTER: LOAD COMPLETED (JSON)                                  │", color="green", bold=True)
+            tprint("└" + "─" * 78 + "┘", color="green")
             return data
 
+        # Try Pickle
         elif pickle_path.exists():
+            tprint(f"  ┌─ 🥒 PICKLE LOAD", color="magenta")
+            tprint(f"  │  Path: {pickle_path}", color="magenta")
+            file_size = pickle_path.stat().st_size
+            tprint(f"  │  Size: {file_size / 1024:.2f} KB", color="magenta")
+            tprint(f"  │  Loading Pickle...", color="magenta")
+
             data = load_pickle(str(pickle_path))
+
             # Extract data from wrapper if present
             if isinstance(data, dict) and 'data' in data and 'metadata' in data:
+                tprint(f"  │  ✅ Loaded (with metadata wrapper)", color="green")
+                tprint(f"  └─ Type: {type(data['data']).__name__}", color="green")
+                tprint("┌" + "─" * 78 + "┐", color="green")
+                tprint("│  ✅ ARTIFACT ROUTER: LOAD COMPLETED (PICKLE)                                │", color="green", bold=True)
+                tprint("└" + "─" * 78 + "┘", color="green")
                 return data['data']
+
+            tprint(f"  │  ✅ Loaded", color="green")
+            tprint(f"  └─ Type: {type(data).__name__}", color="green")
+            tprint("┌" + "─" * 78 + "┐", color="green")
+            tprint("│  ✅ ARTIFACT ROUTER: LOAD COMPLETED (PICKLE)                                │", color="green", bold=True)
+            tprint("└" + "─" * 78 + "┘", color="green")
             return data
 
         # Try parquet
         if data_category in ['historical', 'klines', 'ohlcv'] or \
            any(kw in artifact_name.lower() for kw in ['historical', 'klines', 'ohlcv']):
             try:
+                tprint(f"  ┌─ 📊 PARQUET LOAD", color="magenta")
                 context = context or {}
                 symbol = context.get('symbol', 'UNKNOWN')
                 exchange = context.get('exchange', 'binance')
                 interval = context.get('timeframe', '15m')
+                tprint(f"  │  Symbol: {symbol}, Exchange: {exchange}, Interval: {interval}", color="magenta")
+                tprint(f"  │  Using KlinesParquetManager...", color="magenta")
 
                 data = self.klines_manager.load_klines(symbol, exchange, interval)
                 if not data.empty:
+                    tprint(f"  │  ✅ Loaded DataFrame with shape: {data.shape}", color="green")
+                    tprint(f"  └─ Columns: {list(data.columns)[:5]}{'...' if len(data.columns) > 5 else ''}", color="green")
+                    tprint("┌" + "─" * 78 + "┐", color="green")
+                    tprint("│  ✅ ARTIFACT ROUTER: LOAD COMPLETED (PARQUET)                               │", color="green", bold=True)
+                    tprint("└" + "─" * 78 + "┘", color="green")
                     return data
+                else:
+                    tprint(f"  │  ⚠️  Loaded empty DataFrame", color="yellow")
+                    tprint(f"  └─ Trying next storage method", color="yellow")
             except Exception as e:
+                tprint(f"  │  ⚠️  Failed: {e}", color="yellow")
+                tprint(f"  └─ Trying next storage method", color="yellow")
                 self.logger.warning(f"Failed to load from parquet: {e}")
 
         # Try versioned HDF5
         if self.enable_versioned_artifacts and context:
             try:
-                from src.utils.tprint import tprint
-                
-                tprint(f"🐛 DEBUG: Attempting to load '{artifact_name}' from versioned store", "INFO")
+                tprint(f"  ┌─ 🗄️  HDF5 VERSIONED LOAD", color="magenta")
+                tprint(f"  │  Getting versioned store...", color="magenta")
+
                 store = self._get_versioned_store(context)
                 versions = store.list_versions()
-                tprint(f"🐛 DEBUG: Found {len(versions)} versions in store: {versions}", "INFO")
+
+                tprint(f"  │  Found {len(versions)} versions in store", color="magenta")
                 matching = [v for v in versions if artifact_name in v]
-                tprint(f"🐛 DEBUG: Found {len(matching)} matching versions: {matching}", "INFO")
-                
+
                 if matching:
+                    tprint(f"  │  Found {len(matching)} matching versions", color="magenta")
                     version_name = sorted(matching)[-1]
-                    tprint(f"🐛 DEBUG: Loading version: {version_name}", "INFO")
+                    tprint(f"  │  Loading latest: {version_name}", color="magenta")
+
                     view = store.get_view(version_name)
                     data = view.materialize()
-                    tprint(f"🐛 DEBUG: Successfully loaded data with shape: {data.shape}", "INFO")
+
+                    tprint(f"  │  ✅ Loaded DataFrame with shape: {data.shape}", color="green")
+                    tprint(f"  └─ Columns: {list(data.columns)[:5]}{'...' if len(data.columns) > 5 else ''}", color="green")
+                    tprint("┌" + "─" * 78 + "┐", color="green")
+                    tprint("│  ✅ ARTIFACT ROUTER: LOAD COMPLETED (HDF5)                                  │", color="green", bold=True)
+                    tprint("└" + "─" * 78 + "┘", color="green")
                     return data
                 else:
-                    tprint(f"🐛 DEBUG: No matching versions found for '{artifact_name}'", "INFO")
-                    
-                    # Check if there's a metadata/HDF5 inconsistency
-                    # This happens when metadata shows versions that don't exist in HDF5
-                    tprint(f"🐛 DEBUG: Checking for metadata/HDF5 inconsistency", "INFO")
-                    
-                    # Get all stores to check if the artifact exists in any other store
-                    all_stores_found = False
+                    tprint(f"  │  No matching versions in primary store", color="yellow")
+                    tprint(f"  │  Checking alternate stores...", color="magenta")
+
+                    # Check all stores
                     for store_key, cached_store in self._versioned_stores.items():
                         store_versions = cached_store.list_versions()
                         store_matching = [v for v in store_versions if artifact_name in v]
                         if store_matching:
-                            tprint(f"🐛 DEBUG: Found artifact in store '{store_key}': {store_matching}", "INFO")
+                            tprint(f"  │  ✅ Found in alternate store: {store_key}", color="green")
                             version_name = sorted(store_matching)[-1]
                             view = cached_store.get_view(version_name)
                             data = view.materialize()
-                            tprint(f"🐛 DEBUG: Successfully loaded data from alternate store with shape: {data.shape}", "INFO")
+
+                            tprint(f"  │  ✅ Loaded DataFrame with shape: {data.shape}", color="green")
+                            tprint(f"  └─ Columns: {list(data.columns)[:5]}{'...' if len(data.columns) > 5 else ''}", color="green")
+                            tprint("┌" + "─" * 78 + "┐", color="green")
+                            tprint("│  ✅ ARTIFACT ROUTER: LOAD COMPLETED (HDF5 - ALT STORE)                      │", color="green", bold=True)
+                            tprint("└" + "─" * 78 + "┘", color="green")
                             return data
-                    
-                    if not all_stores_found:
-                        tprint(f"🐛 DEBUG: Artifact '{artifact_name}' not found in any versioned store", "WARNING")
-                        
+
+                    tprint(f"  │  ⚠️  Not found in any versioned store", color="yellow")
+                    tprint(f"  └─ Trying next storage method", color="yellow")
+
             except Exception as e:
-                from src.utils.tprint import tprint
-                tprint(f"🐛 DEBUG: Failed to load from versioned store: {e}", "ERROR")
+                tprint(f"  │  ⚠️  Failed: {e}", color="yellow")
+                tprint(f"  └─ Trying next storage method", color="yellow")
                 self.logger.warning(f"Failed to load from versioned store: {e}")
 
+        tprint("┌" + "─" * 78 + "┐", color="red")
+        tprint("│  ❌ ARTIFACT ROUTER: LOAD FAILED - NOT FOUND                                │", color="red", bold=True)
+        tprint(f"│  Artifact '{artifact_name}' not found in any storage                        │"[:79] + " ", color="red")
+        tprint("└" + "─" * 78 + "┘", color="red")
         raise FileNotFoundError(f"Artifact '{artifact_name}' not found in any storage")
 
     def get_storage_info(self, artifact_name: str) -> Dict[str, Any]:

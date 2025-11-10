@@ -218,8 +218,13 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             # For light/blank modes, we need to determine the date range based on available data
             # First load without filters to find the latest available date, then filter
             if start_date is None and execution_mode in ('light', 'blank'):
-                mode_days_map = {'light': 20, 'blank': 180}
-                days_limit = config.get(f'{execution_mode}_mode_days', mode_days_map.get(execution_mode, 20))
+                # Use centralized execution mode configuration
+                from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import get_execution_mode_config
+                execution_config = get_execution_mode_config()
+                days_limit_default = execution_config.get_data_loading_days(execution_mode)
+
+                # Allow override from config if specified
+                days_limit = config.get(f'{execution_mode}_mode_days', days_limit_default)
                 mode_emoji = "💡" if execution_mode == 'light' else "⚪"
                 tprint(
                     f"{mode_emoji} {execution_mode.capitalize()} mode: will load last {days_limit} days from most recent data"
@@ -235,8 +240,13 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             
             # Apply light/blank mode filtering based on actual data availability
             if market_data is not None and not market_data.empty and start_date is None and execution_mode in ('light', 'blank'):
-                mode_days_map = {'light': 20, 'blank': 180}
-                days_limit = config.get(f'{execution_mode}_mode_days', mode_days_map.get(execution_mode, 20))
+                # Use centralized execution mode configuration
+                from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import get_execution_mode_config
+                execution_config = get_execution_mode_config()
+                days_limit_default = execution_config.get_data_loading_days(execution_mode)
+
+                # Allow override from config if specified
+                days_limit = config.get(f'{execution_mode}_mode_days', days_limit_default)
                 
                 # Get the latest date from the actual data
                 if isinstance(market_data.index, pd.DatetimeIndex):

@@ -664,6 +664,21 @@ class BaseStep(ABC):
             tprint(f"🐛 DEBUG: BaseStep._save_artifact called with artifact_name={artifact_name}, data_category={data_category}", "INFO")
             tprint(f"🐛 DEBUG: Data type: {type(data)}, shape: {getattr(data, 'shape', 'N/A')}", "INFO")
 
+            # Data description if it's a DataFrame
+            if pandas_available and isinstance(data, pd.DataFrame):
+                tprint(f"📊 Saving Data Description:")
+                tprint(f"   • Rows: {len(data)}")
+                tprint(f"   • Columns: {len(data.columns)}")
+                tprint(f"   • First 10 columns: {list(data.columns[:10])}")
+                if len(data.columns) > 10:
+                    tprint(f"   • ... and {len(data.columns) - 10} more columns")
+                tprint(f"   • First 5 rows:")
+                for idx, row_idx in enumerate(data.index[:5]):
+                    row_preview = {col: data.loc[row_idx, col] for col in data.columns[:3]}
+                    tprint(f"     [{idx}] {row_idx}: {row_preview}...")
+                if len(data) > 5:
+                    tprint(f"   • ... and {len(data) - 5} more rows")
+
             # Auto-detect data category from artifact_name if not provided
             if data_category is None:
                 if any(kw in artifact_name.lower() for kw in ['config', 'metadata', 'params', 'settings']):
@@ -787,6 +802,22 @@ class BaseStep(ABC):
 
                 if data is not None:
                     self.logger.info(f"Retrieved artifact: {artifact_name}")
+
+                    # Data description if it's a DataFrame
+                    if pandas_available and isinstance(data, pd.DataFrame):
+                        tprint(f"📊 Retrieved Data Description:")
+                        tprint(f"   • Rows: {len(data)}")
+                        tprint(f"   • Columns: {len(data.columns)}")
+                        tprint(f"   • First 10 columns: {list(data.columns[:10])}")
+                        if len(data.columns) > 10:
+                            tprint(f"   • ... and {len(data.columns) - 10} more columns")
+                        tprint(f"   • First 5 rows:")
+                        for idx, row_idx in enumerate(data.index[:5]):
+                            row_preview = {col: data.loc[row_idx, col] for col in data.columns[:3]}
+                            tprint(f"     [{idx}] {row_idx}: {row_preview}...")
+                        if len(data) > 5:
+                            tprint(f"   • ... and {len(data) - 5} more rows")
+
                     tprint(f"✅ Retrieved artifact '{artifact_name}' | {context_str}")
                     return data
                 else:
@@ -819,6 +850,21 @@ class BaseStep(ABC):
                     )
 
                 if data is not None and resolved_path:
+                    # Data description if it's a DataFrame
+                    if pandas_available and isinstance(data, pd.DataFrame):
+                        tprint(f"📊 Retrieved Data Description (from fallback):")
+                        tprint(f"   • Rows: {len(data)}")
+                        tprint(f"   • Columns: {len(data.columns)}")
+                        tprint(f"   • First 10 columns: {list(data.columns[:10])}")
+                        if len(data.columns) > 10:
+                            tprint(f"   • ... and {len(data.columns) - 10} more columns")
+                        tprint(f"   • First 5 rows:")
+                        for idx, row_idx in enumerate(data.index[:5]):
+                            row_preview = {col: data.loc[row_idx, col] for col in data.columns[:3]}
+                            tprint(f"     [{idx}] {row_idx}: {row_preview}...")
+                        if len(data) > 5:
+                            tprint(f"   • ... and {len(data) - 5} more rows")
+
                     tprint(f"✅ Retrieved artifact '{artifact_name}' from fallback | {context_str}")
                     return data
                 else:

@@ -180,6 +180,13 @@ from .advanced_regime_features import (
     create_advanced_regime_generators
 )
 
+# Ensemble disagreement features for ensemble models
+from .ensemble_disagreement import (
+    EnsembleDisagreementFeatures,
+    calculate_ensemble_disagreement_features,
+    get_core_feature_names
+)
+
 from .microstructure_features import create_default_microstructure_generators
 from .autoencoder import create_default_autoencoder_generators
 from .representation_learning import (

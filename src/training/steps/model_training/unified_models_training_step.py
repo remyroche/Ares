@@ -2339,28 +2339,33 @@ class UnifiedModelsTrainingStep(BaseStep):
             return None
 
     async def _get_regime_features(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
-        """Get regime probability features from regime_ensemble_training artifact."""
+        """
+        Get regime probability features from regime steps.
+
+        NOTE: This method is currently unused. Regime features are loaded via _get_additional_model_outputs.
+        Kept for potential future use.
+        """
         try:
             tprint_info("🌍 Loading regime probabilities for feature preparation...")
-            
-            # Load regime ensemble predictions (from regime_ensemble_training)
-            regime_features = self._get_artifact('regime_ensemble_predictions', 'data')
-            
+
+            # Try ensemble predictions first, then base model predictions
+            regime_features = None
+            for artifact_name in ['regime_ensemble_predictions', 'regime_models_predictions']:
+                try:
+                    regime_features = self._get_artifact(artifact_name, 'data')
+                    if regime_features is not None:
+                        tprint_success(f"✅ Loaded regime features from '{artifact_name}': {regime_features.shape}")
+                        tprint_info(f"   Columns: {list(regime_features.columns)}")
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
+                    continue
+
             if regime_features is None:
-                # Try alternative artifact names
-                tprint_warning("⚠️ regime_ensemble_predictions not found, trying alternatives...")
-                regime_features = await self._get_artifact('regime_probabilities', config)
-                if regime_features is None:
-                    regime_features = await self._get_artifact('regime_ml_outputs', config)
-            
-            if regime_features is not None:
-                tprint_success(f"✅ Loaded regime features: {regime_features.shape}")
-                tprint_info(f"   Columns: {list(regime_features.columns)}")
-            else:
                 tprint_warning("⚠️ No regime features found - will use uniform distribution")
-            
+
             return regime_features
-            
+
         except Exception as e:
             self.logger.error(f"Error retrieving regime features: {e}")
             tprint_warning(f"⚠️ Failed to load regime features: {e}")
@@ -2384,10 +2389,10 @@ class UnifiedModelsTrainingStep(BaseStep):
                 tprint_info(f"   Artifact Name: regime_ensemble_predictions")
                 tprint_info(f"   Storage Format: HDF5 (via versioned_artifacts)")
 
-                # Load regime model predictions (from regime_ensemble_training) - REQUIRED
-                # Try multiple artifact names
+                # Load regime model predictions (from regime steps) - REQUIRED
+                # Try ensemble predictions first, then base model predictions
                 regime_features = None
-                for artifact_name in ['regime_ensemble_predictions', 'regime_models_predictions', 'regime_ml_outputs']:
+                for artifact_name in ['regime_ensemble_predictions', 'regime_models_predictions']:
                     try:
                         regime_features = self._get_artifact(artifact_name, 'data')
                         if regime_features is not None:
@@ -2420,11 +2425,15 @@ class UnifiedModelsTrainingStep(BaseStep):
                 if regime_features is None:
                     error_msg = (
                         "❌ CRITICAL: No regime predictions artifact found!\n"
-                        "   Tried: regime_ensemble_predictions, regime_models_predictions, regime_ml_outputs\n"
+                        "   Expected artifacts:\n"
+                        "   - regime_ensemble_predictions (from regime_ensemble_training step) - preferred\n"
+                        "   - regime_models_predictions (from regime_models_training step) - alternative\n"
+                        "   \n"
                         "   This artifact is REQUIRED for model training.\n"
-                        "   Source: regime_ensemble_training step\n"
                         "   Format: HDF5 (versioned_artifacts)\n"
-                        "   Please ensure regime_ensemble_training step has run successfully."
+                        "   \n"
+                        "   Please ensure regime_ensemble_training or regime_models_training step\n"
+                        "   has run successfully and generated regime probability predictions."
                     )
                     tprint_error(error_msg)
                     raise ValueError(error_msg)

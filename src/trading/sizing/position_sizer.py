@@ -25,6 +25,7 @@ from pathlib import Path
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug
+from src.printing import tprint
 from ..config.trading_config import TradingConfig
 from .leverage_manager import LeverageManager
 from .risk_calculator import RiskCalculator
@@ -439,10 +440,10 @@ class PositionSizer:
     ) -> PositionSizeResult:
         """
         Calculate position size using dampened Kelly criterion.
-        
+
         This is the main entry point that replaces the basic Kelly calculation
         with the production-hardened dampened Kelly system.
-        
+
         Args:
             symbol: Trading symbol
             ml_predictions: ML confidence predictions (must include combined_confidence)
@@ -453,27 +454,33 @@ class PositionSizer:
             stop_loss_price: Stop loss price (optional, for R calculation)
             volatility: Market volatility (optional, will be extracted if not provided)
             market_data: Optional market data with OHLC for volatility calculation
-            
+
         Returns:
             PositionSizeResult with complete metadata
         """
+        tprint(f"calculate_position_size called: symbol={symbol}, current_price={current_price:.2f}, account_balance={account_balance:.2f}, analyst_conf={analyst_confidence:.3f}, tactician_conf={tactician_confidence:.3f}")
+
         try:
             if not self.is_initialized:
+                tprint("Position Sizer not initialized, raising error")
                 raise RuntimeError("Position Sizer not initialized")
-            
+
             # Validate inputs
             self._validate_inputs(symbol, current_price, account_balance, analyst_confidence, tactician_confidence)
-            
+            tprint("Input validation passed")
+
             # Extract required inputs for Kelly engine
             model_score = ml_predictions.get('combined_confidence', 0.5)
             vol = volatility if volatility is not None else self._extract_volatility(ml_predictions, market_data)
             regime_id = self._extract_regime_id(ml_predictions)
             ess, entropy = self._extract_ensemble_uncertainty(ml_predictions)
-            
+            tprint(f"Extracted inputs: model_score={model_score:.3f}, vol={vol:.4f}, regime_id={regime_id}, ess={ess:.2f}, entropy={entropy:.3f}")
+
             # Lookup bin with adaptive fallback
             params = self.kelly_engine.get_regime_params(regime_id)
             n_min = params.get('n_min_samples', 25)
-            
+            tprint(f"Regime params retrieved, n_min={n_min}")
+
             bin_data, merge_level = self.kelly_tracker.lookup_bin(
                 score=model_score,
                 volatility=vol,
@@ -481,8 +488,10 @@ class PositionSizer:
                 n_min=n_min,
                 current_time=datetime.now()
             )
+            tprint(f"Bin lookup complete: merge_level={merge_level}, samples={bin_data.total_samples():.1f}, win_rate={bin_data.win_rate():.3f}")
             
             # Calculate dampened Kelly
+            tprint("Calculating dampened Kelly position and leverage...")
             kelly_result: KellyResult = self.kelly_engine.calculate_position_and_leverage(
                 wins=bin_data.wins,
                 losses=bin_data.losses,
@@ -495,40 +504,50 @@ class PositionSizer:
                 bin_last_updated=bin_data.last_updated,
                 is_bin_stale=bin_data.is_stale
             )
-            
+            tprint(f"Kelly calculation complete: f_final={kelly_result.f_final:.4f}, leverage_final={kelly_result.leverage_final:.2f}, reason_codes={kelly_result.reason_codes}")
+
             # Get base position size from Kelly
             base_size = kelly_result.f_final
-            
+            tprint(f"Base position size from Kelly: {base_size:.4f}")
+
             # Apply correlation adjustment if enabled
             correlation_adjusted = False
             if self.correlation_handler and self.correlation_handler.enabled:
+                tprint("Checking correlation adjustment...")
                 adjusted_size, was_adjusted, corr_metadata = self.correlation_handler.calculate_correlation_adjusted_size(
                     symbol=symbol,
                     base_size=base_size,
                     proposed_leverage=kelly_result.leverage_final,
                     current_time=datetime.now()
                 )
-                
+
                 if was_adjusted:
+                    tprint(f"Correlation adjustment applied: {base_size:.4f} -> {adjusted_size:.4f}")
                     base_size = adjusted_size
                     correlation_adjusted = True
                     kelly_result.correlation_adjusted = True
                     kelly_result.metadata['correlation_adjustment'] = corr_metadata
-            
+                else:
+                    tprint("No correlation adjustment needed")
+
             # Calculate final size in account currency
             final_size = base_size * account_balance
-            
+            tprint(f"Final size before limits: {final_size:.2f} ({base_size:.4f} * {account_balance:.2f})")
+
             # Apply min/max limits
             min_size = self.min_position_size * account_balance
             max_size = self.max_position_size * account_balance
             final_size = max(min_size, min(final_size, max_size))
-            
+            tprint(f"Final size after limits: {final_size:.2f} (min={min_size:.2f}, max={max_size:.2f})")
+
             # Get leverage (already calculated by Kelly engine)
             leverage = kelly_result.leverage_final
-            
+            tprint(f"Final leverage: {leverage:.2f}x")
+
             # Validate risk if RiskCalculator is available
             risk_warnings = []
             if self.risk_calculator and stop_loss_price:
+                tprint("Risk calculator available, validation skipped (placeholder)")
                 # Risk validation would go here
                 pass
             
@@ -567,7 +586,8 @@ class PositionSizer:
                     'timestamp': datetime.now().isoformat()
                 }
             )
-            
+            tprint(f"Position size result created: recommended_size={final_size:.2f}, leverage={leverage:.2f}x, confidence={model_score:.3f}")
+
             # Track in history
             self.position_sizing_history.append({
                 'symbol': symbol,
@@ -577,11 +597,13 @@ class PositionSizer:
                 'config_version': kelly_result.config_version,
                 'reason_codes': kelly_result.reason_codes
             })
-            
+
             # Keep history limited
             if len(self.position_sizing_history) > 1000:
                 self.position_sizing_history = self.position_sizing_history[-1000:]
-            
+                tprint("Position sizing history trimmed to 1000 entries")
+
+            tprint(f"calculate_position_size returning: size={result.recommended_size:.2f}, leverage={result.leverage:.2f}x, method={result.sizing_method}")
             return result
         
         except Exception as e:
@@ -616,7 +638,7 @@ class PositionSizer:
     ) -> None:
         """
         Record trade outcome in Kelly bins for future sizing.
-        
+
         Args:
             symbol: Trading symbol
             score: Model score used for entry
@@ -628,18 +650,23 @@ class PositionSizer:
             stop_loss_price: Stop loss price
             timestamp: Trade close timestamp
         """
+        tprint(f"record_trade_outcome called: symbol={symbol}, score={score:.3f}, volatility={volatility:.4f}, regime_id={regime_id}, is_win={is_win}, entry={entry_price:.2f}, exit={exit_price:.2f}, stop_loss={stop_loss_price:.2f}")
+
         if not self.kelly_tracker:
+            tprint("No kelly_tracker available, skipping trade outcome recording")
             return
-        
+
         try:
             # Calculate realized R
             if stop_loss_price > 0:
                 risk = abs(entry_price - stop_loss_price)
                 profit = exit_price - entry_price if is_win else -(entry_price - exit_price)
                 r_realized = abs(profit / risk) if risk > 0 else 1.0
+                tprint(f"Realized R calculated: {r_realized:.2f} (risk={risk:.2f}, profit={profit:.2f})")
             else:
                 r_realized = 2.0  # Default
-            
+                tprint(f"Using default R: {r_realized:.2f} (no stop loss price)")
+
             # Update bin
             self.kelly_tracker.update_bin(
                 score=score,
@@ -649,13 +676,16 @@ class PositionSizer:
                 r_realized=r_realized,
                 timestamp=timestamp or datetime.now()
             )
-            
+            tprint("Trade outcome recorded in Kelly bins")
+
             # Periodically save bins (every 100 trades)
             if len(self.position_sizing_history) % 100 == 0:
+                tprint(f"Periodic save triggered (every 100 trades, current history: {len(self.position_sizing_history)})")
                 self._save_kelly_bins()
-        
+
         except Exception as e:
             self.logger.error(f"Error recording trade outcome: {e}")
+            tprint(f"Error recording trade outcome: {e}")
     
     def _save_kelly_bins(self) -> None:
         """Save Kelly bins to artifacts."""

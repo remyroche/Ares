@@ -52,25 +52,28 @@ class ExchangeIntegrationConfig:
 
     def __post_init__(self) -> None:
         """Validate configuration."""
+        tprint(f"[ExchangeIntegrationConfig.__post_init__] Entry - exchange_type={self.exchange_type}, testnet={self.testnet}")
+
         if not self.exchange_type:
-            tprint("❌ exchange_type is required")
+            tprint(f"[ExchangeIntegrationConfig.__post_init__] ERROR: exchange_type is required")
             raise ValueError("exchange_type is required")
         if not self.api_key:
-            tprint("❌ api_key is required")
+            tprint(f"[ExchangeIntegrationConfig.__post_init__] ERROR: api_key is required")
             raise ValueError("api_key is required")
         if not self.api_secret:
-            tprint("❌ api_secret is required")
+            tprint(f"[ExchangeIntegrationConfig.__post_init__] ERROR: api_secret is required")
             raise ValueError("api_secret is required")
         if self.exchange_type.lower() not in ['binance', 'bingx']:
-            tprint(f"❌ Unsupported exchange type: {self.exchange_type}")
+            tprint(f"[ExchangeIntegrationConfig.__post_init__] ERROR: Unsupported exchange type: {self.exchange_type}")
             raise ValueError(f"Unsupported exchange type: {self.exchange_type}")
         if self.connection_retry_attempts < 1:
-            tprint("❌ connection_retry_attempts must be >= 1")
+            tprint(f"[ExchangeIntegrationConfig.__post_init__] ERROR: connection_retry_attempts must be >= 1")
             raise ValueError("connection_retry_attempts must be >= 1")
         if self.connection_retry_delay < 0:
-            tprint("❌ connection_retry_delay must be >= 0")
+            tprint(f"[ExchangeIntegrationConfig.__post_init__] ERROR: connection_retry_delay must be >= 0")
             raise ValueError("connection_retry_delay must be >= 0")
-        tprint(f"✅ Exchange integration config validated for {self.exchange_type}")
+
+        tprint(f"[ExchangeIntegrationConfig.__post_init__] Exit - config validated successfully")
 
 class ExchangeIntegrationManager:
     """
@@ -86,6 +89,8 @@ class ExchangeIntegrationManager:
 
     def __init__(self, config: ExchangeIntegrationConfig):
         """Initialize exchange integration manager."""
+        tprint(f"[ExchangeIntegrationManager.__init__] Entry - exchange_type={config.exchange_type}, testnet={config.testnet}")
+
         self.config = config
         self.exchange: Optional[BinanceExchange] = None  # BingXExchange not available
         self.exchange_interface: Optional[ExchangeInterface] = None
@@ -105,14 +110,20 @@ class ExchangeIntegrationManager:
         self.connection_attempts = 0
 
         # Initialize the integration
+        tprint(f"[ExchangeIntegrationManager.__init__] Calling _initialize_integration")
         self._initialize_integration()
+
+        tprint(f"[ExchangeIntegrationManager.__init__] Exit - is_initialized={self.is_initialized}")
 
     @handle_errors(default_return=None)
     def _initialize_integration(self) -> None:
         """Initialize the exchange integration."""
+        tprint(f"[ExchangeIntegrationManager._initialize_integration] Entry - exchange_type={self.config.exchange_type}")
+
         try:
             # Create exchange instance based on type
             if self.config.exchange_type.lower() == 'binance':
+                tprint(f"[ExchangeIntegrationManager._initialize_integration] Creating Binance exchange instance")
                 self.exchange = create_binance_exchange(
                     api_key=self.config.api_key,
                     api_secret=self.config.api_secret,
@@ -121,15 +132,19 @@ class ExchangeIntegrationManager:
                 )
             elif self.config.exchange_type.lower() == 'bingx':
                 # BingX exchange not available
+                tprint(f"[ExchangeIntegrationManager._initialize_integration] ERROR: BingX not supported")
                 raise ValueError("BingX exchange not available - only Binance is supported")
             else:
+                tprint(f"[ExchangeIntegrationManager._initialize_integration] ERROR: Unsupported type {self.config.exchange_type}")
                 raise ValueError(f"Unsupported exchange type: {self.config.exchange_type}")
 
             # Initialize shared utilities if enabled
             if self.config.enable_shared_utilities:
+                tprint(f"[ExchangeIntegrationManager._initialize_integration] Initializing shared utilities")
                 self._initialize_shared_utilities()
 
             # Create exchange interface
+            tprint(f"[ExchangeIntegrationManager._initialize_integration] Creating exchange interface")
             interface_config = {
                 'exchange_type': self.config.exchange_type,
                 'api_key': self.config.api_key,
@@ -141,11 +156,13 @@ class ExchangeIntegrationManager:
             self.exchange_interface = ExchangeInterface(interface_config)
 
             self.is_initialized = True
-            tprint(f"✅ Exchange integration initialized for {self.config.exchange_type}")
+            tprint(f"[ExchangeIntegrationManager._initialize_integration] SUCCESS: Integration initialized")
+            tprint(f"[ExchangeIntegrationManager._initialize_integration] Exit - is_initialized=True")
 
         except Exception as e:
             self.last_error = str(e)
-            tprint(f"❌ Failed to initialize exchange integration: {e}")
+            tprint(f"[ExchangeIntegrationManager._initialize_integration] ERROR: Failed to initialize: {e}")
+            tprint(f"[ExchangeIntegrationManager._initialize_integration] Exit with exception")
             raise
 
     @handle_errors(default_return=None)

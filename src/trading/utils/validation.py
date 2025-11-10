@@ -10,6 +10,7 @@ import numpy as np
 from typing import Dict, Any, List, Optional, Union, Tuple
 from datetime import datetime, timedelta
 
+from src.printing import tprint
 from src.utils.tprint import tprint_error, tprint_warning, tprint_info, tprint_success
 from .error_handling import ValidationError, TradingErrorSeverity
 from ..enums import OrderSide, OrderType

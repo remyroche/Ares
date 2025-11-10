@@ -129,12 +129,16 @@ class DataValidator:
         Returns:
             Validation result
         """
+        data_type = "dict" if isinstance(data, dict) else "DataFrame"
+        tprint(f"validate_market_data: symbol={symbol}, data_type={data_type}")
         try:
             # Convert to DataFrame if needed
             if isinstance(data, dict):
                 df = pd.DataFrame([data])
+                tprint(f"validate_market_data: Converted dict to DataFrame with {len(df)} rows")
             else:
                 df = data.copy()
+                tprint(f"validate_market_data: Using DataFrame with {len(df)} rows")
 
             failed_rules = []
             warnings = []
@@ -142,6 +146,7 @@ class DataValidator:
 
             # Run all validation checks
             validation_results = {}
+            tprint(f"validate_market_data: Starting validation checks for {symbol}")
 
             # 1. OHLC Consistency Check
             ohlc_result = await self._validate_ohlc_consistency(df, symbol)
@@ -201,19 +206,21 @@ class DataValidator:
 
             # Calculate overall quality score
             quality_score = await self._calculate_quality_score(validation_results)
+            tprint(f"validate_market_data: Overall quality_score={quality_score:.3f}")
 
             # Determine if data is valid (critical errors)
             # Check if any critical validation rules failed
             critical_rules = {ValidationRule.OHLC_CONSISTENCY, ValidationRule.MISSING_DATA}
             failed_critical = any(
-                critical_rule in r.failed_rules 
-                for r in validation_results.values() 
+                critical_rule in r.failed_rules
+                for r in validation_results.values()
                 if not r.is_valid
                 for critical_rule in critical_rules
             )
             is_valid = not failed_critical
+            tprint(f"validate_market_data: is_valid={is_valid}, failed_rules={len(failed_rules)}, errors={len(errors)}, warnings={len(warnings)}")
 
-            return ValidationResult(
+            result = ValidationResult(
                 is_valid=is_valid,
                 quality_score=quality_score,
                 failed_rules=failed_rules,
@@ -221,9 +228,11 @@ class DataValidator:
                 errors=errors,
                 metadata={'validation_results': validation_results}
             )
+            tprint(f"validate_market_data: Returning validation result for {symbol}")
+            return result
 
         except Exception as e:
-            tprint(f"❌ Error validating market data: {str(e)}")
+            tprint(f"validate_market_data: Exception occurred: {str(e)}, returning failed ValidationResult")
             return ValidationResult(
                 is_valid=False,
                 quality_score=0.0,

@@ -523,6 +523,8 @@ class TradingModelManager:
 
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get current performance metrics."""
+        tprint("[TRADING_MODEL_MANAGER] Entering get_performance_metrics")
+
         try:
             with self.performance_lock:
                 metrics = {}
@@ -540,31 +542,40 @@ class TradingModelManager:
                         'avg_performance': np.mean(performance.performance_history) if performance.performance_history else 0.0
                     }
 
+                tprint(f"[TRADING_MODEL_MANAGER] Exiting get_performance_metrics with {len(metrics)} metrics")
                 return metrics
 
         except Exception as e:
             self.logger.error(f"❌ Failed to get performance metrics: {e}")
+            tprint(f"[TRADING_MODEL_MANAGER] Exiting get_performance_metrics with error: {e}")
             return {}
 
     def get_cache_status(self) -> Dict[str, Any]:
         """Get model cache status."""
+        tprint("[TRADING_MODEL_MANAGER] Entering get_cache_status")
+
         try:
             with self.cache_lock:
-                return {
+                status = {
                     'cache_size': len(self.model_cache),
                     'cache_limit': self.cache_size_limit,
                     'cached_models': list(self.model_cache.keys()),
                     'memory_usage': sum(len(str(entry.model)) for entry in self.model_cache.values())
                 }
+                tprint(f"[TRADING_MODEL_MANAGER] Exiting get_cache_status with cache_size={status['cache_size']}")
+                return status
 
         except Exception as e:
             self.logger.error(f"❌ Failed to get cache status: {e}")
+            tprint(f"[TRADING_MODEL_MANAGER] Exiting get_cache_status with error: {e}")
             return {}
 
     def get_system_status(self) -> Dict[str, Any]:
         """Get overall system status."""
+        tprint("[TRADING_MODEL_MANAGER] Entering get_system_status")
+
         try:
-            return {
+            status = {
                 'model_selector_ready': self.model_selector_service is not None,
                 'model_loader_ready': self.model_loader is not None,
                 'cached_models': len(self.model_cache),
@@ -572,9 +583,12 @@ class TradingModelManager:
                 'performance_metrics': self.get_performance_metrics(),
                 'cache_status': self.get_cache_status()
             }
+            tprint(f"[TRADING_MODEL_MANAGER] Exiting get_system_status with {len(status)} status fields")
+            return status
 
         except Exception as e:
             self.logger.error(f"❌ Failed to get system status: {e}")
+            tprint(f"[TRADING_MODEL_MANAGER] Exiting get_system_status with error: {e}")
             return {'error': str(e)}
 
     def shutdown(self):

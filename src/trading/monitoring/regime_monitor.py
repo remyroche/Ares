@@ -18,6 +18,7 @@ import numpy as np
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
+from src.printing import tprint
 from src.utils.tprint import (
     tprint_info, tprint_warning, tprint_error, tprint_success,
     tprint_structured, LogLevel
@@ -96,6 +97,7 @@ class RegimeMonitor:
         Args:
             config: Configuration dictionary
         """
+        tprint(f"[REGIME_MON] __init__: Initializing RegimeMonitor with config keys: {list(config.keys())}")
         self.config = config
         self.logger = logger.getChild('RegimeMonitor')
 
@@ -125,7 +127,9 @@ class RegimeMonitor:
 
     async def initialize(self) -> None:
         """Initialize regime monitor."""
+        tprint(f"[REGIME_MON] initialize: Starting RegimeMonitor initialization")
         tprint_success("✅ Regime Monitor initialized successfully")
+        tprint(f"[REGIME_MON] initialize: RegimeMonitor initialized successfully")
 
     @handles_errors
     async def update_regime_state(
@@ -148,6 +152,7 @@ class RegimeMonitor:
         # Determine primary regime
         primary_regime = max(regime_probabilities, key=regime_probabilities.get)
         primary_probability = regime_probabilities[primary_regime]
+        tprint(f"[REGIME_MON] update_regime_state: Updating regime state, primary_regime={primary_regime.value}, confidence={confidence:.3f}, primary_probability={primary_probability:.3f}")
 
         # Calculate stability
         stability = await self._calculate_regime_stability(regime_probabilities)
@@ -188,6 +193,7 @@ class RegimeMonitor:
 
         self.current_regime_state = regime_state
 
+        tprint(f"[REGIME_MON] update_regime_state: Regime state updated, primary_regime={primary_regime.value}, stability={stability.value}, returning regime_state")
         return regime_state
 
     async def _calculate_regime_stability(self, probabilities: Dict[RegimeType, float]) -> RegimeStability:

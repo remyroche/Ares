@@ -19,6 +19,7 @@ import numpy as np
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+from src.printing import tprint
 
 
 logger = system_logger.getChild('TacticianSignals')
@@ -77,6 +78,7 @@ class TacticianSignalGenerator:
         Args:
             config: Configuration dictionary
         """
+        tprint(f"[TACTICIAN_SIG_GEN] __init__: Initializing with config")
         self.config = config
         self.logger = logger.getChild('TacticianSignalGenerator')
 
@@ -105,6 +107,7 @@ class TacticianSignalGenerator:
         self.signal_count = 0
         self.successful_signals = 0
         self.failed_signals = 0
+        tprint(f"[TACTICIAN_SIG_GEN] __init__ -> initialized (confidence_threshold={self.confidence_threshold}, max_history={self.max_history})")
 
     async def initialize(self, tactician_component) -> bool:
         """
@@ -116,12 +119,15 @@ class TacticianSignalGenerator:
         Returns:
             bool: True if initialization successful
         """
+        tprint(f"[TACTICIAN_SIG_GEN] initialize: Initializing with tactician component")
         try:
             self.tactician = tactician_component
             self.logger.info("✅ Tactician Signal Generator initialized")
+            tprint(f"[TACTICIAN_SIG_GEN] initialize -> True")
             return True
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize Tactician Signal Generator: {e}")
+            tprint(f"[TACTICIAN_SIG_GEN] initialize -> False (error: {e})", color="red")
             return False
 
     @handles_errors
@@ -150,9 +156,11 @@ class TacticianSignalGenerator:
         Returns:
             TacticianSignal or None if no signal generated
         """
+        tprint(f"[TACTICIAN_SIG_GEN] generate_timing_signal: symbol={symbol}, data_rows={len(market_data)}, has_position={current_position is not None}, balance={account_balance}")
         try:
             if not self.tactician:
                 self.logger.error("❌ Tactician component not initialized")
+                tprint(f"[TACTICIAN_SIG_GEN] generate_timing_signal -> None (tactician not initialized)", color="red")
                 return None
 
             tprint_info(f"🔄 Generating tactician timing signal for {symbol}")
@@ -164,6 +172,7 @@ class TacticianSignalGenerator:
 
             if not timing_analysis:
                 tprint_warning(f"⚠️ No timing analysis result for {symbol}")
+                tprint(f"[TACTICIAN_SIG_GEN] generate_timing_signal -> None (no timing analysis)")
                 return None
 
             # Calculate position sizing
@@ -183,11 +192,13 @@ class TacticianSignalGenerator:
 
                 tprint_success(f"✅ Generated {signal.timing_signal.value} signal for {symbol} "
                              f"(confidence: {signal.confidence_score:.3f})")
+                tprint(f"[TACTICIAN_SIG_GEN] generate_timing_signal -> {signal.timing_signal.value} (confidence={signal.confidence_score:.3f}, size={signal.position_sizing.recommended_size})")
 
             return signal
 
         except Exception as e:
             self.logger.error(f"❌ Timing signal generation failed for {symbol}: {e}")
+            tprint(f"[TACTICIAN_SIG_GEN] generate_timing_signal -> ERROR: {e}", color="red")
             return None
 
     async def _perform_timing_analysis(
@@ -199,6 +210,7 @@ class TacticianSignalGenerator:
         additional_context: Optional[Dict[str, Any]]
     ) -> Optional[Dict[str, Any]]:
         """Perform timing analysis using Tactician component."""
+        tprint(f"[TACTICIAN_SIG_GEN] _perform_timing_analysis: symbol={symbol}")
         try:
             # Prepare timing context
             timing_context = {
@@ -211,17 +223,22 @@ class TacticianSignalGenerator:
 
             # Call Tactician's timing analysis method
             if hasattr(self.tactician, 'analyze_timing'):
+                tprint(f"[TACTICIAN_SIG_GEN] _perform_timing_analysis: calling tactician.analyze_timing()")
                 timing_result = await self.tactician.analyze_timing(timing_context)
             elif hasattr(self.tactician, 'run_timing_analysis'):
+                tprint(f"[TACTICIAN_SIG_GEN] _perform_timing_analysis: calling tactician.run_timing_analysis()")
                 timing_result = await self.tactician.run_timing_analysis(timing_context)
             else:
                 # Fallback to basic timing analysis
+                tprint(f"[TACTICIAN_SIG_GEN] _perform_timing_analysis: using fallback analysis")
                 timing_result = await self._fallback_timing_analysis(timing_context)
 
+            tprint(f"[TACTICIAN_SIG_GEN] _perform_timing_analysis -> result={timing_result is not None}")
             return timing_result
 
         except Exception as e:
             self.logger.error(f"❌ Timing analysis failed: {e}")
+            tprint(f"[TACTICIAN_SIG_GEN] _perform_timing_analysis -> ERROR: {e}", color="red")
             return None
 
     async def _fallback_timing_analysis(self, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -309,6 +326,7 @@ class TacticianSignalGenerator:
         account_balance: float
     ) -> PositionSizing:
         """Calculate position sizing based on confidence and risk parameters."""
+        tprint(f"[TACTICIAN_SIG_GEN] _calculate_position_sizing: symbol={symbol}, balance={account_balance}")
         try:
             # Get confidence scores
             analyst_confidence = analyst_signal.get('confidence_score', 0.5)
@@ -316,6 +334,7 @@ class TacticianSignalGenerator:
 
             # Combined confidence
             combined_confidence = (analyst_confidence + timing_confidence) / 2
+            tprint(f"[TACTICIAN_SIG_GEN] _calculate_position_sizing: analyst_conf={analyst_confidence:.3f}, timing_conf={timing_confidence:.3f}, combined={combined_confidence:.3f}")
 
             # Kelly criterion calculation for position sizing
             # Note: These values represent actual trading outcomes, not model training targets
@@ -342,7 +361,7 @@ class TacticianSignalGenerator:
             # Leverage calculation
             leverage = min(combined_confidence * self.max_leverage, self.max_leverage)
 
-            return PositionSizing(
+            sizing = PositionSizing(
                 recommended_size=min(recommended_size, max_size),
                 max_size=max_size,
                 leverage=leverage,
@@ -350,9 +369,12 @@ class TacticianSignalGenerator:
                 kelly_fraction=kelly_fraction,
                 confidence_multiplier=confidence_multiplier
             )
+            tprint(f"[TACTICIAN_SIG_GEN] _calculate_position_sizing -> size={sizing.recommended_size:.2f}, leverage={sizing.leverage:.2f}, kelly={kelly_fraction:.3f}")
+            return sizing
 
         except Exception as e:
             self.logger.error(f"❌ Position sizing calculation failed: {e}")
+            tprint(f"[TACTICIAN_SIG_GEN] _calculate_position_sizing -> ERROR: {e} (using defaults)", color="red")
             # Return conservative defaults
             return PositionSizing(
                 recommended_size=account_balance * 0.01,  # 1% of account
@@ -372,13 +394,17 @@ class TacticianSignalGenerator:
         current_position: Optional[Dict[str, Any]]
     ) -> Optional[TacticianSignal]:
         """Generate timing signal from analysis result."""
+        tprint(f"[TACTICIAN_SIG_GEN] _generate_timing_signal_from_analysis: symbol={symbol}")
         try:
             # Extract timing information
             timing_signal_str = timing_analysis.get('timing_signal', 'hold')
             confidence_score = timing_analysis.get('confidence_score', 0.0)
 
+            tprint(f"[TACTICIAN_SIG_GEN] _generate_timing_signal_from_analysis: signal={timing_signal_str}, confidence={confidence_score:.3f}, threshold={self.confidence_threshold:.3f}")
+
             # Check confidence threshold
             if confidence_score < self.confidence_threshold:
+                tprint(f"[TACTICIAN_SIG_GEN] _generate_timing_signal_from_analysis -> None (below confidence threshold)")
                 return None
 
             # Map timing signal
@@ -401,10 +427,12 @@ class TacticianSignalGenerator:
                 metadata=timing_analysis.get('analysis_metadata', {})
             )
 
+            tprint(f"[TACTICIAN_SIG_GEN] _generate_timing_signal_from_analysis -> {timing_signal.value} (confidence={confidence.value})")
             return signal
 
         except Exception as e:
             self.logger.error(f"❌ Timing signal generation from analysis failed: {e}")
+            tprint(f"[TACTICIAN_SIG_GEN] _generate_timing_signal_from_analysis -> ERROR: {e}", color="red")
             return None
 
     def _map_timing_signal(self, signal_str: str, current_position: Optional[Dict[str, Any]]) -> TimingSignal:
@@ -438,13 +466,18 @@ class TacticianSignalGenerator:
 
     def _store_signal(self, signal: TacticianSignal):
         """Store signal in history (deque automatically handles maxlen)."""
+        tprint(f"[TACTICIAN_SIG_GEN] _store_signal: storing signal (history_size={len(self.signal_history)})")
         self.signal_history.append(signal)
+        tprint(f"[TACTICIAN_SIG_GEN] _store_signal -> stored (new_size={len(self.signal_history)})")
 
     def get_signal_history(self, n: int = 100) -> List[TacticianSignal]:
         """Get recent signal history."""
+        tprint(f"[TACTICIAN_SIG_GEN] get_signal_history: n={n}, total_signals={len(self.signal_history)}")
         # Convert deque to list for return
         signal_list = list(self.signal_history)
-        return signal_list[-n:] if len(signal_list) >= n else signal_list
+        result = signal_list[-n:] if len(signal_list) >= n else signal_list
+        tprint(f"[TACTICIAN_SIG_GEN] get_signal_history -> {len(result)} signals")
+        return result
 
     def get_signal_stats(self) -> Dict[str, Any]:
         """Get signal generation statistics."""
@@ -487,7 +520,10 @@ class TacticianSignalGenerator:
 
 def create_tactician_signal_generator(config: Dict[str, Any]) -> TacticianSignalGenerator:
     """Create a configured tactician signal generator."""
-    return TacticianSignalGenerator(config)
+    tprint(f"[TACTICIAN_SIG_GEN] create_tactician_signal_generator: Creating generator")
+    generator = TacticianSignalGenerator(config)
+    tprint(f"[TACTICIAN_SIG_GEN] create_tactician_signal_generator -> created")
+    return generator
 
 async def generate_tactician_signal(
     signal_generator: TacticianSignalGenerator,
@@ -499,13 +535,17 @@ async def generate_tactician_signal(
     account_balance: float = 10000.0
 ) -> Optional[TacticianSignal]:
     """Generate tactician signal with convenience function."""
+    tprint(f"[TACTICIAN_SIG_GEN] generate_tactician_signal: symbol={symbol}")
     if not signal_generator.tactician:
+        tprint(f"[TACTICIAN_SIG_GEN] generate_tactician_signal: initializing tactician component")
         await signal_generator.initialize(tactician_component)
 
-    return await signal_generator.generate_timing_signal(
+    signal = await signal_generator.generate_timing_signal(
         symbol=symbol,
         analyst_signal=analyst_signal,
         market_data=market_data,
         current_position=current_position,
         account_balance=account_balance
     )
+    tprint(f"[TACTICIAN_SIG_GEN] generate_tactician_signal -> {signal.timing_signal.value if signal else None}")
+    return signal

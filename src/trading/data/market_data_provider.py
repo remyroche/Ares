@@ -15,7 +15,7 @@ import pandas as pd
 from src.trading.utils.ohlcv import ensure_ohlcv_dataframe
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.tprint import tprint
 from src.core.decorators import handles_errors, traced, log_execution_time
 from ..config.execution_config import ExchangeType
 
@@ -42,7 +42,7 @@ class MarketDataProvider:
     """
 
     def __init__(self, exchange: ExchangeType = ExchangeType.BINANCE_TESTNET) -> None:
-        tprint_info(f"🔄 Initializing Market Data Provider for {exchange.value}")
+        tprint(f"🔄 Initializing Market Data Provider for {exchange.value}")
         self.exchange: ExchangeType = exchange
         self.logger = logger.getChild(f'{exchange.value}')
 
@@ -64,19 +64,19 @@ class MarketDataProvider:
     async def initialize(self) -> bool:
         """Initialize market data provider."""
         try:
-            tprint_info(f"🔄 Initializing Market Data Provider for {self.exchange.value}...")
+            tprint(f"🔄 Initializing Market Data Provider for {self.exchange.value}...")
             self.logger.info(f"Initializing Market Data Provider for {self.exchange.value}...")
 
             # Initialize exchange client
             await self._initialize_exchange_client()
 
             self.is_initialized = True
-            tprint_success("✅ Market Data Provider initialized successfully")
+            tprint("✅ Market Data Provider initialized successfully")
             self.logger.info("✅ Market Data Provider initialized successfully")
             return True
 
         except Exception as e:
-            tprint_error(f"❌ Failed to initialize Market Data Provider: {e}")
+            tprint(f"❌ Failed to initialize Market Data Provider: {e}")
             self.logger.error(f"❌ Failed to initialize Market Data Provider: {e}")
             return False
 
@@ -86,22 +86,22 @@ class MarketDataProvider:
             # Use existing exchange factory
             from exchanges.factory import ExchangeFactory
 
-            tprint_info(f"🔄 Initializing exchange client for {self.exchange.value}...")
+            tprint(f"🔄 Initializing exchange client for {self.exchange.value}...")
             self.exchange_client = ExchangeFactory.get_exchange(self.exchange.value)
             if self.exchange_client:
                 success: bool = await self.exchange_client.initialize()
                 if not success:
-                    tprint_warning("⚠️ Failed to initialize exchange client")
+                    tprint("⚠️ Failed to initialize exchange client")
                     self.logger.warning("⚠️ Failed to initialize exchange client")
                     self.exchange_client = None
                 else:
-                    tprint_success(f"✅ Exchange client initialized: {self.exchange.value}")
+                    tprint(f"✅ Exchange client initialized: {self.exchange.value}")
             else:
-                tprint_warning("⚠️ Could not create exchange client")
+                tprint("⚠️ Could not create exchange client")
                 self.logger.warning("⚠️ Could not create exchange client")
 
         except Exception as e:
-            tprint_error(f"❌ Exchange client initialization failed: {e}")
+            tprint(f"❌ Exchange client initialization failed: {e}")
             self.logger.warning(f"⚠️ Exchange client initialization failed: {e}")
             self.exchange_client = None
 
@@ -121,12 +121,12 @@ class MarketDataProvider:
         """
         try:
             if not self.is_initialized:
-                tprint_error("❌ Market Data Provider not initialized")
+                tprint("❌ Market Data Provider not initialized")
                 raise RuntimeError("Market Data Provider not initialized")
 
             # Try to get from exchange first
             if self.exchange_client:
-                tprint_info(f"📊 Fetching latest data for {symbol} ({interval}) from exchange...")
+                tprint(f"📊 Fetching latest data for {symbol} ({interval}) from exchange...")
                 klines = await self.exchange_client.get_klines(
                     symbol=symbol,
                     interval=interval,
@@ -135,7 +135,7 @@ class MarketDataProvider:
 
                 if klines:
                     latest_kline = klines[0]
-                    tprint_success(f"✅ Retrieved latest data for {symbol} from exchange")
+                    tprint(f"✅ Retrieved latest data for {symbol} from exchange")
                     return MarketData(
                         timestamp=latest_kline.timestamp,
                         symbol=symbol,
@@ -153,11 +153,11 @@ class MarketDataProvider:
                     )
 
             # Fallback to cached data
-            tprint_info(f"📊 Fetching cached data for {symbol} ({interval})...")
+            tprint(f"📊 Fetching cached data for {symbol} ({interval})...")
             return await self._get_cached_latest_data(symbol, interval)
 
         except Exception as e:
-            tprint_error(f"❌ Failed to get latest data for {symbol}: {e}")
+            tprint(f"❌ Failed to get latest data for {symbol}: {e}")
             self.logger.error(f"❌ Failed to get latest data for {symbol}: {e}")
             return None
 
@@ -187,7 +187,7 @@ class MarketDataProvider:
         """
         try:
             if not self.is_initialized:
-                tprint_error("❌ Market Data Provider not initialized")
+                tprint("❌ Market Data Provider not initialized")
                 raise RuntimeError("Market Data Provider not initialized")
 
             # Check cache first (thread-safe)
@@ -196,12 +196,12 @@ class MarketDataProvider:
                 if cache_key in self.historical_data_cache:
                     cached_data: pd.DataFrame = self.historical_data_cache[cache_key].copy()
                     if self._is_cache_valid(cached_data, start_time, end_time):
-                        tprint_info(f"📊 Using cached historical data for {symbol} ({interval})")
+                        tprint(f"📊 Using cached historical data for {symbol} ({interval})")
                         return self._filter_cached_data(cached_data, start_time, end_time, limit)
 
             # Fetch from exchange
             if self.exchange_client:
-                tprint_info(f"📊 Fetching historical data for {symbol} ({interval}) from exchange...")
+                tprint(f"📊 Fetching historical data for {symbol} ({interval}) from exchange...")
                 klines = await self.exchange_client.get_klines(
                     symbol=symbol,
                     interval=interval,
@@ -232,17 +232,17 @@ class MarketDataProvider:
                     async with self._cache_lock:
                         self._update_cache(cache_key, df)
 
-                    tprint_success(f"✅ Retrieved {len(df)} historical records for {symbol} ({interval})")
+                    tprint(f"✅ Retrieved {len(df)} historical records for {symbol} ({interval})")
                     return df
                 else:
-                    tprint_warning(f"⚠️ No historical data returned for {symbol} ({interval})")
+                    tprint(f"⚠️ No historical data returned for {symbol} ({interval})")
 
             # Return empty DataFrame if no data available
-            tprint_warning(f"⚠️ No exchange client available, returning empty DataFrame")
+            tprint(f"⚠️ No exchange client available, returning empty DataFrame")
             return pd.DataFrame()
 
         except Exception as e:
-            tprint_error(f"❌ Failed to get historical data for {symbol}: {e}")
+            tprint(f"❌ Failed to get historical data for {symbol}: {e}")
             self.logger.error(f"❌ Failed to get historical data for {symbol}: {e}")
             return pd.DataFrame()
 
@@ -267,7 +267,7 @@ class MarketDataProvider:
             Dict[str, MarketData]: Latest data for each symbol
         """
         try:
-            tprint_info(f"📊 Fetching data for {len(symbols)} symbols ({interval})...")
+            tprint(f"📊 Fetching data for {len(symbols)} symbols ({interval})...")
             results: Dict[str, MarketData] = {}
 
             # Fetch data for all symbols concurrently
@@ -283,14 +283,14 @@ class MarketDataProvider:
                     if data:
                         results[symbol] = data
                 except Exception as e:
-                    tprint_warning(f"⚠️ Failed to get data for {symbol}: {e}")
+                    tprint(f"⚠️ Failed to get data for {symbol}: {e}")
                     self.logger.warning(f"⚠️ Failed to get data for {symbol}: {e}")
 
-            tprint_success(f"✅ Retrieved data for {len(results)}/{len(symbols)} symbols")
+            tprint(f"✅ Retrieved data for {len(results)}/{len(symbols)} symbols")
             return results
 
         except Exception as e:
-            tprint_error(f"❌ Failed to get multiple symbols data: {e}")
+            tprint(f"❌ Failed to get multiple symbols data: {e}")
             self.logger.error(f"❌ Failed to get multiple symbols data: {e}")
             return {}
 
@@ -302,7 +302,7 @@ class MarketDataProvider:
                 cached_data: pd.DataFrame = self.historical_data_cache[cache_key]
                 if not cached_data.empty:
                     latest_row = cached_data.iloc[-1]
-                    tprint_info(f"📊 Retrieved cached data for {symbol} ({interval})")
+                    tprint(f"📊 Retrieved cached data for {symbol} ({interval})")
                     return MarketData(
                         timestamp=latest_row.name,  # timestamp is index
                         symbol=symbol,
@@ -318,11 +318,11 @@ class MarketDataProvider:
                             'data_quality': 'historical'
                         }
                     )
-            tprint_warning(f"⚠️ No cached data available for {symbol} ({interval})")
+            tprint(f"⚠️ No cached data available for {symbol} ({interval})")
             return None
 
         except Exception as e:
-            tprint_error(f"❌ Failed to get cached data for {symbol}: {e}")
+            tprint(f"❌ Failed to get cached data for {symbol}: {e}")
             self.logger.warning(f"⚠️ Failed to get cached data for {symbol}: {e}")
             return None
 
@@ -345,11 +345,11 @@ class MarketDataProvider:
             cache_age: float = (datetime.now(timezone.utc) - cache_end).total_seconds()
             is_valid: bool = cache_age < self.cache_ttl
             if not is_valid:
-                tprint_info(f"⚠️ Cache expired (age: {cache_age:.0f}s, TTL: {self.cache_ttl}s)")
+                tprint(f"⚠️ Cache expired (age: {cache_age:.0f}s, TTL: {self.cache_ttl}s)")
             return is_valid
 
         except Exception as e:
-            tprint_warning(f"⚠️ Error validating cache: {e}")
+            tprint(f"⚠️ Error validating cache: {e}")
             return False
 
     def _filter_cached_data(
@@ -388,21 +388,21 @@ class MarketDataProvider:
                 combined_data: pd.DataFrame = pd.concat([existing_data, new_data])
                 combined_data = combined_data[~combined_data.index.duplicated(keep='last')]
                 combined_data = combined_data.sort_index()
-                tprint_info(f"💾 Merged cache for {cache_key}: {len(existing_data)} -> {len(combined_data)} records")
+                tprint(f"💾 Merged cache for {cache_key}: {len(existing_data)} -> {len(combined_data)} records")
             else:
                 combined_data = new_data.copy()
-                tprint_info(f"💾 Created new cache for {cache_key}: {len(combined_data)} records")
+                tprint(f"💾 Created new cache for {cache_key}: {len(combined_data)} records")
 
             # Limit cache size
             if len(combined_data) > self.cache_size:
                 combined_data = combined_data.tail(self.cache_size)
-                tprint_warning(f"⚠️ Cache limit reached for {cache_key}, truncated to {self.cache_size} records")
+                tprint(f"⚠️ Cache limit reached for {cache_key}, truncated to {self.cache_size} records")
 
             self.historical_data_cache[cache_key] = combined_data
             self.last_update_time[cache_key] = datetime.now(timezone.utc)
 
         except Exception as e:
-            tprint_error(f"❌ Failed to update cache for {cache_key}: {e}")
+            tprint(f"❌ Failed to update cache for {cache_key}: {e}")
             self.logger.warning(f"⚠️ Failed to update cache for {cache_key}: {e}")
 
     def _is_cache_fresh(self, cache_key: str) -> bool:
@@ -423,12 +423,12 @@ class MarketDataProvider:
         async with self._cache_lock:
             cached: Optional[pd.DataFrame] = self.historical_data_cache.get(cache_key)
             if cached is None or cached.empty:
-                tprint_info(f"⚠️ No cached data for {cache_key}")
+                tprint(f"⚠️ No cached data for {cache_key}")
                 return None
             if not allow_stale and not self._is_cache_fresh(cache_key):
-                tprint_info(f"⚠️ Cache stale for {cache_key}")
+                tprint(f"⚠️ Cache stale for {cache_key}")
                 return None
-            tprint_info(f"📊 Using cached dataframe for {cache_key} (limit: {limit})")
+            tprint(f"📊 Using cached dataframe for {cache_key} (limit: {limit})")
             return ensure_ohlcv_dataframe(
                 cached.copy(),
                 required_columns=self._default_ohlcv_columns,
@@ -450,17 +450,17 @@ class MarketDataProvider:
             if cached_df is not None and not cached_df.empty:
                 return cached_df
 
-        tprint_info(f"📊 Fetching fresh data for {cache_key} (limit: {limit})")
+        tprint(f"📊 Fetching fresh data for {cache_key} (limit: {limit})")
         df: pd.DataFrame = await self.get_historical_data(symbol, interval, limit=limit)
 
         if df is None or df.empty:
             # Optionally return stale cache to avoid gaps if available
-            tprint_warning(f"⚠️ No fresh data for {cache_key}, checking stale cache...")
+            tprint(f"⚠️ No fresh data for {cache_key}, checking stale cache...")
             cached_df = await self._get_cached_dataframe(cache_key, limit, allow_stale=True)
             if cached_df is not None:
-                tprint_info(f"✅ Using stale cache for {cache_key}")
+                tprint(f"✅ Using stale cache for {cache_key}")
                 return cached_df
-            tprint_warning(f"⚠️ No data available for {cache_key}, returning empty DataFrame")
+            tprint(f"⚠️ No data available for {cache_key}, returning empty DataFrame")
             return pd.DataFrame(columns=self._default_ohlcv_columns)
 
         return ensure_ohlcv_dataframe(
@@ -477,11 +477,11 @@ class MarketDataProvider:
     ) -> Dict[str, Any]:
         """Return a cached bundle of OHLCV data for the requested symbol."""
         if not self.is_initialized:
-            tprint_error("❌ Market Data Provider not initialized")
+            tprint("❌ Market Data Provider not initialized")
             raise RuntimeError("Market Data Provider not initialized")
 
         limits: Dict[str, int] = timeframe_limits or {"15m": 500, "1h": 500}
-        tprint_info(f"📊 Fetching multi-timeframe data for {symbol} (intervals: {list(limits.keys())})")
+        tprint(f"📊 Fetching multi-timeframe data for {symbol} (intervals: {list(limits.keys())})")
         timeframes: Dict[str, pd.DataFrame] = {}
 
         for interval, limit in limits.items():
@@ -525,7 +525,7 @@ class MarketDataProvider:
                 "cache_timestamp": cache_timestamp,
             },
         }
-        tprint_success(f"✅ Retrieved multi-timeframe data for {symbol}: {len(timeframes)} timeframes")
+        tprint(f"✅ Retrieved multi-timeframe data for {symbol}: {len(timeframes)} timeframes")
         return result
 
     async def get_ethusdt_multi_timeframe_data(
@@ -536,7 +536,7 @@ class MarketDataProvider:
     ) -> Dict[str, Any]:
         """Backward-compatible wrapper returning ETHUSDT multi-timeframe data."""
         limits: Dict[str, int] = {"15m": limit_15m, "1h": limit_1h}
-        tprint_info(f"📊 Fetching ETHUSDT multi-timeframe data (15m: {limit_15m}, 1h: {limit_1h})")
+        tprint(f"📊 Fetching ETHUSDT multi-timeframe data (15m: {limit_15m}, 1h: {limit_1h})")
         return await self.get_multi_timeframe_data(
             symbol="ETHUSDT",
             timeframe_limits=limits,
@@ -552,7 +552,7 @@ class MarketDataProvider:
             'cache_keys': list(self.historical_data_cache.keys()),
             'last_update_times': self.last_update_time.copy()
         }
-        tprint_info(f"📊 Cache stats: {len(self.historical_data_cache)} keys, {total_candles} total candles")
+        tprint(f"📊 Cache stats: {len(self.historical_data_cache)} keys, {total_candles} total candles")
         return stats
 
     def clear_cache(self, symbol: Optional[str] = None, interval: Optional[str] = None) -> None:
@@ -564,38 +564,38 @@ class MarketDataProvider:
                     del self.historical_data_cache[cache_key]
                     if cache_key in self.last_update_time:
                         del self.last_update_time[cache_key]
-                    tprint_info(f"🧹 Cache cleared for {symbol} ({interval})")
+                    tprint(f"🧹 Cache cleared for {symbol} ({interval})")
             else:
                 self.historical_data_cache.clear()
                 self.last_update_time.clear()
-                tprint_info("🧹 All cache cleared")
+                tprint("🧹 All cache cleared")
 
             self.logger.info(f"Cache cleared for {symbol or 'all symbols'}")
 
         except Exception as e:
-            tprint_error(f"❌ Failed to clear cache: {e}")
+            tprint(f"❌ Failed to clear cache: {e}")
             self.logger.warning(f"⚠️ Failed to clear cache: {e}")
 
     async def stop(self) -> None:
         """Stop market data provider."""
         try:
-            tprint_info("🛑 Stopping Market Data Provider...")
+            tprint("🛑 Stopping Market Data Provider...")
             self.logger.info("🛑 Stopping Market Data Provider...")
 
             # Close exchange client
             if self.exchange_client:
                 await self.exchange_client.close()
-                tprint_info("✅ Exchange client closed")
+                tprint("✅ Exchange client closed")
 
             # Clear cache
             self.clear_cache()
 
             self.is_initialized = False
-            tprint_success("✅ Market Data Provider stopped successfully")
+            tprint("✅ Market Data Provider stopped successfully")
             self.logger.info("✅ Market Data Provider stopped successfully")
 
         except Exception as e:
-            tprint_error(f"❌ Error stopping Market Data Provider: {e}")
+            tprint(f"❌ Error stopping Market Data Provider: {e}")
             self.logger.error(f"❌ Error stopping Market Data Provider: {e}")
     
     async def health_check(self) -> Dict[str, Any]:

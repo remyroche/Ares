@@ -13,6 +13,8 @@ from dataclasses import dataclass
 import pandas as pd
 import numpy as np
 
+from src.printing import tprint
+
 
 @dataclass
 class KlineRecord:
@@ -40,21 +42,23 @@ class HistoricalDataLoader:
     def __init__(self, base_dir: str = "historical_data"):
         """
         Initialize historical data loader.
-        
+
         Args:
             base_dir: Base directory for historical data (default: "historical_data")
         """
+        tprint(f"[HIST_LOADER] __init__: Initializing historical data loader with base_dir={base_dir}")
         self.base_dir = Path(base_dir)
         self.logger = logging.getLogger(__name__)
-        
+
         # In-memory cache: {(exchange, symbol, interval): DataFrame}
         self._cache: Dict[Tuple[str, str, str], pd.DataFrame] = {}
-        
+
         # Last load time for cache invalidation
         self._cache_timestamps: Dict[Tuple[str, str, str], datetime] = {}
-        
+
         # Cache TTL in seconds (5 minutes for real-time, longer for historical)
         self.cache_ttl_seconds = 300
+        tprint(f"[HIST_LOADER] __init__ -> initialized (cache_ttl={self.cache_ttl_seconds}s)")
     
     def _get_data_path(self, exchange: str, symbol: str, interval: str) -> Optional[Path]:
         """
@@ -163,7 +167,7 @@ class HistoricalDataLoader:
     ) -> List[KlineRecord]:
         """
         Load historical klines data.
-        
+
         Args:
             exchange: Exchange name (e.g., "binance")
             symbol: Trading symbol (e.g., "ETHUSDT")
@@ -172,10 +176,12 @@ class HistoricalDataLoader:
             end_time: Optional end time
             limit: Optional limit on number of records
             use_cache: Whether to use cached data
-            
+
         Returns:
             List of KlineRecord objects
         """
+        tprint(f"[HIST_LOADER] load_klines: exchange={exchange}, symbol={symbol}, interval={interval}, limit={limit}, use_cache={use_cache}")
+
         cache_key = (exchange.lower(), symbol.lower(), interval)
         
         # Check cache
@@ -192,6 +198,7 @@ class HistoricalDataLoader:
             df = self._load_data(exchange, symbol, interval, start_time, end_time)
         
         if df.empty:
+            tprint(f"[HIST_LOADER] load_klines: No data loaded for {exchange}/{symbol}/{interval}, returning empty list", color="yellow")
             self.logger.warning(f"No data loaded for {exchange}/{symbol}/{interval}, returning empty list")
             return []
         
@@ -227,6 +234,7 @@ class HistoricalDataLoader:
                     self.logger.warning(f"Error converting row to KlineRecord: {e}")
                     continue
         
+        tprint(f"[HIST_LOADER] load_klines -> loaded {len(records)} kline records for {exchange}/{symbol}/{interval}")
         self.logger.info(f"Loaded {len(records)} kline records for {exchange}/{symbol}/{interval}")
         return records
     
@@ -256,22 +264,27 @@ class HistoricalDataLoader:
     def get_latest_price(self, exchange: str, symbol: str, interval: str = "1m") -> Optional[float]:
         """
         Get the most recent close price from historical data.
-        
+
         Args:
             exchange: Exchange name
             symbol: Trading symbol
             interval: Timeframe (default: "1m")
-            
+
         Returns:
             Latest close price or None if unavailable
         """
+        tprint(f"[HIST_LOADER] get_latest_price: exchange={exchange}, symbol={symbol}, interval={interval}")
         try:
             # Load most recent data
             records = self.load_klines(exchange, symbol, interval, limit=1)
             if records:
-                return records[-1].close
+                price = records[-1].close
+                tprint(f"[HIST_LOADER] get_latest_price -> {price:.6f}")
+                return price
+            tprint(f"[HIST_LOADER] get_latest_price -> No data available", color="yellow")
             return None
         except Exception as e:
+            tprint(f"[HIST_LOADER] get_latest_price -> ERROR: {e}", color="red")
             self.logger.error(f"Error getting latest price: {e}")
             return None
     
@@ -315,17 +328,18 @@ class HistoricalDataLoader:
     ) -> List[KlineRecord]:
         """
         Generate synthetic klines using random walk.
-        
+
         Args:
             symbol: Trading symbol
             interval: Timeframe
             count: Number of klines to generate
             base_price: Starting price
             volatility: Price volatility (std dev as fraction of price)
-            
+
         Returns:
             List of synthetic KlineRecord objects
         """
+        tprint(f"[HIST_LOADER] generate_synthetic_klines: symbol={symbol}, interval={interval}, count={count}, base_price={base_price}, volatility={volatility}")
         self.logger.info(f"Generating {count} synthetic klines for {symbol}/{interval}")
         
         records = []
@@ -366,7 +380,8 @@ class HistoricalDataLoader:
                 symbol=symbol,
                 interval=interval
             ))
-        
+
+        tprint(f"[HIST_LOADER] generate_synthetic_klines -> generated {len(records)} synthetic klines")
         return records
     
     def _parse_interval_to_minutes(self, interval: str) -> int:
@@ -384,22 +399,27 @@ class HistoricalDataLoader:
     def is_data_available(self, exchange: str, symbol: str, interval: str) -> bool:
         """
         Check if historical data is available for given parameters.
-        
+
         Args:
             exchange: Exchange name
             symbol: Trading symbol
             interval: Timeframe
-            
+
         Returns:
             True if data is available, False otherwise
         """
+        tprint(f"[HIST_LOADER] is_data_available: exchange={exchange}, symbol={symbol}, interval={interval}")
         data_path = self._get_data_path(exchange, symbol, interval)
-        return data_path is not None
+        available = data_path is not None
+        tprint(f"[HIST_LOADER] is_data_available -> {available}")
+        return available
     
     def clear_cache(self) -> None:
         """Clear the in-memory cache."""
+        tprint(f"[HIST_LOADER] clear_cache: Clearing cache with {len(self._cache)} entries")
         self._cache.clear()
         self._cache_timestamps.clear()
+        tprint(f"[HIST_LOADER] clear_cache -> cache cleared")
         self.logger.info("Cache cleared")
 
 

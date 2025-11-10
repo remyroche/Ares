@@ -25,6 +25,7 @@ from enum import Enum
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error
+from src.printing import tprint
 
 logger = system_logger.getChild('DampenedKellyEngine')
 
@@ -149,51 +150,60 @@ class DampenedKellyEngine:
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize dampened Kelly engine.
-        
+
         Args:
             config: Configuration dictionary with regime-aware parameters
         """
+        tprint(f"DampenedKellyEngine.__init__ called with config keys: {list(config.keys())}")
+
         self.config = config
         self.logger = logger.getChild('Engine')
-        
+
         # Thread safety
         self._lock = threading.RLock()
-        
+        tprint("Thread lock initialized for config versioning")
+
         # Versioned configuration
         self._config_version = 1
         self._config_history: List[KellyConfigVersion] = []
         self._current_config = self._create_config_version(config)
         self._config_history.append(self._current_config)
-        
+        tprint(f"Config version initialized: v{self._config_version}")
+
         # Extract configuration sections
         self.regime_params = config.get('regime_params', {})
         self.global_fallback = config.get('global_fallback', {})
         self.lambda_eff_components = config.get('lambda_eff_components', {})
         self.safety_limits = config.get('safety_limits', {})
         self.r_tracking = config.get('r_tracking', {})
-        
+        tprint(f"Config sections extracted: {len(self.regime_params)} regimes, safety_limits={bool(self.safety_limits)}")
+
         # Lambda_eff component parameters
         self.ess_sigmoid_kappa = self.lambda_eff_components.get('ess_sigmoid_kappa', 0.1)
         self.entropy_scale = self.lambda_eff_components.get('entropy_scale', 0.5)
         self.variance_penalty = self.lambda_eff_components.get('variance_penalty', 2.0)
-        
+        tprint(f"Lambda_eff components: kappa={self.ess_sigmoid_kappa}, entropy_scale={self.entropy_scale}, var_penalty={self.variance_penalty}")
+
         # Safety limits (hot-swappable, except fixed risk parameters)
         self.max_leverage = self.safety_limits.get('max_leverage', 3.0)
         self.max_per_trade_pct = self.safety_limits.get('max_per_trade_pct', 0.15)
         self.max_exposure_per_asset = self.safety_limits.get('max_exposure_per_asset', 0.3)
         self.high_leverage_threshold = self.safety_limits.get('high_leverage_threshold', 2.0)
         self.max_acceptable_drawdown = self.safety_limits.get('max_acceptable_drawdown', 0.15)
-        
+        tprint(f"Safety limits: max_lev={self.max_leverage}, max_trade={self.max_per_trade_pct}, max_dd={self.max_acceptable_drawdown}")
+
         # Fixed risk parameters (not optimized - strategic choices)
         self.f_floor = 0.005  # Exploration floor for position sizing
         self.max_kelly_fraction = 0.33  # Risk cap: 1/3 Kelly for robustness
-        
+        tprint(f"Fixed risk params: f_floor={self.f_floor}, max_kelly_fraction={self.max_kelly_fraction}")
+
         # R tracking parameters
         self.use_realized_r = self.r_tracking.get('use_realized_r', True)
         self.r_percentile = self.r_tracking.get('r_percentile', 25)
         self.r_instability_threshold = self.r_tracking.get('r_instability_threshold', 2.0)
         self.r_instability_prior_boost = self.r_tracking.get('r_instability_prior_boost', 2.0)
-        
+        tprint(f"R tracking: use_realized={self.use_realized_r}, percentile={self.r_percentile}, instability_thresh={self.r_instability_threshold}")
+
         tprint_info("✅ Dampened Kelly Engine initialized")
         self.logger.info(f"Initialized with config version {self._config_version}")
     
@@ -209,30 +219,36 @@ class DampenedKellyEngine:
     def update_config(self, new_params: Dict[str, Any]) -> int:
         """
         Hot-swap configuration (thread-safe).
-        
+
         Args:
             new_params: New configuration parameters
-            
+
         Returns:
             New config version number
         """
+        tprint(f"update_config called with new_params keys: {list(new_params.keys())}")
+
         with self._lock:
             self._config_version += 1
             self._current_config = self._create_config_version(new_params)
             self._config_history.append(self._current_config)
-            
+            tprint(f"Config version incremented to v{self._config_version}")
+
             # Update hot-swappable limits
             if 'safety_limits' in new_params:
                 limits = new_params['safety_limits']
+                old_max_lev = self.max_leverage
                 self.max_leverage = limits.get('max_leverage', self.max_leverage)
                 self.max_per_trade_pct = limits.get('max_per_trade_pct', self.max_per_trade_pct)
                 self.max_exposure_per_asset = limits.get('max_exposure_per_asset', self.max_exposure_per_asset)
                 self.max_kelly_fraction = limits.get('max_kelly_fraction', self.max_kelly_fraction)
                 self.max_acceptable_drawdown = limits.get('max_acceptable_drawdown', self.max_acceptable_drawdown)
-            
+                tprint(f"Safety limits updated: max_leverage {old_max_lev} -> {self.max_leverage}")
+
             self.logger.info(f"Config updated to version {self._config_version}")
             tprint_info(f"🔄 Kelly config updated to version {self._config_version}")
-            
+
+            tprint(f"update_config returning version: {self._config_version}")
             return self._config_version
     
     def get_config_version(self) -> int:
@@ -243,22 +259,27 @@ class DampenedKellyEngine:
     def get_regime_params(self, regime_id: Optional[int]) -> Dict[str, Any]:
         """
         Get regime-specific parameters with fallback to global.
-        
+
         Args:
             regime_id: Regime identifier (None for unknown)
-            
+
         Returns:
             Parameter dictionary for the regime
         """
+        tprint(f"get_regime_params called with regime_id: {regime_id}")
+
         if regime_id is None:
+            tprint("Regime is None, returning global fallback params")
             return self.global_fallback.copy()
-        
+
         regime_key = f"regime_{regime_id}"
         if regime_key in self.regime_params:
+            tprint(f"Found regime-specific params for {regime_key}")
             return self.regime_params[regime_key].copy()
-        
+
         # Fallback to global if regime not found
         self.logger.warning(f"Regime {regime_id} not found, using global fallback")
+        tprint(f"Regime {regime_id} not in config, falling back to global params")
         return self.global_fallback.copy()
     
     @staticmethod
@@ -268,28 +289,31 @@ class DampenedKellyEngine:
     ) -> Tuple[float, float]:
         """
         Calculate decay_theta and prior_alpha from a single system half-life parameter.
-        
+
         The system_half_life represents the number of trades after which the system's
         belief should be 50% based on historical data.
-        
+
         Args:
             system_half_life: Number of trades for 50% belief decay (e.g., 200)
             target_samples: Target samples for half-life calculation
-            
+
         Returns:
             Tuple of (decay_theta, prior_alpha)
         """
+        tprint(f"calculate_system_half_life_params called with system_half_life={system_half_life}, target_samples={target_samples}")
+
         # decay_theta: exponential decay factor where 0.5 = theta^system_half_life
         # Solving: 0.5 = theta^N => theta = 0.5^(1/N)
         decay_theta = 0.5 ** (1.0 / system_half_life)
-        
+
         # prior_alpha: Bayesian prior strength
         # Higher half-life = trust old data more = higher prior
         # Map half-life [100, 300] to prior_alpha [10, 50]
         # Using linear interpolation
         prior_alpha = 10.0 + (system_half_life - 100.0) * (50.0 - 10.0) / (300.0 - 100.0)
         prior_alpha = np.clip(prior_alpha, 5.0, 100.0)  # Ensure reasonable bounds
-        
+
+        tprint(f"Calculated decay_theta={decay_theta:.4f}, prior_alpha={prior_alpha:.2f}")
         return decay_theta, prior_alpha
     
     @staticmethod
@@ -632,13 +656,13 @@ class DampenedKellyEngine:
     ) -> KellyResult:
         """
         Calculate both position size and leverage using unified dampened Kelly logic.
-        
+
         This is the main entry point for the engine with reduced parameter space:
         - Unified beta structure (beta_base * multiplier)
         - n_min_samples derived from prior_alpha
         - Single model_consensus_tolerance parameter
         - Fixed f_floor and max_kelly_fraction
-        
+
         Args:
             wins: Number of winning trades in bin
             losses: Number of losing trades in bin
@@ -650,12 +674,15 @@ class DampenedKellyEngine:
             bin_merge_level: Level of bin merging (0=exact, 1=regime-merged, 2=coarse, 3=prior)
             bin_last_updated: Last bin update timestamp
             is_bin_stale: Whether bin is stale (>90 days)
-            
+
         Returns:
             KellyResult with all calculations and metadata
         """
+        tprint(f"calculate_position_and_leverage called: wins={wins}, losses={losses}, regime_id={regime_id}, ess={ess:.2f}, entropy={entropy:.3f}, current_dd={current_dd:.3f}, bin_merge_level={bin_merge_level}, is_bin_stale={is_bin_stale}")
+
         # Get regime-specific parameters
         params = self.get_regime_params(regime_id)
+        tprint(f"Retrieved regime params with {len(params)} keys")
         
         # Core parameters (reduced set)
         lambda_base = params.get('lambda_base', 0.15)
@@ -686,53 +713,67 @@ class DampenedKellyEngine:
         
         # Check sample size
         n_total = wins + losses
+        tprint(f"Total samples in bin: {n_total}, minimum required: {n_min}")
         if n_total < n_min:
             reason_codes.append(ReasonCode.INSUFFICIENT_SAMPLES.value)
-        
+            tprint(f"Insufficient samples: {n_total} < {n_min}")
+
         if regime_id is None:
             reason_codes.append(ReasonCode.REGIME_UNKNOWN.value)
-        
+            tprint("Regime unknown")
+
         if bin_merge_level > 0:
             reason_codes.append(ReasonCode.BIN_MERGED.value)
-        
+            tprint(f"Bin merged at level {bin_merge_level}")
+
         if is_bin_stale:
             reason_codes.append("bin_stale")
-        
+            tprint("Bin is stale (>90 days)")
+
         # Calculate conservative R from realized distribution
         r_conservative, r_mean, r_std, r_is_unstable = self.calculate_r_conservative(r_realized)
-        
+        tprint(f"R calculated: conservative={r_conservative:.2f}, mean={r_mean:.2f}, std={r_std:.2f}, unstable={r_is_unstable}")
+
         if r_is_unstable:
             reason_codes.append(ReasonCode.R_INSTABILITY_DETECTED.value)
             # Increase prior weight for unstable R
+            old_prior = prior_alpha
             prior_alpha *= self.r_instability_prior_boost
+            tprint(f"R instability detected, boosting prior_alpha: {old_prior:.2f} -> {prior_alpha:.2f}")
         
         # Compute posterior
         posterior_mean, posterior_var = self.compute_posterior_mean_var(
             wins, losses, prior_alpha, prior_alpha  # Symmetric prior
         )
-        
+        tprint(f"Posterior calculated: mean={posterior_mean:.4f}, var={posterior_var:.6f}")
+
         # Compute Kelly fractions
         f_kelly = self.compute_f_kelly(posterior_mean, r_conservative)
         leverage_kelly = self.compute_leverage_kelly(posterior_mean, r_conservative, self.max_leverage)
-        
+        tprint(f"Kelly calculated: f_kelly={f_kelly:.4f}, leverage_kelly={leverage_kelly:.2f}")
+
         # Apply Kelly fraction clip
         f_kelly_clipped, was_clipped = self.compute_kelly_fraction_clip(f_kelly, self.max_kelly_fraction)
         if was_clipped:
             reason_codes.append(ReasonCode.KELLY_FRACTION_CLIPPED.value)
+            tprint(f"Kelly fraction clipped: {f_kelly:.4f} -> {f_kelly_clipped:.4f}")
             f_kelly = f_kelly_clipped
-        
+
         # Compute lambda_eff (modular components)
         lambda_eff, components = self.compute_lambda_eff(
             lambda_base, ess, posterior_var, entropy,
             ess_threshold, entropy_threshold
         )
-        
+        tprint(f"Lambda_eff calculated: {lambda_eff:.4f} (ess_factor={components['ess_factor']:.4f}, entropy_factor={components['entropy_factor']:.4f}, var_factor={components['var_factor']:.4f})")
+
         # Check for vetoes
         if ess < ess_threshold * 0.5:  # Very low ESS
             reason_codes.append(ReasonCode.ESS_LOW.value)
-        
+            tprint(f"ESS too low: {ess:.2f} < {ess_threshold * 0.5:.2f}")
+
         if entropy > entropy_threshold:
             reason_codes.append(ReasonCode.ENTROPY_VETO.value)
+            tprint(f"Entropy too high: {entropy:.3f} > {entropy_threshold:.3f}")
         
         # Compute final dampened values using unified beta structure
         f_final = self.compute_f_final(
@@ -741,25 +782,32 @@ class DampenedKellyEngine:
         leverage_final = self.compute_leverage_final(
             leverage_kelly, lambda_eff, beta_base, beta_leverage_multiplier, lev_floor
         )
-        
+        tprint(f"Final dampened values: f_final={f_final:.4f}, leverage_final={leverage_final:.2f}")
+
         # Apply drawdown dampening
         if current_dd > 0:
+            original_f = f_final
+            original_lev = leverage_final
             f_final, dd_factor = self.apply_drawdown_dampening(
                 f_final, current_dd, self.max_acceptable_drawdown
             )
             leverage_final *= dd_factor
-            
+
             if dd_factor < 1.0:
                 reason_codes.append(ReasonCode.DRAWDOWN_DAMPENING.value)
+                tprint(f"Drawdown dampening applied (dd={current_dd:.3f}, factor={dd_factor:.3f}): f {original_f:.4f}->{f_final:.4f}, lev {original_lev:.2f}->{leverage_final:.2f}")
         else:
             dd_factor = 1.0
-        
+
         # Apply hard caps
+        pre_cap_f = f_final
+        pre_cap_lev = leverage_final
         f_final = min(f_final, self.max_per_trade_pct)
         leverage_final = min(leverage_final, self.max_leverage)
-        
+
         if f_final >= self.max_per_trade_pct or leverage_final >= self.max_leverage:
             reason_codes.append(ReasonCode.HARD_CAP_APPLIED.value)
+            tprint(f"Hard caps applied: f {pre_cap_f:.4f}->{f_final:.4f}, lev {pre_cap_lev:.2f}->{leverage_final:.2f}")
         
         # Create result
         result = KellyResult(
@@ -802,6 +850,7 @@ class DampenedKellyEngine:
                 }
             }
         )
-        
+
+        tprint(f"calculate_position_and_leverage returning: f_final={result.f_final:.4f}, leverage_final={result.leverage_final:.2f}, reason_codes={result.reason_codes}")
         return result
 

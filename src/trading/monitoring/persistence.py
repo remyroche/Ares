@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, List
 import logging
 
+from src.printing import tprint
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 
 logger = logging.getLogger(__name__)
@@ -22,12 +23,15 @@ class MonitoringPersistence:
         Args:
             base_path: Base directory for persistence files
         """
+        tprint(f"[MON_PERSIST] __init__: Initializing MonitoringPersistence with base_path={base_path or 'monitoring_data'}")
         self.base_path = Path(base_path or "monitoring_data")
         self.base_path.mkdir(parents=True, exist_ok=True)
         self.logger = logger.getChild('MonitoringPersistence')
+        tprint(f"[MON_PERSIST] __init__: MonitoringPersistence initialized, base_path={self.base_path}")
 
     async def save_alerts(self, alerts: List[Dict[str, Any]], filename: str = "alerts.json") -> bool:
         """Save alerts to file."""
+        tprint(f"[MON_PERSIST] save_alerts: Saving {len(alerts)} alerts to {filename}")
         try:
             filepath = self.base_path / filename
             with open(filepath, 'w') as f:
@@ -36,28 +40,34 @@ class MonitoringPersistence:
                     'alerts': alerts
                 }, f, indent=2, default=str)
             tprint_info(f"💾 Saved {len(alerts)} alerts to {filename}")
+            tprint(f"[MON_PERSIST] save_alerts: Successfully saved alerts, returning True")
             return True
         except Exception as e:
             self.logger.error(f"Failed to save alerts: {e}")
             tprint_error(f"❌ Failed to save alerts: {e}")
+            tprint(f"[MON_PERSIST] save_alerts: Failed to save alerts: {e}, returning False")
             return False
 
     async def load_alerts(self, filename: str = "alerts.json") -> List[Dict[str, Any]]:
         """Load alerts from file."""
+        tprint(f"[MON_PERSIST] load_alerts: Loading alerts from {filename}")
         try:
             filepath = self.base_path / filename
             if not filepath.exists():
                 tprint_info(f"📂 Alert file {filename} not found, returning empty list")
+                tprint(f"[MON_PERSIST] load_alerts: File not found, returning empty list")
                 return []
 
             with open(filepath, 'r') as f:
                 data = json.load(f)
                 alerts = data.get('alerts', [])
                 tprint_info(f"📂 Loaded {len(alerts)} alerts from {filename}")
+                tprint(f"[MON_PERSIST] load_alerts: Successfully loaded {len(alerts)} alerts")
                 return alerts
         except Exception as e:
             self.logger.error(f"Failed to load alerts: {e}")
             tprint_error(f"❌ Failed to load alerts: {e}")
+            tprint(f"[MON_PERSIST] load_alerts: Failed to load alerts: {e}, returning empty list")
             return []
 
     async def save_trades(self, trades: List[Dict[str, Any]], filename: str = "trades.json") -> bool:

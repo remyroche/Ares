@@ -17,6 +17,7 @@ import numpy as np
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
+from src.printing import tprint
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 # comprehensive_trade_monitor import removed to avoid circular imports
 
@@ -95,6 +96,7 @@ class TradeMonitor:
         Args:
             config: Configuration dictionary
         """
+        tprint(f"[TRADE_MONITOR] __init__: Initializing TradeMonitor with config keys: {list(config.keys())}")
         self.config = config
         self.logger = logger.getChild('TradeMonitor')
 
@@ -139,13 +141,16 @@ class TradeMonitor:
         Returns:
             bool: True if initialization successful
         """
+        tprint(f"[TRADE_MONITOR] initialize: Starting TradeMonitor initialization")
         try:
             self.logger.info("✅ Trade Monitor initialized")
             tprint_success("✅ Trade Monitor initialized")
+            tprint(f"[TRADE_MONITOR] initialize: TradeMonitor initialized successfully, returning True")
             return True
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize Trade Monitor: {e}")
             tprint_error(f"❌ Failed to initialize Trade Monitor: {e}")
+            tprint(f"[TRADE_MONITOR] initialize: Initialization failed: {e}, returning False")
             return False
 
     async def start_monitoring(self) -> bool:

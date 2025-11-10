@@ -16,6 +16,7 @@ import numpy as np
 
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+from src.printing import tprint
 from ..monitoring.comprehensive_trade_monitor import DetailedTradeMetrics, TradingSessionMetrics
 from ..utils.error_handling import TradingError, TradingErrorSeverity, trading_error_handler
 
@@ -35,7 +36,8 @@ class DashboardGenerator:
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        self.config = config or {}
+        tprint(f"DashboardGenerator.__init__: Called")
+self.config = config or {}
         self.logger = logger.getChild('DashboardGenerator')
 
         # Dashboard configuration
@@ -61,7 +63,7 @@ class DashboardGenerator:
         session_metrics: Optional[TradingSessionMetrics] = None,
         active_trades: Optional[Dict[str, DetailedTradeMetrics]] = None
     ) -> Dict[str, Any]:
-        """
+"""
         Generate live trading dashboard.
 
         Args:
@@ -72,6 +74,7 @@ class DashboardGenerator:
         Returns:
             Dashboard data dictionary
         """
+        tprint(f"DashboardGenerator.generate_live_dashboard: Called")
         try:
             tprint_info("📊 Generating live trading dashboard...")
 
@@ -110,7 +113,8 @@ class DashboardGenerator:
         trades: List[DetailedTradeMetrics],
         session_metrics: Optional[TradingSessionMetrics]
     ) -> Dict[str, Any]:
-        """Generate real-time performance metrics."""
+"""Generate real-time performance metrics."""
+        tprint(f"DashboardGenerator._generate_live_metrics: Called")
         try:
             current_time = datetime.now()
 
@@ -178,7 +182,8 @@ class DashboardGenerator:
             return {}
 
     async def _generate_performance_charts(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-        """Generate data for performance charts."""
+"""Generate data for performance charts."""
+        tprint(f"DashboardGenerator._generate_performance_charts: Called")
         try:
             if not trades:
                 return {}
@@ -234,7 +239,8 @@ class DashboardGenerator:
             return {}
 
     async def _generate_model_dashboard(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-        """Generate model-specific dashboard data."""
+"""Generate model-specific dashboard data."""
+        tprint(f"DashboardGenerator._generate_model_dashboard: Called")
         try:
             model_dashboard = {}
 
@@ -297,7 +303,8 @@ class DashboardGenerator:
             return {}
 
     async def _generate_risk_dashboard(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-        """Generate risk monitoring dashboard."""
+"""Generate risk monitoring dashboard."""
+        tprint(f"DashboardGenerator._generate_risk_dashboard: Called")
         try:
             # Current risk levels
             recent_trades = [t for t in trades if (datetime.now() - t.timestamp).total_seconds() < 3600]
@@ -351,7 +358,8 @@ class DashboardGenerator:
             return {}
 
     async def _generate_regime_dashboard(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-        """Generate regime analysis dashboard."""
+"""Generate regime analysis dashboard."""
+        tprint(f"DashboardGenerator._generate_regime_dashboard: Called")
         try:
             # Current regime distribution
             recent_trades = [t for t in trades if (datetime.now() - t.timestamp).total_seconds() < 3600]
@@ -401,7 +409,8 @@ class DashboardGenerator:
             return {}
 
     async def _generate_active_trades_panel(self, active_trades: Dict[str, DetailedTradeMetrics]) -> Dict[str, Any]:
-        """Generate active trades monitoring panel."""
+"""Generate active trades monitoring panel."""
+        tprint(f"DashboardGenerator._generate_active_trades_panel: Called")
         try:
             active_panel = {
                 'active_trade_count': len(active_trades),
@@ -439,7 +448,8 @@ class DashboardGenerator:
             return {}
 
     async def _generate_recent_trades_panel(self, recent_trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-        """Generate recent trades panel."""
+"""Generate recent trades panel."""
+        tprint(f"DashboardGenerator._generate_recent_trades_panel: Called")
         try:
             recent_panel = {
                 'recent_trade_count': len(recent_trades),
@@ -471,7 +481,8 @@ class DashboardGenerator:
             return {}
 
     async def _export_dashboard(self, dashboard: Dict[str, Any], dashboard_name: str):
-        """Export dashboard to files."""
+"""Export dashboard to files."""
+        tprint(f"DashboardGenerator._export_dashboard: Called")
         try:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
@@ -494,7 +505,8 @@ class DashboardGenerator:
             tprint_error(f"❌ Failed to export dashboard: {e}")
 
     async def _generate_html_dashboard(self, dashboard: Dict[str, Any], dashboard_name: str, timestamp: str):
-        """Generate interactive HTML dashboard."""
+"""Generate interactive HTML dashboard."""
+        tprint(f"DashboardGenerator._generate_html_dashboard: Called")
         try:
             html_content = f"""
             <!DOCTYPE html>
@@ -629,7 +641,8 @@ class DashboardGenerator:
             tprint_error(f"❌ Failed to generate HTML dashboard: {e}")
 
     def _generate_live_metrics_html(self, live_metrics: Dict[str, Any]) -> str:
-        """Generate HTML for live metrics."""
+"""Generate HTML for live metrics."""
+        tprint(f"DashboardGenerator._generate_live_metrics_html: Called")
         html = '<div class="metrics-grid">'
 
         if 'current_performance' in live_metrics:
@@ -676,7 +689,8 @@ class DashboardGenerator:
         return html
 
     def _generate_active_trades_html(self, active_trades: Dict[str, Any]) -> str:
-        """Generate HTML for active trades panel."""
+"""Generate HTML for active trades panel."""
+        tprint(f"DashboardGenerator._generate_active_trades_html: Called")
         html = '''
         <div class="panel">
             <h3><span class="status-indicator status-active"></span>Active Trades</h3>
@@ -720,7 +734,8 @@ class DashboardGenerator:
         return html
 
     def _generate_recent_trades_html(self, recent_trades: Dict[str, Any]) -> str:
-        """Generate HTML for recent trades panel."""
+"""Generate HTML for recent trades panel."""
+        tprint(f"DashboardGenerator._generate_recent_trades_html: Called")
         html = '''
         <div class="panel">
             <h3><span class="status-indicator status-completed"></span>Recent Trades</h3>
@@ -766,7 +781,8 @@ class DashboardGenerator:
         return html
 
     def _generate_model_dashboard_html(self, model_dashboard: Dict[str, Any]) -> str:
-        """Generate HTML for model performance dashboard."""
+"""Generate HTML for model performance dashboard."""
+        tprint(f"DashboardGenerator._generate_model_dashboard_html: Called")
         html = '''
         <div class="panel">
             <h3>🤖 Model Performance Dashboard</h3>
@@ -811,7 +827,8 @@ class DashboardGenerator:
         return html
 
     async def _calculate_recent_model_usage(self, recent_trades: List[DetailedTradeMetrics]) -> Dict[str, int]:
-        """Calculate recent model usage statistics."""
+"""Calculate recent model usage statistics."""
+        tprint(f"DashboardGenerator._calculate_recent_model_usage: Called")
         try:
             model_usage = {}
             for trade in recent_trades:
@@ -823,7 +840,8 @@ class DashboardGenerator:
             return {}
 
     async def _get_current_market_status(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-        """Get current market status from recent trades."""
+"""Get current market status from recent trades."""
+        tprint(f"DashboardGenerator._get_current_market_status: Called")
         try:
             if not trades:
                 return {'status': 'unknown'}
@@ -849,7 +867,8 @@ class DashboardGenerator:
             return {'status': 'unknown'}
 
     async def _generate_model_performance_timeline(self, trades: List[DetailedTradeMetrics]) -> List[Dict[str, Any]]:
-        """Generate timeline of model performance over time."""
+"""Generate timeline of model performance over time."""
+        tprint(f"DashboardGenerator._generate_model_performance_timeline: Called")
         try:
             if not trades:
                 return []
@@ -886,7 +905,8 @@ class DashboardGenerator:
             return []
 
     async def _generate_trade_frequency_data(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-        """Generate trade frequency analysis data."""
+"""Generate trade frequency analysis data."""
+        tprint(f"DashboardGenerator._generate_trade_frequency_data: Called")
         try:
             if not trades:
                 return {}
@@ -921,7 +941,8 @@ class DashboardGenerator:
             return {}
 
     async def _get_model_feature_importance(self, model_id: str, model_trades: List[DetailedTradeMetrics]) -> Dict[str, float]:
-        """Get aggregated feature importance for a specific model."""
+"""Get aggregated feature importance for a specific model."""
+        tprint(f"DashboardGenerator._get_model_feature_importance: Called")
         try:
             if not model_trades:
                 return {}
@@ -954,7 +975,8 @@ class DashboardGenerator:
             return {}
 
     async def _analyze_regime_transitions(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-        """Analyze regime transitions in trading history."""
+"""Analyze regime transitions in trading history."""
+        tprint(f"DashboardGenerator._analyze_regime_transitions: Called")
         try:
             if not trades or len(trades) < 2:
                 return {}
@@ -999,5 +1021,6 @@ async def create_trading_dashboard(
     session_metrics: Optional[TradingSessionMetrics] = None,
     active_trades: Optional[Dict[str, DetailedTradeMetrics]] = None
 ) -> Dict[str, Any]:
-    """Create comprehensive trading dashboard."""
+"""Create comprehensive trading dashboard."""
+    tprint(f"DashboardGenerator.create_trading_dashboard: Called")
     return await dashboard_generator.generate_live_dashboard(trades, session_metrics, active_trades)

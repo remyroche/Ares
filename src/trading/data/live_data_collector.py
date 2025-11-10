@@ -20,7 +20,7 @@ import numpy as np
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
-from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_structured, LogLevel
+from src.utils.tprint import tprint
 from src.utils.enhanced_error_handler import get_enhanced_error_handler
 from src.utils.memory_management.streaming_data_processor import get_streaming_processor, with_memory_optimization
 from src.utils.hardware.unified_hardware_manager import get_unified_hardware_manager
@@ -202,54 +202,54 @@ class LiveDataCollector:
         try:
             # Initialize exchange client (skip for simulated mode)
             if self.config.collection_mode != CollectionMode.SIMULATED:
-                tprint_info(f"🔄 Initializing {self.config.exchange} exchange client...")
+                tprint(f"🔄 Initializing {self.config.exchange} exchange client...")
 
                 # Use Binance exchange directly
                 if self.config.exchange.lower() == "binance":
                     self.exchange_client = BinanceExchange()
                 else:
-                    tprint_warning(f"⚠️ Exchange {self.config.exchange} not supported, falling back to Binance")
+                    tprint(f"⚠️ Exchange {self.config.exchange} not supported, falling back to Binance")
                     self.exchange_client = BinanceExchange()
 
                 # Initialize the exchange client
                 if self.exchange_client:
                     success = await self.exchange_client.initialize()
                     if not success:
-                        tprint_warning("⚠️ Failed to initialize exchange client, continuing in simulated mode")
+                        tprint("⚠️ Failed to initialize exchange client, continuing in simulated mode")
                         self.logger.warning("⚠️ Failed to initialize exchange client, continuing in simulated mode")
                         self.config.collection_mode = CollectionMode.SIMULATED
                         self.exchange_client = None
                     else:
-                        tprint_success(f"✅ {self.config.exchange} exchange client initialized")
+                        tprint(f"✅ {self.config.exchange} exchange client initialized")
                 else:
-                    tprint_warning("⚠️ Could not create exchange client, falling back to simulated mode")
+                    tprint("⚠️ Could not create exchange client, falling back to simulated mode")
                     self.logger.warning("⚠️ Could not create exchange client, falling back to simulated mode")
                     self.config.collection_mode = CollectionMode.SIMULATED
             else:
-                tprint_info("🔄 Simulated mode: Skipping exchange client initialization")
+                tprint("🔄 Simulated mode: Skipping exchange client initialization")
                 self.logger.info("🔄 Simulated mode: Skipping exchange client initialization")
 
             # Initialize ML model if enabled
             if self.config.enable_ml_predictions and self.config.ml_model_path:
-                tprint_info("🤖 Loading ML model for predictions...")
+                tprint("🤖 Loading ML model for predictions...")
                 self._load_ml_model()
 
             # Initialize feature engineering
             if self.config.feature_engineering:
-                tprint_info("⚙️ Initializing feature engineering...")
+                tprint("⚙️ Initializing feature engineering...")
                 self._initialize_feature_engineering()
 
             # Initialize hardware optimization
             if self.hardware_manager:
-                tprint_info("🚀 Optimizing hardware performance...")
+                tprint("🚀 Optimizing hardware performance...")
                 await self.hardware_manager.initialize()
                 await self.hardware_manager.optimize_for_trading()
 
-            tprint_success(f"✅ Live data collector initialized (mode: {self.config.collection_mode.value}, interval: {self.config.interval_seconds}s)")
+            tprint(f"✅ Live data collector initialized (mode: {self.config.collection_mode.value}, interval: {self.config.interval_seconds}s)")
             self.logger.info(f"✅ Live data collector initialized (mode: {self.config.collection_mode.value}, interval: {self.config.interval_seconds}s)")
 
         except Exception as e:
-            tprint_error(f"❌ Failed to initialize components: {e}")
+            tprint(f"❌ Failed to initialize components: {e}")
             self.logger.error(f"❌ Failed to initialize components: {e}")
             raise
 
@@ -281,7 +281,7 @@ class LiveDataCollector:
                 timeframe="1m"  # Base timeframe
             )
 
-            tprint_success("✅ Feature engineering initialized")
+            tprint("✅ Feature engineering initialized")
             self.logger.info("✅ Feature engineering initialized")
 
         except ImportError:
@@ -289,12 +289,12 @@ class LiveDataCollector:
             try:
                 from src.feature_generation.utils.feature_generators import FeatureGenerators
                 self.feature_engineer = FeatureGenerators()
-                tprint_success("✅ Alternative feature engineering initialized")
+                tprint("✅ Alternative feature engineering initialized")
             except ImportError:
-                tprint_warning("⚠️ Feature engineering not available, using basic features")
+                tprint("⚠️ Feature engineering not available, using basic features")
                 self.feature_engineer = None
         except Exception as e:
-            tprint_warning(f"⚠️ Feature engineering not available: {e}")
+            tprint(f"⚠️ Feature engineering not available: {e}")
             self.logger.warning(f"⚠️ Feature engineering not available: {e}")
             self.feature_engineer = None
 
@@ -543,7 +543,7 @@ class LiveDataCollector:
             required_fields: List[str] = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
             missing_fields: List[str] = [field for field in required_fields if field not in raw_data]
             if missing_fields:
-                tprint_error(f"❌ Missing required fields: {missing_fields}")
+                tprint(f"❌ Missing required fields: {missing_fields}")
                 self.logger.error(f"Missing required fields: {missing_fields}")
                 return False
             
@@ -553,13 +553,13 @@ class LiveDataCollector:
                     raw_data['high'] >= raw_data['close'] and
                     raw_data['low'] <= raw_data['open'] and
                     raw_data['low'] <= raw_data['close']):
-                tprint_error("❌ Invalid OHLC relationships")
+                tprint("❌ Invalid OHLC relationships")
                 self.logger.error("Invalid OHLC relationships")
                 return False
             
             # Validate positive values
             if any(raw_data[field] <= 0 for field in ['open', 'high', 'low', 'close', 'volume']):
-                tprint_error("❌ Non-positive values detected")
+                tprint("❌ Non-positive values detected")
                 self.logger.error("Non-positive values detected")
                 return False
             
@@ -805,7 +805,7 @@ class LiveDataCollector:
             try:
                 df = optimize_dataframe_dtypes(df)
             except Exception as e:
-                tprint_warning(f"⚠️ Memory optimization failed: {e}")
+                tprint(f"⚠️ Memory optimization failed: {e}")
 
         return df
 
@@ -920,10 +920,10 @@ class LiveDataCollector:
                 optimized_df = optimize_dataframe_dtypes(temp_df)
                 self.processed_buffer = optimized_df.to_dict('records')
 
-            tprint_info("🧹 Memory optimization completed")
+            tprint("🧹 Memory optimization completed")
 
         except Exception as e:
-            tprint_warning(f"⚠️ Memory optimization failed: {e}")
+            tprint(f"⚠️ Memory optimization failed: {e}")
 
 # Convenience functions
 

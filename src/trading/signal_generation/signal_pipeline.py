@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+from src.printing import tprint
 from src.utils.logger import system_logger
 from src.trading.config.regime_config import RegimeType
 from src.trading.config.trading_config import TradingConfig
@@ -150,6 +151,7 @@ class SignalGenerationPipeline:
 
     def __init__(self, config: TradingConfig):
         self.config = config
+        tprint(f"[SIGNAL_PIPELINE] __init__: Initializing signal generation pipeline")
         self.logger = logger.getChild('SignalGenerationPipeline')
 
         # Pipeline components
@@ -211,11 +213,13 @@ class SignalGenerationPipeline:
         self.analyst_feature_engineer = AnalystFeatureEngineer(logger=self.logger)
         self.tactician_feature_engineer = TacticianFeatureEngineer(logger=self.logger)
         self.feature_validator = FeatureValidator(logger=self.logger)
+        tprint(f"[SIGNAL_PIPELINE] __init__ -> initialized (regime_threshold={self.optimization_params[\'regime_confidence_threshold\']}, signal_threshold={self.optimization_params[\'signal_confidence_threshold\']})")
 
     @handles_errors
     async def initialize(self) -> bool:
         """Initialize signal generation pipeline."""
         try:
+            tprint(f"[SIGNAL_PIPELINE] initialize: Initializing pipeline components")
             self.logger.info("Initializing Signal Generation Pipeline...")
 
             # Initialize regime detector
@@ -238,10 +242,12 @@ class SignalGenerationPipeline:
             
             self.is_initialized = True
             self.logger.info("✅ Signal Generation Pipeline initialized successfully")
+            tprint(f"[SIGNAL_PIPELINE] initialize -> True (all components initialized)")
             return True
 
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize Signal Generation Pipeline: {e}")
+            tprint(f"[SIGNAL_PIPELINE] initialize -> False (error: {e})", color="red")
             return False
 
     async def _initialize_regime_detector(self):

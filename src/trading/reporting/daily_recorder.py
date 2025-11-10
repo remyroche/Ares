@@ -17,6 +17,7 @@ import json
 
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+from src.printing import tprint
 from ..monitoring.comprehensive_trade_monitor import DetailedTradeMetrics, TradingSessionMetrics
 from ..utils.error_handling import TradingError, TradingErrorSeverity, trading_error_handler
 from ..utils.helpers import format_trading_metrics
@@ -29,6 +30,7 @@ class DailyTradingRecord:
     """
 
     def __init__(self, trade_date: date):
+        tprint(f"DailyTradingRecord.__init__: Initializing for date={trade_date}")
         self.date = trade_date
 
         # Basic Trading Metrics
@@ -105,7 +107,8 @@ class DailyTradingRecord:
 
     def to_csv_row(self) -> Dict[str, Any]:
         """Convert to CSV row format."""
-        return {
+        tprint(f"DailyTradingRecord.to_csv_row: Converting to CSV for date={self.date}")
+        result = {
             # Date and Basic Info
             'date': self.date.isoformat(),
             'total_trades': self.total_trades,
@@ -181,6 +184,8 @@ class DailyTradingRecord:
             'error_count': self.error_count,
             'warning_count': self.warning_count
         }
+        tprint(f"DailyTradingRecord.to_csv_row: Returning CSV row with {len(result)} fields")
+        return result
 
 class DailyRecorder:
     """
@@ -188,6 +193,7 @@ class DailyRecorder:
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
+        tprint(f"DailyRecorder.__init__: Initializing with config keys={list((config or {}).keys())}")
         self.config = config or {}
         self.logger = logger.getChild('DailyRecorder')
 
@@ -210,6 +216,7 @@ class DailyRecorder:
 
     def _initialize_records_file(self):
         """Initialize the daily records file with headers."""
+        tprint(f"DailyRecorder._initialize_records_file: Checking records file at {self.records_file}")
         try:
             if not self.records_file.exists():
                 # Create CSV headers
@@ -256,11 +263,14 @@ class DailyRecorder:
                     writer.writerow(headers)
 
                 tprint_success(f"✅ Initialized daily records file: {self.records_file}")
+                tprint(f"DailyRecorder._initialize_records_file: Created new file with {len(headers)} columns")
             else:
                 tprint_info(f"📄 Using existing daily records file: {self.records_file}")
+                tprint(f"DailyRecorder._initialize_records_file: Using existing file")
 
         except Exception as e:
             tprint_error(f"❌ Failed to initialize records file: {e}")
+            tprint(f"DailyRecorder._initialize_records_file: Exception - {e}")
 
     @trading_error_handler(
         error_types=(Exception,),
@@ -284,8 +294,10 @@ class DailyRecorder:
         Returns:
             True if recording successful
         """
+        tprint(f"DailyRecorder.record_daily_summary: Starting for target_date={target_date}, trades_count={len(trades)}, sessions_count={len(sessions)}")
         try:
             record_date = target_date or date.today()
+            tprint(f"DailyRecorder.record_daily_summary: Using record_date={record_date}")
 
             tprint_info(f"📝 Recording daily summary for {record_date}")
 
@@ -303,6 +315,7 @@ class DailyRecorder:
 
             if not daily_trades and not daily_sessions:
                 tprint_warning(f"⚠️ No trading activity found for {record_date}")
+                tprint(f"DailyRecorder.record_daily_summary: Recording zero-activity day for {record_date}")
                 # Still record a zero-activity day
                 daily_trades = []
                 daily_sessions = []
@@ -321,11 +334,12 @@ class DailyRecorder:
                 await self._create_backup(daily_record)
 
             tprint_success(f"✅ Daily summary recorded for {record_date}")
-
+            tprint(f"DailyRecorder.record_daily_summary: Successfully recorded for {record_date}, returning True")
             return True
 
         except Exception as e:
             tprint_error(f"❌ Failed to record daily summary: {e}")
+            tprint(f"DailyRecorder.record_daily_summary: Exception - {e}, returning False")
             return False
 
     async def _populate_daily_record(
@@ -335,6 +349,7 @@ class DailyRecorder:
         sessions: List[TradingSessionMetrics]
     ):
         """Populate daily record with comprehensive data."""
+        tprint(f"DailyRecorder._populate_daily_record: Populating record for date={record.date}, trades={len(trades)}, sessions={len(sessions)}")
         try:
             # Basic trade statistics
             record.total_trades = len(trades)
@@ -554,12 +569,16 @@ class DailyRecorder:
             record.error_count = 0  # Would be populated from error tracking
             record.warning_count = 2  # Would be populated from warning tracking
 
+            tprint(f"DailyRecorder._populate_daily_record: Completed population - total_trades={record.total_trades}, total_pnl={record.total_pnl:.2f}")
+
         except Exception as e:
             tprint_error(f"❌ Failed to populate daily record: {e}")
+            tprint(f"DailyRecorder._populate_daily_record: Exception during population - {e}")
             raise
 
     async def _calculate_model_accuracies(self, trades: List[DetailedTradeMetrics]) -> Dict[str, float]:
         """Calculate accuracy for each model."""
+        tprint(f"DailyRecorder._calculate_model_accuracies: Calculating for {len(trades)} trades")
         try:
             model_accuracies = {}
 
@@ -584,14 +603,17 @@ class DailyRecorder:
 
                     model_accuracies[model_id] = correct_predictions / len(model_trades)
 
+            tprint(f"DailyRecorder._calculate_model_accuracies: Calculated {len(model_accuracies)} model accuracies")
             return model_accuracies
 
         except Exception as e:
             tprint_error(f"❌ Failed to calculate model accuracies: {e}")
+            tprint(f"DailyRecorder._calculate_model_accuracies: Exception - {e}, returning empty dict")
             return {}
 
     async def _detect_notable_events(self, record: DailyTradingRecord, trades: List[DetailedTradeMetrics]):
         """Detect notable events for the day."""
+        tprint(f"DailyRecorder._detect_notable_events: Detecting events for {len(trades)} trades")
         try:
             events = []
 
@@ -644,12 +666,15 @@ class DailyRecorder:
                 events.append("NO_TRADING")
 
             record.notable_events = events
+            tprint(f"DailyRecorder._detect_notable_events: Detected {len(events)} notable events")
 
         except Exception as e:
             tprint_error(f"❌ Failed to detect notable events: {e}")
+            tprint(f"DailyRecorder._detect_notable_events: Exception - {e}")
 
     async def _write_daily_record(self, record: DailyTradingRecord):
         """Write daily record to CSV file."""
+        tprint(f"DailyRecorder._write_daily_record: Writing record for date={record.date}")
         try:
             # Check if record already exists for this date
             existing_records = await self._read_existing_records()
@@ -680,13 +705,16 @@ class DailyRecorder:
                 writer.writerow(new_row)
 
             tprint_info(f"📝 Daily record written to {self.records_file}")
+            tprint(f"DailyRecorder._write_daily_record: Successfully wrote record for {record.date}")
 
         except Exception as e:
             tprint_error(f"❌ Failed to write daily record: {e}")
+            tprint(f"DailyRecorder._write_daily_record: Exception - {e}")
             raise
 
     async def _read_existing_records(self) -> List[Dict[str, Any]]:
         """Read existing records from CSV file."""
+        tprint(f"DailyRecorder._read_existing_records: Reading from {self.records_file}")
         try:
             if not self.records_file.exists():
                 return []
@@ -697,14 +725,17 @@ class DailyRecorder:
                 for row in reader:
                     records.append(dict(row))
 
+            tprint(f"DailyRecorder._read_existing_records: Read {len(records)} existing records")
             return records
 
         except Exception as e:
             tprint_warning(f"⚠️ Failed to read existing records: {e}")
+            tprint(f"DailyRecorder._read_existing_records: Exception - {e}, returning empty list")
             return []
 
     async def _create_backup(self, record: DailyTradingRecord):
         """Create backup of daily record."""
+        tprint(f"DailyRecorder._create_backup: Creating backup for date={record.date}")
         try:
             backup_dir = self.records_directory / 'backups'
             backup_dir.mkdir(exist_ok=True)
@@ -724,27 +755,34 @@ class DailyRecorder:
                 writer.writerow(record.to_csv_row())
 
             tprint_info(f"💾 Backup created: {backup_file}")
+            tprint(f"DailyRecorder._create_backup: Backup successful for {record.date}")
 
         except Exception as e:
             tprint_warning(f"⚠️ Failed to create backup: {e}")
+            tprint(f"DailyRecorder._create_backup: Exception - {e}")
 
     async def get_daily_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
         """Get daily summary for a specific date."""
+        tprint(f"DailyRecorder.get_daily_summary: Retrieving summary for date={target_date}")
         try:
             existing_records = await self._read_existing_records()
 
             for record in existing_records:
                 if record.get('date') == target_date.isoformat():
+                    tprint(f"DailyRecorder.get_daily_summary: Found summary for {target_date}")
                     return record
 
+            tprint(f"DailyRecorder.get_daily_summary: No summary found for {target_date}")
             return None
 
         except Exception as e:
             tprint_error(f"❌ Failed to get daily summary: {e}")
+            tprint(f"DailyRecorder.get_daily_summary: Exception - {e}, returning None")
             return None
 
     async def get_historical_summary(self, days: int = 30) -> pd.DataFrame:
         """Get historical daily summaries."""
+        tprint(f"DailyRecorder.get_historical_summary: Retrieving last {days} days")
         try:
             existing_records = await self._read_existing_records()
 
@@ -761,10 +799,12 @@ class DailyRecorder:
             # Sort by date
             df = df.sort_values('date')
 
+            tprint(f"DailyRecorder.get_historical_summary: Returning {len(df)} records")
             return df
 
         except Exception as e:
             tprint_error(f"❌ Failed to get historical summary: {e}")
+            tprint(f"DailyRecorder.get_historical_summary: Exception - {e}, returning empty DataFrame")
             return pd.DataFrame()
 
 # Global instance
@@ -777,12 +817,21 @@ async def record_daily_trading_summary(
     target_date: Optional[date] = None
 ) -> bool:
     """Record daily trading summary."""
-    return await daily_recorder.record_daily_summary(trades, sessions, target_date)
+    tprint(f"record_daily_trading_summary: Called with {len(trades)} trades, {len(sessions)} sessions, target_date={target_date}")
+    result = await daily_recorder.record_daily_summary(trades, sessions, target_date)
+    tprint(f"record_daily_trading_summary: Returning {result}")
+    return result
 
 async def get_daily_trading_summary(target_date: date) -> Optional[Dict[str, Any]]:
     """Get daily trading summary for specific date."""
-    return await daily_recorder.get_daily_summary(target_date)
+    tprint(f"get_daily_trading_summary: Called for target_date={target_date}")
+    result = await daily_recorder.get_daily_summary(target_date)
+    tprint(f"get_daily_trading_summary: Returning {'summary' if result else 'None'}")
+    return result
 
 async def get_trading_history(days: int = 30) -> pd.DataFrame:
     """Get historical daily trading summaries."""
-    return await daily_recorder.get_historical_summary(days)
+    tprint(f"get_trading_history: Called for days={days}")
+    result = await daily_recorder.get_historical_summary(days)
+    tprint(f"get_trading_history: Returning DataFrame with {len(result)} rows")
+    return result

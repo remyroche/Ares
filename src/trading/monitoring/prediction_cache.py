@@ -26,6 +26,7 @@ import pandas as pd
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
+from src.printing import tprint
 from src.utils.ml_common.uncertainty_calculator import get_global_uncertainty_calculator, UncertaintyCalculator
 
 logger = system_logger.getChild('PredictionCache')
@@ -90,31 +91,33 @@ class PredictionCache:
     ):
         """
         Initialize the prediction cache.
-        
+
         Args:
             max_candles: Maximum number of candles to store in cache
             default_window: Default window size for degradation calculations
             enable_artifact_loading: Whether to load predictions from artifacts on startup
             artifact_dir: Directory to load/save artifacts
         """
+        tprint(f"[PRED_CACHE] __init__: Initializing PredictionCache max_candles={max_candles}, default_window={default_window}, artifact_dir={artifact_dir}")
         self.max_candles = max_candles
         self.default_window = default_window
         self.enable_artifact_loading = enable_artifact_loading
         self.artifact_dir = artifact_dir or "artifacts/predictions"
-        
+
         # Thread-safe deques for predictions
         self._lock = threading.RLock()  # Reentrant lock for nested locking
         self._analyst_predictions: Deque[PredictionEntry] = deque(maxlen=max_candles)
         self._tactician_predictions: Deque[PredictionEntry] = deque(maxlen=max_candles)
-        
+
         # Position-specific prediction history
         self._position_predictions: Dict[str, List[PredictionEntry]] = {}
-        
+
         # Uncertainty calculator
         self.uncertainty_calculator = get_global_uncertainty_calculator()
-        
+
         self.logger = logger.getChild('PredictionCache')
         self.logger.info(f"✅ PredictionCache initialized: max_candles={max_candles}, window={default_window}")
+        tprint(f"[PRED_CACHE] __init__: PredictionCache initialized successfully")
     
     @handles_errors(fallback=None, context="add analyst prediction")
     def add_analyst_prediction(
@@ -128,7 +131,7 @@ class PredictionCache:
     ) -> None:
         """
         Add an Analyst prediction to the cache.
-        
+
         Args:
             predictions: Analyst prediction values
             timestamp: Prediction timestamp (defaults to now)
@@ -138,7 +141,8 @@ class PredictionCache:
             metadata: Additional metadata
         """
         timestamp = timestamp or datetime.now()
-        
+        tprint(f"[PRED_CACHE] add_analyst_prediction: Adding analyst prediction at {timestamp}, confidence={confidence}")
+
         entry = PredictionEntry(
             timestamp=timestamp,
             predictions=predictions,
@@ -147,10 +151,12 @@ class PredictionCache:
             confidence=confidence,
             metadata=metadata
         )
-        
+
         with self._lock:
             self._analyst_predictions.append(entry)
-            self.logger.debug(f"Added Analyst prediction at {timestamp}, cache size: {len(self._analyst_predictions)}")
+            cache_size = len(self._analyst_predictions)
+            self.logger.debug(f"Added Analyst prediction at {timestamp}, cache size: {cache_size}")
+            tprint(f"[PRED_CACHE] add_analyst_prediction: Analyst prediction added, cache_size={cache_size}")
     
     @handles_errors(fallback=None, context="add tactician prediction")
     def add_tactician_prediction(
@@ -164,7 +170,7 @@ class PredictionCache:
     ) -> None:
         """
         Add a Tactician prediction to the cache.
-        
+
         Args:
             predictions: Tactician prediction values
             timestamp: Prediction timestamp (defaults to now)
@@ -174,7 +180,8 @@ class PredictionCache:
             metadata: Additional metadata
         """
         timestamp = timestamp or datetime.now()
-        
+        tprint(f"[PRED_CACHE] add_tactician_prediction: Adding tactician prediction at {timestamp}, confidence={confidence}")
+
         entry = PredictionEntry(
             timestamp=timestamp,
             predictions=predictions,
@@ -183,10 +190,12 @@ class PredictionCache:
             confidence=confidence,
             metadata=metadata
         )
-        
+
         with self._lock:
             self._tactician_predictions.append(entry)
-            self.logger.debug(f"Added Tactician prediction at {timestamp}, cache size: {len(self._tactician_predictions)}")
+            cache_size = len(self._tactician_predictions)
+            self.logger.debug(f"Added Tactician prediction at {timestamp}, cache size: {cache_size}")
+            tprint(f"[PRED_CACHE] add_tactician_prediction: Tactician prediction added, cache_size={cache_size}")
     
     @handles_errors(fallback=[], context="get recent analyst predictions")
     def get_recent_analyst_predictions(self, n_candles: Optional[int] = None) -> List[PredictionEntry]:
@@ -347,20 +356,22 @@ class PredictionCache:
     ) -> None:
         """
         Register a new position and snapshot current predictions.
-        
+
         This saves the current predictions for later confidence degradation analysis.
-        
+
         Args:
             position_id: Unique position identifier
             entry_timestamp: When the position was entered
             snapshot_window: How many candles to snapshot
         """
+        tprint(f"[PRED_CACHE] register_position: Registering position {position_id}, entry_timestamp={entry_timestamp}, snapshot_window={snapshot_window}")
         with self._lock:
             # Snapshot recent predictions for this position
             snapshot = list(self._tactician_predictions)[-snapshot_window:]
             self._position_predictions[position_id] = snapshot
-            
+
             self.logger.info(f"Registered position {position_id} with {len(snapshot)} prediction snapshots")
+            tprint(f"[PRED_CACHE] register_position: Position {position_id} registered with {len(snapshot)} prediction snapshots")
     
     @handles_errors(fallback=None, context="update position predictions")
     def update_position_predictions(

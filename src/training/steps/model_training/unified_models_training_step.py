@@ -1704,21 +1704,15 @@ class UnifiedModelsTrainingStep(BaseStep):
             tprint_info(f"   Storage Format: HDF5 (via versioned_artifacts)")
 
             # Try to get selected features from feature_generation_final_feature_selection_step
-            # IMPORTANT: We need SELECTED features (60), not generated features (327)
-            timeframe = config.get('timeframe', '15m')
+            # IMPORTANT: We need SELECTED features (e.g., 60), not generated features (327)
+            # No fallback to larger feature sets - only use features from final selection step
             feature_artifact_names = [
-                f'selected_feature_dataframe_{feature_set_size}',  # Primary: selected features
-                f'selected_features_{feature_set_size}',           # Alternative name
+                f'selected_feature_dataframe_{feature_set_size}',  # Primary: selected features DataFrame (with size from config)
+                'selected_feature_dataframe_60',                   # Standard 60-feature DataFrame
+                f'selected_features_{feature_set_size}',           # Feature names list (with size from config)
+                'selected_features_60',                            # Standard 60-feature names list
                 f'final_dataset_{feature_set_size}',               # Validation step generic alias
                 f'final_analyst_dataset_{feature_set_size}',       # Analyst-specific validation alias
-                'selected_feature_dataframe_60',                   # Fallback to 60
-                'selected_feature_dataframe_50',                   # Fallback to 50
-                'selected_feature_dataframe_40',                   # Fallback to 40
-                'final_dataset_60',                                # Validation step 60
-                'final_dataset_50',                                # Validation step 50
-                'final_dataset_40',                                # Validation step 40
-                f'generated_features_{timeframe}',                 # LAST RESORT: all generated features (327)
-                f'generated_features',                             # LAST RESORT: generic name
             ]
 
             tprint_info(f"🔎 Attempting to load training features from HDF5 artifacts...")
@@ -1738,71 +1732,64 @@ class UnifiedModelsTrainingStep(BaseStep):
                     self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
                     continue
             
-            # If still no data, try alternative artifact names
-            if training_data is None:
-                alternative_names = [
-                    'final_dataset',           # From final validation step
-                    'labeled_data',            # From labeling integration step
-                    'training_dataset',        # Generic name
-                ]
-                
-                for artifact_name in alternative_names:
-                    try:
-                        tprint_info(f"   ↪ Trying alternative '{artifact_name}'")
-                        training_data = self._get_artifact(artifact_name, 'data')
-                        if training_data is not None:
-                            feature_source_name = artifact_name
-                            tprint_success(f"✅ Retrieved training data from '{artifact_name}': {training_data.shape if hasattr(training_data, 'shape') else type(training_data)}")
-                            break
-                    except Exception as e:
-                        self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
-                        continue
-            
             # FAIL FAST: If no training data found, raise error
             if training_data is None:
                 error_msg = (
                     "❌ CRITICAL: No training data found in artifacts!\n"
                     f"   Expected artifacts from 'feature_generation_final_feature_selection_step':\n"
-                    f"   - selected_feature_dataframe_{feature_set_size}\n"
-                    f"   - selected_feature_dataframe_50/60/40\n"
-                    f"   OR from other steps: final_dataset, labeled_data\n"
+                    f"   - selected_feature_dataframe_{feature_set_size} (DataFrame with selected features)\n"
+                    f"   - selected_feature_dataframe_60 (standard 60-feature DataFrame)\n"
+                    f"   - selected_features_{feature_set_size} (list of feature names)\n"
+                    f"   - selected_features_60 (standard 60-feature names list)\n"
+                    f"   - final_dataset_{feature_set_size}\n"
+                    f"   - final_analyst_dataset_{feature_set_size}\n"
                     f"   \n"
-                    f"   Please ensure feature_generation_final_feature_selection_step has run successfully.\n"
+                    f"   Note: If artifact contains feature names list, labeled_data is also required.\n"
+                    f"   \n"
+                    f"   Please ensure feature_generation_final_feature_selection_step has run successfully\n"
+                    f"   and generated the selected feature set with {feature_set_size} features.\n"
                     f"   Check artifacts directory for available artifacts."
                 )
                 tprint_error(error_msg)
                 raise ValueError(error_msg)
             
-            # Normalize training_data to DataFrame for downstream processing
+            # Handle case where artifact contains feature names list instead of DataFrame
             if training_data is not None and not isinstance(training_data, pd.DataFrame):
                 # Check if we got a list of feature names instead of actual data
                 if isinstance(training_data, list):
-                    tprint_warning(f"⚠️ Got list of {len(training_data)} feature names, need to load actual feature data")
-                    # Try to load the actual labeled data with these features
+                    tprint_info(f"📋 Artifact '{feature_source_name}' contains {len(training_data)} feature names")
+                    tprint_info(f"   Loading labeled_data to get actual feature values...")
+
+                    # Load labeled_data to get the actual feature values
                     try:
                         labeled_data = self._get_artifact('labeled_data', 'data')
                         if labeled_data is not None and isinstance(labeled_data, pd.DataFrame):
+                            tprint_success(f"✅ Loaded labeled_data: {labeled_data.shape}")
+
                             # Select only the features from the list
                             available_features = [f for f in training_data if f in labeled_data.columns]
                             if available_features:
                                 training_data = labeled_data[available_features].copy()
-                                tprint_success(f"✅ Loaded {len(available_features)} features from labeled_data")
+                                tprint_success(f"✅ Selected {len(available_features)} features from labeled_data")
                             else:
                                 tprint_error(f"❌ None of the {len(training_data)} feature names found in labeled_data")
+                                tprint_error(f"   Feature names sample: {training_data[:5]}")
+                                tprint_error(f"   labeled_data columns sample: {list(labeled_data.columns[:5])}")
                                 raise ValueError(f"Feature names from {feature_source_name} not found in labeled_data")
                         else:
                             tprint_error("❌ Could not load labeled_data to get actual feature values")
                             raise ValueError("Got feature names but no labeled_data available")
                     except Exception as e:
-                        tprint_error(f"❌ Failed to load feature data: {e}")
+                        tprint_error(f"❌ Failed to load feature data from labeled_data: {e}")
                         raise
                 else:
-                    try:
-                        training_data = pd.DataFrame(training_data)
-                        tprint_warning(f"⚠️ Converted training data from type '{type(training_data)}' to DataFrame")
-                    except Exception as e:
-                        tprint_error(f"❌ Failed to convert training data to DataFrame: {e}")
-                        raise
+                    error_msg = (
+                        f"❌ CRITICAL: Training data from '{feature_source_name}' has unexpected type!\n"
+                        f"   Expected: pandas.DataFrame or list of feature names\n"
+                        f"   Got: {type(training_data)}\n"
+                    )
+                    tprint_error(error_msg)
+                    raise ValueError(error_msg)
 
             if training_data is not None and isinstance(training_data, pd.DataFrame):
                 # Comprehensive feature loading verification and logging
@@ -2352,28 +2339,33 @@ class UnifiedModelsTrainingStep(BaseStep):
             return None
 
     async def _get_regime_features(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
-        """Get regime probability features from regime_ensemble_training artifact."""
+        """
+        Get regime probability features from regime steps.
+
+        NOTE: This method is currently unused. Regime features are loaded via _get_additional_model_outputs.
+        Kept for potential future use.
+        """
         try:
             tprint_info("🌍 Loading regime probabilities for feature preparation...")
-            
-            # Load regime ensemble predictions (from regime_ensemble_training)
-            regime_features = self._get_artifact('regime_ensemble_predictions', 'data')
-            
+
+            # Try ensemble predictions first, then base model predictions
+            regime_features = None
+            for artifact_name in ['regime_ensemble_predictions', 'regime_models_predictions']:
+                try:
+                    regime_features = self._get_artifact(artifact_name, 'data')
+                    if regime_features is not None:
+                        tprint_success(f"✅ Loaded regime features from '{artifact_name}': {regime_features.shape}")
+                        tprint_info(f"   Columns: {list(regime_features.columns)}")
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
+                    continue
+
             if regime_features is None:
-                # Try alternative artifact names
-                tprint_warning("⚠️ regime_ensemble_predictions not found, trying alternatives...")
-                regime_features = await self._get_artifact('regime_probabilities', config)
-                if regime_features is None:
-                    regime_features = await self._get_artifact('regime_ml_outputs', config)
-            
-            if regime_features is not None:
-                tprint_success(f"✅ Loaded regime features: {regime_features.shape}")
-                tprint_info(f"   Columns: {list(regime_features.columns)}")
-            else:
                 tprint_warning("⚠️ No regime features found - will use uniform distribution")
-            
+
             return regime_features
-            
+
         except Exception as e:
             self.logger.error(f"Error retrieving regime features: {e}")
             tprint_warning(f"⚠️ Failed to load regime features: {e}")
@@ -2397,10 +2389,10 @@ class UnifiedModelsTrainingStep(BaseStep):
                 tprint_info(f"   Artifact Name: regime_ensemble_predictions")
                 tprint_info(f"   Storage Format: HDF5 (via versioned_artifacts)")
 
-                # Load regime model predictions (from regime_ensemble_training) - REQUIRED
-                # Try multiple artifact names
+                # Load regime model predictions (from regime steps) - REQUIRED
+                # Try ensemble predictions first, then base model predictions
                 regime_features = None
-                for artifact_name in ['regime_ensemble_predictions', 'regime_models_predictions', 'regime_ml_outputs']:
+                for artifact_name in ['regime_ensemble_predictions', 'regime_models_predictions']:
                     try:
                         regime_features = self._get_artifact(artifact_name, 'data')
                         if regime_features is not None:
@@ -2433,11 +2425,15 @@ class UnifiedModelsTrainingStep(BaseStep):
                 if regime_features is None:
                     error_msg = (
                         "❌ CRITICAL: No regime predictions artifact found!\n"
-                        "   Tried: regime_ensemble_predictions, regime_models_predictions, regime_ml_outputs\n"
+                        "   Expected artifacts:\n"
+                        "   - regime_ensemble_predictions (from regime_ensemble_training step) - preferred\n"
+                        "   - regime_models_predictions (from regime_models_training step) - alternative\n"
+                        "   \n"
                         "   This artifact is REQUIRED for model training.\n"
-                        "   Source: regime_ensemble_training step\n"
                         "   Format: HDF5 (versioned_artifacts)\n"
-                        "   Please ensure regime_ensemble_training step has run successfully."
+                        "   \n"
+                        "   Please ensure regime_ensemble_training or regime_models_training step\n"
+                        "   has run successfully and generated regime probability predictions."
                     )
                     tprint_error(error_msg)
                     raise ValueError(error_msg)

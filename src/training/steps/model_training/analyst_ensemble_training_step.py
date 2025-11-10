@@ -306,6 +306,22 @@ class AnalystEnsembleTrainingStep(BaseStep):
             # Since we only have predictions, we'll compute disagreement metrics directly
             predictions_array = base_predictions[model_cols].values
 
+            # Log base predictions before computing disagreement
+            from src.utils.tprint import tprint_data_preview
+            tprint("=" * 80, "INFO")
+            tprint("📊 COMPUTING DISAGREEMENT: Base Model Predictions", "INFO")
+            tprint("=" * 80, "INFO")
+            tprint_data_preview(
+                base_predictions[model_cols],
+                name="Base Model Predictions",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+            tprint(f"📊 Using {len(model_cols)} model prediction columns from {len(model_predictions)} models", "INFO")
+            tprint("=" * 80, "INFO")
+
             # Compute disagreement metrics
             disagreement_df = pd.DataFrame(index=base_predictions.index)
 
@@ -328,6 +344,24 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 disagreement_df['disagreement_cv'] = np.where(np.isfinite(cv), cv, 0)
 
             tprint(f"✅ Generated {len(disagreement_df.columns)} disagreement features", "SUCCESS")
+
+            # Log computed disagreement features
+            tprint("=" * 80, "INFO")
+            tprint("📊 DISAGREEMENT FEATURES COMPUTED: Statistical Metrics", "INFO")
+            tprint("=" * 80, "INFO")
+            tprint_data_preview(
+                disagreement_df,
+                name="Disagreement Features",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+            tprint(f"📊 Disagreement statistics:", "INFO")
+            tprint(f"   Avg variance: {disagreement_df['disagreement_variance'].mean():.6f}", "INFO")
+            tprint(f"   Avg std: {disagreement_df['disagreement_std'].mean():.6f}", "INFO")
+            tprint(f"   Avg range: {disagreement_df['disagreement_range'].mean():.6f}", "INFO")
+            tprint("=" * 80, "INFO")
 
             return disagreement_df
 

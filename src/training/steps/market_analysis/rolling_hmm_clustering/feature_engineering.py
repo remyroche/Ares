@@ -1250,10 +1250,7 @@ class RollingHMMFeatureEngineer:
 
 # Default EWMA configurations
 DEFAULT_EWMA_CONFIGS = [
-    EWMAConfig(short_window=8, long_window=16, name="8+16"),
+    EWMAConfig(short_window=4, long_window=20, name="4+20"),
+    EWMAConfig(short_window=6, long_window=20, name="6+20"),
     EWMAConfig(short_window=8, long_window=20, name="8+20"),
-    EWMAConfig(short_window=8, long_window=24, name="8+24"),
-    EWMAConfig(short_window=12, long_window=16, name="12+16"),
-    EWMAConfig(short_window=12, long_window=20, name="12+20"),
-    EWMAConfig(short_window=12, long_window=24, name="12+24"),
 ]

@@ -250,6 +250,21 @@ class VersionedArtifactStore:
         from src.utils.tprint import tprint
         context_str = self._get_context_string(metadata=metadata)
         tprint(f"💾 Adding data to store '{version_name}': {len(data)} rows × {len(data.columns)} cols | {context_str}")
+
+        # Data description
+        tprint(f"📊 Data Description:")
+        tprint(f"   • Rows: {len(data)}")
+        tprint(f"   • Columns: {len(data.columns)}")
+        tprint(f"   • First 10 columns: {list(data.columns[:10])}")
+        if len(data.columns) > 10:
+            tprint(f"   • ... and {len(data.columns) - 10} more columns")
+        tprint(f"   • First 5 rows:")
+        for idx, row_idx in enumerate(data.index[:5]):
+            row_preview = {col: data.loc[row_idx, col] for col in data.columns[:3]}
+            tprint(f"     [{idx}] {row_idx}: {row_preview}...")
+        if len(data) > 5:
+            tprint(f"   • ... and {len(data) - 5} more rows")
+
         tprint(f"🐛 DEBUG: VersionedArtifactStore.add_data() called", "INFO")
         tprint(f"🐛 DEBUG: Store path: {self.h5_file}", "INFO")
         tprint(f"🐛 DEBUG: Version name: {version_name}", "INFO")
@@ -469,6 +484,24 @@ class VersionedArtifactStore:
                 except (ValueError, OSError):
                     # Silently ignore logging errors - data loading is more important
                     pass
+
+            # Data description after loading
+            try:
+                tprint(f"📊 Loaded Data Description:")
+                tprint(f"   • Rows: {len(df)}")
+                tprint(f"   • Columns: {len(df.columns)}")
+                tprint(f"   • First 10 columns: {list(df.columns[:10])}")
+                if len(df.columns) > 10:
+                    tprint(f"   • ... and {len(df.columns) - 10} more columns")
+                tprint(f"   • First 5 rows:")
+                for idx, row_idx in enumerate(df.index[:5]):
+                    row_preview = {col: df.loc[row_idx, col] for col in df.columns[:3]}
+                    tprint(f"     [{idx}] {row_idx}: {row_preview}...")
+                if len(df) > 5:
+                    tprint(f"   • ... and {len(df) - 5} more rows")
+            except (ValueError, OSError):
+                # Silently ignore logging errors - data loading is more important
+                pass
 
             return df
 

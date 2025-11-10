@@ -133,6 +133,20 @@ class VersionedArtifactAdapter:
                 # For non-DataFrame data, wrap in a simple structure
                 data = pd.DataFrame({'value': [data]})
 
+        # Data description before saving
+        tprint(f"📊 Saving Data Description:")
+        tprint(f"   • Rows: {len(data)}")
+        tprint(f"   • Columns: {len(data.columns)}")
+        tprint(f"   • First 10 columns: {list(data.columns[:10])}")
+        if len(data.columns) > 10:
+            tprint(f"   • ... and {len(data.columns) - 10} more columns")
+        tprint(f"   • First 5 rows:")
+        for idx, row_idx in enumerate(data.index[:5]):
+            row_preview = {col: data.loc[row_idx, col] for col in data.columns[:3]}
+            tprint(f"     [{idx}] {row_idx}: {row_preview}...")
+        if len(data) > 5:
+            tprint(f"   • ... and {len(data) - 5} more rows")
+
         # Generate version name
         version_name = f"{artifact_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
@@ -223,6 +237,21 @@ class VersionedArtifactAdapter:
         try:
             view = self.store.get_view(version_name)
             data = view.materialize()
+
+            # Data description after loading (before unwrapping)
+            if isinstance(data, pd.DataFrame):
+                tprint(f"📊 Retrieved Data Description:")
+                tprint(f"   • Rows: {len(data)}")
+                tprint(f"   • Columns: {len(data.columns)}")
+                tprint(f"   • First 10 columns: {list(data.columns[:10])}")
+                if len(data.columns) > 10:
+                    tprint(f"   • ... and {len(data.columns) - 10} more columns")
+                tprint(f"   • First 5 rows:")
+                for idx, row_idx in enumerate(data.index[:5]):
+                    row_preview = {col: data.loc[row_idx, col] for col in data.columns[:3]}
+                    tprint(f"     [{idx}] {row_idx}: {row_preview}...")
+                if len(data) > 5:
+                    tprint(f"   • ... and {len(data) - 5} more rows")
 
             # Handle unwrapping for single-value artifacts
             if 'value' in data.columns and len(data.columns) == 1:

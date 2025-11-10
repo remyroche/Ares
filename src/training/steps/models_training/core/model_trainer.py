@@ -128,11 +128,50 @@ class ModelTrainer(BaseTrainer):
             tprint_info(f"Input columns (first 20): {list(data.columns[:20])}")
             
             processed_data, processed_targets = self._preprocess_data(data, targets)
-            
+
             tprint_info(f"After preprocessing: {processed_data.shape}")
             tprint_info(f"Processed columns (first 20): {list(processed_data.columns[:20])}")
             tprint_info("=" * 80)
-            
+
+            # Validate dataset size before training
+            n_samples = len(processed_data)
+            n_features = len(processed_data.columns)
+            samples_per_feature = n_samples / n_features if n_features > 0 else 0
+
+            # Minimum recommended: 10-15 samples per feature for reliable training
+            min_samples_recommended = n_features * 10
+            min_samples_absolute = max(100, n_features * 3)  # Absolute minimum
+
+            tprint_info(f"📊 Dataset validation:")
+            tprint_info(f"   Samples: {n_samples}")
+            tprint_info(f"   Features: {n_features}")
+            tprint_info(f"   Samples/Feature ratio: {samples_per_feature:.2f}")
+            tprint_info(f"   Recommended minimum: {min_samples_recommended} samples ({n_features} features × 10)")
+
+            if n_samples < min_samples_absolute:
+                error_msg = (
+                    f"❌ CRITICAL: Dataset too small for reliable training!\n"
+                    f"   Current: {n_samples} samples\n"
+                    f"   Absolute minimum: {min_samples_absolute} samples\n"
+                    f"   Recommended: {min_samples_recommended}+ samples\n"
+                    f"   This will likely result in severe overfitting and poor generalization."
+                )
+                tprint_error(error_msg)
+                self.logger.error(error_msg)
+                # Don't fail immediately, but log prominent warning
+                tprint_warning("⚠️  Proceeding with training despite insufficient data - expect overfitting!")
+            elif n_samples < min_samples_recommended:
+                warning_msg = (
+                    f"⚠️  WARNING: Dataset is smaller than recommended!\n"
+                    f"   Current: {n_samples} samples ({samples_per_feature:.1f} samples/feature)\n"
+                    f"   Recommended: {min_samples_recommended}+ samples (10+ samples/feature)\n"
+                    f"   Training may result in overfitting. Consider collecting more data."
+                )
+                tprint_warning(warning_msg)
+                self.logger.warning(warning_msg)
+            else:
+                tprint_success(f"✅ Dataset size is adequate for training")
+
             # Train each model type with comprehensive metrics
             training_results = {}
             best_model = None
@@ -372,20 +411,20 @@ class ModelTrainer(BaseTrainer):
     ) -> Tuple[Any, Dict[str, Any]]:
         """
         Optimize hyperparameters using Bayesian TPE optimization.
-        
+
         Args:
             model: Base model to optimize
             model_type: Type of model
             data: Training data
             targets: Training targets
-            
+
         Returns:
             Tuple of (optimized_model, best_params)
         """
         try:
             # Get HPO config
             n_trials = self.config.custom_params.get('hpo_n_trials', 50)
-            
+
             # Define search spaces based on model type
             if model_type == ModelType.LIGHTGBM:
                 search_space = {
@@ -402,8 +441,14 @@ class ModelTrainer(BaseTrainer):
                     'l2_leaf_reg': ('float', 1, 10),
                     'border_count': ('int', 32, 255)
                 }
+            elif model_type == ModelType.DEPTHWISE_CNN:
+                # CNN HPO is handled inline during training due to model architecture
+                # Return None to signal that HPO will happen during training
+                tprint_info(f"ℹ️  HPO for {model_type.value} will be handled during model training (inline)")
+                return model, {}
             else:
                 # Return model as-is for types without HPO
+                tprint_info(f"ℹ️  HPO not configured for {model_type.value}, using default parameters")
                 return model, {}
             
             # Use BayesianTPEOptimizer

@@ -130,11 +130,32 @@ class UnifiedModelsTrainingStep(BaseStep):
             yaml_config = await self._load_training_config(training_type, config)
             
             # Retrieve training data and targets from artifacts
+            tprint_info("=" * 80)
+            tprint_info("📥 STEP 1: RETRIEVING TRAINING DATA FROM ARTIFACTS")
+            tprint_info("=" * 80)
             training_data, analyst_targets, tactician_targets = await self._retrieve_training_data(config, yaml_config)
+
+            # Log initial dataset size before any filtering
+            if training_data is not None:
+                tprint_info("=" * 80)
+                tprint_info("📊 INITIAL DATASET SIZE (Before Walk-Forward Filtering)")
+                tprint_info("=" * 80)
+                tprint_info(f"   Training Data: {training_data.shape[0]:,} samples × {training_data.shape[1]:,} features")
+                if analyst_targets is not None:
+                    tprint_info(f"   Analyst Targets: {len(analyst_targets):,} samples")
+                if tactician_targets is not None:
+                    tprint_info(f"   Tactician Targets: {len(tactician_targets):,} samples")
+                tprint_info(f"   Memory Usage: {training_data.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+                tprint_info(f"   Date Range: {training_data.index[0]} to {training_data.index[-1]}")
+                tprint_info("=" * 80)
+            else:
+                tprint_error("❌ No training data retrieved!")
 
             # ========================================================================
             # TEMPORAL SPLITTING: Enforce train/val/test boundaries
             # ========================================================================
+            tprint_info("=" * 80)
+            tprint_info("📅 STEP 2: WALK-FORWARD VALIDATION SETUP")
             tprint_info("=" * 80)
             tprint_info("🔐 TEMPORAL DATA SPLITTING - Preventing Data Leakage")
             tprint_info("=" * 80)
@@ -192,8 +213,14 @@ class UnifiedModelsTrainingStep(BaseStep):
                 # For walk-forward, we keep data for the LARGEST fold (Fold 3's training period)
                 # This ensures we have all data needed for HPO across all folds
                 last_fold = walkforward_config.folds[-1]
-                tprint_info(f"🔒 Filtering data to LARGEST training period (Fold {last_fold.fold_num}) for final model training...")
+                tprint_info("=" * 80)
+                tprint_info("🔒 WALK-FORWARD DATA FILTERING")
+                tprint_info("=" * 80)
+                tprint_info(f"Strategy: Filtering to LARGEST training period (Fold {last_fold.fold_num}) for final model training")
+                tprint_info(f"Rationale: Use the most recent data window for final model deployment")
                 original_len = len(training_data)
+                tprint_info(f"📊 Original dataset size: {original_len} samples")
+                tprint_info(f"📅 Filter period: {last_fold.training.start} → {last_fold.training.effective_end}")
 
                 # Filter to largest training period
                 training_data_filtered = training_data.loc[
@@ -202,8 +229,37 @@ class UnifiedModelsTrainingStep(BaseStep):
                 ].copy()
 
                 filtered_len = len(training_data_filtered)
-                tprint_success(f"✅ Filtered to largest training period: {original_len} → {filtered_len} samples "
-                             f"({filtered_len/original_len*100:.1f}% of full dataset)")
+                reduction_pct = ((original_len - filtered_len) / original_len * 100) if original_len > 0 else 0
+
+                tprint_info(f"📊 Filtered dataset size: {filtered_len} samples")
+                tprint_info(f"📉 Data reduction: {original_len} → {filtered_len} (-{reduction_pct:.1f}%)")
+
+                # CRITICAL: Check if filtered dataset is sufficient
+                n_features = len(training_data_filtered.columns)
+                samples_per_feature = filtered_len / n_features if n_features > 0 else 0
+                min_recommended = n_features * 10
+
+                if filtered_len < min_recommended:
+                    tprint_error("=" * 80)
+                    tprint_error("❌ CRITICAL WARNING: INSUFFICIENT DATA AFTER WALK-FORWARD FILTERING")
+                    tprint_error("=" * 80)
+                    tprint_error(f"   Filtered samples: {filtered_len}")
+                    tprint_error(f"   Features: {n_features}")
+                    tprint_error(f"   Samples/Feature: {samples_per_feature:.2f}")
+                    tprint_error(f"   Minimum recommended: {min_recommended} samples")
+                    tprint_error(f"   Deficit: {min_recommended - filtered_len} samples ({((min_recommended - filtered_len) / min_recommended * 100):.1f}%)")
+                    tprint_error("")
+                    tprint_error("⚠️  ROOT CAUSE: Walk-forward validation filtering reduces dataset too much!")
+                    tprint_error("")
+                    tprint_error("💡 POSSIBLE SOLUTIONS:")
+                    tprint_error("   1. Increase historical data collection period")
+                    tprint_error("   2. Use smaller validation windows (reduce val_pct_per_fold)")
+                    tprint_error("   3. Use fewer CV folds (reduce n_folds from 3 to 2)")
+                    tprint_error("   4. Increase min_train_pct (currently 55%)")
+                    tprint_error("   5. Disable walk-forward validation for initial training")
+                    tprint_error("=" * 80)
+                else:
+                    tprint_success(f"✅ Filtered dataset has adequate samples ({samples_per_feature:.1f} samples/feature)")
 
                 # Store filtered data for final model training
                 training_data = training_data_filtered

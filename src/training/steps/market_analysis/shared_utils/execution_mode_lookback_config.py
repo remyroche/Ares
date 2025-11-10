@@ -26,6 +26,9 @@ class ExecutionMode(Enum):
 @dataclass
 class LookbackConfiguration:
     """Configuration for lookback periods based on execution mode."""
+    # General data loading parameters (for feature generation, training, etc.)
+    data_loading_days: int  # Days of data to load in light/blank modes
+
     # Feature lookback optimization parameters
     optimization_window_days: int
     optimization_sample_size: int
@@ -60,6 +63,9 @@ class ExecutionModeLookbackConfig:
         # Define configurations for each execution mode
         self._configurations = {
             ExecutionMode.FULL: LookbackConfiguration(
+                # General data loading - Full dataset
+                data_loading_days=None,  # None = use all available data
+
                 # Feature lookback optimization - Full intensity
                 optimization_window_days=1460,  # ~4 years of daily data
                 optimization_sample_size=100000,  # Full sample size
@@ -86,24 +92,27 @@ class ExecutionModeLookbackConfig:
             ),
 
             ExecutionMode.LIGHT: LookbackConfiguration(
+                # General data loading - 60 days (INCREASED from 20 for sufficient training data)
+                data_loading_days=60,  # 60 days for adequate sample size
+
                 # Feature lookback optimization - Light intensity
-                optimization_window_days=20,  # 20 days for quick optimization
+                optimization_window_days=60,  # Aligned with data loading window
                 optimization_sample_size=1000,  # Reduced sample size
                 optimization_max_features=80,  # Keep all features
 
                 # PID-based feature generation - Light complexity
-                pid_generation_window_days=20,  # 20 days
+                pid_generation_window_days=60,  # Aligned with data loading window
                 pid_interaction_features=100,  # Keep all interaction features
                 pid_polynomial_features=50,  # Keep all polynomial features
                 pid_cross_timeframe_features=50,  # Keep all cross-timeframe features
 
                 # Multi-horizon profit labeling - Light analysis
-                labeling_window_days=20,  # 20 days for quick labeling
+                labeling_window_days=60,  # Aligned with data loading window
                 labeling_horizons_count=5,  # Reduced horizons
                 labeling_sample_size=1000,  # Reduced sample size
 
                 # Final feature selection - Light pipeline
-                selection_window_days=20,  # 20 days for quick selection
+                selection_window_days=60,  # Aligned with data loading window
                 selection_stage_targets=(120, 100, 80, 60),  # Keep consistent stage targets
 
                 # General parameters
@@ -112,6 +121,9 @@ class ExecutionModeLookbackConfig:
             ),
 
             ExecutionMode.BLANK: LookbackConfiguration(
+                # General data loading - 180 days for validation
+                data_loading_days=180,  # 180 days for validation
+
                 # Feature lookback optimization - Minimal intensity
                 optimization_window_days=180,  # 180 days for validation
                 optimization_sample_size=500,  # Minimal sample size
@@ -235,6 +247,19 @@ class ExecutionModeLookbackConfig:
             'window_days': config.selection_window_days,
             'stage_targets': config.selection_stage_targets
         }
+
+    def get_data_loading_days(self, mode: str) -> Optional[int]:
+        """
+        Get data loading days for a specific execution mode.
+
+        Args:
+            mode: Execution mode ('full', 'light', 'blank')
+
+        Returns:
+            Number of days to load (None for full mode = all data)
+        """
+        config = self.get_configuration(mode)
+        return config.data_loading_days
 
 # Global instance for easy access
 execution_mode_config = ExecutionModeLookbackConfig()

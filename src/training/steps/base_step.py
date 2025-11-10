@@ -345,23 +345,24 @@ class BaseStep(ABC):
                 tprint(f"🔧 BASESTEP: blank_mode_days in context: {self._current_context.get('blank_mode_days', 'NOT FOUND')}", "INFO")
                 tprint(f"🔧 BASESTEP: light_mode_days in context: {self._current_context.get('light_mode_days', 'NOT FOUND')}", "INFO")
                 tprint(f"🔧 BASESTEP: Context keys available: {list(self._current_context.keys())}", "INFO")
-                
+
+                # Use centralized execution mode configuration for defaults
+                from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import get_execution_mode_config
+                execution_config = get_execution_mode_config()
+
                 mode_days_defaults = {
-                    'light': self._current_context.get('light_mode_days', 20),
-                    'blank': self._current_context.get('blank_mode_days', 180),
+                    'light': self._current_context.get('light_mode_days', execution_config.get_data_loading_days('light')),
+                    'blank': self._current_context.get('blank_mode_days', execution_config.get_data_loading_days('blank')),
                 }
                 days_limit = mode_days_defaults.get(execution_mode)
                 
                 # Add fallback logic with warnings when context values are missing
-                if execution_mode == 'blank' and days_limit is None:
-                    # Fallback if blank_mode_days not in context
-                    days_limit = 180
-                    tprint("⚠️ Using fallback blank_mode_days=180 (not found in context)", "WARNING")
-                    tprint(f"🔧 BASESTEP: Context keys available: {list(self._current_context.keys())}", "INFO")
-                elif execution_mode == 'light' and days_limit is None:
-                    # Fallback if light_mode_days not in context
-                    days_limit = 20
-                    tprint("⚠️ Using fallback light_mode_days=20 (not found in context)", "WARNING")
+                if days_limit is None:
+                    # Fallback to centralized configuration
+                    from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import get_execution_mode_config
+                    execution_config = get_execution_mode_config()
+                    days_limit = execution_config.get_data_loading_days(execution_mode)
+                    tprint(f"⚠️ Using centralized config {execution_mode}_mode_days={days_limit} (not found in context)", "WARNING")
                     tprint(f"🔧 BASESTEP: Context keys available: {list(self._current_context.keys())}", "INFO")
 
                 if days_limit is not None:
@@ -912,9 +913,13 @@ class BaseStep(ABC):
                 '4h': 6,      # 24 / 4
                 '1d': 1
             }
-            
+
+            # Use centralized configuration for light mode days
+            from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import get_execution_mode_config
+            execution_config = get_execution_mode_config()
+            days_limit = execution_config.get_data_loading_days('light')
+
             samples_per_day = samples_per_day_map.get(timeframe, 96)  # Default to 15m
-            days_limit = 20
             light_limit = days_limit * samples_per_day
             tprint(
                 f"💡 Applying light mode filter ({timeframe}, {days_limit} days) for '{self.step_name}'"

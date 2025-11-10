@@ -176,16 +176,31 @@ class TrainingMetricsCollector:
             )
 
             # Skip collection if model is not yet instantiated or lacks required API (e.g., TCN, neural net)
+            # BUT: Allow CNN and Neural Network models to skip Pre-HPO since they're trained inline
             has_fit = hasattr(model, "fit") and callable(getattr(model, "fit", None))
             has_predict = hasattr(model, "predict") and callable(getattr(model, "predict", None))
+
+            # Check if this is a model type that's created during training (CNN, Neural Network)
+            is_inline_trained = any(keyword in model_type.lower() for keyword in ['cnn', 'depthwise', 'neural', 'tcn'])
+
             if model is None or not (has_fit and has_predict):
-                msg = (
-                    f"Skipping pre-HPO metrics for {model_name} "
-                    f"because the base model instance is not available or incomplete."
-                )
-                self.logger.info(msg)
-                tprint_info(f"⏭️  {msg}")
-                return model_metrics
+                if is_inline_trained:
+                    msg = (
+                        f"Pre-HPO metrics collection deferred for {model_name} "
+                        f"(model is created and trained inline, will collect Post-HPO metrics only)"
+                    )
+                    self.logger.info(msg)
+                    tprint_info(f"ℹ️  {msg}")
+                    # Return empty metrics - will be filled by post-training collection
+                    return model_metrics
+                else:
+                    msg = (
+                        f"Skipping pre-HPO metrics for {model_name} "
+                        f"because the base model instance is not available or incomplete."
+                    )
+                    self.logger.info(msg)
+                    tprint_warning(f"⚠️  {msg}")
+                    return model_metrics
 
             # Detect problem type (classification vs regression)
             is_classification = self._detect_task_type(y)

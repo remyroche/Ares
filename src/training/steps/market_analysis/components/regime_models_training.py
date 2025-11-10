@@ -1051,6 +1051,21 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             # Resampling to 15m will only happen for ensemble predictions in regime_ensemble_training
             tprint(f"💾 [REGIME_MODELS] Saving at native 1h timeframe (resampling happens only for ensemble)", color="blue")
 
+            # Log predictions before saving with comprehensive preview
+            from src.utils.tprint import tprint_data_preview
+            tprint("=" * 80, "INFO")
+            tprint(f"💾 ARTIFACT SAVING: {artifact_name}", "INFO")
+            tprint("=" * 80, "INFO")
+            tprint_data_preview(
+                predictions,
+                name="Regime Model Predictions",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+            tprint("=" * 80, "INFO")
+
             # Infer timeframe from index frequency
             if isinstance(predictions.index, pd.DatetimeIndex) and predictions.index.freq is not None:
                 timeframe_str = str(predictions.index.freq)
@@ -1190,7 +1205,22 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
             if regime_probs is not None:
                 tprint(f"✅ [REGIME_MODELS] Loaded rolling_hmm regime probabilities: {regime_probs.shape}")
-                
+
+                # Log loaded regime probabilities with comprehensive preview
+                from src.utils.tprint import tprint_data_preview
+                tprint("=" * 80, "INFO")
+                tprint("📥 DATA LOADED: Regime Probabilities for Model Training", "INFO")
+                tprint("=" * 80, "INFO")
+                tprint_data_preview(
+                    regime_probs,
+                    name="Regime Probabilities (HMM Labels)",
+                    max_rows=5,
+                    max_cols=10,
+                    show_dtypes=True,
+                    show_shape=True
+                )
+                tprint("=" * 80, "INFO")
+
                 # Add regime probabilities to protected_data
                 initial_cols = protected_data.columns.tolist()
                 protected_data = protected_data.join(regime_probs, how='left')

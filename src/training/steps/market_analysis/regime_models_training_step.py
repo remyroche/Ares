@@ -152,10 +152,25 @@ class RegimeModelsTrainingStep(BaseStep):
                 f"✅ Using market data from {market_data_source}",
                 "SUCCESS"
             )
-            
+
+            # Log loaded market data with comprehensive preview
+            from src.utils.tprint import tprint_data_preview
+            tprint("=" * 80, "INFO")
+            tprint(f"📥 DATA LOADED: Market Data from {market_data_source}", "INFO")
+            tprint("=" * 80, "INFO")
+            tprint_data_preview(
+                market_data,
+                name="Market Data for Regime Models Training",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+            tprint("=" * 80, "INFO")
+
             # Get timeframe for validation (execution_mode and symbol already defined above)
             timeframe = config.get('timeframe', '1h')
-            
+
             # Check if we have enough data for blank mode (180 days)
             if execution_mode == 'blank' and market_data is not None:
                 expected_samples_per_day = 24 if timeframe == '1h' else (24 * 4 if timeframe == '15m' else 24)

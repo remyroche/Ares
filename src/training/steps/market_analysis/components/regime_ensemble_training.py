@@ -91,6 +91,9 @@ from .regime_artifact_schema import (
 )
 from .ensemble_meta_features import EnsembleMetaFeaturesGenerator, generate_ensemble_meta_features
 
+# Import centralized disagreement features
+from src.feature_generation.categories.ensemble_disagreement import calculate_ensemble_disagreement_features
+
 # Import centralized configuration system
 try:
     from src.config.regime_ensemble_training import (
@@ -393,55 +396,85 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"Failed to load predictions: {e}", exc_info=True)
             return None
 
-    def _calculate_disagreement_features(
+    def _calculate_disagreement_features_centralized(
         self,
         predictions: pd.DataFrame
     ) -> pd.DataFrame:
         """
-        Calculate disagreement features from base model predictions.
+        Calculate disagreement features from base model predictions using centralized calculator.
 
-        Only uses Coefficient of Variation (CV) per regime as the disagreement metric.
+        Uses the 7 core disagreement features from ensemble_disagreement.py:
+        1. prediction_dispersion
+        2. confidence_gap
+        3. uncertainty
+        4. prediction_range
+        5. avg_divergence
+        6. max_confidence
+        7. disagreement_rate
 
         Args:
-            predictions: DataFrame with base model predictions
+            predictions: DataFrame with base model predictions (format: model_regime_X_prob)
 
         Returns:
-            DataFrame with CV disagreement features per regime
+            DataFrame with centralized disagreement features
         """
         try:
-            tprint("🔢 [REGIME_ENSEMBLE] Calculating disagreement features (CV only per regime)", color="cyan")
+            tprint("🔢 [REGIME_ENSEMBLE] Calculating disagreement features using centralized calculator", color="cyan")
 
-            disagreement_features = pd.DataFrame(index=predictions.index)
-
-            # Group by regime (e.g., all *_regime_0_prob columns)
+            # Parse predictions into format expected by centralized calculator
+            # Group by regime to calculate disagreement per regime
             regime_groups = {}
             for col in predictions.columns:
-                # Extract regime number from column name
                 if '_regime_' in col and '_prob' in col:
                     regime_num = col.split('_regime_')[1].split('_')[0]
+                    model_name = col.split('_regime_')[0]
                     if regime_num not in regime_groups:
-                        regime_groups[regime_num] = []
-                    regime_groups[regime_num].append(col)
+                        regime_groups[regime_num] = {}
+                    regime_groups[regime_num][model_name] = predictions[col].values
 
-            # Calculate CV (only) for each regime
-            for regime_num, cols in regime_groups.items():
-                if len(cols) < 2:
+            all_disagreement_features = []
+
+            # Calculate disagreement features for each regime
+            for regime_num, model_probs in regime_groups.items():
+                if len(model_probs) < 2:
                     continue
 
-                regime_preds = predictions[cols]
+                # Convert to format expected by centralized calculator
+                model_predictions = {}
+                model_probabilities = {}
 
-                # Coefficient of variation (normalized diversity) - ONLY disagreement metric
-                std_pred = regime_preds.std(axis=1)
-                mean_pred = regime_preds.mean(axis=1)
-                disagreement_features[f'regime_{regime_num}_cv'] = std_pred / (mean_pred + 1e-8)
+                for model_name, probs in model_probs.items():
+                    # Use probabilities as predictions (they represent likelihood)
+                    model_predictions[model_name] = probs
+                    # Convert single probability to binary format
+                    model_probabilities[model_name] = np.column_stack([1.0 - probs, probs])
 
-            tprint(f"✅ [REGIME_ENSEMBLE] Calculated {len(disagreement_features.columns)} disagreement features (CV only)", color="green")
+                # Calculate disagreement features using centralized calculator
+                disagreement_dict = calculate_ensemble_disagreement_features(
+                    model_predictions=model_predictions,
+                    model_probabilities=model_probabilities,
+                    logger=self.logger
+                )
 
-            return disagreement_features
+                # Convert to DataFrame and add regime prefix
+                regime_features = pd.DataFrame(disagreement_dict, index=predictions.index)
+                regime_features = regime_features.add_prefix(f'regime_{regime_num}_')
+                all_disagreement_features.append(regime_features)
+
+            # Combine all regime disagreement features
+            if all_disagreement_features:
+                disagreement_features = pd.concat(all_disagreement_features, axis=1)
+                tprint(f"✅ [REGIME_ENSEMBLE] Calculated {len(disagreement_features.columns)} disagreement features across {len(regime_groups)} regimes", color="green")
+                return disagreement_features
+            else:
+                tprint("⚠️ [REGIME_ENSEMBLE] No disagreement features calculated (insufficient models per regime)", color="yellow")
+                return pd.DataFrame(index=predictions.index)
 
         except Exception as e:
             tprint(f"❌ [REGIME_ENSEMBLE] Failed to calculate disagreement features: {e}", color="red")
             self.logger.error(f"Failed to calculate disagreement features: {e}", exc_info=True)
+            import traceback
+            self.logger.error(traceback.format_exc())
             return pd.DataFrame(index=predictions.index)
 
     async def _save_ensemble_predictions_to_hdf5(
@@ -564,8 +597,8 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 # Store for later use in reporting
                 pipeline_state['detected_base_models'] = base_model_names
 
-                # Calculate disagreement features
-                disagreement_feats = self._calculate_disagreement_features(regime_models_preds)
+                # Calculate disagreement features using centralized calculator
+                disagreement_feats = self._calculate_disagreement_features_centralized(regime_models_preds)
 
                 if not disagreement_feats.empty:
                     tprint(f"✅ [REGIME_ENSEMBLE] Calculated disagreement features: {disagreement_feats.shape}", color="green")

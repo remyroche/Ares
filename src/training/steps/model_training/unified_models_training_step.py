@@ -25,8 +25,8 @@ from src.training.steps.model_training.hpo_config import (
     ModelParameterGroups
 )
 
-# Import disagreement features calculator
-from src.feature_engineering_roadmap.disagreement_meta_features import DisagreementMetaFeatures
+# Import centralized disagreement features calculator
+from src.feature_generation.categories.ensemble_disagreement import calculate_ensemble_disagreement_features
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
@@ -2553,9 +2553,6 @@ class UnifiedModelsTrainingStep(BaseStep):
                 try:
                     tprint_info("🔍 Calculating disagreement meta-features from base model outputs...")
 
-                    # Initialize disagreement features calculator
-                    disagreement_calc = DisagreementMetaFeatures(logger=self.logger)
-
                     # Prepare model outputs as dict for disagreement calculator
                     # Assume columns are named like: model1_prediction, model2_prediction, etc.
                     # or model1_prob_0, model1_prob_1, model2_prob_0, model2_prob_1, etc.
@@ -2612,16 +2609,18 @@ class UnifiedModelsTrainingStep(BaseStep):
                                 ])
                                 model_probabilities[model_name] = probs
 
-                        disagreement_features_dict = disagreement_calc.calculate_all_disagreement_features(
+                        # Calculate disagreement features using centralized calculator
+                        disagreement_features_dict = calculate_ensemble_disagreement_features(
                             model_predictions=model_predictions,
                             model_probabilities=model_probabilities,
-                            model_confidences=model_confidences if model_confidences else None
+                            model_confidences=model_confidences if model_confidences else None,
+                            logger=self.logger
                         )
 
                         # Convert dict of Series to DataFrame
                         all_meta_features = pd.DataFrame(disagreement_features_dict, index=base_outputs_for_stats.index)
 
-                        # Filter to keep only the 6 most important disagreement features
+                        # Filter to keep only the 7 most important disagreement features
                         # These are the most informative features for ensemble learning
                         core_features = [
                             'prediction_dispersion',    # 1. Variance of predictions across models
@@ -2629,7 +2628,8 @@ class UnifiedModelsTrainingStep(BaseStep):
                             'uncertainty',              # 3. Normalized entropy (uncertainty measure)
                             'prediction_range',         # 4. Range of predictions (max - min)
                             'avg_divergence',           # 5. Average pairwise model divergence
-                            'max_confidence'            # 6. Highest confidence among models
+                            'max_confidence',           # 6. Highest confidence among models
+                            'disagreement_rate'         # 7. Proportion of models disagreeing on direction
                         ]
 
                         # Select only core features that exist

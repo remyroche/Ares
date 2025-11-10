@@ -340,66 +340,20 @@ class EnsembleMetaFeaturesGenerator:
     ) -> Tuple[np.ndarray, List[str]]:
         """
         Generate disagreement features from predictions.
-        
-        Disagreement measures:
-        - Prediction diversity: how many different classes predicted
-        - Agreement rate: proportion of models agreeing on top class
-        - Pairwise disagreement: average pairwise prediction difference
-        - Range of probabilities: max - min probability for each class
+
+        DEPRECATED: Use centralized disagreement features from
+        src.feature_generation.categories.ensemble_disagreement instead.
+
+        This method is kept for backwards compatibility but returns empty features.
+        All ensemble models should use the centralized disagreement calculator.
         """
-        features = []
-        feature_names = []
-        
         n_samples = predictions_list[0].shape[0]
-        n_classes = predictions_list[0].shape[1]
-        n_models = len(predictions_list)
-        
-        # Get predicted classes for each model
-        predicted_classes = np.array([np.argmax(pred, axis=1) for pred in predictions_list]).T
-        # Shape: (n_samples, n_models)
-        
-        # Prediction diversity: number of unique predicted classes
-        diversity = np.array([len(np.unique(predicted_classes[i])) for i in range(n_samples)])
-        features.append(diversity.reshape(-1, 1))
-        feature_names.append("disagreement_diversity")
-        
-        # Agreement rate: proportion of models agreeing on most common prediction
-        agreement_rate = np.array([
-            np.max(np.bincount(predicted_classes[i])) / n_models
-            for i in range(n_samples)
-        ])
-        features.append(agreement_rate.reshape(-1, 1))
-        feature_names.append("disagreement_agreement_rate")
-        
-        # Stack all predictions: (n_samples, n_models, n_classes)
-        all_probs = np.array(predictions_list).transpose(1, 0, 2)
-        
-        # Range of probabilities per class
-        prob_ranges = np.max(all_probs, axis=1) - np.min(all_probs, axis=1)
-        # Shape: (n_samples, n_classes)
-        features.append(prob_ranges)
-        for class_idx in range(n_classes):
-            feature_names.append(f"disagreement_range_class_{class_idx}")
-        
-        # Mean range across classes
-        mean_range = np.mean(prob_ranges, axis=1).reshape(-1, 1)
-        features.append(mean_range)
-        feature_names.append("disagreement_mean_range")
-        
-        # Pairwise disagreement: average difference between model predictions
-        pairwise_diffs = []
-        for i in range(n_models):
-            for j in range(i + 1, n_models):
-                # Calculate average absolute difference in probabilities
-                diff = np.mean(np.abs(predictions_list[i] - predictions_list[j]), axis=1)
-                pairwise_diffs.append(diff)
-        
-        if pairwise_diffs:
-            mean_pairwise_diff = np.mean(pairwise_diffs, axis=0).reshape(-1, 1)
-            features.append(mean_pairwise_diff)
-            feature_names.append("disagreement_mean_pairwise_diff")
-        
-        return np.column_stack(features), feature_names
+
+        # Return empty arrays - disagreement features now come from centralized calculator
+        features = np.zeros((n_samples, 0))
+        feature_names = []
+
+        return features, feature_names
 
 
 # Convenience function

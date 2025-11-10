@@ -38,6 +38,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,7 @@ class MonitoringDashboard:
     
     def __init__(self, config_manager: ConfigurationManager = None):
         """Initialize the monitoring dashboard"""
+        tprint("Initializing MonitoringDashboard", "INFO")
         self.config_manager = config_manager or ConfigurationManager()
         self.logger = system_logger.getChild("MonitoringDashboard")
         
@@ -151,8 +153,10 @@ class MonitoringDashboard:
         
         # Initialize components
         self._initialize_components()
-        
+
+
         self.logger.info("✅ MonitoringDashboard initialized")
+        tprint("MonitoringDashboard initialized successfully", "SUCCESS")
     
     def _initialize_components(self):
         """Initialize monitoring components"""

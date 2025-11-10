@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from collections import defaultdict
 from enum import Enum
 
+from src.utils.tprint import tprint
+
 
 class ResponseType(Enum):
     """Types of responses from exchanges"""
@@ -108,15 +110,20 @@ class ExchangeResponseHandler:
 
     async def start(self) -> None:
         """Start the response handler"""
+        tprint(f"🔧 ExchangeResponseHandler.start called", "INFO")
         if self._running:
+            tprint(f"⚠️ Response handler already running", "WARNING")
             return
 
         self._running = True
         self.logger.info("Exchange response handler started")
+        tprint(f"✅ Exchange response handler started successfully", "SUCCESS")
 
     async def stop(self) -> None:
         """Stop the response handler"""
+        tprint(f"🔧 ExchangeResponseHandler.stop called", "INFO")
         if not self._running:
+            tprint(f"⚠️ Response handler not running", "WARNING")
             return
 
         self._running = False
@@ -132,6 +139,7 @@ class ExchangeResponseHandler:
 
         self._response_processing_tasks.clear()
         self.logger.info("Exchange response handler stopped")
+        tprint(f"✅ Exchange response handler stopped successfully", "SUCCESS")
 
     def register_response_callback(
         self,
@@ -195,6 +203,7 @@ class ExchangeResponseHandler:
             aggregate_responses: Whether to aggregate responses
             aggregate_timeout: Timeout for aggregation in seconds
         """
+        tprint(f"🔧 ExchangeResponseHandler.handle_response called with response_id={response.response_id}, exchange={response.exchange_name}", "INFO")
         try:
             # Store the response
             request_id = response.correlation_id or response.response_id
@@ -207,8 +216,11 @@ class ExchangeResponseHandler:
             if aggregate_responses:
                 await self._aggregate_responses(request_id, aggregate_timeout)
 
+            tprint(f"✅ Response handled successfully: response_id={response.response_id}", "SUCCESS")
+
         except Exception as e:
             self.logger.error(f"Error handling response: {e}")
+            tprint(f"❌ Error handling response: {e}", "ERROR")
 
     async def handle_order_response(
         self,
@@ -224,6 +236,7 @@ class ExchangeResponseHandler:
             order_id: Order ID
             response_data: Response data from the exchange
         """
+        tprint(f"🔧 ExchangeResponseHandler.handle_order_response called with exchange={exchange_name}, order_id={order_id}", "INFO")
         try:
             # Create order execution response
             order_response = OrderExecutionResponse(
@@ -248,9 +261,11 @@ class ExchangeResponseHandler:
             )
 
             await self.handle_response(order_response)
+            tprint(f"✅ Order response handled successfully: order_id={order_id}", "SUCCESS")
 
         except Exception as e:
             self.logger.error(f"Error handling order response: {e}")
+            tprint(f"❌ Error handling order response for {order_id}: {e}", "ERROR")
 
     async def handle_market_data_response(
         self,
@@ -268,6 +283,7 @@ class ExchangeResponseHandler:
             symbol: Trading symbol
             data: Market data
         """
+        tprint(f"🔧 ExchangeResponseHandler.handle_market_data_response called with exchange={exchange_name}, symbol={symbol}, data_type={data_type}", "INFO")
         try:
             market_response = MarketDataResponse(
                 response_id=f"market_data_{data_type}_{symbol}_{exchange_name}_{int(datetime.now().timestamp() * 1000)}",
@@ -280,9 +296,11 @@ class ExchangeResponseHandler:
             )
 
             await self.handle_response(market_response)
+            tprint(f"✅ Market data response handled successfully: {symbol}", "SUCCESS")
 
         except Exception as e:
             self.logger.error(f"Error handling market data response: {e}")
+            tprint(f"❌ Error handling market data response for {symbol}: {e}", "ERROR")
 
     async def _call_response_callbacks(self, response: ExchangeResponse) -> None:
         """Call registered callbacks for a response type"""

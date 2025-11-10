@@ -34,6 +34,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ class MonitoringAPI:
     
     def __init__(self, host: str = '0.0.0.0', port: int = 5000, debug: bool = False):
         """Initialize the monitoring API"""
+        tprint(f"Initializing MonitoringAPI: host={host}, port={port}, debug={debug}", "INFO")
         self.host = host
         self.port = port
         self.debug = debug
@@ -65,9 +67,10 @@ class MonitoringAPI:
         # Start monitoring if not already running
         if not monitoring_dashboard.is_running:
             monitoring_dashboard.start_monitoring()
-        
+
         self.logger = system_logger.getChild("MonitoringAPI")
         self.logger.info(f"✅ MonitoringAPI initialized on {host}:{port}")
+        tprint(f"MonitoringAPI initialized successfully on {host}:{port}", "SUCCESS")
     
     def _register_routes(self):
         """Register all API routes"""

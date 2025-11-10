@@ -12,6 +12,7 @@ from enum import Enum
 from .market_metadata import InstrumentType, InstrumentSpec
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 
 class ContractStatus(Enum):
@@ -44,30 +45,38 @@ class InstrumentManager:
     """
     
     def __init__(self, exchange_name: str):
+        tprint(f"Initializing InstrumentManager for exchange={exchange_name}", "INFO")
         self.exchange_name = exchange_name
         self.logger = system_logger.getChild(f"InstrumentManager.{exchange_name}")
         self.instruments: Dict[str, InstrumentSpec] = {}
         self.contracts: Dict[str, ContractSpec] = {}
         self.symbol_mappings: Dict[str, str] = {}  # normalized -> exchange symbol
+        tprint(f"InstrumentManager initialized successfully for {exchange_name}", "SUCCESS")
         
     def add_instrument(self, instrument: InstrumentSpec) -> None:
         """Add instrument specification."""
+        tprint(f"Adding instrument symbol={instrument.symbol}, type={instrument.instrument_type.value}", "INFO")
         self.instruments[instrument.symbol] = instrument
         self.symbol_mappings[instrument.symbol.upper()] = instrument.symbol
         self.logger.debug(f"Added instrument {instrument.symbol}")
+        tprint(f"Successfully added instrument {instrument.symbol}", "SUCCESS")
     
     def get_instrument(self, symbol: str) -> Optional[InstrumentSpec]:
         """Get instrument by symbol."""
+        tprint(f"Looking up instrument for symbol={symbol}", "INFO")
         # Try direct lookup
         if symbol in self.instruments:
+            tprint(f"Found instrument {symbol} via direct lookup", "SUCCESS")
             return self.instruments[symbol]
-        
+
         # Try case-insensitive lookup
         symbol_upper = symbol.upper()
         if symbol_upper in self.symbol_mappings:
             mapped_symbol = self.symbol_mappings[symbol_upper]
+            tprint(f"Found instrument {symbol} via case-insensitive mapping", "SUCCESS")
             return self.instruments.get(mapped_symbol)
-        
+
+        tprint(f"Instrument not found for symbol={symbol}", "WARNING")
         return None
     
     def get_instruments_by_type(self, instrument_type: InstrumentType) -> List[InstrumentSpec]:
@@ -136,16 +145,25 @@ class InstrumentManager:
     
     def is_symbol_tradable(self, symbol: str) -> bool:
         """Check if symbol is tradable."""
+        tprint(f"Checking if symbol={symbol} is tradable", "INFO")
         instrument = self.get_instrument(symbol)
         if not instrument:
+            tprint(f"Symbol {symbol} not tradable: instrument not found", "WARNING")
             return False
-        
-        return (
+
+        is_tradable = (
             instrument.is_active and
             instrument.status == "active" and
             instrument.tick_size > 0 and
             instrument.lot_size > 0
         )
+
+        if is_tradable:
+            tprint(f"Symbol {symbol} is tradable", "SUCCESS")
+        else:
+            tprint(f"Symbol {symbol} not tradable: is_active={instrument.is_active}, status={instrument.status}", "WARNING")
+
+        return is_tradable
     
     def get_minimum_order_size(self, symbol: str) -> Optional[float]:
         """Get minimum order size for symbol."""
@@ -263,42 +281,44 @@ class InstrumentManager:
         max_lot_size: Optional[float] = None
     ) -> List[InstrumentSpec]:
         """Search instruments with multiple filters."""
+        tprint(f"Searching instruments with filters: base={base_currency}, quote={quote_currency}, type={instrument_type}", "INFO")
         results = []
-        
+
         for inst in self.instruments.values():
             if not inst.is_active:
                 continue
-            
+
             # Apply filters
             if base_currency and inst.base_currency.upper() != base_currency.upper():
                 continue
-            
+
             if quote_currency and inst.quote_currency.upper() != quote_currency.upper():
                 continue
-            
+
             if instrument_type and inst.instrument_type != instrument_type:
                 continue
-            
+
             if min_leverage and (not inst.max_leverage or inst.max_leverage < min_leverage):
                 continue
-            
+
             if max_leverage and inst.max_leverage and inst.max_leverage > max_leverage:
                 continue
-            
+
             if min_tick_size and inst.tick_size < min_tick_size:
                 continue
-            
+
             if max_tick_size and inst.tick_size > max_tick_size:
                 continue
-            
+
             if min_lot_size and inst.lot_size < min_lot_size:
                 continue
-            
+
             if max_lot_size and inst.lot_size > max_lot_size:
                 continue
-            
+
             results.append(inst)
-        
+
+        tprint(f"Search completed: found {len(results)} matching instruments", "SUCCESS")
         return results
     
     def get_instrument_statistics(self) -> Dict[str, Any]:
@@ -325,12 +345,15 @@ class InstrumentManager:
     
     def update_instrument_status(self, symbol: str, is_active: bool) -> bool:
         """Update instrument active status."""
+        tprint(f"Updating instrument status: symbol={symbol}, is_active={is_active}", "INFO")
         instrument = self.get_instrument(symbol)
         if not instrument:
+            tprint(f"Failed to update status: instrument {symbol} not found", "ERROR")
             return False
-        
+
         instrument.is_active = is_active
         self.logger.info(f"Updated instrument {symbol} status to {'active' if is_active else 'inactive'}")
+        tprint(f"Successfully updated {symbol} status to {'active' if is_active else 'inactive'}", "SUCCESS")
         return True
     
     def deactivate_instrument(self, symbol: str) -> bool:
@@ -343,18 +366,22 @@ class InstrumentManager:
     
     def cleanup_inactive_instruments(self) -> int:
         """Remove inactive instruments from memory."""
+        tprint("Starting cleanup of inactive instruments", "INFO")
         inactive_symbols = [
             symbol for symbol, inst in self.instruments.items()
             if not inst.is_active
         ]
-        
+
         for symbol in inactive_symbols:
             del self.instruments[symbol]
             self.symbol_mappings.pop(symbol.upper(), None)
-        
+
         if inactive_symbols:
             self.logger.info(f"Cleaned up {len(inactive_symbols)} inactive instruments")
-        
+            tprint(f"Successfully cleaned up {len(inactive_symbols)} inactive instruments", "SUCCESS")
+        else:
+            tprint("No inactive instruments to clean up", "INFO")
+
         return len(inactive_symbols)
     
     def get_instrument_summary(self, symbol: str) -> Optional[Dict[str, Any]]:

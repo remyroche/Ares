@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.utils.data import DataQualityFramework, DataProcessor
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,7 @@ class AdvancedDataValidator:
     
     def __init__(self, validation_level: ValidationLevel = ValidationLevel.STANDARD):
         """Initialize the advanced data validator"""
+        tprint(f"Initializing AdvancedDataValidator with validation_level={validation_level.value}", "INFO")
         self.validation_level = validation_level
         self.logger = system_logger.getChild("AdvancedDataValidator")
         
@@ -100,8 +102,9 @@ class AdvancedDataValidator:
         
         # Validation thresholds based on level
         self.thresholds = self._get_validation_thresholds()
-        
+
         self.logger.info(f"✅ AdvancedDataValidator initialized with {validation_level.value} level")
+        tprint("AdvancedDataValidator initialized successfully", "SUCCESS")
     
     def _get_validation_thresholds(self) -> Dict[str, Any]:
         """Get validation thresholds based on validation level"""
@@ -143,8 +146,9 @@ class AdvancedDataValidator:
         Returns:
             Comprehensive validation result
         """
+        tprint(f"Validating OHLCV data: exchange={exchange.value}, records={len(data)}, context={context}", "INFO")
         start_time = datetime.now()
-        
+
         try:
             self.logger.info(f"Starting validation for {exchange.value} data: {len(data)} records")
             
@@ -184,13 +188,15 @@ class AdvancedDataValidator:
             
             # Calculate processing time
             result.processing_time = (datetime.now() - start_time).total_seconds()
-            
+
             self.logger.info(f"Validation completed: {result.quality_score:.2f} quality score, {len(result.anomalies)} anomalies")
-            
+            tprint(f"Validation completed: quality_score={result.quality_score:.2f}, anomalies={len(result.anomalies)}, valid={result.is_valid}", "SUCCESS")
+
             return result
             
         except Exception as e:
             self.logger.error(f"Validation failed: {e}")
+            tprint(f"Validation failed: {e}", "ERROR")
             return ValidationResult(
                 is_valid=False,
                 quality_score=0.0,
@@ -200,6 +206,7 @@ class AdvancedDataValidator:
     
     def _validate_data_structure(self, data: pd.DataFrame, result: ValidationResult):
         """Validate basic data structure"""
+        tprint(f"Validating data structure: shape={data.shape}", "INFO")
         # Check required columns
         required_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp']
         missing_columns = [col for col in required_columns if col not in data.columns]
@@ -207,6 +214,7 @@ class AdvancedDataValidator:
         if missing_columns:
             result.errors.append(f"Missing required columns: {missing_columns}")
             result.is_valid = False
+            tprint(f"Missing required columns: {missing_columns}", "ERROR")
         
         # Check data types
         numeric_columns = ['open', 'high', 'low', 'close', 'volume']
@@ -219,15 +227,18 @@ class AdvancedDataValidator:
         if data.empty:
             result.errors.append("Data is empty")
             result.is_valid = False
+            tprint("Data is empty", "ERROR")
     
     def _validate_ohlc_consistency(self, data: pd.DataFrame, result: ValidationResult):
         """Validate OHLC price consistency"""
+        tprint("Validating OHLC consistency", "INFO")
         if not all(col in data.columns for col in ['open', 'high', 'low', 'close']):
             return
         
         # Check high >= max(open, close)
         high_violations = (data['high'] < data[['open', 'close']].max(axis=1)).sum()
         if high_violations > 0:
+            tprint(f"OHLC inconsistency detected: high price violations={high_violations}", "WARNING")
             result.anomalies.append({
                 'type': 'ohlc_inconsistency',
                 'severity': 'high',
@@ -542,24 +553,25 @@ class AdvancedDataValidator:
         result.recommendations = recommendations
     
     def compare_exchange_data(
-        self, 
-        data1: pd.DataFrame, 
+        self,
+        data1: pd.DataFrame,
         data2: pd.DataFrame,
         exchange1: ExchangeType,
         exchange2: ExchangeType
     ) -> Dict[str, Any]:
         """
         Compare data from two different exchanges.
-        
+
         Args:
             data1: Data from first exchange
             data2: Data from second exchange
             exchange1: First exchange type
             exchange2: Second exchange type
-            
+
         Returns:
             Comparison results
         """
+        tprint(f"Comparing exchange data: {exchange1.value} ({len(data1)} records) vs {exchange2.value} ({len(data2)} records)", "INFO")
         comparison_result = {
             'exchanges': [exchange1.value, exchange2.value],
             'data_points': [len(data1), len(data2)],
@@ -609,10 +621,13 @@ class AdvancedDataValidator:
                 price_diff = comparison_result['differences']['price_difference']
                 if price_diff > 0.01:  # 1% difference
                     comparison_result['recommendations'].append("Significant price differences detected")
-            
+
+            tprint(f"Exchange comparison completed: similarity_score={comparison_result['similarity_score']:.2f}", "SUCCESS")
+
         except Exception as e:
             comparison_result['error'] = str(e)
-        
+            tprint(f"Exchange comparison failed: {e}", "ERROR")
+
         return comparison_result
 
 
@@ -637,14 +652,17 @@ def validate_ohlcv_data_quality(
     Returns:
         Validation result
     """
+    tprint(f"validate_ohlcv_data_quality called: exchange={exchange}, validation_level={validation_level}", "INFO")
     try:
         exchange_type = ExchangeType(exchange.lower())
         validation_level_enum = ValidationLevel(validation_level.lower())
         
         validator = AdvancedDataValidator(validation_level_enum)
         return validator.validate_ohlcv_data(data, exchange_type)
-        
+
+
     except ValueError as e:
+        tprint(f"Invalid parameters for validation: {e}", "ERROR")
         return ValidationResult(
             is_valid=False,
             quality_score=0.0,
@@ -670,6 +688,7 @@ def compare_exchange_quality(
     Returns:
         Comparison results
     """
+    tprint(f"compare_exchange_quality called: {exchange1} vs {exchange2}", "INFO")
     try:
         exchange_type1 = ExchangeType(exchange1.lower())
         exchange_type2 = ExchangeType(exchange2.lower())
@@ -677,6 +696,7 @@ def compare_exchange_quality(
         return advanced_data_validator.compare_exchange_data(
             data1, data2, exchange_type1, exchange_type2
         )
-        
+
     except ValueError as e:
+        tprint(f"Invalid exchange names: {e}", "ERROR")
         return {'error': f"Invalid exchange names: {e}"}

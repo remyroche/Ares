@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 
 @dataclass
@@ -31,6 +32,7 @@ class TimeSyncManager:
     """
     
     def __init__(self, exchange_name: str, max_skew_ms: int = 5000):
+        tprint(f"Initializing TimeSyncManager for exchange={exchange_name}, max_skew_ms={max_skew_ms}", "INFO")
         self.exchange_name = exchange_name
         self.max_skew_ms = max_skew_ms
         self.logger = system_logger.getChild(f"TimeSyncManager.{exchange_name}")
@@ -38,18 +40,23 @@ class TimeSyncManager:
         self.sync_history: List[TimeSyncInfo] = []
         self.auto_sync_interval = 300  # 5 minutes
         self.sync_task: Optional[asyncio.Task] = None
+        tprint(f"TimeSyncManager initialized for {exchange_name}", "SUCCESS")
         
     async def start_auto_sync(self, sync_function) -> None:
         """Start automatic time synchronization."""
+        tprint(f"Starting auto time sync for {self.exchange_name}", "INFO")
         if self.sync_task and not self.sync_task.done():
             self.logger.warning("Auto sync already running")
+            tprint(f"Auto sync already running for {self.exchange_name}", "WARNING")
             return
-            
+
         self.sync_task = asyncio.create_task(self._auto_sync_loop(sync_function))
         self.logger.info("Started automatic time synchronization")
+        tprint(f"Auto time sync started for {self.exchange_name}", "SUCCESS")
     
     async def stop_auto_sync(self) -> None:
         """Stop automatic time synchronization."""
+        tprint(f"Stopping auto time sync for {self.exchange_name}", "INFO")
         if self.sync_task:
             self.sync_task.cancel()
             try:
@@ -58,37 +65,45 @@ class TimeSyncManager:
                 pass
             self.sync_task = None
             self.logger.info("Stopped automatic time synchronization")
+            tprint(f"Auto time sync stopped for {self.exchange_name}", "SUCCESS")
+        else:
+            tprint(f"No auto sync task running for {self.exchange_name}", "INFO")
     
     async def _auto_sync_loop(self, sync_function) -> None:
         """Automatic synchronization loop."""
+        tprint(f"Auto sync loop started for {self.exchange_name}", "INFO")
         while True:
             try:
                 await self.sync_time(sync_function)
                 await asyncio.sleep(self.auto_sync_interval)
             except asyncio.CancelledError:
+                tprint(f"Auto sync loop cancelled for {self.exchange_name}", "INFO")
                 break
             except Exception as e:
                 self.logger.error(f"Error in auto sync loop: {e}")
+                tprint(f"Error in auto sync loop: {e}", "ERROR")
                 await asyncio.sleep(60)  # Wait 1 minute before retry
     
     async def sync_time(self, sync_function) -> bool:
         """
         Synchronize time with exchange server.
-        
+
         Args:
             sync_function: Async function that returns server time in milliseconds
-            
+
         Returns:
             True if sync was successful
         """
+        tprint(f"Syncing time with {self.exchange_name} server", "INFO")
         try:
             # Get local time before API call
             local_time_before = int(time.time() * 1000)
-            
+
             # Get server time
             server_time = await sync_function()
             if not server_time:
                 self.logger.warning("Failed to get server time")
+                tprint(f"Failed to get server time from {self.exchange_name}", "WARNING")
                 return False
                 
             # Get local time after API call
@@ -121,37 +136,43 @@ class TimeSyncManager:
             # Keep only last 100 sync records
             if len(self.sync_history) > 100:
                 self.sync_history = self.sync_history[-100:]
-            
+
             if sync_info.is_synced:
                 self.logger.info(f"Time synced successfully. Clock skew: {clock_skew}ms")
+                tprint(f"Time synced successfully with {self.exchange_name}, clock_skew={clock_skew}ms", "SUCCESS")
             else:
                 self.logger.warning(f"Clock skew too large: {clock_skew}ms (max: {self.max_skew_ms}ms)")
-            
+                tprint(f"Clock skew too large: {clock_skew}ms (max: {self.max_skew_ms}ms)", "WARNING")
+
             return sync_info.is_synced
-            
+
         except Exception as e:
             self.logger.error(f"Error syncing time: {e}")
+            tprint(f"Error syncing time with {self.exchange_name}: {e}", "ERROR")
             return False
     
     def get_adjusted_timestamp(self, local_timestamp: Optional[int] = None) -> int:
         """
         Get timestamp adjusted for clock skew.
-        
+
         Args:
             local_timestamp: Local timestamp in milliseconds. If None, uses current time.
-            
+
         Returns:
             Adjusted timestamp for API calls
         """
+        tprint(f"Getting adjusted timestamp for {self.exchange_name}", "INFO")
         if local_timestamp is None:
             local_timestamp = int(time.time() * 1000)
-            
+
         if not self.sync_info or not self.sync_info.is_synced:
             self.logger.warning("Time not synced, using local timestamp")
+            tprint(f"Time not synced, using local timestamp for {self.exchange_name}", "WARNING")
             return local_timestamp
-            
+
         # Adjust for clock skew
         adjusted_timestamp = local_timestamp + self.sync_info.clock_skew
+        tprint(f"Timestamp adjusted with clock_skew={self.sync_info.clock_skew}ms", "SUCCESS")
         return adjusted_timestamp
     
     def get_server_time_estimate(self) -> int:
@@ -173,14 +194,21 @@ class TimeSyncManager:
     
     def is_time_synced(self) -> bool:
         """Check if time is currently synced."""
+        tprint(f"Checking if time is synced for {self.exchange_name}", "INFO")
         if not self.sync_info:
+            tprint(f"No sync info available for {self.exchange_name}", "WARNING")
             return False
-            
+
         # Check if sync is recent (within 10 minutes)
         time_since_sync = datetime.now() - self.sync_info.last_sync
         is_recent = time_since_sync < timedelta(minutes=10)
-        
-        return self.sync_info.is_synced and is_recent
+
+        is_synced = self.sync_info.is_synced and is_recent
+        if is_synced:
+            tprint(f"Time is synced for {self.exchange_name}", "SUCCESS")
+        else:
+            tprint(f"Time is not synced for {self.exchange_name} (synced={self.sync_info.is_synced}, recent={is_recent})", "WARNING")
+        return is_synced
     
     def get_clock_skew(self) -> Optional[int]:
         """Get current clock skew in milliseconds."""
@@ -225,60 +253,86 @@ class TimeSyncManager:
     
     def should_sync_now(self) -> bool:
         """Check if time synchronization is needed."""
+        tprint(f"Checking if time sync needed for {self.exchange_name}", "INFO")
         if not self.sync_info:
+            tprint(f"Time sync needed: no sync info for {self.exchange_name}", "WARNING")
             return True
-            
+
         # Sync if last sync was more than 10 minutes ago
         time_since_sync = datetime.now() - self.sync_info.last_sync
-        return time_since_sync > timedelta(minutes=10)
+        should_sync = time_since_sync > timedelta(minutes=10)
+        if should_sync:
+            tprint(f"Time sync needed: last sync {time_since_sync} ago", "WARNING")
+        else:
+            tprint(f"Time sync not needed: last sync {time_since_sync} ago", "SUCCESS")
+        return should_sync
     
     def get_recommended_timestamp_for_request(self) -> int:
         """
         Get recommended timestamp for API request.
-        
+
         Returns:
             Timestamp adjusted for clock skew and network latency
         """
+        tprint(f"Getting recommended timestamp for {self.exchange_name}", "INFO")
         if not self.is_time_synced():
             self.logger.warning("Time not synced, using local timestamp")
+            tprint(f"Time not synced, using local timestamp for request", "WARNING")
             return int(time.time() * 1000)
-        
+
         # Use server time estimate with small buffer for network latency
         server_time = self.get_server_time_estimate()
         buffer_ms = 1000  # 1 second buffer
+        tprint(f"Recommended timestamp calculated with buffer={buffer_ms}ms", "SUCCESS")
         return server_time + buffer_ms
     
     def validate_timestamp(self, timestamp: int, tolerance_ms: int = 5000) -> bool:
         """
         Validate if a timestamp is within acceptable range.
-        
+
         Args:
             timestamp: Timestamp to validate
             tolerance_ms: Tolerance in milliseconds
-            
+
         Returns:
             True if timestamp is valid
         """
+        tprint(f"Validating timestamp for {self.exchange_name}", "INFO")
         if not self.sync_info:
+            tprint(f"Cannot validate timestamp: no sync info", "WARNING")
             return True  # Can't validate without sync info
-            
+
         server_time = self.get_server_time_estimate()
         time_diff = abs(timestamp - server_time)
-        
-        return time_diff <= tolerance_ms
+
+        is_valid = time_diff <= tolerance_ms
+        if is_valid:
+            tprint(f"Timestamp valid: diff={time_diff}ms (tolerance={tolerance_ms}ms)", "SUCCESS")
+        else:
+            tprint(f"Timestamp invalid: diff={time_diff}ms (tolerance={tolerance_ms}ms)", "WARNING")
+        return is_valid
     
     async def force_sync(self, sync_function) -> bool:
         """Force immediate time synchronization."""
+        tprint(f"Forcing time synchronization for {self.exchange_name}", "INFO")
         self.logger.info("Forcing time synchronization")
-        return await self.sync_time(sync_function)
+        result = await self.sync_time(sync_function)
+        if result:
+            tprint(f"Force sync completed successfully", "SUCCESS")
+        else:
+            tprint(f"Force sync failed", "ERROR")
+        return result
     
     def cleanup_old_sync_history(self, keep_last: int = 50) -> int:
         """Clean up old sync history records."""
+        tprint(f"Cleaning up old sync history for {self.exchange_name}, keep_last={keep_last}", "INFO")
         if len(self.sync_history) <= keep_last:
+            tprint(f"No sync history to clean up ({len(self.sync_history)} <= {keep_last})", "INFO")
             return 0
-            
+
         removed_count = len(self.sync_history) - keep_last
         self.sync_history = self.sync_history[-keep_last:]
-        
+
         self.logger.info(f"Cleaned up {removed_count} old sync records")
+        tprint(f"Cleaned up {removed_count} old sync records", "SUCCESS")
         return removed_count

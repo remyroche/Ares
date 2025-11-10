@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from collections import defaultdict
 
+from src.utils.tprint import tprint
+
 
 class MessageType(Enum):
     """Types of messages handled by the system"""
@@ -169,16 +171,21 @@ class ExchangeMessageHandler:
 
     async def start(self) -> None:
         """Start the message handler"""
+        tprint(f"🔧 ExchangeMessageHandler.start called", "INFO")
         if self._running:
+            tprint(f"⚠️ Message handler already running", "WARNING")
             return
 
         self._running = True
         self._processing_task = asyncio.create_task(self._process_messages())
         self.logger.info("Exchange message handler started")
+        tprint(f"✅ Exchange message handler started successfully", "SUCCESS")
 
     async def stop(self) -> None:
         """Stop the message handler"""
+        tprint(f"🔧 ExchangeMessageHandler.stop called", "INFO")
         if not self._running:
+            tprint(f"⚠️ Message handler not running", "WARNING")
             return
 
         self._running = False
@@ -191,6 +198,7 @@ class ExchangeMessageHandler:
                 pass
 
         self.logger.info("Exchange message handler stopped")
+        tprint(f"✅ Exchange message handler stopped successfully", "SUCCESS")
 
     def register_message_handler(
         self,
@@ -241,7 +249,9 @@ class ExchangeMessageHandler:
         Returns:
             Dictionary mapping exchange names to their responses
         """
+        tprint(f"🔧 ExchangeMessageHandler.send_message called with message_id={message.id}, type={message.message_type.value}, targets={target_exchanges}", "INFO")
         if not target_exchanges:
+            tprint(f"❌ No target exchanges specified", "ERROR")
             raise ValueError("No target exchanges specified")
 
         # Enqueue the message
@@ -270,6 +280,7 @@ class ExchangeMessageHandler:
 
             except Exception as e:
                 self.logger.error(f"Error sending message to {exchange_name}: {e}")
+                tprint(f"❌ Error sending message to {exchange_name}: {e}", "ERROR")
                 responses[exchange_name] = MessageResponse(
                     message_id=message.id,
                     success=False,
@@ -277,6 +288,7 @@ class ExchangeMessageHandler:
                     timestamp=datetime.now()
                 )
 
+        tprint(f"✅ Message sent to {len([r for r in responses.values() if r.success])}/{len(responses)} exchanges", "SUCCESS")
         return responses
 
     async def send_order_message(
@@ -304,6 +316,7 @@ class ExchangeMessageHandler:
         Returns:
             Responses from exchanges
         """
+        tprint(f"🔧 ExchangeMessageHandler.send_order_message called with symbol={symbol}, side={side}, quantity={quantity}", "INFO")
         order_message = OrderMessage(
             id=str(uuid.uuid4()),
             message_type=MessageType.ORDER,
@@ -340,6 +353,7 @@ class ExchangeMessageHandler:
         Returns:
             Responses from exchanges
         """
+        tprint(f"🔧 ExchangeMessageHandler.send_data_request called with data_type={data_type}, symbol={symbol}", "INFO")
         data_message = DataRequestMessage(
             id=str(uuid.uuid4()),
             message_type=MessageType.DATA_REQUEST,
@@ -370,6 +384,7 @@ class ExchangeMessageHandler:
         Returns:
             Responses from exchanges
         """
+        tprint(f"🔧 ExchangeMessageHandler.send_batch_orders called with {len(orders)} orders, strategy={execution_strategy}", "INFO")
         batch_message = BatchOrderMessage(
             id=str(uuid.uuid4()),
             message_type=MessageType.BATCH_ORDER,
@@ -544,6 +559,7 @@ class ExchangeMessageHandler:
         Returns:
             Number of messages cleared
         """
+        tprint(f"🔧 ExchangeMessageHandler.clear_queue called with priority={priority.value if priority else 'all'}", "INFO")
         cleared_count = 0
 
         if priority:
@@ -565,6 +581,7 @@ class ExchangeMessageHandler:
                         break
 
         self.logger.info(f"Cleared {cleared_count} messages from queue")
+        tprint(f"✅ Cleared {cleared_count} messages from queue", "SUCCESS")
         return cleared_count
 
 

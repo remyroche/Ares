@@ -4,12 +4,13 @@ Risk Tier Management
 Handles risk tiers, leverage limits, and position size restrictions per symbol.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Set
 from dataclasses import dataclass
 from enum import Enum
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 
 class RiskTier(Enum):
@@ -64,15 +65,17 @@ class RiskTierManager:
     """
     
     def __init__(self, exchange_name: str):
+        tprint(f"Initializing RiskTierManager for exchange={exchange_name}", "INFO")
         self.exchange_name = exchange_name
         self.logger = system_logger.getChild(f"RiskTierManager.{exchange_name}")
-        
+
         # Risk tier definitions
         self.risk_tiers: Dict[RiskTier, RiskTierSpec] = {}
         self.symbol_risk_profiles: Dict[str, SymbolRiskProfile] = {}
-        
+
         # Initialize default risk tiers
         self._initialize_default_risk_tiers()
+        tprint(f"RiskTierManager initialized successfully for {exchange_name}", "SUCCESS")
     
     def _initialize_default_risk_tiers(self) -> None:
         """Initialize default risk tier specifications."""
@@ -146,8 +149,10 @@ class RiskTierManager:
     
     def set_risk_tier(self, tier: RiskTier, spec: RiskTierSpec) -> None:
         """Set risk tier specification."""
+        tprint(f"Setting risk tier {tier.value} with max_leverage={spec.max_leverage}", "INFO")
         self.risk_tiers[tier] = spec
         self.logger.info(f"Set risk tier {tier.value} specification")
+        tprint(f"Successfully set risk tier {tier.value}", "SUCCESS")
     
     def get_risk_tier(self, tier: RiskTier) -> Optional[RiskTierSpec]:
         """Get risk tier specification."""
@@ -155,8 +160,10 @@ class RiskTierManager:
     
     def set_symbol_risk_profile(self, profile: SymbolRiskProfile) -> None:
         """Set symbol risk profile."""
+        tprint(f"Setting risk profile for symbol={profile.symbol}, tier={profile.risk_tier.value}", "INFO")
         self.symbol_risk_profiles[profile.symbol] = profile
         self.logger.debug(f"Set risk profile for {profile.symbol}")
+        tprint(f"Successfully set risk profile for {profile.symbol}", "SUCCESS")
     
     def get_symbol_risk_profile(self, symbol: str) -> Optional[SymbolRiskProfile]:
         """Get symbol risk profile."""
@@ -255,61 +262,73 @@ class RiskTierManager:
     def validate_position_size(self, symbol: str, position_size: float) -> tuple[bool, str]:
         """
         Validate position size against risk limits.
-        
+
         Args:
             symbol: Trading symbol
             position_size: Position size to validate
-            
+
         Returns:
             (is_valid, error_message)
         """
+        tprint(f"Validating position size: symbol={symbol}, size={position_size}", "INFO")
         max_size = self.get_max_position_size(symbol)
         if position_size > max_size:
+            tprint(f"Position size validation failed: {position_size} > {max_size}", "ERROR")
             return False, f"Position size {position_size} exceeds maximum {max_size}"
-        
+
         if position_size < 0:
+            tprint(f"Position size validation failed: negative value {position_size}", "ERROR")
             return False, "Position size cannot be negative"
-        
+
+        tprint(f"Position size validation successful for {symbol}", "SUCCESS")
         return True, ""
     
     def validate_notional(self, symbol: str, notional: float) -> tuple[bool, str]:
         """
         Validate notional value against risk limits.
-        
+
         Args:
             symbol: Trading symbol
             notional: Notional value to validate
-            
+
         Returns:
             (is_valid, error_message)
         """
+        tprint(f"Validating notional value: symbol={symbol}, notional={notional}", "INFO")
         max_notional = self.get_max_notional(symbol)
         if notional > max_notional:
+            tprint(f"Notional validation failed: {notional} > {max_notional}", "ERROR")
             return False, f"Notional value {notional} exceeds maximum {max_notional}"
-        
+
         if notional < 0:
+            tprint(f"Notional validation failed: negative value {notional}", "ERROR")
             return False, "Notional value cannot be negative"
-        
+
+        tprint(f"Notional validation successful for {symbol}", "SUCCESS")
         return True, ""
     
     def validate_leverage(self, symbol: str, leverage: float) -> tuple[bool, str]:
         """
         Validate leverage against risk limits.
-        
+
         Args:
             symbol: Trading symbol
             leverage: Leverage to validate
-            
+
         Returns:
             (is_valid, error_message)
         """
+        tprint(f"Validating leverage: symbol={symbol}, leverage={leverage}", "INFO")
         max_leverage = self.get_max_leverage(symbol)
         if leverage > max_leverage:
+            tprint(f"Leverage validation failed: {leverage} > {max_leverage}", "ERROR")
             return False, f"Leverage {leverage} exceeds maximum {max_leverage}"
-        
+
         if leverage < 1.0:
+            tprint(f"Leverage validation failed: {leverage} < 1.0", "ERROR")
             return False, "Leverage must be at least 1.0"
-        
+
+        tprint(f"Leverage validation successful for {symbol}", "SUCCESS")
         return True, ""
     
     def calculate_required_margin(self, symbol: str, notional: float, leverage: float) -> float:
@@ -395,14 +414,17 @@ class RiskTierManager:
     
     def update_symbol_risk_tier(self, symbol: str, new_tier: RiskTier) -> bool:
         """Update symbol risk tier."""
+        tprint(f"Updating risk tier for symbol={symbol} to {new_tier.value}", "INFO")
         profile = self.get_symbol_risk_profile(symbol)
         if not profile:
+            tprint(f"Failed to update risk tier: profile not found for {symbol}", "ERROR")
             return False
-        
+
         tier_spec = self.get_risk_tier(new_tier)
         if not tier_spec:
+            tprint(f"Failed to update risk tier: tier spec not found for {new_tier.value}", "ERROR")
             return False
-        
+
         # Update profile with new tier specifications
         profile.risk_tier = new_tier
         profile.max_leverage = tier_spec.max_leverage
@@ -415,8 +437,9 @@ class RiskTierManager:
         profile.adl_tier = tier_spec.adl_tier
         profile.risk_score = tier_spec.risk_score
         profile.last_updated = datetime.now()
-        
+
         self.logger.info(f"Updated {symbol} to risk tier {new_tier.value}")
+        tprint(f"Successfully updated {symbol} to risk tier {new_tier.value}", "SUCCESS")
         return True
     
     def get_risk_statistics(self) -> Dict[str, Any]:
@@ -462,19 +485,23 @@ class RiskTierManager:
     
     def cleanup_old_profiles(self, max_age_days: int = 30) -> int:
         """Clean up old risk profiles."""
+        tprint(f"Starting cleanup of old risk profiles (max_age_days={max_age_days})", "INFO")
         cutoff_time = datetime.now() - timedelta(days=max_age_days)
         cleaned_count = 0
-        
+
         symbols_to_remove = []
         for symbol, profile in self.symbol_risk_profiles.items():
             if profile.last_updated < cutoff_time:
                 symbols_to_remove.append(symbol)
-        
+
         for symbol in symbols_to_remove:
             del self.symbol_risk_profiles[symbol]
             cleaned_count += 1
-        
+
         if cleaned_count > 0:
             self.logger.info(f"Cleaned up {cleaned_count} old risk profiles")
-        
+            tprint(f"Successfully cleaned up {cleaned_count} old risk profiles", "SUCCESS")
+        else:
+            tprint("No old risk profiles to clean up", "INFO")
+
         return cleaned_count

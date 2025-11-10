@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from enum import Enum
 
+from src.utils.tprint import tprint
 from exchanges.base_exchange.exchange_interface import OrderSide, OrderType, OrderStatus
 
 
@@ -56,68 +57,91 @@ class StandardizedOrder:
     
     def __post_init__(self):
         """Validate data after initialization"""
+        tprint(f"StandardizedOrder.__post_init__ called for order_id={self.order_id}, symbol={self.symbol}, side={self.side}, type={self.order_type}", "INFO")
+
         if self.remaining_quantity is None:
             self.remaining_quantity = self.quantity - self.executed_quantity
-        
+            tprint(f"Calculated remaining_quantity={self.remaining_quantity} (quantity={self.quantity}, executed={self.executed_quantity})", "INFO")
+
         if not self.update_time:
             self.update_time = datetime.now(timezone.utc)
-        
+            tprint(f"Set default update_time: {self.update_time}", "INFO")
+
         if not self.timestamp:
             self.timestamp = datetime.now(timezone.utc)
-        
+            tprint(f"Set default timestamp: {self.timestamp}", "INFO")
+
         self._validate_data()
+        tprint(f"Order post-initialization complete for {self.order_id}, status={self.status}, is_valid={self.is_valid}", "SUCCESS" if self.is_valid else "WARNING")
     
     def _validate_data(self) -> None:
         """Validate the order data for consistency and quality"""
+        tprint(f"Validating order: order_id={self.order_id}, symbol={self.symbol}, status={self.status}", "INFO")
         errors = []
-        
+
         # Validate required fields
         if not self.order_id or not isinstance(self.order_id, str):
             errors.append("order_id must be a non-empty string")
-        
+            tprint("Validation error: order_id must be a non-empty string", "ERROR")
+
         if not self.symbol or not isinstance(self.symbol, str):
             errors.append("symbol must be a non-empty string")
-        
+            tprint("Validation error: symbol must be a non-empty string", "ERROR")
+
         if not isinstance(self.quantity, (int, float)) or self.quantity <= 0:
             errors.append("quantity must be a positive number")
-        
+            tprint(f"Validation error: quantity={self.quantity} must be a positive number", "ERROR")
+
         if self.price is not None and (not isinstance(self.price, (int, float)) or self.price <= 0):
             errors.append("price must be a positive number if provided")
-        
+            tprint(f"Validation error: price={self.price} must be a positive number", "ERROR")
+
         if not isinstance(self.executed_quantity, (int, float)) or self.executed_quantity < 0:
             errors.append("executed_quantity must be a non-negative number")
-        
+            tprint(f"Validation error: executed_quantity={self.executed_quantity} must be non-negative", "ERROR")
+
         if self.executed_quantity > self.quantity:
             errors.append("executed_quantity cannot exceed quantity")
-        
+            tprint(f"Validation error: executed_quantity={self.executed_quantity} > quantity={self.quantity}", "ERROR")
+
         if self.remaining_quantity is not None and self.remaining_quantity < 0:
             errors.append("remaining_quantity cannot be negative")
-        
+            tprint(f"Validation error: remaining_quantity={self.remaining_quantity} cannot be negative", "ERROR")
+
         # Validate status consistency
         if self.status == OrderStatus.FILLED and self.executed_quantity < self.quantity:
             errors.append("FILLED status requires executed_quantity == quantity")
-        
+            tprint(f"Validation error: FILLED order has executed_quantity={self.executed_quantity} < quantity={self.quantity}", "ERROR")
+
         if self.status == OrderStatus.PARTIALLY_FILLED and (
             self.executed_quantity == 0 or self.executed_quantity >= self.quantity
         ):
             errors.append("PARTIALLY_FILLED status requires 0 < executed_quantity < quantity")
-        
+            tprint(f"Validation error: PARTIALLY_FILLED status inconsistent with executed_quantity={self.executed_quantity}", "ERROR")
+
         # Validate order type requirements
         if self.order_type in [OrderType.LIMIT, OrderType.STOP_LIMIT] and self.price is None:
             errors.append(f"{self.order_type.value} orders require a price")
-        
+            tprint(f"Validation error: {self.order_type.value} order missing required price", "ERROR")
+
         if self.order_type in [OrderType.STOP, OrderType.STOP_LIMIT] and self.stop_price is None:
             errors.append(f"{self.order_type.value} orders require a stop_price")
-        
+            tprint(f"Validation error: {self.order_type.value} order missing required stop_price", "ERROR")
+
         self.validation_errors = errors
         self.is_valid = len(errors) == 0
-        
+
         if not self.is_valid:
             self.quality_score = max(0.0, self.quality_score - len(errors) * 10.0)
+            tprint(f"Order validation failed for {self.order_id} with {len(errors)} errors, quality_score={self.quality_score}", "ERROR")
+        else:
+            tprint(f"Order validation successful for {self.order_id}: {self.symbol} {self.side.value} {self.quantity}@{self.price}", "SUCCESS")
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization"""
-        return {
+        tprint(f"Converting order to dict: order_id={self.order_id}, symbol={self.symbol}", "INFO")
+
+        result = {
             'order_id': self.order_id,
             'client_order_id': self.client_order_id,
             'symbol': self.symbol,
@@ -142,6 +166,9 @@ class StandardizedOrder:
             'validation_errors': self.validation_errors,
             'quality_score': self.quality_score,
         }
+
+        tprint(f"Order converted to dict: {self.order_id} status={self.status.value if isinstance(self.status, Enum) else self.status}", "SUCCESS")
+        return result
     
     def to_dataframe_row(self) -> Dict[str, Any]:
         """Convert to single-row dictionary for DataFrame creation"""

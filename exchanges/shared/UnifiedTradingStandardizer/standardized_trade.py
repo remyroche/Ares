@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from enum import Enum
 
+from src.utils.tprint import tprint
 from exchanges.base_exchange.exchange_interface import OrderSide
 
 
@@ -48,57 +49,78 @@ class StandardizedTrade:
     
     def __post_init__(self):
         """Validate data after initialization"""
+        tprint(f"StandardizedTrade.__post_init__ called for trade_id={self.trade_id}, symbol={self.symbol}, side={self.side}", "INFO")
+
         if not self.timestamp:
             self.timestamp = datetime.now(timezone.utc)
-        
+            tprint(f"Set default timestamp: {self.timestamp}", "INFO")
+
         self._validate_data()
+        tprint(f"Trade post-initialization complete for {self.trade_id}, is_valid={self.is_valid}", "SUCCESS" if self.is_valid else "WARNING")
     
     def _validate_data(self) -> None:
         """Validate the trade data for consistency and quality"""
+        tprint(f"Validating trade: trade_id={self.trade_id}, symbol={self.symbol}, side={self.side}", "INFO")
         errors = []
-        
+
         # Validate required fields
         if not self.trade_id or not isinstance(self.trade_id, str):
             errors.append("trade_id must be a non-empty string")
-        
+            tprint("Validation error: trade_id must be a non-empty string", "ERROR")
+
         if not self.order_id or not isinstance(self.order_id, str):
             errors.append("order_id must be a non-empty string")
-        
+            tprint("Validation error: order_id must be a non-empty string", "ERROR")
+
         if not self.symbol or not isinstance(self.symbol, str):
             errors.append("symbol must be a non-empty string")
-        
+            tprint("Validation error: symbol must be a non-empty string", "ERROR")
+
         if not isinstance(self.price, (int, float)) or self.price <= 0:
             errors.append("price must be a positive number")
-        
+            tprint(f"Validation error: price={self.price} must be positive", "ERROR")
+
         if not isinstance(self.quantity, (int, float)) or self.quantity <= 0:
             errors.append("quantity must be a positive number")
-        
+            tprint(f"Validation error: quantity={self.quantity} must be positive", "ERROR")
+
         if not isinstance(self.fee, (int, float)) or self.fee < 0:
             errors.append("fee must be a non-negative number")
-        
+            tprint(f"Validation error: fee={self.fee} must be non-negative", "ERROR")
+
         if not self.fee_currency or not isinstance(self.fee_currency, str):
             errors.append("fee_currency must be a non-empty string")
-        
+            tprint("Validation error: fee_currency must be a non-empty string", "ERROR")
+
         # Validate side consistency with is_buyer
         if self.is_buyer is not None:
             if self.side == OrderSide.BUY and not self.is_buyer:
                 errors.append("BUY side should have is_buyer=True")
+                tprint("Validation error: BUY side inconsistent with is_buyer=False", "ERROR")
             elif self.side == OrderSide.SELL and self.is_buyer:
                 errors.append("SELL side should have is_buyer=False")
-        
+                tprint("Validation error: SELL side inconsistent with is_buyer=True", "ERROR")
+
         self.validation_errors = errors
         self.is_valid = len(errors) == 0
-        
+
         if not self.is_valid:
             self.quality_score = max(0.0, self.quality_score - len(errors) * 10.0)
+            tprint(f"Trade validation failed for {self.trade_id} with {len(errors)} errors, quality_score={self.quality_score}", "ERROR")
+        else:
+            tprint(f"Trade validation successful for {self.trade_id}: {self.symbol} {self.side.value} {self.quantity}@{self.price}, fee={self.fee}", "SUCCESS")
     
     def get_total_value(self) -> float:
         """Calculate total trade value (price * quantity)"""
-        return self.price * self.quantity
+        total_value = self.price * self.quantity
+        tprint(f"Calculated total trade value for {self.trade_id}: {total_value}", "INFO")
+        return total_value
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization"""
-        return {
+        tprint(f"Converting trade to dict: trade_id={self.trade_id}, symbol={self.symbol}", "INFO")
+
+        result = {
             'trade_id': self.trade_id,
             'order_id': self.order_id,
             'symbol': self.symbol,
@@ -117,6 +139,9 @@ class StandardizedTrade:
             'validation_errors': self.validation_errors,
             'quality_score': self.quality_score,
         }
+
+        tprint(f"Trade converted to dict: {self.trade_id} {self.quantity}@{self.price}", "SUCCESS")
+        return result
     
     def to_dataframe_row(self) -> Dict[str, Any]:
         """Convert to single-row dictionary for DataFrame creation"""

@@ -457,24 +457,47 @@ class ArtifactRouter:
     ) -> str:
         """Save DataFrame to versioned HDF5 store."""
         from src.utils.tprint import tprint
-        
+
+        tprint("╔" + "═" * 78 + "╗", color="cyan")
+        tprint("║  🗄️  ARTIFACT ROUTER: HDF5 VERSIONED SAVE                                   ║", color="cyan", bold=True)
+        tprint("╚" + "═" * 78 + "╝", color="cyan")
+
         if not isinstance(data, pd.DataFrame):
             raise TypeError(f"HDF5 versioned storage requires DataFrame, got {type(data)}")
 
         context = context or {}
-        tprint(f"🐛 DEBUG: _save_hdf5_versioned() called with artifact_name={artifact_name}", "INFO")
-        tprint(f"🐛 DEBUG: Context: {context}", "INFO")
-        tprint(f"🐛 DEBUG: Data shape: {data.shape}, columns: {list(data.columns)[:10]}...", "INFO")
+
+        # Display context
+        tprint("📋 [ROUTER] Save Request Details:", color="cyan")
+        tprint(f"   ├─ Artifact name: {artifact_name}", color="cyan")
+        tprint(f"   ├─ Data shape: {data.shape}", color="cyan")
+        tprint(f"   ├─ Data type: {type(data).__name__}", color="cyan")
+        tprint(f"   ├─ Columns (first 10): {list(data.columns)[:10]}", color="cyan")
+        if len(data.columns) > 10:
+            tprint(f"   │  ... and {len(data.columns) - 10} more columns", color="cyan")
+        tprint(f"   └─ Index type: {type(data.index).__name__}, length: {len(data)}", color="cyan")
+
+        tprint("🌍 [ROUTER] Context Information:", color="cyan")
+        for key, value in context.items():
+            tprint(f"   ├─ {key}: {value}", color="cyan")
 
         # Get or create versioned store for this context
-        tprint("🐛 DEBUG: Getting or creating versioned store...", "INFO")
+        tprint("🔍 [ROUTER] Getting or creating versioned store...", color="cyan")
         store = self._get_versioned_store(context)
-        tprint(f"🐛 DEBUG: Versioned store path: {store.store_path}", "INFO")
+
+        # Check if store.h5 file exists
+        store_h5_path = store.store_path / "store.h5"
+        if store_h5_path.exists():
+            tprint(f"   ✅ Store HDF5 file exists: {store_h5_path}", color="green")
+            tprint(f"   ├─ Size: {store_h5_path.stat().st_size / 1024:.2f} KB", color="green")
+        else:
+            tprint(f"   ⚠️  Store HDF5 file does NOT exist yet: {store_h5_path}", color="yellow")
+            tprint(f"   └─ Will be created during add_data()", color="yellow")
 
         # Generate version name with milliseconds to avoid collisions
         now = datetime.now()
         version_name = f"{artifact_name}_{now.strftime('%Y%m%d_%H%M%S')}_{now.microsecond // 1000:03d}"
-        tprint(f"🐛 DEBUG: Generated version name: {version_name}", "INFO")
+        tprint(f"🏷️  [ROUTER] Generated version name: {version_name}", color="cyan")
 
         # Prepare metadata
         artifact_metadata = {
@@ -483,33 +506,47 @@ class ArtifactRouter:
             **(context or {}),
             **(metadata or {})
         }
-        tprint(f"🐛 DEBUG: Prepared artifact metadata: {list(artifact_metadata.keys())}", "INFO")
+
+        tprint("📝 [ROUTER] Metadata keys prepared:", color="cyan")
+        for key in artifact_metadata.keys():
+            tprint(f"   ├─ {key}", color="cyan")
 
         # Add data to store
-        tprint("🐛 DEBUG: Adding data to versioned store...", "INFO")
+        tprint("💾 [ROUTER] Calling store.add_data()...", color="cyan", bold=True)
         view = store.add_data(
             data=data,
             version_name=version_name,
             metadata=artifact_metadata
         )
-        tprint(f"🐛 DEBUG: Store.add_data() returned view: {view}", "INFO")
+        tprint(f"✅ [ROUTER] store.add_data() completed successfully!", color="green")
+        tprint(f"   └─ Returned view: {view}", color="green")
 
+        # Construct filepath (this is a logical path, actual data is in store.h5)
         filepath = str(store.store_path / f"{version_name}.h5")
-        tprint(f"🐛 DEBUG: Final HDF5 filepath: {filepath}", "INFO")
-        
-        # Verify the save was successful by checking store statistics
-        tprint("🐛 DEBUG: Verifying save by checking store statistics...", "INFO")
-        stats = store.get_statistics()
-        tprint(f"🐛 DEBUG: Store statistics after save: {stats}", "INFO")
-        
-        # Check if the file actually exists
-        from pathlib import Path
-        file_path = Path(filepath)
-        if file_path.exists():
-            tprint(f"🐛 DEBUG: File exists at {filepath}, size: {file_path.stat().st_size} bytes", "INFO")
+
+        # Verify the save was successful
+        tprint("🔍 [ROUTER] Verifying save success...", color="cyan")
+
+        # Check store.h5 exists and has grown
+        if store_h5_path.exists():
+            new_size = store_h5_path.stat().st_size
+            tprint(f"   ✅ Store HDF5 file exists after save", color="green")
+            tprint(f"   ├─ Path: {store_h5_path}", color="green")
+            tprint(f"   └─ Size: {new_size / 1024:.2f} KB", color="green")
         else:
-            tprint(f"🐛 DEBUG: WARNING - File does not exist at {filepath}!", "ERROR")
-        
+            tprint(f"   ❌ WARNING: Store HDF5 file still does not exist!", color="red")
+
+        # Check store statistics
+        stats = store.get_statistics()
+        tprint(f"📊 [ROUTER] Store statistics:", color="cyan")
+        tprint(f"   ├─ Total versions: {stats.get('num_versions', 0)}", color="cyan")
+        tprint(f"   ├─ Current version: {stats.get('current_version', 'N/A')}", color="cyan")
+        tprint(f"   └─ HDF5 file size: {stats.get('h5_file_size_mb', 0):.4f} MB", color="cyan")
+
+        tprint("╔" + "═" * 78 + "╗", color="green")
+        tprint("║  ✅ ARTIFACT ROUTER: HDF5 SAVE COMPLETED                                    ║", color="green", bold=True)
+        tprint("╚" + "═" * 78 + "╝", color="green")
+
         self.logger.info(f"Saved HDF5 versioned: {filepath}")
         return filepath
 

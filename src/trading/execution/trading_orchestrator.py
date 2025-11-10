@@ -106,8 +106,7 @@ class TradingOrchestrator:
     """
 
     def __init__(self, config: Dict[str, Any]):
-        """
-        Initialize the trading orchestrator.
+        tprint(f"🚀 TradingMode.__init__: Entered", "INFO")
 
         Args:
             config: Configuration dictionary
@@ -179,8 +178,7 @@ class TradingOrchestrator:
         self.uncertainty_calculator = get_global_uncertainty_calculator()
 
     async def initialize(self) -> bool:
-        """
-        Initialize all trading components.
+        tprint(f"🚀 TradingMode.initialize: Entered", "INFO")
 
         Returns:
             bool: True if initialization successful
@@ -350,8 +348,7 @@ class TradingOrchestrator:
             raise
 
     async def start_trading_session(self) -> bool:
-        """
-        Start a new trading session.
+        tprint(f"🚀 TradingMode.start_trading_session: Entered", "INFO")
 
         Returns:
             bool: True if session started successfully
@@ -397,8 +394,7 @@ class TradingOrchestrator:
             return False
 
     async def stop_trading_session(self) -> bool:
-        """
-        Stop the current trading session.
+        tprint(f"🚀 TradingMode.stop_trading_session: Entered", "INFO")
 
         Returns:
             bool: True if session stopped successfully
@@ -1462,9 +1458,8 @@ class TradingOrchestrator:
         )
 
     def get_orchestrator_stats(self) -> Dict[str, Any]:
-        """Get orchestrator statistics."""
-        return {
-            'status': self.status.value,
+        tprint(f"🚀 TradingMode.get_orchestrator_stats: Entered", "INFO")
+
             'current_session': self.current_session.__dict__ if self.current_session else None,
             'performance_metrics': self.performance_metrics,
             'data_collector_stats': self.data_collector.get_stats() if self.data_collector else None,
@@ -1475,9 +1470,8 @@ class TradingOrchestrator:
         }
 
     async def generate_live_dashboard(self) -> Dict[str, Any]:
-        """Generate live trading dashboard."""
-        try:
-            if not comprehensive_trade_monitor.is_initialized:
+        tprint(f"🚀 TradingMode.generate_live_dashboard: Entered", "INFO")
+
                 tprint_warning("⚠️ Comprehensive monitoring not initialized")
                 return {}
 
@@ -1504,9 +1498,8 @@ class TradingOrchestrator:
             return {}
 
     async def generate_performance_report(self, report_type: str = "session") -> Dict[str, Any]:
-        """Generate comprehensive performance report."""
-        try:
-            if not comprehensive_trade_monitor.is_initialized:
+        tprint(f"🚀 TradingMode.generate_performance_report: Entered", "INFO")
+
                 tprint_warning("⚠️ Comprehensive monitoring not initialized")
                 return {}
 
@@ -1564,9 +1557,8 @@ class TradingOrchestrator:
             tprint_warning(f"⚠️ Failed to record daily summary: {e}")
 
     async def force_record_daily_summary(self, target_date: Optional[date] = None) -> bool:
-        """Force recording of daily summary for specified date."""
-        try:
-            record_date = target_date or datetime.now().date()
+        tprint(f"🚀 TradingMode.force_record_daily_summary: Entered", "INFO")
+
 
             tprint_info(f"📝 Force recording daily summary for {record_date}")
 
@@ -1598,15 +1590,10 @@ class TradingOrchestrator:
             return False
 
     def get_trading_decisions(self, n: int = 100) -> List[TradingDecision]:
-        """Get recent trading decisions."""
-        return self.trading_decisions[-n:] if len(self.trading_decisions) >= n else self.trading_decisions.copy()
+        tprint(f"🚀 TradingMode.get_trading_decisions: Entered", "INFO")
 
     def add_trade_decision_callback(self, callback: Any) -> None:
-        """Register a callback to observe trade decision lifecycle events.
-        Callback signature: async|sync callback(decision: TradingDecision, event: str, **kwargs)
-        Events: 'skipped_gate' | 'pre_execute' | 'post_execute'
-        """
-        self._on_trade_decision_callbacks.append(callback)
+        tprint(f"🚀 TradingMode.add_trade_decision_callback: Entered", "INFO")
 
     async def _trigger_trade_callbacks(self, decision: TradingDecision, event: str, **kwargs: Any) -> None:
         """Trigger trade decision callbacks with proper error handling."""
@@ -1660,12 +1647,11 @@ class TradingOrchestrator:
 # Convenience functions
 
 def create_trading_orchestrator(config: Dict[str, Any]) -> TradingOrchestrator:
-    """Create a configured trading orchestrator."""
-    return TradingOrchestrator(config)
+    tprint(f"🚀 TradingMode.create_trading_orchestrator: Entered", "INFO")
 
 async def start_trading_orchestrator(
-    config: Dict[str, Any],
-    symbol: str = "ETH",
+    tprint(f"🚀 TradingMode.start_trading_orchestrator: Entered", "INFO")
+
     exchange: str = "binance",
     trading_mode: str = "paper"
 ) -> TradingOrchestrator:
@@ -1695,9 +1681,8 @@ async def start_trading_orchestrator(
 # Example usage
 if __name__ == "__main__":
     async def main() -> None:
-        """Example main function."""
-        config = {
-            'analyst': {},
+        tprint(f"🚀 TradingMode.main: Entered", "INFO")
+
             'tactician': {},
             'strategist': {},
             'analyst_signals': {'confidence_threshold': 0.6},

@@ -13,7 +13,7 @@ from pathlib import Path
 import pickle
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.tprint import tprint
 from src.utils.standardized_model_manager import standardized_model_manager, ModelMetadata
 from .unified_model_loader import get_unified_model_loader, UnifiedModelLoader
 from ..utils.error_handling import TradingError, TradingErrorSeverity, trading_error_handler
@@ -60,7 +60,7 @@ class TrainingModelLoader:
         Returns:
             Dictionary of loaded models
         """
-        tprint_info(f"🔄 Loading analyst models from step: {step_name}")
+        tprint(f"🔄 Loading analyst models from step: {step_name}")
 
         loaded_models = {}
 
@@ -85,17 +85,17 @@ class TrainingModelLoader:
                                 loaded_models[model_id] = model
                                 self.model_metadata[model_id] = metadata
 
-                                tprint_success(f"✅ Loaded analyst model: {model_id}")
+                                tprint(f"✅ Loaded analyst model: {model_id}")
 
                                 # Validate model compatibility
                                 await self._validate_model_compatibility(model, metadata, "analyst")
 
                         except Exception as e:
-                            tprint_warning(f"⚠️ Could not load analyst model {model_id}: {e}")
+                            tprint(f"⚠️ Could not load analyst model {model_id}: {e}")
 
             self.loaded_models.update(loaded_models)
 
-            tprint_success(f"✅ Successfully loaded {len(loaded_models)} analyst models")
+            tprint(f"✅ Successfully loaded {len(loaded_models)} analyst models")
             return loaded_models
 
         except Exception as e:
@@ -136,7 +136,7 @@ class TrainingModelLoader:
         Returns:
             Dictionary of loaded models
         """
-        tprint_info(f"🔄 Loading tactician models from step: {step_name}")
+        tprint(f"🔄 Loading tactician models from step: {step_name}")
 
         loaded_models = {}
 
@@ -161,17 +161,17 @@ class TrainingModelLoader:
                                 loaded_models[model_id] = model
                                 self.model_metadata[model_id] = metadata
 
-                                tprint_success(f"✅ Loaded tactician model: {model_id}")
+                                tprint(f"✅ Loaded tactician model: {model_id}")
 
                                 # Validate model compatibility
                                 await self._validate_model_compatibility(model, metadata, "tactician")
 
                         except Exception as e:
-                            tprint_warning(f"⚠️ Could not load tactician model {model_id}: {e}")
+                            tprint(f"⚠️ Could not load tactician model {model_id}: {e}")
 
             self.loaded_models.update(loaded_models)
 
-            tprint_success(f"✅ Successfully loaded {len(loaded_models)} tactician models")
+            tprint(f"✅ Successfully loaded {len(loaded_models)} tactician models")
             return loaded_models
 
         except Exception as e:
@@ -206,7 +206,7 @@ class TrainingModelLoader:
         Returns:
             Dictionary of loaded models
         """
-        tprint_info(f"🔄 Loading HMM models from step: {step_name}")
+        tprint(f"🔄 Loading HMM models from step: {step_name}")
 
         loaded_models = {}
 
@@ -225,21 +225,21 @@ class TrainingModelLoader:
                         loaded_models[model_id] = model
                         self.model_metadata[model_id] = metadata
 
-                        tprint_success(f"✅ Loaded HMM model: {model_id}")
+                        tprint(f"✅ Loaded HMM model: {model_id}")
 
                         # Validate model compatibility
                         await self._validate_model_compatibility(model, metadata, "hmm")
 
                     else:
-                        tprint_warning(f"⚠️ Could not load HMM model: {model_id}")
+                        tprint(f"⚠️ Could not load HMM model: {model_id}")
 
                 except Exception as e:
-                    tprint_error(f"❌ Failed to load HMM model {model_id}: {e}")
+                    tprint(f"❌ Failed to load HMM model {model_id}: {e}")
                     continue
 
             self.loaded_models.update(loaded_models)
 
-            tprint_success(f"✅ Successfully loaded {len(loaded_models)} HMM models")
+            tprint(f"✅ Successfully loaded {len(loaded_models)} HMM models")
             return loaded_models
 
         except Exception as e:
@@ -285,7 +285,7 @@ class TrainingModelLoader:
                 return []
 
         except Exception as e:
-            tprint_warning(f"⚠️ Model discovery failed for {step_name}/{model_type}: {e}")
+            tprint(f"⚠️ Model discovery failed for {step_name}/{model_type}: {e}")
             self.logger.warning(f"Model discovery failed for {step_name}/{model_type}: {e}")
             return []
 
@@ -308,20 +308,20 @@ class TrainingModelLoader:
 
             for method in methods_to_check:
                 if not hasattr(model, method):
-                    tprint_warning(f"⚠️ Model {metadata.model_id} missing method: {method}")
+                    tprint(f"⚠️ Model {metadata.model_id} missing method: {method}")
 
             # Check model features compatibility
             if metadata.features:
-                tprint_info(f"📊 Model {metadata.model_id} trained on {len(metadata.features)} features")
+                tprint(f"📊 Model {metadata.model_id} trained on {len(metadata.features)} features")
 
             # Check model metrics
             if metadata.metrics:
-                tprint_info(f"📈 Model {metadata.model_id} performance: {metadata.metrics}")
+                tprint(f"📈 Model {metadata.model_id} performance: {metadata.metrics}")
             
-            tprint_success(f"✅ Model {metadata.model_id} compatibility validated for {model_type}")
+            tprint(f"✅ Model {metadata.model_id} compatibility validated for {model_type}")
 
         except Exception as e:
-            tprint_warning(f"⚠️ Model compatibility validation failed: {e}")
+            tprint(f"⚠️ Model compatibility validation failed: {e}")
             raise
 
     def get_model(self, model_id: str) -> Optional[Any]:
@@ -366,7 +366,7 @@ async def load_trained_models(
     Returns:
         Dictionary with loaded models by type
     """
-    tprint_info("🚀 Loading trained models for trading operations...")
+    tprint("🚀 Loading trained models for trading operations...")
 
     loaded_models = {}
 
@@ -384,12 +384,12 @@ async def load_trained_models(
             loaded_models['hmm'] = await training_model_loader.load_hmm_models(hmm_ids)
 
         total_models = sum(len(models) for models in loaded_models.values())
-        tprint_success(f"✅ Successfully loaded {total_models} trained models")
+        tprint(f"✅ Successfully loaded {total_models} trained models")
 
         return loaded_models
 
     except Exception as e:
-        tprint_error(f"❌ Failed to load trained models: {e}")
+        tprint(f"❌ Failed to load trained models: {e}")
         raise
 
 async def validate_model_compatibility(
@@ -406,7 +406,7 @@ async def validate_model_compatibility(
     Returns:
         True if all models are compatible
     """
-    tprint_info("🔍 Validating model compatibility with trading configuration...")
+    tprint("🔍 Validating model compatibility with trading configuration...")
 
     try:
         # Validate trading config first
@@ -424,9 +424,9 @@ async def validate_model_compatibility(
                         model, metadata, model_type
                     )
 
-        tprint_success("✅ All models are compatible with trading configuration")
+        tprint("✅ All models are compatible with trading configuration")
         return True
 
     except Exception as e:
-        tprint_error(f"❌ Model compatibility validation failed: {e}")
+        tprint(f"❌ Model compatibility validation failed: {e}")
         return False

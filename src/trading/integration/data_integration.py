@@ -14,7 +14,7 @@ import numpy as np
 from pathlib import Path
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.tprint import tprint
 from ..utils.error_handling import TradingError, TradingErrorSeverity, trading_error_handler
 from ..utils.validation import validate_market_data
 
@@ -63,7 +63,7 @@ class DataSyncManager:
         Returns:
             True if sync successful
         """
-        tprint_info(f"🔄 Syncing market data for {symbol} ({timeframe})")
+        tprint(f"🔄 Syncing market data for {symbol} ({timeframe})")
 
         try:
             # Validate input data
@@ -86,11 +86,11 @@ class DataSyncManager:
                 'status': 'success'
             }
 
-            tprint_success(f"✅ Synced {len(trading_format_data)} market data records")
+            tprint(f"✅ Synced {len(trading_format_data)} market data records")
             return True
 
         except Exception as e:
-            tprint_error(f"❌ Market data sync failed: {e}")
+            tprint(f"❌ Market data sync failed: {e}")
             self.sync_status[f"market_data_{symbol}_{timeframe}"] = {
                 'last_sync': datetime.now(),
                 'status': 'failed',
@@ -120,11 +120,11 @@ class DataSyncManager:
         Returns:
             True if sync successful
         """
-        tprint_info(f"🔄 Syncing trading decisions for {symbol}")
+        tprint(f"🔄 Syncing trading decisions for {symbol}")
 
         try:
             if not decisions:
-                tprint_warning("⚠️ No trading decisions to sync")
+                tprint("⚠️ No trading decisions to sync")
                 return True
 
             # Convert to DataFrame for easier handling
@@ -159,11 +159,11 @@ class DataSyncManager:
                 'status': 'success'
             }
 
-            tprint_success(f"✅ Synced {len(decisions)} trading decisions")
+            tprint(f"✅ Synced {len(decisions)} trading decisions")
             return True
 
         except Exception as e:
-            tprint_error(f"❌ Trading decisions sync failed: {e}")
+            tprint(f"❌ Trading decisions sync failed: {e}")
             self.sync_status[f"trading_decisions_{symbol}"] = {
                 'last_sync': datetime.now(),
                 'status': 'failed',
@@ -193,7 +193,7 @@ class DataSyncManager:
         Returns:
             True if sync successful
         """
-        tprint_info(f"🔄 Syncing performance metrics for {symbol}")
+        tprint(f"🔄 Syncing performance metrics for {symbol}")
 
         try:
             # Add metadata to metrics
@@ -215,11 +215,11 @@ class DataSyncManager:
                 'metrics_count': len(metrics)
             }
 
-            tprint_success(f"✅ Synced performance metrics ({len(metrics)} metrics)")
+            tprint(f"✅ Synced performance metrics ({len(metrics)} metrics)")
             return True
 
         except Exception as e:
-            tprint_error(f"❌ Performance metrics sync failed: {e}")
+            tprint(f"❌ Performance metrics sync failed: {e}")
             self.sync_status[f"performance_metrics_{symbol}"] = {
                 'last_sync': datetime.now(),
                 'status': 'failed',
@@ -244,7 +244,7 @@ class DataSyncManager:
             
             if missing_columns:
                 error_msg = f"Missing required columns: {missing_columns}. Available columns: {list(formatted_data.columns)}"
-                tprint_error(f"❌ {error_msg}")
+                tprint(f"❌ {error_msg}")
                 raise ValueError(error_msg)
 
             # Add metadata columns
@@ -264,7 +264,7 @@ class DataSyncManager:
             return formatted_data
 
         except Exception as e:
-            tprint_error(f"❌ Data format conversion failed: {e}")
+            tprint(f"❌ Data format conversion failed: {e}")
             return data
 
     async def _save_to_training_data_store(
@@ -288,10 +288,10 @@ class DataSyncManager:
             # Save as parquet for efficiency
             data.to_parquet(filepath, index=False)
 
-            tprint_info(f"💾 Saved {data_type} data to {filepath}")
+            tprint(f"💾 Saved {data_type} data to {filepath}")
 
         except Exception as e:
-            tprint_error(f"❌ Failed to save to training data store: {e}")
+            tprint(f"❌ Failed to save to training data store: {e}")
 
     async def _save_performance_metrics(
         self,
@@ -316,10 +316,10 @@ class DataSyncManager:
             with open(filepath, 'w') as f:
                 json.dump(metrics, f, indent=2, default=str)
 
-            tprint_info(f"💾 Saved performance metrics to {filepath}")
+            tprint(f"💾 Saved performance metrics to {filepath}")
 
         except Exception as e:
-            tprint_error(f"❌ Failed to save performance metrics: {e}")
+            tprint(f"❌ Failed to save performance metrics: {e}")
 
     def get_sync_status(self) -> Dict[str, Any]:
         """Get current sync status."""
@@ -359,7 +359,7 @@ class TrainingDataReader:
         Returns:
             DataFrame with feature data or None if not available
         """
-        tprint_info(f"📖 Reading training features for {symbol} ({timeframe})")
+        tprint(f"📖 Reading training features for {symbol} ({timeframe})")
 
         try:
             # Try to read from training pipeline feature store
@@ -368,14 +368,14 @@ class TrainingDataReader:
             )
 
             if features_df is not None and not features_df.empty:
-                tprint_success(f"✅ Read {len(features_df)} feature records")
+                tprint(f"✅ Read {len(features_df)} feature records")
                 return features_df
             else:
-                tprint_warning("⚠️ No training features found")
+                tprint("⚠️ No training features found")
                 return None
 
         except Exception as e:
-            tprint_error(f"❌ Failed to read training features: {e}")
+            tprint(f"❌ Failed to read training features: {e}")
             return None
 
     @trading_error_handler(
@@ -400,7 +400,7 @@ class TrainingDataReader:
         Returns:
             Series with target data or None if not available
         """
-        tprint_info(f"📖 Reading training targets for {symbol} ({timeframe})")
+        tprint(f"📖 Reading training targets for {symbol} ({timeframe})")
 
         try:
             # Try to read from training pipeline target store
@@ -420,17 +420,17 @@ class TrainingDataReader:
 
                 if target_column:
                     targets_series = targets_df[target_column]
-                    tprint_success(f"✅ Read {len(targets_series)} target records")
+                    tprint(f"✅ Read {len(targets_series)} target records")
                     return targets_series
                 else:
-                    tprint_warning("⚠️ No target column found in training targets")
+                    tprint("⚠️ No target column found in training targets")
                     return None
             else:
-                tprint_warning("⚠️ No training targets found")
+                tprint("⚠️ No training targets found")
                 return None
 
         except Exception as e:
-            tprint_error(f"❌ Failed to read training targets: {e}")
+            tprint(f"❌ Failed to read training targets: {e}")
             return None
 
     async def _read_from_training_store(
@@ -472,7 +472,7 @@ class TrainingDataReader:
                     all_files.extend(files)
 
             if not all_files:
-                tprint_warning(f"⚠️ No {data_type} files found for {symbol} ({timeframe})")
+                tprint(f"⚠️ No {data_type} files found for {symbol} ({timeframe})")
                 return None
 
             # Sort by modification time (most recent first)
@@ -489,7 +489,7 @@ class TrainingDataReader:
                         df = pd.read_parquet(file_path)
                         combined_data.append(df)
                 except Exception as e:
-                    tprint_warning(f"⚠️ Failed to read file {file_path}: {e}")
+                    tprint(f"⚠️ Failed to read file {file_path}: {e}")
                     continue
 
             if combined_data:
@@ -501,14 +501,14 @@ class TrainingDataReader:
                     result_df = result_df.drop_duplicates(subset=['timestamp'])
                     result_df = result_df.sort_values('timestamp')
 
-                tprint_success(f"✅ Read {len(result_df)} {data_type} records from training store")
+                tprint(f"✅ Read {len(result_df)} {data_type} records from training store")
                 return result_df
             else:
-                tprint_warning(f"⚠️ No {data_type} data found within lookback window ({lookback_days} days)")
+                tprint(f"⚠️ No {data_type} data found within lookback window ({lookback_days} days)")
                 return None
 
         except Exception as e:
-            tprint_error(f"❌ Failed to read from training store: {e}")
+            tprint(f"❌ Failed to read from training store: {e}")
             return None
 
     async def cleanup(self) -> None:
@@ -516,9 +516,9 @@ class TrainingDataReader:
         try:
             self.sync_status.clear()
             self.last_sync = None
-            tprint_success("✅ Data sync manager cleaned up")
+            tprint("✅ Data sync manager cleaned up")
         except Exception as e:
-            tprint_warning(f"⚠️ Cleanup failed: {e}")
+            tprint(f"⚠️ Cleanup failed: {e}")
             self.logger.warning(f"Cleanup failed: {e}")
 
     def __enter__(self) -> "DataSyncManager":
@@ -551,7 +551,7 @@ async def sync_all_trading_data(
     timeframe: str = "1m"
 ) -> Dict[str, bool]:
     """Sync all trading data with training pipeline."""
-    tprint_info("🔄 Syncing all trading data with training pipeline...")
+    tprint("🔄 Syncing all trading data with training pipeline...")
 
     results = {}
 
@@ -575,7 +575,7 @@ async def sync_all_trading_data(
     )
 
     successful_syncs = sum(results.values())
-    tprint_success(f"✅ Successfully synced {successful_syncs}/3 data types")
+    tprint(f"✅ Successfully synced {successful_syncs}/3 data types")
 
     return results
 
@@ -585,7 +585,7 @@ async def read_all_training_data(
     lookback_days: int = 30
 ) -> Dict[str, Optional[pd.DataFrame]]:
     """Read all available training data."""
-    tprint_info("📖 Reading all available training data...")
+    tprint("📖 Reading all available training data...")
 
     results = {}
 
@@ -600,6 +600,6 @@ async def read_all_training_data(
     )
 
     available_data = sum(1 for v in results.values() if v is not None)
-    tprint_success(f"✅ Successfully read {available_data}/2 data types")
+    tprint(f"✅ Successfully read {available_data}/2 data types")
 
     return results

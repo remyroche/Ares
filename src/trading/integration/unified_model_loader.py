@@ -25,7 +25,7 @@ import os
 from datetime import datetime
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.tprint import tprint
 from src.utils.artifact_manager import ArtifactManager
 from src.utils.standardized_model_manager import standardized_model_manager, ModelMetadata
 from src.training.steps.base_step import BaseStep
@@ -49,7 +49,7 @@ class UnifiedModelLoader:
                              If None, will create one using BaseStep pattern.
         """
         self.logger = logger.getChild('UnifiedModelLoader')
-        tprint_info("🔄 Initializing unified model loader")
+        tprint("🔄 Initializing unified model loader")
         
         # Initialize artifact manager
         if artifact_manager is None:
@@ -74,7 +74,7 @@ class UnifiedModelLoader:
             'tactician_base': 'tactician_base_training',
             'tactician_ensemble': 'tactician_ensemble_training'
         }
-        tprint_success("✅ Unified model loader initialized")
+        tprint("✅ Unified model loader initialized")
 
     def _find_most_recent_artifact_file(
         self,
@@ -250,11 +250,11 @@ class UnifiedModelLoader:
                 import joblib
                 return joblib.load(path)
             else:
-                tprint_warning(f"⚠️ Unknown file extension: {path.suffix}")
+                tprint(f"⚠️ Unknown file extension: {path.suffix}")
                 self.logger.warning(f"Unknown file extension: {path.suffix}")
                 return None
         except Exception as e:
-            tprint_error(f"❌ Failed to load artifact from {path}: {e}")
+            tprint(f"❌ Failed to load artifact from {path}: {e}")
             self.logger.error(f"Failed to load artifact from {path}: {e}")
             return None
 
@@ -297,7 +297,7 @@ class UnifiedModelLoader:
         Returns:
             Dictionary of loaded models
         """
-        tprint_info(f"🔄 Loading regime base ML models for {symbol} ({timeframe})...")
+        tprint(f"🔄 Loading regime base ML models for {symbol} ({timeframe})...")
         
         step_name = self.step_mappings['regime_base']
         models = {}
@@ -339,7 +339,7 @@ class UnifiedModelLoader:
                             models[model_id] = model
                             self.model_metadata[model_id] = metadata
                     except Exception as e:
-                        tprint_warning(f"⚠️ Could not load regime model {model_id}: {e}")
+                        tprint(f"⚠️ Could not load regime model {model_id}: {e}")
                         self.logger.debug(f"Could not load regime model {model_id}: {e}")
 
             # Try common artifact names
@@ -366,9 +366,9 @@ class UnifiedModelLoader:
             self.loaded_models.update({f'regime_base_{k}': v for k, v in models.items()})
             
             if models:
-                tprint_success(f"✅ Loaded {len(models)} regime base ML models")
+                tprint(f"✅ Loaded {len(models)} regime base ML models")
             else:
-                tprint_warning("⚠️ No regime base models found")
+                tprint("⚠️ No regime base models found")
 
             return models
 
@@ -404,7 +404,7 @@ class UnifiedModelLoader:
         Returns:
             Ensemble model or None
         """
-        tprint_info(f"🔄 Loading regime ensemble ML model for {symbol} ({timeframe})...")
+        tprint(f"🔄 Loading regime ensemble ML model for {symbol} ({timeframe})...")
         
         step_name = self.step_mappings['regime_ensemble']
         model = None
@@ -440,7 +440,7 @@ class UnifiedModelLoader:
                                 self.model_metadata[model_id] = metadata
                                 break
                         except Exception as e:
-                            tprint_warning(f"⚠️ Could not load regime ensemble model {model_id}: {e}")
+                            tprint(f"⚠️ Could not load regime ensemble model {model_id}: {e}")
                             self.logger.debug(f"Could not load regime ensemble model {model_id}: {e}")
 
             # Try common artifact names
@@ -467,9 +467,9 @@ class UnifiedModelLoader:
 
             if model:
                 self.loaded_models['regime_ensemble'] = model
-                tprint_success("✅ Loaded regime ensemble ML model")
+                tprint("✅ Loaded regime ensemble ML model")
             else:
-                tprint_warning("⚠️ No regime ensemble model found")
+                tprint("⚠️ No regime ensemble model found")
 
             return model
 
@@ -505,7 +505,7 @@ class UnifiedModelLoader:
         Returns:
             Dictionary of loaded models
         """
-        tprint_info(f"🔄 Loading analyst base ML models for {symbol} ({timeframe})...")
+        tprint(f"🔄 Loading analyst base ML models for {symbol} ({timeframe})...")
         
         step_name = self.step_mappings['analyst_base']
         models = {}
@@ -547,7 +547,7 @@ class UnifiedModelLoader:
                             models[model_id] = model
                             self.model_metadata[model_id] = metadata
                     except Exception as e:
-                        tprint_warning(f"⚠️ Could not load analyst model {model_id}: {e}")
+                        tprint(f"⚠️ Could not load analyst model {model_id}: {e}")
                         self.logger.debug(f"Could not load analyst model {model_id}: {e}")
 
             # Try common artifact names
@@ -578,9 +578,9 @@ class UnifiedModelLoader:
             self.loaded_models.update({f'analyst_base_{k}': v for k, v in models.items()})
             
             if models:
-                tprint_success(f"✅ Loaded {len(models)} analyst base ML models (dispatched to Analyst)")
+                tprint(f"✅ Loaded {len(models)} analyst base ML models (dispatched to Analyst)")
             else:
-                tprint_warning("⚠️ No analyst base models found")
+                tprint("⚠️ No analyst base models found")
 
             return models
 
@@ -616,7 +616,7 @@ class UnifiedModelLoader:
         Returns:
             Ensemble model or None
         """
-        tprint_info(f"🔄 Loading analyst ensemble ML model for {symbol} ({timeframe})...")
+        tprint(f"🔄 Loading analyst ensemble ML model for {symbol} ({timeframe})...")
         
         step_name = self.step_mappings['analyst_ensemble']
         model = None
@@ -653,7 +653,7 @@ class UnifiedModelLoader:
                                 self.model_metadata[model_id] = metadata
                                 break
                         except Exception as e:
-                            tprint_warning(f"⚠️ Could not load analyst ensemble model {model_id}: {e}")
+                            tprint(f"⚠️ Could not load analyst ensemble model {model_id}: {e}")
                             self.logger.debug(f"Could not load analyst ensemble model {model_id}: {e}")
 
             # Try common artifact names
@@ -681,9 +681,9 @@ class UnifiedModelLoader:
 
             if model:
                 self.loaded_models['analyst_ensemble'] = model
-                tprint_success("✅ Loaded analyst ensemble ML model (dispatched to Analyst)")
+                tprint("✅ Loaded analyst ensemble ML model (dispatched to Analyst)")
             else:
-                tprint_warning("⚠️ No analyst ensemble model found")
+                tprint("⚠️ No analyst ensemble model found")
 
             return model
 
@@ -719,7 +719,7 @@ class UnifiedModelLoader:
         Returns:
             Dictionary of loaded models
         """
-        tprint_info(f"🔄 Loading tactician base ML models for {symbol} ({timeframe})...")
+        tprint(f"🔄 Loading tactician base ML models for {symbol} ({timeframe})...")
         
         step_name = self.step_mappings['tactician_base']
         models = {}
@@ -761,7 +761,7 @@ class UnifiedModelLoader:
                             models[model_id] = model
                             self.model_metadata[model_id] = metadata
                     except Exception as e:
-                        tprint_warning(f"⚠️ Could not load tactician model {model_id}: {e}")
+                        tprint(f"⚠️ Could not load tactician model {model_id}: {e}")
                         self.logger.debug(f"Could not load tactician model {model_id}: {e}")
 
             # Try common artifact names
@@ -792,9 +792,9 @@ class UnifiedModelLoader:
             self.loaded_models.update({f'tactician_base_{k}': v for k, v in models.items()})
             
             if models:
-                tprint_success(f"✅ Loaded {len(models)} tactician base ML models (dispatched to Tactician)")
+                tprint(f"✅ Loaded {len(models)} tactician base ML models (dispatched to Tactician)")
             else:
-                tprint_warning("⚠️ No tactician base models found")
+                tprint("⚠️ No tactician base models found")
 
             return models
 
@@ -830,7 +830,7 @@ class UnifiedModelLoader:
         Returns:
             Ensemble model or None
         """
-        tprint_info(f"🔄 Loading tactician ensemble ML model for {symbol} ({timeframe})...")
+        tprint(f"🔄 Loading tactician ensemble ML model for {symbol} ({timeframe})...")
         
         step_name = self.step_mappings['tactician_ensemble']
         model = None
@@ -867,7 +867,7 @@ class UnifiedModelLoader:
                                 self.model_metadata[model_id] = metadata
                                 break
                         except Exception as e:
-                            tprint_warning(f"⚠️ Could not load tactician ensemble model {model_id}: {e}")
+                            tprint(f"⚠️ Could not load tactician ensemble model {model_id}: {e}")
                             self.logger.debug(f"Could not load tactician ensemble model {model_id}: {e}")
 
             # Try common artifact names
@@ -895,9 +895,9 @@ class UnifiedModelLoader:
 
             if model:
                 self.loaded_models['tactician_ensemble'] = model
-                tprint_success("✅ Loaded tactician ensemble ML model (dispatched to Tactician)")
+                tprint("✅ Loaded tactician ensemble ML model (dispatched to Tactician)")
             else:
-                tprint_warning("⚠️ No tactician ensemble model found")
+                tprint("⚠️ No tactician ensemble model found")
 
             return model
 
@@ -933,7 +933,7 @@ class UnifiedModelLoader:
         Returns:
             Dictionary of optimized parameters
         """
-        tprint_info(f"🔄 Loading optimized parameters for {symbol} ({timeframe})...")
+        tprint(f"🔄 Loading optimized parameters for {symbol} ({timeframe})...")
         
         parameters = {}
 
@@ -959,7 +959,7 @@ class UnifiedModelLoader:
                     
                     if parameters:
                         self.optimized_parameters = parameters
-                        tprint_success(f"✅ Loaded optimized parameters from artifacts")
+                        tprint(f"✅ Loaded optimized parameters from artifacts")
                         return parameters
 
             # Try loading from file path
@@ -971,7 +971,7 @@ class UnifiedModelLoader:
                     parameters = json.load(f)
                     if isinstance(parameters, dict):
                         self.optimized_parameters = parameters
-                        tprint_success(f"✅ Loaded optimized parameters from {results_file}")
+                        tprint(f"✅ Loaded optimized parameters from {results_file}")
                         return parameters
 
             # Try loading from pickle file
@@ -981,14 +981,14 @@ class UnifiedModelLoader:
                     parameters = pickle.load(f)
                     if isinstance(parameters, dict):
                         self.optimized_parameters = parameters
-                        tprint_success(f"✅ Loaded optimized parameters from {pickle_file}")
+                        tprint(f"✅ Loaded optimized parameters from {pickle_file}")
                         return parameters
 
-            tprint_warning("⚠️ No optimized parameters found, using defaults")
+            tprint("⚠️ No optimized parameters found, using defaults")
             return self._get_default_parameters()
 
         except Exception as e:
-            tprint_warning(f"⚠️ Failed to load optimized parameters: {e}")
+            tprint(f"⚠️ Failed to load optimized parameters: {e}")
             self.logger.warning(f"⚠️ Failed to load optimized parameters: {e}")
             return self._get_default_parameters()
 
@@ -1027,7 +1027,7 @@ class UnifiedModelLoader:
         Returns:
             Dictionary containing all loaded models and parameters
         """
-        tprint_info("🚀 Loading all trained models and optimized parameters...")
+        tprint("🚀 Loading all trained models and optimized parameters...")
 
         result = {
             'regime_base_models': await self.load_regime_base_models(symbol, exchange, regime_timeframe, direction),
@@ -1039,7 +1039,7 @@ class UnifiedModelLoader:
             'optimized_parameters': await self.load_optimized_parameters(symbol, exchange, analyst_timeframe, direction)
         }
 
-        tprint_success("✅ All models and parameters loaded successfully")
+        tprint("✅ All models and parameters loaded successfully")
         return result
 
     def get_model(self, model_id: str) -> Optional[Any]:

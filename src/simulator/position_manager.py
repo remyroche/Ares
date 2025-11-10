@@ -11,6 +11,7 @@ from datetime import datetime
 import uuid
 import logging
 
+from src.printing import tprint
 from .config import SimulatorConfig
 
 
@@ -47,13 +48,15 @@ class PositionManager:
     def __init__(self, config: SimulatorConfig):
         """
         Initialize position manager.
-        
+
         Args:
             config: Simulator configuration
         """
+        tprint(f"[POS_MGR] __init__: Initializing position manager")
         self.config = config
         self.positions: Dict[str, List[Position]] = {}  # {symbol: [positions]}
         self.logger = logging.getLogger(__name__)
+        tprint(f"[POS_MGR] __init__ -> initialized (allow_multiple={config.allow_multiple_positions}, allow_pyramiding={config.allow_pyramiding}, max_per_symbol={config.max_positions_per_symbol})")
     
     def add_position(
         self,
@@ -65,22 +68,26 @@ class PositionManager:
     ) -> Position:
         """
         Add or extend a position.
-        
+
         Args:
             symbol: Trading symbol
             direction: Position direction ("long" or "short")
             quantity: Position quantity (positive)
             price: Entry price
             metadata: Additional position metadata
-            
+
         Returns:
             Position object
         """
+        tprint(f"[POS_MGR] add_position: symbol={symbol}, direction={direction}, qty={quantity}, price={price}")
+
         if quantity <= 0:
+            tprint(f"[POS_MGR] add_position -> ERROR: quantity must be positive ({quantity})", color="red")
             raise ValueError("Quantity must be positive")
-        
+
         direction_lower = direction.lower()
         if direction_lower not in ["long", "short"]:
+            tprint(f"[POS_MGR] add_position -> ERROR: invalid direction {direction}", color="red")
             raise ValueError(f"Invalid direction: {direction}")
         
         # Check if we can add more positions for this symbol
@@ -114,13 +121,15 @@ class PositionManager:
             same_dir_pos.quantity = total_qty
             same_dir_pos.avg_entry_price = total_cost / total_qty
             same_dir_pos.metadata.update(metadata or {})
-            
+
+            tprint(f"[POS_MGR] add_position -> PYRAMIDED: {symbol} {direction_lower}, qty={quantity:.6f} @ {price:.6f}, total_qty={total_qty:.6f}, avg_price={same_dir_pos.avg_entry_price:.6f}", color="green")
+
             self.logger.debug(
                 f"Pyramided {symbol} {direction_lower}: "
                 f"qty={quantity:.6f} price={price:.6f}, "
                 f"total_qty={total_qty:.6f} avg_price={same_dir_pos.avg_entry_price:.6f}"
             )
-            
+
             return same_dir_pos
         else:
             # Create new position
@@ -132,12 +141,14 @@ class PositionManager:
                 metadata=metadata or {}
             )
             existing_positions.append(position)
-            
+
+            tprint(f"[POS_MGR] add_position -> OPENED: {symbol} {direction_lower}, qty={quantity:.6f} @ {price:.6f}, position_id={position.id}", color="green")
+
             self.logger.debug(
                 f"Opened {symbol} {direction_lower}: "
                 f"qty={quantity:.6f} price={price:.6f}"
             )
-            
+
             return position
     
     def reduce_position(
@@ -148,18 +159,21 @@ class PositionManager:
     ) -> List[Position]:
         """
         Partially close position(s).
-        
+
         Args:
             symbol: Trading symbol
             quantity: Quantity to close (positive)
             price: Closing price
-            
+
         Returns:
             List of updated Position objects
         """
+        tprint(f"[POS_MGR] reduce_position: symbol={symbol}, qty={quantity}, price={price}")
+
         if symbol not in self.positions:
+            tprint(f"[POS_MGR] reduce_position -> ERROR: No positions found for {symbol}", color="red")
             raise ValueError(f"No positions found for {symbol}")
-        
+
         remaining_qty = quantity
         updated_positions = []
         
@@ -189,11 +203,13 @@ class PositionManager:
             updated_positions.append(position)
         
         if remaining_qty > 0:
+            tprint(f"[POS_MGR] reduce_position: Could not close {remaining_qty:.6f} of {symbol}, insufficient position size", color="yellow")
             self.logger.warning(
                 f"Could not close {remaining_qty:.6f} of {symbol}, "
                 f"insufficient position size"
             )
-        
+
+        tprint(f"[POS_MGR] reduce_position -> reduced {len(updated_positions)} positions for {symbol}")
         return updated_positions
     
     def close_position(
@@ -202,41 +218,48 @@ class PositionManager:
     ) -> Optional[Position]:
         """
         Close a specific position by ID.
-        
+
         Args:
             position_id: Position ID to close
-            
+
         Returns:
             Closed Position object or None if not found
         """
+        tprint(f"[POS_MGR] close_position: position_id={position_id}")
+
         for symbol, positions in self.positions.items():
             for pos in positions:
                 if pos.id == position_id:
                     self.positions[symbol].remove(pos)
+                    tprint(f"[POS_MGR] close_position -> CLOSED: position {position_id} for {symbol}, qty={pos.quantity}, price={pos.avg_entry_price:.6f}", color="green")
                     self.logger.debug(f"Closed position {position_id} for {symbol}")
                     return pos
-        
+
+        tprint(f"[POS_MGR] close_position -> NOT FOUND: position {position_id}", color="yellow")
         return None
     
     def close_all_positions(self, symbol: Optional[str] = None) -> List[Position]:
         """
         Close all positions, optionally filtered by symbol.
-        
+
         Args:
             symbol: If provided, only close positions for this symbol
-            
+
         Returns:
             List of closed Position objects
         """
+        tprint(f"[POS_MGR] close_all_positions: symbol={symbol or 'ALL'}")
+
         closed = []
-        
+
         symbols_to_close = [symbol] if symbol else list(self.positions.keys())
-        
+
         for sym in symbols_to_close:
             if sym in self.positions:
                 closed.extend(self.positions[sym])
                 self.positions[sym].clear()
-        
+
+        tprint(f"[POS_MGR] close_all_positions -> CLOSED: {len(closed)} positions", color="green")
         return closed
     
     def get_positions(
@@ -247,27 +270,30 @@ class PositionManager:
     ) -> List[Position]:
         """
         Get positions matching criteria.
-        
+
         Args:
             symbol: Filter by symbol (None = all)
             direction: Filter by direction ("long" or "short", None = all)
             status: Filter by status ("open", "closed", "all")
-            
+
         Returns:
             List of Position objects
         """
+        tprint(f"[POS_MGR] get_positions: symbol={symbol or 'ALL'}, direction={direction or 'ALL'}, status={status}")
+
         all_positions = []
-        
+
         for sym, positions in self.positions.items():
             if symbol and sym != symbol:
                 continue
-            
+
             for pos in positions:
                 if direction and pos.direction != direction.lower():
                     continue
-                
+
                 all_positions.append(pos)
-        
+
+        tprint(f"[POS_MGR] get_positions -> found {len(all_positions)} positions")
         return all_positions
     
     def get_position_by_id(self, position_id: str) -> Optional[Position]:
@@ -284,33 +310,37 @@ class PositionManager:
     ) -> Dict[str, float]:
         """
         Calculate unrealized PnL for all positions.
-        
+
         Args:
             current_prices: Current market prices {symbol: price}
-            
+
         Returns:
             Dict with total unrealized PnL and per-symbol breakdown
         """
+        tprint(f"[POS_MGR] calculate_unrealized_pnl: prices for {len(current_prices)} symbols")
+
         total_pnl = 0.0
         symbol_pnl = {}
-        
+
         for symbol, positions in self.positions.items():
             current_price = current_prices.get(symbol, 0.0)
             if current_price == 0:
+                tprint(f"[POS_MGR] calculate_unrealized_pnl: No price for {symbol}, skipping", color="yellow")
                 continue
-            
+
             symbol_total = 0.0
             for pos in positions:
                 if pos.direction == "long":
                     pnl = (current_price - pos.avg_entry_price) * pos.quantity
                 else:  # short
                     pnl = (pos.avg_entry_price - current_price) * pos.quantity
-                
+
                 symbol_total += pnl
-            
+
             symbol_pnl[symbol] = symbol_total
             total_pnl += symbol_total
-        
+
+        tprint(f"[POS_MGR] calculate_unrealized_pnl -> total_pnl={total_pnl:.2f}, symbols={len(symbol_pnl)}")
         return {
             "total": total_pnl,
             "by_symbol": symbol_pnl
@@ -345,16 +375,18 @@ class PositionManager:
     
     def get_position_summary(self) -> Dict[str, Any]:
         """Get summary of all positions."""
+        tprint(f"[POS_MGR] get_position_summary: Generating position summary")
+
         summary = {
             "total_positions": 0,
             "total_notional": 0.0,
             "by_symbol": {}
         }
-        
+
         for symbol, positions in self.positions.items():
             symbol_qty = sum(abs(p.quantity) for p in positions)
             symbol_notional = sum(p.notional_value for p in positions)
-            
+
             summary["by_symbol"][symbol] = {
                 "count": len(positions),
                 "total_quantity": symbol_qty,
@@ -369,8 +401,9 @@ class PositionManager:
                     for p in positions
                 ]
             }
-            
+
             summary["total_positions"] += len(positions)
             summary["total_notional"] += symbol_notional
-        
+
+        tprint(f"[POS_MGR] get_position_summary -> total_positions={summary['total_positions']}, total_notional={summary['total_notional']:.2f}, symbols={len(summary['by_symbol'])}")
         return summary

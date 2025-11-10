@@ -1203,19 +1203,34 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                         market_data, labeling_result, vol_config
                     )
                     tprint(f"🐛 DEBUG: Created labeled DataFrame - shape={labeled_data_df.shape}, columns={list(labeled_data_df.columns)}", "INFO")
-                    
+
+                    # Log labeled data creation with comprehensive preview
+                    from src.utils.tprint import tprint_data_preview
+                    tprint("=" * 80, "INFO")
+                    tprint("🏷️ LABELED DATA CREATED: Target DataFrame with Opportunities", "INFO")
+                    tprint("=" * 80, "INFO")
+                    tprint_data_preview(
+                        labeled_data_df,
+                        name="Labeled Data with Targets",
+                        max_rows=5,
+                        max_cols=10,
+                        show_dtypes=True,
+                        show_shape=True
+                    )
+
                     # Check if target_long and target_short columns exist and show statistics
                     if 'target_long' in labeled_data_df.columns and 'target_short' in labeled_data_df.columns:
                         long_opportunities = (labeled_data_df['target_long'] > 0).sum()
                         short_opportunities = (labeled_data_df['target_short'] > 0).sum()
                         tprint(f"📊 Target columns found in DataFrame:", "INFO")
-                        tprint(f"   • target_long: {long_opportunities} opportunities", "INFO")
-                        tprint(f"   • target_short: {short_opportunities} opportunities", "INFO")
+                        tprint(f"   • target_long: {long_opportunities} opportunities ({long_opportunities/len(labeled_data_df)*100:.2f}%)", "INFO")
+                        tprint(f"   • target_short: {short_opportunities} opportunities ({short_opportunities/len(labeled_data_df)*100:.2f}%)", "INFO")
                         tprint(f"   • DataFrame shape: {labeled_data_df.shape}", "INFO")
                         tprint(f"   • Saving to HDF5 with data_category='features'", "INFO")
                     else:
                         tprint("⚠️ Expected target columns (target_long, target_short) not found in DataFrame", "WARNING")
                         tprint(f"   • Available columns: {list(labeled_data_df.columns)}", "INFO")
+                    tprint("=" * 80, "INFO")
                     
                     # Save labeled data using BaseStep artifact manager with compression
                     tprint("💾 Saving labeled data with new simplified target structure (target_long, target_short)...", "INFO")

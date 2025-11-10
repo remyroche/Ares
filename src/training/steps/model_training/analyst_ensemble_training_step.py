@@ -165,8 +165,31 @@ class AnalystEnsembleTrainingStep(BaseStep):
             disagreement_features = self._generate_disagreement_features(base_predictions)
             tprint(f"✅ Generated disagreement features: {disagreement_features.shape}", "SUCCESS")
 
+            # Log disagreement feature generation with comprehensive preview
+            from src.utils.tprint import tprint_data_preview
+            tprint("=" * 80, "INFO")
+            tprint("🎲 DISAGREEMENT FEATURES: Generated from Base Model Outputs", "INFO")
+            tprint("=" * 80, "INFO")
+            tprint_data_preview(
+                disagreement_features,
+                name="Disagreement Features",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+            tprint("=" * 80, "INFO")
+
             # Combine all features
             tprint("🔗 Combining all features for ensemble training...", "INFO")
+
+            # Track feature counts before combination
+            original_feature_count = features_data.shape[1]
+            regime_feature_count = regime_probs.shape[1] if regime_probs is not None else 0
+            base_pred_count = base_predictions.shape[1]
+            base_conf_count = base_confidence.shape[1] if base_confidence is not None else 0
+            disagreement_count = disagreement_features.shape[1] if not disagreement_features.empty else 0
+
             ensemble_features = self._combine_features(
                 features_data,
                 regime_probs,
@@ -175,6 +198,26 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 disagreement_features
             )
             tprint(f"✅ Combined features shape: {ensemble_features.shape}", "SUCCESS")
+
+            # Log feature combination with comprehensive tracking
+            tprint("=" * 80, "INFO")
+            tprint("🔗 FEATURE COMBINATION: Merging All Feature Sets", "INFO")
+            tprint("=" * 80, "INFO")
+            tprint(f"   Original features: {original_feature_count}", "INFO")
+            tprint(f"   Regime features: {regime_feature_count}", "INFO")
+            tprint(f"   Base predictions: {base_pred_count}", "INFO")
+            tprint(f"   Base confidence: {base_conf_count}", "INFO")
+            tprint(f"   Disagreement features: {disagreement_count}", "INFO")
+            tprint(f"   Total combined: {ensemble_features.shape[1]}", "INFO")
+            tprint_data_preview(
+                ensemble_features,
+                name="Combined Ensemble Features",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+            tprint("=" * 80, "INFO")
 
             # Train ensemble model
             tprint("🏋️ Training analyst ensemble model...", "INFO")
@@ -263,6 +306,22 @@ class AnalystEnsembleTrainingStep(BaseStep):
             # Since we only have predictions, we'll compute disagreement metrics directly
             predictions_array = base_predictions[model_cols].values
 
+            # Log base predictions before computing disagreement
+            from src.utils.tprint import tprint_data_preview
+            tprint("=" * 80, "INFO")
+            tprint("📊 COMPUTING DISAGREEMENT: Base Model Predictions", "INFO")
+            tprint("=" * 80, "INFO")
+            tprint_data_preview(
+                base_predictions[model_cols],
+                name="Base Model Predictions",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+            tprint(f"📊 Using {len(model_cols)} model prediction columns from {len(model_predictions)} models", "INFO")
+            tprint("=" * 80, "INFO")
+
             # Compute disagreement metrics
             disagreement_df = pd.DataFrame(index=base_predictions.index)
 
@@ -285,6 +344,24 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 disagreement_df['disagreement_cv'] = np.where(np.isfinite(cv), cv, 0)
 
             tprint(f"✅ Generated {len(disagreement_df.columns)} disagreement features", "SUCCESS")
+
+            # Log computed disagreement features
+            tprint("=" * 80, "INFO")
+            tprint("📊 DISAGREEMENT FEATURES COMPUTED: Statistical Metrics", "INFO")
+            tprint("=" * 80, "INFO")
+            tprint_data_preview(
+                disagreement_df,
+                name="Disagreement Features",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+            tprint(f"📊 Disagreement statistics:", "INFO")
+            tprint(f"   Avg variance: {disagreement_df['disagreement_variance'].mean():.6f}", "INFO")
+            tprint(f"   Avg std: {disagreement_df['disagreement_std'].mean():.6f}", "INFO")
+            tprint(f"   Avg range: {disagreement_df['disagreement_range'].mean():.6f}", "INFO")
+            tprint("=" * 80, "INFO")
 
             return disagreement_df
 

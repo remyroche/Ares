@@ -535,6 +535,21 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"   ├─ shape: {metadata['shape']}", color="cyan")
             tprint(f"   └─ timestamp: {metadata['timestamp']}", color="cyan")
 
+            # Log ensemble predictions before saving with comprehensive preview
+            from src.utils.tprint import tprint_data_preview
+            tprint("=" * 80, "INFO")
+            tprint(f"💾 ARTIFACT SAVING: {artifact_name}", "INFO")
+            tprint("=" * 80, "INFO")
+            tprint_data_preview(
+                predictions,
+                name="Regime Ensemble Predictions",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+            tprint("=" * 80, "INFO")
+
             # Save to HDF5 via BaseStep
             tprint("🚀 [REGIME_ENSEMBLE] Calling base_step._save_artifact()...", color="cyan", bold=True)
             tprint(f"   ├─ data type: {type(predictions).__name__}", color="cyan")
@@ -630,7 +645,22 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
 
             if regime_models_preds is not None:
                 tprint(f"✅ [REGIME_ENSEMBLE] Using regime_models predictions as features: {regime_models_preds.shape}", color="green")
-                
+
+                # Log loaded base model predictions with comprehensive preview
+                from src.utils.tprint import tprint_data_preview
+                tprint("=" * 80, "INFO")
+                tprint("📥 DATA LOADED: Base Regime Model Predictions", "INFO")
+                tprint("=" * 80, "INFO")
+                tprint_data_preview(
+                    regime_models_preds,
+                    name="Base Regime Model Predictions",
+                    max_rows=5,
+                    max_cols=10,
+                    show_dtypes=True,
+                    show_shape=True
+                )
+                tprint("=" * 80, "INFO")
+
                 # Extract base model names from prediction columns
                 base_model_names = set()
                 for col in regime_models_preds.columns:
@@ -639,7 +669,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                         base_model_names.add(model_name)
                 base_model_names = sorted(list(base_model_names))
                 tprint(f"📊 [REGIME_ENSEMBLE] Detected {len(base_model_names)} base models: {base_model_names}", color="blue")
-                
+
                 # Store for later use in reporting
                 pipeline_state['detected_base_models'] = base_model_names
 

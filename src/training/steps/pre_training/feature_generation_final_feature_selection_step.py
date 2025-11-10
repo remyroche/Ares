@@ -250,13 +250,26 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             targets = self._get_artifact('labeling_metadata')
             tprint_info(f"✅ Loaded in {time.time()-t0:.2f}s")
-            
-            # Debug: Check what columns are in labeled_df
+
+            # Log loaded data with comprehensive preview
+            from src.utils.tprint import tprint_data_preview
             if labeled_df is not None:
+                tprint_info("=" * 80)
+                tprint_info("📥 DATA LOADED: Labeled Data from Labeling Integration")
+                tprint_info("=" * 80)
+                tprint_data_preview(
+                    labeled_df,
+                    name="Labeled Data",
+                    max_rows=5,
+                    max_cols=10,
+                    show_dtypes=True,
+                    show_shape=True
+                )
                 tprint_info(f"🔍 DEBUG: labeled_df shape: {labeled_df.shape}")
                 tprint_info(f"🔍 DEBUG: labeled_df columns: {list(labeled_df.columns)}")
                 target_cols_present = [col for col in labeled_df.columns if 'target' in col.lower()]
                 tprint_info(f"🔍 DEBUG: Target columns in labeled_df: {target_cols_present}")
+                tprint_info("=" * 80)
 
             if labeled_df is None or targets is None:
                 raise ValueError("Required artifacts 'labeled_data' and 'labeling_metadata' not found")
@@ -272,6 +285,20 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_info("⏱️ [3/10] Combining features...")
             combined_features_df = self._combine_features(features_data, labeled_df)
             tprint_info(f"✅ Combined {combined_features_df.shape} in {time.time()-t0:.2f}s")
+
+            # Log combined features with comprehensive preview
+            tprint_info("=" * 80)
+            tprint_info("🔗 DATA MODIFICATION: Combined All Features")
+            tprint_info("=" * 80)
+            tprint_data_preview(
+                combined_features_df,
+                name="Combined Features for Selection",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+            tprint_info("=" * 80)
 
             if combined_features_df.empty:
                 raise ValueError("No features available for final selection")
@@ -1636,6 +1663,26 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     selected_data = combined_features_df[available_features].copy()
                     artifacts[dataframe_name] = selected_data
                     tprint_info(f"✅ Created {dataframe_name} with {len(available_features)} features and {len(selected_data)} rows")
+
+                    # Log artifact creation with comprehensive preview
+                    tprint_info("=" * 80)
+                    tprint_info(f"💾 ARTIFACT CREATED: {dataframe_name}")
+                    tprint_info("=" * 80)
+                    tprint_data_preview(
+                        selected_data,
+                        name=f"Selected Feature Set ({size} features)",
+                        max_rows=5,
+                        max_cols=10,
+                        show_dtypes=True,
+                        show_shape=True
+                    )
+                    from src.utils.tprint import tprint_feature_counts
+                    tprint_feature_counts(
+                        before_count=len(combined_features_df.columns),
+                        after_count=len(available_features),
+                        step_name=f"Final Feature Selection ({size} features)"
+                    )
+                    tprint_info("=" * 80)
                 else:
                     tprint_warning(f"⚠️ No features from {set_name} found in combined_features_df")
                 

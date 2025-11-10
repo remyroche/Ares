@@ -18,6 +18,7 @@ import numpy as np
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
+from src.feature_generation.categories.ensemble_disagreement import calculate_ensemble_disagreement_features
 
 logger = logging.getLogger(__name__)
 
@@ -235,10 +236,6 @@ class AnalystEnsembleTrainingStep(BaseStep):
             DataFrame with disagreement features
         """
         try:
-            from src.training.steps.market_analysis.components.ensemble_meta_features import (
-                EnsembleMetaFeaturesGenerator
-            )
-
             # Extract model columns (assuming format: model_name_prob or model_name_pred)
             model_cols = [col for col in base_predictions.columns if any(
                 suffix in col for suffix in ['_prob', '_pred', '_confidence']
@@ -248,41 +245,15 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 tprint("⚠️ No model prediction columns found, using all columns", "WARNING")
                 model_cols = list(base_predictions.columns)
 
-            # Group by model name
-            model_predictions = {}
-            for col in model_cols:
-                # Extract model name (before _prob, _pred, etc.)
-                model_name = col.split('_prob')[0].split('_pred')[0].split('_confidence')[0]
-                if model_name not in model_predictions:
-                    model_predictions[model_name] = []
-                model_predictions[model_name].append(col)
+            tprint(f"📊 Calculating disagreement features from {len(model_cols)} model prediction columns", "INFO")
 
-            tprint(f"📊 Found {len(model_predictions)} base models: {list(model_predictions.keys())}", "INFO")
-
-            # Create pseudo-models for meta-feature generation
-            # Since we only have predictions, we'll compute disagreement metrics directly
-            predictions_array = base_predictions[model_cols].values
-
-            # Compute disagreement metrics
-            disagreement_df = pd.DataFrame(index=base_predictions.index)
-
-            # Variance across models
-            disagreement_df['disagreement_variance'] = np.var(predictions_array, axis=1)
-
-            # Standard deviation
-            disagreement_df['disagreement_std'] = np.std(predictions_array, axis=1)
-
-            # Range (max - min)
-            disagreement_df['disagreement_range'] = np.max(predictions_array, axis=1) - np.min(predictions_array, axis=1)
-
-            # Mean absolute deviation from mean
-            mean_pred = np.mean(predictions_array, axis=1, keepdims=True)
-            disagreement_df['disagreement_mad'] = np.mean(np.abs(predictions_array - mean_pred), axis=1)
-
-            # Coefficient of variation
-            with np.errstate(divide='ignore', invalid='ignore'):
-                cv = disagreement_df['disagreement_std'] / mean_pred.flatten()
-                disagreement_df['disagreement_cv'] = np.where(np.isfinite(cv), cv, 0)
+            # Use centralized disagreement feature calculation
+            disagreement_df = calculate_ensemble_disagreement_features(
+                predictions=base_predictions[model_cols],
+                feature_prefix="disagreement",
+                return_dataframe=True,
+                index=base_predictions.index
+            )
 
             tprint(f"✅ Generated {len(disagreement_df.columns)} disagreement features", "SUCCESS")
 

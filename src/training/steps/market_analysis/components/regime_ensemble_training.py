@@ -90,6 +90,7 @@ from .regime_artifact_schema import (
     RegimeModelsArtifact, RegimeEnsembleArtifact, RegimeArtifactExtractor
 )
 from .ensemble_meta_features import EnsembleMetaFeaturesGenerator, generate_ensemble_meta_features
+from src.feature_generation.categories.ensemble_disagreement import calculate_ensemble_disagreement_features
 
 # Import centralized configuration system
 try:
@@ -400,16 +401,17 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         """
         Calculate disagreement features from base model predictions.
 
-        Only uses Coefficient of Variation (CV) per regime as the disagreement metric.
+        Uses centralized disagreement feature calculation for consistency
+        across all ensemble models (regime, analyst, tactician).
 
         Args:
             predictions: DataFrame with base model predictions
 
         Returns:
-            DataFrame with CV disagreement features per regime
+            DataFrame with disagreement features per regime
         """
         try:
-            tprint("🔢 [REGIME_ENSEMBLE] Calculating disagreement features (CV only per regime)", color="cyan")
+            tprint("🔢 [REGIME_ENSEMBLE] Calculating disagreement features per regime", color="cyan")
 
             disagreement_features = pd.DataFrame(index=predictions.index)
 
@@ -423,19 +425,26 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                         regime_groups[regime_num] = []
                     regime_groups[regime_num].append(col)
 
-            # Calculate CV (only) for each regime
+            # Calculate disagreement features for each regime using centralized implementation
             for regime_num, cols in regime_groups.items():
                 if len(cols) < 2:
                     continue
 
                 regime_preds = predictions[cols]
 
-                # Coefficient of variation (normalized diversity) - ONLY disagreement metric
-                std_pred = regime_preds.std(axis=1)
-                mean_pred = regime_preds.mean(axis=1)
-                disagreement_features[f'regime_{regime_num}_cv'] = std_pred / (mean_pred + 1e-8)
+                # Use centralized disagreement feature calculation
+                regime_disagreement = calculate_ensemble_disagreement_features(
+                    predictions=regime_preds,
+                    feature_prefix=f'regime_{regime_num}',
+                    return_dataframe=True,
+                    index=predictions.index
+                )
 
-            tprint(f"✅ [REGIME_ENSEMBLE] Calculated {len(disagreement_features.columns)} disagreement features (CV only)", color="green")
+                # Add regime-specific disagreement features
+                for col in regime_disagreement.columns:
+                    disagreement_features[col] = regime_disagreement[col]
+
+            tprint(f"✅ [REGIME_ENSEMBLE] Calculated {len(disagreement_features.columns)} disagreement features", color="green")
 
             return disagreement_features
 

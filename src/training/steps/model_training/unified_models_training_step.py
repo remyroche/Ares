@@ -26,7 +26,7 @@ from src.training.steps.model_training.hpo_config import (
 )
 
 # Import disagreement features calculator
-from src.feature_engineering_roadmap.disagreement_meta_features import DisagreementMetaFeatures
+from src.feature_generation.categories.ensemble_disagreement import calculate_ensemble_disagreement_features
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
@@ -2443,14 +2443,14 @@ class UnifiedModelsTrainingStep(BaseStep):
                     raise ValueError(error_msg)
 
                 tprint_info(f"   ↪ Retrieved regime_ensemble_predictions from HDF5: shape={regime_features.shape}, columns={len(regime_features.columns)}")
-                    # DEBUG: Log regime features before adding
-                    tprint_info("=" * 80)
-                    tprint_info("🔍 [DEBUG] REGIME FEATURES ANALYSIS")
-                    tprint_info("=" * 80)
-                    tprint_info(f"🔍 [DEBUG] Regime features shape: {regime_features.shape}")
-                    tprint_info(f"🔍 [DEBUG] Regime features columns: {list(regime_features.columns)}")
-                    tprint_info(f"🔍 [DEBUG] Regime features count: {len(regime_features.columns)}")
-                    tprint_info("=" * 80)
+                # DEBUG: Log regime features before adding
+                tprint_info("=" * 80)
+                tprint_info("🔍 [DEBUG] REGIME FEATURES ANALYSIS")
+                tprint_info("=" * 80)
+                tprint_info(f"🔍 [DEBUG] Regime features shape: {regime_features.shape}")
+                tprint_info(f"🔍 [DEBUG] Regime features columns: {list(regime_features.columns)}")
+                tprint_info(f"🔍 [DEBUG] Regime features count: {len(regime_features.columns)}")
+                tprint_info("=" * 80)
                 tprint_success(f"✅ Loaded regime ensemble predictions from HDF5: {regime_features.shape}")
 
                 # Resample regime features if needed to match training data (should already be 15m)
@@ -2553,120 +2553,42 @@ class UnifiedModelsTrainingStep(BaseStep):
                 try:
                     tprint_info("🔍 Calculating disagreement meta-features from base model outputs...")
 
-                    # Initialize disagreement features calculator
-                    disagreement_calc = DisagreementMetaFeatures(logger=self.logger)
+                    # Extract model output columns (predictions, probabilities, confidences)
+                    model_cols = [col for col in base_outputs_for_stats.columns if any(
+                        suffix in col.lower() for suffix in ['_prediction', '_pred', '_prob', '_probability', '_confidence', '_conf']
+                    )]
 
-                    # Prepare model outputs as dict for disagreement calculator
-                    # Assume columns are named like: model1_prediction, model2_prediction, etc.
-                    # or model1_prob_0, model1_prob_1, model2_prob_0, model2_prob_1, etc.
+                    if not model_cols:
+                        tprint_warning("⚠️ No model output columns found, using all columns for disagreement features")
+                        model_cols = list(base_outputs_for_stats.columns)
 
-                    model_predictions = {}
-                    model_probabilities = {}
-                    model_confidences = {}
+                    tprint_info(f"   ↪ Found {len(model_cols)} model output columns")
 
-                    # Parse column names to identify model outputs
-                    for col in base_outputs_for_stats.columns:
-                        col_lower = col.lower()
+                    # Use centralized disagreement feature calculation
+                    meta_features = calculate_ensemble_disagreement_features(
+                        predictions=base_outputs_for_stats[model_cols],
+                        feature_prefix="disagreement",
+                        return_dataframe=True,
+                        index=base_outputs_for_stats.index
+                    )
 
-                        # Extract model predictions (columns ending with _prediction or _pred)
-                        if '_prediction' in col_lower or '_pred' in col_lower:
-                            model_name = col.split('_prediction')[0].split('_pred')[0]
-                            model_predictions[model_name] = base_outputs_for_stats[col].values
+                    # DEBUG: Log disagreement features before adding
+                    tprint_info("=" * 80)
+                    tprint_info("🔍 [DEBUG] DISAGREEMENT FEATURES ANALYSIS")
+                    tprint_info("=" * 80)
+                    tprint_info(f"🔍 [DEBUG] Meta features shape: {meta_features.shape}")
+                    tprint_info(f"🔍 [DEBUG] Meta features columns: {list(meta_features.columns)}")
+                    tprint_info(f"🔍 [DEBUG] Meta features count: {len(meta_features.columns)}")
+                    tprint_info("=" * 80)
 
-                        # Extract model probabilities (columns with _prob or _probability)
-                        elif '_prob' in col_lower or '_probability' in col_lower:
-                            # Group multi-class probabilities by model
-                            parts = col.split('_')
-                            for i, part in enumerate(parts):
-                                if 'prob' in part.lower():
-                                    model_name = '_'.join(parts[:i])
-                                    if model_name not in model_probabilities:
-                                        model_probabilities[model_name] = []
-                                    model_probabilities[model_name].append(base_outputs_for_stats[col].values)
-                                    break
+                    tprint_success(f"✅ Calculated {len(meta_features.columns)} disagreement meta-features:")
+                    tprint_info(f"   Feature columns: {list(meta_features.columns)}")
 
-                        # Extract model confidence scores
-                        elif '_confidence' in col_lower or '_conf' in col_lower:
-                            model_name = col.split('_confidence')[0].split('_conf')[0]
-                            model_confidences[model_name] = base_outputs_for_stats[col].values
-
-                    # Convert probability lists to arrays
-                    for model_name in model_probabilities:
-                        if isinstance(model_probabilities[model_name], list):
-                            model_probabilities[model_name] = np.column_stack(model_probabilities[model_name])
-
-                    tprint_info(f"   ↪ Parsed {len(model_predictions)} prediction outputs")
-                    tprint_info(f"   ↪ Parsed {len(model_probabilities)} probability outputs")
-                    tprint_info(f"   ↪ Parsed {len(model_confidences)} confidence outputs")
-
-                    # Calculate disagreement features
-                    if model_predictions or model_probabilities:
-                        # If we only have predictions, create dummy probabilities
-                        if not model_probabilities and model_predictions:
-                            tprint_warning("⚠️ No probabilities found, using predictions only for disagreement features")
-                            # Convert predictions to simple binary probabilities
-                            for model_name, preds in model_predictions.items():
-                                probs = np.column_stack([
-                                    np.where(preds > 0, 0, 1),  # Prob of class 0 (negative)
-                                    np.where(preds > 0, 1, 0)   # Prob of class 1 (positive)
-                                ])
-                                model_probabilities[model_name] = probs
-
-                        disagreement_features_dict = disagreement_calc.calculate_all_disagreement_features(
-                            model_predictions=model_predictions,
-                            model_probabilities=model_probabilities,
-                            model_confidences=model_confidences if model_confidences else None
-                        )
-
-                        # Convert dict of Series to DataFrame
-                        all_meta_features = pd.DataFrame(disagreement_features_dict, index=base_outputs_for_stats.index)
-
-                        # Filter to keep only the 6 most important disagreement features
-                        # These are the most informative features for ensemble learning
-                        core_features = [
-                            'prediction_dispersion',    # 1. Variance of predictions across models
-                            'confidence_gap',           # 2. Margin between top predictions
-                            'uncertainty',              # 3. Normalized entropy (uncertainty measure)
-                            'prediction_range',         # 4. Range of predictions (max - min)
-                            'avg_divergence',           # 5. Average pairwise model divergence
-                            'max_confidence'            # 6. Highest confidence among models
-                        ]
-
-                        # Select only core features that exist
-                        available_core_features = [f for f in core_features if f in all_meta_features.columns]
-                        meta_features = all_meta_features[available_core_features].copy()
-
-                        # Normalize prediction_range and avg_divergence by standard deviation
-                        features_to_normalize = ['prediction_range', 'avg_divergence']
-                        # DEBUG: Log disagreement features before adding
-                        tprint_info("=" * 80)
-                        tprint_info("🔍 [DEBUG] DISAGREEMENT FEATURES ANALYSIS")
-                        tprint_info("=" * 80)
-                        tprint_info(f"🔍 [DEBUG] Meta features shape: {meta_features.shape}")
-                        tprint_info(f"🔍 [DEBUG] Meta features columns: {list(meta_features.columns)}")
-                        tprint_info(f"🔍 [DEBUG] Meta features count: {len(meta_features.columns)}")
-                        tprint_info("=" * 80)
-                        for feature in features_to_normalize:
-                            if feature in meta_features.columns:
-                                feature_std = meta_features[feature].std()
-                                if feature_std > 0:
-                                    meta_features[feature] = meta_features[feature] / feature_std
-                                    tprint_info(f"   ↪ Normalized '{feature}' by std={feature_std:.6f}")
-                                else:
-                                    tprint_warning(f"   ⚠️ Cannot normalize '{feature}' (std=0)")
-
-                        tprint_success(f"✅ Calculated {len(meta_features.columns)} core disagreement meta-features:")
-                        tprint_info(f"   Feature columns: {list(meta_features.columns)}")
-
-                        if len(available_core_features) < len(core_features):
-                            missing = set(core_features) - set(available_core_features)
-                            tprint_warning(f"   ⚠️ Missing features: {missing}")
-
-                        # Add these new features to the list
+                    # Add these new features to the list
+                    if not meta_features.empty:
                         additional_features_list.append(meta_features)
                     else:
-                        tprint_warning("⚠️ Could not parse model outputs for disagreement features, creating empty meta-features")
-                        meta_features = pd.DataFrame(index=base_outputs_for_stats.index)
+                        tprint_warning("⚠️ Empty disagreement features DataFrame, skipping")
                         # Don't add empty DataFrame to avoid errors
 
                 except Exception as e:
@@ -2730,36 +2652,36 @@ class UnifiedModelsTrainingStep(BaseStep):
         config: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Execute training based on the specified type."""
-            # DEBUG: Log detailed feature information before training
-            tprint_info("=" * 80)
-            tprint_info("🔍 [DEBUG] FEATURE ANALYSIS BEFORE TRAINING")
-            tprint_info("=" * 80)
-            tprint_info(f"🔍 [DEBUG] Training type: {training_type}")
-            tprint_info(f"🔍 [DEBUG] Training data shape: {training_data.shape}")
-            tprint_info(f"🔍 [DEBUG] Training data columns (first 20): {list(training_data.columns[:20])}")
-            tprint_info(f"🔍 [DEBUG] Training data columns (last 20): {list(training_data.columns[-20:])}")
-            tprint_info(f"🔍 [DEBUG] Total feature count: {len(training_data.columns)}")
-            
-            # Count regime features
-            regime_features = [col for col in training_data.columns if 'regime' in col.lower()]
-            tprint_info(f"🔍 [DEBUG] Regime features count: {len(regime_features)}")
-            tprint_info(f"🔍 [DEBUG] Regime features: {regime_features}")
-            
-            # Count disagreement features
-            disagreement_features = [col for col in training_data.columns if any(term in col.lower() for term in ['dispersion', 'disagreement', 'uncertainty', 'confidence_gap', 'prediction_range'])]
-            tprint_info(f"🔍 [DEBUG] Disagreement features count: {len(disagreement_features)}")
-            tprint_info(f"🔍 [DEBUG] Disagreement features: {disagreement_features}")
-            
-            # Count model-specific features
-            model_specific_features = [col for col in training_data.columns if any(term in col.lower() for term in ['catboost', 'lgbm', 'lightgbm', 'depthwise', 'cnn', 'gru'])]
-            tprint_info(f"🔍 [DEBUG] Model-specific features count: {len(model_specific_features)}")
-            tprint_info(f"🔍 [DEBUG] Model-specific features: {model_specific_features}")
-            
-            # Save feature list for comparison during prediction
-            self._training_features = list(training_data.columns)
-            self._training_feature_count = len(training_data.columns)
-            tprint_info(f"🔍 [DEBUG] Saved training feature list ({len(self._training_features)} features) for prediction comparison")
-            tprint_info("=" * 80)
+        # DEBUG: Log detailed feature information before training
+        tprint_info("=" * 80)
+        tprint_info("🔍 [DEBUG] FEATURE ANALYSIS BEFORE TRAINING")
+        tprint_info("=" * 80)
+        tprint_info(f"🔍 [DEBUG] Training type: {training_type}")
+        tprint_info(f"🔍 [DEBUG] Training data shape: {training_data.shape}")
+        tprint_info(f"🔍 [DEBUG] Training data columns (first 20): {list(training_data.columns[:20])}")
+        tprint_info(f"🔍 [DEBUG] Training data columns (last 20): {list(training_data.columns[-20:])}")
+        tprint_info(f"🔍 [DEBUG] Total feature count: {len(training_data.columns)}")
+
+        # Count regime features
+        regime_features = [col for col in training_data.columns if 'regime' in col.lower()]
+        tprint_info(f"🔍 [DEBUG] Regime features count: {len(regime_features)}")
+        tprint_info(f"🔍 [DEBUG] Regime features: {regime_features}")
+
+        # Count disagreement features
+        disagreement_features = [col for col in training_data.columns if any(term in col.lower() for term in ['dispersion', 'disagreement', 'uncertainty', 'confidence_gap', 'prediction_range'])]
+        tprint_info(f"🔍 [DEBUG] Disagreement features count: {len(disagreement_features)}")
+        tprint_info(f"🔍 [DEBUG] Disagreement features: {disagreement_features}")
+
+        # Count model-specific features
+        model_specific_features = [col for col in training_data.columns if any(term in col.lower() for term in ['catboost', 'lgbm', 'lightgbm', 'depthwise', 'cnn', 'gru'])]
+        tprint_info(f"🔍 [DEBUG] Model-specific features count: {len(model_specific_features)}")
+        tprint_info(f"🔍 [DEBUG] Model-specific features: {model_specific_features}")
+
+        # Save feature list for comparison during prediction
+        self._training_features = list(training_data.columns)
+        self._training_feature_count = len(training_data.columns)
+        tprint_info(f"🔍 [DEBUG] Saved training feature list ({len(self._training_features)} features) for prediction comparison")
+        tprint_info("=" * 80)
         try:
             if training_type == 'analyst_base':
                 # Regime probabilities are already added by _get_additional_model_outputs

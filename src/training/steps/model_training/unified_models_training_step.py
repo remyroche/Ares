@@ -779,28 +779,40 @@ class UnifiedModelsTrainingStep(BaseStep):
             # STEP 1: Remove Zero-Variance Features
             # ========================================================================
             tprint_info("\n🔧 STEP 1: Removing Zero-Variance Features...")
-            
+
             # Calculate variance for each feature
             numeric_cols = training_data.select_dtypes(include=[np.number]).columns
             if len(numeric_cols) == 0:
                 tprint_warning("⚠️ No numeric columns found for variance threshold")
                 return training_data, targets, feature_selection_info
-            
+
             # Calculate variance
             variances = training_data[numeric_cols].var()
             zero_var_features = variances[variances == 0].index.tolist()
-            
+
             if zero_var_features:
                 tprint_warning(f"⚠️ Found {len(zero_var_features)} zero-variance features:")
                 for feature in zero_var_features[:10]:  # Show first 10
                     tprint_info(f"      - {feature}")
                 if len(zero_var_features) > 10:
                     tprint_info(f"      ... and {len(zero_var_features) - 10} more")
-                
+
+                # Track features before removal
+                features_before_removal = len(training_data.columns)
+
                 # Remove zero-variance features
                 training_data = training_data.drop(columns=zero_var_features)
                 feature_selection_info['removed_features']['zero_variance'] = zero_var_features
-                
+
+                # Use tprint_feature_counts for comprehensive tracking
+                from src.utils.tprint import tprint_feature_counts
+                tprint_feature_counts(
+                    before_count=features_before_removal,
+                    after_count=len(training_data.columns),
+                    step_name="Zero-Variance Removal",
+                    filtered_count=len(zero_var_features)
+                )
+
                 tprint_success(f"✅ Removed {len(zero_var_features)} zero-variance features")
             else:
                 tprint_success("✅ No zero-variance features found")
@@ -954,11 +966,31 @@ class UnifiedModelsTrainingStep(BaseStep):
             tprint_info(f"🔍 [DEBUG] Selected features (last 20): {list(training_data_selected.columns[-20:])}")
             tprint_info("=" * 80)
             tprint_info(f"🔍 [DEBUG] Total feature names AFTER selection: {len(training_data_selected.columns)}")
-            
+
+            # Use tprint_feature_counts for comprehensive tracking
+            tprint_feature_counts(
+                before_count=original_shape[1],
+                after_count=final_shape[1],
+                step_name="SelectFromModel Feature Selection"
+            )
+
+            # Log data preview after feature selection
+            tprint_info("=" * 80)
+            tprint_info("🎯 DATA MODIFICATION: After Feature Selection")
+            tprint_info("=" * 80)
+            tprint_data_preview(
+                training_data_selected,
+                name="Selected Features",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+
             tprint_info("=" * 80)
             tprint_success(f"✅ Feature selection complete: {original_shape[1]:,} → {final_shape[1]:,} features")
             tprint_info("=" * 80)
-            
+
             return training_data_selected, targets_selected, feature_selection_info
             
         except Exception as e:
@@ -1828,6 +1860,17 @@ class UnifiedModelsTrainingStep(BaseStep):
 
                 tprint_info("=" * 80)
 
+                # Use tprint_data_preview for comprehensive data visualization
+                from src.utils.tprint import tprint_data_preview
+                tprint_data_preview(
+                    training_data,
+                    name=f"Loaded Training Features ({feature_source_name})",
+                    max_rows=5,
+                    max_cols=10,
+                    show_dtypes=True,
+                    show_shape=True
+                )
+
                 self._log_feature_snapshot(training_data, feature_source_name or 'unknown_source', prefix='📥 Raw load ')
                 tprint_info(
                     f"🧪 Raw feature frame -> shape={training_data.shape}, columns={len(training_data.columns)}, "
@@ -1905,6 +1948,19 @@ class UnifiedModelsTrainingStep(BaseStep):
 
                 if training_data.empty:
                     raise ValueError("All feature columns were removed during cleaning; check upstream artifacts.")
+
+                # Log data modification with comprehensive preview
+                tprint_info("=" * 80)
+                tprint_info("🧹 DATA MODIFICATION: After Cleaning")
+                tprint_info("=" * 80)
+                tprint_data_preview(
+                    training_data,
+                    name="Cleaned Training Features",
+                    max_rows=5,
+                    max_cols=10,
+                    show_dtypes=True,
+                    show_shape=True
+                )
 
                 self._log_feature_snapshot(training_data, feature_source_name or 'unknown_source', prefix='🧹 Cleaned ')
                 tprint_info(
@@ -2105,10 +2161,33 @@ class UnifiedModelsTrainingStep(BaseStep):
                     raise ValueError("Data alignment failed: No common index between features and analyst targets.")
                 if len(common_index) < len(training_data) or len(common_index) < len(analyst_targets):
                     tprint_warning(f"Index mismatch: Aligning {len(training_data)} features and {len(analyst_targets)} analyst targets to {len(common_index)} common rows.")
-                
+
                 training_data = training_data.loc[common_index]
                 analyst_targets = analyst_targets.loc[common_index]
                 tprint_success(f"✅ Aligned features and analyst targets. New shape: {training_data.shape}")
+
+                # Log label addition with comprehensive preview
+                tprint_info("=" * 80)
+                tprint_info("🎯 LABEL ADDITION: Analyst Targets Loaded and Aligned")
+                tprint_info("=" * 80)
+                tprint_data_preview(
+                    analyst_targets.to_frame() if isinstance(analyst_targets, pd.Series) else analyst_targets,
+                    name="Analyst Targets",
+                    max_rows=5,
+                    max_cols=10,
+                    show_dtypes=True,
+                    show_shape=True
+                )
+                # Log target distribution
+                if isinstance(analyst_targets, pd.Series):
+                    unique_values = analyst_targets.unique()
+                    value_counts = analyst_targets.value_counts()
+                    tprint_info(f"📊 Target Distribution:")
+                    tprint_info(f"   Unique values: {len(unique_values)}")
+                    for value, count in value_counts.head(10).items():
+                        pct = (count / len(analyst_targets)) * 100
+                        tprint_info(f"      {value}: {count} ({pct:.2f}%)")
+                tprint_info("=" * 80)
 
             if training_data is not None and tactician_targets is not None:
                 common_index = training_data.index.intersection(tactician_targets.index)
@@ -2449,6 +2528,19 @@ class UnifiedModelsTrainingStep(BaseStep):
                     tprint_info("=" * 80)
                 tprint_success(f"✅ Loaded regime ensemble predictions from HDF5: {regime_features.shape}")
 
+                # Log regime feature addition with comprehensive preview
+                tprint_info("=" * 80)
+                tprint_info("🌍 REGIME FEATURE ADDITION: Loading Regime Probabilities")
+                tprint_info("=" * 80)
+                tprint_data_preview(
+                    regime_features,
+                    name="Regime Ensemble Predictions (Before Resampling)",
+                    max_rows=5,
+                    max_cols=10,
+                    show_dtypes=True,
+                    show_shape=True
+                )
+
                 # Resample regime features if needed to match training data (should already be 15m)
                 if not regime_features.index.equals(training_data.index):
                     tprint_warning(f"Regime features index mismatch. Resampling {len(regime_features)} rows to match {len(training_data)} rows.")
@@ -2457,15 +2549,30 @@ class UnifiedModelsTrainingStep(BaseStep):
                     tprint_info(
                         f"   ↪ Resampled regime features -> shape={regime_features_resampled.shape}, columns={len(regime_features_resampled.columns)}"
                     )
+
+                    # Log after resampling
+                    tprint_info("=" * 80)
+                    tprint_info("🌍 DATA MODIFICATION: Regime Features After Resampling")
+                    tprint_info("=" * 80)
+                    tprint_data_preview(
+                        regime_features_resampled,
+                        name="Regime Features (After Resampling)",
+                        max_rows=5,
+                        max_cols=10,
+                        show_dtypes=True,
+                        show_shape=True
+                    )
+
                     additional_features_list.append(regime_features_resampled)
                     tprint_success("✅ Resampled and added regime ensemble features.")
                 else:
                     tprint_info("   ↪ Regime features already aligned with training index")
                     additional_features_list.append(regime_features)
-                    
+
                     # DEBUG: Log regime features
                     tprint_info(f"🔍 [DEBUG] Regime features shape: {regime_features.shape}")
                     tprint_info(f"🔍 [DEBUG] Regime features columns: {list(regime_features.columns)}")
+                tprint_info("=" * 80)
             except ValueError:
                 # Re-raise ValueError for fast-fail
                 raise

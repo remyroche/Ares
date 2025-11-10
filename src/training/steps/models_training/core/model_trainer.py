@@ -529,15 +529,46 @@ class ModelTrainer(BaseTrainer):
             import lightgbm as lgb
             from sklearn.model_selection import train_test_split
             import os
-            
+            from src.utils.tprint import tprint_data_preview, tprint_info
+
+            # Log model-specific training start
+            tprint_info("=" * 80)
+            tprint_info("🌟 MODEL-SPECIFIC TRAINING: LightGBM")
+            tprint_info("=" * 80)
+            tprint_data_preview(
+                data,
+                name="LightGBM Training Data",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+            tprint_data_preview(
+                targets.to_frame() if isinstance(targets, pd.Series) else targets,
+                name="LightGBM Target Data",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+
             # Get CPU optimizer for threading
             cpu_optimizer = get_m1_cpu_optimizer()
             n_threads = cpu_optimizer.get_optimal_thread_count() if cpu_optimizer else (os.cpu_count() or 4)
-            
+
+            tprint_info(f"🔧 LightGBM Configuration:")
+            tprint_info(f"   CPU Threads: {n_threads}")
+            tprint_info(f"   Training samples: {len(data)}")
+            tprint_info(f"   Features: {len(data.columns)}")
+
             # Split data for validation (required for early stopping)
             X_train, X_val, y_train, y_val = train_test_split(
                 data, targets, test_size=0.2, random_state=42
             )
+
+            tprint_info(f"   Train split: {len(X_train)} samples")
+            tprint_info(f"   Val split: {len(X_val)} samples")
+            tprint_info("=" * 80)
             
             # Get model parameters from config (if model was passed with params)
             # Otherwise use defaults that will be optimized by HPO
@@ -647,39 +678,73 @@ class ModelTrainer(BaseTrainer):
         """Train CatBoost model with role-specific parameters from YAML config."""
         try:
             import numpy as np
-            
+            from src.utils.tprint import tprint_data_preview, tprint_info, tprint_warning
+
+            # Log model-specific training start
+            tprint_info("=" * 80)
+            tprint_info("🌟 MODEL-SPECIFIC TRAINING: CatBoost")
+            tprint_info("=" * 80)
+            tprint_data_preview(
+                data,
+                name="CatBoost Training Data (Before Filtering)",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+
             # Validate shape alignment (should already be aligned by _train_single_model)
             if len(data) != len(targets):
                 raise ValueError(f"Shape mismatch: data={len(data)}, targets={len(targets)}. This should have been fixed upstream!")
-            
+
             # CRITICAL: Keep ONLY numeric columns for CatBoost (drop datetime, string, categorical)
             original_cols = data.columns.tolist()
             data = data.select_dtypes(include=[np.number]).copy()
-            
+
             if len(data.columns) < len(original_cols):
                 dropped_cols = set(original_cols) - set(data.columns)
                 tprint_warning(f"⚠️ Dropped {len(dropped_cols)} non-numeric columns: {dropped_cols}")
                 tprint_info(f"✅ Using {len(data.columns)} numeric features: {list(data.columns)}")
-            
+
+                # Log after filtering
+                tprint_data_preview(
+                    data,
+                    name="CatBoost Training Data (After Filtering)",
+                    max_rows=5,
+                    max_cols=10,
+                    show_dtypes=True,
+                    show_shape=True
+                )
+
             # Import CatBoost
             from catboost import CatBoostRegressor
             from sklearn.model_selection import train_test_split
             import os
-            
+
             # Get GPU manager for hardware acceleration
             gpu_manager = get_m1_gpu_manager()
             cpu_optimizer = get_m1_cpu_optimizer()
-            
+
             # Determine optimal thread count from hardware
             n_threads = cpu_optimizer.get_optimal_thread_count() if cpu_optimizer else (os.cpu_count() or 4)
-            
+
             # Check GPU availability for CatBoost
             gpu_available = gpu_manager.is_m1 if gpu_manager else False
-            
+
+            tprint_info(f"🔧 CatBoost Configuration:")
+            tprint_info(f"   CPU Threads: {n_threads}")
+            tprint_info(f"   GPU Available: {gpu_available}")
+            tprint_info(f"   Training samples: {len(data)}")
+            tprint_info(f"   Features: {len(data.columns)}")
+
             # Split data for validation (required for early stopping)
             X_train, X_val, y_train, y_val = train_test_split(
                 data, targets, test_size=0.2, random_state=42
             )
+
+            tprint_info(f"   Train split: {len(X_train)} samples")
+            tprint_info(f"   Val split: {len(X_val)} samples")
+            tprint_info("=" * 80)
             
             # Get model parameters from config (if model was passed with params)
             # Otherwise use defaults that will be optimized by HPO
@@ -794,17 +859,39 @@ class ModelTrainer(BaseTrainer):
             # Import DepthwiseCNN model
             from src.models.tcn_regressor import DepthwiseSeparableCNNRegressor
             import numpy as np
-            
+            from src.utils.tprint import tprint_data_preview, tprint_info
+
+            # Log model-specific training start
+            tprint_info("=" * 80)
+            tprint_info("🌟 MODEL-SPECIFIC TRAINING: DepthwiseCNN")
+            tprint_info("=" * 80)
+            tprint_data_preview(
+                data,
+                name="DepthwiseCNN Training Data",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+            tprint_data_preview(
+                targets.to_frame() if isinstance(targets, pd.Series) else targets,
+                name="DepthwiseCNN Target Data",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+
             self.logger.info("🔷 Training DepthwiseSeparableCNN model...")
-            
+
             # Note: We don't need to split here - the model handles validation_split internally
             # Just use the full dataset for training
-            
+
             # Get model parameters from config
             model_params = self.config.custom_params.get('depthwise_cnn', {})
             if isinstance(model_params, dict) and 'params' in model_params:
                 model_params = model_params['params']
-            
+
             # Extract hyperparameters (with defaults)
             filters = model_params.get('filters', 64)
             kernel_size = model_params.get('kernel_size', 3)
@@ -817,11 +904,20 @@ class ModelTrainer(BaseTrainer):
             reduce_lr_patience = model_params.get('reduce_lr_patience', 5)
             use_batch_norm = model_params.get('use_batch_norm', False)
             verbose = model_params.get('verbose', 0)
-            
-            tprint_info(f"🔷 DepthwiseCNN: filters={filters}, kernel_size={kernel_size}, dropout={dropout}")
-            tprint_info(f"📊 DepthwiseCNN training data: {data.shape}")
+
+            tprint_info(f"🔧 DepthwiseCNN Configuration:")
+            tprint_info(f"   Filters: {filters}")
+            tprint_info(f"   Kernel Size: {kernel_size}")
+            tprint_info(f"   Dropout: {dropout}")
+            tprint_info(f"   Learning Rate: {learning_rate}")
+            tprint_info(f"   Batch Size: {batch_size}")
+            tprint_info(f"   Epochs: {epochs}")
+            tprint_info(f"   Validation Split: {validation_split}")
+            tprint_info(f"   Training samples: {len(data)}")
+            tprint_info(f"   Features: {len(data.columns)}")
             tprint_info(f"   Feature columns (first 20): {list(data.columns[:20])}")
             tprint_info(f"   Feature columns (last 10): {list(data.columns[-10:])}")
+            tprint_info("=" * 80)
             
             # Create model
             cnn_model = DepthwiseSeparableCNNRegressor(

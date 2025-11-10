@@ -148,6 +148,9 @@ class ExchangeInterface:
         Args:
             config: Configuration dictionary
         """
+        from src.printing import tprint
+        tprint(f"🚀 ExchangeInterface.__init__: exchange_type={config.get('exchange_type', 'simulated')}, testnet={config.get('testnet', True)}", "INFO")
+
         self.config = config
         self.exchange_type = config.get('exchange_type', 'simulated')
         self.api_key = config.get('api_key')
@@ -195,8 +198,14 @@ class ExchangeInterface:
 
         self.logger = logger.getChild(f'{self.exchange_type}')
 
+        from src.printing import tprint
+        tprint(f"✅ ExchangeInterface.__init__: Initialized with {len(self.ticker_streams)} ticker streams, {len(self.order_book_streams)} order book streams", "INFO")
+
     def _initialize_shared_utilities(self) -> None:
         """Initialize shared utilities for exchange operations."""
+        from src.printing import tprint
+        tprint(f"🔄 ExchangeInterface._initialize_shared_utilities: Starting for exchange_type={self.exchange_type}", "DEBUG")
+
         try:
             # Authentication
             self.auth_manager = AuthenticationManager(self.exchange_type)
@@ -229,11 +238,15 @@ class ExchangeInterface:
             self.audit_logger = AuditLogger(self.exchange_type)
 
         except Exception as e:
+            from src.printing import tprint
+            tprint(f"❌ ExchangeInterface._initialize_shared_utilities: Failed - {e}", "ERROR")
             tprint_error(f"❌ Failed to initialize shared utilities: {e}")
             raise
 
     def _initialize_simulated_data(self) -> None:
         """Initialize simulated exchange data."""
+        from src.printing import tprint
+        tprint("🔧 ExchangeInterface._initialize_simulated_data: Starting initialization", "DEBUG")
         tprint_debug("🔧 Initializing simulated exchange data")
         self.price_feeds['ETHUSDT'] = {
             'price': 3000.0,
@@ -259,9 +272,14 @@ class ExchangeInterface:
     @handle_async_errors(default_return=False)
     async def connect(self, max_retries: int = 5, initial_backoff: float = 1.0) -> bool:
         """Connect to exchange with retry logic and exponential backoff."""
+        from src.printing import tprint
+        tprint(f"🔌 ExchangeInterface.connect: Starting connection to {self.exchange_type}, max_retries={max_retries}, testnet={self.testnet}", "INFO")
+
         try:
             if self.exchange_type == 'simulated':
+                from src.printing import tprint
                 self.connection_status = ConnectionStatus.CONNECTED
+                tprint("✅ ExchangeInterface.connect: Connected to simulated exchange", "SUCCESS")
                 tprint_success("✅ Connected to simulated exchange")
                 return True
 
@@ -319,10 +337,14 @@ class ExchangeInterface:
                     success = await self.dispatcher.initialize()
 
                     if success:
+                        from src.printing import tprint
                         self.connection_status = ConnectionStatus.CONNECTED
+                        tprint(f"✅ ExchangeInterface.connect: Successfully connected and initialized dispatcher for {self.exchange_type}", "SUCCESS")
                         tprint_success(f"✅ Connected to {self.exchange_type}")
                         return True
                     else:
+                        from src.printing import tprint
+                        tprint(f"❌ ExchangeInterface.connect: Failed to initialize dispatcher for {self.exchange_type}", "ERROR")
                         raise Exception(f"Failed to initialize dispatcher for {self.exchange_type}")
 
                 except Exception as e:
@@ -341,13 +363,17 @@ class ExchangeInterface:
                         backoff = min(backoff * 2, 60.0)  # Exponential backoff, max 60s
                     else:
                         # Last attempt failed
+                        from src.printing import tprint
                         self.connection_status = ConnectionStatus.ERROR
+                        tprint(f"❌ ExchangeInterface.connect: Final failure after {max_retries} attempts to {self.exchange_type}, last_error={str(e)}", "ERROR")
                         tprint_error(f"❌ Failed to connect to {self.exchange_type} after {max_retries} attempts")
                         await self._handle_error(e, "connect")
                         return False
 
         except Exception as e:
+            from src.printing import tprint
             self.connection_status = ConnectionStatus.ERROR
+            tprint(f"❌ ExchangeInterface.connect: Unexpected error during connection - {e}", "ERROR")
             await self._handle_error(e, "connect")
             return False
 
@@ -520,6 +546,9 @@ class ExchangeInterface:
     @handle_async_errors(default_return=None)
     async def disconnect(self) -> None:
         """Disconnect from exchange."""
+        from src.printing import tprint
+        tprint(f"📴 ExchangeInterface.disconnect: Starting disconnection from {self.exchange_type}", "INFO")
+
         try:
             # Close all data streams
             for symbol in list(self.ticker_streams.keys()):
@@ -562,9 +591,13 @@ class ExchangeInterface:
                         tprint_warning(f"⚠️ Error closing manager: {e}")
 
             self.connection_status = ConnectionStatus.DISCONNECTED
+            from src.printing import tprint
+            tprint(f"✅ ExchangeInterface.disconnect: Successfully disconnected from {self.exchange_type}", "SUCCESS")
             tprint_info(f"📴 Disconnected from {self.exchange_type}")
 
         except Exception as e:
+            from src.printing import tprint
+            tprint(f"❌ ExchangeInterface.disconnect: Error during disconnection - {e}", "ERROR")
             tprint_error(f"❌ Error during disconnect: {e}")
             self.connection_status = ConnectionStatus.DISCONNECTED
 
@@ -756,9 +789,13 @@ class ExchangeInterface:
     @handle_async_errors(default_return=None)
     async def get_ticker(self, symbol: str) -> Optional[TickerData]:
         """Get ticker data for symbol."""
+        from src.printing import tprint
+        tprint(f"📊 ExchangeInterface.get_ticker: Getting ticker for symbol={symbol}, exchange_type={self.exchange_type}", "DEBUG")
+
         try:
             # Validate inputs
             if not symbol or not isinstance(symbol, str):
+                tprint(f"❌ ExchangeInterface.get_ticker: Invalid symbol={symbol}", "ERROR")
                 tprint_error(f"❌ Invalid symbol for ticker: {symbol}")
                 return None
                 
@@ -772,9 +809,13 @@ class ExchangeInterface:
                     price = market_data.get('price', 0)
                     # Validate price
                     if price is None or price <= 0:
+                        from src.printing import tprint as tprint_func
+                        tprint_func(f"⚠️ ExchangeInterface.get_ticker: Invalid price in market data for {symbol}: {price}", "WARNING")
                         tprint(f"⚠️ Invalid price in market data for {symbol}: {price}", "WARNING")
                         return None
-                        
+
+                    from src.printing import tprint as tprint_func
+                    tprint_func(f"✅ ExchangeInterface.get_ticker: Retrieved ticker from market_manager for {symbol}, price={price}", "DEBUG")
                     return TickerData(
                         symbol=symbol,
                         price=float(price),
@@ -792,14 +833,18 @@ class ExchangeInterface:
 
             # Fallback to dispatcher
             if self.dispatcher:
+                from src.printing import tprint as tprint_func
+                tprint_func(f"🔄 ExchangeInterface.get_ticker: Falling back to dispatcher for {symbol}", "DEBUG")
                 ticker_data = await self.dispatcher.get_ticker(symbol)
                 if ticker_data:
                     price = ticker_data.get('price', 0)
                     # Validate price
                     if price is None or price <= 0:
+                        tprint_func(f"⚠️ ExchangeInterface.get_ticker: Invalid price in dispatcher ticker for {symbol}: {price}", "WARNING")
                         tprint(f"⚠️ Invalid price in dispatcher ticker for {symbol}: {price}", "WARNING")
                         return None
-                        
+
+                    tprint_func(f"✅ ExchangeInterface.get_ticker: Retrieved ticker from dispatcher for {symbol}, price={price}", "DEBUG")
                     return TickerData(
                         symbol=symbol,
                         price=float(price),
@@ -815,9 +860,13 @@ class ExchangeInterface:
                         timestamp=datetime.now()
                     )
 
+            from src.printing import tprint as tprint_func
+            tprint_func(f"⚠️ ExchangeInterface.get_ticker: No ticker data available for {symbol}", "WARNING")
             return None
 
         except Exception as e:
+            from src.printing import tprint as tprint_func
+            tprint_func(f"❌ ExchangeInterface.get_ticker: Error getting ticker for {symbol} - {e}", "ERROR")
             tprint_error(f"❌ Error getting ticker for {symbol}: {e}")
             return None
 
@@ -840,10 +889,12 @@ class ExchangeInterface:
         limit: int = 500
     ) -> List[KlineData]:
         """Get kline data for symbol."""
+        from src.printing import tprint
+        tprint(f"📊 ExchangeInterface.get_klines: symbol={symbol}, interval={interval}, limit={limit}, start_time={start_time}, end_time={end_time}, exchange_type={self.exchange_type}", "DEBUG")
         print(f"DEBUG ExchangeInterface.get_klines: START")
         print(f"DEBUG ExchangeInterface.get_klines: exchange_type={self.exchange_type}")
         print(f"DEBUG ExchangeInterface.get_klines: dispatcher={self.dispatcher}")
-        
+
         if self.exchange_type == 'simulated':
             print(f"DEBUG ExchangeInterface.get_klines: Using simulated klines")
             return await self._get_simulated_klines(symbol, interval, start_time, end_time, limit)
@@ -861,8 +912,12 @@ class ExchangeInterface:
             ohlcv_data = await self.dispatcher.get_klines(symbol, interval, start_time, end_time, limit)
             
             if ohlcv_data:
+                from src.printing import tprint
+                tprint(f"✅ ExchangeInterface.get_klines: Received {len(ohlcv_data)} candles from {symbol}", "INFO")
                 print(f"✅ RECEIVED: {len(ohlcv_data)} candles from {symbol}")
             else:
+                from src.printing import tprint
+                tprint(f"⚠️ ExchangeInterface.get_klines: No data received for {symbol}", "WARNING")
                 print(f"⚠️ NO DATA received for {symbol}")
             klines = []
             for candle in ohlcv_data:
@@ -881,8 +936,12 @@ class ExchangeInterface:
                     taker_buy_base_asset_volume=candle.volume * 0.5,
                     taker_buy_quote_asset_volume=candle.volume * candle.close * 0.5
                 ))
+            from src.printing import tprint
+            tprint(f"✅ ExchangeInterface.get_klines: Returning {len(klines)} klines for {symbol}", "DEBUG")
             return klines
 
+        from src.printing import tprint
+        tprint(f"⚠️ ExchangeInterface.get_klines: No dispatcher available, returning empty list", "WARNING")
         return []
 
     async def get_recent_trades(self, symbol: str, limit: int = 500) -> List[Dict[str, Any]]:
@@ -934,8 +993,13 @@ class ExchangeInterface:
         **kwargs
     ) -> Dict[str, Any]:
         """Create order."""
+        from src.printing import tprint
+        tprint(f"📝 ExchangeInterface.create_order: symbol={symbol}, side={side}, order_type={order_type}, quantity={quantity}, price={price}, exchange_type={self.exchange_type}", "INFO")
+
         try:
             if self.exchange_type == 'simulated':
+                from src.printing import tprint
+                tprint(f"🔄 ExchangeInterface.create_order: Creating simulated order for {symbol}", "DEBUG")
                 return await self._create_simulated_order(symbol, side, order_type, quantity, price)
 
             # Use shared order manager if available
@@ -952,6 +1016,8 @@ class ExchangeInterface:
 
                 validation_result = self.order_manager.validate_order_params(order_params)
                 if not validation_result.is_valid:
+                    from src.printing import tprint
+                    tprint(f"❌ ExchangeInterface.create_order: Order validation failed - {validation_result.errors}", "ERROR")
                     tprint_error(f"❌ Order validation failed: {validation_result.errors}")
                     return {'error': 'validation_failed', 'errors': validation_result.errors}
 
@@ -961,6 +1027,8 @@ class ExchangeInterface:
                 )
 
                 if order_id:
+                    from src.printing import tprint
+                    tprint(f"✅ ExchangeInterface.create_order: Order created successfully, order_id={order_id}, symbol={symbol}", "SUCCESS")
                     return {
                         'orderId': order_id,
                         'symbol': symbol,
@@ -971,17 +1039,26 @@ class ExchangeInterface:
                         'status': 'NEW'
                     }
                 else:
+                    from src.printing import tprint
+                    tprint(f"❌ ExchangeInterface.create_order: Failed to create order for {symbol}", "ERROR")
                     tprint_error(f"❌ Failed to create order for {symbol}")
                     return {'error': 'order_creation_failed'}
 
             # Fallback to dispatcher
             if self.dispatcher:
+                from src.printing import tprint
+                tprint(f"🔄 ExchangeInterface.create_order: Falling back to dispatcher for {symbol}", "DEBUG")
                 result = await self.dispatcher.create_order(symbol, side, order_type, quantity, price)
+                tprint(f"✅ ExchangeInterface.create_order: Dispatcher returned result for {symbol}", "DEBUG")
                 return result or {}
 
+            from src.printing import tprint
+            tprint(f"❌ ExchangeInterface.create_order: No order manager available for {symbol}", "ERROR")
             return {'error': 'no_order_manager_available'}
 
         except Exception as e:
+            from src.printing import tprint
+            tprint(f"❌ ExchangeInterface.create_order: Error creating order for {symbol} - {e}", "ERROR")
             tprint_error(f"❌ Error creating order for {symbol}: {e}")
             return {'error': str(e)}
 

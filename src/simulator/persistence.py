@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 import logging
 
+from src.printing import tprint
 from .position_manager import Position
 
 
@@ -28,13 +29,15 @@ class SimulatorPersistence:
     def __init__(self, db_path: str = "simulator_state.db"):
         """
         Initialize persistence layer.
-        
+
         Args:
             db_path: Path to SQLite database file
         """
+        tprint(f"[PERSIST] __init__: Initializing persistence layer with db_path={db_path}")
         self.db_path = db_path
         self.logger = logging.getLogger(__name__)
         self._init_database()
+        tprint(f"[PERSIST] __init__ -> initialized successfully")
     
     def _init_database(self) -> None:
         """Initialize database schema."""
@@ -127,6 +130,7 @@ class SimulatorPersistence:
         
         conn.commit()
         conn.close()
+        tprint(f"[PERSIST] _init_database -> Database initialized at {self.db_path}")
         self.logger.debug(f"Database initialized at {self.db_path}")
     
     def save_simulator_state(
@@ -141,39 +145,45 @@ class SimulatorPersistence:
         config_json: str = None
     ) -> None:
         """Save or update simulator state."""
+        tprint(f"[PERSIST] save_simulator_state: simulator_id={simulator_id}, mode={mode}, exchange={exchange}, balance={current_balance:.2f}")
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         cursor.execute("""
-            INSERT OR REPLACE INTO simulator_state 
+            INSERT OR REPLACE INTO simulator_state
             (simulator_id, mode, exchange, asset, initial_balance, current_balance,
              direction_constraint, config_json, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         """, (simulator_id, mode, exchange, asset, initial_balance, current_balance,
               direction_constraint, config_json))
-        
+
         conn.commit()
         conn.close()
+        tprint(f"[PERSIST] save_simulator_state -> saved successfully")
     
     def get_simulator_state(self, simulator_id: str) -> Optional[Dict[str, Any]]:
         """Get simulator state by ID."""
+        tprint(f"[PERSIST] get_simulator_state: simulator_id={simulator_id}")
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         cursor.execute("""
             SELECT simulator_id, mode, exchange, asset, initial_balance, current_balance,
                    direction_constraint, config_json, created_at, updated_at
             FROM simulator_state
             WHERE simulator_id = ?
         """, (simulator_id,))
-        
+
         row = cursor.fetchone()
         conn.close()
-        
+
         if not row:
+            tprint(f"[PERSIST] get_simulator_state -> NOT FOUND", color="yellow")
             return None
-        
-        return {
+
+        result = {
             "simulator_id": row[0],
             "mode": row[1],
             "exchange": row[2],
@@ -185,6 +195,8 @@ class SimulatorPersistence:
             "created_at": row[8],
             "updated_at": row[9]
         }
+        tprint(f"[PERSIST] get_simulator_state -> found (mode={result['mode']}, exchange={result['exchange']}, balance={result['current_balance']:.2f})")
+        return result
     
     def save_position(
         self,
@@ -192,11 +204,13 @@ class SimulatorPersistence:
         position: Position
     ) -> None:
         """Save or update a position."""
+        tprint(f"[PERSIST] save_position: simulator_id={simulator_id}, position_id={position.id}, symbol={position.symbol}, direction={position.direction}, qty={position.quantity}")
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         metadata_json = json.dumps(position.metadata) if position.metadata else None
-        
+
         cursor.execute("""
             INSERT OR REPLACE INTO simulator_positions
             (simulator_id, position_id, symbol, direction, quantity, entry_price,
@@ -205,15 +219,18 @@ class SimulatorPersistence:
         """, (simulator_id, position.id, position.symbol, position.direction,
               position.quantity, position.avg_entry_price, position.entry_time.isoformat(),
               position.stop_loss, position.take_profit, "open", metadata_json))
-        
+
         conn.commit()
         conn.close()
+        tprint(f"[PERSIST] save_position -> saved successfully")
     
     def get_positions(self, simulator_id: str, status: str = "open") -> List[Dict[str, Any]]:
         """Get all positions for a simulator."""
+        tprint(f"[PERSIST] get_positions: simulator_id={simulator_id}, status={status}")
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         if status == "all":
             cursor.execute("""
                 SELECT position_id, symbol, direction, quantity, entry_price,
@@ -230,10 +247,10 @@ class SimulatorPersistence:
                 WHERE simulator_id = ? AND status = ?
                 ORDER BY entry_time DESC
             """, (simulator_id, status))
-        
+
         rows = cursor.fetchall()
         conn.close()
-        
+
         positions = []
         for row in rows:
             metadata = json.loads(row[9]) if row[9] else {}
@@ -249,7 +266,8 @@ class SimulatorPersistence:
                 "status": row[8],
                 "metadata": metadata
             })
-        
+
+        tprint(f"[PERSIST] get_positions -> found {len(positions)} positions")
         return positions
     
     def close_position(self, simulator_id: str, position_id: str) -> None:
@@ -272,12 +290,14 @@ class SimulatorPersistence:
         trade_data: Dict[str, Any]
     ) -> int:
         """Save a trade record."""
+        tprint(f"[PERSIST] save_trade: simulator_id={simulator_id}, symbol={trade_data.get('symbol')}, side={trade_data.get('side')}, qty={trade_data.get('quantity')}, price={trade_data.get('price')}")
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         fill_details_json = json.dumps(trade_data.get("fill_details")) if trade_data.get("fill_details") else None
         trading_signal_json = json.dumps(trade_data.get("trading_signal")) if trade_data.get("trading_signal") else None
-        
+
         cursor.execute("""
             INSERT INTO simulator_trades
             (simulator_id, symbol, side, direction, quantity, price, fee, slippage, pnl,
@@ -290,11 +310,12 @@ class SimulatorPersistence:
             trade_data.get("latency_ms"), trade_data.get("order_type"), trading_signal_json,
             trade_data["timestamp"]
         ))
-        
+
         trade_id = cursor.lastrowid
         conn.commit()
         conn.close()
-        
+
+        tprint(f"[PERSIST] save_trade -> saved with trade_id={trade_id}")
         return trade_id
     
     def get_trades(
@@ -304,9 +325,11 @@ class SimulatorPersistence:
         limit: int = 100
     ) -> List[Dict[str, Any]]:
         """Get trade history."""
+        tprint(f"[PERSIST] get_trades: simulator_id={simulator_id}, symbol={symbol or 'ALL'}, limit={limit}")
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         if symbol:
             cursor.execute("""
                 SELECT symbol, side, direction, quantity, price, fee, slippage, pnl,
@@ -325,10 +348,10 @@ class SimulatorPersistence:
                 ORDER BY timestamp DESC
                 LIMIT ?
             """, (simulator_id, limit))
-        
+
         rows = cursor.fetchall()
         conn.close()
-        
+
         trades = []
         for row in rows:
             fill_details = json.loads(row[9]) if row[9] else {}
@@ -346,7 +369,8 @@ class SimulatorPersistence:
                 "order_type": row[10],
                 "timestamp": row[11]
             })
-        
+
+        tprint(f"[PERSIST] get_trades -> found {len(trades)} trades")
         return trades
     
     def close_database(self) -> None:

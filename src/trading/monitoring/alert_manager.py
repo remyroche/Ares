@@ -18,6 +18,7 @@ import numpy as np
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
+from src.printing import tprint
 from src.utils.tprint import (
     tprint_info, tprint_warning, tprint_error, tprint_success,
     tprint_structured, LogLevel
@@ -112,6 +113,7 @@ class AlertManager:
         Args:
             config: Configuration dictionary
         """
+        tprint(f"[ALERT_MGR] __init__: Initializing AlertManager with config keys: {list(config.keys())}")
         self.config = config
         self.logger = logger.getChild('AlertManager')
 
@@ -154,11 +156,14 @@ class AlertManager:
 
     async def initialize(self) -> None:
         """Initialize alert manager."""
+        tprint(f"[ALERT_MGR] initialize: Starting AlertManager initialization")
         await self._load_default_rules()
         tprint_success("✅ Alert Manager initialized successfully")
+        tprint(f"[ALERT_MGR] initialize: Loaded {len(self.alert_rules)} default alert rules")
 
     async def _load_default_rules(self) -> None:
         """Load default alert rules."""
+        tprint(f"[ALERT_MGR] _load_default_rules: Loading default alert rules")
         # Price movement alerts
         self.alert_rules['price_spike'] = AlertRule(
             rule_id='price_spike',
@@ -227,6 +232,7 @@ class AlertManager:
         Returns:
             Alert ID
         """
+        tprint(f"[ALERT_MGR] create_alert: Creating alert type={alert_type.value}, priority={priority.value}, title='{title}', rule_id={rule_id}")
         async with self._lock:
             alert_id = f"alert_{datetime.now().timestamp()}_{len(self.active_alerts)}"
 
@@ -257,24 +263,29 @@ class AlertManager:
         # Check if alert should trigger notifications (outside lock)
         if await self._should_send_notifications(alert):
             await self._send_notifications(alert)
+            tprint(f"[ALERT_MGR] create_alert: Notifications sent for alert {alert_id}")
 
         tprint_warning(f"🚨 {priority.value.upper()}: {title}")
-
+        tprint(f"[ALERT_MGR] create_alert: Alert created successfully, alert_id={alert_id}")
         return alert_id
 
     async def _should_send_notifications(self, alert: Alert) -> bool:
         """Check if alert should trigger notifications."""
+        tprint(f"[ALERT_MGR] _should_send_notifications: Checking notification eligibility for alert {alert.alert_id}, rule_id={alert.rule_id}")
         # Check cooldown for rule-based alerts
         if alert.rule_id and alert.rule_id in self.cooldowns:
             last_trigger = self.cooldowns[alert.rule_id]
             rule = self.alert_rules.get(alert.rule_id)
             if rule and (datetime.now() - last_trigger).total_seconds() < rule.cooldown_seconds:
+                tprint(f"[ALERT_MGR] _should_send_notifications: Alert in cooldown period, returning False")
                 return False
 
         # Update cooldown
         if alert.rule_id:
             self.cooldowns[alert.rule_id] = datetime.now()
+            tprint(f"[ALERT_MGR] _should_send_notifications: Updated cooldown for rule {alert.rule_id}")
 
+        tprint(f"[ALERT_MGR] _should_send_notifications: Notifications approved, returning True")
         return True
 
     def _generate_group_key(self, alert: Alert) -> str:
@@ -584,7 +595,9 @@ Data:
         Returns:
             True if acknowledged successfully
         """
+        tprint(f"[ALERT_MGR] acknowledge_alert: Acknowledging alert_id={alert_id}, user={user}")
         if alert_id not in self.active_alerts:
+            tprint(f"[ALERT_MGR] acknowledge_alert: Alert {alert_id} not found in active alerts, returning False")
             return False
 
         alert = self.active_alerts[alert_id]
@@ -593,6 +606,7 @@ Data:
         alert.acknowledged_at = datetime.now()
 
         tprint_info(f"✅ Alert {alert_id} acknowledged by {user}")
+        tprint(f"[ALERT_MGR] acknowledge_alert: Successfully acknowledged alert {alert_id}, returning True")
         return True
 
     @handles_errors
@@ -607,7 +621,9 @@ Data:
         Returns:
             True if resolved successfully
         """
+        tprint(f"[ALERT_MGR] resolve_alert: Resolving alert_id={alert_id}, resolution='{resolution}'")
         if alert_id not in self.active_alerts:
+            tprint(f"[ALERT_MGR] resolve_alert: Alert {alert_id} not found in active alerts, returning False")
             return False
 
         alert = self.active_alerts[alert_id]
@@ -618,6 +634,7 @@ Data:
         del self.active_alerts[alert_id]
 
         tprint_success(f"✅ Alert {alert_id} resolved: {resolution}")
+        tprint(f"[ALERT_MGR] resolve_alert: Successfully resolved and removed alert {alert_id}, returning True")
         return True
 
     async def escalate_alert(self, alert_id: str) -> bool:
@@ -630,7 +647,9 @@ Data:
         Returns:
             True if escalated successfully
         """
+        tprint(f"[ALERT_MGR] escalate_alert: Escalating alert_id={alert_id}")
         if alert_id not in self.active_alerts:
+            tprint(f"[ALERT_MGR] escalate_alert: Alert {alert_id} not found, returning False")
             return False
 
         alert = self.active_alerts[alert_id]
@@ -641,24 +660,31 @@ Data:
 
         current_index = priority_order.index(alert.priority)
         if current_index < len(priority_order) - 1:
+            old_priority = alert.priority
             new_priority = priority_order[current_index + 1]
             alert.priority = new_priority
+            tprint(f"[ALERT_MGR] escalate_alert: Priority escalated from {old_priority.value} to {new_priority.value}")
 
             # Send new notifications with higher priority
             await self._send_notifications(alert)
 
             tprint_warning(f"⚡ Alert {alert_id} escalated to {new_priority.value}")
+            tprint(f"[ALERT_MGR] escalate_alert: Successfully escalated alert, returning True")
             return True
 
+        tprint(f"[ALERT_MGR] escalate_alert: Alert already at maximum priority, returning False")
         return False
 
     async def get_active_alerts(self, alert_type: Optional[AlertType] = None) -> List[Alert]:
         """Get active alerts."""
+        tprint(f"[ALERT_MGR] get_active_alerts: Retrieving active alerts, filter_type={alert_type.value if alert_type else 'None'}")
         alerts = list(self.active_alerts.values())
 
         if alert_type:
             alerts = [alert for alert in alerts if alert.alert_type == alert_type]
+            tprint(f"[ALERT_MGR] get_active_alerts: Filtered {len(alerts)} alerts by type {alert_type.value}")
 
+        tprint(f"[ALERT_MGR] get_active_alerts: Returning {len(alerts)} active alerts")
         return alerts
 
     async def get_alert_history(

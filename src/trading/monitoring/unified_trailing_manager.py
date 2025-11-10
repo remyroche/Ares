@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Any, Dict, Optional
 
 from src.utils.logger import system_logger
+from src.printing import tprint
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 import numpy as np
 
@@ -98,11 +99,13 @@ class UnifiedTrailingManager:
     }
 
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+        tprint(f"[TRAIL_MGR] __init__: Initializing UnifiedTrailingManager with config keys: {list((config or {}).keys())}")
         self.config = self._merge_config(config or {})
         self.positions: Dict[str, TrailingState] = {}
-        
+
         # Dynamic trailing configuration
         self._load_dynamic_trailing_config()
+        tprint(f"[TRAIL_MGR] __init__: UnifiedTrailingManager initialized, dynamic_method={self.dynamic_method}")
 
     def _load_dynamic_trailing_config(self) -> None:
         """Load dynamic trailing configuration from config."""
@@ -349,8 +352,10 @@ class UnifiedTrailingManager:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> TrailingState:
         """Register a new position for monitoring."""
+        tprint(f"[TRAIL_MGR] register_position: Registering position_id={position_id}, side={side}, entry_price={entry_price}, quantity={quantity}, entry_atr={entry_atr}")
 
         if entry_atr <= 0:
+            tprint(f"[TRAIL_MGR] register_position: Invalid entry_atr={entry_atr}, raising ValueError")
             raise ValueError("entry_atr must be positive for trailing management")
 
         regime = self._determine_regime(entry_atr, entry_price)

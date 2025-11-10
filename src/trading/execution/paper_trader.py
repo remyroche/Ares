@@ -33,8 +33,7 @@ class TradeTracker:
     trades: List[Dict[str, Any]] = field(default_factory=list)
 
 def get_trade_tracker() -> TradeTracker:
-    """Get a trade tracker instance."""
-    return TradeTracker()
+    tprint(f"🚀 TradeTracker.get_trade_tracker: Entered", "INFO")
 
 # Constants for paper trading
 DEFAULT_COMMISSION_RATE = 0.001  # 0.1%
@@ -60,8 +59,7 @@ class PaperTrader:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
-        Initialize paper trader with enhanced type safety.
+        tprint(f"🚀 TradeTracker.__init__: Entered", "INFO")
 
         Args:
             config: Configuration dictionary
@@ -108,8 +106,7 @@ class PaperTrader:
         raise_on_error=True
     )
     async def initialize(self) -> bool:
-        """
-        Initialize paper trader with enhanced error handling.
+        tprint(f"🚀 TradeTracker.initialize: Entered", "INFO")
 
         Returns:
             bool: True if initialization successful, False otherwise
@@ -320,8 +317,8 @@ class PaperTrader:
         raise_on_error=True
     )
     async def execute_buy_order(
-        self,
-        symbol: str,
+        tprint(f"🚀 TradeTracker.execute_buy_order: Entered", "INFO")
+
         quantity: float,
         price: float,
         timestamp: datetime,
@@ -430,8 +427,8 @@ class PaperTrader:
         raise_on_error=True
     )
     async def execute_sell_order(
-        self,
-        symbol: str,
+        tprint(f"🚀 TradeTracker.execute_sell_order: Entered", "INFO")
+
         quantity: float,
         price: float,
         timestamp: datetime,
@@ -598,8 +595,7 @@ class PaperTrader:
         raise_on_error=True
     )
     def get_position(self, symbol: str) -> dict[str, Any] | None:
-        """
-        Get current position for a symbol.
+        tprint(f"🚀 TradeTracker.get_position: Entered", "INFO")
 
         Args:
             symbol: Trading symbol
@@ -621,9 +617,8 @@ class PaperTrader:
             return None
 
     def mark_price(self, symbol: str, price: float) -> None:
-        """Update latest price for symbol for mark-to-market accounting."""
-        try:
-            if price <= 0:
+        tprint(f"🚀 TradeTracker.mark_price: Entered", "INFO")
+
                 tprint_warning(f"⚠️ Invalid price for {symbol}: {price}")
                 return
             self.prices[symbol] = price
@@ -657,8 +652,7 @@ class PaperTrader:
         raise_on_error=True
     )
     def get_all_positions(self) -> dict[str, dict[str, Any]]:
-        """
-        Get all current positions.
+        tprint(f"🚀 TradeTracker.get_all_positions: Entered", "INFO")
 
         Returns:
             Dict[str, Dict[str, Any]]: All positions
@@ -679,8 +673,7 @@ class PaperTrader:
         raise_on_error=True
     )
     def get_balance(self) -> float:
-        """
-        Get current balance.
+        tprint(f"🚀 TradeTracker.get_balance: Entered", "INFO")
 
         Returns:
             float: Current balance
@@ -700,8 +693,7 @@ class PaperTrader:
         raise_on_error=True
     )
     def get_trade_history(self, symbol: str | None = None) -> list[dict[str, Any]]:
-        """
-        Get trade history.
+        tprint(f"🚀 TradeTracker.get_trade_history: Entered", "INFO")
 
         Args:
             symbol: Optional symbol filter
@@ -731,8 +723,7 @@ class PaperTrader:
         raise_on_error=True
     )
     def calculate_performance(self) -> dict[str, Any]:
-        """
-        Calculate trading performance metrics.
+        tprint(f"🚀 TradeTracker.calculate_performance: Entered", "INFO")
 
         Returns:
             Dict[str, Any]: Performance metrics
@@ -815,8 +806,7 @@ class PaperTrader:
             return {}
 
     def get_trader_status(self) -> dict[str, Any]:
-        """
-        Get paper trader status information.
+        tprint(f"🚀 TradeTracker.get_trader_status: Entered", "INFO")
 
         Returns:
             Dict[str, Any]: Trader status
@@ -838,8 +828,7 @@ class PaperTrader:
         raise_on_error=True
     )
     async def stop(self) -> None:
-        """Stop the paper trader."""
-        tprint_info("🛑 Stopping Paper Trader...")
+        tprint(f"🚀 TradeTracker.stop: Entered", "INFO")
 
         try:
             # Stop enhanced monitoring
@@ -869,8 +858,8 @@ paper_trader: PaperTrader | None = None
     context="paper trader setup",
 )
 async def setup_paper_trader(
-    config: dict[str, Any] | None = None,
-) -> PaperTrader | None:
+    tprint(f"🚀 TradeTracker.setup_paper_trader: Entered", "INFO")
+
     """
     Setup global paper trader.
 

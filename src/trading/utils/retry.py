@@ -7,6 +7,7 @@ import time
 from typing import Callable, Type, Union, Tuple, Optional, Any
 from functools import wraps
 
+from src.printing import tprint
 from .error_handling import TradingError, TradingErrorSeverity, NetworkError, RateLimitError
 from .constants import (
     DEFAULT_RETRY_MAX_ATTEMPTS,
@@ -43,24 +44,32 @@ def retry_on_error(
         if asyncio.iscoroutinefunction(func):
             @wraps(func)
             async def async_wrapper(*args, **kwargs):
+                tprint(f"[RETRY] async_wrapper: func={func.__name__}, max_attempts={max_attempts}, base_delay={base_delay}")
                 last_exception = None
                 for attempt in range(max_attempts):
                     try:
-                        return await func(*args, **kwargs)
+                        tprint(f"[RETRY] async_wrapper: Attempt {attempt + 1}/{max_attempts} for {func.__name__}")
+                        result = await func(*args, **kwargs)
+                        tprint(f"[RETRY] async_wrapper -> success on attempt {attempt + 1}")
+                        return result
                     except retry_on as e:
                         last_exception = e
+                        tprint(f"[RETRY] async_wrapper: Attempt {attempt + 1} failed with {type(e).__name__}: {str(e)}")
                         if attempt < max_attempts - 1:
                             if exponential_backoff:
                                 delay = min(base_delay * (exponent ** attempt), max_delay)
                             else:
                                 delay = base_delay
-                            
+
+                            tprint(f"[RETRY] async_wrapper: Waiting {delay:.2f}s before retry")
                             await asyncio.sleep(delay)
                             continue
                         else:
+                            tprint(f"[RETRY] async_wrapper: All attempts exhausted")
                             break
-                
+
                 if reraise and last_exception:
+                    tprint(f"[RETRY] async_wrapper: Re-raising exception after {max_attempts} attempts")
                     # Wrap non-TradingError exceptions
                     if not isinstance(last_exception, TradingError):
                         raise NetworkError(
@@ -69,30 +78,39 @@ def retry_on_error(
                             context={'max_attempts': max_attempts, 'attempts': attempt + 1}
                         )
                     raise last_exception
+                tprint(f"[RETRY] async_wrapper -> None (failed after all attempts)")
                 return None
 
             return async_wrapper
         else:
             @wraps(func)
             def sync_wrapper(*args, **kwargs):
+                tprint(f"[RETRY] sync_wrapper: func={func.__name__}, max_attempts={max_attempts}, base_delay={base_delay}")
                 last_exception = None
                 for attempt in range(max_attempts):
                     try:
-                        return func(*args, **kwargs)
+                        tprint(f"[RETRY] sync_wrapper: Attempt {attempt + 1}/{max_attempts} for {func.__name__}")
+                        result = func(*args, **kwargs)
+                        tprint(f"[RETRY] sync_wrapper -> success on attempt {attempt + 1}")
+                        return result
                     except retry_on as e:
                         last_exception = e
+                        tprint(f"[RETRY] sync_wrapper: Attempt {attempt + 1} failed with {type(e).__name__}: {str(e)}")
                         if attempt < max_attempts - 1:
                             if exponential_backoff:
                                 delay = min(base_delay * (exponent ** attempt), max_delay)
                             else:
                                 delay = base_delay
-                            
+
+                            tprint(f"[RETRY] sync_wrapper: Waiting {delay:.2f}s before retry")
                             time.sleep(delay)
                             continue
                         else:
+                            tprint(f"[RETRY] sync_wrapper: All attempts exhausted")
                             break
-                
+
                 if reraise and last_exception:
+                    tprint(f"[RETRY] sync_wrapper: Re-raising exception after {max_attempts} attempts")
                     # Wrap non-TradingError exceptions
                     if not isinstance(last_exception, TradingError):
                         raise NetworkError(
@@ -101,6 +119,7 @@ def retry_on_error(
                             context={'max_attempts': max_attempts, 'attempts': attempt + 1}
                         )
                     raise last_exception
+                tprint(f"[RETRY] sync_wrapper -> None (failed after all attempts)")
                 return None
 
             return sync_wrapper

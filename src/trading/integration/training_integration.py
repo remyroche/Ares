@@ -17,7 +17,7 @@ import pandas as pd
 import numpy as np
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.tprint import tprint
 from ..utils.error_handling import TradingError, TradingErrorSeverity, trading_error_handler
 from ..utils.validation import validate_market_data
 
@@ -97,7 +97,7 @@ class TrainingDataProvider:
         Returns:
             DataFrame with engineered features
         """
-        tprint_info(f"🔄 Generating training features for {symbol} (set: {feature_set})")
+        tprint(f"🔄 Generating training features for {symbol} (set: {feature_set})")
 
         try:
             # Validate input data
@@ -108,7 +108,7 @@ class TrainingDataProvider:
                 market_data, feature_set, symbol
             )
 
-            tprint_success(f"✅ Generated {len(features_df.columns)} training features")
+            tprint(f"✅ Generated {len(features_df.columns)} training features")
             return features_df
 
         except Exception as e:
@@ -150,12 +150,12 @@ class TrainingDataProvider:
             return features_df
 
         except ImportError as e:
-            tprint_warning(f"⚠️ Training feature engineering not available: {e}")
+            tprint(f"⚠️ Training feature engineering not available: {e}")
             # Fallback to basic features
             return self._create_basic_features(market_data)
 
         except Exception as e:
-            tprint_warning(f"⚠️ Training feature engineering failed: {e}")
+            tprint(f"⚠️ Training feature engineering failed: {e}")
             # Fallback to basic features
             return self._create_basic_features(market_data)
 
@@ -189,11 +189,11 @@ class TrainingDataProvider:
                 features_df['volume_sma_20'] = features_df['volume'].rolling(20).mean()
                 features_df['volume_ratio'] = features_df['volume'] / features_df['volume_sma_20']
 
-            tprint_info("📊 Created basic fallback features")
+            tprint("📊 Created basic fallback features")
             return features_df
 
         except Exception as e:
-            tprint_error(f"❌ Basic feature creation failed: {e}")
+            tprint(f"❌ Basic feature creation failed: {e}")
             return market_data
 
     @trading_error_handler(
@@ -214,7 +214,7 @@ class TrainingDataProvider:
         Returns:
             True if sync successful
         """
-        tprint_info("🔄 Syncing trading data with training pipeline...")
+        tprint("🔄 Syncing trading data with training pipeline...")
 
         try:
             # Export trading data for training pipeline consumption
@@ -228,11 +228,11 @@ class TrainingDataProvider:
 
             self.last_update = datetime.now()
 
-            tprint_success("✅ Successfully synced with training pipeline")
+            tprint("✅ Successfully synced with training pipeline")
             return True
 
         except Exception as e:
-            tprint_warning(f"⚠️ Training pipeline sync failed: {e}")
+            tprint(f"⚠️ Training pipeline sync failed: {e}")
             return False
 
     async def _export_trading_performance(self, trading_data: Dict[str, Any]) -> None:
@@ -256,7 +256,7 @@ class TrainingDataProvider:
             with open(filepath, 'w') as f:
                 json.dump(export_data, f, indent=2, default=str)
 
-            tprint_success(f"✅ Exported trading performance to {filepath}")
+            tprint(f"✅ Exported trading performance to {filepath}")
             self.logger.info(f"Exported trading performance data to {filepath}")
 
         except Exception as e:
@@ -266,11 +266,11 @@ class TrainingDataProvider:
     async def _update_feature_cache(self) -> None:
         """Update feature cache from training pipeline."""
         try:
-            tprint_info("🔄 Checking for feature updates...")
+            tprint("🔄 Checking for feature updates...")
 
             # Check if cache needs update based on TTL
             if self.last_update and (datetime.now() - self.last_update) < self.feature_cache_ttl:
-                tprint_info("📦 Feature cache still valid, skipping update")
+                tprint("📦 Feature cache still valid, skipping update")
                 return
 
             # Check for updated feature definitions from training pipeline
@@ -288,27 +288,27 @@ class TrainingDataProvider:
                             feature_definitions = json.load(f)
                         self.feature_cache['definitions'] = feature_definitions
                         self.feature_cache['last_updated'] = file_time
-                        tprint_success(f"✅ Updated feature cache from {latest_file.name}")
+                        tprint(f"✅ Updated feature cache from {latest_file.name}")
                     else:
-                        tprint_info("📦 Feature definitions up to date")
+                        tprint("📦 Feature definitions up to date")
                 else:
-                    tprint_warning("⚠️ No feature definition files found")
+                    tprint("⚠️ No feature definition files found")
             else:
-                tprint_info("📦 Feature definitions directory not found, using defaults")
+                tprint("📦 Feature definitions directory not found, using defaults")
 
         except Exception as e:
-            tprint_warning(f"⚠️ Feature cache update failed: {e}")
+            tprint(f"⚠️ Feature cache update failed: {e}")
             self.logger.warning(f"Feature cache update failed: {e}")
 
     async def _check_model_updates(self) -> None:
         """Check for updated models from training pipeline."""
         try:
-            tprint_info("🔄 Checking for model updates...")
+            tprint("🔄 Checking for model updates...")
 
             # Check if we need to check based on interval
             now = datetime.now()
             if self.last_model_check and (now - self.last_model_check) < self.model_check_interval:
-                tprint_info("📦 Model check interval not reached, skipping")
+                tprint("📦 Model check interval not reached, skipping")
                 return
 
             # Check for newly trained models
@@ -333,16 +333,16 @@ class TrainingDataProvider:
                         })
 
             if updated_models:
-                tprint_info(f"📦 Found {len(updated_models)} updated model(s)")
+                tprint(f"📦 Found {len(updated_models)} updated model(s)")
                 for model_info in updated_models:
                     self.logger.info(f"Updated model: {model_info['path']} (modified: {model_info['modified']})")
             else:
-                tprint_info("📦 No model updates found")
+                tprint("📦 No model updates found")
 
             self.last_model_check = now
 
         except Exception as e:
-            tprint_warning(f"⚠️ Model update check failed: {e}")
+            tprint(f"⚠️ Model update check failed: {e}")
             self.logger.warning(f"Model update check failed: {e}")
 
     def _should_use_vectorbt(self, data: pd.Series) -> bool:
@@ -376,10 +376,10 @@ class TrainingDataProvider:
             elif operation == 'sum':
                 return rolling_sum(data, window=window, **kwargs)
             else:
-                tprint_error(f"❌ Unsupported operation: {operation}")
+                tprint(f"❌ Unsupported operation: {operation}")
                 raise ValueError(f"Unsupported operation: {operation}")
         except Exception as e:
-            tprint_warning(f"⚠️ VectorBT operation failed: {e}, using pandas fallback")
+            tprint(f"⚠️ VectorBT operation failed: {e}, using pandas fallback")
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
 
@@ -404,7 +404,7 @@ class TrainingDataProvider:
         elif operation == 'sum':
             return data.rolling(window=window).sum()
         else:
-            tprint_error(f"❌ Unsupported operation: {operation}")
+            tprint(f"❌ Unsupported operation: {operation}")
             raise ValueError(f"Unsupported operation: {operation}")
 
     def _vectorbt_apply_operation(
@@ -421,7 +421,7 @@ class TrainingDataProvider:
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:
-            tprint_warning(f"⚠️ VectorBT rolling apply failed: {e}, using pandas fallback")
+            tprint(f"⚠️ VectorBT rolling apply failed: {e}, using pandas fallback")
             logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
             return data.rolling(window=window).apply(func, **kwargs)
 
@@ -433,7 +433,7 @@ class TradingDataExporter:
     def __init__(self) -> None:
         """Initialize trading data exporter."""
         self.logger = logger.getChild('TradingDataExporter')
-        tprint_info("🔄 Trading data exporter initialized")
+        tprint("🔄 Trading data exporter initialized")
 
     @trading_error_handler(
         error_types=(Exception,),
@@ -459,7 +459,7 @@ class TradingDataExporter:
         Returns:
             True if export successful
         """
-        tprint_info("📤 Exporting trading data for training pipeline...")
+        tprint("📤 Exporting trading data for training pipeline...")
 
         try:
             # Validate export format
@@ -482,14 +482,14 @@ class TradingDataExporter:
                     decisions_file = os.path.join(export_dir, f"trading_decisions_{timestamp}.csv")
                     decisions_df.to_csv(decisions_file, index=False)
 
-                tprint_success(f"✅ Exported trading decisions to {decisions_file}")
+                tprint(f"✅ Exported trading decisions to {decisions_file}")
 
             # Export performance metrics
             metrics_file = os.path.join(export_dir, f"performance_metrics_{timestamp}.json")
             with open(metrics_file, 'w') as f:
                 json.dump(performance_metrics, f, indent=2, default=str)
 
-            tprint_success(f"✅ Exported performance metrics to {metrics_file}")
+            tprint(f"✅ Exported performance metrics to {metrics_file}")
 
             # Export market data
             if not market_data.empty:
@@ -500,12 +500,12 @@ class TradingDataExporter:
                     market_file = os.path.join(export_dir, f"market_data_{timestamp}.csv")
                     market_data.to_csv(market_file, index=False)
 
-                tprint_success(f"✅ Exported market data to {market_file}")
+                tprint(f"✅ Exported market data to {market_file}")
 
             return True
 
         except Exception as e:
-            tprint_error(f"❌ Trading data export failed: {e}")
+            tprint(f"❌ Trading data export failed: {e}")
             self.logger.error(f"Trading data export failed: {e}", exc_info=True)
             return False
 
@@ -531,14 +531,14 @@ class TradingDataExporter:
         Returns:
             Tuple of (features_df, targets_series)
         """
-        tprint_info("🔄 Preparing trading data for training pipeline...")
+        tprint("🔄 Preparing trading data for training pipeline...")
 
         try:
             # Convert trading history to DataFrame
             history_df = pd.DataFrame(trading_history)
 
             if history_df.empty or feature_data.empty:
-                tprint_warning("⚠️ Empty data provided for training preparation")
+                tprint("⚠️ Empty data provided for training preparation")
                 return pd.DataFrame(), pd.Series()
 
             # Align data by timestamp
@@ -568,7 +568,7 @@ class TradingDataExporter:
                 if 'pnl' in merged_df.columns:
                     targets_series = (merged_df['pnl'] > 0).astype(int)
                 else:
-                    tprint_warning(f"⚠️ Target column {target_column} not found, creating dummy targets")
+                    tprint(f"⚠️ Target column {target_column} not found, creating dummy targets")
                     targets_series = pd.Series([0] * len(features_df))
 
             # Remove any remaining NaN values
@@ -576,22 +576,22 @@ class TradingDataExporter:
             features_df = features_df[mask]
             targets_series = targets_series[mask]
 
-            tprint_success(f"✅ Prepared {len(features_df)} samples with {len(feature_columns)} features")
+            tprint(f"✅ Prepared {len(features_df)} samples with {len(feature_columns)} features")
 
             return features_df, targets_series
 
         except Exception as e:
-            tprint_error(f"❌ Training data preparation failed: {e}")
+            tprint(f"❌ Training data preparation failed: {e}")
             return pd.DataFrame(), pd.Series()
 
     async def cleanup(self) -> None:
         """Cleanup resources."""
         try:
-            tprint_info("🔄 Cleaning up TradingDataExporter")
+            tprint("🔄 Cleaning up TradingDataExporter")
             self.logger.info("Cleaning up TradingDataExporter")
-            tprint_success("✅ TradingDataExporter cleaned up")
+            tprint("✅ TradingDataExporter cleaned up")
         except Exception as e:
-            tprint_warning(f"⚠️ Cleanup failed: {e}")
+            tprint(f"⚠️ Cleanup failed: {e}")
             self.logger.warning(f"Cleanup failed: {e}")
 
     def __enter__(self) -> "TradingDataExporter":

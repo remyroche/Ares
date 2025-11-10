@@ -18,6 +18,7 @@ import pandas as pd
 import numpy as np
 
 from src.utils.logger import system_logger
+from src.printing import tprint
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_structured, LogLevel
 # Import from trading module components
 # from ..alert_manager import AlertManager, AlertType, AlertPriority  # Removed to avoid circular imports
@@ -578,6 +579,7 @@ class ComprehensiveTradeMonitor:
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
+        tprint(f"[COMP_MONITOR] __init__: Initializing ComprehensiveTradeMonitor with config keys: {list((config or {}).keys())}")
         self.config = config or {}
         self.logger = logger.getChild('ComprehensiveTradeMonitor')
 

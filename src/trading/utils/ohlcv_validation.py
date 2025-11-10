@@ -7,6 +7,7 @@ import numpy as np
 from typing import Optional, Dict, Any, Tuple
 from datetime import datetime, timedelta
 
+from src.printing import tprint
 from .error_handling import ValidationError, TradingErrorSeverity
 from .validation import validate_market_data
 from .constants import EXTREME_PRICE_CHANGE_THRESHOLD
@@ -27,7 +28,9 @@ def detect_timestamp_gaps(
     Returns:
         Dictionary with gap information
     """
+    tprint(f"[OHLCV_VALIDATION] detect_timestamp_gaps: data_shape={data.shape if not data.empty else 'empty'}, expected_frequency={expected_frequency}")
     if data.empty or len(data) < 2:
+        tprint(f"[OHLCV_VALIDATION] detect_timestamp_gaps -> no gaps (insufficient data)")
         return {'gaps': [], 'gap_count': 0, 'max_gap': None}
 
     if not isinstance(data.index, pd.DatetimeIndex):
@@ -56,12 +59,14 @@ def detect_timestamp_gaps(
 
     max_gap = max([g['gap_seconds'] for g in gaps]) if gaps else None
 
-    return {
+    result = {
         'gaps': gaps,
         'gap_count': len(gaps),
         'max_gap': max_gap,
         'threshold_seconds': threshold.total_seconds() if expected_frequency else threshold
     }
+    tprint(f"[OHLCV_VALIDATION] detect_timestamp_gaps -> {len(gaps)} gaps found, max_gap={max_gap}")
+    return result
 
 def detect_price_jumps(
     data: pd.DataFrame,
@@ -79,7 +84,9 @@ def detect_price_jumps(
     Returns:
         Dictionary with jump information
     """
+    tprint(f"[OHLCV_VALIDATION] detect_price_jumps: data_shape={data.shape if not data.empty else 'empty'}, column={column}, threshold={threshold}")
     if data.empty or column not in data.columns:
+        tprint(f"[OHLCV_VALIDATION] detect_price_jumps -> no jumps (empty data or missing column)")
         return {'jumps': [], 'jump_count': 0}
 
     prices = data[column]
@@ -96,12 +103,14 @@ def detect_price_jumps(
                 'change_pct': change * 100
             })
 
-    return {
+    result = {
         'jumps': jumps,
         'jump_count': len(jumps),
         'threshold': threshold,
         'max_jump': max([j['change_pct'] for j in jumps]) if jumps else None
     }
+    tprint(f"[OHLCV_VALIDATION] detect_price_jumps -> {len(jumps)} jumps found")
+    return result
 
 def detect_volume_spikes(
     data: pd.DataFrame,
@@ -168,6 +177,7 @@ def validate_ohlcv_enhanced(
     Raises:
         ValidationError: If critical issues found
     """
+    tprint(f"[OHLCV_VALIDATION] validate_ohlcv_enhanced: data_shape={data.shape}, check_gaps={check_gaps}, check_jumps={check_jumps}, check_volume_spikes={check_volume_spikes}")
     # First run standard validation
     validate_market_data(data)
 
@@ -208,6 +218,7 @@ def validate_ohlcv_enhanced(
         for warning in warnings:
             tprint_warning(f"⚠️ OHLCV Validation Warning: {warning}")
 
+    tprint(f"[OHLCV_VALIDATION] validate_ohlcv_enhanced -> validation complete with {len(warnings)} warnings")
     return results
 
 def validate_multi_timeframe_consistency(

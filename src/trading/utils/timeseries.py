@@ -7,6 +7,7 @@ import numpy as np
 from typing import List, Dict, Optional, Union, Tuple, Any
 from datetime import datetime, timedelta
 
+from src.printing import tprint
 from .error_handling import ValidationError, TradingErrorSeverity
 from .constants import MIN_MARKET_DATA_ROWS
 
@@ -26,7 +27,9 @@ def align_time_series(
     Returns:
         List of aligned series
     """
+    tprint(f"[TIMESERIES] align_time_series: series_count={len(series_list) if series_list else 0}, method={method}")
     if not series_list:
+        tprint(f"[TIMESERIES] align_time_series -> empty list")
         return []
 
     # Find common index
@@ -39,6 +42,7 @@ def align_time_series(
         aligned = series.reindex(common_index, method=method, tolerance=tolerance)
         aligned_series.append(aligned)
 
+    tprint(f"[TIMESERIES] align_time_series -> {len(aligned_series)} aligned series")
     return aligned_series
 
 def fill_time_series_gaps(
@@ -84,7 +88,9 @@ def resample_time_series(
     Returns:
         Resampled DataFrame
     """
+    tprint(f"[TIMESERIES] resample_time_series: data_shape={data.shape if not data.empty else 'empty'}, target_frequency={target_frequency}, method={aggregation_method}")
     if data.empty:
+        tprint(f"[TIMESERIES] resample_time_series -> empty DataFrame")
         return data
 
     if not isinstance(data.index, pd.DatetimeIndex):
@@ -205,7 +211,9 @@ def detect_time_series_anomalies(
     Returns:
         Dictionary with anomaly information
     """
+    tprint(f"[TIMESERIES] detect_time_series_anomalies: series_len={len(series)}, method={method}, threshold={threshold}")
     if len(series) < 3:
+        tprint(f"[TIMESERIES] detect_time_series_anomalies -> no anomalies (series too short)")
         return {'anomalies': [], 'anomaly_count': 0}
 
     anomalies = []
@@ -239,12 +247,14 @@ def detect_time_series_anomalies(
     else:
         raise ValueError(f"Unknown detection method: {method}")
 
-    return {
+    result = {
         'anomalies': anomalies,
         'anomaly_count': len(anomalies),
         'method': method,
         'threshold': threshold
     }
+    tprint(f"[TIMESERIES] detect_time_series_anomalies -> {len(anomalies)} anomalies found")
+    return result
 
 def aggregate_time_series_features(
     data: pd.DataFrame,

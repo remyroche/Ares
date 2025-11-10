@@ -18,6 +18,7 @@ import numpy as np
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
+from src.printing import tprint
 from src.utils.tprint import (
     tprint_info, tprint_warning, tprint_error, tprint_success,
     tprint_structured, LogLevel
@@ -106,6 +107,7 @@ class PerformanceTracker:
         Args:
             config: Configuration dictionary
         """
+        tprint(f"[PERF_TRACKER] __init__: Initializing PerformanceTracker with config keys: {list(config.keys())}")
         self.config = config
         self.logger = logger.getChild('PerformanceTracker')
 
@@ -153,7 +155,9 @@ class PerformanceTracker:
 
     async def initialize(self) -> None:
         """Initialize performance tracker."""
+        tprint(f"[PERF_TRACKER] initialize: Initializing performance tracker with initial_balance={self.initial_balance}")
         tprint_success("✅ Performance Tracker initialized successfully")
+        tprint(f"[PERF_TRACKER] initialize: Performance tracker initialized successfully")
 
     @handles_errors
     async def record_trade(
@@ -180,6 +184,7 @@ class PerformanceTracker:
             strategy: Trading strategy used
             metadata: Additional trade metadata
         """
+        tprint(f"[PERF_TRACKER] record_trade: Recording trade trade_id={trade_id}, symbol={symbol}, side={side}, entry_price={entry_price}, quantity={quantity}, strategy={strategy}")
         async with self._lock:
             trade = TradeRecord(
                 trade_id=trade_id,
@@ -197,6 +202,7 @@ class PerformanceTracker:
             self.total_trades += 1
 
         tprint_info(f"📝 Recorded trade: {side} {quantity} {symbol} @ {entry_price}")
+        tprint(f"[PERF_TRACKER] record_trade: Trade recorded successfully, total_trades={self.total_trades}")
 
     @handles_errors
     async def update_trade(
@@ -218,7 +224,9 @@ class PerformanceTracker:
         Returns:
             Trade PnL
         """
+        tprint(f"[PERF_TRACKER] update_trade: Updating trade trade_id={trade_id}, exit_price={exit_price}, fees={fees}")
         if trade_id not in self.trades:
+            tprint(f"[PERF_TRACKER] update_trade: Trade {trade_id} not found, raising TradingError")
             raise TradingError(f"Trade {trade_id} not found")
 
         trade = self.trades[trade_id]
@@ -258,7 +266,7 @@ class PerformanceTracker:
         await self._update_risk_metrics()
 
         tprint_success(f"✅ Updated trade {trade_id}: PnL = {trade.pnl:.2f}")
-
+        tprint(f"[PERF_TRACKER] update_trade: Trade updated successfully, pnl={trade.pnl:.2f}, returning pnl")
         return trade.pnl
 
     async def _update_risk_metrics(self) -> None:

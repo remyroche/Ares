@@ -14,6 +14,7 @@ import numpy as np
 
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_structured, LogLevel
+from src.printing import tprint
 from ..monitoring.comprehensive_trade_monitor import DetailedTradeMetrics
 from ..utils.error_handling import TradingError, TradingErrorSeverity, trading_error_handler
 from ..utils.helpers import format_trading_metrics
@@ -34,6 +35,7 @@ class TradeAnalyzer:
     """
 
     def __init__(self):
+        tprint(f"TradeAnalyzer.__init__: Initializing TradeAnalyzer")
         self.logger = logger.getChild('TradeAnalyzer')
 
     @trading_error_handler(
@@ -56,6 +58,7 @@ class TradeAnalyzer:
         Returns:
             Comprehensive trade analysis
         """
+        tprint(f"TradeAnalyzer.analyze_trade: Starting analysis for trade_id={trade.trade_id}, include_explanations={include_explanations}")
         try:
             tprint_info(f"🔍 Analyzing trade: {trade.trade_id}")
 
@@ -76,16 +79,18 @@ class TradeAnalyzer:
             analysis['trade_quality_score'] = await self._calculate_trade_quality_score(trade, analysis)
 
             tprint_success(f"✅ Completed analysis for trade: {trade.trade_id}")
-
+            tprint(f"TradeAnalyzer.analyze_trade: Analysis complete for {trade.trade_id}, returning {len(analysis)} sections")
             return analysis
 
         except Exception as e:
             tprint_error(f"❌ Failed to analyze trade {trade.trade_id}: {e}")
+            tprint(f"TradeAnalyzer.analyze_trade: Exception - {e}")
             return {'error': str(e)}
 
     async def _analyze_trade_overview(self, trade: DetailedTradeMetrics) -> Dict[str, Any]:
         """Analyze basic trade overview."""
-        return {
+        tprint(f"TradeAnalyzer._analyze_trade_overview: Analyzing overview for {trade.trade_id}")
+        result = {
             'trade_id': trade.trade_id,
             'timestamp': trade.timestamp.isoformat(),
             'symbol': trade.symbol,
@@ -96,9 +101,12 @@ class TradeAnalyzer:
             'exchange': trade.exchange,
             'duration_minutes': trade.duration_minutes or 0.0
         }
+        tprint(f"TradeAnalyzer._analyze_trade_overview: Returning overview for {trade.symbol}")
+        return result
 
     async def _analyze_trade_performance(self, trade: DetailedTradeMetrics) -> Dict[str, Any]:
         """Analyze trade performance metrics."""
+        tprint(f"TradeAnalyzer._analyze_trade_performance: Analyzing performance for {trade.trade_id}, pnl={trade.pnl_absolute}")
         try:
             performance = {
                 'pnl_absolute': trade.pnl_absolute or 0.0,
@@ -134,14 +142,17 @@ class TradeAnalyzer:
                     performance['outcome'] = 'break_even'
                     performance['outcome_quality'] = 'neutral'
 
+            tprint(f"TradeAnalyzer._analyze_trade_performance: Performance analysis complete, outcome={performance.get('outcome', 'unknown')}")
             return performance
 
         except Exception as e:
             tprint_error(f"❌ Failed to analyze trade performance: {e}")
+            tprint(f"TradeAnalyzer._analyze_trade_performance: Exception - {e}")
             return {}
 
     async def _analyze_model_contributions(self, trade: DetailedTradeMetrics) -> Dict[str, Any]:
         """Analyze ML model contributions to the trade decision."""
+        tprint(f"TradeAnalyzer._analyze_model_contributions: Analyzing {len(trade.models_used)} models for {trade.trade_id}")
         try:
             model_analysis = {}
 
@@ -191,17 +202,22 @@ class TradeAnalyzer:
             }
 
             return {
+            result = {
                 'individual_models': model_analysis,
                 'consensus_analysis': consensus_analysis,
                 'ensemble_effectiveness': await self._assess_ensemble_effectiveness(trade)
             }
+            tprint(f"TradeAnalyzer._analyze_model_contributions: Model analysis complete for {len(model_analysis)} models")
+            return result
 
         except Exception as e:
             tprint_error(f"❌ Failed to analyze model contributions: {e}")
+            tprint(f"TradeAnalyzer._analyze_model_contributions: Exception - {e}")
             return {}
 
     async def _analyze_explanations(self, trade: DetailedTradeMetrics) -> Dict[str, Any]:
         """Analyze SHAP and LIME explanations."""
+        tprint(f"TradeAnalyzer._analyze_explanations: Analyzing explanations for {trade.trade_id}")
         try:
             explanation_analysis = {
                 'shap_analysis': {},
@@ -252,14 +268,17 @@ class TradeAnalyzer:
                 'explanation_consistency': await self._assess_explanation_consistency(trade)
             }
 
+            tprint(f"TradeAnalyzer._analyze_explanations: Explanation analysis complete, SHAP models={len(explanation_analysis.get('shap_analysis', {}))}")
             return explanation_analysis
 
         except Exception as e:
             tprint_error(f"❌ Failed to analyze explanations: {e}")
+            tprint(f"TradeAnalyzer._analyze_explanations: Exception - {e}")
             return {}
 
     async def _analyze_trade_risk(self, trade: DetailedTradeMetrics) -> Dict[str, Any]:
         """Analyze trade-specific risk metrics."""
+        tprint(f"TradeAnalyzer._analyze_trade_risk: Analyzing risk for {trade.trade_id}, portfolio_risk={trade.portfolio_risk}")
         try:
             risk_analysis = {
                 'position_risk': {
@@ -294,14 +313,17 @@ class TradeAnalyzer:
                 'risk_reward_ratio': abs(trade.pnl_percentage / total_risk_score) if total_risk_score > 0 and trade.pnl_percentage else 0.0
             }
 
+            tprint(f"TradeAnalyzer._analyze_trade_risk: Risk analysis complete, risk_level={risk_analysis['risk_assessment']['risk_level']}")
             return risk_analysis
 
         except Exception as e:
             tprint_error(f"❌ Failed to analyze trade risk: {e}")
+            tprint(f"TradeAnalyzer._analyze_trade_risk: Exception - {e}")
             return {}
 
     async def _analyze_trade_timing(self, trade: DetailedTradeMetrics) -> Dict[str, Any]:
         """Analyze trade timing quality."""
+        tprint(f"TradeAnalyzer._analyze_trade_timing: Analyzing timing for {trade.trade_id}, timing_quality={trade.timing_quality}")
         try:
             timing_analysis = {
                 'entry_timing': {
@@ -331,14 +353,17 @@ class TradeAnalyzer:
                 'timing_quality': 'excellent' if timing_score > 0.9 else 'good' if timing_score > 0.7 else 'fair' if timing_score > 0.5 else 'poor'
             }
 
+            tprint(f"TradeAnalyzer._analyze_trade_timing: Timing analysis complete, timing_quality={timing_analysis['timing_assessment']['timing_quality']}")
             return timing_analysis
 
         except Exception as e:
             tprint_error(f"❌ Failed to analyze trade timing: {e}")
+            tprint(f"TradeAnalyzer._analyze_trade_timing: Exception - {e}")
             return {}
 
     async def _analyze_trade_execution(self, trade: DetailedTradeMetrics) -> Dict[str, Any]:
         """Analyze trade execution quality."""
+        tprint(f"TradeAnalyzer._analyze_trade_execution: Analyzing execution for {trade.trade_id}, execution_quality={trade.execution_quality}")
         try:
             execution_analysis = {
                 'execution_metrics': {
@@ -368,14 +393,17 @@ class TradeAnalyzer:
                 'execution_quality': 'excellent' if execution_score > 0.9 else 'good' if execution_score > 0.7 else 'fair' if execution_score > 0.5 else 'poor'
             }
 
+            tprint(f"TradeAnalyzer._analyze_trade_execution: Execution analysis complete, execution_quality={execution_analysis['execution_assessment']['execution_quality']}")
             return execution_analysis
 
         except Exception as e:
             tprint_error(f"❌ Failed to analyze trade execution: {e}")
+            tprint(f"TradeAnalyzer._analyze_trade_execution: Exception - {e}")
             return {}
 
     async def _analyze_market_context(self, trade: DetailedTradeMetrics) -> Dict[str, Any]:
         """Analyze market context during the trade."""
+        tprint(f"TradeAnalyzer._analyze_market_context: Analyzing context for {trade.trade_id}")
         try:
             context_analysis = {
                 'market_conditions': trade.market_conditions,
@@ -407,16 +435,20 @@ class TradeAnalyzer:
                 'favorability_level': 'high' if favorability_score > 0.7 else 'medium' if favorability_score > 0.4 else 'low'
             }
 
+            tprint(f"TradeAnalyzer._analyze_market_context: Context analysis complete, favorability_level={context_analysis['market_favorability']['favorability_level']}")
             return context_analysis
 
         except Exception as e:
             tprint_error(f"❌ Failed to analyze market context: {e}")
+            tprint(f"TradeAnalyzer._analyze_market_context: Exception - {e}")
             return {}
 
     async def _assess_ensemble_effectiveness(self, trade: DetailedTradeMetrics) -> Dict[str, Any]:
         """Assess how effectively the ensemble performed."""
+        tprint(f"TradeAnalyzer._assess_ensemble_effectiveness: Assessing ensemble for {trade.trade_id}, models={len(trade.models_used)}")
         try:
             if not trade.models_used:
+                tprint(f"TradeAnalyzer._assess_ensemble_effectiveness: No models used")
                 return {'effectiveness': 'no_models'}
 
             # Model diversity
@@ -443,14 +475,20 @@ class TradeAnalyzer:
                 'effectiveness_level': 'high' if effectiveness_score > 0.7 else 'medium' if effectiveness_score > 0.4 else 'low'
             }
 
+            tprint(f"TradeAnalyzer._assess_ensemble_effectiveness: Effectiveness level={result['effectiveness_level']}")
+            return result
+
         except Exception as e:
             tprint_error(f"❌ Failed to assess ensemble effectiveness: {e}")
+            tprint(f"TradeAnalyzer._assess_ensemble_effectiveness: Exception - {e}")
             return {}
 
     async def _assess_explanation_consistency(self, trade: DetailedTradeMetrics) -> float:
         """Assess consistency between SHAP and LIME explanations."""
+        tprint(f"TradeAnalyzer._assess_explanation_consistency: Assessing for {trade.trade_id}")
         try:
             if not trade.shap_explanations or not trade.lime_explanations:
+                tprint(f"TradeAnalyzer._assess_explanation_consistency: Missing explanations, returning 0.0")
                 return 0.0
 
             consistency_scores = []
@@ -473,10 +511,13 @@ class TradeAnalyzer:
                         consistency = 1.0 - (np.mean(rank_differences) / len(common_features)) if rank_differences else 0.0
                         consistency_scores.append(max(0.0, consistency))
 
-            return np.mean(consistency_scores) if consistency_scores else 0.0
+            result = np.mean(consistency_scores) if consistency_scores else 0.0
+            tprint(f"TradeAnalyzer._assess_explanation_consistency: Consistency score={result:.3f}")
+            return result
 
         except Exception as e:
             tprint_error(f"❌ Failed to assess explanation consistency: {e}")
+            tprint(f"TradeAnalyzer._assess_explanation_consistency: Exception - {e}")
             return 0.0
 
     async def _calculate_trade_quality_score(
@@ -485,6 +526,7 @@ class TradeAnalyzer:
         analysis: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Calculate overall trade quality score."""
+        tprint(f"TradeAnalyzer._calculate_trade_quality_score: Calculating quality score for {trade.trade_id}")
         try:
             # Component scores
             performance_score = 0.5
@@ -520,36 +562,44 @@ class TradeAnalyzer:
                 'quality_grade': 'A' if overall_score > 0.8 else 'B' if overall_score > 0.6 else 'C' if overall_score > 0.4 else 'D',
                 'trade_classification': await self._classify_trade_quality(overall_score, trade)
             }
+            tprint(f"TradeAnalyzer._calculate_trade_quality_score: Quality score={overall_score:.3f}, grade={result['quality_grade']}")
+            return result
 
         except Exception as e:
             tprint_error(f"❌ Failed to calculate trade quality score: {e}")
+            tprint(f"TradeAnalyzer._calculate_trade_quality_score: Exception - {e}")
             return {}
 
     async def _classify_trade_quality(self, score: float, trade: DetailedTradeMetrics) -> str:
         """Classify trade quality based on score and outcome."""
+        tprint(f"TradeAnalyzer._classify_trade_quality: Classifying for {trade.trade_id}, score={score:.3f}")
         try:
             if score > 0.8:
                 if trade.pnl_absolute and trade.pnl_absolute > 0:
-                    return "excellent_winner"
+                    classification = "excellent_winner"
                 else:
-                    return "excellent_process_poor_outcome"
+                    classification = "excellent_process_poor_outcome"
             elif score > 0.6:
                 if trade.pnl_absolute and trade.pnl_absolute > 0:
-                    return "good_winner"
+                    classification = "good_winner"
                 else:
-                    return "good_process_poor_outcome"
+                    classification = "good_process_poor_outcome"
             elif score > 0.4:
                 if trade.pnl_absolute and trade.pnl_absolute > 0:
-                    return "lucky_winner"
+                    classification = "lucky_winner"
                 else:
                     return "fair_process_fair_outcome"
             else:
                 if trade.pnl_absolute and trade.pnl_absolute > 0:
-                    return "very_lucky_winner"
+                    classification = "very_lucky_winner"
                 else:
-                    return "poor_process_poor_outcome"
+                    classification = "poor_process_poor_outcome"
 
-        except Exception:
+            tprint(f"TradeAnalyzer._classify_trade_quality: Classification={classification}")
+            return classification
+
+        except Exception as e:
+            tprint(f"TradeAnalyzer._classify_trade_quality: Exception - {e}, returning unknown")
             return "unknown"
 
 # Global instance
@@ -561,4 +611,7 @@ async def analyze_trade_performance(
     include_explanations: bool = True
 ) -> Dict[str, Any]:
     """Analyze individual trade performance."""
-    return await trade_analyzer.analyze_trade(trade, include_explanations)
+    tprint(f"analyze_trade_performance: Called for trade_id={trade.trade_id}, include_explanations={include_explanations}")
+    result = await trade_analyzer.analyze_trade(trade, include_explanations)
+    tprint(f"analyze_trade_performance: Analysis complete, returning {'error' if 'error' in result else 'success'}")
+    return result

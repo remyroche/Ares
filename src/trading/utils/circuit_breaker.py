@@ -9,6 +9,7 @@ from functools import wraps
 from threading import Lock
 from datetime import datetime, timedelta
 
+from src.printing import tprint
 from .error_handling import TradingError, TradingErrorSeverity
 from .constants import (
     DEFAULT_CB_FAILURE_THRESHOLD,
@@ -43,6 +44,8 @@ class CircuitBreaker:
             half_open_max_calls: Max calls in half-open state before deciding
             name: Name for logging
         """
+        tprint(f"[CIRCUIT_BREAKER] __init__: name={name}, failure_threshold={failure_threshold}, recovery_timeout={recovery_timeout}, half_open_max_calls={half_open_max_calls}")
+
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.half_open_max_calls = half_open_max_calls
@@ -54,6 +57,8 @@ class CircuitBreaker:
         self.last_failure_time: Optional[float] = None
         self.last_success_time: Optional[float] = None
         self.lock = Lock()
+
+        tprint(f"[CIRCUIT_BREAKER] __init__ -> initialized in CLOSED state")
 
     def call(self, func: Callable, *args, **kwargs) -> Any:
         """
@@ -70,13 +75,17 @@ class CircuitBreaker:
         Raises:
             TradingError: If circuit is open
         """
+        tprint(f"[CIRCUIT_BREAKER] call: name={self.name}, func={func.__name__}, state={self.state.value}")
+
         with self.lock:
             if self.state == CircuitState.OPEN:
                 if self._should_attempt_recovery():
+                    tprint(f"[CIRCUIT_BREAKER] call: Transitioning from OPEN to HALF_OPEN state")
                     self.state = CircuitState.HALF_OPEN
                     self.success_count = 0
                     self.failure_count = 0
                 else:
+                    tprint(f"[CIRCUIT_BREAKER] call: Circuit is OPEN, rejecting call")
                     raise TradingError(
                         f"Circuit breaker {self.name} is OPEN. Service unavailable.",
                         error_code="CIRCUIT_BREAKER_OPEN",
@@ -91,8 +100,10 @@ class CircuitBreaker:
         try:
             result = func(*args, **kwargs)
             self._record_success()
+            tprint(f"[CIRCUIT_BREAKER] call -> success")
             return result
         except Exception as e:
+            tprint(f"[CIRCUIT_BREAKER] call: Function failed with {type(e).__name__}: {str(e)}")
             self._record_failure()
             raise
 
@@ -111,13 +122,17 @@ class CircuitBreaker:
         Raises:
             TradingError: If circuit is open
         """
+        tprint(f"[CIRCUIT_BREAKER] call_async: name={self.name}, func={func.__name__}, state={self.state.value}")
+
         with self.lock:
             if self.state == CircuitState.OPEN:
                 if self._should_attempt_recovery():
+                    tprint(f"[CIRCUIT_BREAKER] call_async: Transitioning from OPEN to HALF_OPEN state")
                     self.state = CircuitState.HALF_OPEN
                     self.success_count = 0
                     self.failure_count = 0
                 else:
+                    tprint(f"[CIRCUIT_BREAKER] call_async: Circuit is OPEN, rejecting call")
                     raise TradingError(
                         f"Circuit breaker {self.name} is OPEN. Service unavailable.",
                         error_code="CIRCUIT_BREAKER_OPEN",
@@ -132,17 +147,22 @@ class CircuitBreaker:
         try:
             result = await func(*args, **kwargs)
             self._record_success()
+            tprint(f"[CIRCUIT_BREAKER] call_async -> success")
             return result
         except Exception as e:
+            tprint(f"[CIRCUIT_BREAKER] call_async: Function failed with {type(e).__name__}: {str(e)}")
             self._record_failure()
             raise
 
     def _should_attempt_recovery(self) -> bool:
         """Check if recovery should be attempted."""
         if self.last_failure_time is None:
+            tprint(f"[CIRCUIT_BREAKER] _should_attempt_recovery -> False (no last failure)")
             return False
         elapsed = time.time() - self.last_failure_time
-        return elapsed >= self.recovery_timeout
+        should_recover = elapsed >= self.recovery_timeout
+        tprint(f"[CIRCUIT_BREAKER] _should_attempt_recovery: elapsed={elapsed:.2f}s, timeout={self.recovery_timeout}s -> {should_recover}")
+        return should_recover
 
     def _record_success(self) -> None:
         """Record a successful call."""
@@ -150,40 +170,49 @@ class CircuitBreaker:
             self.last_success_time = time.time()
             if self.state == CircuitState.HALF_OPEN:
                 self.success_count += 1
+                tprint(f"[CIRCUIT_BREAKER] _record_success: HALF_OPEN state, success_count={self.success_count}/{self.half_open_max_calls}")
                 if self.success_count >= self.half_open_max_calls:
+                    tprint(f"[CIRCUIT_BREAKER] _record_success: Transitioning HALF_OPEN -> CLOSED")
                     self.state = CircuitState.CLOSED
                     self.failure_count = 0
                     self.success_count = 0
             elif self.state == CircuitState.CLOSED:
                 self.failure_count = 0
+                tprint(f"[CIRCUIT_BREAKER] _record_success: CLOSED state, reset failure_count")
 
     def _record_failure(self) -> None:
         """Record a failed call."""
         with self.lock:
             self.last_failure_time = time.time()
             self.failure_count += 1
+            tprint(f"[CIRCUIT_BREAKER] _record_failure: failure_count={self.failure_count}/{self.failure_threshold}, state={self.state.value}")
 
             if self.state == CircuitState.HALF_OPEN:
                 # Any failure in half-open state opens the circuit
+                tprint(f"[CIRCUIT_BREAKER] _record_failure: Transitioning HALF_OPEN -> OPEN")
                 self.state = CircuitState.OPEN
                 self.success_count = 0
             elif self.state == CircuitState.CLOSED:
                 if self.failure_count >= self.failure_threshold:
+                    tprint(f"[CIRCUIT_BREAKER] _record_failure: Transitioning CLOSED -> OPEN (threshold reached)")
                     self.state = CircuitState.OPEN
 
     def reset(self) -> None:
         """Reset circuit breaker to closed state."""
+        tprint(f"[CIRCUIT_BREAKER] reset: Resetting circuit breaker {self.name}")
         with self.lock:
             self.state = CircuitState.CLOSED
             self.failure_count = 0
             self.success_count = 0
             self.last_failure_time = None
             self.last_success_time = None
+        tprint(f"[CIRCUIT_BREAKER] reset -> reset complete")
 
     def get_state(self) -> Dict[str, Any]:
         """Get current circuit breaker state."""
+        tprint(f"[CIRCUIT_BREAKER] get_state: name={self.name}")
         with self.lock:
-            return {
+            state_dict = {
                 'state': self.state.value,
                 'failure_count': self.failure_count,
                 'success_count': self.success_count,
@@ -192,6 +221,8 @@ class CircuitBreaker:
                 'failure_threshold': self.failure_threshold,
                 'recovery_timeout': self.recovery_timeout
             }
+        tprint(f"[CIRCUIT_BREAKER] get_state -> state={self.state.value}, failures={self.failure_count}")
+        return state_dict
 
 def circuit_breaker(
     failure_threshold: int = DEFAULT_CB_FAILURE_THRESHOLD,

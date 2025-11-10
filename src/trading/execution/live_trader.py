@@ -21,6 +21,7 @@ from src.utils.tprint import (
     tprint_info, tprint_warning, tprint_error, tprint_success,
     tprint_structured, LogLevel
 )
+from src.printing import tprint
 from ..config.trading_config import TradingConfig, TradingMode
 from ..config.execution_config import ExecutionConfig
 from ..utils.error_handling import (
@@ -90,6 +91,8 @@ class LiveTrader:
 
     def __init__(self, config: Dict[str, Any]):
         """
+        tprint(f"🚀 LiveTraderStatus.__init__: config={config}, Any]={Any]}", "INFO")
+
         Initialize live trader.
 
         Args:
@@ -138,6 +141,8 @@ class LiveTrader:
     )
     async def initialize(self) -> None:
         """Initialize live trader components."""
+        tprint(f"🚀 LiveTraderStatus.initialize: Starting", "INFO")
+
         try:
             # Initialize exchange interface first
             exchange_config = self.config.copy()
@@ -534,6 +539,8 @@ class LiveTrader:
 
     async def close_position(self, symbol: str, quantity: Optional[float] = None) -> bool:
         """
+        tprint(f"🚀 LiveTraderStatus.close_position: symbol={symbol}, quantity={quantity}", "INFO")
+
         Close position for symbol.
 
         Args:
@@ -610,18 +617,26 @@ class LiveTrader:
 
     async def get_positions(self) -> Dict[str, Position]:
         """Get all current positions."""
+        tprint(f"🚀 LiveTraderStatus.get_positions: Starting", "INFO")
+
         return self.positions.copy()
 
     async def get_position(self, symbol: str) -> Optional[Position]:
         """Get position for specific symbol."""
+        tprint(f"🚀 LiveTraderStatus.get_position: symbol={symbol}", "INFO")
+
         return self.positions.get(symbol)
 
     async def get_active_orders(self) -> List[Order]:
         """Get all active orders."""
+        tprint(f"🚀 LiveTraderStatus.get_active_orders: Starting", "INFO")
+
         return list(self.active_orders.values())
 
     async def cancel_order(self, order_id: str) -> bool:
         """
+        tprint(f"🚀 LiveTraderStatus.cancel_order: order_id={order_id}", "INFO")
+
         Cancel an active order.
 
         Args:
@@ -644,6 +659,8 @@ class LiveTrader:
 
     async def reconcile_positions_with_exchange(self) -> Dict[str, Any]:
         """
+        tprint(f"🚀 LiveTraderStatus.reconcile_positions_with_exchange: Starting", "INFO")
+
         Reconcile internal position tracking with exchange positions.
         
         This method:
@@ -838,6 +855,8 @@ class LiveTrader:
 
     async def update_positions(self) -> None:
         """Update position information with current prices."""
+        tprint(f"🚀 LiveTraderStatus.update_positions: Starting", "INFO")
+
         try:
             for symbol, position in self.positions.items():
                 if position.quantity == 0:
@@ -864,6 +883,8 @@ class LiveTrader:
 
     async def monitor_positions(self) -> None:
         """Monitor positions and execute risk management."""
+        tprint(f"🚀 LiveTraderStatus.monitor_positions: Starting", "INFO")
+
         try:
             for symbol, position in list(self.positions.items()):
                 # Check stop loss
@@ -922,6 +943,8 @@ class LiveTrader:
 
     async def generate_signals(self, symbol: str, market_data: pd.DataFrame, regime_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Generate trading signals."""
+        tprint(f"🚀 LiveTraderStatus.generate_signals: symbol={symbol}, market_data={market_data}, regime_data={regime_data}, Any]]={Any]]}", "INFO")
+
         try:
             signals = {}
 
@@ -957,6 +980,8 @@ class LiveTrader:
 
     async def get_performance_metrics(self) -> Dict[str, Any]:
         """Get trading performance metrics."""
+        tprint(f"🚀 LiveTraderStatus.get_performance_metrics: Starting", "INFO")
+
         return {
             'total_trades': self.total_trades,
             'successful_trades': self.successful_trades,
@@ -971,6 +996,8 @@ class LiveTrader:
 
     async def cleanup(self) -> None:
         """Clean up resources and close positions."""
+        tprint(f"🚀 LiveTraderStatus.cleanup: Starting", "INFO")
+
         try:
             tprint_info("🧹 Cleaning up Live Trader...")
 
@@ -1017,11 +1044,15 @@ class LiveTrader:
 # Factory functions
 async def create_live_trader(config: Dict[str, Any]) -> LiveTrader:
     """Create and initialize a live trader."""
+    tprint(f"🚀 LiveTraderStatus.create_live_trader: config={config}, Any]={Any]}", "INFO")
+
     trader = LiveTrader(config)
     await trader.initialize()
     return trader
 
 def get_live_trader() -> Optional[LiveTrader]:
     """Get the global live trader instance."""
+    tprint(f"🚀 LiveTraderStatus.get_live_trader: Starting", "INFO")
+
     # Placeholder for singleton pattern
     return None

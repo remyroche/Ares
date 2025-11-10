@@ -15,12 +15,9 @@ from enum import Enum
 import pandas as pd
 import numpy as np
 
+from src.utils.tprint import tprint
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
-from src.utils.tprint import (
-    tprint_info, tprint_warning, tprint_error, tprint_success,
-    tprint_structured, LogLevel
-)
 from ..utils.error_handling import (
     TradingError, TradingErrorSeverity, trading_error_handler,
     critical_operation, require_no_fallback
@@ -82,7 +79,7 @@ class DataValidator:
         Args:
             config: Configuration dictionary
         """
-        tprint_info("🔍 Initializing Data Validator...")
+        tprint(f"DataValidator.__init__: Initializing with config keys: {list(config.keys())}")
         self.config: Dict[str, Any] = config
         self.logger = logger.getChild('DataValidator')
 
@@ -92,6 +89,7 @@ class DataValidator:
         self.missing_data_threshold: float = config.get('missing_data_threshold', 0.05)  # 5%
         self.outlier_threshold: float = config.get('outlier_threshold', 2.5)  # 2.5 std devs (more appropriate for financial data)
         self.freshness_threshold_minutes: int = config.get('freshness_threshold_minutes', 5)
+        tprint(f"DataValidator.__init__: Thresholds set - price_tolerance={self.price_tolerance}, outlier_threshold={self.outlier_threshold}")
 
         # Quality scoring weights
         self.quality_weights: Dict[ValidationRule, float] = {
@@ -108,10 +106,12 @@ class DataValidator:
         # Historical data for validation
         self.price_history: Dict[str, List[float]] = {}
         self.volume_history: Dict[str, List[float]] = {}
+        tprint(f"DataValidator.__init__: Initialized successfully")
 
     async def initialize(self) -> None:
         """Initialize data validator."""
-        tprint_success("✅ Data Validator initialized successfully")
+        tprint("DataValidator.initialize: Starting initialization")
+        tprint("DataValidator.initialize: Initialization complete")
 
     @handles_errors
     async def validate_market_data(
@@ -129,12 +129,16 @@ class DataValidator:
         Returns:
             Validation result
         """
+        data_type = "dict" if isinstance(data, dict) else "DataFrame"
+        tprint(f"validate_market_data: symbol={symbol}, data_type={data_type}")
         try:
             # Convert to DataFrame if needed
             if isinstance(data, dict):
                 df = pd.DataFrame([data])
+                tprint(f"validate_market_data: Converted dict to DataFrame with {len(df)} rows")
             else:
                 df = data.copy()
+                tprint(f"validate_market_data: Using DataFrame with {len(df)} rows")
 
             failed_rules = []
             warnings = []
@@ -142,6 +146,7 @@ class DataValidator:
 
             # Run all validation checks
             validation_results = {}
+            tprint(f"validate_market_data: Starting validation checks for {symbol}")
 
             # 1. OHLC Consistency Check
             ohlc_result = await self._validate_ohlc_consistency(df, symbol)
@@ -201,19 +206,21 @@ class DataValidator:
 
             # Calculate overall quality score
             quality_score = await self._calculate_quality_score(validation_results)
+            tprint(f"validate_market_data: Overall quality_score={quality_score:.3f}")
 
             # Determine if data is valid (critical errors)
             # Check if any critical validation rules failed
             critical_rules = {ValidationRule.OHLC_CONSISTENCY, ValidationRule.MISSING_DATA}
             failed_critical = any(
-                critical_rule in r.failed_rules 
-                for r in validation_results.values() 
+                critical_rule in r.failed_rules
+                for r in validation_results.values()
                 if not r.is_valid
                 for critical_rule in critical_rules
             )
             is_valid = not failed_critical
+            tprint(f"validate_market_data: is_valid={is_valid}, failed_rules={len(failed_rules)}, errors={len(errors)}, warnings={len(warnings)}")
 
-            return ValidationResult(
+            result = ValidationResult(
                 is_valid=is_valid,
                 quality_score=quality_score,
                 failed_rules=failed_rules,
@@ -221,9 +228,11 @@ class DataValidator:
                 errors=errors,
                 metadata={'validation_results': validation_results}
             )
+            tprint(f"validate_market_data: Returning validation result for {symbol}")
+            return result
 
         except Exception as e:
-            tprint_error(f"❌ Error validating market data: {str(e)}")
+            tprint(f"validate_market_data: Exception occurred: {str(e)}, returning failed ValidationResult")
             return ValidationResult(
                 is_valid=False,
                 quality_score=0.0,
@@ -243,7 +252,7 @@ class DataValidator:
         if missing_columns:
             error_msg: str = f"Missing required columns: {missing_columns}"
             errors.append(error_msg)
-            tprint_error(f"❌ OHLC validation failed for {symbol}: {error_msg}")
+            tprint(f"❌ OHLC validation failed for {symbol}: {error_msg}")
 
         if not errors and len(df) > 0:
             # Check for logical OHLC relationships
@@ -282,7 +291,7 @@ class DataValidator:
         if df.empty:
             error_msg: str = "DataFrame is empty"
             errors.append(error_msg)
-            tprint_error(f"❌ Missing data validation failed: {error_msg}")
+            tprint(f"❌ Missing data validation failed: {error_msg}")
             return ValidationResult(
                 is_valid=False,
                 quality_score=0.0,
@@ -299,12 +308,12 @@ class DataValidator:
         if missing_percentage > self.missing_data_threshold:
             error_msg = f"Missing data percentage ({missing_percentage:.2%}) exceeds threshold ({self.missing_data_threshold:.2%})"
             errors.append(error_msg)
-            tprint_error(f"❌ Missing data validation failed: {error_msg}")
+            tprint(f"❌ Missing data validation failed: {error_msg}")
 
         if missing_percentage > 0:
             warning_msg: str = f"Missing data in {missing_counts[missing_counts > 0].to_dict()}"
             warnings.append(warning_msg)
-            tprint_warning(f"⚠️ Missing data detected: {warning_msg}")
+            tprint(f"⚠️ Missing data detected: {warning_msg}")
 
         return ValidationResult(
             is_valid=len(errors) == 0,
@@ -344,7 +353,7 @@ class DataValidator:
                     if not outliers.empty:
                         warning_msg: str = f"Outliers detected in {col}: {len(outliers)} values"
                         warnings.append(warning_msg)
-                        tprint_warning(f"⚠️ Extreme values validation warning for {symbol}: {warning_msg}")
+                        tprint(f"⚠️ Extreme values validation warning for {symbol}: {warning_msg}")
 
         # Check for zero or negative prices
         price_columns: List[str] = [col for col in ['open', 'high', 'low', 'close'] if col in df.columns]
@@ -353,7 +362,7 @@ class DataValidator:
             if not negative_prices.empty:
                 error_msg: str = f"Zero or negative prices detected: {len(negative_prices)} rows"
                 errors.append(error_msg)
-                tprint_error(f"❌ Extreme values validation failed for {symbol}: {error_msg}")
+                tprint(f"❌ Extreme values validation failed for {symbol}: {error_msg}")
 
         return ValidationResult(
             is_valid=len(errors) == 0,
@@ -390,14 +399,14 @@ class DataValidator:
             if not volume_spikes.empty:
                 warning_msg: str = f"Volume spikes detected: {len(volume_spikes)} occurrences"
                 warnings.append(warning_msg)
-                tprint_warning(f"⚠️ Volume spikes validation warning for {symbol}: {warning_msg}")
+                tprint(f"⚠️ Volume spikes validation warning for {symbol}: {warning_msg}")
 
         # Check for zero volume periods
         zero_volume = df[df['volume'] == 0]
         if not zero_volume.empty:
             warning_msg = f"Zero volume periods: {len(zero_volume)} occurrences"
             warnings.append(warning_msg)
-            tprint_warning(f"⚠️ Volume spikes validation warning for {symbol}: {warning_msg}")
+            tprint(f"⚠️ Volume spikes validation warning for {symbol}: {warning_msg}")
 
         return ValidationResult(
             is_valid=len(errors) == 0,
@@ -651,7 +660,7 @@ class DataValidator:
                 weighted_score += weight * result.quality_score
 
         score: float = weighted_score / total_weight if total_weight > 0 else 0.0
-        tprint_info(f"📊 Calculated quality score: {score:.3f}")
+        tprint(f"📊 Calculated quality score: {score:.3f}")
         return score
 
     async def generate_quality_report(
@@ -752,7 +761,7 @@ class DataValidator:
         """Clean up resources."""
         self.price_history.clear()
         self.volume_history.clear()
-        tprint_info("🧹 Data Validator cleaned up successfully")
+        tprint("🧹 Data Validator cleaned up successfully")
 
 # Factory functions
 async def create_data_validator(config: Dict[str, Any]) -> DataValidator:

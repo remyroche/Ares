@@ -46,8 +46,7 @@ class PaperTradingIntegration:
     Integration module for paper trading with enhanced reporting.
     """
     def __init__(self, config: dict[str, Any]) -> None:
-        """
-        Initialize paper trading integration.
+        tprint(f"🚀 PaperTradingIntegration.__init__: Entered", "INFO")
 
         Args:
             config: Configuration dictionary
@@ -82,8 +81,7 @@ class PaperTradingIntegration:
         context="integration initialization",
     )
     async def initialize(self) -> bool:
-        """
-        Initialize paper trading integration with enhanced reporting.
+        tprint(f"🚀 PaperTradingIntegration.initialize: Entered", "INFO")
 
         Returns:
             bool: True if initialization successful, False otherwise
@@ -168,8 +166,8 @@ class PaperTradingIntegration:
         context="integrated trade execution",
     )
     async def execute_trade(
-        self,
-        symbol: str,
+        tprint(f"🚀 PaperTradingIntegration.execute_trade: Entered", "INFO")
+
         side: str,
         quantity: float,
         price: float,
@@ -282,9 +280,8 @@ class PaperTradingIntegration:
             self.logger.error(error(f"Error generating real-time report: {e}"))
 
     def get_performance_metrics(self) -> dict[str, Any]:
-        """Get comprehensive performance metrics."""
-        try:
-            # Get basic performance metrics
+        tprint(f"🚀 PaperTradingIntegration.get_performance_metrics: Entered", "INFO")
+
             basic_metrics = (
                 self.paper_trader.calculate_performance() if self.paper_trader else {}
             )
@@ -319,9 +316,8 @@ class PaperTradingIntegration:
             return {}
 
     def get_trade_history(self, symbol: str | None = None) -> list[dict[str, Any]]:
-        """Get trade history with optional filtering."""
-        try:
-            if self.paper_trader:
+        tprint(f"🚀 PaperTradingIntegration.get_trade_history: Entered", "INFO")
+
                 return self.paper_trader.get_trade_history(symbol)
             return []
 
@@ -331,9 +327,8 @@ class PaperTradingIntegration:
             return []
 
     def get_portfolio_summary(self) -> dict[str, Any]:
-        """Get portfolio summary."""
-        try:
-            if self.reporter:
+        tprint(f"🚀 PaperTradingIntegration.get_portfolio_summary: Entered", "INFO")
+
                 return self.reporter.get_portfolio_summary()
             if self.paper_trader:
                 positions = self.paper_trader.get_all_positions()
@@ -355,8 +350,8 @@ class PaperTradingIntegration:
 
     @performance_monitor(level=PerformanceLevel.BASIC)
     async def generate_comprehensive_report(
-        self,
-        report_type: str = "comprehensive",
+        tprint(f"🚀 PaperTradingIntegration.generate_comprehensive_report: Entered", "INFO")
+
         export_formats: list[str] | None = None,
     ) -> dict[str, Any]:
         """Generate comprehensive trading report."""
@@ -428,9 +423,8 @@ class PaperTradingIntegration:
             return {}
 
     def get_integration_status(self) -> dict[str, Any]:
-        """Get integration status."""
-        return {
-            "is_initialized": self.is_initialized,
+        tprint(f"🚀 PaperTradingIntegration.get_integration_status: Entered", "INFO")
+
             "is_running": self.is_running,
             "enable_detailed_reporting": self.enable_detailed_reporting,
             "enable_real_time_reporting": self.enable_real_time_reporting,
@@ -445,9 +439,8 @@ class PaperTradingIntegration:
         context="integration cleanup",
     )
     async def stop(self) -> None:
-        """Stop paper trading integration."""
-        try:
-            self.is_running = False
+        tprint(f"🚀 PaperTradingIntegration.stop: Entered", "INFO")
+
 
             # Stop paper trader
             if self.paper_trader:
@@ -468,8 +461,8 @@ class PaperTradingIntegration:
     context="paper trading integration setup",
 )
 async def setup_paper_trading_integration(
-    config: dict[str, Any] | None = None,
-) -> PaperTradingIntegration | None:
+    tprint(f"🚀 PaperTradingIntegration.setup_paper_trading_integration: Entered", "INFO")
+
     """
     Setup paper trading integration.
 

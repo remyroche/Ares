@@ -26,6 +26,7 @@ from pathlib import Path
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+from src.printing import tprint
 
 logger = system_logger.getChild('KellyHistoryTracker')
 
@@ -146,41 +147,47 @@ class KellyHistoryTracker:
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize history tracker.
-        
+
         Args:
             config: Configuration dictionary with binning and temporal settings
         """
+        tprint(f"KellyHistoryTracker.__init__ called with config keys: {list(config.keys())}")
+
         self.config = config
         self.logger = logger.getChild('Tracker')
-        
+
         # Extract configuration
         binning_config = config.get('binning', {})
         self.score_bins = np.array(binning_config.get('score_bins', [0.5, 0.6, 0.7, 0.8, 0.9]))
         self.volatility_bins = np.array(binning_config.get('volatility_bins', [0.005, 0.01, 0.02, 0.04]))
         self.enable_adaptive_merging = binning_config.get('enable_adaptive_merging', True)
         self.stale_bin_days = binning_config.get('stale_bin_days', 90)
-        
+        tprint(f"Binning config: {len(self.score_bins)} score bins, {len(self.volatility_bins)} vol bins, adaptive_merging={self.enable_adaptive_merging}, stale_days={self.stale_bin_days}")
+
         # Temporal integrity
         temporal_config = config.get('temporal', {})
         self.enable_purging = temporal_config.get('enable_purging', True)
         self.embargo_pct = temporal_config.get('embargo_pct_of_train', 0.05)
         self.overlap_detection = temporal_config.get('overlap_detection', True)
-        
+        tprint(f"Temporal integrity: purging={self.enable_purging}, embargo_pct={self.embargo_pct}, overlap_detection={self.overlap_detection}")
+
         # Regime-specific parameters
         self.regime_params = config.get('regime_params', {})
-        
+        tprint(f"Regime params: {len(self.regime_params)} regimes configured")
+
         # Storage: bins[regime_id][bin_key] = BinData
         self.bins: Dict[str, Dict[str, BinData]] = defaultdict(lambda: defaultdict(BinData))
-        
+
         # Metadata
         self.version = 1
         self.created_at = datetime.now()
         self.last_saved = None
-        
+
         # Regime stability tracking (for adaptive decay)
         self.regime_switches = []  # List of (timestamp, old_regime, new_regime)
         self.regime_stability_window = 1000  # bars for stability calculation
-        
+        tprint(f"Regime stability window: {self.regime_stability_window} bars")
+
         tprint_info("✅ Kelly History Tracker initialized")
         self.logger.info(f"Bins: {len(self.score_bins)} score × {len(self.volatility_bins)} vol")
     
@@ -269,7 +276,7 @@ class KellyHistoryTracker:
     ) -> None:
         """
         Update bin with new trade outcome.
-        
+
         Args:
             score: Model confidence score
             volatility: Market volatility (ATR or similar)
@@ -278,25 +285,33 @@ class KellyHistoryTracker:
             r_realized: Realized reward/risk ratio
             timestamp: Trade timestamp (defaults to now)
         """
+        tprint(f"update_bin called: score={score:.3f}, volatility={volatility:.4f}, regime_id={regime_id}, is_win={is_win}, r_realized={r_realized:.2f}")
+
         if timestamp is None:
             timestamp = datetime.now()
-        
+
         # Digitize to buckets
         score_bucket = self._digitize_score(score)
         vol_bucket = self._digitize_volatility(volatility)
-        
+        tprint(f"Digitized to buckets: score_bucket={score_bucket}, vol_bucket={vol_bucket}")
+
         # Get regime key
         regime_key = self._get_regime_key(regime_id)
-        
+
         # Create bin key
         bin_key = self._get_bin_key(score_bucket, vol_bucket)
-        
+        tprint(f"Bin location: {regime_key}/{bin_key}")
+
         # Get decay rate for this regime
         decay_theta = self._get_decay_theta(regime_id)
-        
+        tprint(f"Decay theta for regime {regime_id}: {decay_theta:.4f}")
+
         # Update bin
+        before_samples = self.bins[regime_key][bin_key].total_samples()
         self.bins[regime_key][bin_key].add_trade(is_win, r_realized, timestamp, decay_theta)
-        
+        after_samples = self.bins[regime_key][bin_key].total_samples()
+
+        tprint(f"Bin updated: {regime_key}/{bin_key}, samples {before_samples:.1f}->{after_samples:.1f}, win={is_win}, R={r_realized:.2f}")
         self.logger.debug(f"Updated bin {regime_key}/{bin_key}: win={is_win}, R={r_realized:.2f}")
     
     def track_regime_switch(
@@ -333,62 +348,75 @@ class KellyHistoryTracker:
     ) -> Tuple[BinData, int]:
         """
         Lookup bin with adaptive fallback hierarchy.
-        
+
         Hierarchy:
         1. Exact bin (score_bucket, vol_bucket, regime_id)
         2. Regime-agnostic (merge across regimes for same score/vol)
         3. Coarser bins (merge adjacent buckets)
         4. Global prior (return empty BinData with merge_level=3)
-        
+
         Args:
             score: Model confidence score
             volatility: Market volatility
             regime_id: Regime identifier
             n_min: Minimum samples required
             current_time: Current time for staleness check
-            
+
         Returns:
             Tuple of (BinData, merge_level)
         """
+        tprint(f"lookup_bin called: score={score:.3f}, volatility={volatility:.4f}, regime_id={regime_id}, n_min={n_min}")
+
         if current_time is None:
             current_time = datetime.now()
-        
+
         # Digitize to buckets
         score_bucket = self._digitize_score(score)
         vol_bucket = self._digitize_volatility(volatility)
-        
+        tprint(f"Digitized to buckets: score_bucket={score_bucket}, vol_bucket={vol_bucket}")
+
         # Level 0: Exact bin
         regime_key = self._get_regime_key(regime_id)
         bin_key = self._get_bin_key(score_bucket, vol_bucket)
-        
+
         if regime_key in self.bins and bin_key in self.bins[regime_key]:
             bin_data = self.bins[regime_key][bin_key]
             bin_data.check_stale(current_time, self.stale_bin_days)
-            
-            if bin_data.total_samples() >= n_min:
+            samples = bin_data.total_samples()
+            tprint(f"Level 0 - Exact bin found: {regime_key}/{bin_key}, samples={samples:.1f}, required={n_min}")
+
+            if samples >= n_min:
                 bin_data.merge_level = 0
+                tprint(f"lookup_bin returning exact bin at level 0 with {samples:.1f} samples")
                 return bin_data, 0
-        
+
         # Level 1: Regime-agnostic merge (if adaptive merging enabled)
         if self.enable_adaptive_merging:
             merged_bin = self._merge_across_regimes(score_bucket, vol_bucket)
-            if merged_bin.total_samples() >= n_min:
+            samples = merged_bin.total_samples()
+            tprint(f"Level 1 - Regime-agnostic merge: samples={samples:.1f}, required={n_min}")
+            if samples >= n_min:
                 merged_bin.merge_level = 1
                 merged_bin.check_stale(current_time, self.stale_bin_days)
-                self.logger.debug(f"Using regime-agnostic bin: {merged_bin.total_samples()} samples")
+                self.logger.debug(f"Using regime-agnostic bin: {samples} samples")
+                tprint(f"lookup_bin returning regime-agnostic bin at level 1 with {samples:.1f} samples")
                 return merged_bin, 1
-            
+
             # Level 2: Coarser bins (merge adjacent buckets)
             merged_bin = self._merge_coarse_bins(score_bucket, vol_bucket, regime_id)
-            if merged_bin.total_samples() >= n_min:
+            samples = merged_bin.total_samples()
+            tprint(f"Level 2 - Coarse bin merge: samples={samples:.1f}, required={n_min}")
+            if samples >= n_min:
                 merged_bin.merge_level = 2
                 merged_bin.check_stale(current_time, self.stale_bin_days)
-                self.logger.debug(f"Using coarse bin: {merged_bin.total_samples()} samples")
+                self.logger.debug(f"Using coarse bin: {samples} samples")
+                tprint(f"lookup_bin returning coarse bin at level 2 with {samples:.1f} samples")
                 return merged_bin, 2
-        
+
         # Level 3: Global prior (fallback with no data)
         empty_bin = BinData(merge_level=3)
         self.logger.warning(f"Insufficient data, using global prior for s={score:.2f}, v={volatility:.4f}, r={regime_id}")
+        tprint(f"lookup_bin returning global prior at level 3 (no data available)")
         return empty_bin, 3
     
     def _merge_across_regimes(self, score_bucket: int, vol_bucket: int) -> BinData:

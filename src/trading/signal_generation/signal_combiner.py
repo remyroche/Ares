@@ -18,6 +18,7 @@ import numpy as np
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+from src.printing import tprint
 
 # Import signal types
 from .analyst_signals import AnalystSignal, SignalType, SignalStrength
@@ -79,6 +80,7 @@ class SignalCombiner:
         Args:
             config: Configuration dictionary
         """
+        tprint(f"[SIGNAL_COMBINER] __init__: Initializing signal combiner")
         self.config = config
         self.logger = logger.getChild('SignalCombiner')
 
@@ -110,6 +112,7 @@ class SignalCombiner:
         self.stacker_artifacts = config.get('stacker_artifacts', {})
         self.stacker_ready = False
         self._initialise_stacker_from_artifacts()
+        tprint(f"[SIGNAL_COMBINER] __init__ -> initialized (method={self.combination_method.value}, confidence_threshold={self.weights.confidence_threshold})")
 
     async def initialize(self) -> bool:
         """
@@ -118,11 +121,14 @@ class SignalCombiner:
         Returns:
             bool: True if initialization successful
         """
+        tprint(f"[SIGNAL_COMBINER] initialize: Initializing signal combiner")
         try:
             self.logger.info("✅ Signal Combiner initialized")
+            tprint(f"[SIGNAL_COMBINER] initialize -> True")
             return True
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize Signal Combiner: {e}")
+            tprint(f"[SIGNAL_COMBINER] initialize -> False (error: {e})", color="red")
             return False
 
     def _initialise_stacker_from_artifacts(self) -> None:
@@ -176,12 +182,14 @@ class SignalCombiner:
         Returns:
             Combined signal result or None if no valid combination
         """
+        tprint(f"[SIGNAL_COMBINER] combine_signals: has_analyst={analyst_signal is not None}, has_tactician={tactician_signal is not None}, method={self.combination_method.value}")
         try:
             tprint_info("🔄 Combining Analyst and Tactician signals...")
 
             # Validate inputs
             if not analyst_signal and not tactician_signal:
                 tprint_warning("⚠️ No signals provided for combination")
+                tprint(f"[SIGNAL_COMBINER] combine_signals -> None (no signals)")
                 return None
 
             # Perform signal combination based on method
@@ -220,12 +228,16 @@ class SignalCombiner:
                              f"(confidence: {combined_signal.confidence:.3f})")
 
                 # Return as dictionary for compatibility
-                return self._signal_to_dict(combined_signal)
+                result = self._signal_to_dict(combined_signal)
+                tprint(f"[SIGNAL_COMBINER] combine_signals -> {combined_signal.action.value} (confidence={combined_signal.confidence:.3f}, strength={combined_signal.strength:.3f})")
+                return result
 
+            tprint(f"[SIGNAL_COMBINER] combine_signals -> None (no combined signal)")
             return None
 
         except Exception as e:
             self.logger.error(f"❌ Signal combination failed: {e}")
+            tprint(f"[SIGNAL_COMBINER] combine_signals -> ERROR: {e}", color="red")
             return None
 
     async def _weighted_average_combination(
@@ -235,12 +247,15 @@ class SignalCombiner:
         additional_context: Optional[Dict[str, Any]]
     ) -> Optional[CombinedSignal]:
         """Combine signals using weighted average method."""
+        tprint(f"[SIGNAL_COMBINER] _weighted_average_combination: combining signals")
         try:
             analyst_confidence = analyst_signal.confidence_score if analyst_signal else 0.0
             tactician_confidence = tactician_signal.confidence_score if tactician_signal else 0.0
 
             analyst_weight = self.weights.analyst_weight if analyst_signal else 0.0
             tactician_weight = self.weights.tactician_weight if tactician_signal else 0.0
+
+            tprint(f"[SIGNAL_COMBINER] _weighted_average_combination: analyst_conf={analyst_confidence:.3f}, tactician_conf={tactician_confidence:.3f}")
 
             gated_output = self._compute_gated_output(
                 analyst_signal, tactician_signal, additional_context
@@ -286,11 +301,13 @@ class SignalCombiner:
                 )
 
             if combined_confidence < self.weights.confidence_threshold:
+                tprint(f"[SIGNAL_COMBINER] _weighted_average_combination -> None (confidence {combined_confidence:.3f} below threshold {self.weights.confidence_threshold:.3f})")
                 return None
 
             action = self._determine_combined_action(analyst_signal, tactician_signal)
             strength = self._calculate_combined_strength(analyst_signal, tactician_signal)
             risk_metrics = self._calculate_risk_metrics(analyst_signal, tactician_signal)
+            tprint(f"[SIGNAL_COMBINER] _weighted_average_combination: action={action.value}, strength={strength:.3f}, confidence={combined_confidence:.3f}")
             if combined_utility is not None:
                 risk_metrics = dict(risk_metrics or {})
                 risk_metrics['combined_utility'] = combined_utility
@@ -305,7 +322,7 @@ class SignalCombiner:
                 metadata['combined_utility'] = combined_utility
             metadata['combined_confidence'] = combined_confidence
 
-            return CombinedSignal(
+            signal = CombinedSignal(
                 timestamp=datetime.now(),
                 symbol=analyst_signal.symbol if analyst_signal else tactician_signal.symbol,
                 action=action,
@@ -318,9 +335,12 @@ class SignalCombiner:
                 position_sizing=position_sizing,
                 metadata=metadata,
             )
+            tprint(f"[SIGNAL_COMBINER] _weighted_average_combination -> {action.value} (confidence={combined_confidence:.3f})")
+            return signal
 
         except Exception as e:
             self.logger.error(f"❌ Weighted average combination failed: {e}")
+            tprint(f"[SIGNAL_COMBINER] _weighted_average_combination -> ERROR: {e}", color="red")
             return None
 
     async def _confidence_weighted_combination(
@@ -561,6 +581,7 @@ class SignalCombiner:
         tactician_signal: Optional[TacticianSignal]
     ) -> CombinedAction:
         """Determine combined action from both signals."""
+        tprint(f"[SIGNAL_COMBINER] _determine_combined_action: determining action")
         try:
             # Get actions from both signals
             analyst_action = self._map_analyst_signal_to_action(
@@ -570,18 +591,24 @@ class SignalCombiner:
                 tactician_signal.timing_signal if tactician_signal else TimingSignal.HOLD
             )
 
+            tprint(f"[SIGNAL_COMBINER] _determine_combined_action: analyst_action={analyst_action.value}, tactician_action={tactician_action.value}")
+
             # Combine actions based on priority
             if analyst_action == CombinedAction.BUY and tactician_action in [CombinedAction.BUY, CombinedAction.HOLD]:
-                return CombinedAction.BUY
+                result = CombinedAction.BUY
             elif analyst_action == CombinedAction.SELL and tactician_action in [CombinedAction.SELL, CombinedAction.HOLD]:
-                return CombinedAction.SELL
+                result = CombinedAction.SELL
             elif analyst_action == CombinedAction.HOLD and tactician_action == CombinedAction.CLOSE:
-                return CombinedAction.CLOSE
+                result = CombinedAction.CLOSE
             else:
-                return CombinedAction.HOLD
+                result = CombinedAction.HOLD
+
+            tprint(f"[SIGNAL_COMBINER] _determine_combined_action -> {result.value}")
+            return result
 
         except Exception as e:
             self.logger.error(f"❌ Action determination failed: {e}")
+            tprint(f"[SIGNAL_COMBINER] _determine_combined_action -> HOLD (error: {e})", color="red")
             return CombinedAction.HOLD
 
     def _map_analyst_signal_to_action(self, signal_type: SignalType) -> CombinedAction:
@@ -900,7 +927,8 @@ class SignalCombiner:
 
     def _signal_to_dict(self, signal: CombinedSignal) -> Dict[str, Any]:
         """Convert combined signal to dictionary."""
-        return {
+        tprint(f"[SIGNAL_COMBINER] _signal_to_dict: converting signal to dict")
+        result = {
             'action': signal.action.value,
             'confidence': signal.confidence,
             'strength': signal.strength,
@@ -911,14 +939,18 @@ class SignalCombiner:
             'position_sizing': signal.position_sizing,
             'metadata': signal.metadata
         }
+        tprint(f"[SIGNAL_COMBINER] _signal_to_dict -> dict with {len(result)} keys")
+        return result
 
     def _store_combination(self, signal: CombinedSignal):
         """Store combination in history."""
+        tprint(f"[SIGNAL_COMBINER] _store_combination: storing combination (history_size={len(self.combination_history)})")
         self.combination_history.append(signal)
 
         # Maintain history size
         if len(self.combination_history) > self.max_history:
             self.combination_history.pop(0)
+        tprint(f"[SIGNAL_COMBINER] _store_combination -> stored (new_size={len(self.combination_history)})")
 
     def get_combination_history(self, n: int = 100) -> List[CombinedSignal]:
         """Get recent combination history."""
@@ -962,7 +994,10 @@ class SignalCombiner:
 
 def create_signal_combiner(config: Dict[str, Any]) -> SignalCombiner:
     """Create a configured signal combiner."""
-    return SignalCombiner(config)
+    tprint(f"[SIGNAL_COMBINER] create_signal_combiner: Creating signal combiner")
+    combiner = SignalCombiner(config)
+    tprint(f"[SIGNAL_COMBINER] create_signal_combiner -> created")
+    return combiner
 
 async def combine_signals(
     signal_combiner: SignalCombiner,
@@ -971,8 +1006,11 @@ async def combine_signals(
     additional_context: Optional[Dict[str, Any]] = None
 ) -> Optional[Dict[str, Any]]:
     """Combine signals with convenience function."""
-    return await signal_combiner.combine_signals(
+    tprint(f"[SIGNAL_COMBINER] combine_signals: calling combiner.combine_signals()")
+    result = await signal_combiner.combine_signals(
         analyst_signal=analyst_signal,
         tactician_signal=tactician_signal,
         additional_context=additional_context
     )
+    tprint(f"[SIGNAL_COMBINER] combine_signals -> {result['action'] if result else None}")
+    return result

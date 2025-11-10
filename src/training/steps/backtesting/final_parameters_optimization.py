@@ -76,7 +76,7 @@ from src.utils.common_operations import (
 from src.utils.common_utilities import ensure_list, ensure_array, flatten_dict
 
 # Output utilities
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_data_preview, tprint_data_format, tprint_info, tprint_success, tprint_warning, tprint_error
 from collections import OrderedDict
 
 # Hardware optimization
@@ -277,8 +277,8 @@ class FinalParametersOptimizer(BaseStep):
             # New directional categories
             'long_specific_parameters', 'short_specific_parameters',
             'directional_thresholds', 'asymmetric_risk_management',
-            # Merged Tactician & Analyst integration
-            'tactician_analyst_integration', 'analyst_oof_weights', 'merged_feature_importance'
+            # Analyst integration (Tactician deprecated - using Analyst only)
+            'analyst_integration', 'analyst_oof_weights', 'analyst_feature_importance'
         ]
 
         # Default search spaces for each category
@@ -1113,30 +1113,30 @@ class FinalParametersOptimizer(BaseStep):
                                      tactician_conf: np.ndarray,
                                      params: Dict[str, Any]) -> np.ndarray:
         """
-        Return Tactician confidence (no combination with Analyst).
-        
-        Note: Tactician uses Analyst output as input, so combining confidences
-        would cause overfitting. We use only Tactician's Ensemble confidence.
+        Return Analyst confidence directly.
+
+        Note: Updated to use Analyst confidence instead of Tactician.
+        We use only Analyst's Ensemble confidence for decision making.
 
         Args:
-            analyst_conf: Analyst confidence array (not used, kept for API compatibility)
-            tactician_conf: Tactician confidence array
+            analyst_conf: Analyst confidence array (primary input)
+            tactician_conf: Tactician confidence array (deprecated, kept for API compatibility)
             params: Parameters (not used for combination, kept for API compatibility)
 
         Returns:
-            Tactician confidence array
+            Analyst confidence array
         """
         try:
-            # Validate inputs
-            tactician_conf = ensure_array(tactician_conf)
-            tactician_conf = validate_probability(tactician_conf)
-            return tactician_conf
+            # Validate inputs - use analyst_conf as primary confidence source
+            analyst_conf = ensure_array(analyst_conf)
+            analyst_conf = validate_probability(analyst_conf)
+            return analyst_conf
 
         except Exception as e:
-            self.logger.error(f"Error processing tactician confidence: {e}")
-            tprint(f"❌ Tactician confidence processing failed: {e}", "error")
+            self.logger.error(f"Error processing analyst confidence: {e}")
+            tprint(f"❌ Analyst confidence processing failed: {e}", "error")
             # Return zero confidence on error
-            return np.zeros_like(tactician_conf) if hasattr(tactician_conf, 'shape') else np.array([0.0])
+            return np.zeros_like(analyst_conf) if hasattr(analyst_conf, 'shape') else np.array([0.0])
     
     # ============================================================================
     # HIERARCHICAL OPTIMIZATION HELPER METHODS
@@ -1156,33 +1156,34 @@ class FinalParametersOptimizer(BaseStep):
             Tuple of (features, targets) as numpy arrays
         """
         try:
-            # Extract confidence arrays
+            # Extract confidence arrays - Updated to use only analyst_confidence
             analyst_conf = calibration_results.get('analyst_confidence', np.array([]))
-            tactician_conf = calibration_results.get('tactician_confidence', np.array([]))
+            # Legacy support: also check for tactician_confidence but default to analyst
+            tactician_conf = calibration_results.get('tactician_confidence', analyst_conf.copy() if len(analyst_conf) > 0 else np.array([]))
             returns = calibration_results.get('returns', np.array([]))
-            
+
             # Check for new simplified target structure
             target_long = calibration_results.get('target_long', np.array([]))
             target_short = calibration_results.get('target_short', np.array([]))
-            
+
             # If we have the new simplified target structure, use it
             if len(target_long) > 0 and len(target_short) > 0:
                 tprint_info("📊 Using new simplified target structure (target_long, target_short)")
-                
+
                 # Create combined targets for backward compatibility
                 # Use target_long for long opportunities, target_short for short opportunities
                 min_len = min(len(target_long), len(target_short))
-                
+
                 # Create combined target for optimization (prioritize long opportunities)
                 combined_targets = target_long[:min_len]
-                
+
                 # Create directional signals from new target structure
                 long_signals = (target_long[:min_len] > 0).astype(int)
                 short_signals = (target_short[:min_len] > 0).astype(int)
-                
+
                 # Create combined signals (long=1, short=-1, neutral=0)
                 combined_signals = long_signals - short_signals
-                
+
                 # Use targets as returns if actual returns not available
                 if len(returns) == 0:
                     # Simulate returns from target structure
@@ -1192,28 +1193,26 @@ class FinalParametersOptimizer(BaseStep):
                     tprint_info("📊 Using target structure as proxy for returns")
                 else:
                     returns = returns[:min_len]
-                
+
                 # Update calibration results with derived data for backward compatibility
                 calibration_results['derived_signals'] = combined_signals
                 calibration_results['derived_targets'] = combined_targets
                 calibration_results['target_structure'] = 'simplified'
-                
+
             else:
                 # Use legacy target structure
                 tprint_info("📊 Using legacy target structure")
-                
-                # Ensure we have data
-                if len(analyst_conf) == 0 or len(tactician_conf) == 0 or len(returns) == 0:
-                    raise ValueError("calibration_results must contain analyst_confidence, tactician_confidence, and returns arrays")
-            
-            # Combine confidence scores as features
-            min_len = min(len(analyst_conf), len(tactician_conf))
-            features = np.column_stack([
-                analyst_conf[:min_len],
-                tactician_conf[:min_len]
-            ])
-            
-            # Use returns as targets if available
+
+                # Ensure we have data - Updated to only require analyst_confidence
+                if len(analyst_conf) == 0 or len(returns) == 0:
+                    raise ValueError("calibration_results must contain analyst_confidence and returns arrays")
+
+            # Use only analyst confidence as features (no longer combining with tactician)
+            features = analyst_conf.reshape(-1, 1) if len(analyst_conf.shape) == 1 else analyst_conf
+
+            # Align features and targets
+            min_len = min(len(features), len(returns))
+            features = features[:min_len]
             targets = returns[:min_len]
             
             self.logger.info(f"   Prepared data: {features.shape[0]} samples, {features.shape[1]} features")
@@ -1244,21 +1243,22 @@ class FinalParametersOptimizer(BaseStep):
             Dict with predictions, targets, returns, regime_labels
         """
         try:
-            # Extract confidence data
+            # Extract confidence data - Updated to use only analyst_confidence
             analyst_conf = calibration_results.get('analyst_confidence', np.array([]))
-            tactician_conf = calibration_results.get('tactician_confidence', np.array([]))
+            # Legacy support for tactician_confidence (fallback to analyst)
+            tactician_conf = calibration_results.get('tactician_confidence', analyst_conf.copy() if len(analyst_conf) > 0 else np.array([]))
             returns = calibration_results.get('returns', np.array([]))
-            
+
             # Check for new simplified target structure
             target_long = calibration_results.get('target_long', np.array([]))
             target_short = calibration_results.get('target_short', np.array([]))
             derived_signals = calibration_results.get('derived_signals', np.array([]))
             derived_targets = calibration_results.get('derived_targets', np.array([]))
-            
+
             # If we have the new simplified target structure, use it
             if len(target_long) > 0 and len(target_short) > 0:
                 tprint_info("📊 Using new simplified target structure for hierarchical optimization")
-                
+
                 # Use derived signals and targets if available
                 if len(derived_signals) > 0 and len(derived_targets) > 0:
                     signals = derived_signals
@@ -1269,7 +1269,7 @@ class FinalParametersOptimizer(BaseStep):
                     short_signals = (target_short > 0).astype(int)
                     signals = long_signals - short_signals
                     targets = target_long  # Use target_long as primary target
-                
+
                 # Use returns if available, otherwise use targets as proxy
                 if len(returns) == 0:
                     returns = targets
@@ -1278,15 +1278,16 @@ class FinalParametersOptimizer(BaseStep):
                     signals = signals[:min_len]
                     targets = targets[:min_len]
                     returns = returns[:min_len]
-                
+
             else:
-                # Use legacy target structure
-                min_len = min(len(analyst_conf), len(tactician_conf), len(returns))
-                tactician_conf = tactician_conf[:min_len]
+                # Use legacy target structure - Updated to use analyst_confidence
+                min_len = min(len(analyst_conf), len(returns))
+                analyst_conf = analyst_conf[:min_len]
                 returns = returns[:min_len]
 
-                conf_threshold = params.get('tactician_confidence_threshold', 0.75)
-                signals = (tactician_conf >= conf_threshold).astype(int)
+                # Use analyst_confidence_threshold instead of tactician
+                conf_threshold = params.get('analyst_confidence_threshold', params.get('tactician_confidence_threshold', 0.75))
+                signals = (analyst_conf >= conf_threshold).astype(int)
                 targets = (returns > 0).astype(int)
 
             simulated_returns = signals * returns
@@ -2734,21 +2735,22 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             Evaluation score
         """
         try:
-            # Extract confidence data from calibration results
+            # Extract confidence data from calibration results - Updated to use analyst_confidence
             analyst_conf = calibration_results.get('analyst_confidence', np.array([]))
-            tactician_conf = calibration_results.get('tactician_confidence', np.array([]))
+            # Legacy support for tactician_confidence
+            tactician_conf = calibration_results.get('tactician_confidence', analyst_conf.copy() if len(analyst_conf) > 0 else np.array([]))
             returns = calibration_results.get('returns', np.array([]))
-            
+
             # Check for new simplified target structure
             target_long = calibration_results.get('target_long', np.array([]))
             target_short = calibration_results.get('target_short', np.array([]))
             derived_signals = calibration_results.get('derived_signals', np.array([]))
             derived_targets = calibration_results.get('derived_targets', np.array([]))
-            
+
             # If we have the new simplified target structure, use it for evaluation
             if len(target_long) > 0 and len(target_short) > 0:
                 tprint_info("📊 Evaluating confidence parameters with new simplified target structure")
-                
+
                 # Use derived signals and targets for evaluation
                 if len(derived_signals) > 0 and len(derived_targets) > 0:
                     return self._evaluate_confidence_with_new_targets(params, derived_signals, derived_targets, returns)
@@ -2758,8 +2760,8 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                     combined_targets = target_long  # Use target_long as primary target
                     return self._evaluate_confidence_with_new_targets(params, combined_signals, combined_targets, returns)
 
-            # If we have actual confidence data, use simulation-based evaluation
-            if len(analyst_conf) > 0 and len(tactician_conf) > 0 and len(returns) > 0:
+            # If we have actual confidence data, use simulation-based evaluation (Analyst-based)
+            if len(analyst_conf) > 0 and len(returns) > 0:
                 return self._evaluate_confidence_with_simulation(params, analyst_conf, tactician_conf, returns)
 
             # Otherwise, fall back to heuristic evaluation
@@ -2795,20 +2797,26 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 tprint(f"⚠️  Signals/targets/returns length mismatch: signals={len(signals)}, targets={len(targets)}, returns={len(returns)}", "warning")
                 return 0.0
 
-            # Apply confidence threshold with validation
+            # Apply confidence threshold with validation - Updated to use analyst_confidence
             confidence_threshold = validate_probability(
-                params.get('tactician_confidence_threshold', 0.7), default=0.7
+                params.get('analyst_confidence_threshold', params.get('tactician_confidence_threshold', 0.7)), default=0.7
             )
-            
+
             # For new target structure, we use the targets directly as signals
             # since target_long and target_short are already binary signals
             if len(targets) > 0:
                 # Use targets as signals (they're already binary)
                 filtered_signals = targets
                 filtered_returns = returns[:len(targets)]
-                
-                # Apply additional confidence filtering if we have confidence data
-                if 'tactician_confidence' in self.calibration_results:
+
+                # Apply additional confidence filtering if we have confidence data (Analyst-based)
+                if 'analyst_confidence' in self.calibration_results:
+                    analyst_conf = self.calibration_results['analyst_confidence'][:len(targets)]
+                    conf_mask = analyst_conf >= confidence_threshold
+                    filtered_signals = filtered_signals[conf_mask]
+                    filtered_returns = filtered_returns[conf_mask]
+                elif 'tactician_confidence' in self.calibration_results:
+                    # Legacy fallback
                     tactician_conf = self.calibration_results['tactician_confidence'][:len(targets)]
                     conf_mask = tactician_conf >= confidence_threshold
                     filtered_signals = filtered_signals[conf_mask]
@@ -4163,33 +4171,35 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 tprint_info(f"   • target_short: {len(target_short)} samples")
                 return True
             
-            # Check for legacy target structure
+            # Check for legacy target structure - Updated to only require analyst_confidence
             analyst_conf = calibration_results.get('analyst_confidence', np.array([]))
+            # Tactician confidence is optional for backward compatibility
             tactician_conf = calibration_results.get('tactician_confidence', np.array([]))
             returns = calibration_results.get('returns', np.array([]))
-            
-            if len(analyst_conf) > 0 and len(tactician_conf) > 0 and len(returns) > 0:
-                tprint_success("✅ Valid calibration results found with legacy target structure")
+
+            if len(analyst_conf) > 0 and len(returns) > 0:
+                tprint_success("✅ Valid calibration results found with legacy target structure (Analyst-based)")
                 tprint_info(f"   • analyst_confidence: {len(analyst_conf)} samples")
-                tprint_info(f"   • tactician_confidence: {len(tactician_conf)} samples")
+                if len(tactician_conf) > 0:
+                    tprint_info(f"   • tactician_confidence: {len(tactician_conf)} samples (optional, legacy support)")
                 tprint_info(f"   • returns: {len(returns)} samples")
                 return True
-            
+
             # Check for alternative legacy target names
             price_target_vol_normalized = calibration_results.get('price_target_vol_normalized', np.array([]))
             volatility_labels = calibration_results.get('volatility_labels', np.array([]))
-            
+
             if len(price_target_vol_normalized) > 0 or len(volatility_labels) > 0:
                 tprint_success("✅ Valid calibration results found with alternative legacy target structure")
                 tprint_info(f"   • price_target_vol_normalized: {len(price_target_vol_normalized)} samples")
                 tprint_info(f"   • volatility_labels: {len(volatility_labels)} samples")
                 return True
-            
+
             # No valid target structure found
             tprint_error("❌ No valid target structure found in calibration results")
             tprint_info("   Expected one of:")
             tprint_info("   • New simplified: target_long, target_short")
-            tprint_info("   • Legacy: analyst_confidence, tactician_confidence, returns")
+            tprint_info("   • Legacy (Analyst-based): analyst_confidence, returns")
             tprint_info("   • Alternative legacy: price_target_vol_normalized, volatility_labels")
             return False
             
@@ -5070,25 +5080,35 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                     if artifact_data is not None:
                         calibration_results.update(artifact_data)
                         tprint_success(f"✅ Loaded calibration results from {artifact_name}")
+                        # Print detailed data preview for calibration results
+                        tprint_info(f"📊 Calibration Results Preview:")
+                        for key, value in artifact_data.items():
+                            if hasattr(value, 'shape'):
+                                tprint_data_preview(value, name=f"Calibration - {key}", max_rows=5, max_cols=10)
+                            else:
+                                tprint_info(f"   • {key}: {type(value).__name__}")
                         break
                 except Exception as e:
                     self.logger.debug(f"Failed to load {artifact_name}: {e}")
                     continue
-            
+
             # If no calibration results found, return empty dict
             if not calibration_results:
                 tprint_warning("⚠️ No calibration results found in artifacts")
                 return {}
-            
+
             # Check if calibration results contain required data
-            required_keys = ['analyst_confidence', 'tactician_confidence', 'returns']
+            # Note: Changed to use analyst_confidence instead of tactician_confidence
+            required_keys = ['analyst_confidence', 'returns']
             missing_keys = [key for key in required_keys if key not in calibration_results]
-            
+
             if missing_keys:
                 tprint_warning(f"⚠️ Missing required calibration data: {missing_keys}")
                 return {}
-            
+
             tprint_success(f"✅ Calibration results loaded successfully")
+            # Print summary of what was loaded
+            tprint_info(f"📊 Loaded calibration data keys: {list(calibration_results.keys())}")
             return calibration_results
             
         except Exception as e:
@@ -6033,17 +6053,32 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 model='analyst'
             )
 
+            # Try to load labeled data from feature_generation_labeling_integration_step
+            # This is the artifact name used by the feature generation step
             labeled_data = self._get_artifact(
-                artifact_name=f'labeled_data_{symbol}_{timeframe}',
+                artifact_name='feature_generation_labeling_integration',
                 artifact_type='data',
                 data_category='features'
             )
 
+            # Fallback to legacy naming pattern if not found
+            if labeled_data is None:
+                tprint(f"⚠️ 'feature_generation_labeling_integration' not found, trying legacy 'labeled_data_{symbol}_{timeframe}'...", "warning")
+                labeled_data = self._get_artifact(
+                    artifact_name=f'labeled_data_{symbol}_{timeframe}',
+                    artifact_type='data',
+                    data_category='features'
+                )
+
             if labeled_data is not None:
                 tprint(f"✅ Loaded labeled data: {labeled_data.shape}", "success")
+                # Print detailed data preview
+                tprint_data_preview(labeled_data, name="Labeled Data", max_rows=5, max_cols=10)
+                tprint_data_format(labeled_data, name="Labeled Data", check_compatibility=True)
                 loaded_data['labeled_data'] = labeled_data
             else:
                 tprint("⚠️ Labeled data not found in versioned artifacts", "warning")
+                tprint("   Tried artifact names: 'feature_generation_labeling_integration', f'labeled_data_{symbol}_{timeframe}'", "info")
 
             # 2. Load regime probabilities from regime_ensemble_training
             tprint("📊 Loading regime probabilities from regime_ensemble_training...", "info")
@@ -6058,17 +6093,31 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 model='regime'
             )
 
+            # Try to load regime ensemble predictions (saved as 'regime_ensemble_predictions' by regime training step)
             regime_probs = self._get_artifact(
                 artifact_name='regime_ensemble_predictions',
                 artifact_type='data',
                 data_category='predictions'
             )
 
+            # Fallback to rolling_hmm_regime_probabilities if not found
+            if regime_probs is None:
+                tprint("⚠️ 'regime_ensemble_predictions' not found, trying 'rolling_hmm_regime_probabilities'...", "warning")
+                regime_probs = self._get_artifact(
+                    artifact_name='rolling_hmm_regime_probabilities',
+                    artifact_type='data',
+                    data_category='features'
+                )
+
             if regime_probs is not None:
                 tprint(f"✅ Loaded regime probabilities: {regime_probs.shape}", "success")
+                # Print detailed data preview
+                tprint_data_preview(regime_probs, name="Regime Probabilities", max_rows=5, max_cols=10)
+                tprint_data_format(regime_probs, name="Regime Probabilities", check_compatibility=True)
                 loaded_data['regime_probabilities'] = regime_probs
             else:
                 tprint("⚠️ Regime probabilities not found in versioned artifacts", "warning")
+                tprint("   Tried artifact names: 'regime_ensemble_predictions', 'rolling_hmm_regime_probabilities'", "info")
 
             # 3. Load analyst ensemble confidence and disagreement features
             tprint("📊 Loading analyst ensemble outputs (confidence + disagreement)...", "info")
@@ -6082,20 +6131,50 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 model='analyst'
             )
 
-            # Try to load analyst ensemble predictions which should contain confidence scores
+            # Try to load analyst ensemble outputs (saved as 'analyst_ensemble_outputs' by unified training step)
+            # First try the actual artifact name used by the training step
             analyst_predictions = self._get_artifact(
-                artifact_name='analyst_ensemble_predictions',
+                artifact_name='analyst_ensemble_outputs',
                 artifact_type='data',
                 data_category='predictions'
             )
 
+            # Fallback to legacy name if not found
+            if analyst_predictions is None:
+                tprint("⚠️ 'analyst_ensemble_outputs' not found, trying legacy 'analyst_ensemble_predictions'...", "warning")
+                analyst_predictions = self._get_artifact(
+                    artifact_name='analyst_ensemble_predictions',
+                    artifact_type='data',
+                    data_category='predictions'
+                )
+
             if analyst_predictions is not None:
                 tprint(f"✅ Loaded analyst ensemble predictions: {analyst_predictions.shape}", "success")
+                # Print detailed data preview
+                tprint_data_preview(analyst_predictions, name="Analyst Ensemble Predictions", max_rows=5, max_cols=10)
+                tprint_data_format(analyst_predictions, name="Analyst Ensemble Predictions", check_compatibility=True)
 
-                # Extract confidence scores if available
+                # The analyst_ensemble_outputs contains the predictions DataFrame
+                # Typically it has columns like 'prediction', 'confidence', etc.
+                # We'll use the entire DataFrame as analyst_confidence for now
+                # and extract specific columns if they exist
+
+                # Check for confidence column
                 if 'confidence' in analyst_predictions.columns:
                     loaded_data['analyst_confidence'] = analyst_predictions[['confidence']]
                     tprint(f"   • Extracted confidence scores: {loaded_data['analyst_confidence'].shape}", "info")
+                    tprint_data_preview(loaded_data['analyst_confidence'], name="Analyst Confidence Scores", max_rows=5, max_cols=10)
+                elif 'prediction' in analyst_predictions.columns:
+                    # Use predictions as proxy for confidence if confidence column doesn't exist
+                    tprint("⚠️ No 'confidence' column found, using 'prediction' column as proxy", "warning")
+                    loaded_data['analyst_confidence'] = analyst_predictions[['prediction']]
+                    tprint(f"   • Using prediction as confidence: {loaded_data['analyst_confidence'].shape}", "info")
+                    tprint_data_preview(loaded_data['analyst_confidence'], name="Analyst Predictions (as confidence)", max_rows=5, max_cols=10)
+                else:
+                    # Use all columns as analyst_confidence if no specific column found
+                    tprint(f"⚠️ No 'confidence' or 'prediction' column found, using all columns: {list(analyst_predictions.columns)}", "warning")
+                    loaded_data['analyst_confidence'] = analyst_predictions
+                    tprint_data_preview(loaded_data['analyst_confidence'], name="Analyst Predictions (all columns)", max_rows=5, max_cols=10)
 
                 # Extract disagreement features if available
                 disagreement_cols = [col for col in analyst_predictions.columns if 'disagreement' in col.lower()]
@@ -6103,8 +6182,10 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                     loaded_data['disagreement_features'] = analyst_predictions[disagreement_cols]
                     tprint(f"   • Extracted disagreement features: {loaded_data['disagreement_features'].shape}", "info")
                     tprint(f"   • Disagreement columns: {disagreement_cols}", "info")
+                    tprint_data_preview(loaded_data['disagreement_features'], name="Disagreement Features", max_rows=5, max_cols=10)
             else:
-                tprint("⚠️ Analyst ensemble predictions not found in versioned artifacts", "warning")
+                tprint("⚠️ Analyst ensemble outputs not found in versioned artifacts", "warning")
+                tprint("   Tried artifact names: 'analyst_ensemble_outputs', 'analyst_ensemble_predictions'", "info")
 
             # Summary
             tprint("=" * 80, "header")

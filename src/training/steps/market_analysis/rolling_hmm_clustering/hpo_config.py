@@ -5,9 +5,9 @@ This module defines the HPO search space and objective function for optimizing
 Rolling HMM clustering parameters using hierarchical optimization.
 
 HPO Components:
-1. EWMA periods: 8+16, 8+20, 8+24, 12+16, 12+20, 12+24 (6 options)
-2. Model structure: n_components (4-6), pca_components (3-5)
-3. Regularization: min_covar (1e-5 to 1e-2), kappa (1-50)
+1. EWMA periods: 4+20, 6+20, 8+20 (3 options)
+2. Model structure: n_components (4-6)
+3. Regularization: min_covar (0.001 to 0.01), kappa (0.5 to 4)
 
 Uses HierarchicalParameterOptimizer with coarse-to-fine grid search followed by TPE.
 """
@@ -231,18 +231,18 @@ class RollingHMMOptimizer:
         groups = []
 
         # Group 1: Feature Engineering (highest priority)
-        # EWMA periods: 8+16, 8+20, 8+24, 12+16, 12+20, 12+24
+        # EWMA periods: 4+20, 6+20, 8+20
         groups.append(
             ParameterGroup(
                 name="feature_engineering",
                 params={
                     "ewma_config_idx": {
                         "type": "categorical",
-                        "choices": [0, 1, 2, 3, 4, 5]  # Index into DEFAULT_EWMA_CONFIGS
+                        "choices": [0, 1, 2]  # Index into DEFAULT_EWMA_CONFIGS (4+20, 6+20, 8+20)
                     }
                 },
                 priority=1,
-                description="EWMA period selection (8+16, 8+20, 8+24, 12+16, 12+20, 12+24)"
+                description="EWMA period selection (4+20, 6+20, 8+20)"
             )
         )
 
@@ -253,8 +253,8 @@ class RollingHMMOptimizer:
                 params={
                     "n_components": {
                         "type": "int",
-                        "low": 3,
-                        "high": 7,
+                        "low": 4,
+                        "high": 6,
                         "step": 1
                     }
                 },
@@ -271,14 +271,14 @@ class RollingHMMOptimizer:
                 params={
                     "min_covar": {
                         "type": "float",
-                        "low": 1e-5,
-                        "high": 1e-2,
+                        "low": 1e-3,  # 0.001
+                        "high": 1e-2,  # 0.01
                         "log": True  # Log-scale sampling
                     },
                     "kappa": {
                         "type": "float",
-                        "low": 1.0,
-                        "high": 50.0,
+                        "low": 0.5,
+                        "high": 4.0,
                         "log": False
                     }
                 },
@@ -874,10 +874,10 @@ class RollingHMMOptimizer:
         tprint_info("Running custom hierarchical optimization with successive halving")
 
         coarse_grid = {
-            'ewma_config_idx': [0, 1, 2, 3, 4],  # Test all EWMA configs
-            'n_components': [4, 5, 6],  # Reduced to focus on clearer regime separation
-            'min_covar': [1e-3, 2.5e-3, 5e-3, 1e-2],  # Higher floor for stability
-            'kappa': [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0]
+            'ewma_config_idx': [0, 1, 2],  # Test all EWMA configs (4+20, 6+20, 8+20)
+            'n_components': [4, 5, 6],  # States to try
+            'min_covar': [1e-3, 5e-3, 1e-2],  # Min covariance: 0.001, 0.005, 0.01
+            'kappa': [0.5, 1.0, 2.0, 3.0, 4.0]  # Kappa values
         }
 
         best_score = -np.inf
@@ -1283,14 +1283,14 @@ class RollingHMMOptimizer:
         import itertools
 
         # Generate candidates around best parameters
-        best_ewma = best_params.get('ewma_config_idx', 0)
+        best_ewma = best_params.get('ewma_config_idx', 1)
         best_n_comp = best_params.get('n_components', 5)
         best_min_cov = best_params.get('min_covar', 1e-3)
-        best_kappa = best_params.get('kappa', 10.0)
+        best_kappa = best_params.get('kappa', 2.0)
 
         # Create fine-tuned ranges around best values
-        ewma_candidates = [max(0, best_ewma - 1), best_ewma, min(5, best_ewma + 1)]
-        n_comp_candidates = [max(3, best_n_comp - 1), best_n_comp, min(5, best_n_comp + 1)]
+        ewma_candidates = [max(0, best_ewma - 1), best_ewma, min(2, best_ewma + 1)]
+        n_comp_candidates = [max(4, best_n_comp - 1), best_n_comp, min(6, best_n_comp + 1)]
         min_cov_candidates = [best_min_cov * 0.5, best_min_cov, best_min_cov * 2.0]
         kappa_candidates = [best_kappa * 0.5, best_kappa, best_kappa * 1.5]
 
@@ -1374,15 +1374,15 @@ class RollingHMMOptimizer:
 
         for key in perturb_keys:
             if key == 'ewma_config_idx':
-                params[key] = int(np.clip(params[key] + np.random.randint(-1, 2), 0, 5))
+                params[key] = int(np.clip(params[key] + np.random.randint(-1, 2), 0, 2))
             elif key == 'n_components':
-                params[key] = int(np.clip(params[key] + np.random.randint(-1, 2), 3, 5))
+                params[key] = int(np.clip(params[key] + np.random.randint(-1, 2), 4, 6))
             elif key == 'min_covar':
                 log_val = np.log10(params[key])
                 log_val += np.random.uniform(-0.5, 0.5)
-                params[key] = float(np.clip(10 ** log_val, 1e-5, 1e-2))  # Cap at 0.01 (reduced from 0.02)
+                params[key] = float(np.clip(10 ** log_val, 1e-3, 1e-2))  # 0.001 to 0.01
             elif key == 'kappa':
-                params[key] = float(np.clip(params[key] + np.random.uniform(-5, 5), 0.25, 20.0))  # Cap at 20.0 (reduced from 30.0)
+                params[key] = float(np.clip(params[key] + np.random.uniform(-1, 1), 0.5, 4.0))  # 0.5 to 4.0
 
         return params
 
@@ -1468,23 +1468,23 @@ class RollingHMMOptimizer:
     def _generate_second_round_grid(self, base_params: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Create bounded grid around a base parameter configuration."""
 
-        ewma_idx = int(base_params.get('ewma_config_idx', 0))
+        ewma_idx = int(base_params.get('ewma_config_idx', 1))
         n_comp = int(base_params.get('n_components', 5))
         min_covar = float(base_params.get('min_covar', 1e-3))
-        kappa = float(base_params.get('kappa', 10.0))
+        kappa = float(base_params.get('kappa', 2.0))
 
-        ewma_candidates = list(range(max(0, ewma_idx - 2), min(5, ewma_idx + 2) + 1))
-        n_comp_candidates = list(range(max(3, n_comp - 2), min(5, n_comp + 2) + 1))
+        ewma_candidates = list(range(max(0, ewma_idx - 1), min(2, ewma_idx + 1) + 1))
+        n_comp_candidates = list(range(max(4, n_comp - 1), min(6, n_comp + 1) + 1))
 
-        min_covar_multipliers = [0.25, 0.5, 1.0, 2.0, 4.0]
+        min_covar_multipliers = [0.5, 1.0, 2.0]
         min_covar_candidates = sorted({
-            float(np.clip(min_covar * mult, 1e-5, 1e-2))  # Cap at 0.01 (reduced from 0.02)
+            float(np.clip(min_covar * mult, 1e-3, 1e-2))  # 0.001 to 0.01
             for mult in min_covar_multipliers
         })
 
-        kappa_offsets = [-5.0, -2.5, 0.0, 2.5, 5.0]  # Refine kappa grid
+        kappa_offsets = [-1.0, -0.5, 0.0, 0.5, 1.0]  # Refined kappa grid
         kappa_candidates = sorted({
-            float(np.clip(kappa + offset, 0.25, 20.0))  # Cap at 20.0 (reduced from 30.0)
+            float(np.clip(kappa + offset, 0.5, 4.0))  # 0.5 to 4.0
             for offset in kappa_offsets
         })
 
@@ -1577,7 +1577,7 @@ DEFAULT_HPO_CONFIG = HPOConfig(
         OptimizationStage.FINE_GRID,
         OptimizationStage.TPE
     ],
-    n_rounds=2,
+    n_rounds=1,  # Single round optimization (second round removed)
     enable_final_refinement=True,
     final_refinement_trials=50,
     cv_folds=5,

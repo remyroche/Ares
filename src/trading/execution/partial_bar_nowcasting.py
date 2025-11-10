@@ -55,7 +55,8 @@ class PartialBarNowcaster:
     """
 
     def __init__(self, config: NowcastingConfig):
-        self.config = config
+        tprint(f"🚀 BarSplit.__init__: config={config}", "INFO")
+
         self.logger = logger.getChild('PartialBarNowcaster')
 
         # Bar splitting state
@@ -81,6 +82,8 @@ class PartialBarNowcaster:
 
     async def initialize(self) -> bool:
         """Initialize the nowcaster with current market data."""
+        tprint(f"🚀 BarSplit.initialize: Starting", "INFO")
+
         try:
             tprint_info("🚀 Initializing Partial-Bar Nowcaster...")
 
@@ -113,6 +116,8 @@ class PartialBarNowcaster:
 
     async def should_evaluate_regime(self, current_time: Optional[datetime] = None) -> bool:
         """
+        tprint(f"🚀 BarSplit.should_evaluate_regime: current_time={current_time}", "INFO")
+
         Determine if regime evaluation should occur based on bar completion.
 
         Returns True if:
@@ -154,6 +159,8 @@ class PartialBarNowcaster:
 
     async def create_bar_split(self, current_time: Optional[datetime] = None) -> BarSplit:
         """
+        tprint(f"🚀 BarSplit.create_bar_split: current_time={current_time}", "INFO")
+
         Create a bar split for the current evaluation time.
 
         This ensures we always work with complete hourly bars by splitting
@@ -183,6 +190,8 @@ class PartialBarNowcaster:
 
     async def get_complete_hourly_bars(self, n_bars: int = 24) -> pd.DataFrame:
         """
+        tprint(f"🚀 BarSplit.get_complete_hourly_bars: n_bars={n_bars}", "INFO")
+
         Get complete hourly bars for regime evaluation.
 
         This method ensures we always return complete 1-hour bars,
@@ -469,11 +478,15 @@ class PartialBarNowcaster:
 
     async def update_evaluation_time(self) -> None:
         """Update the last evaluation time."""
+        tprint(f"🚀 BarSplit.update_evaluation_time: Starting", "INFO")
+
         self.last_evaluation_time = datetime.now()
         tprint_debug(f"⏰ Updated evaluation time: {self.last_evaluation_time}")
 
     async def get_nowcasting_stats(self) -> Dict[str, Any]:
         """Get statistics about the nowcasting process."""
+        tprint(f"🚀 BarSplit.get_nowcasting_stats: Starting", "INFO")
+
         return {
             'current_hour_start': self.current_hour_start,
             'current_hour_end': self.current_hour_end,
@@ -510,6 +523,8 @@ def create_partial_bar_nowcaster(
 # Example usage
 async def example_nowcasting() -> None:
     """Example of using the partial-bar nowcaster."""
+    tprint(f"🚀 BarSplit.example_nowcasting: Starting", "INFO")
+
     try:
         # Create nowcaster
         nowcaster = create_partial_bar_nowcaster()

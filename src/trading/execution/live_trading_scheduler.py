@@ -97,6 +97,8 @@ class LiveTradingScheduler:
 
     def __init__(self, symbol: str = "ETH", exchange: str = "binance"):
         """
+        tprint(f"🚀 ModelType.__init__: symbol={symbol}, exchange={exchange}", "INFO")
+
         Initialize the live trading scheduler.
 
         Args:
@@ -181,6 +183,8 @@ class LiveTradingScheduler:
 
     async def start_scheduler(self) -> bool:
         """Start the live trading scheduler."""
+        tprint(f"🚀 ModelType.start_scheduler: Starting", "INFO")
+
         if self.is_running:
             tprint_warning("⚠️ Scheduler already running")
             return False
@@ -225,6 +229,8 @@ class LiveTradingScheduler:
 
     async def stop_scheduler(self) -> bool:
         """Stop the live trading scheduler."""
+        tprint(f"🚀 ModelType.stop_scheduler: Starting", "INFO")
+
         if not self.is_running:
             return True
 
@@ -263,16 +269,21 @@ class LiveTradingScheduler:
             # Create a mock HMM implementation since the actual training module is not available
             class MockHMMPipeline:
                 def __init__(self, n_regimes=20, n_features=100):
-                    self.n_regimes = n_regimes
+                    tprint(f"🚀 ModelType.__init__: n_regimes={n_regimes}, n_features={n_features}", "INFO")
+
                     self.n_features = n_features
                     self.is_initialized = True
                 
                 async def predict(self, data: Any) -> np.ndarray:
                     """Mock prediction method."""
+                    tprint(f"🚀 ModelType.predict: data={data}", "INFO")
+
                     return np.random.randint(0, self.n_regimes, len(data))
                 
                 async def predict_proba(self, data: Any) -> np.ndarray:
                     """Mock probability prediction."""
+                    tprint(f"🚀 ModelType.predict_proba: data={data}", "INFO")
+
                     return np.random.rand(len(data), self.n_regimes)
 
             config = self.model_configs[ModelType.HMM]
@@ -299,14 +310,19 @@ class LiveTradingScheduler:
                 # Create mock implementation
                 class MockAnalystEnsemble:
                     def __init__(self):
-                        self.is_initialized = True
+                        tprint(f"🚀 ModelType.__init__: Starting", "INFO")
+
                     
                     async def predict(self, data: Any) -> np.ndarray:
                         """Mock prediction method."""
+                        tprint(f"🚀 ModelType.predict: data={data}", "INFO")
+
                         return np.random.choice([0, 1], len(data), p=[0.7, 0.3])
                     
                     async def predict_proba(self, data: Any) -> np.ndarray:
                         """Mock probability prediction."""
+                        tprint(f"🚀 ModelType.predict_proba: data={data}", "INFO")
+
                         return np.random.rand(len(data), 2)
                 
                 self.analyst_models = MockAnalystEnsemble()
@@ -328,14 +344,19 @@ class LiveTradingScheduler:
                 # Create mock implementation
                 class MockTacticianEnsemble:
                     def __init__(self):
-                        self.is_initialized = True
+                        tprint(f"🚀 ModelType.__init__: Starting", "INFO")
+
                     
                     async def predict(self, data: Any) -> np.ndarray:
                         """Mock prediction method."""
+                        tprint(f"🚀 ModelType.predict: data={data}", "INFO")
+
                         return np.random.choice([0, 1], len(data), p=[0.8, 0.2])
                     
                     async def predict_proba(self, data: Any) -> np.ndarray:
                         """Mock probability prediction."""
+                        tprint(f"🚀 ModelType.predict_proba: data={data}", "INFO")
+
                         return np.random.rand(len(data), 2)
                 
                 self.tactician_models = MockTacticianEnsemble()
@@ -642,14 +663,20 @@ class LiveTradingScheduler:
 
     def add_execution_callback(self, callback: Callable[[ExecutionResult], None]) -> None:
         """Add a callback for model executions."""
+        tprint(f"🚀 ModelType.add_execution_callback: callback={callback}, None]={None]}", "INFO")
+
         self.on_execution_callbacks.append(callback)
 
     def add_error_callback(self, callback: Callable[[Exception], None]) -> None:
         """Add a callback for errors."""
+        tprint(f"🚀 ModelType.add_error_callback: callback={callback}, None]={None]}", "INFO")
+
         self.on_error_callbacks.append(callback)
 
     def get_scheduler_stats(self) -> Dict[str, Any]:
         """Get scheduler statistics."""
+        tprint(f"🚀 ModelType.get_scheduler_stats: Starting", "INFO")
+
         total_executions = sum(config.execution_count for config in self.model_configs.values())
         total_successes = sum(config.success_count for config in self.model_configs.values())
         total_failures = sum(config.failure_count for config in self.model_configs.values())
@@ -678,6 +705,8 @@ class LiveTradingScheduler:
 
     async def get_nowcasting_stats(self) -> Dict[str, Any]:
         """Get partial-bar nowcasting statistics."""
+        tprint(f"🚀 ModelType.get_nowcasting_stats: Starting", "INFO")
+
         try:
             if self.nowcaster:
                 return await self.nowcaster.get_nowcasting_stats()
@@ -689,10 +718,14 @@ class LiveTradingScheduler:
 
     def get_recent_executions(self, n: int = 10) -> List[ExecutionResult]:
         """Get recent execution results."""
+        tprint(f"🚀 ModelType.get_recent_executions: n={n}", "INFO")
+
         return self.execution_history[-n:] if len(self.execution_history) >= n else self.execution_history.copy()
 
     def enable_model(self, model_type: ModelType, enabled: bool = True) -> None:
         """Enable or disable a model."""
+        tprint(f"🚀 ModelType.enable_model: model_type={model_type}, enabled={enabled}", "INFO")
+
         if model_type in self.model_configs:
             self.model_configs[model_type].enabled = enabled
             if enabled:
@@ -701,6 +734,8 @@ class LiveTradingScheduler:
 
     def update_model_interval(self, model_type: ModelType, interval_seconds: int) -> None:
         """Update execution interval for a model."""
+        tprint(f"🚀 ModelType.update_model_interval: model_type={model_type}, interval_seconds={interval_seconds}", "INFO")
+
         if model_type in self.model_configs:
             self.model_configs[model_type].execution_interval_seconds = interval_seconds
             tprint_info(f"📊 {model_type.value.upper()} execution interval updated to {interval_seconds}s")
@@ -752,6 +787,8 @@ if __name__ == "__main__":
 
     async def main() -> None:
         """Example main function."""
+        tprint(f"🚀 ModelType.main: Starting", "INFO")
+
         scheduler = await start_live_trading_scheduler(
             symbol="ETH",
             exchange="binance",

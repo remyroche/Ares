@@ -7,7 +7,7 @@ from typing import Any, Iterable, List, Optional
 import numpy as np
 import pandas as pd
 
-from src.printing import tprint
+from src.utils.tprint import tprint
 
 _DEFAULT_OHLCV_COLUMNS: List[str] = ["open", "high", "low", "close", "volume"]
 

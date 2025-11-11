@@ -413,7 +413,12 @@ class RegimeArtifactExtractor:
             # Calculate basic statistics
             unique_regimes, regime_counts = np.unique(cluster_assignments, return_counts=True)
             n_regimes = len(unique_regimes)
-            regime_distribution = dict(zip(unique_regimes.astype(int), regime_counts.astype(int)))
+            
+            # Convertir explicitement en types Python natifs pour éviter les erreurs de sérialisation JSON
+            # numpy.astype(int) peut encore créer des int64 qui ne sont pas sérialisables comme clés JSON
+            unique_regimes_native = [int(r) for r in unique_regimes]
+            regime_counts_native = [int(c) for c in regime_counts]
+            regime_distribution = dict(zip(unique_regimes_native, regime_counts_native))
             # (n_samples, n_regimes) DataFrame of posterior probabilities (soft labels)
             probabilities: Optional[pd.DataFrame] = None
     

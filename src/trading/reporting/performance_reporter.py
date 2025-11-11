@@ -16,7 +16,7 @@ import json
 
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_structured, LogLevel
-from src.printing import tprint
+from src.utils.tprint import tprint
 from ..monitoring.comprehensive_trade_monitor import DetailedTradeMetrics, TradingSessionMetrics
 from ..utils.error_handling import TradingError, TradingErrorSeverity, trading_error_handler
 from ..utils.helpers import format_trading_metrics, calculate_sharpe_ratio, calculate_max_drawdown
@@ -38,7 +38,7 @@ class PerformanceReporter:
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         tprint(f"PerformanceReporter.__init__: Called")
-tprint(f"PerformanceReporter.__init__: Initializing with config keys={list((config or {}).keys())}")
+        tprint(f"PerformanceReporter.__init__: Initializing with config keys={list((config or {}).keys())}")
         self.config = config or {}
         self.logger = logger.getChild('PerformanceReporter')
 

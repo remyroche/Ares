@@ -149,10 +149,14 @@ class ArtifactManager:
 
             # Merge metadata
             full_metadata = {**session_metadata, **metadata}
+            
+            # Valider et nettoyer les artefacts avant la sérialisation
+            # Utiliser notre nouvelle fonction de prétraitement plus robuste
+            sanitized_artifacts = self._preprocess_for_json(artifacts)
 
             report = persist_artifacts(
                 component_name=component_name,
-                artifacts=artifacts,
+                artifacts=sanitized_artifacts,
                 metadata=full_metadata,
                 base_dir=self.artifact_dir,
                 logger=self.logger,
@@ -168,6 +172,31 @@ class ArtifactManager:
             self.logger.error(f"❌ Failed to save artifacts for {component_name}: {e}")
             raise Exception(f"Artifact saving failed for {component_name}: {e}")
 
+    def _convert_numpy_to_python(self, obj: Any) -> Any:
+        """
+        Convertit les types numpy vers les types Python natifs pour la sérialisation JSON.
+        
+        Args:
+            obj: Objet à convertir
+            
+        Returns:
+            Objet avec types Python natifs
+        """
+        if not NUMPY_AVAILABLE:
+            return obj
+            
+        # Convertir les types numpy scalaires
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        
+        return obj
+    
     def _json_serializer(self, obj: Any) -> Any:
         """
         Custom JSON serializer for complex objects.
@@ -208,30 +237,155 @@ class ArtifactManager:
         if isinstance(obj, dict):
             new_dict = {}
             for key, value in obj.items():
-                # Convert keys to JSON-serializable types
-                if NUMPY_AVAILABLE and isinstance(key, np.integer):
-                    key = int(key)
-                elif NUMPY_AVAILABLE and isinstance(key, np.floating):
-                    key = float(key)
+                # Convertir les clés avec notre fonction utilitaire
+                if NUMPY_AVAILABLE:
+                    key = self._convert_numpy_to_python(key)
+                
+                # Si ce n'est pas un type numpy, vérifier les types de base
                 elif not isinstance(key, (str, int, float, bool, type(None))):
                     # Convert other non-JSON-serializable keys to string
                     key = str(key)
                 
                 # Recursively serialize values
-                new_dict[key] = value
+                new_dict[key] = self._json_serializer(value)
             return new_dict
         
-        # Handle lists/tuples
+        # Handle lists/tuples - recursively serialize elements
         if isinstance(obj, (list, tuple)):
-            return list(obj)
+            return [self._json_serializer(item) for item in obj]
         
         # Handle objects with __dict__
         if hasattr(obj, '__dict__'):
-            return obj.__dict__
+            return self._json_serializer(obj.__dict__)
         
         # Fallback to string representation
         return str(obj)
+    
+    def _preprocess_for_json(self, obj: Any) -> Any:
+        """
+        Prétraite un objet pour garantir la compatibilité JSON avant sérialisation.
+        
+        Cette fonction est CRUCIALE car elle gère les clés de dictionnaire numpy
+        que le handler 'default' de json.dumps ne peut pas traiter.
+        
+        Args:
+            obj: Objet à prétraiter
+            
+        Returns:
+            Objet compatible JSON
+        """
+        # Gérer les dictionnaires - le cas critique pour les clés numpy
+        if isinstance(obj, dict):
+            new_dict = {}
+            for key, value in obj.items():
+                # Convertir les clés numpy en types Python natifs
+                if NUMPY_AVAILABLE:
+                    key = self._convert_numpy_to_python(key)
+                
+                # Si ce n'est pas un type numpy, vérifier les types de base
+                elif not isinstance(key, (str, int, float, bool, type(None))):
+                    key = str(key)
+                
+                # Prétraiter récursivement la valeur
+                new_dict[key] = self._preprocess_for_json(value)
+            return new_dict
+        
+        # Gérer les listes et tuples
+        elif isinstance(obj, (list, tuple)):
+            return [self._preprocess_for_json(item) for item in obj]
+        
+        # Gérer les types numpy directement
+        elif NUMPY_AVAILABLE:
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.bool_):
+                return bool(obj)
+        
+        # Gérer les autres types
+        else:
+            return obj
 
+    def _sanitize_artifacts(self, artifacts: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Nettoyer les artefacts pour garantir la compatibilité JSON.
+        
+        Cette fonction est CRUCIALE car elle pré-traite les données avant la sérialisation.
+        Le problème principal est que les clés de dictionnaire numpy.int64 ne sont pas
+        gérées par le handler 'default' de json.dumps - elles doivent être converties
+        avant même que la sérialisation ne commence.
+        
+        Args:
+            artifacts: Dictionnaire d'artefacts à nettoyer
+            
+        Returns:
+            Dictionnaire d'artefacts nettoyés
+        """
+        if not isinstance(artifacts, dict):
+            return artifacts
+            
+        sanitized = {}
+        for key, value in artifacts.items():
+            # Convertir les clés avec notre fonction utilitaire
+            if NUMPY_AVAILABLE:
+                key = self._convert_numpy_to_python(key)
+            
+            # Convertir récursivement les valeurs
+            sanitized[key] = self._sanitize_recursively(value)
+        
+        return sanitized
+    
+    def _sanitize_recursively(self, obj: Any) -> Any:
+        """
+        Nettoie récursivement un objet pour garantir la compatibilité JSON.
+        
+        Cette fonction gère spécifiquement les clés de dictionnaire numpy dans
+        les structures imbriquées, ce que le handler default de json.dumps ne peut pas faire.
+        
+        Args:
+            obj: Objet à nettoyer
+            
+        Returns:
+            Objet nettoyé compatible JSON
+        """
+        # Gérer les dictionnaires - le cas critique pour les clés numpy
+        if isinstance(obj, dict):
+            new_dict = {}
+            for key, value in obj.items():
+                # Convertir les clés numpy en types Python natifs
+                if NUMPY_AVAILABLE:
+                    key = self._convert_numpy_to_python(key)
+                
+                # Si ce n'est pas un type numpy, vérifier les types de base
+                elif not isinstance(key, (str, int, float, bool, type(None))):
+                    key = str(key)
+                
+                # Nettoyer récursivement la valeur
+                new_dict[key] = self._sanitize_recursively(value)
+            return new_dict
+        
+        # Gérer les listes et tuples
+        elif isinstance(obj, (list, tuple)):
+            return [self._sanitize_recursively(item) for item in obj]
+        
+        # Gérer les types numpy directement
+        elif NUMPY_AVAILABLE:
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.bool_):
+                return bool(obj)
+        
+        # Gérer les autres types
+        else:
+            return self._json_serializer(obj)
+    
     def get_artifact_summary(self) -> Dict[str, Any]:
         """
         Get summary of all artifacts in the session.

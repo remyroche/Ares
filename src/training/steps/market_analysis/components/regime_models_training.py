@@ -866,12 +866,17 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         tprint("🔧 [REGIME_MODELS] Initializing improved components", color="cyan")
         
         # Initialize temporal splitter
-        tprint(f"🔍 [DEBUG] Config being passed to temporal splitter: min_regime_samples={self.validated_config.get('min_regime_samples', 'NOT_SET')}", color="yellow")
+        min_regime_samples = self.validated_config.get('min_regime_samples', 10)
+        tprint(f"🔍 [DEBUG] Config being passed to temporal splitter: min_regime_samples={min_regime_samples}", color="yellow")
         self.temporal_splitter = create_temporal_splitter(self.validated_config)
         # Workaround: Directly set min_regime_samples to handle rare regimes
         if hasattr(self.temporal_splitter, 'min_regime_samples'):
-            self.temporal_splitter.min_regime_samples = 5
+            self.temporal_splitter.min_regime_samples = min_regime_samples
             tprint(f"🔧 [REGIME_MODELS] Temporal splitter min_regime_samples set to {self.temporal_splitter.min_regime_samples}", color="cyan")
+            # 🔍 LOGGING: Configuration codée en dur pour la gestion des régimes rares
+            tprint(f"🔍 [REGIME_MODELS] GESTION RÉGIMES RARES: min_regime_samples configuré à {min_regime_samples}", color="blue")
+            tprint(f"   → Cette configuration détermine le nombre minimum d'échantillons requis par régime", color="blue")
+            tprint(f"   → Impact: Les régimes avec moins de {min_regime_samples} échantillons seront ignorés", color="blue")
         tprint("✅ [REGIME_MODELS] Temporal splitter initialized", color="green")
 
         # Initialize walk-forward validator for OOS model selection
@@ -881,17 +886,22 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             embargo_pct=0.05,
             min_train_samples=100,
             min_val_samples=30,
-            min_regime_samples=self.validated_config.get('min_regime_samples', 10)
+            min_regime_samples=min_regime_samples
         )
         self.walk_forward_validator = RegimeWalkForwardValidator(wf_config)
         tprint("✅ [REGIME_MODELS] Walk-forward validator initialized", color="green")
+        # 🔍 LOGGING: Configuration pour la validation walk-forward
+        tprint(f"🔍 [REGIME_MODELS] WALK-FORWARD: min_regime_samples={min_regime_samples} pour la validation OOS", color="blue")
         
         # Initialize regime label extractor
         self.regime_extractor = RegimeLabelExtractor(
-            min_samples=self.validated_config.get('min_regime_samples', 10),
+            min_samples=min_regime_samples,
             min_regimes=2
         )
         tprint("✅ [REGIME_MODELS] Regime label extractor initialized", color="green")
+        # 🔍 LOGGING: Configuration pour l'extraction des labels de régime
+        tprint(f"🔍 [REGIME_MODELS] EXTRACTION: min_samples={min_regime_samples}, min_regimes=2", color="blue")
+        tprint(f"   → Cette configuration affecte directement la distribution des régimes extraits", color="blue")
         
         # Note: Using existing feature bank system instead of custom feature generator
         tprint("✅ [REGIME_MODELS] Using existing feature bank system", color="green")
@@ -2107,22 +2117,51 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         # 2. Train LightGBM with HPO
         try:
             tprint("💡 [REGIME_MODELS] Training LightGBM with HPO", color="blue")
+            
+            # 🔍 AMÉLIORATION: Configuration optimisée pour petits datasets
+            n_samples = len(X_train)
+            is_small_dataset = n_samples < 1000
+            
+            if is_small_dataset:
+                tprint("🔍 [LIGHTGBM] PETIT DATASET DÉTECTÉ - Application d'optimisations spécifiques", color="cyan")
+                tprint(f"   → Taille du dataset: {n_samples} échantillons (< 1000)", color="cyan")
+                tprint("   → Optimisations: early stopping plus agressif, régularisation augmentée", color="cyan")
+                tprint("   → Impact: Réduction du overfitting, amélioration de la généralisation", color="cyan")
 
             def create_lightgbm_model(**params):
-                return lgb.LGBMClassifier(
-                    num_leaves=params.get('num_leaves', 31),
-                    max_depth=params.get('max_depth', -1),
-                    learning_rate=params.get('learning_rate', 0.1),
-                    n_estimators=params.get('n_estimators', 100),
-                    subsample=params.get('subsample', 1.0),
-                    colsample_bytree=params.get('colsample_bytree', 1.0),
-                    reg_alpha=params.get('reg_alpha', 0.0),
-                    reg_lambda=params.get('reg_lambda', 0.0),
-                    class_weight=adaptive_weights,  # Apply adaptive class weights (dict format)
-                    random_state=42,
-                    verbose=-1,
-                    force_col_wise=True
-                )
+                # 🔍 AMÉLIORATION: Hyperparamètres adaptés pour petits datasets
+                if is_small_dataset:
+                    # Réduire la complexité pour éviter l'overfitting
+                    return lgb.LGBMClassifier(
+                        num_leaves=min(params.get('num_leaves', 15), 31),      # Réduit de 31 à 15
+                        max_depth=min(params.get('max_depth', 4), 6),          # Réduit de -1 à 4
+                        learning_rate=max(params.get('learning_rate', 0.05), 0.1),  # Réduit pour plus de stabilité
+                        n_estimators=min(params.get('n_estimators', 50), 100),   # Réduit de 100 à 50
+                        subsample=params.get('subsample', 0.8),                 # Ajout de subsampling
+                        colsample_bytree=params.get('colsample_bytree', 0.8),      # Ajout de feature sampling
+                        reg_alpha=max(params.get('reg_alpha', 0.1), 0.3),        # Régularisation L1 augmentée
+                        reg_lambda=max(params.get('reg_lambda', 0.1), 0.3),       # Régularisation L2 augmentée
+                        min_child_samples=max(params.get('min_child_samples', 20), 50),  # Augmenté pour éviter l'overfitting
+                        class_weight=adaptive_weights,  # Apply adaptive class weights (dict format)
+                        random_state=42,
+                        verbose=-1,
+                        force_col_wise=True
+                    )
+                else:
+                    return lgb.LGBMClassifier(
+                        num_leaves=params.get('num_leaves', 31),
+                        max_depth=params.get('max_depth', -1),
+                        learning_rate=params.get('learning_rate', 0.1),
+                        n_estimators=params.get('n_estimators', 100),
+                        subsample=params.get('subsample', 1.0),
+                        colsample_bytree=params.get('colsample_bytree', 1.0),
+                        reg_alpha=params.get('reg_alpha', 0.0),
+                        reg_lambda=params.get('reg_lambda', 0.0),
+                        class_weight=adaptive_weights,  # Apply adaptive class weights (dict format)
+                        random_state=42,
+                        verbose=-1,
+                        force_col_wise=True
+                    )
 
             search_space = self.hpo_optimizer._get_default_search_space('lightgbm_regime')
             hpo_result = self.hpo_optimizer.bayesian_optimization(
@@ -2144,11 +2183,15 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 best_params = hpo_result.get('best_params', {})
                 best_score = hpo_result.get('best_score')
                 tuned_model = create_lightgbm_model(**best_params)
+                # 🔍 AMÉLIORATION: Early stopping plus agressif pour petits datasets
+                early_stopping_rounds = 20 if is_small_dataset else 50
+                tprint(f"🔍 [LIGHTGBM] Early stopping rounds: {early_stopping_rounds} (adapté pour {'petit' if is_small_dataset else 'grand'} dataset)", color="cyan")
+                
                 # Train with early stopping on validation set
                 tuned_model.fit(
                     X_train_fit, y_train_fit,
                     eval_set=[(X_val, y_val)],
-                    callbacks=[early_stopping(50), log_evaluation(0)]
+                    callbacks=[early_stopping(early_stopping_rounds), log_evaluation(0)]
                 )
                 trained_models['lightgbm'] = tuned_model
                 score_msg = f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
@@ -2157,40 +2200,87 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             else:
                 if hpo_result and hpo_result.get('error'):
                     tprint(f"⚠️ [REGIME_MODELS] LightGBM HPO returned error: {hpo_result.get('error')}", color="yellow")
+                
+                # 🔍 AMÉLIORATION: Configuration par défaut optimisée pour petits datasets
+                default_params = {
+                    'num_leaves': 15 if is_small_dataset else 31,
+                    'max_depth': 4 if is_small_dataset else -1,
+                    'learning_rate': 0.05 if is_small_dataset else 0.1,
+                    'n_estimators': 50 if is_small_dataset else 100,
+                    'subsample': 0.8,
+                    'colsample_bytree': 0.8,
+                    'reg_alpha': 0.1 if is_small_dataset else 0.0,
+                    'reg_lambda': 0.1 if is_small_dataset else 0.0,
+                    'min_child_samples': 50 if is_small_dataset else 20,
+                }
+                
                 lgbm_model = lgb.LGBMClassifier(
-                    num_leaves=31, learning_rate=0.1, n_estimators=100,
                     class_weight=adaptive_weights,  # Apply adaptive class weights
-                    random_state=42, verbose=-1, force_col_wise=True
+                    random_state=42, verbose=-1, force_col_wise=True,
+                    **default_params
                 )
+                
+                # 🔍 AMÉLIORATION: Early stopping plus agressif pour petits datasets
+                early_stopping_rounds = 20 if is_small_dataset else 50
+                tprint(f"🔍 [LIGHTGBM] Early stopping rounds par défaut: {early_stopping_rounds} (adapté pour {'petit' if is_small_dataset else 'grand'} dataset)", color="cyan")
+                
                 # Train with early stopping
                 lgbm_model.fit(
                     X_train_fit, y_train_fit,
                     eval_set=[(X_val, y_val)],
-                    callbacks=[early_stopping(50), log_evaluation(0)]
+                    callbacks=[early_stopping(early_stopping_rounds), log_evaluation(0)]
                 )
                 trained_models['lightgbm'] = lgbm_model
-                tprint("⚠️ [REGIME_MODELS] LightGBM HPO unavailable, using default parameters", color="yellow")
+                tprint("⚠️ [REGIME_MODELS] LightGBM HPO unavailable, using optimized default parameters", color="yellow")
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] LightGBM training failed: {e}", color="red")
 
         # 3. Train XGBoost with HPO
         try:
             tprint("🚀 [REGIME_MODELS] Training XGBoost with HPO", color="blue")
+            
+            # 🔍 AMÉLIORATION: Configuration optimisée pour petits datasets
+            n_samples = len(X_train)
+            is_small_dataset = n_samples < 1000
+            
+            if is_small_dataset:
+                tprint("🔍 [XGBOOST] PETIT DATASET DÉTECTÉ - Application d'optimisations spécifiques", color="cyan")
+                tprint(f"   → Taille du dataset: {n_samples} échantillons (< 1000)", color="cyan")
+                tprint("   → Optimisations: early stopping plus agressif, régularisation augmentée", color="cyan")
+                tprint("   → Impact: Réduction du overfitting, amélioration de la généralisation", color="cyan")
 
             def create_xgboost_model(**params):
-                return xgb.XGBClassifier(
-                    n_estimators=params.get('n_estimators', 100),
-                    max_depth=params.get('max_depth', 6),
-                    learning_rate=params.get('learning_rate', 0.1),
-                    subsample=params.get('subsample', 0.8),
-                    colsample_bytree=params.get('colsample_bytree', 0.8),
-                    reg_alpha=params.get('reg_alpha', 0.1),
-                    reg_lambda=params.get('reg_lambda', 0.1),
-                    gamma=params.get('gamma', 0),
-                    random_state=42,
-                    n_jobs=-1,
-                    verbosity=0
-                )
+                # 🔍 AMÉLIORATION: Hyperparamètres adaptés pour petits datasets
+                if is_small_dataset:
+                    # Réduire la complexité pour éviter l'overfitting
+                    return xgb.XGBClassifier(
+                        n_estimators=min(params.get('n_estimators', 50), 100),   # Réduit de 100 à 50
+                        max_depth=min(params.get('max_depth', 4), 6),          # Réduit de 6 à 4
+                        learning_rate=max(params.get('learning_rate', 0.05), 0.1),  # Réduit pour plus de stabilité
+                        subsample=params.get('subsample', 0.8),                 # Ajout de subsampling
+                        colsample_bytree=params.get('colsample_bytree', 0.8),      # Ajout de feature sampling
+                        reg_alpha=max(params.get('reg_alpha', 0.1), 0.3),        # Régularisation L1 augmentée
+                        reg_lambda=max(params.get('reg_lambda', 0.1), 0.3),       # Régularisation L2 augmentée
+                        gamma=params.get('gamma', 0.1),                         # Ajout de gamma pour la complexité
+                        min_child_weight=max(params.get('min_child_weight', 1), 5),  # Augmenté pour éviter l'overfitting
+                        random_state=42,
+                        n_jobs=-1,
+                        verbosity=0
+                    )
+                else:
+                    return xgb.XGBClassifier(
+                        n_estimators=params.get('n_estimators', 100),
+                        max_depth=params.get('max_depth', 6),
+                        learning_rate=params.get('learning_rate', 0.1),
+                        subsample=params.get('subsample', 0.8),
+                        colsample_bytree=params.get('colsample_bytree', 0.8),
+                        reg_alpha=params.get('reg_alpha', 0.1),
+                        reg_lambda=params.get('reg_lambda', 0.1),
+                        gamma=params.get('gamma', 0),
+                        random_state=42,
+                        n_jobs=-1,
+                        verbosity=0
+                    )
 
             search_space = self.hpo_optimizer._get_default_search_space('xgboost_regime')
             hpo_result = self.hpo_optimizer.bayesian_optimization(
@@ -2212,6 +2302,10 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 best_params = hpo_result.get('best_params', {})
                 best_score = hpo_result.get('best_score')
                 tuned_model = create_xgboost_model(**best_params)
+                # 🔍 AMÉLIORATION: Early stopping plus agressif pour petits datasets
+                early_stopping_rounds = 20 if is_small_dataset else 50
+                tprint(f"🔍 [XGBOOST] Early stopping rounds: {early_stopping_rounds} (adapté pour {'petit' if is_small_dataset else 'grand'} dataset)", color="cyan")
+                
                 # Train with early stopping on validation set
                 tuned_model.fit(
                     X_train_fit, y_train_fit,
@@ -2225,7 +2319,29 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             else:
                 if hpo_result and hpo_result.get('error'):
                     tprint(f"⚠️ [REGIME_MODELS] XGBoost HPO returned error: {hpo_result.get('error')}", color="yellow")
-                xgb_model = xgb.XGBClassifier(n_estimators=100, max_depth=6, learning_rate=0.1, random_state=42, n_jobs=-1, verbosity=0)
+                
+                # 🔍 AMÉLIORATION: Configuration par défaut optimisée pour petits datasets
+                default_params = {
+                    'n_estimators': 50 if is_small_dataset else 100,
+                    'max_depth': 4 if is_small_dataset else 6,
+                    'learning_rate': 0.05 if is_small_dataset else 0.1,
+                    'subsample': 0.8,
+                    'colsample_bytree': 0.8,
+                    'reg_alpha': 0.1 if is_small_dataset else 0.1,
+                    'reg_lambda': 0.1 if is_small_dataset else 0.1,
+                    'gamma': 0.1 if is_small_dataset else 0,
+                    'min_child_weight': 5 if is_small_dataset else 1,
+                }
+                
+                xgb_model = xgb.XGBClassifier(
+                    random_state=42, n_jobs=-1, verbosity=0,
+                    **default_params
+                )
+                
+                # 🔍 AMÉLIORATION: Early stopping plus agressif pour petits datasets
+                early_stopping_rounds = 20 if is_small_dataset else 50
+                tprint(f"🔍 [XGBOOST] Early stopping rounds par défaut: {early_stopping_rounds} (adapté pour {'petit' if is_small_dataset else 'grand'} dataset)", color="cyan")
+                
                 # Train with early stopping
                 xgb_model.fit(
                     X_train_fit, y_train_fit,
@@ -2233,7 +2349,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     verbose=False
                 )
                 trained_models['xgboost'] = xgb_model
-                tprint("⚠️ [REGIME_MODELS] XGBoost HPO unavailable, using default parameters", color="yellow")
+                tprint("⚠️ [REGIME_MODELS] XGBoost HPO unavailable, using optimized default parameters", color="yellow")
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] XGBoost training failed: {e}", color="red")
 
@@ -2360,6 +2476,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         for model_name, model in trained_models.items():
             try:
                 tprint(f"📊 [REGIME_MODELS] Calibrating {model_name}", color="blue")
+                tprint(f"🔍 [DEBUG] Type du modèle avant calibration: {type(model)}", color="yellow")
                 # Use isotonic calibration (better for tree-based models)
                 # Train calibrator on validation set
                 calibrated = CalibratedClassifierCV(
@@ -2371,6 +2488,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 # Calibrate using validation set
                 calibrated.fit(X_val, y_val)
                 calibrated_models[model_name] = calibrated
+                tprint(f"🔍 [DEBUG] Type du modèle après calibration: {type(calibrated)}", color="yellow")
                 tprint(f"✅ [REGIME_MODELS] {model_name} calibrated successfully", color="green")
             except Exception as e:
                 tprint(f"⚠️ [REGIME_MODELS] Failed to calibrate {model_name}: {e}, using uncalibrated model", color="yellow")
@@ -2706,9 +2824,29 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     # Fit on selected features only
                     shap_model.fit(X_selected, y)
                     
-                    # Compute SHAP values
-                    explainer = shap.TreeExplainer(shap_model)
-                    shap_values = explainer.shap_values(X_selected)
+                    # DEBUG: Log model type before SHAP in feature selection
+                    tprint(f"🔍 [DEBUG] Modèle passé à SHAP dans feature selection: {type(shap_model)}", color="yellow")
+                    
+                    # Import SHAP utilities for safe handling
+                    try:
+                        from src.utils.shap_utils import safe_shap_tree_explainer, safe_shap_values
+                        tprint("✅ [DEBUG] SHAP utils importées avec succès dans feature selection", color="green")
+                    except ImportError as e:
+                        tprint(f"⚠️ [DEBUG] SHAP utils non disponibles dans feature selection: {e}", color="yellow")
+                        # Fallback to manual extraction
+                        from src.utils.shap_utils import extract_base_model_from_calibrated, apply_numpy_shap_fix
+                        model_for_shap = extract_base_model_from_calibrated(shap_model)
+                        if model_for_shap is None:
+                            model_for_shap = shap_model
+                        apply_numpy_shap_fix()
+                        explainer = shap.TreeExplainer(model_for_shap)
+                    else:
+                        # Use safe SHAP utilities
+                        explainer = safe_shap_tree_explainer(shap_model)
+                        if explainer is None:
+                            tprint("❌ [DEBUG] Impossible de créer TreeExplainer avec SHAP utils dans feature selection", color="red")
+                            return None
+                    shap_values = safe_shap_values(explainer, X_selected)
                     
                     # For multi-class, get mean absolute SHAP values across classes
                     if isinstance(shap_values, list):
@@ -3187,9 +3325,32 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 # Try to compute SHAP values for the best model
                 try:
                     import shap
-                    # Create a smaller explainer for SHAP analysis
-                    explainer = shap.TreeExplainer(model)
-                    shap_values = explainer.shap_values(X[:100])  # Use subset for speed
+                    # DEBUG: Log model type before SHAP
+                    tprint(f"🔍 [DEBUG] Modèle passé à SHAP: {type(model)}", color="yellow")
+                    
+                    # Import SHAP utilities for safe handling
+                    try:
+                        from src.utils.shap_utils import safe_shap_tree_explainer, safe_shap_values
+                        tprint("✅ [DEBUG] SHAP utils importées avec succès", color="green")
+                    except ImportError as e:
+                        tprint(f"⚠️ [DEBUG] SHAP utils non disponibles: {e}", color="yellow")
+                        # Fallback to manual extraction
+                        from src.utils.shap_utils import extract_base_model_from_calibrated, apply_numpy_shap_fix
+                        model_for_shap = extract_base_model_from_calibrated(model)
+                        if model_for_shap is None:
+                            model_for_shap = model
+                        apply_numpy_shap_fix()
+                        explainer = shap.TreeExplainer(model_for_shap)
+                    else:
+                        # Use safe SHAP utilities
+                        explainer = safe_shap_tree_explainer(model)
+                        if explainer is None:
+                            tprint("❌ [DEBUG] Impossible de créer TreeExplainer avec SHAP utils", color="red")
+                            return None
+                    shap_values = safe_shap_values(explainer, X[:100])  # Use subset for speed
+                    if shap_values is None:
+                        tprint("❌ [DEBUG] Impossible de calculer les valeurs SHAP dans feature selection", color="red")
+                        return None
                     
                     # For multi-class, get mean absolute SHAP values across classes
                     if isinstance(shap_values, list):
@@ -3383,7 +3544,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 if 'shap_importance' in feature_importance:
                     lines.append("SHAP Feature Importance (Top 10):")
                     shap_importance = feature_importance['shap_importance']
-                    for i, row in shAP_importance.head(10).iterrows():
+                    for i, row in shap_importance.head(10).iterrows():
                         lines.append(f"  {i+1:2d}. {row['feature']:<40} (SHAP: {row['shap_importance']:.6f})")
                     lines.append("")
 

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import logging
 import random
 
-from src.printing import tprint
+from src.utils.tprint import tprint
 from .config import SimulatorConfig, SlippageModel
 
 

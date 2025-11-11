@@ -7,7 +7,7 @@ import numpy as np
 from typing import Optional, Dict, Any, Tuple
 from datetime import datetime, timedelta
 
-from src.printing import tprint
+from src.utils.tprint import tprint
 from .error_handling import ValidationError, TradingErrorSeverity
 from .validation import validate_market_data
 from .constants import EXTREME_PRICE_CHANGE_THRESHOLD

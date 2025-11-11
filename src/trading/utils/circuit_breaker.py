@@ -9,7 +9,7 @@ from functools import wraps
 from threading import Lock
 from datetime import datetime, timedelta
 
-from src.printing import tprint
+from src.utils.tprint import tprint
 from .error_handling import TradingError, TradingErrorSeverity
 from .constants import (
     DEFAULT_CB_FAILURE_THRESHOLD,

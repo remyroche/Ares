@@ -27,7 +27,7 @@ from src.utils.tprint import (
     tprint_info, tprint_warning, tprint_error, tprint_success,
     tprint_structured, LogLevel
 )
-from src.printing import tprint
+from src.utils.tprint import tprint
 from ..config.trading_config import TradingConfig
 from ..utils.error_handling import (
     TradingError, TradingErrorSeverity, trading_error_handler

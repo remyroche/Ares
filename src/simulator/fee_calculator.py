@@ -8,7 +8,7 @@ from typing import Dict, Any, Tuple
 from dataclasses import dataclass
 import logging
 
-from src.printing import tprint
+from src.utils.tprint import tprint
 from .config import SimulatorConfig
 
 

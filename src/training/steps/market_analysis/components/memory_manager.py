@@ -138,6 +138,12 @@ class MemoryManager:
     def force_cleanup(self) -> None:
         """Force memory cleanup."""
         try:
+            # 🔍 LOGGING: Gestion mémoire sous pression
+            stats_before = self.get_memory_stats()
+            tprint_info("🔍 [MEMORY] GESTION MÉMOIRE SOUS PRESSION")
+            tprint_info(f"   → Mémoire avant nettoyage: {stats_before.memory_percentage:.1f}% ({stats_before.process_memory_mb:.1f}MB)")
+            tprint_info("   → Seuil de déclenchement: 80% d'utilisation mémoire")
+            
             # Run garbage collection
             collected = gc.collect()
 
@@ -152,7 +158,13 @@ class MemoryManager:
             if self.m1_optimizer:
                 self.m1_optimizer.force_cleanup()
 
+            # 🔍 LOGGING: Impact du nettoyage
+            stats_after = self.get_memory_stats()
+            memory_freed = stats_before.process_memory_mb - stats_after.process_memory_mb
             tprint_info(f"Memory cleanup completed (collected {collected} objects)")
+            tprint_info(f"   → Mémoire après nettoyage: {stats_after.memory_percentage:.1f}% ({stats_after.process_memory_mb:.1f}MB)")
+            tprint_info(f"   → Mémoire libérée: {memory_freed:.1f}MB")
+            tprint_info(f"   → Objets collectés: {collected}")
 
         except Exception as e:
             tprint_error(f"Memory cleanup failed: {e}")
@@ -160,12 +172,38 @@ class MemoryManager:
     def optimize_memory_usage(self, data: Union[np.ndarray, pd.DataFrame]) -> Union[np.ndarray, pd.DataFrame]:
         """Optimize memory usage of data structures."""
         try:
+            # 🔍 LOGGING: Décisions de réduction non documentées
+            original_size = 0
             if isinstance(data, np.ndarray):
-                return self._optimize_numpy_array(data)
+                original_size = data.nbytes / (1024 * 1024)  # MB
             elif isinstance(data, pd.DataFrame):
-                return self._optimize_dataframe(data)
+                original_size = data.memory_usage(deep=True).sum() / (1024 * 1024)  # MB
+            
+            tprint_info("🔍 [MEMORY] OPTIMISATION MÉMOIRE")
+            tprint_info(f"   → Taille originale des données: {original_size:.1f}MB")
+            tprint_info(f"   → Type de données: {type(data).__name__}")
+            
+            if isinstance(data, np.ndarray):
+                optimized = self._optimize_numpy_array(data)
+            elif isinstance(data, pd.DataFrame):
+                optimized = self._optimize_dataframe(data)
             else:
-                return data
+                optimized = data
+            
+            # 🔍 LOGGING: Impact de l'optimisation
+            optimized_size = 0
+            if isinstance(optimized, np.ndarray):
+                optimized_size = optimized.nbytes / (1024 * 1024)  # MB
+            elif isinstance(optimized, pd.DataFrame):
+                optimized_size = optimized.memory_usage(deep=True).sum() / (1024 * 1024)  # MB
+            
+            reduction_pct = ((original_size - optimized_size) / original_size * 100) if original_size > 0 else 0
+            memory_saved = original_size - optimized_size
+            
+            tprint_info(f"   → Taille optimisée: {optimized_size:.1f}MB")
+            tprint_info(f"   → Réduction: {memory_saved:.1f}MB ({reduction_pct:.1f}%)")
+            
+            return optimized
 
         except Exception as e:
             tprint_warning(f"Memory optimization failed: {e}")

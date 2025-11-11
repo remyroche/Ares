@@ -1380,6 +1380,45 @@ class HierarchicalParameterOptimizer:
     ) -> float:
         """Evaluate a set of parameters using the objective function."""
         try:
+            # 🔍 DIAGNOSTIC LOGS: Cross-validation fold analysis
+            logger.info(f"🔍 CV DEBUG: Total samples={len(X_train)}, cv_folds={self.cv_folds}")
+            logger.info(f"🔍 CV DEBUG: Expected samples per fold={len(X_train) // self.cv_folds}")
+            
+            # Create cross-validation object to analyze fold sizes
+            try:
+                from sklearn.model_selection import TimeSeriesSplit, KFold, StratifiedKFold
+                import sklearn.utils.multiclass
+                
+                # Determine appropriate CV strategy
+                is_classification = False
+                try:
+                    is_classification = sklearn.utils.multiclass.type_of_target(y_train) in {"binary", "multiclass", "multilabel-indicator", "multiclass-multioutput"}
+                except:
+                    # Fallback heuristic
+                    unique_values = len(np.unique(y_train))
+                    is_classification = unique_values <= 10
+                
+                # Create CV object matching what would be used
+                cv = None
+                if hasattr(self.objective_func, '__name__') and 'temporal' in self.objective_func.__name__.lower():
+                    cv = TimeSeriesSplit(n_splits=self.cv_folds)
+                else:
+                    if is_classification:
+                        cv = StratifiedKFold(n_splits=self.cv_folds, shuffle=False)
+                    else:
+                        cv = KFold(n_splits=self.cv_folds, shuffle=False)
+                
+                # Analyze fold sizes
+                if cv and hasattr(cv, 'split'):
+                    for fold_idx, (train_idx, val_idx) in enumerate(cv.split(X_train, y_train)):
+                        logger.info(f"🔍 CV DEBUG: Fold {fold_idx+1}/{self.cv_folds}: train_size={len(train_idx)}, val_size={len(val_idx)}")
+                        if len(val_idx) == 0:
+                            logger.error(f"🚨 CV CRITICAL: Fold {fold_idx+1} has 0 validation samples!")
+                        elif len(val_idx) < 5:
+                            logger.warning(f"⚠️ CV WARNING: Fold {fold_idx+1} has only {len(val_idx)} validation samples (may be insufficient)")
+            except Exception as cv_debug_error:
+                logger.warning(f"🔍 CV DEBUG: Could not analyze fold sizes: {cv_debug_error}")
+            
             score = self.objective_func(
                 params=params,
                 X_train=X_train,

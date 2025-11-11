@@ -25,7 +25,7 @@ from pathlib import Path
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug
-from src.printing import tprint
+from src.utils.tprint import tprint
 from ..config.trading_config import TradingConfig
 from .leverage_manager import LeverageManager
 from .risk_calculator import RiskCalculator

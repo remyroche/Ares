@@ -84,7 +84,7 @@ analyst_config:
         n_rounds: 2
   base_model_outputs:
     lgbm_output: analyst_base_lgbm_predictions
-    tcn_output: analyst_base_tcn_predictions
+    depthwise_cnn_output: analyst_base_depthwise_cnn_predictions
     catboost_output: analyst_base_catboost_predictions
     meta_learner_output: analyst_base_meta_learner_predictions
   training:
@@ -170,11 +170,9 @@ feature_engineering:
     enable: true
     source: analyst_base_models
     features:
-    - lgbm_predictions
-    - lgbm_patchtst_predictions
-    - catboost_predictions
-    - meta_learner_predictions
-    - base_model_confidence_scores
+    - analyst_base_predictions
+    - analyst_base_confidence
+    - analyst_base_meta_learner_output
   feature_selection:
     method: lasso
     alpha: 0.01

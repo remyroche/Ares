@@ -9,7 +9,7 @@ from .components.sr_clustering import SRClusteringComponent
 from .components.sr_detection import SRDetectionComponent
 
 # Import HDBSCAN regime discovery step
-from .hdbscan_clustering import HDBSCANRegimeDiscoveryStep
+# from .hdbscan_clustering import HDBSCANRegimeDiscoveryStep  # Module not available
 
 # Import GMM regime discovery step
 # from .gmm_clustering import GMMRegimeDiscoveryStep  # Module not available
@@ -26,7 +26,7 @@ from .regime_ensemble_training_step import RegimeEnsembleTrainingStep
 from .regime_feature_selector import EnhancedRegimeFeatureSelector
 
 # Import statsmodel clustering pipeline step
-from .statsmodel_clustering_pipeline_step import StatsmodelClusteringPipelineStep
+# from .statsmodel_clustering_pipeline_step import StatsmodelClusteringPipelineStep  # Module has missing dependencies
 
 # Import Sticky Finite HMM regime discovery step
 from .sticky_finite_hmm_clustering.sticky_finite_hmm_regime_discovery_step import StickyFiniteHMMRegimeDiscoveryStep
@@ -44,10 +44,10 @@ step_registry.register("regime_models_training", RegimeModelsTrainingStep)
 step_registry.register("regime_ensemble_training", RegimeEnsembleTrainingStep)
 step_registry.register("sr_clustering", SRClusteringComponent)
 step_registry.register("sr_detection", SRDetectionComponent)
-step_registry.register("hdbscan_regime_discovery", HDBSCANRegimeDiscoveryStep)
+# step_registry.register("hdbscan_regime_discovery", HDBSCANRegimeDiscoveryStep)  # Module not available
 # step_registry.register("gmm_regime_discovery", GMMRegimeDiscoveryStep)  # Module not available
 # Use EnhancedRegimeFeatureSelector which has proper unsupervised mode for pre-clustering selection
 step_registry.register("regime_feature_selection", EnhancedRegimeFeatureSelector)
-step_registry.register("statsmodel_clustering_pipeline", StatsmodelClusteringPipelineStep)
+# step_registry.register("statsmodel_clustering_pipeline", StatsmodelClusteringPipelineStep)  # Module has missing dependencies
 step_registry.register("sticky_finite_hmm_regime_discovery", StickyFiniteHMMRegimeDiscoveryStep)
 step_registry.register("rolling_hmm_regime_discovery", RollingHMMRegimeDiscoveryStep)

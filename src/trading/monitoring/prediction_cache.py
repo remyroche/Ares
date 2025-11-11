@@ -26,7 +26,7 @@ import pandas as pd
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
-from src.printing import tprint
+from src.utils.tprint import tprint
 from src.utils.ml_common.uncertainty_calculator import get_global_uncertainty_calculator, UncertaintyCalculator
 
 logger = system_logger.getChild('PredictionCache')

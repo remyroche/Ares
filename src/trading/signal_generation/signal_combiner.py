@@ -18,7 +18,7 @@ import numpy as np
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
-from src.printing import tprint
+from src.utils.tprint import tprint
 
 # Import signal types
 from .analyst_signals import AnalystSignal, SignalType, SignalStrength

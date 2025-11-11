@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 import logging
 
-from src.printing import tprint
+from src.utils.tprint import tprint
 from .position_manager import Position
 
 

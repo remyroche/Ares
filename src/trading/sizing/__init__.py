@@ -7,7 +7,7 @@ Based on existing tactician approach.
 """
 
 from typing import Optional, Dict, Any
-from src.printing import tprint
+from src.utils.tprint import tprint
 from .position_sizer import PositionSizer  # Temporarily removed setup_position_sizer due to import issues
 from .leverage_manager import LeverageManager, setup_leverage_manager
 from .risk_calculator import RiskCalculator, setup_risk_calculator

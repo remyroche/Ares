@@ -1,0 +1,18 @@
+{
+  "symbol": null,
+  "exchange": null,
+  "timeframe": null,
+  "execution_mode": null,
+  "ensemble_config": {
+    "n_estimators": null,
+    "max_depth": null,
+    "learning_rate": null,
+    "random_state": null,
+    "n_jobs": null,
+    "verbose": null,
+    "calibration_method": null,
+    "cv_folds": null
+  },
+  "component_version": null,
+  "compatibility_version": null
+}

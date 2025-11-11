@@ -14,7 +14,7 @@ import numpy as np
 
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_structured, LogLevel
-from src.printing import tprint
+from src.utils.tprint import tprint
 from ..monitoring.comprehensive_trade_monitor import DetailedTradeMetrics
 from ..utils.error_handling import TradingError, TradingErrorSeverity, trading_error_handler
 from ..utils.helpers import format_trading_metrics

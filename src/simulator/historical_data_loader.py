@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import pandas as pd
 import numpy as np
 
-from src.printing import tprint
+from src.utils.tprint import tprint
 
 
 @dataclass

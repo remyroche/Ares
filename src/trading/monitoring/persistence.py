@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, List
 import logging
 
-from src.printing import tprint
+from src.utils.tprint import tprint
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 
 logger = logging.getLogger(__name__)

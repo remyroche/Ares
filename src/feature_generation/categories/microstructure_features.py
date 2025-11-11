@@ -387,54 +387,55 @@ class MicrostructureFeatureGenerator(VectorizedFeatureGenerator):
 
         return features
 
-class BidAskSpreadGenerator(VectorizedFeatureGenerator):
-    """Generator for bid-ask spread features."""
-
-    def __init__(self, window: int = 20):
-        config = FeatureConfig(
-            name="bid_ask_spread",
-            category=FeatureCategory.MICROSTRUCTURE,
-            description="Bid-ask spread analysis for market microstructure",
-            required_columns=[],
-            optional_columns=["bid", "ask"],
-            default_lookback=window,
-            min_lookback=5,
-            max_lookback=100,
-            parameters={"window": window}
-        )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.window = window
-
-    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate bid-ask spread feature."""
-        try:
-            # Check if bid and ask columns exist
-            if 'bid' not in data.columns or 'ask' not in data.columns:
-                missing = [col for col in ['bid', 'ask'] if col not in data.columns]
-                tprint_warning(f"⚠️ Skipping bid-ask spread feature due to missing columns: {missing}")
-                return pd.Series(np.zeros(len(data)), index=data.index)
-
-            bid = data['bid']
-            ask = data['ask']
-
-            # Calculate spread
-            spread = ask - bid
-
-            # Calculate relative spread
-            mid_price = (bid + ask) / 2
-            relative_spread = spread / mid_price
-
-            # Calculate spread volatility
-            if VECTORBT_AVAILABLE and rolling_std is not None:
-                spread_vol = rolling_std(relative_spread, window=self.window)
-            else:
-                spread_vol = relative_spread.rolling(window=self.window).std()
-
-            return spread_vol
-
-        except Exception as e:
-            tprint_warning(f"⚠️ Bid-ask spread calculation failed: {e}")
-            return pd.Series(np.zeros(len(data)), index=data.index)
+# DISABLED: Requires bid/ask columns which are not available
+# class BidAskSpreadGenerator(VectorizedFeatureGenerator):
+#     """Generator for bid-ask spread features."""
+#
+#     def __init__(self, window: int = 20):
+#         config = FeatureConfig(
+#             name="bid_ask_spread",
+#             category=FeatureCategory.MICROSTRUCTURE,
+#             description="Bid-ask spread analysis for market microstructure",
+#             required_columns=[],
+#             optional_columns=["bid", "ask"],
+#             default_lookback=window,
+#             min_lookback=5,
+#             max_lookback=100,
+#             parameters={"window": window}
+#         )
+#         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+#         self.window = window
+#
+#     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+#         """Generate bid-ask spread feature."""
+#         try:
+#             # Check if bid and ask columns exist
+#             if 'bid' not in data.columns or 'ask' not in data.columns:
+#                 missing = [col for col in ['bid', 'ask'] if col not in data.columns]
+#                 tprint_warning(f"⚠️ Skipping bid-ask spread feature due to missing columns: {missing}")
+#                 return pd.Series(np.zeros(len(data)), index=data.index)
+#
+#             bid = data['bid']
+#             ask = data['ask']
+#
+#             # Calculate spread
+#             spread = ask - bid
+#
+#             # Calculate relative spread
+#             mid_price = (bid + ask) / 2
+#             relative_spread = spread / mid_price
+#
+#             # Calculate spread volatility
+#             if VECTORBT_AVAILABLE and rolling_std is not None:
+#                 spread_vol = rolling_std(relative_spread, window=self.window)
+#             else:
+#                 spread_vol = relative_spread.rolling(window=self.window).std()
+#
+#             return spread_vol
+#
+#         except Exception as e:
+#             tprint_warning(f"⚠️ Bid-ask spread calculation failed: {e}")
+#             return pd.Series(np.zeros(len(data)), index=data.index)
 
 class OrderFlowImbalanceGenerator(VectorizedFeatureGenerator):
     """Generator for order flow imbalance features."""
@@ -937,65 +938,66 @@ class VectorBTOrderFlowImbalanceGenerator(VectorBTFeatureGenerator):
             tprint(f"⚠️ Order flow imbalance calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
 
-class VectorBTBidAskImbalanceGenerator(VectorBTFeatureGenerator):
-    """VectorBT-optimized bid-ask imbalance generator."""
-
-    def __init__(self, window: int = 20, config: Optional[FeatureConfig] = None):
-        if config is None:
-            config = self._create_default_config(window)
-        super().__init__(config)
-        self.window = window
-
-        # Initialize VectorBT optimizer
-        self.vectorbt_rolling_optimizer = None
-        if OPTIMIZATION_AVAILABLE:
-            try:
-                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
-            except Exception as e:
-                tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
-
-    def _create_default_config(self, window: int) -> FeatureConfig:
-        """Create default configuration."""
-        return FeatureConfig(
-            name="vectorbt_bid_ask_imbalance",
-            category=FeatureCategory.MICROSTRUCTURE,
-            description="VectorBT-optimized bid-ask imbalance",
-            required_columns=["bid", "ask"],
-            default_lookback=window,
-            min_lookback=5,
-            max_lookback=100,
-            parameters={"window": window}
-        )
-
-    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate bid-ask imbalance feature."""
-        try:
-            # Check if bid and ask columns exist
-            if 'bid' not in data.columns or 'ask' not in data.columns:
-                missing = [col for col in ['bid', 'ask'] if col not in data.columns]
-                tprint_warning(f"⚠️ Skipping bid-ask imbalance feature due to missing columns: {missing}")
-                return pd.Series(np.zeros(len(data)), index=data.index)
-
-            bid = data['bid']
-            ask = data['ask']
-
-            # Calculate spread and mid price
-            spread = ask - bid
-            mid_price = (bid + ask) / 2
-
-            # Relative spread as imbalance measure
-            relative_spread = spread / mid_price
-
-            if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer and rolling_mean is not None:
-                imbalance = rolling_mean(relative_spread, window=self.window)
-            else:
-                imbalance = relative_spread.rolling(window=self.window).mean()
-
-            return imbalance.fillna(0)
-
-        except Exception as e:
-            tprint_warning(f"⚠️ Bid-ask imbalance calculation failed: {e}")
-            return pd.Series(np.zeros(len(data)), index=data.index)
+# DISABLED: Requires bid/ask columns which are not available
+# class VectorBTBidAskImbalanceGenerator(VectorBTFeatureGenerator):
+#     """VectorBT-optimized bid-ask imbalance generator."""
+#
+#     def __init__(self, window: int = 20, config: Optional[FeatureConfig] = None):
+#         if config is None:
+#             config = self._create_default_config(window)
+#         super().__init__(config)
+#         self.window = window
+#
+#         # Initialize VectorBT optimizer
+#         self.vectorbt_rolling_optimizer = None
+#         if OPTIMIZATION_AVAILABLE:
+#             try:
+#                 self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
+#             except Exception as e:
+#                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
+#
+#     def _create_default_config(self, window: int) -> FeatureConfig:
+#         """Create default configuration."""
+#         return FeatureConfig(
+#             name="vectorbt_bid_ask_imbalance",
+#             category=FeatureCategory.MICROSTRUCTURE,
+#             description="VectorBT-optimized bid-ask imbalance",
+#             required_columns=["bid", "ask"],
+#             default_lookback=window,
+#             min_lookback=5,
+#             max_lookback=100,
+#             parameters={"window": window}
+#         )
+#
+#     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+#         """Generate bid-ask imbalance feature."""
+#         try:
+#             # Check if bid and ask columns exist
+#             if 'bid' not in data.columns or 'ask' not in data.columns:
+#                 missing = [col for col in ['bid', 'ask'] if col not in data.columns]
+#                 tprint_warning(f"⚠️ Skipping bid-ask imbalance feature due to missing columns: {missing}")
+#                 return pd.Series(np.zeros(len(data)), index=data.index)
+#
+#             bid = data['bid']
+#             ask = data['ask']
+#
+#             # Calculate spread and mid price
+#             spread = ask - bid
+#             mid_price = (bid + ask) / 2
+#
+#             # Relative spread as imbalance measure
+#             relative_spread = spread / mid_price
+#
+#             if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer and rolling_mean is not None:
+#                 imbalance = rolling_mean(relative_spread, window=self.window)
+#             else:
+#                 imbalance = relative_spread.rolling(window=self.window).mean()
+#
+#             return imbalance.fillna(0)
+#
+#         except Exception as e:
+#             tprint_warning(f"⚠️ Bid-ask imbalance calculation failed: {e}")
+#             return pd.Series(np.zeros(len(data)), index=data.index)
 
 class VectorBTMarketOrderFlowGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized market order flow generator."""
@@ -1507,53 +1509,54 @@ class VectorBTOrderFlowRegimeGenerator(VectorBTFeatureGenerator):
 # ANALYST FEATURES
 # ============================================================================
 
-class AnalystSpreadNormalizedGenerator(VectorizedFeatureGenerator):
-    """Generator for analyst spread normalized feature."""
-
-    def __init__(self, window: int = 20):
-        config = FeatureConfig(
-            name="analyst_spread_normalized",
-            category=FeatureCategory.MICROSTRUCTURE,
-            description="Analyst spread normalized for market microstructure analysis",
-            required_columns=["bid", "ask"],
-            default_lookback=window,
-            min_lookback=5,
-            max_lookback=100,
-            parameters={"window": window}
-        )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.window = window
-
-    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate analyst spread normalized feature."""
-        try:
-            # Check if bid and ask columns exist
-            if 'bid' not in data.columns or 'ask' not in data.columns:
-                missing = [col for col in ['bid', 'ask'] if col not in data.columns]
-                tprint_warning(f"⚠️ Skipping analyst spread normalized feature due to missing columns: {missing}")
-                return pd.Series(np.ones(len(data)), index=data.index)
-
-            bid = data['bid']
-            ask = data['ask']
-
-            # Calculate spread and normalize
-            spread = ask - bid
-            mid_price = (bid + ask) / 2
-            normalized_spread = spread / mid_price
-
-            # Calculate rolling mean for normalization
-            if VECTORBT_AVAILABLE and rolling_mean is not None:
-                normalized_spread_mean = rolling_mean(normalized_spread, window=self.window)
-                spread_normalized = normalized_spread / normalized_spread_mean
-            else:
-                normalized_spread_mean = normalized_spread.rolling(window=self.window).mean()
-                spread_normalized = normalized_spread / normalized_spread_mean
-
-            return spread_normalized.fillna(1)
-
-        except Exception as e:
-            tprint_warning(f"⚠️ Analyst spread normalized calculation failed: {e}")
-            return pd.Series(np.ones(len(data)), index=data.index)
+# DISABLED: Requires bid/ask columns which are not available
+# class AnalystSpreadNormalizedGenerator(VectorizedFeatureGenerator):
+#     """Generator for analyst spread normalized feature."""
+#
+#     def __init__(self, window: int = 20):
+#         config = FeatureConfig(
+#             name="analyst_spread_normalized",
+#             category=FeatureCategory.MICROSTRUCTURE,
+#             description="Analyst spread normalized for market microstructure analysis",
+#             required_columns=["bid", "ask"],
+#             default_lookback=window,
+#             min_lookback=5,
+#             max_lookback=100,
+#             parameters={"window": window}
+#         )
+#         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+#         self.window = window
+#
+#     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+#         """Generate analyst spread normalized feature."""
+#         try:
+#             # Check if bid and ask columns exist
+#             if 'bid' not in data.columns or 'ask' not in data.columns:
+#                 missing = [col for col in ['bid', 'ask'] if col not in data.columns]
+#                 tprint_warning(f"⚠️ Skipping analyst spread normalized feature due to missing columns: {missing}")
+#                 return pd.Series(np.ones(len(data)), index=data.index)
+#
+#             bid = data['bid']
+#             ask = data['ask']
+#
+#             # Calculate spread and normalize
+#             spread = ask - bid
+#             mid_price = (bid + ask) / 2
+#             normalized_spread = spread / mid_price
+#
+#             # Calculate rolling mean for normalization
+#             if VECTORBT_AVAILABLE and rolling_mean is not None:
+#                 normalized_spread_mean = rolling_mean(normalized_spread, window=self.window)
+#                 spread_normalized = normalized_spread / normalized_spread_mean
+#             else:
+#                 normalized_spread_mean = normalized_spread.rolling(window=self.window).mean()
+#                 spread_normalized = normalized_spread / normalized_spread_mean
+#
+#             return spread_normalized.fillna(1)
+#
+#         except Exception as e:
+#             tprint_warning(f"⚠️ Analyst spread normalized calculation failed: {e}")
+#             return pd.Series(np.ones(len(data)), index=data.index)
 
 class AnalystTickImbalanceGenerator(VectorizedFeatureGenerator):
     """Generator for analyst tick imbalance feature."""
@@ -1786,7 +1789,7 @@ def create_microstructure_feature_generators() -> List[FeatureGenerator]:
 
     # Core microstructure generators (numpy-optimized, work without orderbook data)
     generators.append(MicrostructureFeatureGenerator())
-    generators.append(BidAskSpreadGenerator())  # Optional: uses bid/ask if available
+    # generators.append(BidAskSpreadGenerator())  # DISABLED: Requires bid/ask columns
     generators.append(OrderFlowImbalanceGenerator())  # Works with OHLCV
     generators.append(TradeSizeImbalanceGenerator())
     generators.append(PriceImpactGenerator())  # Works with OHLCV
@@ -1803,7 +1806,7 @@ def create_microstructure_feature_generators() -> List[FeatureGenerator]:
                 generators.append(VectorBTTakerSellRatioGenerator(window))
                 generators.append(VectorBTMarketAggressionIndexGenerator(window))
                 generators.append(VectorBTOrderFlowImbalanceGenerator(window))
-                generators.append(VectorBTBidAskImbalanceGenerator(window))
+                # generators.append(VectorBTBidAskImbalanceGenerator(window))  # DISABLED: Requires bid/ask columns
                 generators.append(VectorBTMarketOrderFlowGenerator(window))
                 generators.append(VectorBTVolumeWeightedOrderFlowGenerator(window))
                 generators.append(VectorBTOrderFlowMomentumGenerator(window))
@@ -1819,7 +1822,7 @@ def create_microstructure_feature_generators() -> List[FeatureGenerator]:
         tprint("ℹ️ VectorBT not available, using core microstructure generators only (numpy-optimized)")
 
     # Analyst generators
-    generators.append(AnalystSpreadNormalizedGenerator())
+    # generators.append(AnalystSpreadNormalizedGenerator())  # DISABLED: Requires bid/ask columns
     generators.append(AnalystTickImbalanceGenerator())
     generators.append(CorwinSchultzSpreadMomentumGenerator())
     generators.append(AmihudIlliquidityVWAPDistanceGenerator())
@@ -1833,7 +1836,7 @@ def create_core_microstructure_generators() -> List[FeatureGenerator]:
     generators = []
 
     generators.append(MicrostructureFeatureGenerator())
-    generators.append(BidAskSpreadGenerator())
+    # generators.append(BidAskSpreadGenerator())  # DISABLED: Requires bid/ask columns
     generators.append(OrderFlowImbalanceGenerator())
     generators.append(TradeSizeImbalanceGenerator())
     generators.append(PriceImpactGenerator())
@@ -1853,7 +1856,7 @@ def create_vectorbt_microstructure_generators() -> List[FeatureGenerator]:
         generators.append(VectorBTTakerSellRatioGenerator(window))
         generators.append(VectorBTMarketAggressionIndexGenerator(window))
         generators.append(VectorBTOrderFlowImbalanceGenerator(window))
-        generators.append(VectorBTBidAskImbalanceGenerator(window))
+        # generators.append(VectorBTBidAskImbalanceGenerator(window))  # DISABLED: Requires bid/ask columns
         generators.append(VectorBTMarketOrderFlowGenerator(window))
         generators.append(VectorBTVolumeWeightedOrderFlowGenerator(window))
         generators.append(VectorBTOrderFlowMomentumGenerator(window))
@@ -1870,7 +1873,7 @@ def create_analyst_microstructure_generators() -> List[FeatureGenerator]:
     """Create analyst microstructure feature generators."""
     generators = []
 
-    generators.append(AnalystSpreadNormalizedGenerator())
+    # generators.append(AnalystSpreadNormalizedGenerator())  # DISABLED: Requires bid/ask columns
     generators.append(AnalystTickImbalanceGenerator())
     generators.append(CorwinSchultzSpreadMomentumGenerator())
     generators.append(AmihudIlliquidityVWAPDistanceGenerator())
@@ -1967,7 +1970,7 @@ __all__ = [
     'VectorBTOrderFlowRegimeGenerator',
 
     # Analyst Features
-    'AnalystSpreadNormalizedGenerator',
+    # 'AnalystSpreadNormalizedGenerator',  # DISABLED: Requires bid/ask columns
     'AnalystTickImbalanceGenerator',
     'CorwinSchultzSpreadMomentumGenerator',
     'AmihudIlliquidityVWAPDistanceGenerator',

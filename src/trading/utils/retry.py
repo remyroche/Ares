@@ -7,7 +7,7 @@ import time
 from typing import Callable, Type, Union, Tuple, Optional, Any
 from functools import wraps
 
-from src.printing import tprint
+from src.utils.tprint import tprint
 from .error_handling import TradingError, TradingErrorSeverity, NetworkError, RateLimitError
 from .constants import (
     DEFAULT_RETRY_MAX_ATTEMPTS,

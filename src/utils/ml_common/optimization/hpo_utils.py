@@ -182,6 +182,92 @@ class HyperparameterOptimization:
 
         _LOGGER.info("✅ Enhanced HyperparameterOptimization initialized successfully")
 
+    def calculate_class_weights(self, y: np.ndarray,
+                             method: str = 'inverse_frequency',
+                             minority_boost: float = 1.5) -> Dict[int, float]:
+        """
+        Calculer les poids de classes pour gérer le déséquilibre des classes.
+        
+        Args:
+            y: Array des étiquettes de classes
+            method: Méthode de calcul ('inverse_frequency', 'balanced', 'custom')
+            minority_boost: Facteur de boost pour les classes minoritaires
+            
+        Returns:
+            Dictionnaire des poids de classes {class_index: weight}
+        """
+        try:
+            self.logger.info(f"🔧 Calcul des poids de classes avec méthode: {method}")
+            
+            # Compter les occurrences de chaque classe
+            unique_classes, class_counts = np.unique(y, return_counts=True)
+            n_samples = len(y)
+            n_classes = len(unique_classes)
+            
+            # Calculer les pourcentages de classes
+            class_percentages = {cls: (count / n_samples) * 100
+                              for cls, count in zip(unique_classes, class_counts)}
+            
+            self.logger.info(f"📊 Distribution des classes: {class_percentages}")
+            
+            if method == 'inverse_frequency':
+                # Poids inverses à la fréquence (plus de poids aux classes rares)
+                base_weights = {cls: n_samples / (n_classes * count)
+                              for cls, count in zip(unique_classes, class_counts)}
+                
+                # Boost supplémentaire pour les classes très minoritaires (<10%)
+                for cls, pct in class_percentages.items():
+                    if pct < 10:
+                        base_weights[cls] *= minority_boost
+                        
+            elif method == 'balanced':
+                # Méthode balanced de scikit-learn
+                from sklearn.utils.class_weight import compute_class_weight
+                base_weights = compute_class_weight('balanced', classes=unique_classes, y=y)
+                base_weights = {cls: weight for cls, weight in zip(unique_classes, base_weights)}
+                
+            else:
+                # Méthode personnalisée basée sur les pourcentages fournis
+                # Classes: 0(7.8%), 1(20.7%), 2(14.7%), 3(5.6%), 4(21.7%), 5(29.5%)
+                target_percentages = {0: 7.8, 1: 20.7, 2: 14.7, 3: 5.6, 4: 21.7, 5: 29.5}
+                
+                base_weights = {}
+                for cls in unique_classes:
+                    if cls in target_percentages:
+                        # Poids inverse au pourcentage cible
+                        base_weights[cls] = 100.0 / target_percentages[cls]
+                        
+                        # Boost pour les classes très minoritaires (0 et 3)
+                        if cls in [0, 3]:
+                            base_weights[cls] *= minority_boost
+                    else:
+                        # Valeur par défaut pour les classes non spécifiées
+                        base_weights[cls] = 1.0
+            
+            # Normaliser les poids pour éviter des valeurs extrêmes
+            max_weight = max(base_weights.values())
+            min_weight = min(base_weights.values())
+            
+            # Limiter les poids entre 0.1 et 10.0
+            normalized_weights = {}
+            for cls, weight in base_weights.items():
+                normalized_weight = max(0.1, min(10.0, weight))
+                normalized_weights[cls] = normalized_weight
+            
+            # Journaliser les poids finaux
+            self.logger.info("🎯 Poids de classes calculés:")
+            for cls in sorted(normalized_weights.keys()):
+                pct = class_percentages.get(cls, 0)
+                weight = normalized_weights[cls]
+                self.logger.info(f"   • Classe {cls}: {pct:.1f}% → poids {weight:.3f}")
+            
+            return normalized_weights
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erreur lors du calcul des poids de classes: {e}")
+            # Retourner des poids par défaut en cas d'erreur
+            return {i: 1.0 for i in range(len(np.unique(y)))}
+
     def _initialize_vectorbt_components(self):
         """Initialize VectorBT optimization components."""
         try:
@@ -926,11 +1012,62 @@ class HyperparameterOptimization:
 
                 # Compute sample weights if classification and estimator supports it
                 fp = dict(fit_params or {})
+                
+                # Calculer et appliquer les poids de classes pour gérer le déséquilibre
                 try:
                     if SKLEARN_AVAILABLE and len(np.unique(y)) <= 10:
-                        fp.setdefault('sample_weight', compute_sample_weight('balanced', y))
+                        # Calculer les poids de classes personnalisés
+                        class_weights = self.calculate_class_weights(y, method='custom', minority_boost=1.5)
+                        
+                        # Appliquer les poids selon le type de modèle
+                        model_name = model_factory.__name__.lower() if hasattr(model_factory, '__name__') else str(model_factory).lower()
+                        
+                        if 'xgb' in model_name or 'xgboost' in model_name:
+                            # XGBoost: utiliser scale_pos_weight pour classification binaire
+                            if len(np.unique(y)) == 2:
+                                # Pour classification binaire
+                                class_0_weight = class_weights.get(0, 1.0)
+                                class_1_weight = class_weights.get(1, 1.0)
+                                params['scale_pos_weight'] = class_0_weight / class_1_weight
+                                model.set_params(**params)
+                            else:
+                                # Pour multi-classe, utiliser sample_weight
+                                sample_weights = compute_sample_weight('balanced', y)
+                                # Ajuster avec les poids calculés
+                                for i, weight in enumerate(sample_weights):
+                                    class_idx = y[i]
+                                    sample_weights[i] *= class_weights.get(class_idx, 1.0)
+                                fp.setdefault('sample_weight', sample_weights)
+                                
+                        elif 'catboost' in model_name:
+                            # CatBoost: utiliser class_weights
+                            weights_list = [class_weights.get(i, 1.0) for i in sorted(class_weights.keys())]
+                            params['class_weights'] = weights_list
+                            model.set_params(**params)
+                            
+                        elif 'randomforest' in model_name or 'extratrees' in model_name or 'lightgbm' in model_name:
+                            # RandomForest, ExtraTrees, LightGBM: utiliser class_weight
+                            params['class_weight'] = class_weights
+                            model.set_params(**params)
+                        else:
+                            # Fallback: utiliser sample_weight
+                            sample_weights = compute_sample_weight('balanced', y)
+                            # Ajuster avec les poids calculés
+                            for i, weight in enumerate(sample_weights):
+                                class_idx = y[i]
+                                sample_weights[i] *= class_weights.get(class_idx, 1.0)
+                            fp.setdefault('sample_weight', sample_weights)
+                            
+                        self.logger.info(f"🎯 Pondération des classes appliquée pour {model_name}: {class_weights}")
+                        
                 except Exception as e:
-                    self.logger.warning(f"Could not compute sample weights: {e}, continuing without sample weights")
+                    self.logger.warning(f"Could not compute class weights: {e}, using default balanced weights")
+                    # Fallback to balanced weights
+                    try:
+                        if SKLEARN_AVAILABLE and len(np.unique(y)) <= 10:
+                            fp.setdefault('sample_weight', compute_sample_weight('balanced', y))
+                    except Exception as e2:
+                        self.logger.warning(f"Could not compute sample weights: {e2}, continuing without sample weights")
 
                 # Manual CV loop to support sample_weight without passing fit_params
                 try:
@@ -1101,7 +1238,14 @@ class HyperparameterOptimization:
                     return 999.0  # Return worst possible score
 
             # Create study with TPE sampler (Bayesian optimization) and pruner/storage
-            sampler = TPESampler()
+            # TPESampler optimisé avec les paramètres demandés
+            sampler = TPESampler(
+                n_startup_trials=10,      # Nombre d'essais initiaux avec échantillonnage aléatoire
+                n_ei_candidates=24,       # Nombre de candidats pour l'amélioration attendue
+                multivariate=True,         # Échantillonnage multivarié pour une meilleure corrélation
+                group=True,                # Regroupement des paramètres pour une meilleure efficacité
+                seed=42                   # Seed pour la reproductibilité
+            )
             pruner_obj = None
 
             # Use new pruner parameters if provided, otherwise fall back to old parameter
@@ -1118,8 +1262,13 @@ class HyperparameterOptimization:
                 )
                 self.logger.info("📊 Using MedianPruner (conservative)")
             elif actual_pruner_type == 'hyperband':
-                pruner_obj = HyperbandPruner()
-                self.logger.info("⚡ Using HyperbandPruner (aggressive)")
+                # HyperbandPruner optimisé avec les paramètres demandés
+                pruner_obj = HyperbandPruner(
+                    min_resource=1,        # Ressource minimale par essai
+                    max_resource='auto',   # Ressource maximale déterminée automatiquement
+                    reduction_factor=3     # Facteur de réduction agressif
+                )
+                self.logger.info("⚡ Using HyperbandPruner (aggressive) - min_resource=1, max_resource='auto', reduction_factor=3")
             elif pruner == 'median':  # Backward compatibility with old parameter
                 pruner_obj = MedianPruner(
                     n_startup_trials=5,
@@ -1179,6 +1328,20 @@ class HyperparameterOptimization:
 
             # Enhanced optimization with early stopping
             self.logger.info(f"🎲 Starting Bayesian optimization with {n_trials} trials (max)...")
+            
+            # Ajout d'informations détaillées avant le début des essais Optuna
+            model_name = model_factory.__name__ if hasattr(model_factory, '__name__') else str(model_factory)
+            self.logger.info("=" * 100)
+            self.logger.info(f"🔬 OPTUNA TRIALS INFORMATION")
+            self.logger.info("=" * 100)
+            self.logger.info(f"🤖 MODEL: {model_name}")
+            self.logger.info(f"🔢 TOTAL TRIALS PLANNED: {n_trials}")
+            self.logger.info(f"🎯 OPTIMIZATION CONTEXT: {optimization_context or 'Regime Models Training'}")
+            self.logger.info(f"⏱️ EXPECTED DURATION: ~{n_trials * 2}-{n_trials * 5} minutes")
+            self.logger.info(f"📈 ACQUISITION FUNCTION: {acquisition_function}")
+            self.logger.info(f"✂️ PRUNING STRATEGY: {pruner_type if enable_pruner else 'disabled'}")
+            self.logger.info("=" * 100)
+            
             study.optimize(objective, n_trials=n_trials, timeout=timeout, callbacks=callbacks)
 
             results = {
@@ -1502,7 +1665,8 @@ class HyperparameterOptimization:
                 'colsample_bytree': {'type': 'float', 'low': 0.5, 'high': 1.0},
                 'gamma': {'type': 'float', 'low': 0, 'high': 5},
                 'reg_alpha': {'type': 'float', 'low': 1e-4, 'high': 1.0, 'log': True},
-                'reg_lambda': {'type': 'float', 'low': 1e-4, 'high': 1.0, 'log': True}
+                'reg_lambda': {'type': 'float', 'low': 1e-4, 'high': 1.0, 'log': True},
+                'scale_pos_weight': {'type': 'float', 'low': 0.1, 'high': 10.0}  # Ajout pour XGBoost
             },
             # Regime-specific model search spaces
             'catboost_regime': {
@@ -1512,6 +1676,7 @@ class HyperparameterOptimization:
                 'iterations': {'type': 'int', 'low': 500, 'high': 1200},
                 'subsample': {'type': 'float', 'low': 0.5, 'high': 0.9},
                 'colsample_bylevel': {'type': 'float', 'low': 0.5, 'high': 0.9},
+                'class_weights': {'type': 'categorical', 'choices': ['balanced', 'custom']},  # Ajout pour CatBoost
                 # Bayesian bootstrap does not support subsample < 1.0.
                 # Restrict search to supported strategies when subsample is tuned.
                 'bootstrap_type': {'type': 'categorical', 'choices': ['Bernoulli']}
@@ -1533,7 +1698,8 @@ class HyperparameterOptimization:
                 'max_depth': {'type': 'categorical', 'choices': [None, 10, 15]},
                 'min_samples_split': {'type': 'int', 'low': 5, 'high': 20},
                 'min_samples_leaf': {'type': 'int', 'low': 2, 'high': 10},
-                'max_features': {'type': 'categorical', 'choices': ['sqrt', 0.3, 0.5]}
+                'max_features': {'type': 'categorical', 'choices': ['sqrt', 0.3, 0.5]},
+                'class_weight': {'type': 'categorical', 'choices': ['balanced', 'balanced_subsample', None]}  # Ajout pour ExtraTrees
             },
             'lightgbm_meta_regime': {
                 'num_leaves': {'type': 'int', 'low': 15, 'high': 31},
@@ -1543,7 +1709,8 @@ class HyperparameterOptimization:
                 'feature_fraction': {'type': 'float', 'low': 0.6, 'high': 0.9},
                 'lambda_l1': {'type': 'float', 'low': 0, 'high': 0.1},
                 'lambda_l2': {'type': 'float', 'low': 0, 'high': 0.1},
-                'n_estimators': {'type': 'int', 'low': 200, 'high': 600}
+                'n_estimators': {'type': 'int', 'low': 200, 'high': 600},
+                'class_weight': {'type': 'categorical', 'choices': ['balanced', None]}  # Ajout pour LightGBM
             },
             'bayesian_rule_lists_regime': {
                 'listlengthprior': {'type': 'int', 'low': 2, 'high': 5},
@@ -2020,7 +2187,7 @@ class HyperparameterOptimization:
             self.logger.warning(f"Smart initialization failed: {e}")
             return None
 
-    def _sample_hyperparameters(self, trial: Any, model_factory: Callable, search_space: Dict[str, Any] = None) -> Dict[str, Any]:
+    def _sample_hyperparameters(self, trial: Any, model_factory: Callable, search_space: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Enhanced hyperparameter sampling with non-linear transformations."""
         try:
             if search_space is None:
@@ -2169,7 +2336,7 @@ class HyperparameterOptimization:
                 from sklearn.metrics import r2_score
                 score = r2_score(y_val, y_pred)
 
-            return score
+            return float(score)
 
         except Exception as e:
             self.logger.warning(f"Early stopping training failed: {e}")
@@ -2387,7 +2554,7 @@ class HyperparameterOptimization:
         return _eval
 
     def _early_stopping_callback(self, study, trial):
-        """Early stopping callback for low variance scenarios."""
+        """Early stopping intelligent basé sur la variance des scores récents."""
         if len(study.trials) < 5:  # Need at least 5 trials to check variance
             return
 
@@ -2397,15 +2564,52 @@ class HyperparameterOptimization:
         if len(recent_scores) >= 5:
             # Calculate variance
             score_variance = np.var(recent_scores)
-
-            # If variance is extremely low (all scores identical), stop early
-            if score_variance < 1e-10:  # Threshold for identical scores
-                self.logger.warning(f"⚠️ Early stopping triggered: Score variance extremely low ({score_variance:.2e})")
-                self.logger.warning("⚠️ All recent scores are identical - stopping optimization")
+            score_mean = np.mean(recent_scores)
+            
+            # Early stopping intelligent basé sur la variance
+            # Seuils adaptatifs basés sur la moyenne des scores
+            variance_threshold_low = 1e-6 * (1 + score_mean)  # Seuil très bas
+            variance_threshold_medium = 0.0001 * (1 + score_mean)  # Seuil moyen
+            
+            # Si la variance est extrêmement faible (scores presque identiques)
+            if score_variance < variance_threshold_low:
+                self.logger.warning(f"🛑 Early stopping intelligent: Variance extrêmement faible ({score_variance:.2e})")
+                self.logger.warning("🛑 Les scores récents sont presque identiques - arrêt de l'optimisation")
                 study.stop()
-            elif score_variance < 0.001:  # Very low variance threshold
-                self.logger.warning(f"⚠️ Very low score variance detected: {score_variance:.6f}")
-                # Continue but log warning
+            # Si la variance est très faible sur plusieurs essais consécutifs
+            elif score_variance < variance_threshold_medium:
+                # Vérifier si cette faible variance persiste sur plus d'essais
+                if len(study.trials) >= 10:
+                    older_scores = [t.value for t in study.trials[-10:-5] if t.value is not None]
+                    if len(older_scores) >= 5:
+                        older_variance = np.var(older_scores)
+                        # Si la variance reste faible sur 10 essais
+                        if older_variance < variance_threshold_medium * 2:
+                            self.logger.warning(f"🛑 Early stopping intelligent: Variance persistamment faible")
+                            self.logger.warning(f"🛑 Variance récente: {score_variance:.6f}, Variance précédente: {older_variance:.6f}")
+                            study.stop()
+                        else:
+                            self.logger.info(f"📊 Variance faible mais en amélioration: {score_variance:.6f}")
+                    else:
+                        self.logger.info(f"📊 Variance faible détectée: {score_variance:.6f}")
+                else:
+                    self.logger.info(f"📊 Variance faible détectée: {score_variance:.6f}")
+            
+            # Analyse de tendance pour détecter la convergence
+            if len(study.trials) >= 8:
+                # Calculer la tendance des scores récents
+                recent_trials = study.trials[-8:]
+                scores_trend = [t.value for t in recent_trials if t.value is not None]
+                if len(scores_trend) >= 8:
+                    # Régression linéaire simple pour détecter la tendance
+                    x = np.arange(len(scores_trend))
+                    slope, _ = np.polyfit(x, scores_trend, 1)
+                    
+                    # Si la pente est très proche de zéro (convergence)
+                    if abs(slope) < 1e-4 and score_variance < variance_threshold_medium * 5:
+                        self.logger.warning(f"🛑 Early stopping intelligent: Convergence détectée")
+                        self.logger.warning(f"🛑 Pente de tendance: {slope:.6f}, Variance: {score_variance:.6f}")
+                        study.stop()
 
     def _calculate_parameter_importance(self, study: Any) -> Dict[str, float]:
         """Calculate parameter importance from study."""
@@ -2782,11 +2986,11 @@ class HyperparameterOptimization:
 # ============================================================================
 # These functions provide a simple interface to the HyperparameterOptimization class
 
-def optimize_hyperparameters(model_factory: Callable = None,
+def optimize_hyperparameters(model_factory: Optional[Callable] = None,
                            model: Any = None,
-                           X: np.ndarray = None,
-                           y: np.ndarray = None,
-                           search_space: Dict[str, Any] = None,
+                           X: Optional[np.ndarray] = None,
+                           y: Optional[np.ndarray] = None,
+                           search_space: Optional[Dict[str, Any]] = None,
                            n_trials: int = 50,
                            method: str = 'bayesian',
                            scoring: Union[str, Callable] = 'accuracy',

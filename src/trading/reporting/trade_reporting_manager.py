@@ -20,7 +20,7 @@ from src.utils.tprint import (
     tprint_info, tprint_success, tprint_error, tprint_warning,
     tprint_debug, tprint_data_preview, tprint_data_format
 )
-from src.printing import tprint
+from src.utils.tprint import tprint
 
 
 class TradingMode(Enum):

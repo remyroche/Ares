@@ -11,7 +11,7 @@ from datetime import datetime
 import uuid
 import logging
 
-from src.printing import tprint
+from src.utils.tprint import tprint
 from .config import SimulatorConfig
 
 

@@ -26,7 +26,7 @@ from pathlib import Path
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
-from src.printing import tprint
+from src.utils.tprint import tprint
 
 logger = system_logger.getChild('KellyHistoryTracker')
 

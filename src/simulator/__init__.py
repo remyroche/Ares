@@ -6,7 +6,7 @@ and comprehensive position management for testing trading strategies.
 """
 
 from typing import Optional
-from src.printing import tprint
+from src.utils.tprint import tprint
 from .config import SimulatorConfig
 from .fee_calculator import FeeCalculator
 from .slippage_calculator import SlippageCalculator

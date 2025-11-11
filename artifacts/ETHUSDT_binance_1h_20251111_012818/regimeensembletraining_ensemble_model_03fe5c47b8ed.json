@@ -1,0 +1,17 @@
+{
+  "model_type": null,
+  "base_models": {
+    "catboost": null,
+    "random_forest": null,
+    "extra_tree": null
+  },
+  "meta_learner": null,
+  "calibration_method": null,
+  "feature_names": [],
+  "model_metadata": {
+    "training_timestamp": null,
+    "n_features": null,
+    "n_base_models": null,
+    "calibration_enabled": null
+  }
+}

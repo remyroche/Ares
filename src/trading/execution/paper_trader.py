@@ -33,7 +33,14 @@ class TradeTracker:
     trades: List[Dict[str, Any]] = field(default_factory=list)
 
 def get_trade_tracker() -> TradeTracker:
+    """
+    Get trade tracker instance.
+
+    Returns:
+        TradeTracker: Trade tracker instance
+    """
     tprint(f"🚀 TradeTracker.get_trade_tracker: Entered", "INFO")
+    return TradeTracker()
 
 # Constants for paper trading
 DEFAULT_COMMISSION_RATE = 0.001  # 0.1%
@@ -59,11 +66,13 @@ class PaperTrader:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        tprint(f"🚀 TradeTracker.__init__: Entered", "INFO")
+        """
+        Initialize PaperTrader with configuration.
 
         Args:
             config: Configuration dictionary
         """
+        tprint(f"🚀 TradeTracker.__init__: Entered", "INFO")
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("PaperTrader")
 
@@ -106,11 +115,13 @@ class PaperTrader:
         raise_on_error=True
     )
     async def initialize(self) -> bool:
-        tprint(f"🚀 TradeTracker.initialize: Entered", "INFO")
+        """
+        Initialize paper trader.
 
         Returns:
             bool: True if initialization successful, False otherwise
         """
+        tprint(f"🚀 TradeTracker.initialize: Entered", "INFO")
         try:
             tprint_info("🚀 Initializing Paper Trader...")
 
@@ -317,8 +328,8 @@ class PaperTrader:
         raise_on_error=True
     )
     async def execute_buy_order(
-        tprint(f"🚀 TradeTracker.execute_buy_order: Entered", "INFO")
-
+        self,
+        symbol: str,
         quantity: float,
         price: float,
         timestamp: datetime,
@@ -337,6 +348,7 @@ class PaperTrader:
         Returns:
             bool: True if successful, False otherwise
         """
+        tprint(f"🚀 TradeTracker.execute_buy_order: Entered", "INFO")
         try:
             if not self._validate_order(symbol, quantity, price):
                 return False
@@ -427,8 +439,8 @@ class PaperTrader:
         raise_on_error=True
     )
     async def execute_sell_order(
-        tprint(f"🚀 TradeTracker.execute_sell_order: Entered", "INFO")
-
+        self,
+        symbol: str,
         quantity: float,
         price: float,
         timestamp: datetime,
@@ -447,6 +459,7 @@ class PaperTrader:
         Returns:
             bool: True if successful, False otherwise
         """
+        tprint(f"🚀 TradeTracker.execute_sell_order: Entered", "INFO")
         try:
             if not self._validate_order(symbol, quantity, price):
                 return False
@@ -595,7 +608,8 @@ class PaperTrader:
         raise_on_error=True
     )
     def get_position(self, symbol: str) -> dict[str, Any] | None:
-        tprint(f"🚀 TradeTracker.get_position: Entered", "INFO")
+        """
+        Get position for symbol.
 
         Args:
             symbol: Trading symbol
@@ -603,6 +617,7 @@ class PaperTrader:
         Returns:
             Optional[Dict[str, Any]]: Position information or None
         """
+        tprint(f"🚀 TradeTracker.get_position: Entered", "INFO")
         try:
             position = self.positions.get(symbol, None)
             if position:
@@ -617,8 +632,16 @@ class PaperTrader:
             return None
 
     def mark_price(self, symbol: str, price: float) -> None:
-        tprint(f"🚀 TradeTracker.mark_price: Entered", "INFO")
+        """
+        Mark price for symbol.
 
+        Args:
+            symbol: Trading symbol
+            price: Current price
+        """
+        tprint(f"🚀 TradeTracker.mark_price: Entered", "INFO")
+        try:
+            if price <= 0:
                 tprint_warning(f"⚠️ Invalid price for {symbol}: {price}")
                 return
             self.prices[symbol] = price
@@ -652,11 +675,13 @@ class PaperTrader:
         raise_on_error=True
     )
     def get_all_positions(self) -> dict[str, dict[str, Any]]:
-        tprint(f"🚀 TradeTracker.get_all_positions: Entered", "INFO")
+        """
+        Get all positions.
 
         Returns:
             Dict[str, Dict[str, Any]]: All positions
         """
+        tprint(f"🚀 TradeTracker.get_all_positions: Entered", "INFO")
         try:
             positions = self.positions.copy()
             tprint_debug(f"📊 Retrieved {len(positions)} positions")
@@ -673,11 +698,13 @@ class PaperTrader:
         raise_on_error=True
     )
     def get_balance(self) -> float:
-        tprint(f"🚀 TradeTracker.get_balance: Entered", "INFO")
+        """
+        Get current balance.
 
         Returns:
             float: Current balance
         """
+        tprint(f"🚀 TradeTracker.get_balance: Entered", "INFO")
         try:
             tprint_debug(f"💰 Current balance: ${self.balance:,.2f}")
             return self.balance
@@ -693,7 +720,8 @@ class PaperTrader:
         raise_on_error=True
     )
     def get_trade_history(self, symbol: str | None = None) -> list[dict[str, Any]]:
-        tprint(f"🚀 TradeTracker.get_trade_history: Entered", "INFO")
+        """
+        Get trade history.
 
         Args:
             symbol: Optional symbol filter
@@ -701,6 +729,7 @@ class PaperTrader:
         Returns:
             List[Dict[str, Any]]: Trade history
         """
+        tprint(f"🚀 TradeTracker.get_trade_history: Entered", "INFO")
         try:
             if symbol:
                 trades = [
@@ -723,11 +752,13 @@ class PaperTrader:
         raise_on_error=True
     )
     def calculate_performance(self) -> dict[str, Any]:
-        tprint(f"🚀 TradeTracker.calculate_performance: Entered", "INFO")
+        """
+        Calculate performance metrics.
 
         Returns:
             Dict[str, Any]: Performance metrics
         """
+        tprint(f"🚀 TradeTracker.calculate_performance: Entered", "INFO")
         try:
             if not self.trade_history:
                 return {
@@ -806,11 +837,13 @@ class PaperTrader:
             return {}
 
     def get_trader_status(self) -> dict[str, Any]:
-        tprint(f"🚀 TradeTracker.get_trader_status: Entered", "INFO")
+        """
+        Get trader status.
 
         Returns:
             Dict[str, Any]: Trader status
         """
+        tprint(f"🚀 TradeTracker.get_trader_status: Entered", "INFO")
         return {
             "is_trading": self.is_trading,
             "balance": self.balance,
@@ -828,8 +861,13 @@ class PaperTrader:
         raise_on_error=True
     )
     async def stop(self) -> None:
-        tprint(f"🚀 TradeTracker.stop: Entered", "INFO")
+        """
+        Stop paper trader.
 
+        Returns:
+            None
+        """
+        tprint(f"🚀 TradeTracker.stop: Entered", "INFO")
         try:
             # Stop enhanced monitoring
             if self.enhanced_monitoring:
@@ -858,8 +896,8 @@ paper_trader: PaperTrader | None = None
     context="paper trader setup",
 )
 async def setup_paper_trader(
-    tprint(f"🚀 TradeTracker.setup_paper_trader: Entered", "INFO")
-
+    config: dict[str, Any] | None = None,
+) -> PaperTrader | None:
     """
     Setup global paper trader.
 
@@ -869,6 +907,7 @@ async def setup_paper_trader(
     Returns:
         Optional[PaperTrader]: Global paper trader instance
     """
+    tprint(f"🚀 TradeTracker.setup_paper_trader: Entered", "INFO")
     try:
         global paper_trader
 

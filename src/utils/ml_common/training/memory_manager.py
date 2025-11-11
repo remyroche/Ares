@@ -128,6 +128,23 @@ class TrainingMemoryManager:
         # Get memory before cleanup
         before = self.get_memory_info()
         
+        # 🔍 LOGGING: Décisions de gestion mémoire sous pression
+        memory_pressure = before['percent']
+        if memory_pressure > 90:
+            tprint(f"🚨 [MEMORY_PRESSURE] HAUTE PRESSION MÉMOIRE DÉTECTÉE: {memory_pressure:.1f}%", color="red")
+            tprint(f"   → Action: Nettoyage forcé déclenché (force={force})", color="red")
+            tprint(f"   → Seuil d'alerte: {self.alert_threshold}%", color="red")
+            tprint(f"   → Impact: Nettoyage agressif pour libérer maximum de mémoire", color="red")
+        elif memory_pressure > 80:
+            tprint(f"⚠️ [MEMORY_PRESSURE] PRESSION MÉMOIRE ÉLEVÉE: {memory_pressure:.1f}%", color="yellow")
+            tprint(f"   → Action: Nettoyage préventif déclenché", color="yellow")
+            tprint(f"   → Seuil d'alerte: {self.alert_threshold}%", color="yellow")
+            tprint(f"   → Impact: Nettoyage modéré pour optimiser l'utilisation", color="yellow")
+        else:
+            tprint(f"🔍 [MEMORY_PRESSURE] PRESSION MÉMOIRE NORMALE: {memory_pressure:.1f}%", color="blue")
+            tprint(f"   → Action: Nettoyage de routine", color="blue")
+            tprint(f"   → Seuil d'alerte: {self.alert_threshold}%", color="blue")
+        
         # Perform garbage collection
         collected = gc.collect()
         
@@ -139,19 +156,25 @@ class TrainingMemoryManager:
         
         self.last_cleanup_time = current_time
         
+        # 🔍 LOGGING: Résultats du nettoyage mémoire
         if verbose:
             tprint(
                 f"🧹 Memory cleanup: freed {freed_gb:.2f}GB, "
                 f"collected {collected} objects",
                 color="green"
             )
+            tprint(f"   → Mémoire avant: {before['used_gb']:.2f}GB ({before['percent']:.1f}%)", color="green")
+            tprint(f"   → Mémoire après: {after['used_gb']:.2f}GB ({after['percent']:.1f}%)", color="green")
+            tprint(f"   → Gain net: {freed_gb:.2f}GB ({before['percent'] - after['percent']:.1f}%)", color="green")
+            tprint(f"   → Objets collectés: {collected:,}", color="green")
         
         return {
             'skipped': False,
             'collected_objects': collected,
             'freed_gb': freed_gb,
             'before_percent': before['percent'],
-            'after_percent': after['percent']
+            'after_percent': after['percent'],
+            'memory_pressure_level': 'high' if memory_pressure > 90 else 'medium' if memory_pressure > 80 else 'normal'
         }
     
     def start_monitoring(self, stage: str = "Initial"):
@@ -249,7 +272,8 @@ def managed_training(
     auto_cleanup: bool = True,
     cleanup_on_error: bool = True,
     alert_threshold: float = 85.0,
-    hardware_manager: Optional[Any] = None
+    hardware_manager: Optional[Any] = None,
+    subset_size: Optional[int] = None
 ):
     """
     Context manager for automatic memory management during training.
@@ -266,6 +290,7 @@ def managed_training(
         cleanup_on_error: Cleanup even if error occurs
         alert_threshold: Memory alert threshold percentage
         hardware_manager: Optional hardware manager to cleanup
+        subset_size: Optional subset size for memory optimization
         
     Yields:
         TrainingMemoryManager instance for manual control
@@ -274,6 +299,30 @@ def managed_training(
         alert_threshold_percent=alert_threshold,
         enable_monitoring=True
     )
+    
+    # 🔍 LOGGING: Décisions de réduction de subset_size
+    if subset_size is not None:
+        initial_memory = memory_mgr.get_memory_info()
+        memory_pressure = initial_memory['percent']
+        
+        if memory_pressure > 85:
+            tprint(f"🚨 [SUBSET_SIZE] RÉDUCTION AGRESSIVE SOUS PRESSION MÉMOIRE", color="red")
+            tprint(f"   → Pression mémoire: {memory_pressure:.1f}%", color="red")
+            tprint(f"   → Subset size: {subset_size:,} échantillons", color="red")
+            tprint(f"   → Raison: Pression mémoire élevée > 85%", color="red")
+            tprint(f"   → Impact: Réduction significative des données pour éviter OOM", color="red")
+        elif memory_pressure > 75:
+            tprint(f"⚠️ [SUBSET_SIZE] RÉDUCTION MODÉRÉE SOUS PRESSION MÉMOIRE", color="yellow")
+            tprint(f"   → Pression mémoire: {memory_pressure:.1f}%", color="yellow")
+            tprint(f"   → Subset size: {subset_size:,} échantillons", color="yellow")
+            tprint(f"   → Raison: Pression mémoire modérée > 75%", color="yellow")
+            tprint(f"   → Impact: Réduction modérée des données pour optimiser", color="yellow")
+        else:
+            tprint(f"🔍 [SUBSET_SIZE] RÉDUCTION STANDARD", color="blue")
+            tprint(f"   → Pression mémoire: {memory_pressure:.1f}%", color="blue")
+            tprint(f"   → Subset size: {subset_size:,} échantillons", color="blue")
+            tprint(f"   → Raison: Optimisation standard des performances", color="blue")
+            tprint(f"   → Impact: Réduction contrôlée pour équilibre performance/mémoire", color="blue")
     
     # Start monitoring
     memory_mgr.start_monitoring(stage_name)

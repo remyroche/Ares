@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Any, Dict, Optional
 
 from src.utils.logger import system_logger
-from src.printing import tprint
+from src.utils.tprint import tprint
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 import numpy as np
 

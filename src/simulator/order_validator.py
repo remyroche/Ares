@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import Enum
 import logging
 
-from src.printing import tprint
+from src.utils.tprint import tprint
 from .config import SimulatorConfig
 
 

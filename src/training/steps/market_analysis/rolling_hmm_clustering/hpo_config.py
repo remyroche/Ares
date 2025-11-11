@@ -351,6 +351,9 @@ class RollingHMMOptimizer:
                     # Not enough data
                     return -1e6, None
 
+                # 🔍 DIAGNOSTIC LOGS: Data filtering impact analysis
+                logger.info(f"🔍 DATA DEBUG: Raw features shape: {features.shape}")
+
                 # Extract economic features instead of PCA
                 # This maintains economic interpretability for regime identification
                 features_economic = feature_engineer.extract_economic_features(
@@ -358,6 +361,9 @@ class RollingHMMOptimizer:
                     market_data,
                     ewma_config
                 )
+                
+                logger.info(f"🔍 DATA DEBUG: Economic features shape: {features_economic.shape}")
+                logger.info(f"🔍 DATA DEBUG: Economic features index range: {features_economic.index.min()} to {features_economic.index.max()}")
 
                 # Create HMM config with reduced n_iter for HPO speed
                 hmm_config = StickyHMMConfig(
@@ -516,7 +522,17 @@ class RollingHMMOptimizer:
                     tprint_info(f"📊 HPO Progress: Trial {self.current_trial} - {self.current_stage}")
 
                 # Predict regime labels
+                logger.info(f"🔍 PREDICT DEBUG: About to predict on features_economic.shape={features_economic.values.shape}")
                 regime_labels = hmm_model.predict(features_economic.values)
+                
+                # 🔍 DIAGNOSTIC LOGS: Regime labels analysis
+                logger.info(f"🔍 REGIME DEBUG: Regime labels shape: {regime_labels.shape}")
+                logger.info(f"🔍 REGIME DEBUG: Unique regimes: {np.unique(regime_labels)}")
+                logger.info(f"🔍 REGIME DEBUG: Regime distribution: {dict(zip(*np.unique(regime_labels, return_counts=True)))}")
+                
+                # Check for empty regime labels
+                if len(regime_labels) == 0:
+                    logger.error(f"🚨 REGIME CRITICAL: Empty regime labels detected!")
 
                 # Calculate regime distribution and apply constraints
                 unique_regimes, regime_counts = np.unique(regime_labels, return_counts=True)

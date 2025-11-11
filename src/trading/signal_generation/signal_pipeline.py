@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
-from src.printing import tprint
+from src.utils.tprint import tprint
 from src.utils.logger import system_logger
 from src.trading.config.regime_config import RegimeType
 from src.trading.config.trading_config import TradingConfig

@@ -30,7 +30,7 @@ from src.feature_generation.categories.ensemble_disagreement import calculate_en
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error, tprint_warning
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error, tprint_warning, tprint_data_preview
 
 # Import model training report generator
 from src.training.steps.model_training.model_training_report_generator import create_model_training_report
@@ -641,12 +641,18 @@ class UnifiedModelsTrainingStep(BaseStep):
                 depthwise_params['batch_size'] = 128  # Increased from 64 (fewer iterations)
                 depthwise_params['early_stopping_patience'] = 3  # Reduced from 7
 
-                # Disable DepthwiseCNN HPO in light mode
+                # REACTIVATE DepthwiseCNN HPO in light mode (user request)
                 if 'hpo' in depthwise_config:
-                    depthwise_config['hpo']['enabled'] = False
+                    # Keep HPO enabled but reduce trials for light mode
+                    if 'max_trials' in depthwise_config['hpo']:
+                        depthwise_config['hpo']['max_trials'] = min(depthwise_config['hpo']['max_trials'], 10)
+                    if 'time_budget' in depthwise_config['hpo']:
+                        depthwise_config['hpo']['time_budget'] = min(depthwise_config['hpo']['time_budget'], 300)  # 5 minutes max
+                    tprint_info(f"  DepthwiseCNN HPO: REACTIVATED (reduced trials for light mode)")
+                else:
+                    tprint_info(f"  DepthwiseCNN HPO: No HPO configuration found")
 
                 tprint_info(f"  DepthwiseCNN epochs: 50 → 10 (10x lighter)")
-                tprint_info(f"  DepthwiseCNN HPO: DISABLED")
             
             # Optimize CatBoost
             if 'catboost' in base_models:
@@ -659,13 +665,20 @@ class UnifiedModelsTrainingStep(BaseStep):
                 catboost_params['depth'] = 4  # Reduced from 6
                 catboost_params['early_stopping_rounds'] = 10  # Reduced from 50
                 
-                # Disable CatBoost HPO in light mode
+                # REACTIVATE CatBoost HPO in light mode (user request)
                 if 'hpo' in catboost_config:
-                    catboost_config['hpo']['enabled'] = False
+                    # Keep HPO enabled but reduce trials for light mode
+                    if 'max_trials' in catboost_config['hpo']:
+                        catboost_config['hpo']['max_trials'] = min(catboost_config['hpo']['max_trials'], 10)
+                    if 'time_budget' in catboost_config['hpo']:
+                        catboost_config['hpo']['time_budget'] = min(catboost_config['hpo']['time_budget'], 300)  # 5 minutes max
+                    tprint_info(f"  CatBoost HPO: REACTIVATED (reduced trials for light mode)")
+                else:
+                    tprint_info(f"  CatBoost HPO: No HPO configuration found")
                 
                 tprint_info(f"  CatBoost iterations: 500 → 50 (10x lighter)")
                 tprint_info(f"  CatBoost depth: 6 → 4")
-                tprint_info(f"  CatBoost HPO: DISABLED")
+                tprint_info(f"  CatBoost HPO: REACTIVATED (reduced trials for light mode)")
             
             # Optimize LGBM
             if 'lgbm' in base_models:
@@ -677,13 +690,20 @@ class UnifiedModelsTrainingStep(BaseStep):
                 lgbm_params['n_estimators'] = 100  # Reduced from 1000 (10x lighter)
                 lgbm_params['max_depth'] = 6  # Reduced from 8
                 
-                # Disable LGBM HPO in light mode
+                # REACTIVATE LGBM HPO in light mode (user request)
                 if 'hpo' in lgbm_config:
-                    lgbm_config['hpo']['enabled'] = False
+                    # Keep HPO enabled but reduce trials for light mode
+                    if 'max_trials' in lgbm_config['hpo']:
+                        lgbm_config['hpo']['max_trials'] = min(lgbm_config['hpo']['max_trials'], 10)
+                    if 'time_budget' in lgbm_config['hpo']:
+                        lgbm_config['hpo']['time_budget'] = min(lgbm_config['hpo']['time_budget'], 300)  # 5 minutes max
+                    tprint_info(f"  LGBM HPO: REACTIVATED (reduced trials for light mode)")
+                else:
+                    tprint_info(f"  LGBM HPO: No HPO configuration found")
                 
                 tprint_info(f"  LGBM n_estimators: 1000 → 100 (10x lighter)")
                 tprint_info(f"  LGBM max_depth: 8 → 6")
-                tprint_info(f"  LGBM HPO: DISABLED")
+                tprint_info(f"  LGBM HPO: REACTIVATED (reduced trials for light mode)")
         
         # Check if tactician_config has GRU model
         if 'tactician_config' in yaml_config:
@@ -1490,12 +1510,18 @@ class UnifiedModelsTrainingStep(BaseStep):
                 depthwise_params['batch_size'] = 128  # Increased from 64 (fewer iterations)
                 depthwise_params['early_stopping_patience'] = 3  # Reduced from 7
 
-                # Disable DepthwiseCNN HPO in light mode
+                # REACTIVATE DepthwiseCNN HPO in light mode (user request)
                 if 'hpo' in depthwise_config:
-                    depthwise_config['hpo']['enabled'] = False
+                    # Keep HPO enabled but reduce trials for light mode
+                    if 'max_trials' in depthwise_config['hpo']:
+                        depthwise_config['hpo']['max_trials'] = min(depthwise_config['hpo']['max_trials'], 10)
+                    if 'time_budget' in depthwise_config['hpo']:
+                        depthwise_config['hpo']['time_budget'] = min(depthwise_config['hpo']['time_budget'], 300)  # 5 minutes max
+                    tprint_info(f"  DepthwiseCNN HPO: REACTIVATED (reduced trials for light mode)")
+                else:
+                    tprint_info(f"  DepthwiseCNN HPO: No HPO configuration found")
 
                 tprint_info(f"  DepthwiseCNN epochs: 50 → 10 (10x lighter)")
-                tprint_info(f"  DepthwiseCNN HPO: DISABLED")
             
             # Optimize CatBoost
             if 'catboost' in base_models:
@@ -1508,13 +1534,20 @@ class UnifiedModelsTrainingStep(BaseStep):
                 catboost_params['depth'] = 4  # Reduced from 6
                 catboost_params['early_stopping_rounds'] = 10  # Reduced from 50
                 
-                # Disable CatBoost HPO in light mode
+                # REACTIVATE CatBoost HPO in light mode (user request)
                 if 'hpo' in catboost_config:
-                    catboost_config['hpo']['enabled'] = False
+                    # Keep HPO enabled but reduce trials for light mode
+                    if 'max_trials' in catboost_config['hpo']:
+                        catboost_config['hpo']['max_trials'] = min(catboost_config['hpo']['max_trials'], 10)
+                    if 'time_budget' in catboost_config['hpo']:
+                        catboost_config['hpo']['time_budget'] = min(catboost_config['hpo']['time_budget'], 300)  # 5 minutes max
+                    tprint_info(f"  CatBoost HPO: REACTIVATED (reduced trials for light mode)")
+                else:
+                    tprint_info(f"  CatBoost HPO: No HPO configuration found")
                 
                 tprint_info(f"  CatBoost iterations: 500 → 50 (10x lighter)")
                 tprint_info(f"  CatBoost depth: 6 → 4")
-                tprint_info(f"  CatBoost HPO: DISABLED")
+                tprint_info(f"  CatBoost HPO: REACTIVATED (reduced trials for light mode)")
             
             # Optimize LGBM
             if 'lgbm' in base_models:
@@ -1526,13 +1559,20 @@ class UnifiedModelsTrainingStep(BaseStep):
                 lgbm_params['n_estimators'] = 100  # Reduced from 1000 (10x lighter)
                 lgbm_params['max_depth'] = 6  # Reduced from 8
                 
-                # Disable LGBM HPO in light mode
+                # REACTIVATE LGBM HPO in light mode (user request)
                 if 'hpo' in lgbm_config:
-                    lgbm_config['hpo']['enabled'] = False
+                    # Keep HPO enabled but reduce trials for light mode
+                    if 'max_trials' in lgbm_config['hpo']:
+                        lgbm_config['hpo']['max_trials'] = min(lgbm_config['hpo']['max_trials'], 10)
+                    if 'time_budget' in lgbm_config['hpo']:
+                        lgbm_config['hpo']['time_budget'] = min(lgbm_config['hpo']['time_budget'], 300)  # 5 minutes max
+                    tprint_info(f"  LGBM HPO: REACTIVATED (reduced trials for light mode)")
+                else:
+                    tprint_info(f"  LGBM HPO: No HPO configuration found")
                 
                 tprint_info(f"  LGBM n_estimators: 1000 → 100 (10x lighter)")
                 tprint_info(f"  LGBM max_depth: 8 → 6")
-                tprint_info(f"  LGBM HPO: DISABLED")
+                tprint_info(f"  LGBM HPO: REACTIVATED (reduced trials for light mode)")
         
         # Check if tactician_config has GRU or DepthwiseCNN models
         if 'tactician_config' in yaml_config:
@@ -2574,14 +2614,15 @@ class UnifiedModelsTrainingStep(BaseStep):
                     raise ValueError(error_msg)
 
                 tprint_info(f"   ↪ Retrieved regime_ensemble_predictions from HDF5: shape={regime_features.shape}, columns={len(regime_features.columns)}")
-                    # DEBUG: Log regime features before adding
-                    tprint_info("=" * 80)
-                    tprint_info("🔍 [DEBUG] REGIME FEATURES ANALYSIS")
-                    tprint_info("=" * 80)
-                    tprint_info(f"🔍 [DEBUG] Regime features shape: {regime_features.shape}")
-                    tprint_info(f"🔍 [DEBUG] Regime features columns: {list(regime_features.columns)}")
-                    tprint_info(f"🔍 [DEBUG] Regime features count: {len(regime_features.columns)}")
-                    tprint_info("=" * 80)
+                
+                # DEBUG: Log regime features before adding
+                tprint_info("=" * 80)
+                tprint_info("🔍 [DEBUG] REGIME FEATURES ANALYSIS")
+                tprint_info("=" * 80)
+                tprint_info(f"🔍 [DEBUG] Regime features shape: {regime_features.shape}")
+                tprint_info(f"🔍 [DEBUG] Regime features columns: {list(regime_features.columns)}")
+                tprint_info(f"🔍 [DEBUG] Regime features count: {len(regime_features.columns)}")
+                tprint_info("=" * 80)
                 tprint_success(f"✅ Loaded regime ensemble predictions from HDF5: {regime_features.shape}")
 
                 # Log regime feature addition with comprehensive preview
@@ -2889,36 +2930,36 @@ class UnifiedModelsTrainingStep(BaseStep):
         config: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Execute training based on the specified type."""
-            # DEBUG: Log detailed feature information before training
-            tprint_info("=" * 80)
-            tprint_info("🔍 [DEBUG] FEATURE ANALYSIS BEFORE TRAINING")
-            tprint_info("=" * 80)
-            tprint_info(f"🔍 [DEBUG] Training type: {training_type}")
-            tprint_info(f"🔍 [DEBUG] Training data shape: {training_data.shape}")
-            tprint_info(f"🔍 [DEBUG] Training data columns (first 20): {list(training_data.columns[:20])}")
-            tprint_info(f"🔍 [DEBUG] Training data columns (last 20): {list(training_data.columns[-20:])}")
-            tprint_info(f"🔍 [DEBUG] Total feature count: {len(training_data.columns)}")
-            
-            # Count regime features
-            regime_features = [col for col in training_data.columns if 'regime' in col.lower()]
-            tprint_info(f"🔍 [DEBUG] Regime features count: {len(regime_features)}")
-            tprint_info(f"🔍 [DEBUG] Regime features: {regime_features}")
-            
-            # Count disagreement features
-            disagreement_features = [col for col in training_data.columns if any(term in col.lower() for term in ['dispersion', 'disagreement', 'uncertainty', 'confidence_gap', 'prediction_range'])]
-            tprint_info(f"🔍 [DEBUG] Disagreement features count: {len(disagreement_features)}")
-            tprint_info(f"🔍 [DEBUG] Disagreement features: {disagreement_features}")
-            
-            # Count model-specific features
-            model_specific_features = [col for col in training_data.columns if any(term in col.lower() for term in ['catboost', 'lgbm', 'lightgbm', 'depthwise', 'cnn', 'gru'])]
-            tprint_info(f"🔍 [DEBUG] Model-specific features count: {len(model_specific_features)}")
-            tprint_info(f"🔍 [DEBUG] Model-specific features: {model_specific_features}")
-            
-            # Save feature list for comparison during prediction
-            self._training_features = list(training_data.columns)
-            self._training_feature_count = len(training_data.columns)
-            tprint_info(f"🔍 [DEBUG] Saved training feature list ({len(self._training_features)} features) for prediction comparison")
-            tprint_info("=" * 80)
+        # DEBUG: Log detailed feature information before training
+        tprint_info("=" * 80)
+        tprint_info("🔍 [DEBUG] FEATURE ANALYSIS BEFORE TRAINING")
+        tprint_info("=" * 80)
+        tprint_info(f"🔍 [DEBUG] Training type: {training_type}")
+        tprint_info(f"🔍 [DEBUG] Training data shape: {training_data.shape}")
+        tprint_info(f"🔍 [DEBUG] Training data columns (first 20): {list(training_data.columns[:20])}")
+        tprint_info(f"🔍 [DEBUG] Training data columns (last 20): {list(training_data.columns[-20:])}")
+        tprint_info(f"🔍 [DEBUG] Total feature count: {len(training_data.columns)}")
+
+        # Count regime features
+        regime_features = [col for col in training_data.columns if 'regime' in col.lower()]
+        tprint_info(f"🔍 [DEBUG] Regime features count: {len(regime_features)}")
+        tprint_info(f"🔍 [DEBUG] Regime features: {regime_features}")
+
+        # Count disagreement features
+        disagreement_features = [col for col in training_data.columns if any(term in col.lower() for term in ['dispersion', 'disagreement', 'uncertainty', 'confidence_gap', 'prediction_range'])]
+        tprint_info(f"🔍 [DEBUG] Disagreement features count: {len(disagreement_features)}")
+        tprint_info(f"🔍 [DEBUG] Disagreement features: {disagreement_features}")
+
+        # Count model-specific features
+        model_specific_features = [col for col in training_data.columns if any(term in col.lower() for term in ['catboost', 'lgbm', 'lightgbm', 'depthwise', 'cnn', 'gru'])]
+        tprint_info(f"🔍 [DEBUG] Model-specific features count: {len(model_specific_features)}")
+        tprint_info(f"🔍 [DEBUG] Model-specific features: {model_specific_features}")
+
+        # Save feature list for comparison during prediction
+        self._training_features = list(training_data.columns)
+        self._training_feature_count = len(training_data.columns)
+        tprint_info(f"🔍 [DEBUG] Saved training feature list ({len(self._training_features)} features) for prediction comparison")
+        tprint_info("=" * 80)
         try:
             if training_type == 'analyst_base':
                 # Regime probabilities are already added by _get_additional_model_outputs

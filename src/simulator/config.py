@@ -8,7 +8,7 @@ slippage models, latency simulation, and position management constraints.
 from dataclasses import dataclass, field
 from typing import Dict, Any, Tuple
 from enum import Enum
-from src.printing import tprint
+from src.utils.tprint import tprint
 
 
 class SlippageModel(Enum):

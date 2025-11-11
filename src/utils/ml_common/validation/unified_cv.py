@@ -111,6 +111,22 @@ class UnifiedCrossValidator:
                 else:
                     cv = KFold(n_splits=cv_folds, shuffle=False)
 
+            # 🔍 DIAGNOSTIC LOGS: Cross-validation fold analysis
+            LOGGER.info(f"🔍 CV DEBUG: Analyzing {cv_folds} folds for {len(X)} samples")
+            LOGGER.info(f"🔍 CV DEBUG: Expected samples per fold={len(X) // cv_folds}")
+            
+            # Analyze fold sizes and detect empty folds
+            if hasattr(cv, 'split') and len(list(cv.split(X, y))) > 0:
+                for i, (train_idx, val_idx) in enumerate(cv.split(X, y)):
+                    if len(val_idx) == 0:
+                        LOGGER.error(f"🚨 CV CRITICAL: Fold {i+1} has 0 validation samples! X.shape={X.shape}")
+                        LOGGER.error(f"🚨 CV CRITICAL: Train indices: {train_idx}")
+                        LOGGER.error(f"🚨 CV CRITICAL: Val indices: {val_idx}")
+                    elif len(val_idx) < 5:
+                        LOGGER.warning(f"⚠️ CV WARNING: Fold {i+1} has only {len(val_idx)} validation samples (may be insufficient)")
+                    else:
+                        LOGGER.info(f"🔍 CV DEBUG: Fold {i+1}/{cv_folds}: train_size={len(train_idx)}, val_size={len(val_idx)}")
+
             # Multi-metric vs single-metric
             if isinstance(scoring, list):
                 cv_result = cross_validate(

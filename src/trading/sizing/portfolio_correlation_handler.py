@@ -22,7 +22,7 @@ from typing import Dict, Any, List, Tuple, Optional
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 from src.utils.tprint import tprint_info, tprint_warning, tprint_debug
-from src.printing import tprint
+from src.utils.tprint import tprint
 
 logger = system_logger.getChild('PortfolioCorrelationHandler')
 

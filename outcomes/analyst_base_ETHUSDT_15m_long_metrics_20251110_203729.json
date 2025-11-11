@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "generated_at": "2025-11-09T19:30:52.160886",
+    "generated_at": "2025-11-10T20:37:29.197535",
     "training_type": "analyst_base",
     "symbol": "ETHUSDT",
     "exchange": "binance",
@@ -16,31 +16,31 @@
       "catboost"
     ],
     "details": {
-      "lightgbm": "<lightgbm.basic.Booster object at 0x3793b6a90>",
+      "lightgbm": "<lightgbm.basic.Booster object at 0x33abb4f90>",
       "depthwise_cnn": "DepthwiseSeparableCNNRegressor(batch_size=64, early_stopping_patience=7)",
-      "catboost": "<catboost.core.CatBoostRegressor object at 0x3878861d0>"
+      "catboost": "<catboost.core.CatBoostRegressor object at 0x3888e4b90>"
     }
   },
   "metrics": {
-    "avg_mse": 0.03535706671650194,
-    "std_mse": 0.049996951166571955,
-    "avg_mae": 0.04986930853205523,
-    "std_mae": 0.06993059357571801,
-    "avg_r2": 0.6651792921939637,
-    "std_r2": 0.47345597732868383,
-    "avg_rmse": 0.1095011919995416,
-    "std_rmse": 0.15286123009835248,
+    "avg_mse": 0.03211349957303935,
+    "std_mse": 0.04541134351691053,
+    "avg_mae": 0.0583017838154905,
+    "std_mae": 0.08183450416670353,
+    "avg_r2": 0.6958948881114434,
+    "std_r2": 0.43003166533811454,
+    "avg_rmse": 0.10425729804944994,
+    "std_rmse": 0.14575292579041943,
     "avg_iterations_used": 299.5,
     "std_iterations_used": 199.5,
     "avg_best_iteration": 299.5,
     "std_best_iteration": 199.5,
-    "avg_training_time": 2.614042282104492,
+    "avg_training_time": 8.903841972351074,
     "std_training_time": 0.0
   },
   "hpo_results": {},
   "regime_performance": {},
   "feature_info": {
-    "feature_count": 69,
+    "feature_count": 60,
     "feature_source": "feature_generation_final_feature_selection_step",
     "feature_names": [
       "candlestick_dark_cloud_cover_pattern_vwap_3x_ratio_log_fibonacci_0.786_10_price_returns_vwap",
@@ -102,16 +102,7 @@
       "wavelet_energy_base_6x_ratio",
       "wavelet_energy_base_6x_ratio_log_fibonacci_0.786_10_price_returns_vwap_x_9x",
       "wavelet_energy_base_6x_ratio_log_ratio_fibonacci_0.618_20_price_returns_vwap_x_27x",
-      "wavelet_energy_base_6x_ratio_x_fibonacci_0.618_20_price_returns_vwap_x_27x",
-      "catboost_regime_0_prob",
-      "catboost_regime_1_prob",
-      "catboost_regime_2_prob",
-      "extratrees_regime_0_prob",
-      "extratrees_regime_1_prob",
-      "extratrees_regime_2_prob",
-      "lightgbm_regime_0_prob",
-      "lightgbm_regime_1_prob",
-      "lightgbm_regime_2_prob"
+      "wavelet_energy_base_6x_ratio_x_fibonacci_0.618_20_price_returns_vwap_x_27x"
     ],
     "regime_features_included": true
   },

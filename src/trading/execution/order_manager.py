@@ -99,7 +99,7 @@ class OrderManager:
         Args:
             config: Configuration dictionary containing trading and execution settings
         """
-        from src.printing import tprint
+        from src.utils.tprint import tprint
         tprint(f"🚀 OrderManager.__init__: Initializing with polling_enabled={config.get('enable_order_polling', True)}", "INFO")
 
         self.config = config
@@ -131,7 +131,7 @@ class OrderManager:
         self.execution_count = 0
         self.total_fees = 0.0
 
-        from src.printing import tprint
+        from src.utils.tprint import tprint
         tprint(f"✅ OrderManager.__init__: Initialized with {len(self.active_orders)} active orders", "INFO")
         tprint_info("🚀 Initializing Order Manager...")
 
@@ -201,7 +201,7 @@ class OrderManager:
         Returns:
             Created order object
         """
-        from src.printing import tprint
+        from src.utils.tprint import tprint
         tprint(f"📝 OrderManager.create_order: symbol={symbol}, side={side.value}, type={order_type.value}, quantity={quantity}, price={price}", "INFO")
 
         # Validate order parameters
@@ -233,7 +233,7 @@ class OrderManager:
         self.active_orders[order.order_id] = order
         self.order_count += 1
 
-        from src.printing import tprint
+        from src.utils.tprint import tprint
         tprint(f"✅ OrderManager.create_order: Order created with order_id={order.order_id}, total_active_orders={len(self.active_orders)}", "SUCCESS")
         tprint_info(f"📝 Created {side.value} order for {symbol}: {quantity} @ {price}")
 
@@ -242,11 +242,11 @@ class OrderManager:
 
         # Start polling for order status if enabled and order is not immediately filled
         if self.polling_enabled and order.status == OrderStatus.SUBMITTED:
-            from src.printing import tprint
+            from src.utils.tprint import tprint
             tprint(f"🔄 OrderManager.create_order: Starting polling for order_id={order.order_id}", "DEBUG")
             await self._start_order_polling(order)
 
-        from src.printing import tprint
+        from src.utils.tprint import tprint
         tprint(f"✅ OrderManager.create_order: Returning order_id={order.order_id}, status={order.status.value}", "DEBUG")
         return order
 

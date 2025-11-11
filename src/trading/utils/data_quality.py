@@ -7,7 +7,7 @@ import numpy as np
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
-from src.printing import tprint
+from src.utils.tprint import tprint
 from .constants import (
     DATA_MISSING_THRESHOLD_CRITICAL,
     DATA_MISSING_THRESHOLD_WARNING,

@@ -1,0 +1,351 @@
+analyst_config:
+  model_name: analyst_base
+  model_type: multi_model_ensemble
+  target: trading_signal
+  base_timeframe: 5m
+  execution_timeframe: 15m
+  execution_frequency: 15m
+  base_models:
+    lgbm:
+      model_type: LGBMRegressor
+      params:
+        n_estimators: 1000
+        learning_rate: 0.01
+        max_depth: 3
+        num_leaves: 6
+        subsample: 0.6
+        colsample_bytree: 0.6
+        random_state: 42
+        verbosity: -1
+        n_jobs: -1
+        reg_lambda: 0.0
+        sampling_rate: 0.6
+        min_child_samples: 10
+      hpo:
+        enabled: true
+        n_rounds: 2
+        enable_final_refinement: true
+        final_refinement_trials: 50
+        search_space:
+          max_depth:
+            type: int
+            low: 3
+            high: 10
+          learning_rate:
+            type: float
+            low: 0.01
+            high: 0.3
+            log: true
+          num_leaves:
+            type: int
+            low: 20
+            high: 300
+          reg_alpha:
+            type: float
+            low: 0.0
+            high: 5.0
+          reg_lambda:
+            type: float
+            low: 0.0
+            high: 5.0
+          subsample:
+            type: float
+            low: 0.6
+            high: 1.0
+          colsample_bytree:
+            type: float
+            low: 0.6
+            high: 1.0
+          min_child_samples:
+            type: int
+            low: 10
+            high: 100
+          min_gain_to_split:
+            type: float
+            low: 0.1
+            high: 1.0
+        optimal_params:
+          max_depth: 3
+          learning_rate: 0.01
+          reg_lambda: 0.0
+          sampling_rate: 0.6
+          min_child_samples: 10
+          num_leaves: 6
+          subsample: 0.6
+          colsample_bytree: 0.6
+        last_optimization:
+          timestamp: '2025-11-10T20:10:57.595052'
+          best_score: 0.0
+          total_trials: 12
+          total_time_seconds: 5.192095994949341
+          n_rounds: 2
+    depthwise_cnn:
+      model_type: DepthwiseSeparableCNNRegressor
+      params:
+        filters: 128
+        kernel_size: 3
+        dropout: 0.3
+        learning_rate: 0.001
+        batch_size: 32
+        epochs: 100
+        validation_split: 0.2
+        early_stopping_patience: 15
+        reduce_lr_patience: 7
+        verbose: 0
+        use_batch_norm: true
+      hpo:
+        enabled: true
+        n_rounds: 3
+        enable_final_refinement: true
+        final_refinement_trials: 100
+        search_space:
+          filters:
+            type: categorical
+            choices:
+            - 64
+            - 128
+            - 256
+            - 512
+          kernel_size:
+            type: categorical
+            choices:
+            - 2
+            - 3
+            - 5
+            - 7
+          dropout:
+            type: float
+            low: 0.1
+            high: 0.6
+          learning_rate:
+            type: float
+            low: 0.0001
+            high: 0.01
+            log: true
+          batch_size:
+            type: categorical
+            choices:
+            - 16
+            - 32
+            - 64
+            - 128
+          epochs:
+            type: int
+            low: 50
+            high: 200
+          use_batch_norm:
+            type: categorical
+            choices:
+            - false
+            - true
+          early_stopping_patience:
+            type: int
+            low: 10
+            high: 25
+        optimal_params: {}
+    catboost:
+      model_type: CatBoostRegressor
+      params:
+        iterations: 300
+        learning_rate: 0.01
+        depth: 4
+        l2_leaf_reg: 1.0
+        subsample: 0.6
+        colsample_bylevel: 0.6
+        border_count: 128
+        max_ctr_complexity: 2
+        random_seed: 42
+        verbose: false
+        early_stopping_rounds: 50
+        sampling_rate: 0.6
+        bootstrap_type: Bernoulli
+      hpo:
+        enabled: true
+        n_rounds: 2
+        enable_final_refinement: true
+        final_refinement_trials: 50
+        search_space:
+          iterations:
+            type: int
+            low: 300
+            high: 1500
+          learning_rate:
+            type: float
+            low: 0.01
+            high: 0.3
+            log: true
+          depth:
+            type: int
+            low: 4
+            high: 10
+          l2_leaf_reg:
+            type: float
+            low: 1.0
+            high: 10.0
+          subsample:
+            type: float
+            low: 0.6
+            high: 1.0
+          colsample_bylevel:
+            type: float
+            low: 0.6
+            high: 1.0
+          border_count:
+            type: int
+            low: 64
+            high: 254
+          max_ctr_complexity:
+            type: int
+            low: 1
+            high: 4
+        optimal_params:
+          depth: 4
+          learning_rate: 0.01
+          iterations: 300
+          l2_leaf_reg: 1.0
+          bootstrap_type: Bernoulli
+          subsample: 0.6
+          colsample_bylevel: 0.6
+        last_optimization:
+          timestamp: '2025-11-10T20:12:45.436450'
+          best_score: 0.0
+          total_trials: 12
+          total_time_seconds: 106.92695879936218
+          n_rounds: 2
+  training:
+    training_samples: 50000
+    validation_samples: 15000
+    test_samples: 10000
+    enable_cross_validation: true
+    cv_folds: 3
+    enable_early_stopping: true
+    early_stopping_patience: 20
+    validation_split: 0.2
+    test_split: 0.1
+    enable_time_series_split: true
+  performance:
+    expected_accuracy: 0.78
+    training_time_limit: 300
+    memory_limit_mb: 2048
+  output:
+    save_models: true
+    save_predictions: true
+    generate_reports: true
+    output_dir: ./analyst_base_models
+feature_engineering:
+  exclude_raw_ohlcv:
+    enabled: true
+    excluded_patterns:
+    - volume
+    - close
+    - high
+    - open
+    - low
+    technical_indicators:
+    - rsi
+    - sma
+    - ema
+    - bb_
+    - macd
+    - atr
+    - roc
+    - mom
+    - return
+    - pct
+    - ratio
+    - std
+    - volatility
+    - trend
+    - momentum
+    - oscillator
+    - signal
+    - cross
+    - divergence
+  primary_features:
+    source: feature_generation_final_feature_selection_step
+    artifact_name: analyst_features
+    initial_count: 300
+    target_count: 100
+  cross_timeframe:
+    enable: true
+    base_timeframe: 5m
+    target_timeframes:
+    - 1m
+    - 5m
+    - 15m
+    - 30m
+    - 1h
+    - 4h
+    - 1d
+    feature_types:
+    - technical_indicators
+    - price_action
+    - volume_profile
+    - volatility
+  regime_features:
+    enable: true
+    source: regime_ml_models
+    feature_names:
+    - regime_prob_0
+    - regime_prob_1
+    - regime_prob_2
+    - regime_prob_3
+    include_regime_outputs: true
+  feature_selection:
+    method: lasso
+    alpha: 0.01
+    max_features: 100
+    enable_recursive_elimination: true
+    enable_feature_importance: true
+  scaling:
+    method: robust
+    enable_outlier_handling: true
+    outlier_threshold: 3.0
+data_preparation:
+  time_series:
+    enable_temporal_features: true
+    lookback_window: 50
+    forecast_horizon: 1
+  target_generation:
+    method: price_momentum
+    lookback_periods:
+    - 5
+    - 10
+    - 20
+    threshold: 0.02
+evaluation:
+  metrics:
+    regression:
+    - mse
+    - mae
+    - r2
+    - mape
+    classification:
+    - accuracy
+    - precision
+    - recall
+    - f1
+  cross_validation:
+    method: time_series_split
+    n_splits: 5
+    test_size: 0.2
+  comparison:
+    enable_model_ranking: true
+    ranking_metric: r2
+    enable_feature_importance: true
+hardware:
+  enable_gpu_acceleration: false
+  enable_memory_optimization: true
+  enable_parallel_processing: true
+  memory_limit_gb: 2.0
+  max_workers: null
+logging:
+  level: INFO
+  enable_detailed_logging: true
+  log_predictions: true
+  log_performance_metrics: true
+  log_feature_importance: true
+  intervals:
+    training_progress: 100
+    prediction_summary: 1000
+    performance_update: 5000

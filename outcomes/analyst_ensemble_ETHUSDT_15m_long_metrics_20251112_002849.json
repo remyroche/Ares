@@ -1,0 +1,73 @@
+{
+  "report_version": "3.0",
+  "metadata": {
+    "training_type": "analyst_ensemble",
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "execution_mode": "blank",
+    "timestamp": "20251112_002849",
+    "generated_at": "2025-11-12T00:28:49.467914",
+    "report_type": "comprehensive_training_metrics"
+  },
+  "configuration": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "execution_mode": "blank",
+    "enable_hpo": true,
+    "train_percentage": 0.7,
+    "validation_percentage": 0.15,
+    "test_percentage": 0.15,
+    "walkforward_config": "N/A"
+  },
+  "execution_summary": {
+    "success": true,
+    "execution_time_seconds": 0.0,
+    "training_type": "analyst_ensemble",
+    "models_trained_count": 0,
+    "model_names": [],
+    "error": null,
+    "warnings": []
+  },
+  "overall_performance": {},
+  "per_model_metrics": {},
+  "training_metrics": {},
+  "validation_metrics": {},
+  "test_metrics": {},
+  "hpo_results": {},
+  "walkforward_results": {},
+  "feature_importance": {},
+  "data_quality": {},
+  "model_complexity": {},
+  "prediction_statistics": {},
+  "error_analysis": {},
+  "data_drift_checks": {},
+  "uncertainty_calibration": {},
+  "shap_explanations": {},
+  "threshold_optimization": {},
+  "ensemble_specific": {},
+  "raw_metrics": {
+    "meta_mse": 0.1301188938411194,
+    "meta_mae": 0.26139824258642913,
+    "meta_r2": 0.20716834470632173,
+    "meta_rmse": 0.36071996595852496
+  },
+  "artifacts": {
+    "analyst_ensemble_outputs": "artifacts/analyst_ensemble_outputs.pkl",
+    "analyst_ensemble_model": "artifacts/analyst_ensemble_model.pkl",
+    "analyst_ensemble_metrics": "artifacts/analyst_ensemble_metrics.pkl",
+    "analyst_ensemble_metrics_report": "outcomes/analyst_ensemble_ETHUSDT_15m_long_report_20251112_002849.md",
+    "analyst_ensemble_config": "artifacts/analyst_ensemble_config.json",
+    "training_report_markdown": "outcomes/analyst_ensemble_ETHUSDT_15m_long_report_20251112_002849.md",
+    "training_report_json": "outcomes/analyst_ensemble_ETHUSDT_15m_long_metrics_20251112_002849.json",
+    "ml_scored_historical_data": "ml_scored_historical_data_analyst_long"
+  },
+  "models": {
+    "count": 0,
+    "names": [],
+    "details": {}
+  }
+}

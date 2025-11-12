@@ -21,7 +21,9 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.utils.tprint import (
     tprint_info, tprint_warning, tprint_error, tprint_success,
-    tprint_structured, LogLevel
+    tprint_structured, LogLevel,
+    tprint_logged, tprint_data_preview, tprint_data_format,
+    tprint_timer, tprint_performance, tprint_feature_counts
 )
 
 # Import signal generators
@@ -105,12 +107,16 @@ class TradingOrchestrator:
     - Performance monitoring and reporting
     """
 
+    @tprint_logged()
     def __init__(self, config: Dict[str, Any]):
-        tprint(f"🚀 TradingMode.__init__: Entered", "INFO")
-
+        """
+        Initialize Trading Orchestrator.
+        
         Args:
             config: Configuration dictionary
         """
+        tprint_info("🚀 TradingOrchestrator.__init__ - Initialisation")
+        tprint_data_preview({"trading_mode": config.get('trading_mode', 'paper'), "symbol": config.get('symbol', 'ETH')}, "TradingOrchestrator.__init__ - config")
         self.config = config
         self.logger = logger.getChild('TradingOrchestrator')
 
@@ -177,38 +183,43 @@ class TradingOrchestrator:
         )
         self.uncertainty_calculator = get_global_uncertainty_calculator()
 
+    @tprint_logged()
     async def initialize(self) -> bool:
-        tprint(f"🚀 TradingMode.initialize: Entered", "INFO")
-
+        """
+        Initialize all components of the trading orchestrator.
+        
         Returns:
             bool: True if initialization successful
         """
-        try:
-            tprint_info("🚀 Initializing Trading Orchestrator...")
+        tprint_info("🚀 TradingOrchestrator.initialize - Démarrage de l'initialisation")
+        tprint_data_preview({"trading_mode": self.trading_mode.value, "symbol": self.symbol}, "TradingOrchestrator.initialize - configuration")
+        with tprint_timer("TradingOrchestrator.initialize - Temps d'initialisation"):
+            try:
+                tprint_info("🚀 Initializing Trading Orchestrator...")
+                
+                # Initialize core components
+                await self._initialize_core_components()
 
-            # Initialize core components
-            await self._initialize_core_components()
+                # Initialize signal generators
+                await self._initialize_signal_generators()
 
-            # Initialize signal generators
-            await self._initialize_signal_generators()
+                # Initialize data collection
+                await self._initialize_data_collection()
 
-            # Initialize data collection
-            await self._initialize_data_collection()
+                # Initialize trading scheduler
+                await self._initialize_trading_scheduler()
 
-            # Initialize trading scheduler
-            await self._initialize_trading_scheduler()
+                # Initialize comprehensive monitoring
+                await self._initialize_comprehensive_monitoring()
 
-            # Initialize comprehensive monitoring
-            await self._initialize_comprehensive_monitoring()
+                self.status = OrchestratorStatus.STOPPED
+                tprint_success("✅ Trading Orchestrator initialized successfully")
+                return True
 
-            self.status = OrchestratorStatus.STOPPED
-            tprint_success("✅ Trading Orchestrator initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to initialize Trading Orchestrator: {e}")
-            self.status = OrchestratorStatus.ERROR
-            return False
+            except Exception as e:
+                self.logger.error(f"❌ Failed to initialize Trading Orchestrator: {e}")
+                self.status = OrchestratorStatus.ERROR
+                return False
 
     async def _initialize_core_components(self) -> None:
         """Initialize core trading components."""
@@ -347,93 +358,103 @@ class TradingOrchestrator:
             tprint_error(f"❌ Comprehensive monitoring initialization failed: {e}")
             raise
 
+    @tprint_logged
     async def start_trading_session(self) -> bool:
-        tprint(f"🚀 TradingMode.start_trading_session: Entered", "INFO")
-
+        """
+        Start a new trading session.
+        
         Returns:
             bool: True if session started successfully
         """
-        try:
-            if self.status != OrchestratorStatus.STOPPED:
-                tprint_warning("⚠️ Orchestrator is not in stopped state")
+        tprint_info("🚀 TradingOrchestrator.start_trading_session - Démarrage de la session")
+        tprint_data_preview({"trading_mode": self.trading_mode.value, "symbol": self.symbol}, "TradingOrchestrator.start_trading_session - configuration")
+        with tprint_timer("TradingOrchestrator.start_trading_session - Temps de démarrage"):
+            try:
+                if self.status != OrchestratorStatus.STOPPED:
+                    tprint_warning("⚠️ Orchestrator is not in stopped state")
+                    return False
+
+                tprint_info("🚀 Starting trading session...")
+                self.status = OrchestratorStatus.STARTING
+
+                # Create new session
+                session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                self.current_session = TradingSession(
+                    session_id=session_id,
+                    start_time=datetime.now(),
+                    symbol=self.symbol,
+                    mode=self.trading_mode
+                )
+
+                # Start data collection
+                await self.data_collector.start_collection()
+
+                # Start trading scheduler
+                await self.trading_scheduler.start_scheduler()
+
+                # Set up callbacks
+                self._setup_callbacks()
+
+                # Start main trading loop
+                asyncio.create_task(self._trading_loop())
+
+                self.status = OrchestratorStatus.RUNNING
+                self.performance_metrics['total_sessions'] += 1
+
+                tprint_success(f"✅ Trading session {session_id} started")
+                return True
+
+            except Exception as e:
+                self.logger.error(f"❌ Failed to start trading session: {e}")
+                self.status = OrchestratorStatus.ERROR
                 return False
 
-            tprint_info("🚀 Starting trading session...")
-            self.status = OrchestratorStatus.STARTING
-
-            # Create new session
-            session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            self.current_session = TradingSession(
-                session_id=session_id,
-                start_time=datetime.now(),
-                symbol=self.symbol,
-                mode=self.trading_mode
-            )
-
-            # Start data collection
-            await self.data_collector.start_collection()
-
-            # Start trading scheduler
-            await self.trading_scheduler.start_scheduler()
-
-            # Set up callbacks
-            self._setup_callbacks()
-
-            # Start main trading loop
-            asyncio.create_task(self._trading_loop())
-
-            self.status = OrchestratorStatus.RUNNING
-            self.performance_metrics['total_sessions'] += 1
-
-            tprint_success(f"✅ Trading session {session_id} started")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to start trading session: {e}")
-            self.status = OrchestratorStatus.ERROR
-            return False
-
+    @tprint_logged
     async def stop_trading_session(self) -> bool:
-        tprint(f"🚀 TradingMode.stop_trading_session: Entered", "INFO")
-
+        """
+        Stop the current trading session.
+        
         Returns:
             bool: True if session stopped successfully
         """
-        try:
-            if self.status != OrchestratorStatus.RUNNING:
-                tprint_warning("⚠️ No active trading session to stop")
+        tprint_info("🛑 TradingOrchestrator.stop_trading_session - Arrêt de la session")
+        tprint_data_preview({"trading_mode": self.trading_mode.value, "symbol": self.symbol}, "TradingOrchestrator.stop_trading_session - configuration")
+        with tprint_timer("TradingOrchestrator.stop_trading_session - Temps d'arrêt"):
+            try:
+                if self.status != OrchestratorStatus.RUNNING:
+                    tprint_warning("⚠️ No active trading session to stop")
+                    return False
+
+                tprint_info("🛑 Stopping trading session...")
+                self.status = OrchestratorStatus.STOPPING
+
+                # Stop data collection
+                await self.data_collector.stop_collection()
+
+                # Stop trading scheduler
+                await self.trading_scheduler.stop_scheduler()
+                
+                # Stop Supervisor
+                if self.supervisor:
+                    await self.supervisor.stop()
+
+                # End current session
+                if self.current_session:
+                    self.current_session.end_time = datetime.now()
+                    self._update_session_metrics()
+
+                    # Record daily summary if this is end of day
+                    await self._record_daily_summary_if_needed()
+
+                self.status = OrchestratorStatus.STOPPED
+
+                tprint_success("✅ Trading session stopped")
+                return True
+
+            except Exception as e:
+                self.logger.error(f"❌ Failed to stop trading session: {e}")
+                self.status = OrchestratorStatus.ERROR
                 return False
-
-            tprint_info("🛑 Stopping trading session...")
-            self.status = OrchestratorStatus.STOPPING
-
-            # Stop data collection
-            await self.data_collector.stop_collection()
-
-            # Stop trading scheduler
-            await self.trading_scheduler.stop_scheduler()
-            
-            # Stop Supervisor
-            if self.supervisor:
-                await self.supervisor.stop()
-
-            # End current session
-            if self.current_session:
-                self.current_session.end_time = datetime.now()
-                self._update_session_metrics()
-
-                # Record daily summary if this is end of day
-                await self._record_daily_summary_if_needed()
-
-            self.status = OrchestratorStatus.STOPPED
-
-            tprint_success("✅ Trading session stopped")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to stop trading session: {e}")
-            self.status = OrchestratorStatus.ERROR
-            return False
 
     def _setup_callbacks(self) -> None:
         """Set up callbacks for data and execution events."""
@@ -541,148 +562,164 @@ class TradingOrchestrator:
                 error_sleep = min(polling_interval * 2, 60)  # Max 60s
                 await asyncio.sleep(error_sleep)
 
+    @tprint_logged()
     async def _generate_trading_decision(
         self, market_snapshot: Optional[Dict[str, Any]] = None
     ) -> Optional[TradingDecision]:
         """Generate trading decision based on all components."""
-        try:
-            if market_snapshot is None:
-                market_snapshot = await self._get_market_snapshot()
-            if not market_snapshot:
-                return None
+        tprint_info("🧠 TradingOrchestrator._generate_trading_decision - Génération de décision")
+        if market_snapshot:
+            tprint_data_preview({"market_data_shape": market_snapshot.get('market_data', pd.DataFrame()).shape if 'market_data' in market_snapshot else None},
+                               "TradingOrchestrator._generate_trading_decision - market_snapshot")
+        with tprint_timer("TradingOrchestrator._generate_trading_decision - Temps de génération"):
+            try:
+                if market_snapshot is None:
+                    market_snapshot = await self._get_market_snapshot()
+                if not market_snapshot:
+                    return None
 
-            market_data: pd.DataFrame = market_snapshot['market_data']
-            self._latest_market_snapshot = market_snapshot
+                market_data: pd.DataFrame = market_snapshot['market_data']
+                self._latest_market_snapshot = market_snapshot
 
-            # Validate market data is not empty
-            if market_data is None or len(market_data) == 0:
-                self.logger.warning("⚠️ Market data is empty, cannot generate trading decision")
-                return None
+                # Validate market data is not empty
+                if market_data is None or len(market_data) == 0:
+                    self.logger.warning("⚠️ Market data is empty, cannot generate trading decision")
+                    return None
 
-            # Get regime prediction from Strategist
-            regime_data = None
-            if self.strategist and hasattr(self.strategist, 'predict_regime'):
-                try:
-                    regime_prediction = await self.strategist.predict_regime(market_data)
-                    if regime_prediction:
-                        regime_data = regime_prediction
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Failed to get regime prediction from Strategist: {e}")
+                # Get regime prediction from Strategist
+                regime_data = None
+                if self.strategist and hasattr(self.strategist, 'predict_regime'):
+                    try:
+                        regime_prediction = await self.strategist.predict_regime(market_data)
+                        if regime_prediction:
+                            regime_data = regime_prediction
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Failed to get regime prediction from Strategist: {e}")
 
-            # Generate Analyst signal
-            analyst_signal = await self.analyst_signal_generator.generate_signal(
-                symbol=self.symbol,
-                market_data=market_data,
-                regime_data=regime_data
-            )
+                # Generate Analyst signal
+                analyst_signal = await self.analyst_signal_generator.generate_signal(
+                    symbol=self.symbol,
+                    market_data=market_data,
+                    regime_data=regime_data
+                )
 
-            if not analyst_signal:
-                return None
+                if not analyst_signal:
+                    return None
 
-            # Generate Tactician signal
-            tactician_signal = await self.tactician_signal_generator.generate_timing_signal(
-                symbol=self.symbol,
-                analyst_signal=analyst_signal.__dict__,
-                market_data=market_data,
-                account_balance=self.account_balance
-            )
+                # Generate Tactician signal
+                tactician_signal = await self.tactician_signal_generator.generate_timing_signal(
+                    symbol=self.symbol,
+                    analyst_signal=analyst_signal.__dict__,
+                    market_data=market_data,
+                    account_balance=self.account_balance
+                )
 
-            if not tactician_signal:
-                return None
+                if not tactician_signal:
+                    return None
 
-            self._latest_signals = {
-                'analyst': analyst_signal,
-                'tactician': tactician_signal,
-            }
-            
-            # Cache predictions for uncertainty tracking
-            current_timestamp = datetime.now()
-            
-            # Cache Analyst prediction
-            self.prediction_cache.add_analyst_prediction(
-                predictions={
-                    'confidence': analyst_signal.confidence if hasattr(analyst_signal, 'confidence') else 0.0,
-                    'prediction': analyst_signal.__dict__ if analyst_signal else {}
-                },
-                timestamp=current_timestamp,
-                ohlcv=market_data.iloc[-1] if len(market_data) > 0 else None,
-                confidence=analyst_signal.confidence if hasattr(analyst_signal, 'confidence') else None
-            )
-            
-            # Cache Tactician prediction
-            self.prediction_cache.add_tactician_prediction(
-                predictions={
-                    'confidence': tactician_signal.confidence if hasattr(tactician_signal, 'confidence') else 0.0,
-                    'prediction': tactician_signal.__dict__ if tactician_signal else {}
-                },
-                timestamp=current_timestamp,
-                ohlcv=market_data.iloc[-1] if len(market_data) > 0 else None,
-                confidence=tactician_signal.confidence if hasattr(tactician_signal, 'confidence') else None
-            )
-
-            # Combine signals
-            combined_signal = await self.signal_combiner.combine_signals(
-                analyst_signal=analyst_signal,
-                tactician_signal=tactician_signal
-            )
-
-            # Create trading decision
-            # Validate we have price data
-            if 'close' not in market_data.columns or len(market_data) == 0:
-                self.logger.warning("⚠️ No close price available in market data")
-                return None
-            
-            decision = TradingDecision(
-                timestamp=datetime.now(),
-                symbol=self.symbol,
-                action=combined_signal.get('action', 'hold'),
-                quantity=tactician_signal.position_sizing.recommended_size,
-                price=market_data['close'].iloc[-1],
-                confidence=combined_signal.get('confidence', 0.0),
-                analyst_signal=analyst_signal,
-                tactician_signal=tactician_signal,
-                combined_signal=combined_signal,
-                risk_metrics=combined_signal.get('risk_metrics', {}),
-                metadata={
-                    'session_id': self.current_session.session_id if self.current_session else None,
-                    'regime_data': regime_data
+                self._latest_signals = {
+                    'analyst': analyst_signal,
+                    'tactician': tactician_signal,
                 }
-            )
+                
+                # Cache predictions for uncertainty tracking
+                current_timestamp = datetime.now()
+                
+                # Cache Analyst prediction
+                self.prediction_cache.add_analyst_prediction(
+                    predictions={
+                        'confidence': analyst_signal.confidence if hasattr(analyst_signal, 'confidence') else 0.0,
+                        'prediction': analyst_signal.__dict__ if analyst_signal else {}
+                    },
+                    timestamp=current_timestamp,
+                    ohlcv=market_data.iloc[-1] if len(market_data) > 0 else None,
+                    confidence=analyst_signal.confidence if hasattr(analyst_signal, 'confidence') else None
+                )
+                
+                # Cache Tactician prediction
+                self.prediction_cache.add_tactician_prediction(
+                    predictions={
+                        'confidence': tactician_signal.confidence if hasattr(tactician_signal, 'confidence') else 0.0,
+                        'prediction': tactician_signal.__dict__ if tactician_signal else {}
+                    },
+                    timestamp=current_timestamp,
+                    ohlcv=market_data.iloc[-1] if len(market_data) > 0 else None,
+                    confidence=tactician_signal.confidence if hasattr(tactician_signal, 'confidence') else None
+                )
 
-            return decision
+                # Combine signals
+                combined_signal = await self.signal_combiner.combine_signals(
+                    analyst_signal=analyst_signal,
+                    tactician_signal=tactician_signal
+                )
 
-        except Exception as e:
-            self.logger.error(f"❌ Trading decision generation failed: {e}")
-            return None
+                # Create trading decision
+                # Validate we have price data
+                if 'close' not in market_data.columns or len(market_data) == 0:
+                    self.logger.warning("⚠️ No close price available in market data")
+                    return None
+                
+                decision = TradingDecision(
+                    timestamp=datetime.now(),
+                    symbol=self.symbol,
+                    action=combined_signal.get('action', 'hold'),
+                    quantity=tactician_signal.position_sizing.recommended_size,
+                    price=market_data['close'].iloc[-1],
+                    confidence=combined_signal.get('confidence', 0.0),
+                    analyst_signal=analyst_signal,
+                    tactician_signal=tactician_signal,
+                    combined_signal=combined_signal,
+                    risk_metrics=combined_signal.get('risk_metrics', {}),
+                    metadata={
+                        'session_id': self.current_session.session_id if self.current_session else None,
+                        'regime_data': regime_data
+                    }
+                )
+    
+                return decision
+    
+            except Exception as e:
+                self.logger.error(f"❌ Trading decision generation failed: {e}")
+                return None
 
+    @tprint_logged
     async def _execute_trading_decision(
         self,
         decision: TradingDecision,
         market_snapshot: Dict[str, Any],
     ) -> None:
         """Execute trading decision with comprehensive monitoring."""
-        try:
-            tprint_info(f"🔄 Executing {decision.action} order for {decision.symbol}")
+        tprint_info(f"⚡ TradingOrchestrator._execute_trading_decision - Exécution: {decision.action} {decision.symbol}")
+        tprint_data_preview({
+            "action": decision.action,
+            "symbol": decision.symbol,
+            "quantity": decision.quantity,
+            "price": decision.price,
+            "confidence": decision.confidence
+        }, "TradingOrchestrator._execute_trading_decision - décision")
+        with tprint_timer("TradingOrchestrator._execute_trading_decision - Temps d'exécution"):
+            try:
+                tprint_info(f"🔄 Executing {decision.action} order for {decision.symbol}")
 
-            # Cross-asset trade gate: serialize trade execution across symbols
-            gate_acquired = False
-            if self.trade_gate is not None:
-                gate_acquired = await self.trade_gate.acquire(self.symbol, decision)
-                if not gate_acquired:
-                    await self._trigger_trade_callbacks(decision, event="skipped_gate")
-                    tprint_warning("⚠️ Trade skipped due to global gate or risk checks")
+                # Cross-asset trade gate: serialize trade execution across symbols
+                gate_acquired = False
+                if self.trade_gate is not None:
+                    gate_acquired = await self.trade_gate.acquire(self.symbol, decision)
+                    if not gate_acquired:
+                        await self._trigger_trade_callbacks(decision, event="skipped_gate")
+                        tprint_warning("⚠️ Trade skipped due to global gate or risk checks")
+                        return
+
+                # Validate position limits before execution
+                if not await self._validate_position_limits(decision):
+                    await self._trigger_trade_callbacks(decision, event="position_limit_exceeded")
+                    tprint_warning(f"⚠️ Trade rejected: position limits exceeded for {decision.symbol}")
                     return
 
-            # Validate position limits before execution
-            if not await self._validate_position_limits(decision):
-                await self._trigger_trade_callbacks(decision, event="position_limit_exceeded")
-                tprint_warning(f"⚠️ Trade rejected: position limits exceeded for {decision.symbol}")
-                return
+                feature_bundle: TrailingFeatureBundle = market_snapshot['feature_bundle']
 
-            feature_bundle: TrailingFeatureBundle = market_snapshot['feature_bundle']
-
-            # Prepare comprehensive trade data
-            trade_data = {
+                # Prepare comprehensive trade data
+                trade_data = {
                 'symbol': decision.symbol,
                 'action': decision.action,
                 'quantity': decision.quantity,
@@ -700,10 +737,10 @@ class TradingOrchestrator:
                     'leverage': 1.0,  # Default for paper trading
                     'risk_per_trade': 0.02
                 }
-            }
+                }
 
-            # Prepare models used information
-            models_used = {
+                # Prepare models used information
+                models_used = {
                 'analyst_model': {
                     'type': 'analyst',
                     'prediction': decision.confidence,
@@ -718,220 +755,227 @@ class TradingOrchestrator:
                     'weight': 0.4,
                     'version': '1.0'
                 }
-            }
+                }
 
-            # Get recent market data for context
-            market_data = market_snapshot['market_data'] if market_snapshot else None
+                # Get recent market data for context
+                market_data = market_snapshot['market_data'] if market_snapshot else None
 
-            # Record comprehensive trade decision
-            trade_id = await record_detailed_trade(trade_data, models_used, market_data)
+                # Record comprehensive trade decision
+                trade_id = await record_detailed_trade(trade_data, models_used, market_data)
 
-            # Store decision with trade ID for outcome tracking
-            decision.metadata['trade_id'] = trade_id
-            self.trading_decisions.append(decision)
+                # Store decision with trade ID for outcome tracking
+                decision.metadata['trade_id'] = trade_id
+                self.trading_decisions.append(decision)
 
-            # Inform trade gate of active trade id
-            if self.trade_gate is not None and trade_id:
-                try:
-                    self.trade_gate.set_active_trade_id(trade_id)
-                except Exception:
-                    pass
-
-            # Trigger pre-execution callback
-            await self._trigger_trade_callbacks(decision, event="pre_execute")
-
-            # Pre-execution check with Supervisor
-            # Calculate current exposure (existing positions + new decision)
-            current_exposure = 0.0
-            if self.account_balance > 0:
-                # Calculate exposure from existing positions
-                for pos_id, position in self.active_positions.items():
-                    pos_value = position.get('quantity', 0) * position.get('entry_price', 0)
-                    leverage = position.get('leverage', 1.0)
-                    current_exposure += (pos_value * leverage) / self.account_balance
-                # Add exposure from new decision
-                decision_value = decision.quantity * decision.price
-                decision_leverage = decision.metadata.get('leverage', 1.0)
-                current_exposure += (decision_value * decision_leverage) / self.account_balance
-            
-            if self.supervisor and self.supervisor.is_initialized:
-                execution_check = await self.supervisor.pre_execution_check(
-                    decision=decision,
-                    current_exposure=current_exposure,
-                    risk_metrics=decision.risk_metrics,
-                    account_balance=self.account_balance
-                )
-                
-                if not execution_check.can_proceed:
-                    self.logger.warning(
-                        f"⚠️ Pre-execution check failed: {execution_check.reason}"
-                    )
-                    tprint_warning(f"⚠️ Execution blocked by Supervisor: {execution_check.reason}")
-                    await self._trigger_trade_callbacks(decision, event="pre_execution_blocked")
-                    
-                    # Apply suggested adjustments if available
-                    if execution_check.suggested_adjustments:
-                        if execution_check.suggested_adjustments.get('reduce_position_size'):
-                            reduction_factor = 0.5  # Reduce by 50%
-                            decision.quantity *= reduction_factor
-                            self.logger.info(
-                                f"📉 Position size reduced by Supervisor: {reduction_factor:.0%}"
-                            )
-                            tprint_info(f"📉 Position size adjusted: {decision.quantity:.4f}")
-                    
-                    # Retry with adjustments or skip
-                    if execution_check.suggested_adjustments.get('reduce_position_size') and decision.quantity > 0:
-                        # Continue with reduced size
+                # Inform trade gate of active trade id
+                if self.trade_gate is not None and trade_id:
+                    try:
+                        self.trade_gate.set_active_trade_id(trade_id)
+                    except Exception:
                         pass
-                    else:
-                        return  # Skip execution entirely
 
-            # Simulate execution (in real trading, this would place actual orders)
-            execution_success = await self._simulate_order_execution(decision)
+                # Trigger pre-execution callback
+                await self._trigger_trade_callbacks(decision, event="pre_execute")
 
-            # Monitor execution with Supervisor
-            if self.supervisor and self.supervisor.is_initialized:
-                execution_result = {
-                    'status': 'FILLED' if execution_success else 'REJECTED',
-                    'order_id': trade_id,
-                    'slippage': 0.001 if execution_success else 0.0,  # Default slippage
-                    'commission': decision.quantity * decision.price * 0.001 if execution_success else 0.0
-                }
-                await self.supervisor.monitor_execution(trade_id, execution_result)
-
-            # Update trade outcome
-            if execution_success:
-                outcome_data = {
-                    'exit_price': decision.price,  # For immediate execution
-                    'pnl_absolute': 0.0,  # Will be updated when position is closed
-                    'pnl_percentage': 0.0,
-                    'duration_minutes': 0.0,
-                    'execution_quality': 0.95,  # High quality for successful execution
-                    'slippage': 0.001,  # 0.1% slippage
-                    'commission': decision.quantity * decision.price * 0.001,  # 0.1% commission
-                    'timing_quality': decision.confidence  # Use confidence as timing quality
-                }
-
-                await update_trade_outcome(trade_id, outcome_data)
+                # Pre-execution check with Supervisor
+                # Calculate current exposure (existing positions + new decision)
+                current_exposure = 0.0
+                if self.account_balance > 0:
+                    # Calculate exposure from existing positions
+                    for pos_id, position in self.active_positions.items():
+                        pos_value = position.get('quantity', 0) * position.get('entry_price', 0)
+                        leverage = position.get('leverage', 1.0)
+                        current_exposure += (pos_value * leverage) / self.account_balance
+                    # Add exposure from new decision
+                    decision_value = decision.quantity * decision.price
+                    decision_leverage = decision.metadata.get('leverage', 1.0)
+                    current_exposure += (decision_value * decision_leverage) / self.account_balance
                 
-                # Record trade to CSV for persistent reporting
-                try:
-                    # Determine direction from action
-                    direction = 'long' if decision.action.lower() in ['buy', 'long'] else 'short'
-                    side = 'buy' if decision.action.lower() in ['buy', 'long'] else 'sell'
-                    
-                    # Get leverage from decision metadata or position sizing
-                    leverage = trade_data.get('position_sizing', {}).get('leverage', 1.0)
-                    
-                    # Extract market context
-                    market_context = {}
-                    if market_data is not None and len(market_data) > 0:
-                        latest_data = market_data.iloc[-1]
-                        market_context = {
-                            'volume': float(latest_data.get('volume', 0.0)) if 'volume' in latest_data else 0.0,
-                            'volatility': float(latest_data.get('volatility', 0.0)) if 'volatility' in latest_data else 0.0,
-                            'trend': 'bullish' if decision.action.lower() in ['buy', 'long'] else 'bearish'
-                        }
-                    
-                    # Build trading decision dict for CSV recording
-                    csv_trading_decision = {
-                        'confidence': decision.confidence,
-                        'analyst_confidence': decision.analyst_signal.confidence if decision.analyst_signal else 0.0,
-                        'tactician_confidence': decision.tactician_signal.confidence if decision.tactician_signal else 0.0,
-                        'analyst_signal': trade_data.get('analyst_signal'),
-                        'tactician_signal': trade_data.get('tactician_signal'),
-                        'signal_strength': decision.confidence,
-                        'feature_importance': {}  # Can be populated from SHAP if available
-                    }
-                    
-                    # Create TradeRecord for CSV export
-                    trade_record = create_trade_record_from_execution(
-                        trade_id=trade_id,
-                        exchange=self.exchange,
-                        symbol=self.symbol,
-                        mode=self.trading_mode.value,
-                        side=side,
-                        direction=direction,
-                        entry_price=decision.price,
-                        quantity=decision.quantity,
-                        leverage=leverage,
-                        fees=outcome_data['commission'],
-                        slippage_pct=outcome_data['slippage'] * 100,  # Convert to percentage
-                        trading_decision=csv_trading_decision,
-                        regime_data=trade_data.get('regime_data'),
-                        market_context=market_context
+                if self.supervisor and self.supervisor.is_initialized:
+                    execution_check = await self.supervisor.pre_execution_check(
+                        decision=decision,
+                        current_exposure=current_exposure,
+                        risk_metrics=decision.risk_metrics,
+                        account_balance=self.account_balance
                     )
                     
-                    # Record to CSV
-                    await trade_reporting_manager.record_trade(trade_record)
-                    tprint_info(f"📊 Trade recorded to CSV: {trade_id}")
-                    
-                except Exception as csv_error:
-                    self.logger.warning(f"⚠️ Failed to record trade to CSV: {csv_error}")
-                    # Don't fail the trade execution if CSV recording fails
-                
-                # Post-trade analysis with Supervisor (for filled orders)
+                    if not execution_check.can_proceed:
+                        self.logger.warning(
+                            f"⚠️ Pre-execution check failed: {execution_check.reason}"
+                        )
+                        tprint_warning(f"⚠️ Execution blocked by Supervisor: {execution_check.reason}")
+                        await self._trigger_trade_callbacks(decision, event="pre_execution_blocked")
+                        
+                        # Apply suggested adjustments if available
+                        if execution_check.suggested_adjustments:
+                            if execution_check.suggested_adjustments.get('reduce_position_size'):
+                                reduction_factor = 0.5  # Reduce by 50%
+                                decision.quantity *= reduction_factor
+                                self.logger.info(
+                                    f"📉 Position size reduced by Supervisor: {reduction_factor:.0%}"
+                                )
+                                tprint_info(f"📉 Position size adjusted: {decision.quantity:.4f}")
+                        
+                        # Retry with adjustments or skip
+                        if execution_check.suggested_adjustments.get('reduce_position_size') and decision.quantity > 0:
+                            # Continue with reduced size
+                            pass
+                        else:
+                            return  # Skip execution entirely
+
+                # Simulate execution (in real trading, this would place actual orders)
+                execution_success = await self._simulate_order_execution(decision)
+
+                # Monitor execution with Supervisor
                 if self.supervisor and self.supervisor.is_initialized:
-                    await self.supervisor.post_trade_analysis(trade_id, outcome_data)
+                    execution_result = {
+                        'status': 'FILLED' if execution_success else 'REJECTED',
+                        'order_id': trade_id,
+                        'slippage': 0.001 if execution_success else 0.0,  # Default slippage
+                        'commission': decision.quantity * decision.price * 0.001 if execution_success else 0.0
+                    }
+                    await self.supervisor.monitor_execution(trade_id, execution_result)
 
-                if self.current_session:
-                    self.current_session.total_trades += 1
+                # Update trade outcome
+                if execution_success:
+                    outcome_data = {
+                        'exit_price': decision.price,  # For immediate execution
+                        'pnl_absolute': 0.0,  # Will be updated when position is closed
+                        'pnl_percentage': 0.0,
+                        'duration_minutes': 0.0,
+                        'execution_quality': 0.95,  # High quality for successful execution
+                        'slippage': 0.001,  # 0.1% slippage
+                        'commission': decision.quantity * decision.price * 0.001,  # 0.1% commission
+                        'timing_quality': decision.confidence  # Use confidence as timing quality
+                    }
 
-                self.performance_metrics['total_trades'] += 1
+                    await update_trade_outcome(trade_id, outcome_data)
+                    
+                    # Record trade to CSV for persistent reporting
+                    try:
+                        # Determine direction from action
+                        direction = 'long' if decision.action.lower() in ['buy', 'long'] else 'short'
+                        side = 'buy' if decision.action.lower() in ['buy', 'long'] else 'sell'
+                        
+                        # Get leverage from decision metadata or position sizing
+                        leverage = trade_data.get('position_sizing', {}).get('leverage', 1.0)
+                        
+                        # Extract market context
+                        market_context = {}
+                        if market_data is not None and len(market_data) > 0:
+                            latest_data = market_data.iloc[-1]
+                            market_context = {
+                                'volume': float(latest_data.get('volume', 0.0)) if 'volume' in latest_data else 0.0,
+                                'volatility': float(latest_data.get('volatility', 0.0)) if 'volatility' in latest_data else 0.0,
+                                'trend': 'bullish' if decision.action.lower() in ['buy', 'long'] else 'bearish'
+                            }
+                        
+                        # Build trading decision dict for CSV recording
+                        csv_trading_decision = {
+                            'confidence': decision.confidence,
+                            'analyst_confidence': decision.analyst_signal.confidence if decision.analyst_signal else 0.0,
+                            'tactician_confidence': decision.tactician_signal.confidence if decision.tactician_signal else 0.0,
+                            'analyst_signal': trade_data.get('analyst_signal'),
+                            'tactician_signal': trade_data.get('tactician_signal'),
+                            'signal_strength': decision.confidence,
+                            'feature_importance': {}  # Can be populated from SHAP if available
+                        }
+                        
+                        # Create TradeRecord for CSV export
+                        trade_record = create_trade_record_from_execution(
+                            trade_id=trade_id,
+                            exchange=self.exchange,
+                            symbol=self.symbol,
+                            mode=self.trading_mode.value,
+                            side=side,
+                            direction=direction,
+                            entry_price=decision.price,
+                            quantity=decision.quantity,
+                            leverage=leverage,
+                            fees=outcome_data['commission'],
+                            slippage_pct=outcome_data['slippage'] * 100,  # Convert to percentage
+                            trading_decision=csv_trading_decision,
+                            regime_data=trade_data.get('regime_data'),
+                            market_context=market_context
+                        )
+                        
+                        # Record to CSV
+                        await trade_reporting_manager.record_trade(trade_record)
+                        tprint_info(f"📊 Trade recorded to CSV: {trade_id}")
+                        
+                    except Exception as csv_error:
+                        self.logger.warning(f"⚠️ Failed to record trade to CSV: {csv_error}")
+                        # Don't fail the trade execution if CSV recording fails
+                    
+                    # Post-trade analysis with Supervisor (for filled orders)
+                    if self.supervisor and self.supervisor.is_initialized:
+                        await self.supervisor.post_trade_analysis(trade_id, outcome_data)
 
-                tprint_success(f"✅ {decision.action} order executed for {decision.symbol} (ID: {trade_id})")
+                    if self.current_session:
+                        self.current_session.total_trades += 1
 
-                self._update_active_positions(decision, trade_id, feature_bundle)
-            else:
-                tprint_error(f"❌ Failed to execute {decision.action} order for {decision.symbol}")
+                    self.performance_metrics['total_trades'] += 1
+
+                    tprint_success(f"✅ {decision.action} order executed for {decision.symbol} (ID: {trade_id})")
+
+                    self._update_active_positions(decision, trade_id, feature_bundle)
+                else:
+                    tprint_error(f"❌ Failed to execute {decision.action} order for {decision.symbol}")
+                    if self.current_session:
+                        self.current_session.failed_trades += 1
+                    self.performance_metrics['failed_trades'] += 1
+
+                # Trigger post-execution callback
+                await self._trigger_trade_callbacks(decision, event="post_execute", success=execution_success)
+
+            except Exception as e:
+                self.logger.error(f"❌ Trading decision execution failed: {e}")
                 if self.current_session:
                     self.current_session.failed_trades += 1
                 self.performance_metrics['failed_trades'] += 1
+            finally:
+                # Ensure gate is released
+                if self.trade_gate is not None:
+                    try:
+                        await self.trade_gate.release(decision.metadata.get('trade_id'))
+                    except Exception:
+                        pass
 
-            # Trigger post-execution callback
-            await self._trigger_trade_callbacks(decision, event="post_execute", success=execution_success)
-
-        except Exception as e:
-            self.logger.error(f"❌ Trading decision execution failed: {e}")
-            if self.current_session:
-                self.current_session.failed_trades += 1
-            self.performance_metrics['failed_trades'] += 1
-        finally:
-            # Ensure gate is released
-            if self.trade_gate is not None:
-                try:
-                    await self.trade_gate.release(decision.metadata.get('trade_id'))
-                except Exception:
-                    pass
-
+    @tprint_logged()
     async def _get_market_snapshot(self) -> Optional[Dict[str, Any]]:
         """Collect latest market data and derived trailing features."""
+        tprint_info("📊 TradingOrchestrator._get_market_snapshot - Collecte des données de marché")
+        with tprint_timer("TradingOrchestrator._get_market_snapshot - Temps de collecte"):
+            try:
+                if not self.data_collector:
+                    return None
 
-        try:
-            if not self.data_collector:
+                market_data = self.data_collector.get_processed_data_df(n=200)
+                if market_data is None or len(market_data) == 0:
+                    return None
+
+                feature_bundle = prepare_trailing_feature_bundle(market_data)
+                if feature_bundle is None:
+                    return None
+
+                return {
+                    'market_data': market_data,
+                    'feature_bundle': feature_bundle,
+                }
+            except Exception as exc:
+                self.logger.error(f"❌ Failed to collect market snapshot: {exc}")
                 return None
 
-            market_data = self.data_collector.get_processed_data_df(n=200)
-            if market_data is None or len(market_data) == 0:
-                return None
-
-            feature_bundle = prepare_trailing_feature_bundle(market_data)
-            if feature_bundle is None:
-                return None
-
-            return {
-                'market_data': market_data,
-                'feature_bundle': feature_bundle,
-            }
-        except Exception as exc:
-            self.logger.error(f"❌ Failed to collect market snapshot: {exc}")
-            return None
-
+    @tprint_logged()
     async def _evaluate_trailing_positions(self, market_snapshot: Dict[str, Any]) -> None:
         """Evaluate trailing actions for all active positions."""
-
-        if not self.active_positions:
-            return
+        tprint_info(f"📈 TradingOrchestrator._evaluate_trailing_positions - Évaluation de {len(self.active_positions)} positions")
+        if self.active_positions:
+            tprint_data_preview({"active_positions": list(self.active_positions.keys())},
+                               "TradingOrchestrator._evaluate_trailing_positions - positions actives")
+        with tprint_timer("TradingOrchestrator._evaluate_trailing_positions - Temps d'évaluation"):
+                if not self.active_positions:
+                    return
 
         feature_bundle: TrailingFeatureBundle = market_snapshot.get('feature_bundle')
         if feature_bundle is None:
@@ -1287,6 +1331,7 @@ class TradingOrchestrator:
             )
             self._close_position(position_id, reason=decision.reason or 'trailing_exit')
 
+    @tprint_logged
     async def _validate_position_limits(self, decision: TradingDecision) -> bool:
         """
         Validate that executing this decision won't exceed position limits.
@@ -1297,6 +1342,13 @@ class TradingOrchestrator:
         Returns:
             True if position limits allow this trade, False otherwise
         """
+        tprint_info(f"🔍 TradingOrchestrator._validate_position_limits - Validation: {decision.action} {decision.symbol}")
+        tprint_data_preview({
+            "symbol": decision.symbol,
+            "action": decision.action,
+            "quantity": decision.quantity,
+            "price": decision.price
+        }, "TradingOrchestrator._validate_position_limits - décision à valider")
         try:
             # Skip validation for close actions
             if decision.action.lower() in ['close', 'exit']:
@@ -1365,6 +1417,7 @@ class TradingOrchestrator:
             # In case of error, reject the trade for safety
             return False
 
+    @tprint_logged
     async def _simulate_order_execution(self, decision: TradingDecision) -> bool:
         """
         Simulate order execution with realistic behavior.
@@ -1375,6 +1428,14 @@ class TradingOrchestrator:
         - Exchange processing time
         - Realistic failure rates based on market conditions
         """
+        tprint_info(f"🎭 TradingOrchestrator._simulate_order_execution - Simulation: {decision.action} {decision.symbol}")
+        tprint_data_preview({
+            "action": decision.action,
+            "symbol": decision.symbol,
+            "quantity": decision.quantity,
+            "price": decision.price,
+            "confidence": decision.confidence
+        }, "TradingOrchestrator._simulate_order_execution - paramètres de simulation")
         try:
             # Simulate variable network latency (50-200ms)
             import random
@@ -1457,9 +1518,12 @@ class TradingOrchestrator:
             / self.performance_metrics['total_sessions']
         )
 
+    @tprint_logged
     def get_orchestrator_stats(self) -> Dict[str, Any]:
-        tprint(f"🚀 TradingMode.get_orchestrator_stats: Entered", "INFO")
-
+        """Get comprehensive orchestrator statistics."""
+        tprint_info("📊 TradingOrchestrator.get_orchestrator_stats - Collecte des statistiques")
+        stats = {
+            'status': self.status.value,
             'current_session': self.current_session.__dict__ if self.current_session else None,
             'performance_metrics': self.performance_metrics,
             'data_collector_stats': self.data_collector.get_stats() if self.data_collector else None,
@@ -1468,59 +1532,79 @@ class TradingOrchestrator:
             'monitoring_stats': comprehensive_trade_monitor.get_monitor_stats() if comprehensive_trade_monitor.is_initialized else None,
             'supervisor_stats': self.supervisor.get_supervisor_status() if self.supervisor and self.supervisor.is_initialized else None
         }
+        tprint_performance(stats, "TradingOrchestrator.get_orchestrator_stats - statistiques")
+        return stats
 
+    @tprint_logged()
     async def generate_live_dashboard(self) -> Dict[str, Any]:
-        tprint(f"🚀 TradingMode.generate_live_dashboard: Entered", "INFO")
+        """Generate live trading dashboard."""
+        tprint_info("📈 TradingOrchestrator.generate_live_dashboard - Génération du dashboard")
+        with tprint_timer("TradingOrchestrator.generate_live_dashboard - Temps de génération"):
+            try:
+                if not comprehensive_trade_monitor.is_initialized:
+                    tprint_warning("⚠️ Comprehensive monitoring not initialized")
+                    return {}
 
-                tprint_warning("⚠️ Comprehensive monitoring not initialized")
+                # Get completed trades
+                completed_trades = comprehensive_trade_monitor.completed_trades
+
+                # Get active trades
+                active_trades = comprehensive_trade_monitor.active_trades
+
+                # Get session metrics
+                session_metrics = comprehensive_trade_monitor.current_session
+
+                tprint_data_preview({
+                    "completed_trades": len(completed_trades),
+                    "active_trades": len(active_trades)
+                }, "TradingOrchestrator.generate_live_dashboard - données")
+
+                # Generate dashboard
+                dashboard = await create_trading_dashboard(
+                    trades=completed_trades,
+                    session_metrics=session_metrics,
+                    active_trades=active_trades
+                )
+
+                return dashboard
+
+            except Exception as e:
+                tprint_error(f"❌ Failed to generate live dashboard: {e}")
                 return {}
 
-            # Get completed trades
-            completed_trades = comprehensive_trade_monitor.completed_trades
-
-            # Get active trades
-            active_trades = comprehensive_trade_monitor.active_trades
-
-            # Get session metrics
-            session_metrics = comprehensive_trade_monitor.current_session
-
-            # Generate dashboard
-            dashboard = await create_trading_dashboard(
-                trades=completed_trades,
-                session_metrics=session_metrics,
-                active_trades=active_trades
-            )
-
-            return dashboard
-
-        except Exception as e:
-            tprint_error(f"❌ Failed to generate live dashboard: {e}")
-            return {}
-
+    @tprint_logged()
     async def generate_performance_report(self, report_type: str = "session") -> Dict[str, Any]:
-        tprint(f"🚀 TradingMode.generate_performance_report: Entered", "INFO")
+        """Generate performance report."""
+        tprint_info(f"📄 TradingOrchestrator.generate_performance_report - Génération du rapport {report_type}")
+        with tprint_timer("TradingOrchestrator.generate_performance_report - Temps de génération"):
+            try:
+                if not comprehensive_trade_monitor.is_initialized:
+                    tprint_warning("⚠️ Comprehensive monitoring not initialized")
+                    return {}
 
-                tprint_warning("⚠️ Comprehensive monitoring not initialized")
+                # Get completed trades
+                completed_trades = comprehensive_trade_monitor.completed_trades
+
+                # Get session metrics
+                session_metrics = comprehensive_trade_monitor.current_session
+
+                tprint_data_preview({
+                    "report_type": report_type,
+                    "completed_trades": len(completed_trades)
+                }, "TradingOrchestrator.generate_performance_report - paramètres")
+
+                # Generate report
+                report = await generate_trading_report(
+                    trades=completed_trades,
+                    session_metrics=session_metrics,
+                    report_name=f"orchestrator_{report_type}_report"
+                )
+
+                return report
+
+            except Exception as e:
+                tprint_error(f"❌ Failed to generate performance report: {e}")
                 return {}
-
-            # Get completed trades
-            completed_trades = comprehensive_trade_monitor.completed_trades
-
-            # Get session metrics
-            session_metrics = comprehensive_trade_monitor.current_session
-
-            # Generate report
-            report = await generate_trading_report(
-                trades=completed_trades,
-                session_metrics=session_metrics,
-                report_name=f"orchestrator_{report_type}_report"
-            )
-
-            return report
-
-        except Exception as e:
-            tprint_error(f"❌ Failed to generate performance report: {e}")
-            return {}
 
     async def _record_daily_summary_if_needed(self) -> None:
         """Record daily summary if this is the last session of the day."""
@@ -1556,45 +1640,57 @@ class TradingOrchestrator:
         except Exception as e:
             tprint_warning(f"⚠️ Failed to record daily summary: {e}")
 
+    @tprint_logged()
     async def force_record_daily_summary(self, target_date: Optional[date] = None) -> bool:
-        tprint(f"🚀 TradingMode.force_record_daily_summary: Entered", "INFO")
+        """Force record daily trading summary for specific date."""
+        tprint_info(f"📝 TradingOrchestrator.force_record_daily_summary - Enregistrement forcé du résumé quotidien")
+        with tprint_timer("TradingOrchestrator.force_record_daily_summary - Temps d'enregistrement"):
+            try:
+                record_date = target_date or datetime.now().date()
+                tprint_info(f"📝 Force recording daily summary for {record_date}")
+                
+                # Get trades for the specified date
+                target_trades = [
+                    t for t in comprehensive_trade_monitor.completed_trades
+                    if t.timestamp.date() == record_date
+                ]
 
+                # Get sessions for the specified date
+                target_sessions = []
+                if self.current_session and self.current_session.start_time.date() == record_date:
+                    target_sessions = [self.current_session]
 
-            tprint_info(f"📝 Force recording daily summary for {record_date}")
+                # Record daily summary
+                success = await record_daily_trading_summary(
+                    trades=target_trades,
+                    sessions=target_sessions,
+                    target_date=record_date
+                )
 
-            # Get trades for the specified date
-            target_trades = [
-                t for t in comprehensive_trade_monitor.completed_trades
-                if t.timestamp.date() == record_date
-            ]
+                if success:
+                    tprint_success(f"✅ Daily summary force-recorded for {record_date}")
 
-            # Get sessions for the specified date
-            target_sessions = []
-            if self.current_session and self.current_session.start_time.date() == record_date:
-                target_sessions = [self.current_session]
+                return success
 
-            # Record daily summary
-            success = await record_daily_trading_summary(
-                trades=target_trades,
-                sessions=target_sessions,
-                target_date=record_date
-            )
+            except Exception as e:
+                tprint_error(f"❌ Failed to force record daily summary: {e}")
+                return False
 
-            if success:
-                tprint_success(f"✅ Daily summary force-recorded for {record_date}")
-
-            return success
-
-        except Exception as e:
-            tprint_error(f"❌ Failed to force record daily summary: {e}")
-            return False
-
+    @tprint_logged
     def get_trading_decisions(self, n: int = 100) -> List[TradingDecision]:
-        tprint(f"🚀 TradingMode.get_trading_decisions: Entered", "INFO")
+        """Get recent trading decisions."""
+        tprint_info(f"📋 TradingOrchestrator.get_trading_decisions - Récupération des {n} dernières décisions")
+        decisions = self.trading_decisions[-n:] if self.trading_decisions else []
+        tprint_data_preview({"count": len(decisions)}, "TradingOrchestrator.get_trading_decisions - résultat")
+        return decisions
 
+    @tprint_logged
     def add_trade_decision_callback(self, callback: Any) -> None:
-        tprint(f"🚀 TradingMode.add_trade_decision_callback: Entered", "INFO")
+        """Add callback for trade decision events."""
+        tprint_info(f"🔗 TradingOrchestrator.add_trade_decision_callback - Ajout d'un callback")
+        self._on_trade_decision_callbacks.append(callback)
 
+    @tprint_logged
     async def _trigger_trade_callbacks(self, decision: TradingDecision, event: str, **kwargs: Any) -> None:
         """Trigger trade decision callbacks with proper error handling."""
         for cb in self._on_trade_decision_callbacks:
@@ -1646,16 +1742,27 @@ class TradingOrchestrator:
 
 # Convenience functions
 
+@tprint_logged()
 def create_trading_orchestrator(config: Dict[str, Any]) -> TradingOrchestrator:
-    tprint(f"🚀 TradingMode.create_trading_orchestrator: Entered", "INFO")
+    """Create trading orchestrator instance."""
+    tprint_info("🏭 TradingOrchestrator.create_trading_orchestrator - Création de l'orchestrateur")
+    tprint_data_preview({"config_keys": list(config.keys())}, "TradingOrchestrator.create_trading_orchestrator - configuration")
+    return TradingOrchestrator(config)
 
+@tprint_logged()
 async def start_trading_orchestrator(
-    tprint(f"🚀 TradingMode.start_trading_orchestrator: Entered", "INFO")
-
+    config: Dict[str, Any],
+    symbol: str = "ETH",
     exchange: str = "binance",
     trading_mode: str = "paper"
 ) -> TradingOrchestrator:
     """Start trading orchestrator with default settings."""
+    tprint_info(f"🚀 TradingOrchestrator.start_trading_orchestrator - Démarrage pour {symbol} sur {exchange}")
+    tprint_data_preview({
+        "symbol": symbol,
+        "exchange": exchange,
+        "trading_mode": trading_mode
+    }, "TradingOrchestrator.start_trading_orchestrator - paramètres")
 
     # Update config with provided parameters
     config.update({
@@ -1680,9 +1787,13 @@ async def start_trading_orchestrator(
 
 # Example usage
 if __name__ == "__main__":
+    @tprint_logged()
     async def main() -> None:
-        tprint(f"🚀 TradingMode.main: Entered", "INFO")
-
+        """Example usage of trading orchestrator."""
+        tprint_info("🚀 TradingOrchestrator.main - Démonstration de l'orchestrateur")
+        
+        config = {
+            'analyst': {},
             'tactician': {},
             'strategist': {},
             'analyst_signals': {'confidence_threshold': 0.6},

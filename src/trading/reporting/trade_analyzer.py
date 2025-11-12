@@ -201,7 +201,6 @@ class TradeAnalyzer:
                 'weighted_prediction': sum(p * trade.model_weights.get(model_id, 1.0) for model_id, p in trade.model_predictions.items()) / sum(trade.model_weights.values()) if trade.model_weights else np.mean(all_predictions) if all_predictions else 0.0
             }
 
-            return {
             result = {
                 'individual_models': model_analysis,
                 'consensus_analysis': consensus_analysis,
@@ -475,8 +474,16 @@ class TradeAnalyzer:
                 'effectiveness_level': 'high' if effectiveness_score > 0.7 else 'medium' if effectiveness_score > 0.4 else 'low'
             }
 
-            tprint(f"TradeAnalyzer._assess_ensemble_effectiveness: Effectiveness level={result['effectiveness_level']}")
-            return result
+            effectiveness_result = {
+                'diversity_score': diversity_score,
+                'agreement_score': agreement_score,
+                'weight_entropy': weight_entropy,
+                'effectiveness_score': effectiveness_score,
+                'effectiveness_level': 'high' if effectiveness_score > 0.7 else 'medium' if effectiveness_score > 0.4 else 'low'
+            }
+
+            tprint(f"TradeAnalyzer._assess_ensemble_effectiveness: Effectiveness level={effectiveness_result['effectiveness_level']}")
+            return effectiveness_result
 
         except Exception as e:
             tprint_error(f"❌ Failed to assess ensemble effectiveness: {e}")
@@ -550,7 +557,7 @@ class TradeAnalyzer:
                 execution_score * 0.1
             )
 
-            return {
+            quality_result = {
                 'component_scores': {
                     'performance': performance_score,
                     'model_effectiveness': model_score,
@@ -562,8 +569,9 @@ class TradeAnalyzer:
                 'quality_grade': 'A' if overall_score > 0.8 else 'B' if overall_score > 0.6 else 'C' if overall_score > 0.4 else 'D',
                 'trade_classification': await self._classify_trade_quality(overall_score, trade)
             }
-            tprint(f"TradeAnalyzer._calculate_trade_quality_score: Quality score={overall_score:.3f}, grade={result['quality_grade']}")
-            return result
+            return quality_result
+            tprint(f"TradeAnalyzer._calculate_trade_quality_score: Quality score={overall_score:.3f}, grade={quality_result['quality_grade']}")
+            return quality_result
 
         except Exception as e:
             tprint_error(f"❌ Failed to calculate trade quality score: {e}")

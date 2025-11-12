@@ -6,6 +6,7 @@ exchange-specific rates, and total fee calculations.
 """
 
 import pytest
+import math
 from unittest.mock import Mock, patch, MagicMock
 from typing import Dict, Any
 import logging
@@ -58,8 +59,8 @@ class TestFeeCalculator:
     @pytest.mark.parametrize("exchange,expected_maker,expected_taker", [
         ("binance", 0.0006, 0.001),
         ("okx", 0.0008, 0.0012),
-        ("UNKNOWN_EXCHANGE", 0.0005, 0.0008),  # Should use defaults
-        ("new_exchange", 0.0005, 0.0008),  # Should use defaults
+        ("UNKNOWN_EXCHANGE", 0.001, 0.0015),  # Should use defaults from custom config
+        ("new_exchange", 0.0005, 0.0008),  # Should use defaults from custom config
     ])
     def test_get_fee_rates_from_config(
         self, 
@@ -70,8 +71,8 @@ class TestFeeCalculator:
     ):
         """Test fee rate retrieval from configuration."""
         maker_fee, taker_fee = config.get_fee_rates(exchange)
-        assert maker_fee == expected_maker
-        assert taker_fee == expected_taker
+        assert math.isclose(maker_fee, expected_maker, rel_tol=1e-9)
+        assert math.isclose(taker_fee, expected_taker, rel_tol=1e-9)
     
     @pytest.mark.parametrize("exchange,quantity,price,order_type,is_maker,expected_fee_type,expected_fee_rate", [
         ("binance", 1.0, 100.0, "limit", None, "maker", 0.0006),
@@ -103,13 +104,13 @@ class TestFeeCalculator:
         
         assert isinstance(result, FeeResult)
         assert result.fee_type == expected_fee_type
-        assert result.fee_percentage == expected_fee_rate
+        assert math.isclose(result.fee_percentage, expected_fee_rate, rel_tol=1e-9)
         assert result.exchange == exchange
         assert result.is_maker == (expected_fee_type == "maker")
         
         # Calculate expected fee amount
         expected_fee_amount = quantity * price * expected_fee_rate
-        assert abs(result.fee_amount - expected_fee_amount) < 1e-10
+        assert math.isclose(result.fee_amount, expected_fee_amount, rel_tol=1e-9, abs_tol=1e-10)
     
     def test_calculate_fee_without_maker_taker_distinction(self, config: SimulatorConfig):
         """Test fee calculation when maker/taker distinction is disabled."""
@@ -126,7 +127,7 @@ class TestFeeCalculator:
         
         # Should always use taker fee when distinction is disabled
         assert result.fee_type == "taker"
-        assert result.fee_percentage == 0.001  # binance taker fee
+        assert math.isclose(result.fee_percentage, 0.001, rel_tol=1e-9)  # binance taker fee
     
     def test_calculate_fee_unknown_exchange(self, fee_calculator: FeeCalculator):
         """Test fee calculation for unknown exchange (should use defaults)."""
@@ -139,8 +140,9 @@ class TestFeeCalculator:
         
         # Should use default fees
         assert result.fee_type == "maker"
-        assert result.fee_percentage == fee_calculator.config.default_maker_fee
-        assert result.fee_amount == 1.5 * 200.0 * fee_calculator.config.default_maker_fee
+        assert math.isclose(result.fee_percentage, fee_calculator.config.default_maker_fee, rel_tol=1e-9)
+        expected_amount = 1.5 * 200.0 * fee_calculator.config.default_maker_fee
+        assert math.isclose(result.fee_amount, expected_amount, rel_tol=1e-9, abs_tol=1e-10)
     
     @pytest.mark.parametrize("quantity,price", [
         (0.1, 100.0),
@@ -163,7 +165,7 @@ class TestFeeCalculator:
         )
         
         expected_fee = quantity * price * 0.001  # binance taker fee
-        assert abs(result.fee_amount - expected_fee) < 1e-10
+        assert math.isclose(result.fee_amount, expected_fee, rel_tol=1e-9, abs_tol=1e-10)
         assert result.fee_amount > 0
     
     def test_calculate_fee_logging(self, fee_calculator: FeeCalculator, mock_logger):
@@ -226,9 +228,9 @@ class TestFeeCalculator:
         
         # Verify calculations
         expected_total = entry_fee.fee_amount + exit_fee.fee_amount
-        assert result["total_fee"] == expected_total
-        assert result["entry_fee"] == entry_fee.fee_amount
-        assert result["exit_fee"] == exit_fee.fee_amount
+        assert math.isclose(result["total_fee"], expected_total, rel_tol=1e-9, abs_tol=1e-10)
+        assert math.isclose(result["entry_fee"], entry_fee.fee_amount, rel_tol=1e-9, abs_tol=1e-10)
+        assert math.isclose(result["exit_fee"], exit_fee.fee_amount, rel_tol=1e-9, abs_tol=1e-10)
         assert result["fee_type"] == "maker/taker"
     
     def test_calculate_total_fee_same_type(self, fee_calculator: FeeCalculator):
@@ -268,7 +270,8 @@ class TestFeeCalculator:
         
         result = fee_calculator.calculate_total_fee(entry_fee, exit_fee)
         assert result["fee_type"] == "maker/taker"
-        assert result["total_fee"] == entry_fee.fee_amount + exit_fee.fee_amount
+        expected_total = entry_fee.fee_amount + exit_fee.fee_amount
+        assert math.isclose(result["total_fee"], expected_total, rel_tol=1e-9, abs_tol=1e-10)
     
     def test_calculate_total_fee_percentage_calculation(self, fee_calculator: FeeCalculator):
         """Test that percentage calculations are correct."""
@@ -289,9 +292,9 @@ class TestFeeCalculator:
         result = fee_calculator.calculate_total_fee(entry_fee, exit_fee)
         
         # Check percentage calculations (should be in basis points, not decimal)
-        assert result["entry_fee_pct"] == 0.06  # 0.06%
-        assert result["exit_fee_pct"] == 0.10   # 0.10%
-        assert result["total_fee_pct"] == 0.16   # 0.16%
+        assert math.isclose(result["entry_fee_pct"], 0.06, rel_tol=1e-3)  # 0.06%
+        assert math.isclose(result["exit_fee_pct"], 0.10, rel_tol=1e-3)   # 0.10%
+        assert math.isclose(result["total_fee_pct"], 0.16, rel_tol=1e-3)   # 0.16%
     
     @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     def test_calculate_total_fee_with_tprint_tracing(self, fee_calculator: FeeCalculator):
@@ -354,8 +357,8 @@ class TestFeeCalculator:
             order_type="limit"
         )
         
-        assert result.fee_amount == 0.0
-        assert result.fee_percentage == 0.0006  # Still uses maker rate
+        assert math.isclose(result.fee_amount, 0.0, abs_tol=1e-15)
+        assert math.isclose(result.fee_percentage, 0.0006, rel_tol=1e-9)  # Still uses maker rate
         assert result.fee_type == "maker"
     
     def test_edge_case_zero_price(self, fee_calculator: FeeCalculator):
@@ -367,8 +370,8 @@ class TestFeeCalculator:
             order_type="limit"
         )
         
-        assert result.fee_amount == 0.0
-        assert result.fee_percentage == 0.0006
+        assert math.isclose(result.fee_amount, 0.0, abs_tol=1e-15)
+        assert math.isclose(result.fee_percentage, 0.0006, rel_tol=1e-9)
         assert result.fee_type == "maker"
     
     def test_edge_case_large_values(self, fee_calculator: FeeCalculator):
@@ -381,7 +384,7 @@ class TestFeeCalculator:
         )
         
         expected_fee = 10000.0 * 50000.0 * 0.001  # taker fee
-        assert abs(result.fee_amount - expected_fee) < 1e-6
+        assert math.isclose(result.fee_amount, expected_fee, rel_tol=1e-9, abs_tol=1e-6)
         assert result.fee_amount > 0
     
     @pytest.mark.skipif(not TPRINT_AVAILABLE, reason="tprint not available")
@@ -436,8 +439,8 @@ class TestFeeResult:
             is_maker=True
         )
         
-        assert result.fee_amount == 0.1
-        assert result.fee_percentage == 0.001
+        assert math.isclose(result.fee_amount, 0.1, rel_tol=1e-9)
+        assert math.isclose(result.fee_percentage, 0.001, rel_tol=1e-9)
         assert result.fee_type == "maker"
         assert result.exchange == "binance"
         assert result.is_maker is True

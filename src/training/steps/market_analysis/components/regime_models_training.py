@@ -476,8 +476,13 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         self.temporal_smoothing_alpha = 0.1  # Default smoothness penalty weight
         self.enable_soft_labels = True
         self.soft_label_smoothing = 0.1  # Label smoothing factor
-        self.enable_smoothed_features = True
-        self.smoothing_window_sizes = [3, 5, 7]
+        
+        # EWMA features are ALWAYS enabled for regime models - critical for temporal pattern detection
+        # These features help models capture regime transitions and persistence
+        # Simple EWMA 8 & 20 without special weights - just standard exponential weighting
+        self.enable_smoothed_features = True  # ALWAYS TRUE for regime models
+        self.smoothing_window_sizes = [8, 20]  # Simple EWMA windows (8 & 20 periods)
+        self.ewm_alpha = 0.3  # EWMA smoothing factor (0 < alpha <= 1, smaller = more smoothing)
 
         # Initialize model validator
         self.model_validator = ModelValidator(
@@ -3043,6 +3048,25 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"   • Sample-to-feature ratio: {n_samples / X_selected.shape[1]:.3f}", color="blue")
             tprint(f"   • REGIME features enabled: {enable_regime_features}", color="blue")
             
+            # CRITICAL: Verify EWMA features are preserved after feature selection
+            ewma_count_after_selection = sum(1 for fn in selected_feature_names if '_ewm' in fn.lower())
+            rolling_ma_count_after_selection = sum(1 for fn in selected_feature_names if '_ma' in fn.lower() and '_ewm' not in fn.lower())
+            
+            tprint(f"🔍 [REGIME_MODELS] POST-SELECTION FEATURE VERIFICATION:", color="cyan", bold=True)
+            tprint(f"   • EWMA (_ewm) features after selection: {ewma_count_after_selection}", color="green" if ewma_count_after_selection > 0 else "red")
+            tprint(f"   • Rolling MA (_ma) features after selection: {rolling_ma_count_after_selection}", color="blue")
+            
+            if ewma_count_after_selection == 0:
+                tprint("   ❌ CRITICAL ERROR: ALL EWMA FEATURES WERE REMOVED DURING SELECTION!", color="red", bold=True)
+                tprint("   → This will severely impact regime detection performance", color="red")
+                tprint("   → Consider adjusting feature selection to preserve EWMA features", color="red")
+            else:
+                tprint(f"   ✅ EWMA features preserved after selection: {ewma_count_after_selection} features", color="green")
+                # Show sample EWMA feature names after selection
+                ewma_features_after = [fn for fn in selected_feature_names if '_ewm' in fn.lower()]
+                if ewma_features_after:
+                    tprint(f"   → Sample EWMA features after selection: {ewma_features_after[:5]}...", color="blue")
+            
             if 'between_within_ratio' in regime_cv_scores:
                 tprint(f"   • Between/Within CV ratio: {regime_cv_scores['between_within_ratio']:.4f}", color="blue")
             
@@ -3073,14 +3097,15 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint("✅ [REGIME_MODELS] Feature bank retrieved with REGIME features ENABLED", color="green")
 
             # Define feature categories to generate - prioritize REGIME category for core regime features
+            # NOTE: OSCILLATOR category removed for regime detection mode as requested
             categories = [
                 FeatureCategory.REGIME,  # Core regime features (lagged, derived, temporal)
-                FeatureCategory.MOMENTUM,
-                FeatureCategory.VOLATILITY,
-                FeatureCategory.VOLUME,
-                FeatureCategory.TREND,
-                FeatureCategory.OSCILLATOR,
-                FeatureCategory.RETURNS,
+                FeatureCategory.MOMENTUM,  # Price momentum indicators (RSI, MACD, etc.)
+                FeatureCategory.VOLATILITY,  # Volatility measures (ATR, Bollinger Bands, etc.)
+                FeatureCategory.VOLUME,  # Volume-based indicators (OBV, Volume MA, etc.)
+                FeatureCategory.TREND,  # Trend following indicators (ADX, Aroon, etc.)
+                # FeatureCategory.OSCILLATOR,  # DISABLED for regime detection mode (Stoch, Williams %R, etc.)
+                FeatureCategory.RETURNS,  # Price return calculations and statistics
                 FeatureCategory.MICROSTRUCTURE  # Microstructure features (no orderbook dependency)
             ]
 
@@ -3130,15 +3155,45 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 X = np.array(all_features.values, dtype=np.float64)
                 feature_names = list(all_features.columns)
                 
-                # Add smoothed features if enabled
-                if self.enable_smoothed_features:
-                    tprint("🔧 [REGIME_MODELS] Adding smoothed features", color="cyan")
-                    X, feature_names = add_smoothed_features(
-                        X, 
-                        window_sizes=self.smoothing_window_sizes,
-                        feature_names=feature_names
-                    )
-                    tprint(f"✅ [REGIME_MODELS] Smoothed features added: {X.shape[1]} total features", color="green")
+                # EWMA features are ALWAYS enabled for regime models - no conditional logic
+                # Apply both rolling window smoothing and EWMA smoothing for optimal regime detection
+                # Using simple EWMA 8 & 20 without special weights as requested
+                tprint("🔧 [REGIME_MODELS] Adding EWMA and rolling smoothed features (ALWAYS ENABLED)", color="cyan")
+                tprint("   → CLARIFICATION: _ma8/_ma20/_std8/_std20 are ROLLING WINDOW features (NOT EWMA)", color="yellow")
+                tprint("   → TRUE EWMA features have suffix _ewm0.3 (exponential weighting)", color="yellow")
+                tprint("   → Using simple EWMA 8 & 20 without special weights", color="blue")
+                
+                # First apply rolling window smoothing (moving averages and std)
+                # NOTE: These create _ma8, _ma20, _std8, _std20 features (ROLLING, NOT EWMA)
+                X, feature_names = add_smoothed_features(
+                    X,
+                    window_sizes=self.smoothing_window_sizes,
+                    feature_names=feature_names
+                )
+                tprint(f"✅ [REGIME_MODELS] Rolling smoothed features added: {X.shape[1]} total features", color="green")
+                tprint(f"   → Created _ma8, _ma20, _std8, _std20 features (ROLLING WINDOW, NOT EWMA)", color="blue")
+                
+                # Then apply EWMA smoothing for additional temporal smoothing
+                # NOTE: These create _ewm0.3 features (TRUE EWMA with exponential weighting)
+                initial_feature_count = X.shape[1]
+                X, feature_names = apply_ewm_smoothing(
+                    X,
+                    alpha=self.ewm_alpha,
+                    feature_names=feature_names
+                )
+                final_feature_count = X.shape[1]
+                ewm_feature_count = final_feature_count - initial_feature_count
+                
+                tprint(f"✅ [REGIME_MODELS] EWMA smoothed features added: {X.shape[1]} total features", color="green")
+                tprint(f"   → Created {ewm_feature_count} _ewm0.3 features (TRUE EWMA with exponential weighting)", color="blue")
+                
+                # Log EWMA feature names for verification
+                ewm_feature_names = [fn for fn in feature_names if '_ewm0.3' in fn]
+                if ewm_feature_names:
+                    tprint(f"   → EWMA features created: {len(ewm_feature_names)} features", color="green")
+                    tprint(f"   → Sample EWMA features: {ewm_feature_names[:5]}...", color="blue")
+                else:
+                    tprint("   ⚠️ WARNING: No _ewm0.3 features found in feature names!", color="red")
                 
                 tprint(f"✅ [REGIME_MODELS] Feature bank generated {X.shape[1]} features from {len(categories)} categories", color="green")
                 tprint(f"📊 [REGIME_MODELS] Feature matrix shape: {X.shape}", color="blue")
@@ -3156,9 +3211,22 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
                 # Log feature categories breakdown
                 category_counts = {}
+                ewma_count = 0
+                rolling_ma_count = 0
+                rolling_std_count = 0
+                
                 for fn in feature_names:
                     fn_lower = fn.lower()
-                    if 'regime' in fn_lower:
+                    if '_ewm' in fn_lower:
+                        ewma_count += 1
+                        category_counts['ewma'] = category_counts.get('ewma', 0) + 1
+                    elif '_ma' in fn_lower and '_ewm' not in fn_lower:
+                        rolling_ma_count += 1
+                        category_counts['rolling_ma'] = category_counts.get('rolling_ma', 0) + 1
+                    elif '_std' in fn_lower:
+                        rolling_std_count += 1
+                        category_counts['rolling_std'] = category_counts.get('rolling_std', 0) + 1
+                    elif 'regime' in fn_lower:
                         category_counts['regime'] = category_counts.get('regime', 0) + 1
                     elif 'momentum' in fn_lower or 'rsi' in fn_lower or 'macd' in fn_lower:
                         category_counts['momentum'] = category_counts.get('momentum', 0) + 1
@@ -3170,6 +3238,23 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         category_counts['other'] = category_counts.get('other', 0) + 1
 
                 tprint(f"📊 [REGIME_MODELS] Feature breakdown: {category_counts}", color="blue")
+                
+                # CRITICAL: Verify EWMA features are present
+                tprint(f"🔍 [REGIME_MODELS] FEATURE VERIFICATION:", color="cyan", bold=True)
+                tprint(f"   • EWMA (_ewm) features: {ewma_count}", color="green" if ewma_count > 0 else "red")
+                tprint(f"   • Rolling MA (_ma) features: {rolling_ma_count}", color="blue")
+                tprint(f"   • Rolling STD (_std) features: {rolling_std_count}", color="blue")
+                
+                if ewma_count == 0:
+                    tprint("   ❌ CRITICAL ERROR: NO EWMA FEATURES FOUND!", color="red", bold=True)
+                    tprint("   → This means apply_ewm_smoothing() failed or was not called", color="red")
+                    tprint("   → Regime detection accuracy will be severely impacted", color="red")
+                else:
+                    tprint(f"   ✅ EWMA features successfully generated: {ewma_count} features", color="green")
+                    # Show sample EWMA feature names
+                    ewma_features = [fn for fn in feature_names if '_ewm' in fn.lower()]
+                    if ewma_features:
+                        tprint(f"   → Sample EWMA features: {ewma_features[:5]}...", color="blue")
 
                 return X, feature_names
             else:

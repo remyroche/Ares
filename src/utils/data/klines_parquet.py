@@ -709,13 +709,17 @@ class KlinesParquetManager:
 
                 duplicate_timestamps = combined_df.index[index_duplicates].unique()
 
-                for timestamp in duplicate_timestamps:
+                # PERFORMANCE FIX: Process duplicates in batch without excessive logging
+                for idx, timestamp in enumerate(duplicate_timestamps):
                     # Get all records for this timestamp
                     timestamp_records = combined_df[combined_df.index == timestamp]
 
                     if len(timestamp_records) > 1:
-                        # DEBUG: Print info about this timestamp group
-                        self.logger.info(f"🔍 DEBUG: Timestamp {timestamp} has {len(timestamp_records)} records")
+                        # Only log first few and last few for debugging, skip the middle
+                        should_log = idx < 5 or idx >= len(duplicate_timestamps) - 5
+                        
+                        if should_log:
+                            self.logger.info(f"🔍 DEBUG: Timestamp {timestamp} has {len(timestamp_records)} records")
 
                         # Check if all records for this timestamp are identical across key columns
                         first_record = timestamp_records.iloc[0]
@@ -726,19 +730,26 @@ class KlinesParquetManager:
                             # Check if all key columns match
                             if not all(first_record[col] == current_record[col] for col in available_key_columns):
                                 all_identical = False
-                                # DEBUG: Show what differs
-                                differing_cols = [col for col in available_key_columns if first_record[col] != current_record[col]]
-                                self.logger.info(f"🔍 DEBUG: Records differ in columns: {differing_cols}")
+                                if should_log:
+                                    # DEBUG: Show what differs (only for logged timestamps)
+                                    differing_cols = [col for col in available_key_columns if first_record[col] != current_record[col]]
+                                    self.logger.info(f"🔍 DEBUG: Records differ in columns: {differing_cols}")
                                 break
 
                         if all_identical:
                             # All records are identical - keep only the last one, mark others as duplicates
                             true_duplicates.extend(timestamp_records.index[:-1].tolist())
                             data_duplicates += len(timestamp_records) - 1
-                            self.logger.info(f"🔍 DEBUG: Found {len(timestamp_records)} identical records for {timestamp}")
+                            if should_log:
+                                self.logger.info(f"🔍 DEBUG: Found {len(timestamp_records)} identical records for {timestamp}")
                         else:
-                            self.logger.info(f"🔍 DEBUG: Records for {timestamp} have different data - keeping all")
+                            if should_log:
+                                self.logger.info(f"🔍 DEBUG: Records for {timestamp} have different data - keeping all")
                         # If not all identical, keep all records (they represent different data at same timestamp)
+                
+                # Log summary of skipped timestamps
+                if len(duplicate_timestamps) > 10:
+                    self.logger.info(f"🔍 DEBUG: Processed {len(duplicate_timestamps)} duplicate timestamps (showing first 5 and last 5 only)")
 
                 # Create mask for true duplicates only
                 if true_duplicates:

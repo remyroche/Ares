@@ -426,7 +426,7 @@ def create_temporal_split_config_for_pipeline(
         train_pct=0.6,
         val_pct=0.2,
         test_pct=0.2,
-        embargo_days=30
+        embargo_days=1  # Reduced from 30 to 1 day - 30 days is excessive for 15m data
     )
 
     # Save for future use

@@ -46,13 +46,14 @@ class DataLeakageConfig:
     report_directory: str = "reports/leakage"
     enable_detailed_logging: bool = True
 
-    # Thresholds - Adaptive for regime classification and small datasets
-    critical_leakage_threshold: float = 0.25  # 25% leakage rate for regime data
-    warning_leakage_threshold: float = 0.10   # 10% leakage rate for regime data
+    # Thresholds - CRITICAL for financial data to prevent subtle leaks
+    # Financial data is extremely sensitive to temporal leakage - even 1-2% can compromise results
+    critical_leakage_threshold: float = 0.05  # 5% leakage rate - CRITICAL for financial data
+    warning_leakage_threshold: float = 0.02   # 2% leakage rate - WARNING for financial data
 
-    # Small dataset adjustments
+    # Small dataset adjustments - REMOVED permissiveness for financial data
     small_dataset_threshold: int = 1000
-    small_dataset_leakage_multiplier: float = 1.5  # More lenient for small datasets
+    small_dataset_leakage_multiplier: float = 1.0  # NO multiplier - financial data requires strict validation
 
 @dataclass
 class LeakageReport:
@@ -128,7 +129,14 @@ class DataLeakagePrevention:
         if self.config.save_leakage_reports:
             Path(self.config.report_directory).mkdir(parents=True, exist_ok=True)
 
-        logger.info("✅ Data Leakage Prevention initialized")
+        # Log critical financial data thresholds
+        logger.info("🔒 Data Leakage Prevention initialized with CRITICAL financial thresholds:")
+        logger.info(f"   • Critical leakage threshold: {self.config.critical_leakage_threshold:.1%} (was 25%)")
+        logger.info(f"   • Warning leakage threshold: {self.config.warning_leakage_threshold:.1%} (was 10%)")
+        logger.info(f"   • Small dataset multiplier: {self.config.small_dataset_leakage_multiplier:.1f} (was 1.5)")
+        logger.info("   • These strict thresholds are ESSENTIAL for financial data integrity")
+        logger.info("   • Even 1-2% leakage can invalidate backtesting results")
+        logger.info("   • High model scores (>96%) often indicate undetected temporal leakage")
 
     def detect_temporal_leakage(self,
                                data: Union[pd.DataFrame, np.ndarray],
@@ -208,22 +216,50 @@ class DataLeakagePrevention:
                               len(report.leaked_features))
             report.overall_leakage_rate = total_violations / len(data)
 
-            # Assess severity - adaptive for small datasets and regime classification
-            # Apply small dataset multiplier if dataset is small
+            # Assess severity - CRITICAL for financial data
+            # Financial data requires extremely strict validation due to:
+            # 1. Temporal sensitivity - even small leaks can invalidate backtesting
+            # 2. Market efficiency - genuine patterns are subtle and easily masked by leakage
+            # 3. Regime detection - high scores (>96%) often indicate undetected leakage
+            
             effective_critical_threshold = self.config.critical_leakage_threshold
             effective_warning_threshold = self.config.warning_leakage_threshold
 
+            # Note: Small dataset multiplier removed for financial data
+            # Financial markets exhibit consistent statistical properties regardless of dataset size
+            # Small datasets should trigger data collection, not relaxed validation standards
+            
             if report.total_samples < self.config.small_dataset_threshold:
-                effective_critical_threshold *= self.config.small_dataset_leakage_multiplier
-                effective_warning_threshold *= self.config.small_dataset_leakage_multiplier
+                logger.warning(
+                    f"Petit dataset détecté ({report.total_samples} samples). "
+                    f"Pour les données financières, les seuils stricts sont maintenus car "
+                    f"même 1-2% de fuite peuvent compromettre les résultats de backtesting."
+                )
+                # No multiplier applied - financial data requires strict validation regardless of size
+                effective_critical_threshold *= self.config.small_dataset_leakage_multiplier  # = 1.0
+                effective_warning_threshold *= self.config.small_dataset_leakage_multiplier   # = 1.0
 
-            # Assess severity
+            # Assess severity with strict financial thresholds
             if report.overall_leakage_rate > effective_critical_threshold:
                 report.severity_level = "critical"
+                logger.error(
+                    f"CRITICAL: Taux de fuite de {report.overall_leakage_rate:.2%} détecté. "
+                    f"Ce niveau de fuite invalide complètement les résultats pour les données financières. "
+                    f"Seuil critique: {effective_critical_threshold:.2%}"
+                )
             elif report.overall_leakage_rate > effective_warning_threshold:
                 report.severity_level = "high"
+                logger.warning(
+                    f"WARNING: Taux de fuite de {report.overall_leakage_rate:.2%} détecté. "
+                    f"Même ce niveau peut affecter la validité des backtests financiers. "
+                    f"Seuil d'avertissement: {effective_warning_threshold:.2%}"
+                )
             elif report.overall_leakage_rate > 0:
                 report.severity_level = "medium"
+                logger.info(
+                    f"INFO: Taux de fuite de {report.overall_leakage_rate:.2%} détecté. "
+                    f"Pour les données financières, toute fuite devrait être investiguée."
+                )
 
             # Generate recommendations
             report = self._generate_temporal_recommendations(report)

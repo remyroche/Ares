@@ -472,7 +472,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             tprint(f"❌ {error_msg}", "ERROR")
             raise ValueError(error_msg)
         
-        tprint(f"🏷️ Starting volatility-aware labeling integration for {config.get('symbol', 'UNKNOWN')}", "INFO")
+        tprint(f"🏷️ Starting volatility-aware labeling integration for {config.get('symbol', 'ETHUSDT')}", "INFO")
 
         try:
             # Initialize variables with safe defaults BEFORE any conditional blocks
@@ -1233,7 +1233,20 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     tprint("=" * 80, "INFO")
                     
                     # Save labeled data using BaseStep artifact manager with compression
+                    # CRITICAL FIX: Save to ETHUSDT store (not UNKNOWN) so feature selection can find it
                     tprint("💾 Saving labeled data with new simplified target structure (target_long, target_short)...", "INFO")
+                    tprint(f"🔧 CRITICAL FIX: Saving to ETHUSDT store (not UNKNOWN) for feature selection compatibility", "INFO")
+                    
+                    # Temporarily override context to save to ETHUSDT store
+                    original_context = self._current_context.copy() if hasattr(self, '_current_context') else {}
+                    self._current_context.update({
+                        'symbol': config['symbol'],  # This will make it save to ETHUSDT store
+                        'exchange': config['exchange'],
+                        'timeframe': config['timeframe'],
+                        'direction': config.get('direction', 'long'),
+                        'model': config.get('model', 'analyst')
+                    })
+                    
                     labeled_data_path = self._save_artifact(
                         data=labeled_data_df,
                         artifact_name=f'labeled_data_{config["symbol"]}_{config["timeframe"]}',
@@ -1257,8 +1270,13 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                             'created_at': datetime.now().isoformat()
                         }
                     )
+                    
+                    # Restore original context
+                    self._current_context = original_context
+                    
                     tprint(f"🐛 DEBUG: _save_artifact returned path: {labeled_data_path}", "INFO")
                     tprint(f"✅ Successfully saved labeled data with simplified target structure to: {labeled_data_path}", "SUCCESS")
+                    tprint(f"✅ CRITICAL: Saved to ETHUSDT store for feature selection compatibility!", "SUCCESS")
                     tprint(f"   • Target structure: target_long (volume-normalized), target_short (volume-normalized)", "INFO")
                     tprint(f"   • Data category: 'features' for HDF5 versioning", "INFO")
                     tprint(f"   • Compression: auto for efficient storage", "INFO")
@@ -1556,46 +1574,69 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             # Get features data to align time periods
             try:
                 from src.utils.versioned_artifacts import create_versioned_store
-                store = create_versioned_store(
-                    store_key="UNKNOWN_binance_15m_long_analyst",
+                
+                # Use proper symbol name from config - FIX: Extract from actual config
+                # Get config from the parent execute method context or use defaults
+                symbol = self._current_context.get('symbol', 'ETHUSDT')
+                exchange = self._current_context.get('exchange', 'binance')
+                timeframe = self._current_context.get('timeframe', '15m')
+                direction = self._current_context.get('direction', 'long')
+                model = self._current_context.get('model', 'analyst')
+                
+                # Look for features in the ETHUSDT store (where feature generation saves them)
+                features_store_key = f"{symbol}_{exchange}_{timeframe}_{direction}_{model}"
+                tprint_info(f"🔍 Looking for features in ETHUSDT store: {features_store_key}")
+                
+                features_store = create_versioned_store(
+                    store_key=features_store_key,
                     store_dir="versioned_artifacts"
                 )
                 
-                # Try to get the latest features data to match time period
-                # Priority order: final datasets (from interaction generation) first,
-                # then selected features, then generated features (from feature generation step)
+                # But save labeled data to UNKNOWN store (for now, until we fix the root cause)
+                save_store_key = f"UNKNOWN_{exchange}_{timeframe}_{direction}_{model}"
+                tprint_info(f"🔍 Will save labeled data to: {save_store_key}")
+                
+                store = create_versioned_store(
+                    store_key=save_store_key,
+                    store_dir="versioned_artifacts"
+                )
+                
+                # PRIORITY: Look for the LATEST generated_features_15m (largest, most recent dataset)
+                # This ensures we align with the same time period as feature generation step
                 feature_artifacts = [
-                    'selected_feature_dataframe_50',
-                    'selected_feature_dataframe_60',
-                    'selected_feature_dataframe_40',
-                    'final_dataset_50',
-                    'final_dataset_60',
-                    'final_dataset_40',
-                    'generated_features_15m',
+                    'generated_features_15m',  # This should be the 16K+ row dataset ending at 2025-10-31
                     'generated_features',
+                    'selected_feature_dataframe_60',  # Fallback to smaller datasets if needed
+                    'selected_feature_dataframe_50',
+                    'selected_feature_dataframe_40',
                 ]
                 
                 features_data = None
-                tprint(f"🐛 DEBUG: Searching for features data in {len(feature_artifacts)} possible artifacts...", "INFO")
+                tprint_info(f"🔍 TIMESTAMP ALIGNMENT: Searching for LATEST features data to match time period...")
+                
                 for artifact_name in feature_artifacts:
                     try:
-                        tprint(f"🐛 DEBUG: Trying to load '{artifact_name}'...", "INFO")
-                        # Use correct VersionedArtifactStore API: get_view() then materialize()
-                        view = store.get_view(artifact_name)
-                        if view is not None:
-                            tprint(f"🐛 DEBUG: Got view for '{artifact_name}', materializing...", "INFO")
-                            features_data = view.materialize()
-                            if features_data is not None and not features_data.empty:
-                                tprint(f"✅ Found features data '{artifact_name}' with shape={features_data.shape}", "SUCCESS")
-                                tprint(f"🐛 DEBUG: Features index range: {features_data.index.min()} to {features_data.index.max()}", "INFO")
-                                break
-                            else:
-                                tprint(f"🐛 DEBUG: View '{artifact_name}' materialized to empty/None", "INFO")
-                                features_data = None
+                        tprint_info(f"🔍 Trying to load '{artifact_name}'...")
+                        
+                        # Get all versions of this artifact from the FEATURES store and use the latest one
+                        all_versions = features_store.list_versions()
+                        matching_versions = [v for v in all_versions if artifact_name in v.lower()]
+                        
+                        if matching_versions:
+                            latest_version = sorted(matching_versions)[-1]
+                            tprint_info(f"📂 Using latest version: {latest_version}")
+                            
+                            view = features_store.get_view(latest_version)
+                            if view is not None:
+                                features_data = view.materialize()
+                                if features_data is not None and not features_data.empty:
+                                    tprint_success(f"✅ Found features data '{latest_version}' with shape={features_data.shape}")
+                                    tprint_info(f"📅 Features time range: {features_data.index.min()} to {features_data.index.max()}")
+                                    break
                         else:
-                            tprint(f"🐛 DEBUG: No view found for '{artifact_name}'", "INFO")
+                            tprint_warning(f"⚠️ No versions found for '{artifact_name}'")
                     except Exception as e:
-                        tprint(f"🐛 DEBUG: Failed to load '{artifact_name}': {type(e).__name__}: {e}", "INFO")
+                        tprint_warning(f"⚠️ Failed to load '{artifact_name}': {type(e).__name__}: {e}")
                         continue
 
                 if features_data is not None:

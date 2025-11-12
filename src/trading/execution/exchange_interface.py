@@ -21,7 +21,9 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.utils.tprint import (
     tprint, tprint_info, tprint_warning, tprint_error, tprint_success,
-    tprint_debug, tprint_structured, LogLevel
+    tprint_debug, tprint_structured, LogLevel,
+    tprint_logged, tprint_data_preview, tprint_data_format,
+    tprint_timer, tprint_performance, tprint_feature_counts
 )
 
 # Import shared exchange utilities
@@ -129,6 +131,7 @@ class KlineData:
     taker_buy_base_asset_volume: float
     taker_buy_quote_asset_volume: float
 
+@tprint_logged()
 class ExchangeInterface:
     """
     Exchange interface that uses the exchange dispatcher and shared utilities.
@@ -141,6 +144,7 @@ class ExchangeInterface:
     - Authentication and risk management
     """
 
+    @tprint_logged()
     def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize exchange interface.
@@ -201,10 +205,12 @@ class ExchangeInterface:
         from src.utils.tprint import tprint
         tprint(f"✅ ExchangeInterface.__init__: Initialized with {len(self.ticker_streams)} ticker streams, {len(self.order_book_streams)} order book streams", "INFO")
 
+    @tprint_logged()
     def _initialize_shared_utilities(self) -> None:
         """Initialize shared utilities for exchange operations."""
         from src.utils.tprint import tprint
         tprint(f"🔄 ExchangeInterface._initialize_shared_utilities: Starting for exchange_type={self.exchange_type}", "DEBUG")
+        tprint_data_preview({"exchange_type": self.exchange_type, "api_key": "***" if self.api_key else None}, "ExchangeInterface._initialize_shared_utilities - config")
 
         try:
             # Authentication
@@ -270,10 +276,12 @@ class ExchangeInterface:
 
 
     @handle_async_errors(default_return=False)
+    @tprint_logged()
     async def connect(self, max_retries: int = 5, initial_backoff: float = 1.0) -> bool:
         """Connect to exchange with retry logic and exponential backoff."""
         from src.utils.tprint import tprint
         tprint(f"🔌 ExchangeInterface.connect: Starting connection to {self.exchange_type}, max_retries={max_retries}, testnet={self.testnet}", "INFO")
+        tprint_data_preview({"exchange_type": self.exchange_type, "max_retries": max_retries, "testnet": self.testnet}, "ExchangeInterface.connect - params")
 
         try:
             if self.exchange_type == 'simulated':
@@ -544,6 +552,7 @@ class ExchangeInterface:
             tprint_error(f"❌ Failed to setup risk tiers: {e}")
 
     @handle_async_errors(default_return=None)
+    @tprint_logged()
     async def disconnect(self) -> None:
         """Disconnect from exchange."""
         from src.utils.tprint import tprint
@@ -787,10 +796,12 @@ class ExchangeInterface:
         return False
 
     @handle_async_errors(default_return=None)
+    @tprint_logged()
     async def get_ticker(self, symbol: str) -> Optional[TickerData]:
         """Get ticker data for symbol."""
         from src.utils.tprint import tprint
         tprint(f"📊 ExchangeInterface.get_ticker: Getting ticker for symbol={symbol}, exchange_type={self.exchange_type}", "DEBUG")
+        tprint_data_preview({"symbol": symbol, "exchange_type": self.exchange_type}, "ExchangeInterface.get_ticker - request")
 
         try:
             # Validate inputs
@@ -870,8 +881,11 @@ class ExchangeInterface:
             tprint_error(f"❌ Error getting ticker for {symbol}: {e}")
             return None
 
+    @tprint_logged()
     async def get_order_book(self, symbol: str, limit: int = 100) -> Optional[Dict[str, Any]]:
         """Get order book for symbol."""
+        tprint_data_preview({"symbol": symbol, "limit": limit, "exchange_type": self.exchange_type}, "ExchangeInterface.get_order_book - request")
+        
         if self.exchange_type == 'simulated':
             return await self._get_simulated_order_book(symbol, limit)
 
@@ -880,6 +894,7 @@ class ExchangeInterface:
 
         return None
 
+    @tprint_logged()
     async def get_klines(
         self,
         symbol: str,
@@ -891,6 +906,7 @@ class ExchangeInterface:
         """Get kline data for symbol."""
         from src.utils.tprint import tprint
         tprint(f"📊 ExchangeInterface.get_klines: symbol={symbol}, interval={interval}, limit={limit}, start_time={start_time}, end_time={end_time}, exchange_type={self.exchange_type}", "DEBUG")
+        tprint_data_preview({"symbol": symbol, "interval": interval, "limit": limit, "start_time": start_time, "end_time": end_time}, "ExchangeInterface.get_klines - request")
         print(f"DEBUG ExchangeInterface.get_klines: START")
         print(f"DEBUG ExchangeInterface.get_klines: exchange_type={self.exchange_type}")
         print(f"DEBUG ExchangeInterface.get_klines: dispatcher={self.dispatcher}")
@@ -944,8 +960,11 @@ class ExchangeInterface:
         tprint(f"⚠️ ExchangeInterface.get_klines: No dispatcher available, returning empty list", "WARNING")
         return []
 
+    @tprint_logged()
     async def get_recent_trades(self, symbol: str, limit: int = 500) -> List[Dict[str, Any]]:
         """Get recent trades for symbol."""
+        tprint_data_preview({"symbol": symbol, "limit": limit, "exchange_type": self.exchange_type}, "ExchangeInterface.get_recent_trades - request")
+        
         if self.exchange_type == 'simulated':
             return await self._get_simulated_recent_trades(symbol, limit)
 
@@ -953,9 +972,12 @@ class ExchangeInterface:
         return []
 
     @handle_async_errors(default_return={})
+    @tprint_logged()
     async def get_account_balance(self, asset: Optional[str] = None) -> Dict[str, float]:
         """Get account balance."""
         try:
+            tprint_data_preview({"asset": asset, "exchange_type": self.exchange_type}, "ExchangeInterface.get_account_balance - request")
+            
             if self.exchange_type == 'simulated':
                 return self._get_simulated_balance(asset)
 
@@ -983,6 +1005,7 @@ class ExchangeInterface:
             return {}
 
     @handle_async_errors(default_return={})
+    @tprint_logged()
     async def create_order(
         self,
         symbol: str,
@@ -995,6 +1018,8 @@ class ExchangeInterface:
         """Create order."""
         from src.utils.tprint import tprint
         tprint(f"📝 ExchangeInterface.create_order: symbol={symbol}, side={side}, order_type={order_type}, quantity={quantity}, price={price}, exchange_type={self.exchange_type}", "INFO")
+        tprint_data_preview({"symbol": symbol, "side": side, "order_type": order_type, "quantity": quantity, "price": price}, "ExchangeInterface.create_order - params")
+        tprint_data_format({"symbol": str, "side": str, "order_type": str, "quantity": float, "price": (float, type(None))}, "ExchangeInterface.create_order - format validation")
 
         try:
             if self.exchange_type == 'simulated':
@@ -1062,8 +1087,11 @@ class ExchangeInterface:
             tprint_error(f"❌ Error creating order for {symbol}: {e}")
             return {'error': str(e)}
 
+    @tprint_logged()
     async def cancel_order(self, symbol: str, order_id: str) -> bool:
         """Cancel order."""
+        tprint_data_preview({"symbol": symbol, "order_id": order_id, "exchange_type": self.exchange_type}, "ExchangeInterface.cancel_order - request")
+        
         if self.exchange_type == 'simulated':
             return await self._cancel_simulated_order(symbol, order_id)
 
@@ -1072,8 +1100,11 @@ class ExchangeInterface:
 
         return False
 
+    @tprint_logged()
     async def get_order_status(self, symbol: str, order_id: str) -> Dict[str, Any]:
         """Get order status."""
+        tprint_data_preview({"symbol": symbol, "order_id": order_id, "exchange_type": self.exchange_type}, "ExchangeInterface.get_order_status - request")
+        
         if self.exchange_type == 'simulated':
             return self._get_simulated_order_status(symbol, order_id)
 
@@ -1083,8 +1114,11 @@ class ExchangeInterface:
 
         return {}
 
+    @tprint_logged()
     async def get_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get open orders."""
+        tprint_data_preview({"symbol": symbol, "exchange_type": self.exchange_type}, "ExchangeInterface.get_open_orders - request")
+        
         if self.exchange_type == 'simulated':
             return self._get_simulated_open_orders(symbol)
 
@@ -1520,13 +1554,18 @@ class ExchangeInterface:
             return False  # Fail closed for safety
 
     @handle_async_errors(default_return={})
+    @tprint_logged()
     async def get_risk_info(self, symbol: str, position_size: float, current_price: float, leverage: float = 1.0) -> Dict[str, Any]:
         """Get risk information for a position."""
         try:
+            tprint_data_preview({"symbol": symbol, "position_size": position_size, "current_price": current_price, "leverage": leverage}, "ExchangeInterface.get_risk_info - request")
+            
             if self.risk_manager:
-                return self.risk_manager.calculate_position_risk(
+                result = self.risk_manager.calculate_position_risk(
                     symbol, position_size, current_price, leverage
                 )
+                tprint_performance({"risk_calculation": "completed", "symbol": symbol}, "ExchangeInterface.get_risk_info - performance")
+                return result
             return {}
 
         except Exception as e:
@@ -1534,11 +1573,17 @@ class ExchangeInterface:
             return {}
 
     @handle_async_errors(default_return=[])
+    @tprint_logged()
     async def get_portfolio_risk(self, positions: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Get portfolio risk information."""
         try:
+            tprint_data_preview({"positions_count": len(positions), "symbols": [p.get('symbol', 'unknown') for p in positions[:5]]}, "ExchangeInterface.get_portfolio_risk - request")
+            tprint_feature_counts({"positions": len(positions)}, "ExchangeInterface.get_portfolio_risk - feature counts")
+            
             if self.risk_manager:
-                return self.risk_manager.calculate_portfolio_risk(positions)
+                result = self.risk_manager.calculate_portfolio_risk(positions)
+                tprint_performance({"portfolio_risk_calculation": "completed", "positions_count": len(positions)}, "ExchangeInterface.get_portfolio_risk - performance")
+                return result
             return {}
 
         except Exception as e:
@@ -1565,20 +1610,25 @@ class ExchangeInterface:
             tprint_warning(f"⚠️ Rate limit warning for {endpoint}: {current_count}/{limit}")
 
     @handle_async_errors(default_return=None)
+    @tprint_logged()
     async def _handle_error(self, error: Exception, operation: str) -> None:
         """Handle exchange errors."""
         try:
-            self.connection_errors.append({
+            error_info = {
                 'timestamp': datetime.now(),
                 'operation': operation,
                 'error': str(error)
-            })
-
+            }
+            
+            tprint_data_preview(error_info, "ExchangeInterface._handle_error - error details")
+            
+            self.connection_errors.append(error_info)
             self.failed_requests += 1
 
             if len(self.connection_errors) > 10:
                 self.connection_status = ConnectionStatus.ERROR
 
+            tprint_performance({"failed_requests": self.failed_requests, "connection_errors": len(self.connection_errors)}, "ExchangeInterface._handle_error - performance metrics")
             tprint_error(f"❌ Exchange error in {operation}: {str(error)}")
 
         except Exception as e:

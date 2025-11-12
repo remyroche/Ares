@@ -1,0 +1,502 @@
+{
+  "models": {
+    "catboost": null,
+    "lightgbm": null,
+    "xgboost": null,
+    "random_forest": null,
+    "extratrees": null
+  },
+  "model_metrics": {
+    "catboost": {
+      "accuracy": null,
+      "precision": null,
+      "recall": null,
+      "f1_score": null,
+      "classification_report": {
+        "0": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "1": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "2": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "3": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "4": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "5": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "accuracy": null,
+        "macro avg": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "weighted avg": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        }
+      }
+    },
+    "lightgbm": {
+      "accuracy": null,
+      "precision": null,
+      "recall": null,
+      "f1_score": null,
+      "classification_report": {
+        "0": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "1": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "2": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "3": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "4": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "5": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "accuracy": null,
+        "macro avg": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "weighted avg": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        }
+      }
+    },
+    "xgboost": {
+      "accuracy": null,
+      "precision": null,
+      "recall": null,
+      "f1_score": null,
+      "classification_report": {
+        "0": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "1": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "2": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "3": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "4": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "5": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "accuracy": null,
+        "macro avg": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "weighted avg": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        }
+      }
+    },
+    "random_forest": {
+      "accuracy": null,
+      "precision": null,
+      "recall": null,
+      "f1_score": null,
+      "classification_report": {
+        "0": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "1": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "2": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "3": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "4": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "5": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "accuracy": null,
+        "macro avg": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "weighted avg": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        }
+      }
+    },
+    "extratrees": {
+      "accuracy": null,
+      "precision": null,
+      "recall": null,
+      "f1_score": null,
+      "classification_report": {
+        "0": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "1": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "2": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "3": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "4": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "5": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "accuracy": null,
+        "macro avg": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "weighted avg": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        }
+      }
+    }
+  },
+  "training_time": null,
+  "success": null,
+  "validation_report": {
+    "temporal_order_valid": null,
+    "leakage_detected": null,
+    "validation_score": null,
+    "warnings": [],
+    "recommendations": [
+      null
+    ]
+  },
+  "hardware_optimization": {
+    "enabled": null,
+    "workload_type": null,
+    "optimization_applied": null
+  },
+  "lookahead_protection": {
+    "enabled": null,
+    "protection_applied": null
+  },
+  "metadata": {
+    "component_type": null,
+    "data_shape": [
+      null,
+      null
+    ],
+    "train_shape": [
+      null,
+      null
+    ],
+    "test_shape": [
+      null,
+      null
+    ],
+    "n_regimes": null,
+    "feature_names": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "timestamp": null,
+    "centralized_config_used": null,
+    "walk_forward_validation": {
+      "validation_completed": null,
+      "n_folds": null,
+      "model_rankings": [
+        {
+          "model_name": null,
+          "composite_score": 0.6014378336257791,
+          "accuracy": 0.6846003898635477,
+          "f1_score": 0.6537479744632919,
+          "precision": 0.6573710392138197,
+          "recall": 0.6846003898635477,
+          "mel": 5.375154681326433,
+          "sfpr": 0.18468525939592956,
+          "accuracy_ci": [
+            0.2592558721579421,
+            1.1099449075691532
+          ],
+          "f1_ci": [
+            0.1779400532631235,
+            1.1295558956634604
+          ]
+        },
+        {
+          "model_name": null,
+          "composite_score": 0.5697370012166544,
+          "accuracy": 0.6499025341130604,
+          "f1_score": 0.6220554220845238,
+          "precision": 0.6354969757212489,
+          "recall": 0.6499025341130604,
+          "mel": 5.03148432449903,
+          "sfpr": 0.1840753609135962,
+          "accuracy_ci": [
+            0.25390077115350007,
+            1.045904297072621
+          ],
+          "f1_ci": [
+            0.18194249453120592,
+            1.0621683496378416
+          ]
+        },
+        {
+          "model_name": null,
+          "composite_score": 0.5627133654585321,
+          "accuracy": 0.6686159844054581,
+          "f1_score": 0.6542358515550364,
+          "precision": 0.666981092056026,
+          "recall": 0.6686159844054581,
+          "mel": 4.018806438431609,
+          "sfpr": 0.17889206039598435,
+          "accuracy_ci": [
+            0.2374555823086572,
+            1.099776386502259
+          ],
+          "f1_ci": [
+            0.19741480706495967,
+            1.111056896045113
+          ]
+        },
+        {
+          "model_name": null,
+          "composite_score": 0.5611403405613385,
+          "accuracy": 0.6662768031189084,
+          "f1_score": 0.6568130569449677,
+          "precision": 0.6625428872703527,
+          "recall": 0.6662768031189084,
+          "mel": 3.854989682604976,
+          "sfpr": 0.1561957336260869,
+          "accuracy_ci": [
+            0.22729846752963012,
+            1.1052551387081866
+          ],
+          "f1_ci": [
+            0.2019341143588283,
+            1.1116919995311072
+          ]
+        },
+        {
+          "model_name": null,
+          "composite_score": 0.5542282554785976,
+          "accuracy": 0.6495126705653022,
+          "f1_score": 0.6355488321416253,
+          "precision": 0.6386394123954868,
+          "recall": 0.6495126705653022,
+          "mel": 4.1616643356643355,
+          "sfpr": 0.16893395493395494,
+          "accuracy_ci": [
+            0.2397878866780045,
+            1.0592374544525998
+          ],
+          "f1_ci": [
+            0.2031787305822031,
+            1.0679189337010475
+          ]
+        }
+      ],
+      "selected_models": [
+        null,
+        null,
+        null
+      ]
+    }
+  },
+  "reports": {
+    "markdown_report": null,
+    "csv_metrics": null,
+    "csv_comparison": null
+  }
+}

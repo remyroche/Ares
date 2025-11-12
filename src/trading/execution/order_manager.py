@@ -21,11 +21,13 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.utils.tprint import (
     tprint_info, tprint_warning, tprint_error, tprint_success,
-    tprint_structured, LogLevel
+    tprint_structured, LogLevel,
+    tprint_logged, tprint_data_preview, tprint_data_format,
+    tprint_timer, tprint_performance, tprint_feature_counts
 )
 from ..config.trading_config import TradingConfig
 from ..config.execution_config import ExecutionConfig
-from ..enums import OrderType, OrderSide, OrderStatus, TimeInForce
+from ..enums import OrderType, OrderSide, OrderStatus, TimeInForce, TradingMode
 from ..utils.error_handling import (
     ExecutionError, TradingErrorSeverity, trading_error_handler,
     critical_operation, require_no_fallback
@@ -84,6 +86,7 @@ class OrderBook:
     timestamp: datetime
     exchange: str
 
+@tprint_logged()
 class OrderManager:
     """
     Unified Order Management System
@@ -92,6 +95,7 @@ class OrderManager:
     different exchanges and trading modes (paper/live).
     """
 
+    @tprint_logged()
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize the order manager.
@@ -140,6 +144,7 @@ class OrderManager:
         severity=TradingErrorSeverity.HIGH,
         raise_on_error=True
     )
+    @tprint_logged()
     async def initialize(self) -> None:
         """Initialize order manager components."""
         try:
@@ -170,6 +175,7 @@ class OrderManager:
     @critical_operation
     @require_no_fallback
     @handles_errors
+    @tprint_logged()
     async def create_order(
         self,
         symbol: str,
@@ -203,9 +209,11 @@ class OrderManager:
         """
         from src.utils.tprint import tprint
         tprint(f"📝 OrderManager.create_order: symbol={symbol}, side={side.value}, type={order_type.value}, quantity={quantity}, price={price}", "INFO")
+        tprint_data_preview({"symbol": symbol, "side": side.value, "order_type": order_type.value, "quantity": quantity, "price": price}, "OrderManager.create_order - params")
+        tprint_data_format({"symbol": str, "side": str, "order_type": str, "quantity": float, "price": (float, type(None))}, "OrderManager.create_order - format validation")
 
         # Validate order parameters
-        await validate_order_params(
+        validate_order_params(
             symbol=symbol,
             side=side,
             order_type=order_type,
@@ -236,6 +244,7 @@ class OrderManager:
         from src.utils.tprint import tprint
         tprint(f"✅ OrderManager.create_order: Order created with order_id={order.order_id}, total_active_orders={len(self.active_orders)}", "SUCCESS")
         tprint_info(f"📝 Created {side.value} order for {symbol}: {quantity} @ {price}")
+        tprint_performance({"orders_created": self.order_count, "active_orders": len(self.active_orders)}, "OrderManager.create_order - performance")
 
         # Submit order to exchange
         await self._submit_order(order)
@@ -365,23 +374,24 @@ class OrderManager:
                 price=current_price,
                 fees=order.quantity * current_price * 0.001  # 0.1% fee
             )
-
+    
             # Update order
             order.status = OrderStatus.FILLED
             order.filled_quantity = order.quantity
             order.remaining_quantity = 0.0
             order.average_fill_price = current_price
             order.fees = execution.fees
-
+    
             # Store execution
             if order.order_id not in self.executions:
                 self.executions[order.order_id] = []
             self.executions[order.order_id].append(execution)
-
+    
             self.execution_count += 1
             self.total_fees += execution.fees
-
+    
             tprint_success(f"✅ Simulated order {order.order_id} filled @ {current_price}")
+            tprint_performance({"executions": self.execution_count, "total_fees": self.total_fees}, "OrderManager._simulate_order_execution - performance")
 
         else:
             # For limit orders, we'd need more complex simulation
@@ -506,6 +516,7 @@ class OrderManager:
                 self.total_fees += execution.fees
                 
                 tprint_success(f"✅ Order {order.order_id} executed: {order.filled_quantity}/{order.quantity} @ {order.average_fill_price}")
+                tprint_performance({"filled_quantity": order.filled_quantity, "total_quantity": order.quantity, "fill_rate": order.filled_quantity/order.quantity if order.quantity > 0 else 0}, "OrderManager._execute_live_order - execution performance")
             else:
                 tprint_info(f"📝 Order {order.order_id} submitted: {order.status.value}")
             
@@ -528,6 +539,7 @@ class OrderManager:
         return 3000.0 if symbol.startswith('ETH') else 50000.0
 
     @handles_errors
+    @tprint_logged()
     async def cancel_order(self, order_id: str) -> bool:
         """
         Cancel an active order.
@@ -546,6 +558,7 @@ class OrderManager:
 
         if order.status not in [OrderStatus.PENDING, OrderStatus.SUBMITTED, OrderStatus.PARTIALLY_FILLED]:
             tprint_warning(f"⚠️ Cannot cancel order {order_id} with status {order.status.value}")
+            tprint_data_preview({"order_id": order_id, "status": order.status.value}, "OrderManager.cancel_order - status validation")
             return False
 
         try:
@@ -559,6 +572,7 @@ class OrderManager:
             await self._stop_order_polling(order_id)
             
             tprint_info(f"❌ Cancelled order {order_id}")
+            tprint_performance({"cancelled_orders": 1, "order_id": order_id}, "OrderManager.cancel_order - performance")
             return True
 
         except Exception as e:
@@ -607,6 +621,7 @@ class OrderManager:
             raise
 
     @handles_errors
+    @tprint_logged()
     async def get_order_status(self, order_id: str) -> Optional[OrderStatus]:
         """
         Get the status of an order.
@@ -625,6 +640,7 @@ class OrderManager:
             return None
 
     @handles_errors
+    @tprint_logged()
     async def get_order(self, order_id: str) -> Optional[Order]:
         """
         Get order by ID.
@@ -638,6 +654,7 @@ class OrderManager:
         return self.active_orders.get(order_id) or self.order_history.get(order_id)
 
     @handles_errors
+    @tprint_logged()
     async def get_active_orders(self, symbol: Optional[str] = None) -> List[Order]:
         """
         Get all active orders.
@@ -653,9 +670,11 @@ class OrderManager:
         if symbol:
             orders = [order for order in orders if order.symbol == symbol]
 
+        tprint_feature_counts({"active_orders": len(orders), "filtered_orders": len(orders)}, "OrderManager.get_active_orders - feature counts")
         return orders
 
     @handles_errors
+    @tprint_logged()
     async def get_order_history(
         self,
         symbol: Optional[str] = None,
@@ -684,9 +703,11 @@ class OrderManager:
         if end_time:
             orders = [order for order in orders if order.timestamp <= end_time]
 
+        tprint_feature_counts({"history_orders": len(orders), "symbol_filtered": len([o for o in orders if o.symbol == symbol]) if symbol else 0}, "OrderManager.get_order_history - feature counts")
         return orders
 
     @handles_errors
+    @tprint_logged()
     async def get_executions(self, order_id: str) -> List[OrderExecution]:
         """
         Get executions for a specific order.
@@ -699,6 +720,7 @@ class OrderManager:
         """
         return self.executions.get(order_id, [])
 
+    @tprint_logged()
     async def get_order_book(self, symbol: str) -> Optional[OrderBook]:
         """
         Get order book for symbol.
@@ -711,6 +733,7 @@ class OrderManager:
         """
         return self.order_books.get(symbol)
 
+    @tprint_logged()
     async def cleanup(self) -> None:
         """Clean up resources."""
         try:
@@ -722,12 +745,13 @@ class OrderManager:
             active_orders = list(self.active_orders.keys())
             for order_id in active_orders:
                 await self.cancel_order(order_id)
-
+    
             # Move active orders to history
             self.order_history.update(self.active_orders)
             self.active_orders.clear()
-
+    
             tprint_info("🧹 Order Manager cleaned up successfully")
+            tprint_performance({"active_orders_cleaned": len(active_orders), "polling_tasks_stopped": len(list(self._polling_tasks.keys()))}, "OrderManager.cleanup - performance")
 
         except Exception as e:
             tprint_error(f"❌ Error during Order Manager cleanup: {str(e)}")

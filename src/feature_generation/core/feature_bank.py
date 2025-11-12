@@ -1685,8 +1685,9 @@ class FeatureBank:
         if 'interaction' in generator_name:
             return True
 
-        # Exclude regime-specific generators (context-dependent)
-        if 'regime_' in generator_name:
+        # FIXED: Do NOT exclude regime-specific generators when regime features are enabled
+        # These generators are critical for regime detection models
+        if 'regime_' in generator_name and not self.config.enable_regime_features:
             return True
 
         return False

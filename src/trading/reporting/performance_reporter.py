@@ -64,7 +64,7 @@ class PerformanceReporter:
         session_metrics: Optional[TradingSessionMetrics] = None,
         report_name: str = "trading_performance"
     ) -> Dict[str, Any]:
-"""
+        """
         Generate comprehensive trading performance report.
 
         Args:
@@ -109,7 +109,7 @@ class PerformanceReporter:
             return {'error': str(e)}
 
     async def _generate_report_metadata(self, report_name: str) -> Dict[str, Any]:
-"""Generate report metadata."""
+        """Generate report metadata."""
         tprint(f"PerformanceReporter._generate_report_metadata: Called")
         return {
             'report_name': report_name,
@@ -124,7 +124,7 @@ class PerformanceReporter:
         trades: List[DetailedTradeMetrics],
         session_metrics: Optional[TradingSessionMetrics]
     ) -> Dict[str, Any]:
-"""Generate executive summary of trading performance."""
+        """Generate executive summary of trading performance."""
         tprint(f"PerformanceReporter._generate_executive_summary: Called")
         try:
             # Basic statistics
@@ -207,7 +207,7 @@ class PerformanceReporter:
             return {}
 
     async def _generate_trade_analysis(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-"""Generate detailed trade-by-trade analysis."""
+        """Generate detailed trade-by-trade analysis."""
         tprint(f"PerformanceReporter._generate_trade_analysis: Called")
         try:
             # Trade distribution by action
@@ -258,7 +258,7 @@ class PerformanceReporter:
             return {}
 
     async def _generate_model_performance_analysis(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-"""Generate ML model performance analysis."""
+        """Generate ML model performance analysis."""
         tprint(f"PerformanceReporter._generate_model_performance_analysis: Called")
         try:
             model_performance = {}
@@ -317,7 +317,7 @@ class PerformanceReporter:
             return {}
 
     async def _generate_explainability_analysis(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-"""Generate SHAP/LIME explainability analysis."""
+        """Generate SHAP/LIME explainability analysis."""
         tprint(f"PerformanceReporter._generate_explainability_analysis: Called")
         try:
             # Feature importance analysis
@@ -380,7 +380,7 @@ class PerformanceReporter:
             return {}
 
     async def _generate_risk_analysis(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-"""Generate comprehensive risk analysis."""
+        """Generate comprehensive risk analysis."""
         tprint(f"PerformanceReporter._generate_risk_analysis: Called")
         try:
             # Risk metrics aggregation
@@ -440,7 +440,7 @@ class PerformanceReporter:
             return {}
 
     async def _generate_regime_analysis(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-"""Generate regime-based performance analysis."""
+        """Generate regime-based performance analysis."""
         tprint(f"PerformanceReporter._generate_regime_analysis: Called")
         try:
             regime_performance = {}
@@ -502,7 +502,7 @@ class PerformanceReporter:
             return {}
 
     async def _generate_execution_analysis(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-"""Generate execution quality analysis."""
+        """Generate execution quality analysis."""
         tprint(f"PerformanceReporter._generate_execution_analysis: Called")
         try:
             # Execution metrics
@@ -548,7 +548,7 @@ class PerformanceReporter:
             return {}
 
     async def _analyze_trade_timing(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-"""Analyze trade timing patterns."""
+        """Analyze trade timing patterns."""
         tprint(f"PerformanceReporter._analyze_trade_timing: Called")
         try:
             # Time distribution analysis
@@ -588,7 +588,7 @@ class PerformanceReporter:
             return {}
 
     async def _analyze_position_sizes(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-"""Analyze position sizing patterns and performance."""
+        """Analyze position sizing patterns and performance."""
         tprint(f"PerformanceReporter._analyze_position_sizes: Called")
         try:
             position_sizes = [t.position_size for t in trades if t.position_size > 0]
@@ -642,7 +642,7 @@ class PerformanceReporter:
             return {}
 
     async def _find_optimal_position_sizes(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-"""Find optimal position sizes based on historical performance."""
+        """Find optimal position sizes based on historical performance."""
         tprint(f"PerformanceReporter._find_optimal_position_sizes: Called")
         try:
             # Group trades by confidence levels and analyze optimal sizes
@@ -680,7 +680,7 @@ class PerformanceReporter:
             return {}
 
     async def _export_report(self, report: Dict[str, Any], report_name: str):
-"""Export comprehensive report to files."""
+        """Export comprehensive report to files."""
         tprint(f"PerformanceReporter._export_report: Called")
         try:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -708,7 +708,7 @@ class PerformanceReporter:
             tprint_error(f"❌ Failed to export report: {e}")
 
     def _extract_summary_for_csv(self, report: Dict[str, Any]) -> Dict[str, Any]:
-"""Extract key metrics for CSV export."""
+        """Extract key metrics for CSV export."""
         tprint(f"PerformanceReporter._extract_summary_for_csv: Called")
         try:
             summary = {}
@@ -746,7 +746,7 @@ class PerformanceReporter:
             return {}
 
     async def _generate_html_report(self, report: Dict[str, Any], report_name: str, timestamp: str):
-"""Generate HTML report with visualizations."""
+        """Generate HTML report with visualizations."""
         tprint(f"PerformanceReporter._generate_html_report: Called")
         try:
             # Create HTML content
@@ -804,7 +804,7 @@ class PerformanceReporter:
             tprint_error(f"❌ Failed to generate HTML report: {e}")
 
     def _generate_html_executive_summary(self, summary: Dict[str, Any]) -> str:
-"""Generate HTML for executive summary."""
+        """Generate HTML for executive summary."""
         tprint(f"PerformanceReporter._generate_html_executive_summary: Called")
         html = '<div class="section"><h2>Executive Summary</h2>'
 
@@ -823,7 +823,7 @@ class PerformanceReporter:
         return html
 
     def _generate_html_model_performance(self, model_perf: Dict[str, Any]) -> str:
-"""Generate HTML for model performance."""
+        """Generate HTML for model performance."""
         tprint(f"PerformanceReporter._generate_html_model_performance: Called")
         html = '<div class="section"><h2>Model Performance Analysis</h2>'
 
@@ -847,7 +847,7 @@ class PerformanceReporter:
         return html
 
     def _generate_html_regime_analysis(self, regime_analysis: Dict[str, Any]) -> str:
-"""Generate HTML for regime analysis."""
+        """Generate HTML for regime analysis."""
         tprint(f"PerformanceReporter._generate_html_regime_analysis: Called")
         html = '<div class="section"><h2>Regime Performance Analysis</h2>'
 
@@ -871,7 +871,7 @@ class PerformanceReporter:
         return html
 
     async def _compare_model_performance(self, model_performance: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-"""Compare performance across different models."""
+        """Compare performance across different models."""
         tprint(f"PerformanceReporter._compare_model_performance: Called")
         try:
             if not model_performance:
@@ -897,7 +897,7 @@ class PerformanceReporter:
             return {}
 
     async def _analyze_ensemble_performance(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-"""Analyze ensemble model performance."""
+        """Analyze ensemble model performance."""
         tprint(f"PerformanceReporter._analyze_ensemble_performance: Called")
         try:
             if not trades:
@@ -926,7 +926,7 @@ class PerformanceReporter:
             return {}
 
     async def _calculate_trade_quality_metrics(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-"""Calculate trade quality metrics."""
+        """Calculate trade quality metrics."""
         tprint(f"PerformanceReporter._calculate_trade_quality_metrics: Called")
         try:
             if not trades:
@@ -957,7 +957,7 @@ class PerformanceReporter:
             return {}
 
     async def _analyze_model_agreement(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
-"""Analyze model agreement across trades."""
+        """Analyze model agreement across trades."""
         tprint(f"PerformanceReporter._analyze_model_agreement: Called")
         try:
             if not trades:
@@ -986,7 +986,7 @@ class PerformanceReporter:
             return {}
 
     async def _identify_drawdown_periods(self, cumulative_pnl: np.ndarray) -> List[Dict[str, Any]]:
-"""Identify drawdown periods in cumulative PnL."""
+        """Identify drawdown periods in cumulative PnL."""
         tprint(f"PerformanceReporter._identify_drawdown_periods: Called")
         try:
             if len(cumulative_pnl) < 2:
@@ -1039,6 +1039,6 @@ async def generate_trading_report(
     session_metrics: Optional[TradingSessionMetrics] = None,
     report_name: str = "trading_performance"
 ) -> Dict[str, Any]:
-"""Generate comprehensive trading performance report."""
-    tprint(f"PerformanceReporter.generate_trading_report: Called")
-    return await performance_reporter.generate_comprehensive_report(trades, session_metrics, report_name)
+        """Generate comprehensive trading performance report."""
+        tprint(f"PerformanceReporter.generate_trading_report: Called")
+        return await performance_reporter.generate_comprehensive_report(trades, session_metrics, report_name)

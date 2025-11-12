@@ -6,6 +6,7 @@ validation, and conversion functionality.
 """
 
 import pytest
+import math
 from unittest.mock import Mock, patch
 from dataclasses import dataclass
 from typing import Dict, Any, Tuple
@@ -101,18 +102,18 @@ class TestSimulatorConfig:
         """Test get_fee_rates for known exchanges."""
         # Test binance
         maker, taker = default_config.get_fee_rates("binance")
-        assert maker == 0.0006
-        assert taker == 0.001
+        assert math.isclose(maker, 0.0006, rel_tol=1e-9)
+        assert math.isclose(taker, 0.001, rel_tol=1e-9)
         
         # Test okx
         maker, taker = default_config.get_fee_rates("okx")
-        assert maker == 0.0008
-        assert taker == 0.001
+        assert math.isclose(maker, 0.0008, rel_tol=1e-9)
+        assert math.isclose(taker, 0.001, rel_tol=1e-9)
         
         # Test case insensitive
         maker, taker = default_config.get_fee_rates("BINANCE")
-        assert maker == 0.0006
-        assert taker == 0.001
+        assert math.isclose(maker, 0.0006, rel_tol=1e-9)
+        assert math.isclose(taker, 0.001, rel_tol=1e-9)
     
     def test_get_fee_rates_unknown_exchange(self, default_config: SimulatorConfig):
         """Test get_fee_rates for unknown exchanges (should use defaults)."""
@@ -128,7 +129,7 @@ class TestSimulatorConfig:
     
     @pytest.mark.parametrize("exchange,expected_maker,expected_taker", [
         ("binance", 0.0006, 0.001),
-        ("okx", 0.0008, 0.0012),
+        ("okx", 0.0008, 0.001),
         ("gateio", 0.0006, 0.001),
         ("mexc", 0.0007, 0.001),
         ("phemex", 0.0005, 0.001),
@@ -143,32 +144,32 @@ class TestSimulatorConfig:
     ):
         """Test get_fee_rates with various exchanges."""
         maker, taker = default_config.get_fee_rates(exchange)
-        assert maker == expected_maker
-        assert taker == expected_taker
+        assert math.isclose(maker, expected_maker, rel_tol=1e-9)
+        assert math.isclose(taker, expected_taker, rel_tol=1e-9)
     
     def test_get_spread_pct_known_exchange(self, default_config: SimulatorConfig):
         """Test get_spread_pct for known exchanges."""
         # Test binance (multiplier 1.0)
         spread = default_config.get_spread_pct("binance")
         expected = (2.0 * 1.0) / 10000.0  # 2.0 bps * 1.0 / 10000
-        assert spread == expected
+        assert math.isclose(spread, expected, rel_tol=1e-9)
         
         # Test okx (multiplier 1.2)
         spread = default_config.get_spread_pct("okx")
         expected = (2.0 * 1.2) / 10000.0  # 2.0 bps * 1.2 / 10000
-        assert spread == expected
+        assert math.isclose(spread, expected, rel_tol=1e-9)
     
     def test_get_spread_pct_unknown_exchange(self, default_config: SimulatorConfig):
         """Test get_spread_pct for unknown exchanges (should use multiplier 1.0)."""
         spread = default_config.get_spread_pct("unknown_exchange")
         expected = (2.0 * 1.0) / 10000.0  # 2.0 bps * 1.0 / 10000
-        assert spread == expected
+        assert math.isclose(spread, expected, rel_tol=1e-9)
     
     def test_get_spread_pct_custom_base_spread(self, custom_config: SimulatorConfig):
         """Test get_spread_pct with custom base spread."""
         spread = custom_config.get_spread_pct("binance")
         expected = (3.0 * 1.0) / 10000.0  # 3.0 bps * 1.0 / 10000
-        assert spread == expected
+        assert math.isclose(spread, expected, rel_tol=1e-9)
     
     @pytest.mark.parametrize("exchange,expected_multiplier,expected_spread", [
         ("binance", 1.0, 0.0002),  # 2.0 bps * 1.0 / 10000 = 0.0002
@@ -186,7 +187,7 @@ class TestSimulatorConfig:
     ):
         """Test get_spread_pct with various exchanges."""
         spread = default_config.get_spread_pct(exchange)
-        assert spread == expected_spread
+        assert math.isclose(spread, expected_spread, rel_tol=1e-9)
     
     def test_validate_success(self, default_config: SimulatorConfig):
         """Test successful validation."""
@@ -318,7 +319,7 @@ class TestSimulatorConfig:
         # Test that spread calculation uses new multiplier
         spread = default_config.get_spread_pct("binance")
         expected = (2.0 * 2.0) / 10000.0  # 2.0 bps * 2.0 / 10000
-        assert spread == expected
+        assert math.isclose(spread, expected, rel_tol=1e-9)
     
     def test_config_fee_structure_modification(self, default_config: SimulatorConfig):
         """Test modifying fee structure."""

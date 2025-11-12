@@ -434,8 +434,26 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         """
         start_time = time.time()
         
+        # Update context with symbol from config to ensure correct artifact storage
+        symbol = config.get('symbol', 'UNKNOWN')
+        exchange = config.get('exchange', 'binance')
+        timeframe = config.get('timeframe', '15m')
+        direction = config.get('direction', 'long')
+        
+        self._current_context.update({
+            'symbol': symbol,
+            'exchange': exchange,
+            'timeframe': timeframe,
+            'direction': direction,
+            'model': 'analyst'  # Will be updated based on execution mode
+        })
+        tprint_info(f"📁 Updated context: {symbol}/{exchange} [{timeframe}] {direction}")
+        
         # Detect execution mode
         self.execution_mode = self._detect_execution_mode(config)
+        
+        # Update model in context based on execution mode
+        self._current_context['model'] = self.execution_mode
         
         # Fast fail: Check CMI availability for Tactician mode
         if self.execution_mode == 'tactician':
@@ -671,6 +689,20 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_success(f"✅ Loaded generated_features: {generated_features.shape}")
         except Exception as e:
             raise FileNotFoundError(f"Failed to load generated_features artifact: {e}")
+        
+        # CRITICAL FIX: Deduplicate indices immediately after loading to prevent performance issues
+        # This prevents the data loading layer from spending excessive time processing duplicates
+        if labeled_data.index.duplicated().any():
+            n_dup = labeled_data.index.duplicated().sum()
+            tprint_warning(f"⚠️ Labeled data has {n_dup} duplicate indices ({n_dup/len(labeled_data)*100:.1f}%), deduplicating at load time...")
+            labeled_data = labeled_data[~labeled_data.index.duplicated(keep='first')]
+            tprint_success(f"✅ Deduplicated labeled_data to {len(labeled_data)} unique indices")
+        
+        if generated_features.index.duplicated().any():
+            n_dup = generated_features.index.duplicated().sum()
+            tprint_warning(f"⚠️ Generated features has {n_dup} duplicate indices ({n_dup/len(generated_features)*100:.1f}%), deduplicating at load time...")
+            generated_features = generated_features[~generated_features.index.duplicated(keep='first')]
+            tprint_success(f"✅ Deduplicated generated_features to {len(generated_features)} unique indices")
         
         # Apply light mode filtering
         tprint_info(f"📊 PHASE 0: Initial feature counts before filtering:")
@@ -2459,33 +2491,13 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         # Train MultiOutputRegressor with early stopping
         tprint_info(f"  🔍 DEBUG: About to create MultiOutputRegressor with early stopping...")
         
-        # Create validation split for early stopping
-        if len(features_sample) > 1000:  # Only use early stopping for larger datasets
-            val_size = min(200, len(features_sample) // 5)  # 20% or max 200 samples
-            X_train_es = features_sample.iloc[:-val_size]
-            X_val_es = features_sample.iloc[-val_size:]
-            y_train_es = targets_sample.iloc[:-val_size]
-            y_val_es = targets_sample.iloc[-val_size:]
-            
-            # Add early stopping parameters
-            lgbm_params['early_stopping_rounds'] = 20
-            lgbm_params['eval_metric'] = 'rmse'
-            
-            model = MultiOutputRegressor(lgb.LGBMRegressor(**lgbm_params))
-            
-            # Train with early stopping
-            tprint_info("  🔄 Training with early stopping...")
-            model.fit(
-                X_train_es, y_train_es,
-                eval_set=[(X_val_es, y_val_es)],
-                callbacks=[lgb.early_stopping(20, verbose=False)]
-            )
-            tprint_info("  ✅ Early stopping training completed")
-        else:
-            # For smaller datasets, train without early stopping
-            model = MultiOutputRegressor(lgb.LGBMRegressor(**lgbm_params))
-            model.fit(features_sample, targets_sample)
-            tprint_info("  ✅ Standard training completed (no early stopping for small dataset)")
+        # Train model
+        # Note: MultiOutputRegressor doesn't support early stopping or eval_set
+        # So we train directly without these features
+        model = MultiOutputRegressor(lgb.LGBMRegressor(**lgbm_params))
+        tprint_info("  🔄 Training LGBM model...")
+        model.fit(features_sample, targets_sample)
+        tprint_info("  ✅ Training completed")
         
         # Calculate performance metrics with comprehensive error reporting
         tprint_info("  📊 Calculating model performance metrics...")
@@ -3048,8 +3060,28 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         # Align features and targets by index before sampling
         
+        # CRITICAL FIX: Deduplicate indices to prevent "cannot reindex on an axis with duplicate labels" error
+        if features.index.duplicated().any():
+            n_dup = features.index.duplicated().sum()
+            tprint_warning(f"  ⚠️ Features has {n_dup} duplicate indices, deduplicating...")
+            features = features[~features.index.duplicated(keep='first')]
+            tprint_success(f"  ✅ Deduplicated features to {len(features)} unique indices")
+        
+        if targets.index.duplicated().any():
+            n_dup = targets.index.duplicated().sum()
+            tprint_warning(f"  ⚠️ Targets has {n_dup} duplicate indices, deduplicating...")
+            targets = targets[~targets.index.duplicated(keep='first')]
+            tprint_success(f"  ✅ Deduplicated targets to {len(targets)} unique indices")
+        
         # Find common indices
         common_indices = features.index.intersection(targets.index)
+        
+        # Deduplicate common_indices if needed
+        if common_indices.duplicated().any():
+            n_dup = common_indices.duplicated().sum()
+            tprint_warning(f"  ⚠️ Found {n_dup} duplicate indices in common_indices, removing duplicates...")
+            common_indices = common_indices[~common_indices.duplicated(keep='first')]
+            tprint_success(f"  ✅ Deduplicated common_indices to {len(common_indices)} unique indices")
         
         if len(common_indices) == 0:
             # Use the smaller dataset size
@@ -3569,10 +3601,14 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         )
         tprint_info(f"📁 Updated context: {symbol}/{exchange} [{timeframe}]")
         
+        # CRITICAL FIX: Save to versioned artifacts (HDF5) using artifact_type='data'
+        # This ensures the interaction features are stored in the same versioned artifacts
+        # store as generated_features and labeled_data, making them accessible to
+        # feature_generation_final_feature_selection_step via _get_artifact()
         features_path = self._save_artifact(
             data=combined_features,
             artifact_name='analyst_interaction_features',
-            artifact_type='data',
+            artifact_type='data',  # This triggers HDF5/versioned artifacts storage
             metadata=enhanced_metadata
         )
         

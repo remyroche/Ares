@@ -88,7 +88,7 @@ class TradeRecord:
     execution_quality: float = 0.0
     
     def to_csv_dict(self) -> Dict[str, Any]:
-"""Convert to dictionary suitable for CSV writing"""
+        """Convert to dictionary suitable for CSV writing"""
         tprint(f"TradingMode.to_csv_dict: Called")
         return {
             'trade_id': self.trade_id,
@@ -187,7 +187,7 @@ class DailyRecap:
     avg_volume: float = 0.0
     
     def to_csv_dict(self) -> Dict[str, Any]:
-"""Convert to dictionary suitable for CSV writing"""
+        """Convert to dictionary suitable for CSV writing"""
         tprint(f"TradingMode.to_csv_dict: Called")
         return {
             'date': self.date.isoformat(),
@@ -241,7 +241,7 @@ class TradeReportingManager:
     DEFAULT_ACCOUNT_SIZE = 10000.0  # Can be overridden via config
     
     def __init__(self, base_directory: str = "trade_monitoring", account_size: float = None):
-"""
+        """
         Initialize trade reporting manager.
         
         Args:
@@ -261,7 +261,7 @@ class TradeReportingManager:
         tprint_info(f"📊 Trade reporting manager initialized: {self.base_directory} (account_size: {self.account_size})")
     
     def _get_report_directory(self, mode: str, exchange: str, asset: str) -> Path:
-"""
+        """
         Get report directory for specific mode/exchange/asset.
         
         Args:
@@ -278,13 +278,13 @@ class TradeReportingManager:
         return report_dir
     
     def _get_storage_key(self, mode: str, exchange: str, asset: str) -> str:
-"""Get storage key for in-memory trade storage"""
+        """Get storage key for in-memory trade storage"""
         tprint(f"TradingMode._get_storage_key: Called")
         # Use delimiter that's unlikely to appear in exchange/asset names
         return f"{mode}::{exchange}::{asset}"
     
     async def record_trade(self, trade_record: TradeRecord) -> bool:
-"""
+        """
         Record a trade for reporting.
         
         Args:
@@ -322,8 +322,7 @@ class TradeReportingManager:
             return False
     
     def _get_trade_period_filename(self, trade_date: datetime) -> str:
-        tprint(f"TradingMode._get_trade_period_filename: Called")
-"""
+        """
         Generate filename for trade CSV based on 15-day periods.
         
         Files are created for:
@@ -336,6 +335,7 @@ class TradeReportingManager:
         Returns:
             Filename for the trade CSV (e.g., "trades_2025-10-01_to_2025-10-15.csv")
         """
+        tprint(f"TradingMode._get_trade_period_filename: Called")
         year = trade_date.year
         month = trade_date.month
         day = trade_date.day
@@ -354,7 +354,7 @@ class TradeReportingManager:
         return f"trades_{start_date}_to_{end_date}.csv"
     
     async def _write_trade_to_csv(self, trade_record: TradeRecord):
-"""
+        """
         Write individual trade to per-trade CSV file.
         
         Creates separate files every 15 days:
@@ -406,7 +406,7 @@ class TradeReportingManager:
         asset: str,
         target_date: Optional[date] = None
     ) -> bool:
-"""
+        """
         Generate daily recap for specific mode/exchange/asset.
         
         Args:
@@ -467,7 +467,7 @@ class TradeReportingManager:
         asset: str,
         trades: List[TradeRecord]
     ) -> DailyRecap:
-"""Calculate daily recap metrics from trades"""
+        """Calculate daily recap metrics from trades"""
         tprint(f"TradingMode._calculate_daily_recap: Called")
         try:
             recap = DailyRecap(
@@ -592,7 +592,7 @@ class TradeReportingManager:
             )
     
     async def _write_daily_recap_to_csv(self, recap: DailyRecap):
-"""Write daily recap to CSV file"""
+        """Write daily recap to CSV file"""
         tprint(f"TradingMode._write_daily_recap_to_csv: Called")
         try:
             report_dir = self._get_report_directory(
@@ -651,7 +651,7 @@ class TradeReportingManager:
             tprint_error(f"❌ Failed to write daily recap to CSV: {e}")
     
     async def generate_all_daily_recaps(self, target_date: Optional[date] = None) -> bool:
-"""
+        """
         Generate daily recaps for all tracked mode/exchange/asset combinations.
         
         Args:
@@ -689,10 +689,10 @@ class TradeReportingManager:
             tprint_error(f"❌ Failed to generate all daily recaps: {e}")
             return False
     
-    def get_trade_count(self, mode: Optional[str] = None, 
+    def get_trade_count(self, mode: Optional[str] = None,
                        exchange: Optional[str] = None,
                        asset: Optional[str] = None) -> int:
-"""Get count of trades matching criteria"""
+        """Get count of trades matching criteria"""
         tprint(f"TradingMode.get_trade_count: Called")
         count = 0
         for storage_key, trades in self.current_trades.items():
@@ -734,7 +734,7 @@ def create_trade_record_from_execution(
     regime_data: Optional[Dict[str, Any]] = None,
     market_context: Optional[Dict[str, Any]] = None
 ) -> TradeRecord:
-"""
+    """
     Create a comprehensive TradeRecord from trade execution data.
     
     Args:
@@ -915,7 +915,7 @@ def create_trade_record_from_execution(
 
 # Convenience functions
 async def record_trade(trade_record: TradeRecord) -> bool:
-"""Record a trade for reporting"""
+    """Record a trade for reporting"""
     tprint(f"TradingMode.record_trade: Called")
     return await trade_reporting_manager.record_trade(trade_record)
 
@@ -926,7 +926,7 @@ async def generate_daily_recap(
     asset: str,
     target_date: Optional[date] = None
 ) -> bool:
-"""Generate daily recap for specific mode/exchange/asset"""
+    """Generate daily recap for specific mode/exchange/asset"""
     tprint(f"TradingMode.generate_daily_recap: Called")
     return await trade_reporting_manager.generate_daily_recap(
         mode, exchange, asset, target_date
@@ -934,6 +934,6 @@ async def generate_daily_recap(
 
 
 async def generate_all_daily_recaps(target_date: Optional[date] = None) -> bool:
-"""Generate daily recaps for all tracked combinations"""
+    """Generate daily recaps for all tracked combinations"""
     tprint(f"TradingMode.generate_all_daily_recaps: Called")
     return await trade_reporting_manager.generate_all_daily_recaps(target_date)

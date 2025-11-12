@@ -1399,14 +1399,11 @@ class HierarchicalParameterOptimizer:
                     is_classification = unique_values <= 10
                 
                 # Create CV object matching what would be used
-                cv = None
-                if hasattr(self.objective_func, '__name__') and 'temporal' in self.objective_func.__name__.lower():
-                    cv = TimeSeriesSplit(n_splits=self.cv_folds)
-                else:
-                    if is_classification:
-                        cv = StratifiedKFold(n_splits=self.cv_folds, shuffle=False)
-                    else:
-                        cv = KFold(n_splits=self.cv_folds, shuffle=False)
+                # CRITICAL FIX: Always use TimeSeriesSplit for financial time series data
+                # Regular KFold can cause data leakage by using future data to predict past
+                # This ensures temporal ordering is always respected during cross-validation
+                cv = TimeSeriesSplit(n_splits=self.cv_folds)
+                logger.info(f"🕐 Using TimeSeriesSplit for temporal data (n_splits={self.cv_folds})")
                 
                 # Analyze fold sizes
                 if cv and hasattr(cv, 'split'):
@@ -1418,6 +1415,23 @@ class HierarchicalParameterOptimizer:
                             logger.warning(f"⚠️ CV WARNING: Fold {fold_idx+1} has only {len(val_idx)} validation samples (may be insufficient)")
             except Exception as cv_debug_error:
                 logger.warning(f"🔍 CV DEBUG: Could not analyze fold sizes: {cv_debug_error}")
+            
+            # Validate data before calling objective function
+            if X_train is None or len(X_train) == 0:
+                logger.warning(f"⚠️ X_train is empty (shape: {getattr(X_train, 'shape', 'None')}), returning poor score")
+                return float('-inf') if self.direction == 'maximize' else float('inf')
+            
+            if y_train is None or len(y_train) == 0:
+                logger.warning(f"⚠️ y_train is empty (shape: {getattr(y_train, 'shape', 'None')}), returning poor score")
+                return float('-inf') if self.direction == 'maximize' else float('inf')
+            
+            if X_val is not None and len(X_val) == 0:
+                logger.warning(f"⚠️ X_val is empty (shape: {getattr(X_val, 'shape', 'None')}), returning poor score")
+                return float('-inf') if self.direction == 'maximize' else float('inf')
+            
+            if y_val is not None and len(y_val) == 0:
+                logger.warning(f"⚠️ y_val is empty (shape: {getattr(y_val, 'shape', 'None')}), returning poor score")
+                return float('-inf') if self.direction == 'maximize' else float('inf')
             
             score = self.objective_func(
                 params=params,

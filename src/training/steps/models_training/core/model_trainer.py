@@ -13,6 +13,7 @@ Key Features:
 """
 
 import logging
+import os
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 import pandas as pd
@@ -111,6 +112,14 @@ class ModelTrainer(BaseTrainer):
         try:
             self.logger.info(f"🚀 Starting {self.config.role.value} model training with comprehensive metrics...")
             start_time = time.time()
+            
+            # SINGLE SOURCE OF TRUTH: Check environment variable to override HPO
+            # This takes precedence over all other config sources
+            disable_hpo_env = os.getenv('DISABLE_HPO', 'false').lower() in ('true', '1', 'yes')
+            if disable_hpo_env:
+                tprint_warning("🚫 HPO DISABLED via DISABLE_HPO environment variable")
+                tprint_info("   Using saved optimal parameters from config")
+                self.config.enable_hyperparameter_optimization = False
             
             # Start metrics collection session
             training_type = f"{self.config.role.value}_base"
@@ -216,14 +225,21 @@ class ModelTrainer(BaseTrainer):
                     hpo_n_trials = self.config.custom_params.get('hpo_n_trials', 50)
                     
                     tprint_success(f"✅ HPO completed in {hpo_time:.2f}s with {hpo_n_trials} trials")
+                    
+                    # CRITICAL FIX: Train final model with best params and get test metrics
+                    # HPO only does CV, we need train/val/test split evaluation
+                    tprint_info(f"🎯 Phase 3: Training final model with optimized parameters and evaluating on test set...")
+                    model_result = await self._train_single_model(
+                        model, model_type, processed_data, processed_targets, best_params
+                    )
                 else:
                     tprint_info(f"⏭️  Skipping HPO (disabled in config)")
-                
-                # Train final model with best parameters
-                tprint_info(f"🎯 Phase 3: Training final model with optimized parameters...")
-                model_result = await self._train_single_model(
-                    model, model_type, processed_data, processed_targets
-                )
+                    
+                    # Train model with default parameters
+                    tprint_info(f"🎯 Phase 3: Training model with default parameters...")
+                    model_result = await self._train_single_model(
+                        model, model_type, processed_data, processed_targets
+                    )
                 
                 if model_result.success:
                     # Collect post-HPO metrics using engineered data
@@ -330,11 +346,18 @@ class ModelTrainer(BaseTrainer):
         model: Any, 
         model_type: ModelType, 
         data: pd.DataFrame, 
-        targets: pd.Series
+        targets: pd.Series,
+        best_params: Optional[Dict[str, Any]] = None
     ) -> TrainingResult:
         """Train a single model with role-specific optimizations."""
         try:
             start_time = time.time()
+            
+            # Store best params for use in training functions
+            if best_params:
+                self._best_params = best_params
+            else:
+                self._best_params = {}
             
             # Role-specific feature engineering
             tprint_info(f"🔧 Training {model_type.value} - Feature engineering for {self.config.role.value}")
@@ -606,29 +629,50 @@ class ModelTrainer(BaseTrainer):
             tprint_info(f"   Training samples: {len(data)}")
             tprint_info(f"   Features: {len(data.columns)}")
 
-            # Split data for validation (required for early stopping)
+            # CRITICAL FIX: Split data into train/val/test (70/15/15) for proper evaluation
+            # This prevents overfitting detection issues and provides honest metrics
+            
+            # First split: separate test set (15%)
+            X_temp, X_test, y_temp, y_test = train_test_split(
+                data, targets, test_size=0.15, random_state=42, shuffle=False  # No shuffle for time series
+            )
+            
+            # Second split: train (70%) and validation (15%) from remaining 85%
             X_train, X_val, y_train, y_val = train_test_split(
-                data, targets, test_size=0.2, random_state=42
+                X_temp, y_temp, test_size=0.176, random_state=42, shuffle=False  # 0.176 * 0.85 ≈ 0.15
             )
 
-            tprint_info(f"   Train split: {len(X_train)} samples")
-            tprint_info(f"   Val split: {len(X_val)} samples")
+            tprint_info(f"   📊 Data splits (temporal order preserved):")
+            tprint_info(f"      Train: {len(X_train)} samples ({len(X_train)/len(data)*100:.1f}%)")
+            tprint_info(f"      Val: {len(X_val)} samples ({len(X_val)/len(data)*100:.1f}%)")
+            tprint_info(f"      Test: {len(X_test)} samples ({len(X_test)/len(data)*100:.1f}%)")
             tprint_info("=" * 80)
             
-            # Get model parameters from config (if model was passed with params)
-            # Otherwise use defaults that will be optimized by HPO
-            model_params = {}
-            if hasattr(model, 'get_params'):
-                try:
-                    model_params = model.get_params()
-                except:
-                    pass
+            # CRITICAL FIX: Load optimal params from YAML config when HPO is disabled
+            if hasattr(self, '_best_params') and self._best_params:
+                tprint_info(f"   Using HPO-optimized parameters from current session")
+                model_params = self._best_params
+            else:
+                # Load optimal params from YAML config file
+                tprint_info(f"   Loading optimal parameters from YAML config")
+                import yaml
+                from pathlib import Path
+                config_path = Path('src/training/steps/model_training/analyst_base_config.yaml')
+                if config_path.exists():
+                    with open(config_path) as f:
+                        yaml_config = yaml.safe_load(f)
+                        lgbm_config = yaml_config.get('analyst_config', {}).get('base_models', {}).get('lgbm', {})
+                        model_params = lgbm_config.get('params', {})
+                        tprint_success(f"   ✅ Loaded {len(model_params)} parameters from YAML config")
+                else:
+                    tprint_warning(f"   ⚠️  YAML config not found, using defaults")
+                    model_params = {}
             
-            # Extract hyperparameters (these come from YAML and HPO)
+            # Extract hyperparameters (from HPO, YAML, or defaults)
             n_estimators = model_params.get('n_estimators', 1000)
             learning_rate = model_params.get('learning_rate', 0.1)
             max_depth = model_params.get('max_depth', 8)
-            num_leaves = model_params.get('num_leaves', 255)
+            num_leaves = model_params.get('num_leaves', 31)
             subsample = model_params.get('subsample', 0.8)
             colsample_bytree = model_params.get('colsample_bytree', 0.8)
             reg_alpha = model_params.get('reg_alpha', 0.0)
@@ -678,25 +722,69 @@ class ModelTrainer(BaseTrainer):
             train_data = lgb.Dataset(X_train, label=y_train)
             valid_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
             
-            # Train model with validation set for early stopping
+            # Train model WITHOUT early stopping for final training
+            # Early stopping is only used during HPO
+            tprint_info(f"   Training for full {n_estimators} iterations (no early stopping)")
             model = lgb.train(
                 params,
                 train_data,
                 num_boost_round=n_estimators,
                 valid_sets=[valid_data],
-                callbacks=[lgb.early_stopping(stopping_rounds=50, verbose=False)]
+                callbacks=[]  # No early stopping for final training
             )
             
-            # Get predictions and metrics (use all data for prediction evaluation)
-            predictions = model.predict(data)
-            
-            # Use regression metrics for all roles (targets are continuous)
+            # CRITICAL FIX: Evaluate on train/val/test splits separately
+            # This provides honest metrics and detects overfitting
             from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+            
+            # Predictions on each split
+            train_pred = model.predict(X_train)
+            val_pred = model.predict(X_val)
+            test_pred = model.predict(X_test)
+            
+            # Calculate directional accuracy (for regression)
+            # Accuracy = % of predictions within acceptable error threshold
+            def calculate_accuracy(y_true, y_pred, threshold=0.1):
+                """Calculate accuracy as % of predictions within threshold of true value"""
+                errors = np.abs(y_true - y_pred)
+                within_threshold = errors <= threshold
+                return np.mean(within_threshold)
+            
+            # Metrics for each split
             metrics = {
-                'mse': mean_squared_error(targets, predictions),
-                'mae': mean_absolute_error(targets, predictions),
-                'r2': r2_score(targets, predictions),
-                'rmse': np.sqrt(mean_squared_error(targets, predictions)),
+                # Training set metrics
+                'train_mse': mean_squared_error(y_train, train_pred),
+                'train_mae': mean_absolute_error(y_train, train_pred),
+                'train_r2': r2_score(y_train, train_pred),
+                'train_rmse': np.sqrt(mean_squared_error(y_train, train_pred)),
+                'train_accuracy': calculate_accuracy(y_train, train_pred),
+                
+                # Validation set metrics
+                'val_mse': mean_squared_error(y_val, val_pred),
+                'val_mae': mean_absolute_error(y_val, val_pred),
+                'val_r2': r2_score(y_val, val_pred),
+                'val_rmse': np.sqrt(mean_squared_error(y_val, val_pred)),
+                'val_accuracy': calculate_accuracy(y_val, val_pred),
+                
+                # Test set metrics (CRITICAL - unseen data)
+                'test_mse': mean_squared_error(y_test, test_pred),
+                'test_mae': mean_absolute_error(y_test, test_pred),
+                'test_r2': r2_score(y_test, test_pred),
+                'test_rmse': np.sqrt(mean_squared_error(y_test, test_pred)),
+                'test_accuracy': calculate_accuracy(y_test, test_pred),
+                
+                # Overfitting analysis
+                'train_test_r2_gap': r2_score(y_train, train_pred) - r2_score(y_test, test_pred),
+                'overfitting_ratio': (r2_score(y_train, train_pred) - r2_score(y_test, test_pred)) / max(r2_score(y_train, train_pred), 0.01),
+                'generalization_score': r2_score(y_test, test_pred) / max(r2_score(y_train, train_pred), 0.01),
+                
+                # Legacy metrics (for backward compatibility - use test metrics)
+                'mse': mean_squared_error(y_test, test_pred),
+                'mae': mean_absolute_error(y_test, test_pred),
+                'r2': r2_score(y_test, test_pred),
+                'rmse': np.sqrt(mean_squared_error(y_test, test_pred)),
+                
+                # Model info
                 'iterations_used': model.current_iteration(),
                 'best_iteration': model.best_iteration
             }
@@ -704,7 +792,20 @@ class ModelTrainer(BaseTrainer):
             # Get feature importance
             feature_importance = dict(zip(data.columns, model.feature_importance()))
             
-            tprint_success(f"✅ LightGBM trained: {model.current_iteration()} iterations, RMSE={metrics['rmse']:.4f}")
+            # Log comprehensive results
+            tprint_success(f"✅ LightGBM trained: {model.current_iteration()} iterations")
+            tprint_info(f"   📊 Train R²: {metrics['train_r2']:.4f}, RMSE: {metrics['train_rmse']:.4f}, Accuracy: {metrics['train_accuracy']:.2%}")
+            tprint_info(f"   📊 Val R²: {metrics['val_r2']:.4f}, RMSE: {metrics['val_rmse']:.4f}, Accuracy: {metrics['val_accuracy']:.2%}")
+            tprint_info(f"   📊 Test R²: {metrics['test_r2']:.4f}, RMSE: {metrics['test_rmse']:.4f}, Accuracy: {metrics['test_accuracy']:.2%}")
+            tprint_info(f"   ⚠️  Train-Test Gap: {metrics['train_test_r2_gap']:.4f} ({metrics['overfitting_ratio']*100:.1f}%)")
+            
+            # Overfitting warning
+            if metrics['overfitting_ratio'] > 0.2:
+                tprint_warning(f"   ⚠️  HIGH OVERFITTING detected! Model may not generalize well.")
+            elif metrics['overfitting_ratio'] > 0.1:
+                tprint_warning(f"   ⚠️  Moderate overfitting detected.")
+            else:
+                tprint_success(f"   ✅ Good generalization (overfitting ratio < 10%)")
             
             return TrainingResult(
                 success=True,
@@ -782,25 +883,44 @@ class ModelTrainer(BaseTrainer):
             tprint_info(f"   Training samples: {len(data)}")
             tprint_info(f"   Features: {len(data.columns)}")
 
-            # Split data for validation (required for early stopping)
+            # CRITICAL FIX: Split data into train/val/test (70/15/15) for proper evaluation
+            # First split: separate test set (15%)
+            X_temp, X_test, y_temp, y_test = train_test_split(
+                data, targets, test_size=0.15, random_state=42, shuffle=False
+            )
+            
+            # Second split: train (70%) and validation (15%) from remaining 85%
             X_train, X_val, y_train, y_val = train_test_split(
-                data, targets, test_size=0.2, random_state=42
+                X_temp, y_temp, test_size=0.176, random_state=42, shuffle=False
             )
 
-            tprint_info(f"   Train split: {len(X_train)} samples")
-            tprint_info(f"   Val split: {len(X_val)} samples")
+            tprint_info(f"   📊 Data splits (temporal order preserved):")
+            tprint_info(f"      Train: {len(X_train)} samples ({len(X_train)/len(data)*100:.1f}%)")
+            tprint_info(f"      Val: {len(X_val)} samples ({len(X_val)/len(data)*100:.1f}%)")
+            tprint_info(f"      Test: {len(X_test)} samples ({len(X_test)/len(data)*100:.1f}%)")
             tprint_info("=" * 80)
             
-            # Get model parameters from config (if model was passed with params)
-            # Otherwise use defaults that will be optimized by HPO
-            model_params = {}
-            if hasattr(model, 'get_params'):
-                try:
-                    model_params = model.get_params()
-                except:
-                    pass
+            # CRITICAL FIX: Load optimal params from YAML config when HPO is disabled
+            if hasattr(self, '_best_params') and self._best_params:
+                tprint_info(f"   Using HPO-optimized parameters from current session")
+                model_params = self._best_params
+            else:
+                # Load optimal params from YAML config file
+                tprint_info(f"   Loading optimal parameters from YAML config")
+                import yaml
+                from pathlib import Path
+                config_path = Path('src/training/steps/model_training/analyst_base_config.yaml')
+                if config_path.exists():
+                    with open(config_path) as f:
+                        yaml_config = yaml.safe_load(f)
+                        catboost_config = yaml_config.get('analyst_config', {}).get('base_models', {}).get('catboost', {})
+                        model_params = catboost_config.get('params', {})
+                        tprint_success(f"   ✅ Loaded {len(model_params)} parameters from YAML config")
+                else:
+                    tprint_warning(f"   ⚠️  YAML config not found, using defaults")
+                    model_params = {}
             
-            # Extract hyperparameters (these come from YAML and HPO)
+            # Extract hyperparameters (from HPO, YAML, or defaults)
             iterations = model_params.get('iterations', 500)
             learning_rate = model_params.get('learning_rate', 0.1)
             depth = model_params.get('depth', 6)
@@ -857,25 +977,67 @@ class ModelTrainer(BaseTrainer):
             tprint_info(f"   Feature columns (first 20): {list(data.columns[:20])}")
             tprint_info(f"   Feature columns (last 10): {list(data.columns[-10:])}")
             
-            # Train model with validation set
+            # Train model WITHOUT early stopping for final training
+            # Early stopping is only used during HPO
+            tprint_info(f"   Training for full {iterations} iterations (no early stopping)")
             model.fit(
                 X_train, y_train, 
                 eval_set=(X_val, y_val), 
-                early_stopping_rounds=early_stopping_rounds,
+                early_stopping_rounds=None,  # No early stopping for final training
                 verbose=False,
-                use_best_model=True
+                use_best_model=False  # Train for full iterations
             )
             
-            # Get predictions and metrics (on full data)
-            predictions = model.predict(data)
-            
-            # Use regression metrics for all roles
+            # CRITICAL FIX: Evaluate on train/val/test splits separately
             from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+            
+            # Predictions on each split
+            train_pred = model.predict(X_train)
+            val_pred = model.predict(X_val)
+            test_pred = model.predict(X_test)
+            
+            # Calculate directional accuracy (for regression)
+            def calculate_accuracy(y_true, y_pred, threshold=0.1):
+                """Calculate accuracy as % of predictions within threshold of true value"""
+                errors = np.abs(y_true - y_pred)
+                within_threshold = errors <= threshold
+                return np.mean(within_threshold)
+            
+            # Metrics for each split
             metrics = {
-                'mse': mean_squared_error(targets, predictions),
-                'mae': mean_absolute_error(targets, predictions),
-                'r2': r2_score(targets, predictions),
-                'rmse': np.sqrt(mean_squared_error(targets, predictions)),
+                # Training set metrics
+                'train_mse': mean_squared_error(y_train, train_pred),
+                'train_mae': mean_absolute_error(y_train, train_pred),
+                'train_r2': r2_score(y_train, train_pred),
+                'train_rmse': np.sqrt(mean_squared_error(y_train, train_pred)),
+                'train_accuracy': calculate_accuracy(y_train, train_pred),
+                
+                # Validation set metrics
+                'val_mse': mean_squared_error(y_val, val_pred),
+                'val_mae': mean_absolute_error(y_val, val_pred),
+                'val_r2': r2_score(y_val, val_pred),
+                'val_rmse': np.sqrt(mean_squared_error(y_val, val_pred)),
+                'val_accuracy': calculate_accuracy(y_val, val_pred),
+                
+                # Test set metrics (CRITICAL - unseen data)
+                'test_mse': mean_squared_error(y_test, test_pred),
+                'test_mae': mean_absolute_error(y_test, test_pred),
+                'test_r2': r2_score(y_test, test_pred),
+                'test_rmse': np.sqrt(mean_squared_error(y_test, test_pred)),
+                'test_accuracy': calculate_accuracy(y_test, test_pred),
+                
+                # Overfitting analysis
+                'train_test_r2_gap': r2_score(y_train, train_pred) - r2_score(y_test, test_pred),
+                'overfitting_ratio': (r2_score(y_train, train_pred) - r2_score(y_test, test_pred)) / max(r2_score(y_train, train_pred), 0.01),
+                'generalization_score': r2_score(y_test, test_pred) / max(r2_score(y_train, train_pred), 0.01),
+                
+                # Legacy metrics (for backward compatibility - use test metrics)
+                'mse': mean_squared_error(y_test, test_pred),
+                'mae': mean_absolute_error(y_test, test_pred),
+                'r2': r2_score(y_test, test_pred),
+                'rmse': np.sqrt(mean_squared_error(y_test, test_pred)),
+                
+                # Model info
                 'iterations_used': model.get_best_iteration() or model.tree_count_,
                 'best_iteration': model.get_best_iteration()
             }
@@ -883,7 +1045,20 @@ class ModelTrainer(BaseTrainer):
             # Get feature importance
             feature_importance = dict(zip(data.columns, model.get_feature_importance()))
             
-            tprint_success(f"✅ CatBoost trained: {metrics['iterations_used']} iterations, RMSE={metrics['rmse']:.4f}")
+            # Log comprehensive results
+            tprint_success(f"✅ CatBoost trained: {metrics['iterations_used']} iterations")
+            tprint_info(f"   📊 Train R²: {metrics['train_r2']:.4f}, RMSE: {metrics['train_rmse']:.4f}, Accuracy: {metrics['train_accuracy']:.2%}")
+            tprint_info(f"   📊 Val R²: {metrics['val_r2']:.4f}, RMSE: {metrics['val_rmse']:.4f}, Accuracy: {metrics['val_accuracy']:.2%}")
+            tprint_info(f"   📊 Test R²: {metrics['test_r2']:.4f}, RMSE: {metrics['test_rmse']:.4f}, Accuracy: {metrics['test_accuracy']:.2%}")
+            tprint_info(f"   ⚠️  Train-Test Gap: {metrics['train_test_r2_gap']:.4f} ({metrics['overfitting_ratio']*100:.1f}%)")
+            
+            # Overfitting warning
+            if metrics['overfitting_ratio'] > 0.2:
+                tprint_warning(f"   ⚠️  HIGH OVERFITTING detected! Model may not generalize well.")
+            elif metrics['overfitting_ratio'] > 0.1:
+                tprint_warning(f"   ⚠️  Moderate overfitting detected.")
+            else:
+                tprint_success(f"   ✅ Good generalization (overfitting ratio < 10%)")
             
             return TrainingResult(
                 success=True,

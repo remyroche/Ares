@@ -12,6 +12,7 @@ from datetime import datetime, date
 import uuid
 import logging
 
+from enum import Enum
 from .config import SimulatorConfig
 from .fee_calculator import FeeCalculator
 from .slippage_calculator import SlippageCalculator
@@ -19,12 +20,17 @@ from .order_validator import OrderValidator
 from .position_manager import PositionManager, Position
 from .persistence import SimulatorPersistence
 from src.trading.reporting.trade_reporting_manager import (
-    TradeRecord, trade_reporting_manager, generate_daily_recap, 
+    TradeRecord, trade_reporting_manager, generate_daily_recap,
     create_trade_record_from_execution
 )
-from src.utils.tprint import tprint_info, tprint_success, tprint_error, tprint_debug
+from src.utils.tprint import (
+    tprint_info, tprint_success, tprint_error, tprint_debug,
+    tprint_logged, tprint_timer, tprint_performance, tprint_data_preview,
+    tprint_data_format, tprint_feature_counts, LogLevel
+)
 
 
+@tprint_logged(LogLevel.INFO, include_args=True)
 class PaperTradingSimulator:
     """
     Main paper trading simulator.
@@ -84,6 +90,7 @@ class PaperTradingSimulator:
         from . import register_simulator
         register_simulator(self.simulator_id, self)
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     async def simulate_order(
         self,
         symbol: str,
@@ -111,18 +118,22 @@ class PaperTradingSimulator:
         """
         start_time = datetime.now()
         
-        # Simulate latency
-        if self.config.enable_latency_simulation:
-            latency_ms = random.randint(
-                self.config.latency_range_ms[0],
-                self.config.latency_range_ms[1]
-            )
-            await asyncio.sleep(latency_ms / 1000.0)
-        else:
-            latency_ms = 0
+        # Preview order book data for debugging
+        tprint_data_preview(order_book, "Order Book", max_rows=5)
+        
+        # Simulate latency with timer
+        with tprint_timer("Order simulation latency"):
+            if self.config.enable_latency_simulation:
+                latency_ms = random.randint(
+                    self.config.latency_range_ms[0],
+                    self.config.latency_range_ms[1]
+                )
+                await asyncio.sleep(latency_ms / 1000.0)
+            else:
+                latency_ms = 0
         
         try:
-            # Validate order
+            # Validate order with position preview
             current_positions = {
                 pos.symbol: {
                     "quantity": pos.quantity,
@@ -132,6 +143,7 @@ class PaperTradingSimulator:
                 for pos_list in self.position_manager.positions.values()
                 for pos in pos_list
             }
+            tprint_data_preview(current_positions, "Current Positions", max_rows=10)
             
             # Get current price for validation
             reference_price = self.slippage_calculator._get_best_price(
@@ -238,7 +250,7 @@ class PaperTradingSimulator:
                             pnl += (pos.avg_entry_price - fill_price) * closed_qty
                         pnl -= fee_result.fee_amount
             
-            # Save trade to database
+            # Save trade to database with data format validation
             trade_data = {
                 "symbol": symbol,
                 "side": side,
@@ -259,6 +271,7 @@ class PaperTradingSimulator:
                 "timestamp": datetime.now().isoformat()
             }
             
+            tprint_data_format(trade_data, "Trade Data", check_compatibility=True)
             self.persistence.save_trade(self.simulator_id, trade_data)
             
             # Update state
@@ -316,6 +329,7 @@ class PaperTradingSimulator:
                 symbol, side, order_type, quantity, str(e)
             )
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True)
     def _create_rejected_response(
         self,
         symbol: str,
@@ -336,6 +350,7 @@ class PaperTradingSimulator:
             "createdAt": datetime.now().isoformat()
         }
     
+    @tprint_logged(LogLevel.DEBUG)
     def _save_state(self) -> None:
         """Save current simulator state to database."""
         config_json = self.config.to_dict()
@@ -353,14 +368,17 @@ class PaperTradingSimulator:
             config_json=config_json_str
         )
     
+    @tprint_logged(LogLevel.DEBUG)
     def get_positions(self) -> List[Dict[str, Any]]:
         """Get current positions."""
         return self.persistence.get_positions(self.simulator_id, status="open")
     
+    @tprint_logged(LogLevel.DEBUG)
     def get_trade_history(self, symbol: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
         """Get trade history."""
         return self.persistence.get_trades(self.simulator_id, symbol=symbol, limit=limit)
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True)
     async def _record_trade_for_reporting(
         self,
         symbol: str,
@@ -492,6 +510,7 @@ class PaperTradingSimulator:
         except Exception as e:
             tprint_error(f"❌ Failed to record trade for reporting: {e}")
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     async def generate_daily_report(self, symbol: str, target_date: Optional[date] = None) -> bool:
         """
         Generate daily report for a specific symbol.
@@ -523,11 +542,13 @@ class PaperTradingSimulator:
             tprint_error(f"❌ Failed to generate daily report: {e}")
             return False
     
+    @tprint_logged(LogLevel.INFO)
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics."""
         trades = self.get_trade_history()
         
         if not trades:
+            tprint_data_preview(trades, "Trade History (Empty)")
             return {
                 "total_trades": 0,
                 "winning_trades": 0,
@@ -551,6 +572,10 @@ class PaperTradingSimulator:
         total_losses = abs(sum(t.get("pnl", 0) for t in trades if t.get("pnl", 0) < 0))
         profit_factor = total_profits / total_losses if total_losses > 0 else 0.0
         
+        # Performance metrics logging
+        tprint_performance("Performance metrics calculation", 0.001)
+        tprint_feature_counts(total_trades, winning_trades, "Win/Loss Analysis")
+        
         return {
             "total_trades": total_trades,
             "winning_trades": winning_trades,
@@ -565,3 +590,26 @@ class PaperTradingSimulator:
             "net_pnl": self.current_balance - self.initial_balance,
             "net_pnl_pct": (self.current_balance - self.initial_balance) / self.initial_balance if self.initial_balance > 0 else 0.0
         }
+
+
+class OrderType(Enum):
+    """Order type enumeration"""
+    MARKET = "market"
+    LIMIT = "limit"
+    STOP = "stop"
+    STOP_LIMIT = "stop_limit"
+
+
+class OrderStatus(Enum):
+    """Order status enumeration"""
+    OPEN = "open"
+    FILLED = "filled"
+    CANCELLED = "cancelled"
+    REJECTED = "rejected"
+    PARTIALLY_FILLED = "partially_filled"
+
+
+class PositionSide(Enum):
+    """Position side enumeration"""
+    LONG = "long"
+    SHORT = "short"

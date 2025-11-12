@@ -36,6 +36,7 @@ try:
 except ImportError:
     SHAP_AVAILABLE = False
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 
 
 class FinalFeatureSelectionConfig:
@@ -50,7 +51,8 @@ class FinalFeatureSelectionConfig:
         selection_method: str = "permutation",
         scoring_threshold: float = 0.01,
         use_tree_based: bool = True,
-        use_permutation_importance: bool = True
+        use_permutation_importance: bool = True,
+        stability_weight: float = 0.0
     ):
         """
         Initialize final feature selection configuration.
@@ -62,6 +64,7 @@ class FinalFeatureSelectionConfig:
             scoring_threshold: Minimum score threshold for features
             use_tree_based: Whether to use tree-based feature importance
             use_permutation_importance: Whether to use permutation importance (captures interactions) vs standard Gini importance
+            stability_weight: Weight for stability in ranking (0-1). 0=pure importance, 0.3=30% stability, 1=pure stability
         """
         self.max_features = max_features
         self.min_features = min_features
@@ -69,6 +72,7 @@ class FinalFeatureSelectionConfig:
         self.scoring_threshold = scoring_threshold
         self.use_tree_based = use_tree_based
         self.use_permutation_importance = use_permutation_importance
+        self.stability_weight = stability_weight
 
 
 class FinalFeatureSelectionComponent:
@@ -249,7 +253,15 @@ class FinalFeatureSelectionComponent:
                 self.logger.info(f"✅ Final ranking: {len(ranked_features)} features with non-zero importance")
                 self.logger.info(f"Top 5 features: {ranked_features[:5] if len(ranked_features) >= 5 else ranked_features}")
             
-            # Step 4: Select top N features by SHAP importance
+            # Step 3.5: Apply stability-weighted ranking if enabled
+            stability_weight = getattr(self.config, 'stability_weight', 0.0)
+            if stability_weight > 0 and len(ranked_features) > 0:
+                self.logger.info(f"📊 Step 3.5: Applying stability-weighted ranking (weight={stability_weight})")
+                ranked_features = self._apply_stability_weighted_ranking(
+                    X_prefiltered, y, ranked_features, stability_weight
+                )
+            
+            # Step 4: Select top N features by SHAP importance (or stability-weighted score)
             expected_count = min(max_features, len(ranked_features))
             selected_features = ranked_features[:expected_count]
             
@@ -270,7 +282,34 @@ class FinalFeatureSelectionComponent:
             
         except Exception as e:
             self.logger.error(f"Error in feature selection: {e}")
-            return []
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            
+            # FALLBACK: Return at least some features based on simple correlation
+            self.logger.warning("⚠️ Falling back to correlation-based selection due to error")
+            try:
+                # Calculate simple correlation with target
+                correlations = {}
+                for col in feature_names:
+                    try:
+                        corr = abs(X[col].corr(y))
+                        if not np.isnan(corr):
+                            correlations[col] = corr
+                    except:
+                        pass
+                
+                # Sort by correlation and select top features
+                sorted_features = sorted(correlations.items(), key=lambda x: x[1], reverse=True)
+                max_features = min(self.config.max_features, len(sorted_features))
+                selected_features = [feat for feat, _ in sorted_features[:max_features]]
+                
+                self.logger.info(f"✅ Fallback selection: {len(selected_features)} features selected by correlation")
+                return selected_features
+            except Exception as fallback_error:
+                self.logger.error(f"❌ Fallback selection also failed: {fallback_error}")
+                # Last resort: return first N features
+                max_features = min(self.config.max_features, len(feature_names))
+                return feature_names[:max_features]
     
     def _apply_tree_based_selection(
         self,
@@ -382,6 +421,36 @@ class FinalFeatureSelectionComponent:
             if self.config.use_permutation_importance:
                 self.all_permutation_importances = feature_importance.copy()
                 self.logger.info(f"Stored SHAP/permutation importances for all {len(feature_names)} features")
+            
+            # SPECIAL ANALYSIS: Check interaction features specifically
+            interaction_features = {feat: imp for feat, imp in feature_importance.items() 
+                                   if 'interaction' in feat.lower() or '_x_' in feat.lower()}
+            if interaction_features:
+                self.logger.info(f"🔍 INTERACTION FEATURES ANALYSIS: Found {len(interaction_features)} interaction features")
+                sorted_interactions = sorted(interaction_features.items(), key=lambda x: x[1], reverse=True)
+                self.logger.info(f"📊 Top 10 interaction features by importance:")
+                for feat, imp in sorted_interactions[:10]:
+                    self.logger.info(f"   {feat}: {imp:.6f}")
+                self.logger.info(f"📊 Bottom 10 interaction features by importance:")
+                for feat, imp in sorted_interactions[-10:]:
+                    self.logger.info(f"   {feat}: {imp:.6f}")
+                
+                # Compare with overall distribution
+                all_importances = list(feature_importance.values())
+                interaction_importances = list(interaction_features.values())
+                self.logger.info(f"📊 Interaction features statistics:")
+                self.logger.info(f"   Mean importance (all features): {np.mean(all_importances):.6f}")
+                self.logger.info(f"   Mean importance (interactions): {np.mean(interaction_importances):.6f}")
+                self.logger.info(f"   Max importance (all features): {np.max(all_importances):.6f}")
+                self.logger.info(f"   Max importance (interactions): {np.max(interaction_importances):.6f}")
+                
+                # Find ranking of best interaction feature
+                sorted_all = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
+                best_interaction = sorted_interactions[0]
+                best_interaction_rank = next(i for i, (feat, _) in enumerate(sorted_all) if feat == best_interaction[0]) + 1
+                self.logger.info(f"📊 Best interaction feature '{best_interaction[0]}' ranks #{best_interaction_rank} out of {len(feature_names)}")
+            else:
+                self.logger.warning(f"⚠️ No interaction features found in feature pool (checked for 'interaction' or '_x_' in names)")
             
             # Store importances for later analysis
             self.feature_scores.update(feature_importance)
@@ -672,6 +741,128 @@ class FinalFeatureSelectionComponent:
         except Exception as e:
             self.logger.error(f"Error in redundancy detection: {e}")
             return {"error": str(e)}
+    
+    def _apply_stability_weighted_ranking(self, X: pd.DataFrame, y: pd.Series, 
+                                          ranked_features: List[str], 
+                                          stability_weight: float = 0.3) -> List[str]:
+        """
+        Re-rank features by combining SHAP importance with stability scores using log multiplication.
+        
+        Formula: combined_score = importance^(1-w) × stability^w
+        
+        This is equivalent to: exp((1-w)*log(importance) + w*log(stability))
+        
+        Log multiplication is better than addition because:
+        - Handles multiplicative relationships naturally
+        - Features need BOTH high importance AND high stability
+        - Low score in either dimension significantly reduces combined score
+        - More aligned with probabilistic interpretation
+        
+        Args:
+            X: Feature matrix
+            y: Target variable
+            ranked_features: Features ranked by SHAP importance
+            stability_weight: Weight for stability (0-1). Default 0.3 = 30% stability, 70% importance
+        
+        Returns:
+            Re-ranked feature list
+        """
+        try:
+            self.logger.info(f"🔄 Computing stability scores for {len(ranked_features)} features...")
+            
+            # Get SHAP importances (normalized to 0-1)
+            if not self.all_permutation_importances:
+                self.logger.warning("⚠️ No SHAP importances available, skipping stability weighting")
+                return ranked_features
+            
+            shap_scores = {feat: self.all_permutation_importances.get(feat, 0.0) for feat in ranked_features}
+            max_shap = max(shap_scores.values()) if shap_scores.values() else 1.0
+            normalized_shap = {feat: score / max_shap for feat, score in shap_scores.items()}
+            
+            # Compute stability scores using time windows
+            n_samples = len(X)
+            n_windows = 5
+            window_size = n_samples // n_windows
+            
+            window_importances = []
+            for i in range(n_windows):
+                start_idx = i * window_size
+                end_idx = min((i + 1) * window_size, n_samples)
+                
+                if end_idx - start_idx < 50:
+                    continue
+                
+                X_window = X.iloc[start_idx:end_idx][ranked_features]
+                y_window = y.iloc[start_idx:end_idx]
+                
+                window_importance = {}
+                for feature in ranked_features:
+                    try:
+                        corr = abs(X_window[feature].corr(y_window))
+                        window_importance[feature] = corr if not np.isnan(corr) else 0.0
+                    except:
+                        window_importance[feature] = 0.0
+                
+                window_importances.append(window_importance)
+            
+            # Calculate stability scores
+            stability_scores = {}
+            for feature in ranked_features:
+                importances = [w.get(feature, 0.0) for w in window_importances]
+                
+                if len(importances) > 0 and np.std(importances) > 0:
+                    mean_imp = np.mean(importances)
+                    std_imp = np.std(importances)
+                    cv = std_imp / mean_imp if mean_imp > 0 else 999
+                    stability_score = 1 / (1 + cv)  # Normalize to 0-1
+                else:
+                    stability_score = 1.0 if len(importances) > 0 else 0.0
+                
+                stability_scores[feature] = stability_score
+            
+            # Combine scores using log multiplication (better for multiplicative relationships)
+            # Formula: score = exp(w1*log(importance) + w2*log(stability))
+            # This is equivalent to: score = importance^w1 * stability^w2
+            combined_scores = {}
+            importance_weight = 1 - stability_weight  # e.g., 0.7
+            
+            for feature in ranked_features:
+                shap_norm = normalized_shap.get(feature, 0.0)
+                stab_score = stability_scores.get(feature, 0.0)
+                
+                # Add small epsilon to avoid log(0)
+                epsilon = 1e-10
+                shap_safe = max(shap_norm, epsilon)
+                stab_safe = max(stab_score, epsilon)
+                
+                # Log multiplication: log(A^w1 * B^w2) = w1*log(A) + w2*log(B)
+                log_combined = importance_weight * np.log(shap_safe) + stability_weight * np.log(stab_safe)
+                combined = np.exp(log_combined)
+                
+                combined_scores[feature] = combined
+            
+            # Re-rank by combined score
+            reranked = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
+            reranked_features = [feat for feat, _ in reranked]
+            
+            # Log changes
+            changes = 0
+            for i, feat in enumerate(reranked_features[:20]):  # Check top 20
+                original_rank = ranked_features.index(feat) if feat in ranked_features else -1
+                if original_rank != i:
+                    changes += 1
+            
+            self.logger.info(f"✅ Stability-weighted ranking complete (log multiplication):")
+            self.logger.info(f"   Formula: importance^{1-stability_weight:.1f} × stability^{stability_weight:.1f}")
+            self.logger.info(f"   Weight: {stability_weight:.1%} stability, {1-stability_weight:.1%} importance")
+            self.logger.info(f"   Ranking changes in top 20: {changes}")
+            self.logger.info(f"   New top 5: {reranked_features[:5]}")
+            
+            return reranked_features
+            
+        except Exception as e:
+            self.logger.error(f"Error in stability-weighted ranking: {e}")
+            return ranked_features
     
     def analyze_feature_stability(self, X: pd.DataFrame, y: pd.Series, selected_features: List[str],
                                  n_windows: int = 5) -> Dict[str, Any]:
@@ -1599,20 +1790,141 @@ class FinalFeatureSelectionComponent:
             self.logger.info(f"Reducing redundancy from {len(ranked_features)} to {target_count} features using hierarchical clustering")
             self.logger.info(f"Correlation threshold: {correlation_threshold}")
             
-            # Get feature data as numpy array for speed
-            feature_data = X[ranked_features].values
+            # ADVANCED OPTIMIZATION: Adaptive sampling + vectorization + chunking
+            n_samples = len(X)
+            n_features = len(ranked_features)
             
-            # OPTIMIZATION: Use numpy for faster correlation calculation
-            # Normalize features for correlation (mean=0, std=1)
+            # 1. USE FULL DATASET: With vectorization and chunking, we can handle the full dataset
+            if n_samples > 20000:
+                # For very large datasets (>20K), use smart sampling
+                optimal_sample_size = min(20000, n_samples)
+                self.logger.info(f"🚀 LARGE DATASET SAMPLING: Using {optimal_sample_size} samples for {n_features} features")
+                sample_indices = np.random.choice(n_samples, optimal_sample_size, replace=False)
+                feature_data = X[ranked_features].iloc[sample_indices].values
+            else:
+                # Use FULL dataset for datasets ≤20K (like our 14K dataset)
+                feature_data = X[ranked_features].values
+                optimal_sample_size = n_samples
+                self.logger.info(f"🚀 USING FULL DATASET: {optimal_sample_size} samples × {n_features} features")
+            
+            self.logger.info(f"📊 Correlation calculation: {optimal_sample_size} samples × {n_features} features")
+            
+            # 2. VECTORIZED NORMALIZATION: Batch normalize all features at once
+            self.logger.info("⚡ Vectorized normalization...")
             feature_mean = np.nanmean(feature_data, axis=0, keepdims=True)
             feature_std = np.nanstd(feature_data, axis=0, keepdims=True)
-            feature_std[feature_std == 0] = 1  # Avoid division by zero
+            
+            # Vectorized zero-std handling
+            zero_std_mask = feature_std == 0
+            feature_std = np.where(zero_std_mask, 1.0, feature_std)
+            
+            # Vectorized normalization
             feature_normalized = (feature_data - feature_mean) / feature_std
             
-            # Calculate correlation matrix using matrix multiplication (much faster)
-            n_samples = feature_normalized.shape[0]
-            corr_matrix = np.dot(feature_normalized.T, feature_normalized) / n_samples
+            # 3. OPTIMIZED CORRELATION: GPU acceleration (M1) + Symmetric matrix optimization
+            import time
+            chunk_start_time = time.time()
+            
+            # Try GPU acceleration first (Mac M1 Metal Performance Shaders via PyTorch MPS)
+            # GPU is beneficial when: n_features * n_samples > 1M (transfer overhead is worth it)
+            use_gpu = False
+            gpu_threshold = 1_000_000  # Empirical threshold where GPU becomes faster
+            workload_size = n_features * optimal_sample_size
+            
+            try:
+                import torch
+                if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+                    if workload_size > gpu_threshold:
+                        use_gpu = True
+                        tprint(f"🚀 Mac M1 GPU (Metal) detected - workload {workload_size/1e6:.1f}M > threshold", "SUCCESS")
+                    else:
+                        tprint(f"ℹ️ GPU available but workload too small ({workload_size/1e6:.1f}M < {gpu_threshold/1e6:.1f}M)", "INFO")
+                        tprint("   Using optimized CPU (faster for small matrices)", "INFO")
+            except (ImportError, AttributeError):
+                self.logger.info("ℹ️ GPU acceleration not available, using optimized CPU")
+            
+            if use_gpu:
+                # GPU-ACCELERATED CORRELATION (Mac M1 Metal)
+                try:
+                    self.logger.info(f"🎮 GPU CORRELATION: Processing {n_features} features on M1 GPU")
+                    
+                    # Transfer to GPU
+                    device = torch.device("mps")
+                    feature_tensor = torch.from_numpy(feature_normalized.astype(np.float32)).to(device)
+                    
+                    # Compute correlation on GPU (no chunking needed!)
+                    corr_matrix_gpu = torch.mm(feature_tensor.T, feature_tensor) / optimal_sample_size
+                    
+                    # Transfer back to CPU
+                    corr_matrix = corr_matrix_gpu.cpu().numpy()
+                    
+                    total_time = time.time() - chunk_start_time
+                    self.logger.info(f"✅ GPU correlation completed in {total_time:.1f}s (M1 Metal)")
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ GPU acceleration failed: {e}")
+                    self.logger.info("   Falling back to optimized CPU correlation")
+                    use_gpu = False
+            
+            if not use_gpu:
+                # CPU-OPTIMIZED CORRELATION with symmetric matrix optimization
+                if n_features > 200:
+                    # SYMMETRIC MATRIX OPTIMIZATION: Only compute upper triangle
+                    chunk_size = min(250, max(100, n_features // 3))
+                    total_chunks = (n_features - 1) // chunk_size + 1
+                    total_pairs = (total_chunks * (total_chunks + 1)) // 2  # Upper triangle only
+                    
+                    tprint(f"🧩 SYMMETRIC CHUNKED CORRELATION: Processing {n_features} features", "INFO")
+                    tprint(f"   Chunk size: {chunk_size} features", "INFO")
+                    tprint(f"   Total chunks: {total_chunks}", "INFO")
+                    tprint(f"   Upper triangle pairs: {total_pairs} (vs {total_chunks * total_chunks} full matrix)", "INFO")
+                    tprint(f"   Speedup: {(total_chunks * total_chunks) / total_pairs:.1f}x fewer computations", "INFO")
+                    
+                    corr_matrix = np.zeros((n_features, n_features), dtype=np.float32)
+                    chunk_count = 0
+                    
+                    # Only compute upper triangle (i <= j)
+                    for i in range(0, n_features, chunk_size):
+                        end_i = min(i + chunk_size, n_features)
+                        chunk_i = feature_normalized[:, i:end_i].astype(np.float32)
+                        chunk_num_i = i // chunk_size + 1
+                        
+                        # Start from i (not 0) to only compute upper triangle
+                        for j in range(i, n_features, chunk_size):
+                            end_j = min(j + chunk_size, n_features)
+                            chunk_j = feature_normalized[:, j:end_j].astype(np.float32)
+                            chunk_num_j = j // chunk_size + 1
+                            
+                            # Vectorized correlation calculation for this chunk pair
+                            corr_chunk = np.dot(chunk_i.T, chunk_j) / optimal_sample_size
+                            corr_matrix[i:end_i, j:end_j] = corr_chunk
+                            
+                            # Mirror to lower triangle (except diagonal blocks)
+                            if i != j:
+                                corr_matrix[j:end_j, i:end_i] = corr_chunk.T
+                            
+                            chunk_count += 1
+                            
+                            # Progress update every 10% or every row completion
+                            if chunk_count % max(1, total_pairs // 10) == 0 or j + chunk_size >= n_features:
+                                elapsed = time.time() - chunk_start_time
+                                progress_pct = (chunk_count / total_pairs) * 100
+                                eta = (elapsed / chunk_count) * (total_pairs - chunk_count) if chunk_count > 0 else 0
+                                tprint(f"   📊 Chunk [{chunk_num_i},{chunk_num_j}] | Progress: {progress_pct:.1f}% | Elapsed: {elapsed:.1f}s | ETA: {eta:.1f}s", "INFO")
+                    
+                    total_time = time.time() - chunk_start_time
+                    tprint(f"✅ Symmetric chunked correlation completed in {total_time:.1f}s", "SUCCESS")
+                else:
+                    # Standard vectorized correlation for smaller feature sets
+                    tprint(f"⚡ Standard vectorized correlation for {n_features} features...", "INFO")
+                    corr_matrix = np.dot(feature_normalized.astype(np.float32).T, 
+                                        feature_normalized.astype(np.float32)) / optimal_sample_size
+                    total_time = time.time() - chunk_start_time
+                    tprint(f"✅ Correlation completed in {total_time:.1f}s", "SUCCESS")
+            
+            # Ensure correlation matrix is properly bounded and symmetric
             corr_matrix = np.abs(corr_matrix)  # Absolute correlation
+            corr_matrix = np.clip(corr_matrix, 0, 1)  # Ensure [0,1] range
             
             # Handle NaN values
             nan_mask = np.isnan(corr_matrix)

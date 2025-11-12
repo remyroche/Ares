@@ -17,7 +17,7 @@ import os
 import json
 import yaml
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Union, Type
+from typing import Dict, List, Any, Optional, Union, Type, Callable
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 import logging
@@ -35,7 +35,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint
+from src.utils.tprint import (
+    tprint, tprint_logged, tprint_data_preview, tprint_data_format,
+    tprint_timer, tprint_performance, tprint_feature_counts, LogLevel
+)
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +184,7 @@ class ConfigurationManager:
     
     def __init__(self, config_dir: str = "config"):
         """Initialize the configuration manager"""
-        tprint(f"Initializing ConfigurationManager with config_dir={config_dir}", "INFO")
+        tprint(f"Initializing ConfigurationManager with config_dir={config_dir}", LogLevel.INFO)
         self.config_dir = Path(config_dir)
         self.config_dir.mkdir(exist_ok=True)
 
@@ -190,7 +193,7 @@ class ConfigurationManager:
         # Configuration state
         self._config: Optional[ExchangeOHLCVConfig] = None
         self._config_lock = threading.RLock()
-        self._config_watchers: List[callable] = []
+        self._config_watchers: List[Callable] = []
 
         # Configuration sources
         self._config_sources: Dict[str, ConfigSource] = {}
@@ -200,11 +203,11 @@ class ConfigurationManager:
         self._load_default_config()
 
         self.logger.info("✅ ConfigurationManager initialized")
-        tprint("ConfigurationManager initialized successfully", "SUCCESS")
+        tprint("ConfigurationManager initialized successfully", LogLevel.SUCCESS)
     
     def _load_default_config(self):
         """Load default configuration"""
-        tprint("Loading default configuration", "INFO")
+        tprint("Loading default configuration", LogLevel.INFO)
         self._config = ExchangeOHLCVConfig()
         
         # Add default exchange configurations
@@ -243,6 +246,7 @@ class ConfigurationManager:
             "min_success_rate": 0.95
         }
     
+    @tprint_logged(LogLevel.INFO)
     def load_config(self, config_path: Union[str, Path], source: ConfigSource = ConfigSource.FILE) -> bool:
         """
         Load configuration from file.
@@ -254,56 +258,60 @@ class ConfigurationManager:
         Returns:
             True if configuration loaded successfully
         """
-        tprint(f"Loading configuration from {config_path}, source={source.value}", "INFO")
-        try:
-            config_path = Path(config_path)
+        tprint(f"📁 ConfigurationManager.load_config - Chargement depuis {config_path}", LogLevel.INFO)
+        tprint_data_preview({"config_path": str(config_path), "source": source.value}, "ConfigurationManager.load_config - paramètres")
+        tprint_data_format(config_path, "ConfigurationManager.load_config - config_path")
+        with tprint_timer("ConfigurationManager.load_config - Temps de chargement"):
+            try:
+                config_path = Path(config_path)
 
-            if not config_path.exists():
-                self.logger.error(f"Configuration file not found: {config_path}")
-                tprint(f"Configuration file not found: {config_path}", "ERROR")
-                return False
-            
-            # Load configuration based on file extension
-            if config_path.suffix.lower() == '.json':
-                with open(config_path, 'r') as f:
-                    config_data = json.load(f)
-            elif config_path.suffix.lower() in ['.yml', '.yaml']:
-                with open(config_path, 'r') as f:
-                    config_data = yaml.safe_load(f)
-            else:
-                self.logger.error(f"Unsupported configuration file format: {config_path.suffix}")
-                return False
-            
-            # Convert to configuration object
-            new_config = self._dict_to_config(config_data)
-            
-            # Validate configuration
-            if not self._validate_config(new_config):
-                self.logger.error("Configuration validation failed")
-                return False
-            
-            # Update configuration
-            with self._config_lock:
-                self._config = new_config
-                self._config.updated_at = datetime.now(timezone.utc)
-                self._config.config_source = source.value
-            
-            # Store configuration source info
-            self._config_sources[source.value] = source
-            self._config_files[source.value] = config_path
-            
-            # Notify watchers
-            self._notify_config_watchers()
+                if not config_path.exists():
+                    self.logger.error(f"Configuration file not found: {config_path}")
+                    tprint(f"Configuration file not found: {config_path}", LogLevel.ERROR)
+                    return False
+                
+                # Load configuration based on file extension
+                if config_path.suffix.lower() == '.json':
+                    with open(config_path, 'r') as f:
+                        config_data = json.load(f)
+                elif config_path.suffix.lower() in ['.yml', '.yaml']:
+                    with open(config_path, 'r') as f:
+                        config_data = yaml.safe_load(f)
+                else:
+                    self.logger.error(f"Unsupported configuration file format: {config_path.suffix}")
+                    return False
+                
+                # Convert to configuration object
+                new_config = self._dict_to_config(config_data)
+                
+                # Validate configuration
+                if not self._validate_config(new_config):
+                    self.logger.error("Configuration validation failed")
+                    return False
+                
+                # Update configuration
+                with self._config_lock:
+                    self._config = new_config
+                    self._config.updated_at = datetime.now(timezone.utc)
+                    self._config.config_source = source.value
+                
+                # Store configuration source info
+                self._config_sources[source.value] = source
+                self._config_files[source.value] = config_path
+                
+                # Notify watchers
+                self._notify_config_watchers()
 
-            self.logger.info(f"✅ Configuration loaded from {config_path}")
-            tprint(f"Configuration loaded successfully from {config_path}", "SUCCESS")
-            return True
+                self.logger.info(f"✅ Configuration loaded from {config_path}")
+                tprint(f"Configuration loaded successfully from {config_path}", LogLevel.SUCCESS)
+                return True
 
-        except Exception as e:
-            self.logger.error(f"Failed to load configuration from {config_path}: {e}")
-            tprint(f"Failed to load configuration: {e}", "ERROR")
-            return False
+            except Exception as e:
+                self.logger.error(f"Failed to load configuration from {config_path}: {e}")
+                tprint(f"Failed to load configuration: {e}", LogLevel.ERROR)
+                return False
     
+    @tprint_logged(LogLevel.INFO)
     def save_config(self, config_path: Union[str, Path], format: str = "json") -> bool:
         """
         Save current configuration to file.
@@ -315,46 +323,49 @@ class ConfigurationManager:
         Returns:
             True if configuration saved successfully
         """
-        tprint(f"Saving configuration to {config_path}, format={format}", "INFO")
-        try:
-            config_path = Path(config_path)
-            config_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            with self._config_lock:
-                if self._config is None:
-                    self.logger.error("No configuration to save")
-                    tprint("No configuration to save", "ERROR")
-                    return False
+        tprint(f"💾 ConfigurationManager.save_config - Sauvegarde vers {config_path}", LogLevel.INFO)
+        tprint_data_preview({"config_path": str(config_path), "format": format}, "ConfigurationManager.save_config - paramètres")
+        with tprint_timer("ConfigurationManager.save_config - Temps de sauvegarde"):
+            try:
+                config_path = Path(config_path)
+                config_path.parent.mkdir(parents=True, exist_ok=True)
                 
-                config_dict = asdict(self._config)
-                
-                if format.lower() == 'json':
-                    with open(config_path, 'w') as f:
-                        json.dump(config_dict, f, indent=2, default=str)
-                elif format.lower() in ['yml', 'yaml']:
-                    with open(config_path, 'w') as f:
-                        yaml.dump(config_dict, f, default_flow_style=False)
-                else:
-                    self.logger.error(f"Unsupported format: {format}")
-                    tprint(f"Unsupported format: {format}", "ERROR")
-                    return False
+                with self._config_lock:
+                    if self._config is None:
+                        self.logger.error("No configuration to save")
+                        tprint("No configuration to save", LogLevel.ERROR)
+                        return False
+                    
+                    config_dict = asdict(self._config)
+                    
+                    if format.lower() == 'json':
+                        with open(config_path, 'w') as f:
+                            json.dump(config_dict, f, indent=2, default=str)
+                    elif format.lower() in ['yml', 'yaml']:
+                        with open(config_path, 'w') as f:
+                            yaml.dump(config_dict, f, default_flow_style=False)
+                    else:
+                        self.logger.error(f"Unsupported format: {format}")
+                        tprint(f"Unsupported format: {format}", LogLevel.ERROR)
+                        return False
 
-            self.logger.info(f"✅ Configuration saved to {config_path}")
-            tprint(f"Configuration saved successfully to {config_path}", "SUCCESS")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Failed to save configuration to {config_path}: {e}")
-            tprint(f"Failed to save configuration: {e}", "ERROR")
-            return False
+                    self.logger.info(f"✅ Configuration saved to {config_path}")
+                    tprint(f"Configuration saved successfully to {config_path}", LogLevel.SUCCESS)
+                    return True
+                
+            except Exception as e:
+                self.logger.error(f"Failed to save configuration to {config_path}: {e}")
+                tprint(f"Failed to save configuration: {e}", LogLevel.ERROR)
+                return False
     
     def get_config(self) -> ExchangeOHLCVConfig:
         """Get current configuration"""
         with self._config_lock:
             if self._config is None:
                 self._load_default_config()
-            return self._config
+            return self._config  # type: ignore
     
+    @tprint_logged(LogLevel.INFO)
     def update_config(self, updates: Dict[str, Any]) -> bool:
         """
         Update configuration with new values.
@@ -365,75 +376,82 @@ class ConfigurationManager:
         Returns:
             True if configuration updated successfully
         """
-        tprint(f"Updating configuration with {len(updates)} changes", "INFO")
-        try:
-            with self._config_lock:
-                if self._config is None:
-                    self._load_default_config()
+        tprint(f"🔄 ConfigurationManager.update_config - Mise à jour avec {len(updates)} modifications", LogLevel.INFO)
+        tprint_data_preview({"updates_count": len(updates), "keys": list(updates.keys())[:5]}, "ConfigurationManager.update_config - modifications")
+        tprint_data_format(updates, "ConfigurationManager.update_config - updates")
+        with tprint_timer("ConfigurationManager.update_config - Temps de mise à jour"):
+            try:
+                with self._config_lock:
+                    if self._config is None:
+                        self._load_default_config()
+                    
+                    # Apply updates
+                    self._apply_config_updates(self._config, updates)
+                    self._config.updated_at = datetime.now(timezone.utc)
+                    
+                    # Validate updated configuration
+                    if not self._validate_config(self._config):  # type: ignore
+                        self.logger.error("Configuration validation failed after update")
+                        return False
                 
-                # Apply updates
-                self._apply_config_updates(self._config, updates)
-                self._config.updated_at = datetime.now(timezone.utc)
-                
-                # Validate updated configuration
-                if not self._validate_config(self._config):
-                    self.logger.error("Configuration validation failed after update")
-                    return False
-            
-            # Notify watchers
-            self._notify_config_watchers()
+                # Notify watchers
+                self._notify_config_watchers()
 
-            self.logger.info("✅ Configuration updated successfully")
-            tprint("Configuration updated successfully", "SUCCESS")
-            return True
+                self.logger.info("✅ Configuration updated successfully")
+                tprint("Configuration updated successfully", LogLevel.SUCCESS)
+                return True
 
-        except Exception as e:
-            self.logger.error(f"Failed to update configuration: {e}")
-            tprint(f"Failed to update configuration: {e}", "ERROR")
-            return False
+            except Exception as e:
+                self.logger.error(f"Failed to update configuration: {e}")
+                tprint(f"Failed to update configuration: {e}", LogLevel.ERROR)
+                return False
     
+    @tprint_logged(LogLevel.INFO)
     def get_exchange_config(self, exchange_name: str) -> Optional[ExchangeConfig]:
         """Get configuration for specific exchange"""
-        tprint(f"Getting configuration for exchange: {exchange_name}", "INFO")
+        tprint(f"🏢 ConfigurationManager.get_exchange_config - Récupération pour {exchange_name}", LogLevel.INFO)
         config = self.get_config()
         return config.exchanges.get(exchange_name)
     
+    @tprint_logged(LogLevel.INFO)
     def update_exchange_config(self, exchange_name: str, updates: Dict[str, Any]) -> bool:
         """Update configuration for specific exchange"""
-        tprint(f"Updating configuration for exchange {exchange_name} with {len(updates)} changes", "INFO")
-        try:
-            with self._config_lock:
-                if self._config is None:
-                    self._load_default_config()
+        tprint(f"🏢 ConfigurationManager.update_exchange_config - Mise à jour pour {exchange_name}", LogLevel.INFO)
+        tprint_data_preview({"exchange": exchange_name, "updates_count": len(updates)}, "ConfigurationManager.update_exchange_config - modifications")
+        with tprint_timer("ConfigurationManager.update_exchange_config - Temps de mise à jour"):
+            try:
+                with self._config_lock:
+                    if self._config is None:
+                        self._load_default_config()
+                    
+                    if exchange_name not in self._config.exchanges:
+                        self.logger.error(f"Exchange {exchange_name} not found in configuration")
+                        tprint(f"Exchange {exchange_name} not found in configuration", LogLevel.ERROR)
+                        return False
+                    
+                    # Apply updates to exchange config
+                    exchange_config = self._config.exchanges[exchange_name]
+                    self._apply_config_updates(exchange_config, updates)
+                    
+                    self._config.updated_at = datetime.now(timezone.utc)
                 
-                if exchange_name not in self._config.exchanges:
-                    self.logger.error(f"Exchange {exchange_name} not found in configuration")
-                    tprint(f"Exchange {exchange_name} not found in configuration", "ERROR")
-                    return False
-                
-                # Apply updates to exchange config
-                exchange_config = self._config.exchanges[exchange_name]
-                self._apply_config_updates(exchange_config, updates)
-                
-                self._config.updated_at = datetime.now(timezone.utc)
-            
-            # Notify watchers
-            self._notify_config_watchers()
+                # Notify watchers
+                self._notify_config_watchers()
 
-            self.logger.info(f"✅ Configuration updated for exchange {exchange_name}")
-            tprint(f"Configuration updated successfully for exchange {exchange_name}", "SUCCESS")
-            return True
+                self.logger.info(f"✅ Configuration updated for exchange {exchange_name}")
+                tprint(f"Configuration updated successfully for exchange {exchange_name}", LogLevel.SUCCESS)
+                return True
             
-        except Exception as e:
-            self.logger.error(f"Failed to update exchange configuration: {e}")
-            tprint(f"Failed to update exchange configuration: {e}", "ERROR")
-            return False
+            except Exception as e:
+                self.logger.error(f"Failed to update exchange configuration: {e}")
+                tprint(f"Failed to update exchange configuration: {e}", LogLevel.ERROR)
+                return False
     
-    def add_config_watcher(self, callback: callable):
+    def add_config_watcher(self, callback: Callable):
         """Add configuration change watcher"""
         self._config_watchers.append(callback)
     
-    def remove_config_watcher(self, callback: callable):
+    def remove_config_watcher(self, callback: Callable):
         """Remove configuration change watcher"""
         if callback in self._config_watchers:
             self._config_watchers.remove(callback)
@@ -487,126 +505,137 @@ class ConfigurationManager:
                     # Direct attribute update
                     setattr(config_obj, key, value)
     
+    @tprint_logged(LogLevel.INFO)
     def _validate_config(self, config: ExchangeOHLCVConfig) -> bool:
         """Validate configuration"""
-        tprint("Validating configuration", "INFO")
-        try:
-            # Validate system configuration
-            if not config.system.environment in [e.value for e in ConfigEnvironment]:
-                self.logger.error(f"Invalid environment: {config.system.environment}")
-                tprint(f"Invalid environment: {config.system.environment}", "ERROR")
-                return False
-            
-            # Validate exchange configurations
-            for name, exchange_config in config.exchanges.items():
-                if not exchange_config.name:
-                    self.logger.error(f"Exchange {name} missing name")
+        tprint("🔍 ConfigurationManager._validate_config - Validation de la configuration", LogLevel.INFO)
+        tprint_data_preview({
+            "environment": config.system.environment,
+            "exchanges_count": len(config.exchanges),
+            "validation_level": config.quality.validation_level
+        }, "ConfigurationManager._validate_config - paramètres")
+        with tprint_timer("ConfigurationManager._validate_config - Temps de validation"):
+            try:
+                # Validate system configuration
+                if not config.system.environment in [e.value for e in ConfigEnvironment]:
+                    self.logger.error(f"Invalid environment: {config.system.environment}")
+                    tprint(f"Invalid environment: {config.system.environment}", LogLevel.ERROR)
                     return False
                 
-                if not exchange_config.base_url:
-                    self.logger.error(f"Exchange {name} missing base_url")
+                # Validate exchange configurations
+                for name, exchange_config in config.exchanges.items():
+                    if not exchange_config.name:
+                        self.logger.error(f"Exchange {name} missing name")
+                        return False
+                    
+                    if not exchange_config.base_url:
+                        self.logger.error(f"Exchange {name} missing base_url")
+                        return False
+                
+                # Validate data processing configuration
+                if config.data_processing.batch_size <= 0:
+                    self.logger.error("Invalid batch_size")
                     return False
-            
-            # Validate data processing configuration
-            if config.data_processing.batch_size <= 0:
-                self.logger.error("Invalid batch_size")
-                return False
-            
-            if config.data_processing.max_memory_usage_mb <= 0:
-                self.logger.error("Invalid max_memory_usage_mb")
-                return False
-            
-            # Validate quality configuration
-            if not config.quality.validation_level in [l.value for l in DataQualityLevel]:
-                self.logger.error(f"Invalid validation_level: {config.quality.validation_level}")
-                return False
-            
-            if not 0 <= config.quality.quality_threshold <= 100:
-                self.logger.error(f"Invalid quality_threshold: {config.quality.quality_threshold}")
-                return False
+                
+                if config.data_processing.max_memory_usage_mb <= 0:
+                    self.logger.error("Invalid max_memory_usage_mb")
+                    return False
+                
+                # Validate quality configuration
+                if not config.quality.validation_level in [l.value for l in DataQualityLevel]:
+                    self.logger.error(f"Invalid validation_level: {config.quality.validation_level}")
+                    return False
+                
+                if not 0 <= config.quality.quality_threshold <= 100:
+                    self.logger.error(f"Invalid quality_threshold: {config.quality.quality_threshold}")
+                    return False
 
-            tprint("Configuration validation successful", "SUCCESS")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Configuration validation error: {e}")
-            tprint(f"Configuration validation error: {e}", "ERROR")
-            return False
+                tprint("Configuration validation successful", LogLevel.SUCCESS)
+                return True
+                
+            except Exception as e:
+                self.logger.error(f"Configuration validation error: {e}")
+                tprint(f"Configuration validation error: {e}", LogLevel.ERROR)
+                return False
     
+    @tprint_logged(LogLevel.INFO)
     def load_from_environment(self) -> bool:
         """Load configuration from environment variables"""
-        tprint("Loading configuration from environment variables", "INFO")
-        try:
-            updates = {}
-            
-            # System configuration
-            if os.getenv('EXCHANGE_ENVIRONMENT'):
-                updates['system'] = {'environment': os.getenv('EXCHANGE_ENVIRONMENT')}
-            
-            if os.getenv('EXCHANGE_DEBUG'):
-                updates['system'] = updates.get('system', {})
-                updates['system']['debug_mode'] = os.getenv('EXCHANGE_DEBUG').lower() == 'true'
-            
-            # Exchange configurations
-            for exchange in ['binance', 'bingx', 'okx', 'mexc']:
-                exchange_updates = {}
+        tprint("🌍 ConfigurationManager.load_from_environment - Chargement depuis les variables d'environnement", LogLevel.INFO)
+        with tprint_timer("ConfigurationManager.load_from_environment - Temps de chargement"):
+            try:
+                updates = {}
                 
-                if os.getenv(f'{exchange.upper()}_API_KEY'):
-                    exchange_updates['api_key'] = os.getenv(f'{exchange.upper()}_API_KEY')
+                # System configuration
+                if os.getenv('EXCHANGE_ENVIRONMENT'):
+                    updates['system'] = {'environment': os.getenv('EXCHANGE_ENVIRONMENT')}
                 
-                if os.getenv(f'{exchange.upper()}_API_SECRET'):
-                    exchange_updates['api_secret'] = os.getenv(f'{exchange.upper()}_API_SECRET')
+                if os.getenv('EXCHANGE_DEBUG'):
+                    updates['system'] = updates.get('system', {})
+                    updates['system']['debug_mode'] = os.getenv('EXCHANGE_DEBUG').lower() == 'true'
                 
-                if os.getenv(f'{exchange.upper()}_BASE_URL'):
-                    exchange_updates['base_url'] = os.getenv(f'{exchange.upper()}_BASE_URL')
+                # Exchange configurations
+                for exchange in ['binance', 'bingx', 'okx', 'mexc']:
+                    exchange_updates = {}
+                    
+                    if os.getenv(f'{exchange.upper()}_API_KEY'):
+                        exchange_updates['api_key'] = os.getenv(f'{exchange.upper()}_API_KEY')
+                    
+                    if os.getenv(f'{exchange.upper()}_API_SECRET'):
+                        exchange_updates['api_secret'] = os.getenv(f'{exchange.upper()}_API_SECRET')
+                    
+                    if os.getenv(f'{exchange.upper()}_BASE_URL'):
+                        exchange_updates['base_url'] = os.getenv(f'{exchange.upper()}_BASE_URL')
+                    
+                    if os.getenv(f'{exchange.upper()}_ENABLED'):
+                        exchange_updates['enabled'] = os.getenv(f'{exchange.upper()}_ENABLED').lower() == 'true'
+                    
+                    if exchange_updates:
+                        updates['exchanges'] = updates.get('exchanges', {})
+                        updates['exchanges'][exchange] = exchange_updates
                 
-                if os.getenv(f'{exchange.upper()}_ENABLED'):
-                    exchange_updates['enabled'] = os.getenv(f'{exchange.upper()}_ENABLED').lower() == 'true'
+                # Data processing configuration
+                if os.getenv('BATCH_SIZE'):
+                    updates['data_processing'] = updates.get('data_processing', {})
+                    updates['data_processing']['batch_size'] = int(os.getenv('BATCH_SIZE') or '1000')
                 
-                if exchange_updates:
-                    updates['exchanges'] = updates.get('exchanges', {})
-                    updates['exchanges'][exchange] = exchange_updates
-            
-            # Data processing configuration
-            if os.getenv('BATCH_SIZE'):
-                updates['data_processing'] = updates.get('data_processing', {})
-                updates['data_processing']['batch_size'] = int(os.getenv('BATCH_SIZE'))
-            
-            if os.getenv('MAX_MEMORY_MB'):
-                updates['data_processing'] = updates.get('data_processing', {})
-                updates['data_processing']['max_memory_usage_mb'] = int(os.getenv('MAX_MEMORY_MB'))
-            
-            # Quality configuration
-            if os.getenv('QUALITY_LEVEL'):
-                updates['quality'] = updates.get('quality', {})
-                updates['quality']['validation_level'] = os.getenv('QUALITY_LEVEL')
-            
-            if os.getenv('QUALITY_THRESHOLD'):
-                updates['quality'] = updates.get('quality', {})
-                updates['quality']['quality_threshold'] = float(os.getenv('QUALITY_THRESHOLD'))
-            
-            if updates:
-                tprint(f"Loaded {len(updates)} configuration sections from environment", "SUCCESS")
-                return self.update_config(updates)
+                if os.getenv('MAX_MEMORY_MB'):
+                    updates['data_processing'] = updates.get('data_processing', {})
+                    updates['data_processing']['max_memory_usage_mb'] = int(os.getenv('MAX_MEMORY_MB') or '1000')
+                
+                # Quality configuration
+                if os.getenv('QUALITY_LEVEL'):
+                    updates['quality'] = updates.get('quality', {})
+                    updates['quality']['validation_level'] = os.getenv('QUALITY_LEVEL')
+                
+                if os.getenv('QUALITY_THRESHOLD'):
+                    updates['quality'] = updates.get('quality', {})
+                    updates['quality']['quality_threshold'] = float(os.getenv('QUALITY_THRESHOLD') or '75.0')
+                
+                if updates:
+                    tprint(f"Loaded {len(updates)} configuration sections from environment", LogLevel.SUCCESS)
+                    return self.update_config(updates)
 
-            tprint("No environment configuration found, using defaults", "INFO")
-            return True
+                tprint("No environment configuration found, using defaults", LogLevel.INFO)
+                return True
             
-        except Exception as e:
-            self.logger.error(f"Failed to load configuration from environment: {e}")
-            tprint(f"Failed to load configuration from environment: {e}", "ERROR")
-            return False
+            except Exception as e:
+                self.logger.error(f"Failed to load configuration from environment: {e}")
+                tprint(f"Failed to load configuration from environment: {e}", LogLevel.ERROR)
+                return False
     
     def export_config(self, filepath: Union[str, Path], format: str = "json") -> bool:
         """Export current configuration to file"""
         return self.save_config(filepath, format)
     
+    @tprint_logged(LogLevel.INFO)
     def get_config_summary(self) -> Dict[str, Any]:
         """Get configuration summary"""
-        tprint("Generating configuration summary", "INFO")
-        config = self.get_config()
-        
-        return {
+        tprint("📊 ConfigurationManager.get_config_summary - Génération du résumé", LogLevel.INFO)
+        with tprint_timer("ConfigurationManager.get_config_summary - Temps de génération"):
+            config = self.get_config()
+            
+            return {
             'version': config.version,
             'environment': config.system.environment,
             'debug_mode': config.system.debug_mode,

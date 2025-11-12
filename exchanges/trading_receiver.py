@@ -14,13 +14,53 @@ from dataclasses import dataclass, field
 from enum import Enum
 import logging
 
-from src.utils.tprint import tprint
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success,
+    tprint_progress, tprint_performance, tprint_data_preview, tprint_data_format,
+    tprint_timer, tprint_feature_counts, tprint_logged, LogLevel
+)
 from .order_router import OrderRouter
 from .data_aggregator import DataAggregator
 from .exchange_registry import ExchangeRegistry
 from .base_exchange import ExchangeMessageHandler, MultiExchangeBase, ExchangeResponseHandler
 from .base_exchange.message_handler import MessageBroker, MessageRouter
 from .base_exchange.response_handler import ResponseAggregator
+
+
+class SignalStatus(Enum):
+    """Signal status enumeration"""
+    RECEIVED = "received"
+    PROCESSING = "processing"
+    PROCESSED = "processed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    TIMEOUT = "timeout"
+
+
+class ReceiverState(Enum):
+    """Receiver state enumeration"""
+    STOPPED = "stopped"
+    STARTING = "starting"
+    ACTIVE = "active"
+    STOPPING = "stopping"
+    ERROR = "error"
+
+
+@dataclass
+class TradingSignal:
+    """Trading signal structure"""
+    id: str
+    symbol: str
+    side: str
+    order_type: str
+    quantity: float
+    price: Optional[float] = None
+    exchange: Optional[str] = None
+    timestamp: datetime = field(default_factory=datetime.now)
+    confidence: Optional[float] = None
+    strategy: Optional[str] = None
+    signal_id: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 class MessageType(Enum):
@@ -59,9 +99,10 @@ class TradingResponse:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
+@tprint_logged(LogLevel.INFO)
 class TradingReceiver:
     """Exchange-agnostic trading receiver that routes orders to appropriate exchanges"""
-
+    
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = logging.getLogger(__name__)
@@ -125,7 +166,7 @@ class TradingReceiver:
         """Start the trading receiver"""
         tprint(f"Starting trading receiver", "INFO")
         if self._running:
-            tprint(f"Trading receiver already running", "WARNING")
+            tprint_warning("Trading receiver already running")
             return
 
         self.logger.info("Starting trading receiver...")
@@ -160,10 +201,10 @@ class TradingReceiver:
 
             self._running = True
             self.logger.info("Trading receiver started successfully")
-            tprint(f"Trading receiver started successfully", "SUCCESS")
+            tprint_success("Trading receiver started successfully")
 
         except Exception as e:
-            tprint(f"Failed to start trading receiver: {e}", "ERROR")
+            tprint_error(f"Failed to start trading receiver: {e}")
             self.logger.error(f"Failed to start trading receiver: {e}")
             await self.stop()
             raise
@@ -172,7 +213,7 @@ class TradingReceiver:
         """Stop the trading receiver"""
         tprint(f"Stopping trading receiver", "INFO")
         if not self._running:
-            tprint(f"Trading receiver not running", "WARNING")
+            tprint_warning("Trading receiver not running")
             return
 
         self.logger.info("Stopping trading receiver...")
@@ -197,17 +238,19 @@ class TradingReceiver:
         await self.multi_exchange_base.close_all_exchanges()
 
         self.logger.info("Trading receiver stopped")
-        tprint(f"Trading receiver stopped successfully", "SUCCESS")
+        tprint_success("Trading receiver stopped successfully")
     
+    @tprint_logged(LogLevel.INFO)
     def register_handler(self, message_type: MessageType, handler: Callable[[TradingMessage], Awaitable[TradingResponse]]) -> None:
         """Register message handler"""
         if message_type in self.message_handlers:
             self.message_handlers[message_type].append(handler)
             self.logger.info(f"Registered handler for {message_type.value}")
     
+    @tprint_logged(LogLevel.INFO)
     async def process_message(self, message: TradingMessage) -> TradingResponse:
         """Process incoming trading message"""
-        tprint(f"Processing message: type={message.type.value}, exchange={message.exchange}, symbol={message.symbol}", "INFO")
+        tprint_info(f"Processing message: type={message.type.value}, exchange={message.exchange}, symbol={message.symbol}")
         try:
             self.message_stats["total_received"] += 1
             self._update_stats_by_type(message.type)
@@ -217,7 +260,7 @@ class TradingReceiver:
             handlers = self.message_handlers.get(message.type, [])
 
             if not handlers:
-                tprint(f"No handlers registered for message type: {message.type.value}", "WARNING")
+                tprint_warning(f"No handlers registered for message type: {message.type.value}")
                 return TradingResponse(
                     id=str(int(time.time() * 1000)),
                     request_id=message.id,
@@ -232,16 +275,16 @@ class TradingReceiver:
                 try:
                     response = await handler(message)
                     self.message_stats["total_processed"] += 1
-                    tprint(f"Message processed successfully: type={message.type.value}", "SUCCESS")
+                    tprint_success(f"Message processed successfully: type={message.type.value}")
                     return response
                 except Exception as e:
-                    tprint(f"Handler error for {message.type.value}: {e}", "ERROR")
+                    tprint_error(f"Handler error for {message.type.value}: {e}")
                     self.logger.error(f"Handler error for {message.type.value}: {e}")
                     continue
             
             # If no handler succeeded
             self.message_stats["total_errors"] += 1
-            tprint(f"All handlers failed to process message: type={message.type.value}", "ERROR")
+            tprint_error(f"All handlers failed to process message: type={message.type.value}")
             return TradingResponse(
                 id=str(int(time.time() * 1000)),
                 request_id=message.id,
@@ -253,7 +296,7 @@ class TradingReceiver:
             
         except Exception as e:
             self.message_stats["total_errors"] += 1
-            tprint(f"Error processing message: {e}", "ERROR")
+            tprint_error(f"Error processing message: {e}")
             self.logger.error(f"Error processing message: {e}")
             return TradingResponse(
                 id=str(int(time.time() * 1000)),
@@ -264,6 +307,7 @@ class TradingReceiver:
                 error=str(e)
             )
     
+    @tprint_logged(LogLevel.INFO)
     async def send_order(
         self,
         exchange: str,
@@ -275,23 +319,23 @@ class TradingReceiver:
         **kwargs
     ) -> TradingResponse:
         """Send order to specified exchange"""
-        tprint(f"Sending order: exchange={exchange}, symbol={symbol}, side={side}, type={order_type}, quantity={quantity}, price={price}", "INFO")
+        tprint_info(f"Sending order: exchange={exchange}, symbol={symbol}, side={side}, type={order_type}, quantity={quantity}, price={price}")
         try:
             # Validate inputs
             if not exchange:
-                tprint(f"Exchange name is required", "ERROR")
+                tprint_error("Exchange name is required")
                 raise ValueError("Exchange name is required")
             if not symbol:
-                tprint(f"Symbol is required", "ERROR")
+                tprint_error("Symbol is required")
                 raise ValueError("Symbol is required")
             if not side:
-                tprint(f"Side is required", "ERROR")
+                tprint_error("Side is required")
                 raise ValueError("Side is required")
             if not order_type:
-                tprint(f"Order type is required", "ERROR")
+                tprint_error("Order type is required")
                 raise ValueError("Order type is required")
             if quantity <= 0:
-                tprint(f"Quantity must be positive", "ERROR")
+                tprint_error("Quantity must be positive")
                 raise ValueError("Quantity must be positive")
 
             message = TradingMessage(
@@ -311,11 +355,11 @@ class TradingReceiver:
 
             response = await self.process_message(message)
             if response.success:
-                tprint(f"Order sent successfully: exchange={exchange}, symbol={symbol}", "SUCCESS")
+                tprint_success(f"Order sent successfully: exchange={exchange}, symbol={symbol}")
             return response
 
         except Exception as e:
-            tprint(f"Error sending order: {e}", "ERROR")
+            tprint_error(f"Error sending order: {e}")
             self.logger.error(f"Error sending order: {e}")
             return TradingResponse(
                 id=str(int(time.time() * 1000)),
@@ -326,6 +370,7 @@ class TradingReceiver:
                 error=str(e)
             )
 
+    @tprint_logged(LogLevel.INFO)
     async def send_multi_exchange_order(
         self,
         exchanges: List[str],
@@ -337,7 +382,7 @@ class TradingReceiver:
         **kwargs
     ) -> List[TradingResponse]:
         """Send order to multiple exchanges"""
-        tprint(f"Sending order to {len(exchanges)} exchanges: {exchanges}", "INFO")
+        tprint_info(f"Sending order to {len(exchanges)} exchanges: {exchanges}")
         responses = []
 
         for exchange in exchanges:
@@ -354,7 +399,7 @@ class TradingReceiver:
                 responses.append(response)
 
             except Exception as e:
-                tprint(f"Error sending order to {exchange}: {e}", "ERROR")
+                tprint_error(f"Error sending order to {exchange}: {e}")
                 self.logger.error(f"Error sending order to {exchange}: {e}")
                 responses.append(TradingResponse(
                     id=str(int(time.time() * 1000)),
@@ -365,7 +410,7 @@ class TradingReceiver:
                     error=str(e)
                 ))
 
-        tprint(f"Multi-exchange order completed: {len(responses)} responses", "SUCCESS")
+        tprint_success(f"Multi-exchange order completed: {len(responses)} responses")
         return responses
 
     async def send_order_for_ml_model(
@@ -395,7 +440,7 @@ class TradingReceiver:
         """
         tprint(f"Sending order for ML model: model_id={ml_model_id}, symbol={symbol}, side={side}", "INFO")
         if not self._running:
-            tprint(f"Trading receiver is not running", "ERROR")
+            tprint_error("Trading receiver is not running")
             return TradingResponse(
                 id=str(int(time.time() * 1000)),
                 request_id=str(int(time.time() * 1000)),
@@ -407,7 +452,7 @@ class TradingReceiver:
 
         # Validate ML model and asset compatibility
         if ml_model_id and not self._validate_ml_model_asset_compatibility(ml_model_id, symbol):
-            tprint(f"ML model {ml_model_id} is not compatible with asset {symbol}", "ERROR")
+            tprint_error(f"ML model {ml_model_id} is not compatible with asset {symbol}")
             return TradingResponse(
                 id=str(int(time.time() * 1000)),
                 request_id=str(int(time.time() * 1000)),
@@ -420,7 +465,7 @@ class TradingReceiver:
 
         # Determine target exchange based on ML model and asset
         target_exchange = self._get_exchange_for_ml_model(ml_model_id, symbol)
-        tprint(f"Routing ML model order to exchange: {target_exchange}", "INFO")
+        tprint_info(f"Routing ML model order to exchange: {target_exchange}")
 
         try:
             response = await self.send_order(
@@ -441,11 +486,11 @@ class TradingReceiver:
                 response.metadata["asset_compatible"] = True
 
             if response.success:
-                tprint(f"ML model order sent successfully: model={ml_model_id}, exchange={target_exchange}", "SUCCESS")
+                tprint_success(f"ML model order sent successfully: model={ml_model_id}, exchange={target_exchange}")
             return response
 
         except Exception as e:
-            tprint(f"Error sending order for ML model {ml_model_id} to {target_exchange}: {e}", "ERROR")
+            tprint_error(f"Error sending order for ML model {ml_model_id} to {target_exchange}: {e}")
             self.logger.error(f"Error sending order for ML model {ml_model_id} asset {symbol} to {target_exchange}: {e}")
             return TradingResponse(
                 id=str(int(time.time() * 1000)),
@@ -537,6 +582,7 @@ class TradingReceiver:
         # If no specific asset restrictions, allow any asset
         return True
 
+    @tprint_logged(LogLevel.INFO)
     async def send_order_to_all_exchanges(
         self,
         symbol: str,
@@ -678,6 +724,7 @@ class TradingReceiver:
                 error=f"Unknown routing strategy: {routing_strategy}"
             )
 
+    @tprint_logged(LogLevel.INFO)
     async def send_order_to_primary_with_failover(
         self,
         symbol: str,
@@ -746,45 +793,54 @@ class TradingReceiver:
         Returns:
             Name of the best exchange or None
         """
-        try:
-            # Get best price information from data aggregator
-            price_info = await self.data_aggregator.get_aggregated_data(symbol, "ticker")
+        with tprint_timer(f"TradingReceiver._get_best_execution_exchange - {symbol}"):
+            try:
+                # Get best price information from data aggregator
+                price_info = await self.data_aggregator.get_aggregated_data(symbol, "ticker")
 
-            if not price_info.get("success"):
-                return self.primary_exchange  # Fallback to primary
+                if not price_info.get("success"):
+                    return self.primary_exchange  # Fallback to primary
 
-            exchange_data = price_info.get("exchange_data", {})
+                exchange_data = price_info.get("exchange_data", {})
+                
+                tprint_data_preview(exchange_data, f"Exchange data for {symbol}", max_rows=5)
 
-            if side == "buy":
-                # For buys, prefer lowest ask price
-                best_exchange = None
-                best_ask = float('inf')
+                if side == "buy":
+                    # For buys, prefer lowest ask price
+                    best_exchange = None
+                    best_ask = float('inf')
 
-                for exchange, data in exchange_data.items():
-                    ask = float(data.get("ask", 0))
-                    if ask > 0 and ask < best_ask:
-                        best_ask = ask
-                        best_exchange = exchange
+                    for exchange, data in exchange_data.items():
+                        ask = float(data.get("ask", 0))
+                        if ask > 0 and ask < best_ask:
+                            best_ask = ask
+                            best_exchange = exchange
 
-                return best_exchange or self.primary_exchange
+                    result = best_exchange or self.primary_exchange
+                    tprint_performance("TradingReceiver._get_best_execution_exchange (buy) - performance", 0.0, metrics={"symbol": symbol, "best_exchange": result, "strategy": "lowest_ask"})
+                    return result
 
-            else:
-                # For sells, prefer highest bid price
-                best_exchange = None
-                best_bid = 0
+                else:
+                    # For sells, prefer highest bid price
+                    best_exchange = None
+                    best_bid = 0
 
-                for exchange, data in exchange_data.items():
-                    bid = float(data.get("bid", 0))
-                    if bid > best_bid:
-                        best_bid = bid
-                        best_exchange = exchange
+                    for exchange, data in exchange_data.items():
+                        bid = float(data.get("bid", 0))
+                        if bid > best_bid:
+                            best_bid = bid
+                            best_exchange = exchange
 
-                return best_exchange or self.primary_exchange
+                    result = best_exchange or self.primary_exchange
+                    tprint_performance("TradingReceiver._get_best_execution_exchange (sell) - performance", 0.0, metrics={"symbol": symbol, "best_exchange": result, "strategy": "highest_bid"})
+                    return result
 
-        except Exception as e:
-            self.logger.error(f"Error determining best execution exchange: {e}")
-            return self.primary_exchange
+            except Exception as e:
+                self.logger.error(f"Error determining best execution exchange: {e}")
+                tprint_error(f"Error determining best execution exchange: {e}")
+                return self.primary_exchange
 
+    @tprint_logged(LogLevel.DEBUG)
     async def _handle_multi_exchange_order(self, message: TradingMessage) -> None:
         """
         Handle orders that should be sent to multiple exchanges.
@@ -865,6 +921,7 @@ class TradingReceiver:
         """
         return self.pending_multi_exchange_orders.get(multi_order_id)
 
+    @tprint_logged(LogLevel.INFO)
     async def get_all_multi_exchange_orders(self) -> Dict[str, Dict[str, Any]]:
         """
         Get all multi-exchange orders.
@@ -977,6 +1034,7 @@ class TradingReceiver:
         """
         return self.ml_model_exchanges.get(ml_model_id)
 
+    @tprint_logged(LogLevel.DEBUG)
     def get_all_ml_model_exchanges(self) -> Dict[str, str]:
         """
         Get all ML model to exchange mappings.
@@ -986,6 +1044,7 @@ class TradingReceiver:
         """
         return dict(self.ml_model_exchanges)
 
+    @tprint_logged(LogLevel.INFO)
     def set_default_ml_exchange(self, exchange_name: str) -> bool:
         """
         Set the default exchange for ML models.
@@ -1094,7 +1153,7 @@ class TradingReceiver:
         order_info["status"] = "cancelled"
         order_info["cancelled_at"] = datetime.now()
 
-        return {
+        result = {
             "multi_order_id": multi_order_id,
             "cancellation_responses": responses,
             "successful_cancellations": [
@@ -1102,6 +1161,9 @@ class TradingReceiver:
                 if resp.get("success", False)
             ]
         }
+        tprint_data_preview(result, f"Multi-exchange order cancellation result for {multi_order_id}")
+        tprint_performance("TradingReceiver.cancel_multi_exchange_order - performance", 0.0, metrics={"multi_order_id": multi_order_id, "successful_cancellations": len(result["successful_cancellations"])})
+        return result
 
     async def request_data(
         self,
@@ -1123,7 +1185,12 @@ class TradingReceiver:
             }
         )
         
-        return await self.process_message(message)
+        with tprint_timer(f"TradingReceiver.request_data - {exchange}/{data_type}"):
+            response = await self.process_message(message)
+            if response.success:
+                tprint_data_preview(response.data, f"Data response for {exchange}/{data_type}")
+                tprint_performance("TradingReceiver.request_data - performance", 0.0, metrics={"exchange": exchange, "data_type": data_type, "success": True})
+            return response
     
     async def get_account_info(self, exchange: str) -> TradingResponse:
         """Get account information from specified exchange"""
@@ -1136,7 +1203,12 @@ class TradingReceiver:
             data={}
         )
         
-        return await self.process_message(message)
+        with tprint_timer(f"TradingReceiver.get_account_info - {exchange}"):
+            response = await self.process_message(message)
+            if response.success:
+                tprint_data_preview(response.data, f"Account info for {exchange}")
+                tprint_performance("TradingReceiver.get_account_info - performance", 0.0, metrics={"exchange": exchange, "success": True})
+            return response
     
     async def get_position_info(self, exchange: str, symbol: str) -> TradingResponse:
         """Get position information from specified exchange"""
@@ -1149,7 +1221,12 @@ class TradingReceiver:
             data={}
         )
         
-        return await self.process_message(message)
+        with tprint_timer(f"TradingReceiver.get_position_info - {exchange}/{symbol}"):
+            response = await self.process_message(message)
+            if response.success:
+                tprint_data_preview(response.data, f"Position info for {exchange}/{symbol}")
+                tprint_performance("TradingReceiver.get_position_info - performance", 0.0, metrics={"exchange": exchange, "symbol": symbol, "success": True})
+            return response
     
     async def cancel_order(self, exchange: str, symbol: str, order_id: str) -> TradingResponse:
         """Cancel order on specified exchange"""
@@ -1164,7 +1241,12 @@ class TradingReceiver:
             }
         )
         
-        return await self.process_message(message)
+        with tprint_timer(f"TradingReceiver.cancel_order - {exchange}/{symbol}"):
+            response = await self.process_message(message)
+            if response.success:
+                tprint_data_preview(response.data, f"Cancel order result for {exchange}/{symbol}")
+                tprint_performance("TradingReceiver.cancel_order - performance", 0.0, metrics={"exchange": exchange, "symbol": symbol, "success": True})
+            return response
     
     async def send_heartbeat(self, exchange: str) -> TradingResponse:
         """Send heartbeat to specified exchange"""
@@ -1177,7 +1259,11 @@ class TradingReceiver:
             data={}
         )
         
-        return await self.process_message(message)
+        with tprint_timer(f"TradingReceiver.send_heartbeat - {exchange}"):
+            response = await self.process_message(message)
+            if response.success:
+                tprint_performance("TradingReceiver.send_heartbeat - performance", 0.0, metrics={"exchange": exchange, "success": True})
+            return response
     
     async def _initialize_exchanges(self) -> None:
         """Initialize configured exchanges"""
@@ -1198,17 +1284,18 @@ class TradingReceiver:
                 success = await self.exchange_registry.register_exchange(exchange_name, exchange)
 
                 if success:
-                    tprint(f"Exchange initialized: {exchange_name}", "SUCCESS")
+                    tprint_success(f"Exchange initialized: {exchange_name}")
                     self.logger.info(f"Initialized exchange: {exchange_name}")
                 else:
-                    tprint(f"Failed to register exchange {exchange_name}", "ERROR")
+                    tprint_error(f"Failed to register exchange {exchange_name}")
                     self.logger.error(f"Failed to register exchange {exchange_name}")
 
             except Exception as e:
-                tprint(f"Failed to initialize exchange {exchange_name}: {e}", "ERROR")
+                tprint_error(f"Failed to initialize exchange {exchange_name}: {e}")
                 self.logger.error(f"Failed to initialize exchange {exchange_name}: {e}")
                 self.message_stats["total_errors"] += 1
     
+    @tprint_logged(LogLevel.DEBUG)
     def _register_default_handlers(self) -> None:
         """Register default message handlers"""
         self.register_handler(MessageType.ORDER, self._handle_order_message)
@@ -1218,6 +1305,7 @@ class TradingReceiver:
         self.register_handler(MessageType.CANCEL_ORDER, self._handle_cancel_order)
         self.register_handler(MessageType.HEARTBEAT, self._handle_heartbeat)
 
+    @tprint_logged(LogLevel.DEBUG)
     def _register_enhanced_handlers(self) -> None:
         """Register enhanced multi-exchange message handlers"""
         # Register handlers for the enhanced message handler
@@ -1230,15 +1318,16 @@ class TradingReceiver:
         # Note: This would register with the base exchange message handler
         # For now, we'll use the existing structure but add multi-exchange capability
     
+    @tprint_logged(LogLevel.INFO)
     async def _handle_order_message(self, message: TradingMessage) -> TradingResponse:
         """Handle order message"""
-        tprint(f"Handling order message: exchange={message.exchange}, symbol={message.symbol}", "INFO")
+        tprint_info(f"Handling order message: exchange={message.exchange}, symbol={message.symbol}")
         try:
             # Validate message data
             required_fields = ["side", "order_type", "quantity"]
             for field in required_fields:
                 if field not in message.data:
-                    tprint(f"Missing required field: {field}", "ERROR")
+                    tprint_error(f"Missing required field: {field}")
                     raise ValueError(f"Missing required field: {field}")
 
             # Normalize order type and side
@@ -1248,17 +1337,17 @@ class TradingReceiver:
             # Validate side
             valid_sides = ["buy", "sell"]
             if side not in valid_sides:
-                tprint(f"Invalid side: {side}", "ERROR")
+                tprint_error(f"Invalid side: {side}")
                 raise ValueError(f"Invalid side: {side}. Must be one of {valid_sides}")
 
             # Validate order type
             valid_order_types = ["MARKET", "LIMIT", "STOP", "STOP_LIMIT"]
             if order_type not in valid_order_types:
-                tprint(f"Invalid order type: {order_type}", "ERROR")
+                tprint_error(f"Invalid order type: {order_type}")
                 raise ValueError(f"Invalid order type: {order_type}. Must be one of {valid_order_types}")
 
             # Route order to appropriate exchange
-            tprint(f"Routing order via order_router: {message.exchange}/{message.symbol}", "INFO")
+            tprint_info(f"Routing order via order_router: {message.exchange}/{message.symbol}")
             result = await self.order_router.route_order(
                 exchange=message.exchange,
                 symbol=message.symbol,
@@ -1271,7 +1360,7 @@ class TradingReceiver:
             )
 
             if result.get("success"):
-                tprint(f"Order routed successfully via order_router", "SUCCESS")
+                tprint_success("Order routed successfully via order_router")
 
             return TradingResponse(
                 id=str(int(time.time() * 1000)),
@@ -1283,7 +1372,7 @@ class TradingReceiver:
             )
 
         except Exception as e:
-            tprint(f"Error handling order message: {e}", "ERROR")
+            tprint_error(f"Error handling order message: {e}")
             self.logger.error(f"Error handling order message: {e}")
             return TradingResponse(
                 id=str(int(time.time() * 1000)),
@@ -1294,20 +1383,21 @@ class TradingReceiver:
                 error=str(e)
             )
     
+    @tprint_logged(LogLevel.INFO)
     async def _handle_data_request(self, message: TradingMessage) -> TradingResponse:
         """Handle data request message"""
-        tprint(f"Handling data request: exchange={message.exchange}, symbol={message.symbol}", "INFO")
+        tprint_info(f"Handling data request: exchange={message.exchange}, symbol={message.symbol}")
         try:
             # Validate message data
             if "data_type" not in message.data:
-                tprint(f"Missing required field: data_type", "ERROR")
+                tprint_error("Missing required field: data_type")
                 raise ValueError("Missing required field: data_type")
 
             # Validate data type
             valid_data_types = ["ticker", "klines", "trades", "orderbook", "account_info", "position_info", "open_orders"]
             data_type = message.data["data_type"].lower()
             if data_type not in valid_data_types:
-                tprint(f"Invalid data type: {data_type}", "ERROR")
+                tprint_error(f"Invalid data type: {data_type}")
                 raise ValueError(f"Invalid data type: {data_type}. Must be one of {valid_data_types}")
 
             # Route data request to appropriate exchange
@@ -1319,7 +1409,7 @@ class TradingReceiver:
             )
 
             if result.get("success"):
-                tprint(f"Data request completed: type={data_type}", "SUCCESS")
+                tprint_success(f"Data request completed: type={data_type}")
 
             return TradingResponse(
                 id=str(int(time.time() * 1000)),
@@ -1331,7 +1421,7 @@ class TradingReceiver:
             )
 
         except Exception as e:
-            tprint(f"Error handling data request: {e}", "ERROR")
+            tprint_error(f"Error handling data request: {e}")
             self.logger.error(f"Error handling data request: {e}")
             return TradingResponse(
                 id=str(int(time.time() * 1000)),
@@ -1342,6 +1432,7 @@ class TradingReceiver:
                 error=str(e)
             )
     
+    @tprint_logged(LogLevel.INFO)
     async def _handle_account_info(self, message: TradingMessage) -> TradingResponse:
         """Handle account info request"""
         try:
@@ -1370,6 +1461,7 @@ class TradingReceiver:
                 error=str(e)
             )
     
+    @tprint_logged(LogLevel.INFO)
     async def _handle_position_info(self, message: TradingMessage) -> TradingResponse:
         """Handle position info request"""
         try:
@@ -1398,13 +1490,14 @@ class TradingReceiver:
                 error=str(e)
             )
     
+    @tprint_logged(LogLevel.INFO)
     async def _handle_cancel_order(self, message: TradingMessage) -> TradingResponse:
         """Handle cancel order request"""
-        tprint(f"Handling cancel order: exchange={message.exchange}, symbol={message.symbol}", "INFO")
+        tprint_info(f"Handling cancel order: exchange={message.exchange}, symbol={message.symbol}")
         try:
             exchange = await self.exchange_registry.get_exchange(message.exchange)
             if not exchange:
-                tprint(f"Exchange {message.exchange} not found", "ERROR")
+                tprint_error(f"Exchange {message.exchange} not found")
                 raise ValueError(f"Exchange {message.exchange} not found")
             
             result = await exchange.cancel_order(
@@ -1412,7 +1505,7 @@ class TradingReceiver:
                 message.data["order_id"]
             )
 
-            tprint(f"Order cancelled: order_id={message.data['order_id']}", "SUCCESS")
+            tprint_success(f"Order cancelled: order_id={message.data['order_id']}")
 
             return TradingResponse(
                 id=str(int(time.time() * 1000)),
@@ -1423,7 +1516,7 @@ class TradingReceiver:
             )
             
         except Exception as e:
-            tprint(f"Error handling cancel order request: {e}", "ERROR")
+            tprint_error(f"Error handling cancel order request: {e}")
             self.logger.error(f"Error handling cancel order request: {e}")
             return TradingResponse(
                 id=str(int(time.time() * 1000)),
@@ -1434,6 +1527,7 @@ class TradingReceiver:
                 error=str(e)
             )
     
+    @tprint_logged(LogLevel.DEBUG)
     async def _handle_heartbeat(self, message: TradingMessage) -> TradingResponse:
         """Handle heartbeat message"""
         try:
@@ -1464,6 +1558,7 @@ class TradingReceiver:
                 error=str(e)
             )
     
+    @tprint_logged(LogLevel.DEBUG)
     async def _cleanup_expired_responses(self) -> None:
         """Cleanup expired response futures"""
         while self._running:
@@ -1501,70 +1596,81 @@ class TradingReceiver:
             self.message_stats["by_exchange"][exchange] = 0
         self.message_stats["by_exchange"][exchange] += 1
     
+    @tprint_logged(LogLevel.INFO)
     async def get_statistics(self) -> Dict[str, Any]:
         """Get receiver statistics"""
-        try:
-            # Get basic statistics
-            basic_stats = {
-                "running": self._running,
-                "statistics": self.message_stats,
-                "registered_exchanges": await self.exchange_registry.get_registered_exchanges(),
-                "active_connections": len(self.pending_responses),
-                "timestamp": datetime.now().isoformat()
-            }
+        with tprint_timer("TradingReceiver.get_statistics"):
+            try:
+                # Get basic statistics
+                basic_stats = {
+                    "running": self._running,
+                    "statistics": self.message_stats,
+                    "registered_exchanges": await self.exchange_registry.get_registered_exchanges(),
+                    "active_connections": len(self.pending_responses),
+                    "timestamp": datetime.now().isoformat()
+                }
 
-            # Get multi-exchange statistics
-            multi_exchange_stats = {
-                "multi_exchange_orders": len(self.pending_multi_exchange_orders),
-                "primary_exchange": self.primary_exchange,
-                "failover_exchanges": self.failover_exchanges,
-                "broadcast_enabled": self.broadcast_enabled,
-                "load_balancing_enabled": self.load_balancing_enabled,
-                "total_exchanges_configured": len(await self.exchange_registry.get_registered_exchanges())
-            }
-
-            # Get ML model statistics
-            ml_model_stats = {
-                "registered_ml_models": len(self.ml_model_exchanges),
-                "default_ml_exchange": self.default_ml_exchange,
-                "default_asset": self.default_asset,
-                "ml_model_exchanges": self.ml_model_exchanges,
-                "ml_model_assets": self.ml_model_assets,
-                "ml_model_exchange_assets": self.ml_model_exchange_assets,
-                "ml_models_by_exchange": self._get_ml_models_by_exchange(),
-                "assets_by_ml_model": self._get_assets_by_ml_model()
-            }
-
-            # Get message handler statistics
-            message_handler_stats = {}
-            if hasattr(self.message_handler, 'get_queue_status'):
-                message_handler_stats = await self.message_handler.get_queue_status()
-
-            # Get response handler statistics
-            response_handler_stats = {}
-            if hasattr(self.response_handler, 'get_response_statistics'):
-                response_handler_stats = await self.response_handler.get_response_statistics()
-
-            return {
-                **basic_stats,
-                "multi_exchange": multi_exchange_stats,
-                "ml_model": ml_model_stats,
-                "message_handler": message_handler_stats,
-                "response_handler": response_handler_stats,
-                "config": {
+                # Get multi-exchange statistics
+                multi_exchange_stats = {
+                    "multi_exchange_orders": len(self.pending_multi_exchange_orders),
                     "primary_exchange": self.primary_exchange,
                     "failover_exchanges": self.failover_exchanges,
                     "broadcast_enabled": self.broadcast_enabled,
                     "load_balancing_enabled": self.load_balancing_enabled,
-                    "default_ml_exchange": self.default_ml_exchange,
-                    "default_asset": self.default_asset
+                    "total_exchanges_configured": len(await self.exchange_registry.get_registered_exchanges())
                 }
-            }
 
-        except Exception as e:
-            self.logger.error(f"Error getting statistics: {e}")
-            return {
-                "error": str(e),
-                "running": self._running,
-                "timestamp": datetime.now().isoformat()
-            }
+                # Get ML model statistics
+                ml_model_stats = {
+                    "registered_ml_models": len(self.ml_model_exchanges),
+                    "default_ml_exchange": self.default_ml_exchange,
+                    "default_asset": self.default_asset,
+                    "ml_model_exchanges": self.ml_model_exchanges,
+                    "ml_model_assets": self.ml_model_assets,
+                    "ml_model_exchange_assets": self.ml_model_exchange_assets,
+                    "ml_models_by_exchange": self._get_ml_models_by_exchange(),
+                    "assets_by_ml_model": self._get_assets_by_ml_model()
+                }
+
+                # Get message handler statistics
+                message_handler_stats = {}
+                if hasattr(self.message_handler, 'get_queue_status'):
+                    message_handler_stats = await self.message_handler.get_queue_status()
+
+                # Get response handler statistics
+                response_handler_stats = {}
+                if hasattr(self.response_handler, 'get_response_statistics'):
+                    response_handler_stats = await self.response_handler.get_response_statistics()
+
+                result = {
+                    **basic_stats,
+                    "multi_exchange": multi_exchange_stats,
+                    "ml_model": ml_model_stats,
+                    "message_handler": message_handler_stats,
+                    "response_handler": response_handler_stats,
+                    "config": {
+                        "primary_exchange": self.primary_exchange,
+                        "failover_exchanges": self.failover_exchanges,
+                        "broadcast_enabled": self.broadcast_enabled,
+                        "load_balancing_enabled": self.load_balancing_enabled,
+                        "default_ml_exchange": self.default_ml_exchange,
+                        "default_asset": self.default_asset
+                    }
+                }
+                
+                tprint_data_preview(result, "Trading receiver statistics", max_rows=10)
+                tprint_performance("TradingReceiver.get_statistics - performance", 0.0, metrics={"running": self._running, "registered_exchanges": len(await self.exchange_registry.get_registered_exchanges())})
+                return result
+
+            except Exception as e:
+                self.logger.error(f"Error getting statistics: {e}")
+                error_result = {
+                    "error": str(e),
+                    "running": self._running,
+                    "timestamp": datetime.now().isoformat()
+                }
+                tprint_error(f"Error getting statistics: {e}")
+                tprint_performance("TradingReceiver.get_statistics - error", 0.0, metrics={"error": True})
+                return error_result
+        
+        

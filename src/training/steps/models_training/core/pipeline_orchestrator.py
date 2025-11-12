@@ -315,10 +315,11 @@ class TrainingPipelineOrchestrator:
             # Default analyst configuration
             analyst_config = TrainingConfig(
                 role=TrainingRole.ANALYST,
-                model_types=[ModelType.LIGHTGBM, ModelType.DEPTHWISE_CNN, ModelType.CATBOOST],
+                model_types=[ModelType.LIGHTGBM, ModelType.CATBOOST],  # Removed DEPTHWISE_CNN (R²≈0, not suitable for tabular data)
                 timeframe=self.config.timeframe,
                 symbol=self.config.symbol,
                 enable_ensemble=False,  # Individual models only
+                enable_hyperparameter_optimization=False,  # HPO already completed, use saved params
                 custom_params=self.config.analyst_config or {}
             )
             

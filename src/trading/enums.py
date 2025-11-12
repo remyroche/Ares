@@ -38,3 +38,10 @@ class TimeInForce(Enum):
     FOK = "FOK"  # Fill or Kill
     DAY = "DAY"  # Day order
     GTD = "GTD"  # Good Till Date
+
+class TradingMode(Enum):
+    """Trading modes."""
+    LIVE = "live"
+    PAPER = "paper"
+    SIMULATION = "simulation"
+    BACKTEST = "backtest"

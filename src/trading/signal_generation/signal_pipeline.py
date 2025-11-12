@@ -213,7 +213,9 @@ class SignalGenerationPipeline:
         self.analyst_feature_engineer = AnalystFeatureEngineer(logger=self.logger)
         self.tactician_feature_engineer = TacticianFeatureEngineer(logger=self.logger)
         self.feature_validator = FeatureValidator(logger=self.logger)
-        tprint(f"[SIGNAL_PIPELINE] __init__ -> initialized (regime_threshold={self.optimization_params[\'regime_confidence_threshold\']}, signal_threshold={self.optimization_params[\'signal_confidence_threshold\']})")
+        regime_threshold = self.optimization_params['regime_confidence_threshold']
+        signal_threshold = self.optimization_params['signal_confidence_threshold']
+        tprint(f"[SIGNAL_PIPELINE] __init__ -> initialized (regime_threshold={regime_threshold}, signal_threshold={signal_threshold})")
 
     @handles_errors
     async def initialize(self) -> bool:

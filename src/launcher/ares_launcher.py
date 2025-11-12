@@ -353,8 +353,8 @@ def cleanup_duplicate_files(directories: List[str], keep_count: int = 5):
     """
     logger.info("🧹 Starting cleanup of duplicate files...")
     
-    # Pattern to match datetime suffixes like: _20251026_223845
-    datetime_pattern = re.compile(r'_(\d{8}_\d{6})(\.[a-zA-Z]+)?$')
+    # Pattern to match datetime suffixes like: _20251026_223845 or _20251026_223845_123
+    datetime_pattern = re.compile(r'_(\d{8}_\d{6})(?:_\d+)?(\.[a-zA-Z]+)?$')
     
     total_deleted = 0
     total_skipped = 0
@@ -444,9 +444,10 @@ async def main():
     directories_to_clean = [
         'logs',
         'artifacts',
+        'versioned_artifacts',
         'outcomes'
     ]
-    cleanup_duplicate_files(directories_to_clean, keep_count=5)
+    cleanup_duplicate_files(directories_to_clean, keep_count=3)
     
     # Create CLI parser
     parser = create_cli_parser()

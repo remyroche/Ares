@@ -315,6 +315,10 @@ def apply_ewm_smoothing(
             smoothed_names.extend(smoothed_feature_names)
         ewm_names = [f'{name}_ewm{alpha}' for name in original_feature_names]
         smoothed_names.extend(ewm_names)
+        
+        # DEBUG: Log EWMA feature creation
+        print(f"DEBUG: apply_ewm_smoothing created {len(ewm_names)} EWMA features with alpha={alpha}")
+        print(f"DEBUG: Sample EWMA feature names: {ewm_names[:5]}...")
     else:
         n_original = len(original_indices)
         smoothed_names = [f'feature_{i}' for i in range(n_original)]
@@ -322,5 +326,9 @@ def apply_ewm_smoothing(
             smoothed_names.extend(smoothed_feature_names)
         ewm_names = [f'feature_{i}_ewm{alpha}' for i in range(n_original)]
         smoothed_names.extend(ewm_names)
+        
+        # DEBUG: Log EWMA feature creation
+        print(f"DEBUG: apply_ewm_smoothing created {len(ewm_names)} EWMA features with alpha={alpha}")
+        print(f"DEBUG: Sample EWMA feature names: {ewm_names[:5]}...")
     
     return smoothed_X, smoothed_names

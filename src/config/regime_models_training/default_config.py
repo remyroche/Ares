@@ -208,11 +208,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "use_feature_bank": True,
         "categories": [
             "REGIME",
-            "MOMENTUM", 
+            "MOMENTUM",
             "VOLATILITY",
             "VOLUME",
             "TREND",
-            "OSCILLATOR",
+            # "OSCILLATOR",  # DISABLED for regime detection mode
             "RETURNS",
             "MICROSTRUCTURE"
         ],
@@ -222,6 +222,14 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "enabled": True,
             "window_sizes": [4, 8, 16, 24],
             "enable_smoothed_features": True
+        },
+        
+        # Configuration EWMA - simple EWMA 8 & 20 without special weights
+        "ewma_features": {
+            "enabled": True,
+            "window_sizes": [8, 20],  # Simple EWMA windows (8 & 20 periods)
+            "alpha": 0.3,  # EWMA smoothing factor
+            "description": "Simple EWMA 8 & 20 without special weights - just standard exponential weighting"
         },
         
         # Sélection de caractéristiques

@@ -11,7 +11,10 @@ from datetime import datetime
 import uuid
 import logging
 
-from src.utils.tprint import tprint
+from src.utils.tprint import (
+    tprint, tprint_logged, tprint_timer, tprint_performance,
+    tprint_data_preview, tprint_data_format, tprint_feature_counts, LogLevel
+)
 from .config import SimulatorConfig
 
 
@@ -34,6 +37,7 @@ class Position:
         return abs(self.quantity) * self.avg_entry_price
 
 
+@tprint_logged(LogLevel.INFO, include_args=True)
 class PositionManager:
     """
     Manage trading positions with flexible position sizing.
@@ -58,6 +62,7 @@ class PositionManager:
         self.logger = logging.getLogger(__name__)
         tprint(f"[POS_MGR] __init__ -> initialized (allow_multiple={config.allow_multiple_positions}, allow_pyramiding={config.allow_pyramiding}, max_per_symbol={config.max_positions_per_symbol})")
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def add_position(
         self,
         symbol: str,
@@ -151,6 +156,7 @@ class PositionManager:
 
             return position
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def reduce_position(
         self,
         symbol: str,
@@ -212,6 +218,7 @@ class PositionManager:
         tprint(f"[POS_MGR] reduce_position -> reduced {len(updated_positions)} positions for {symbol}")
         return updated_positions
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def close_position(
         self,
         position_id: str
@@ -238,6 +245,7 @@ class PositionManager:
         tprint(f"[POS_MGR] close_position -> NOT FOUND: position {position_id}", color="yellow")
         return None
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def close_all_positions(self, symbol: Optional[str] = None) -> List[Position]:
         """
         Close all positions, optionally filtered by symbol.
@@ -262,6 +270,7 @@ class PositionManager:
         tprint(f"[POS_MGR] close_all_positions -> CLOSED: {len(closed)} positions", color="green")
         return closed
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True)
     def get_positions(
         self,
         symbol: Optional[str] = None,
@@ -304,6 +313,7 @@ class PositionManager:
                     return pos
         return None
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def calculate_unrealized_pnl(
         self,
         current_prices: Dict[str, float]
@@ -346,6 +356,7 @@ class PositionManager:
             "by_symbol": symbol_pnl
         }
     
+    @tprint_logged(LogLevel.DEBUG, include_args=True)
     def validate_direction(
         self,
         symbol: str,
@@ -373,6 +384,7 @@ class PositionManager:
         
         return True
     
+    @tprint_logged(LogLevel.INFO)
     def get_position_summary(self) -> Dict[str, Any]:
         """Get summary of all positions."""
         tprint(f"[POS_MGR] get_position_summary: Generating position summary")

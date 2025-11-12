@@ -195,7 +195,8 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 regime_probs,
                 base_predictions,
                 base_confidence,
-                disagreement_features
+                disagreement_features,
+                config
             )
             tprint(f"✅ Combined features shape: {ensemble_features.shape}", "SUCCESS")
 
@@ -375,17 +376,33 @@ class AnalystEnsembleTrainingStep(BaseStep):
         regime_probs: Optional[pd.DataFrame],
         base_predictions: pd.DataFrame,
         base_confidence: Optional[pd.DataFrame],
-        disagreement_features: pd.DataFrame
+        disagreement_features: pd.DataFrame,
+        config: Dict[str, Any]
     ) -> pd.DataFrame:
         """Combine all features for ensemble training."""
-        # Start with features_data as base
-        combined = features_data.copy()
+        execution_mode = config.get('execution_mode', 'full')
+        
+        # In blank mode, only use labels from features_data
+        if execution_mode == 'blank':
+            tprint("🎯 BLANK MODE: Using only labels, base predictions, and disagreement features", "INFO")
+            # Extract only label columns from features_data
+            label_cols = [col for col in features_data.columns if 'label' in col.lower() or 'target' in col.lower()]
+            if label_cols:
+                combined = features_data[label_cols].copy()
+                tprint(f"   Extracted {len(label_cols)} label columns from features", "INFO")
+            else:
+                # If no label columns found, create empty DataFrame with same index
+                combined = pd.DataFrame(index=features_data.index)
+                tprint("   No label columns found in features_data", "WARNING")
+        else:
+            # Start with features_data as base
+            combined = features_data.copy()
 
         # Align all dataframes to the same index
-        common_index = combined.index
+        common_index = combined.index if not combined.empty else features_data.index
 
-        # Add regime probabilities if available
-        if regime_probs is not None:
+        # Add regime probabilities if available (skip in blank mode)
+        if regime_probs is not None and execution_mode != 'blank':
             # Ensure regime_probs has datetime index if common_index is datetime
             if hasattr(common_index, 'dtype') and 'datetime' in str(common_index.dtype):
                 if not hasattr(regime_probs.index, 'dtype') or 'datetime' not in str(regime_probs.index.dtype):

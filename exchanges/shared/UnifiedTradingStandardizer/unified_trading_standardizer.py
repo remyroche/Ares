@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_logged, tprint_data_preview, tprint_data_format, tprint_timer, tprint_performance, tprint_feature_counts, LogLevel
 
 from exchanges.exchange_types import ExchangeType
 from exchanges.base_exchange.exchange_interface import OrderSide, OrderType, OrderStatus
@@ -107,6 +107,7 @@ class UnifiedTradingStandardizer:
     # ORDER STANDARDIZATION
     # ============================================================================
     
+    @tprint_logged(LogLevel.INFO)
     def standardize_order(
         self,
         raw_order: Dict[str, Any],
@@ -124,123 +125,127 @@ class UnifiedTradingStandardizer:
         Returns:
             StandardizedOrder object
         """
-        tprint(f"standardize_order called for exchange={exchange.value}, symbol={symbol}", "INFO")
-        try:
-            mapping = self.order_mappings.get(exchange)
-            if not mapping:
-                raise ValueError(f"No field mapping found for exchange: {exchange}")
-            
-            # Extract fields using mapping
-            extracted = self._extract_fields(raw_order, mapping)
-            
-            # Get symbol
-            if not symbol:
-                symbol = extracted.get('symbol') or raw_order.get('symbol', '')
-            if not symbol:
-                raise ValueError("Symbol is required and could not be extracted from raw_order")
-            
-            # Normalize enum fields
-            side = self._normalize_value(
-                extracted.get('side'),
-                normalize_order_side,
-                exchange,
-                default=OrderSide.BUY
-            )
-            order_type = self._normalize_value(
-                extracted.get('order_type'),
-                normalize_order_type,
-                exchange,
-                default=OrderType.MARKET
-            )
-            status = self._normalize_value(
-                extracted.get('status'),
-                normalize_order_status,
-                exchange,
-                default=OrderStatus.PENDING
-            )
-            
-            # Extract quantities and prices
-            quantity = float(extracted.get('quantity', 0))
-            executed_quantity = float(extracted.get('executed_quantity', 0))
-            remaining_quantity = extracted.get('remaining_quantity')
-            if remaining_quantity is None:
-                remaining_quantity = quantity - executed_quantity
-            else:
-                remaining_quantity = float(remaining_quantity)
-            
-            price = self._safe_float(extracted.get('price'))
-            stop_price = self._safe_float(extracted.get('stop_price'))
-            executed_price_avg = self._safe_float(extracted.get('executed_price_avg'))
-            
-            # Extract timestamps
-            timestamp = self._convert_timestamp(
-                extracted.get('timestamp'),
-                exchange,
-                default=datetime.now(timezone.utc)
-            )
-            update_time = self._convert_timestamp(
-                extracted.get('update_time'),
-                exchange,
-                default=timestamp
-            )
-            
-            # Create standardized order
-            order = StandardizedOrder(
-                order_id=str(extracted.get('order_id', raw_order.get('orderId', ''))),
-                symbol=str(symbol),
-                exchange=exchange.value,
-                side=side,
-                order_type=order_type,
-                status=status,
-                quantity=quantity,
-                price=price,
-                executed_quantity=executed_quantity,
-                remaining_quantity=remaining_quantity,
-                executed_price_avg=executed_price_avg,
-                stop_price=stop_price,
-                time_in_force=extracted.get('time_in_force'),
-                fee=self._safe_float(extracted.get('fee')),
-                fee_currency=extracted.get('fee_currency'),
-                client_order_id=extracted.get('client_order_id'),
-                exchange_order_id=extracted.get('exchange_order_id'),
-                timestamp=timestamp,
-                update_time=update_time,
-                raw_order_data=raw_order,
-                source_exchange_type=exchange.value,
-            )
-            
-            # Apply quality processing
-            if self.quality_level != DataQualityLevel.BASIC:
-                order = self._apply_order_quality_processing(order)
+        tprint(f"📋 UnifiedTradingStandardizer.standardize_order - Standardisation pour {exchange.value}", "INFO")
+        tprint_data_preview({"exchange": exchange.value, "symbol": symbol, "raw_keys": list(raw_order.keys())[:5]}, "UnifiedTradingStandardizer.standardize_order - paramètres")
+        tprint_data_format(raw_order, "UnifiedTradingStandardizer.standardize_order - raw_order")
+        with tprint_timer("UnifiedTradingStandardizer.standardize_order - Temps de standardisation"):
+            try:
+                mapping = self.order_mappings.get(exchange)
+                if not mapping:
+                    raise ValueError(f"No field mapping found for exchange: {exchange}")
+                
+                # Extract fields using mapping
+                extracted = self._extract_fields(raw_order, mapping)
+                
+                # Get symbol
+                if not symbol:
+                    symbol = extracted.get('symbol') or raw_order.get('symbol', '')
+                if not symbol:
+                    raise ValueError("Symbol is required and could not be extracted from raw_order")
+                
+                # Normalize enum fields
+                side = self._normalize_value(
+                    extracted.get('side'),
+                    normalize_order_side,
+                    exchange,
+                    default=OrderSide.BUY
+                )
+                order_type = self._normalize_value(
+                    extracted.get('order_type'),
+                    normalize_order_type,
+                    exchange,
+                    default=OrderType.MARKET
+                )
+                status = self._normalize_value(
+                    extracted.get('status'),
+                    normalize_order_status,
+                    exchange,
+                    default=OrderStatus.PENDING
+                )
+                
+                # Extract quantities and prices
+                quantity = float(extracted.get('quantity', 0))
+                executed_quantity = float(extracted.get('executed_quantity', 0))
+                remaining_quantity = extracted.get('remaining_quantity')
+                if remaining_quantity is None:
+                    remaining_quantity = quantity - executed_quantity
+                else:
+                    remaining_quantity = float(remaining_quantity)
+                
+                price = self._safe_float(extracted.get('price'))
+                stop_price = self._safe_float(extracted.get('stop_price'))
+                executed_price_avg = self._safe_float(extracted.get('executed_price_avg'))
+                
+                # Extract timestamps
+                timestamp = self._convert_timestamp(
+                    extracted.get('timestamp'),
+                    exchange,
+                    default=datetime.now(timezone.utc)
+                )
+                update_time = self._convert_timestamp(
+                    extracted.get('update_time'),
+                    exchange,
+                    default=timestamp
+                )
+                
+                # Create standardized order
+                order = StandardizedOrder(
+                    order_id=str(extracted.get('order_id', raw_order.get('orderId', ''))),
+                    symbol=str(symbol),
+                    exchange=exchange.value,
+                    side=side,
+                    order_type=order_type,
+                    status=status,
+                    quantity=quantity,
+                    price=price,
+                    executed_quantity=executed_quantity,
+                    remaining_quantity=remaining_quantity,
+                    executed_price_avg=executed_price_avg,
+                    stop_price=stop_price,
+                    time_in_force=extracted.get('time_in_force'),
+                    fee=self._safe_float(extracted.get('fee')),
+                    fee_currency=extracted.get('fee_currency'),
+                    client_order_id=extracted.get('client_order_id'),
+                    exchange_order_id=extracted.get('exchange_order_id'),
+                    timestamp=timestamp,
+                    update_time=update_time,
+                    raw_order_data=raw_order,
+                    source_exchange_type=exchange.value,
+                )
+                
+                # Apply quality processing
+                if self.quality_level != DataQualityLevel.BASIC:
+                    order = self._apply_order_quality_processing(order)
 
-            tprint(f"Order standardization successful: order_id={order.order_id}, symbol={order.symbol}, status={order.status}", "SUCCESS")
-            return order
+                tprint(f"Order standardization successful: order_id={order.order_id}, symbol={order.symbol}, status={order.status}", "SUCCESS")
+                return order
 
-        except Exception as e:
-            self.failure_counts['orders'] += 1
-            error_msg = f"Failed to standardize order from {exchange.value}: {e}"
-            self.logger.error(error_msg)
-            tprint(f"Order standardization failed for {exchange.value}: {e}", "ERROR")
+            except Exception as e:
+                self.failure_counts['orders'] += 1
+                error_msg = f"Failed to standardize order from {exchange.value}: {e}"
+                self.logger.error(error_msg)
+                tprint(f"Order standardization failed for {exchange.value}: {e}", "ERROR")
 
-            # In strict mode, re-raise the exception
-            if self.strict_mode:
-                raise ValueError(error_msg) from e
+                # In strict mode, re-raise the exception
+                if self.strict_mode:
+                    raise ValueError(error_msg) from e
 
-            # In lenient mode, return invalid order for tracking
-            return StandardizedOrder(
-                order_id=str(raw_order.get('orderId', raw_order.get('order_id', 'unknown'))),
-                symbol=symbol or 'UNKNOWN',
-                exchange=exchange.value,
-                side=OrderSide.BUY,
-                order_type=OrderType.MARKET,
-                status=OrderStatus.REJECTED,
-                quantity=0.0,
-                timestamp=datetime.now(timezone.utc),
-                update_time=datetime.now(timezone.utc),
-                is_valid=False,
-                validation_errors=[str(e)],
-            )
+                # In lenient mode, return invalid order for tracking
+                return StandardizedOrder(
+                    order_id=str(raw_order.get('orderId', raw_order.get('order_id', 'unknown'))),
+                    symbol=symbol or 'UNKNOWN',
+                    exchange=exchange.value,
+                    side=OrderSide.BUY,
+                    order_type=OrderType.MARKET,
+                    status=OrderStatus.REJECTED,
+                    quantity=0.0,
+                    timestamp=datetime.now(timezone.utc),
+                    update_time=datetime.now(timezone.utc),
+                    is_valid=False,
+                    validation_errors=[str(e)],
+                )
     
+    @tprint_logged(LogLevel.INFO)
     def standardize_orders(
         self,
         raw_orders: Union[List[Dict], List[List], pd.DataFrame],
@@ -248,23 +253,30 @@ class UnifiedTradingStandardizer:
         symbol: Optional[str] = None
     ) -> List[StandardizedOrder]:
         """Standardize multiple orders"""
-        tprint(f"standardize_orders called for exchange={exchange.value}, count={len(raw_orders) if hasattr(raw_orders, '__len__') else 'unknown'}", "INFO")
+        tprint(f"📋 UnifiedTradingStandardizer.standardize_orders - Standardisation multiple pour {exchange.value}", "INFO")
+        count = len(raw_orders) if hasattr(raw_orders, '__len__') else 'unknown'
+        tprint_data_preview({"exchange": exchange.value, "count": count, "symbol": symbol}, "UnifiedTradingStandardizer.standardize_orders - paramètres")
+        with tprint_timer("UnifiedTradingStandardizer.standardize_orders - Temps de standardisation"):
+            if isinstance(raw_orders, pd.DataFrame):
+                raw_orders = raw_orders.to_dict('records')
 
-        if isinstance(raw_orders, pd.DataFrame):
-            raw_orders = raw_orders.to_dict('records')
+            standardized = []
+            for raw_order in raw_orders:
+                try:
+                    # Ensure raw_order is a dict
+                    if isinstance(raw_order, dict):
+                        order = self.standardize_order(raw_order, exchange, symbol)
+                        standardized.append(order)
+                    else:
+                        self.logger.warning(f"Skipping non-dict order data: {type(raw_order)}")
+                        tprint(f"Skipped non-dict order data: {type(raw_order)}", "WARNING")
+                except Exception as e:
+                    self.logger.warning(f"Failed to standardize order: {e}")
+                    tprint(f"Skipped order due to standardization error: {e}", "WARNING")
+                    continue
 
-        standardized = []
-        for raw_order in raw_orders:
-            try:
-                order = self.standardize_order(raw_order, exchange, symbol)
-                standardized.append(order)
-            except Exception as e:
-                self.logger.warning(f"Failed to standardize order: {e}")
-                tprint(f"Skipped order due to standardization error: {e}", "WARNING")
-                continue
-
-        tprint(f"Standardized {len(standardized)} orders from {exchange.value}", "SUCCESS")
-        return standardized
+            tprint(f"Standardized {len(standardized)} orders from {exchange.value}", "SUCCESS")
+            return standardized
     
     def standardize_orders_to_dataframe(
         self,
@@ -292,6 +304,7 @@ class UnifiedTradingStandardizer:
     # POSITION STANDARDIZATION
     # ============================================================================
     
+    @tprint_logged(LogLevel.INFO)
     def standardize_position(
         self,
         raw_position: Dict[str, Any],
@@ -299,99 +312,103 @@ class UnifiedTradingStandardizer:
         symbol: Optional[str] = None
     ) -> StandardizedPosition:
         """Standardize position response from exchange"""
-        tprint(f"standardize_position called for exchange={exchange.value}, symbol={symbol}", "INFO")
-        try:
-            mapping = self.position_mappings.get(exchange)
-            if not mapping:
-                raise ValueError(f"No field mapping found for exchange: {exchange}")
-            
-            # Extract fields
-            extracted = self._extract_fields(raw_position, mapping)
-            
-            # Get symbol
-            if not symbol:
-                symbol = extracted.get('symbol') or raw_position.get('symbol', '')
-            if not symbol:
-                raise ValueError("Symbol is required and could not be extracted from raw_position")
-            
-            # Normalize position side
-            side = normalize_position_side(
-                extracted.get('side', 'neutral'),
-                exchange
-            )
-            
-            # Extract numeric fields
-            size = abs(float(extracted.get('size', 0)))  # Always positive
-            entry_price = float(extracted.get('entry_price', 0))
-            mark_price = self._safe_float(extracted.get('mark_price'))
-            liquidation_price = self._safe_float(extracted.get('liquidation_price'))
-            unrealized_pnl = float(extracted.get('unrealized_pnl', 0))
-            realized_pnl = float(extracted.get('realized_pnl', 0))
-            leverage = self._safe_float(extracted.get('leverage'))
-            margin = self._safe_float(extracted.get('margin'))
-            isolated_margin = self._safe_float(extracted.get('isolated_margin'))
-            
-            # Extract timestamps
-            timestamp = self._convert_timestamp(
-                extracted.get('timestamp'),
-                exchange,
-                default=datetime.now(timezone.utc)
-            )
-            
-            # Create standardized position
-            position = StandardizedPosition(
-                symbol=str(symbol),
-                exchange=exchange.value,
-                side=side,
-                size=size,
-                entry_price=entry_price,
-                mark_price=mark_price,
-                liquidation_price=liquidation_price,
-                unrealized_pnl=unrealized_pnl,
-                realized_pnl=realized_pnl,
-                leverage=leverage,
-                margin=margin,
-                isolated_margin=isolated_margin,
-                position_value=extracted.get('position_value'),
-                margin_mode=extracted.get('margin_mode'),
-                position_mode=extracted.get('position_mode'),
-                exchange_position_id=extracted.get('exchange_position_id'),
-                timestamp=timestamp,
-                update_time=timestamp,
-                raw_position_data=raw_position,
-                source_exchange_type=exchange.value,
-            )
-            
-            # Apply quality processing
-            if self.quality_level != DataQualityLevel.BASIC:
-                position = self._apply_position_quality_processing(position)
+        tprint(f"📊 UnifiedTradingStandardizer.standardize_position - Standardisation pour {exchange.value}", "INFO")
+        tprint_data_preview({"exchange": exchange.value, "symbol": symbol, "raw_keys": list(raw_position.keys())[:5]}, "UnifiedTradingStandardizer.standardize_position - paramètres")
+        tprint_data_format(raw_position, "UnifiedTradingStandardizer.standardize_position - raw_position")
+        with tprint_timer("UnifiedTradingStandardizer.standardize_position - Temps de standardisation"):
+            try:
+                mapping = self.position_mappings.get(exchange)
+                if not mapping:
+                    raise ValueError(f"No field mapping found for exchange: {exchange}")
+                
+                # Extract fields
+                extracted = self._extract_fields(raw_position, mapping)
+                
+                # Get symbol
+                if not symbol:
+                    symbol = extracted.get('symbol') or raw_position.get('symbol', '')
+                if not symbol:
+                    raise ValueError("Symbol is required and could not be extracted from raw_position")
+                
+                # Normalize position side
+                side = normalize_position_side(
+                    extracted.get('side', 'neutral'),
+                    exchange
+                )
+                
+                # Extract numeric fields
+                size = abs(float(extracted.get('size', 0)))  # Always positive
+                entry_price = float(extracted.get('entry_price', 0))
+                mark_price = self._safe_float(extracted.get('mark_price'))
+                liquidation_price = self._safe_float(extracted.get('liquidation_price'))
+                unrealized_pnl = float(extracted.get('unrealized_pnl', 0))
+                realized_pnl = float(extracted.get('realized_pnl', 0))
+                leverage = self._safe_float(extracted.get('leverage'))
+                margin = self._safe_float(extracted.get('margin'))
+                isolated_margin = self._safe_float(extracted.get('isolated_margin'))
+                
+                # Extract timestamps
+                timestamp = self._convert_timestamp(
+                    extracted.get('timestamp'),
+                    exchange,
+                    default=datetime.now(timezone.utc)
+                )
+                
+                # Create standardized position
+                position = StandardizedPosition(
+                    symbol=str(symbol),
+                    exchange=exchange.value,
+                    side=side,
+                    size=size,
+                    entry_price=entry_price,
+                    mark_price=mark_price,
+                    liquidation_price=liquidation_price,
+                    unrealized_pnl=unrealized_pnl,
+                    realized_pnl=realized_pnl,
+                    leverage=leverage,
+                    margin=margin,
+                    isolated_margin=isolated_margin,
+                    position_value=extracted.get('position_value'),
+                    margin_mode=extracted.get('margin_mode'),
+                    position_mode=extracted.get('position_mode'),
+                    exchange_position_id=extracted.get('exchange_position_id'),
+                    timestamp=timestamp,
+                    update_time=timestamp,
+                    raw_position_data=raw_position,
+                    source_exchange_type=exchange.value,
+                )
+                
+                # Apply quality processing
+                if self.quality_level != DataQualityLevel.BASIC:
+                    position = self._apply_position_quality_processing(position)
 
-            tprint(f"Position standardization successful: symbol={position.symbol}, side={position.side}, size={position.size}", "SUCCESS")
-            return position
+                tprint(f"Position standardization successful: symbol={position.symbol}, side={position.side}, size={position.size}", "SUCCESS")
+                return position
 
-        except Exception as e:
-            self.failure_counts['positions'] += 1
-            error_msg = f"Failed to standardize position from {exchange.value}: {e}"
-            self.logger.error(error_msg)
-            tprint(f"Position standardization failed for {exchange.value}: {e}", "ERROR")
+            except Exception as e:
+                self.failure_counts['positions'] += 1
+                error_msg = f"Failed to standardize position from {exchange.value}: {e}"
+                self.logger.error(error_msg)
+                tprint(f"Position standardization failed for {exchange.value}: {e}", "ERROR")
 
-            # In strict mode, re-raise the exception
-            if self.strict_mode:
-                raise ValueError(error_msg) from e
+                # In strict mode, re-raise the exception
+                if self.strict_mode:
+                    raise ValueError(error_msg) from e
 
-            # In lenient mode, return invalid position for tracking
-            return StandardizedPosition(
-                symbol=symbol or 'UNKNOWN',
-                exchange=exchange.value,
-                side='neutral',
-                size=0.0,
-                entry_price=0.0,
-                timestamp=datetime.now(timezone.utc),
-                update_time=datetime.now(timezone.utc),
-                is_valid=False,
-                validation_errors=[str(e)],
-            )
+                # In lenient mode, return invalid position for tracking
+                return StandardizedPosition(
+                    symbol=symbol or 'UNKNOWN',
+                    exchange=exchange.value,
+                    side='neutral',
+                    size=0.0,
+                    entry_price=0.0,
+                    timestamp=datetime.now(timezone.utc),
+                    update_time=datetime.now(timezone.utc),
+                    is_valid=False,
+                    validation_errors=[str(e)],
+                )
     
+    @tprint_logged(LogLevel.INFO)
     def standardize_positions(
         self,
         raw_positions: Union[List[Dict], Dict[str, Dict]],
@@ -399,30 +416,32 @@ class UnifiedTradingStandardizer:
         symbol: Optional[str] = None
     ) -> List[StandardizedPosition]:
         """Standardize multiple positions"""
-        tprint(f"standardize_positions called for exchange={exchange.value}", "INFO")
+        tprint(f"📊 UnifiedTradingStandardizer.standardize_positions - Standardisation multiple pour {exchange.value}", "INFO")
+        count = len(raw_positions) if hasattr(raw_positions, '__len__') else 'unknown'
+        tprint_data_preview({"exchange": exchange.value, "count": count, "symbol": symbol}, "UnifiedTradingStandardizer.standardize_positions - paramètres")
+        with tprint_timer("UnifiedTradingStandardizer.standardize_positions - Temps de standardisation"):
+            # Handle dict of positions (keyed by symbol)
+            if isinstance(raw_positions, dict):
+                positions_list = []
+                for pos_symbol, pos_data in raw_positions.items():
+                    if isinstance(pos_data, dict):
+                        positions_list.append(pos_data)
+                    else:
+                        positions_list.append({'symbol': pos_symbol, **pos_data})
+                raw_positions = positions_list
 
-        # Handle dict of positions (keyed by symbol)
-        if isinstance(raw_positions, dict):
-            positions_list = []
-            for pos_symbol, pos_data in raw_positions.items():
-                if isinstance(pos_data, dict):
-                    positions_list.append(pos_data)
-                else:
-                    positions_list.append({'symbol': pos_symbol, **pos_data})
-            raw_positions = positions_list
+            standardized = []
+            for raw_position in raw_positions:
+                try:
+                    position = self.standardize_position(raw_position, exchange, symbol)
+                    standardized.append(position)
+                except Exception as e:
+                    self.logger.warning(f"Failed to standardize position: {e}")
+                    tprint(f"Skipped position due to standardization error: {e}", "WARNING")
+                    continue
 
-        standardized = []
-        for raw_position in raw_positions:
-            try:
-                position = self.standardize_position(raw_position, exchange, symbol)
-                standardized.append(position)
-            except Exception as e:
-                self.logger.warning(f"Failed to standardize position: {e}")
-                tprint(f"Skipped position due to standardization error: {e}", "WARNING")
-                continue
-
-        tprint(f"Standardized {len(standardized)} positions from {exchange.value}", "SUCCESS")
-        return standardized
+            tprint(f"Standardized {len(standardized)} positions from {exchange.value}", "SUCCESS")
+            return standardized
     
     def standardize_positions_to_dataframe(
         self,
@@ -445,6 +464,7 @@ class UnifiedTradingStandardizer:
     # BALANCE STANDARDIZATION
     # ============================================================================
     
+    @tprint_logged(LogLevel.INFO)
     def standardize_balance(
         self,
         raw_balance: Dict[str, Any],
@@ -452,115 +472,121 @@ class UnifiedTradingStandardizer:
         currency: str
     ) -> StandardizedBalance:
         """Standardize balance response from exchange"""
-        tprint(f"standardize_balance called for exchange={exchange.value}, currency={currency}", "INFO")
-        try:
-            mapping = self.balance_mappings.get(exchange)
-            if not mapping:
-                raise ValueError(f"No field mapping found for exchange: {exchange}")
-            
-            # Extract fields
-            extracted = self._extract_fields(raw_balance, mapping)
-            
-            # Get currency (prioritize provided, then extracted)
-            currency = currency or extracted.get('currency') or raw_balance.get('currency', '')
-            if not currency:
-                raise ValueError("Currency is required")
-            
-            # Extract balance values
-            free = float(extracted.get('free', 0))
-            used = float(extracted.get('used', 0))
-            total = extracted.get('total')
-            if total is None:
-                total = free + used
-            else:
-                total = float(total)
-            
-            available_balance = self._safe_float(extracted.get('available_balance'))
-            frozen_balance = self._safe_float(extracted.get('frozen_balance'))
-            
-            # Extract timestamp
-            timestamp = self._convert_timestamp(
-                extracted.get('timestamp'),
-                exchange,
-                default=datetime.now(timezone.utc)
-            )
-            
-            # Create standardized balance
-            balance = StandardizedBalance(
-                currency=str(currency).upper(),
-                exchange=exchange.value,
-                free=free,
-                used=used,
-                total=total,
-                available_balance=available_balance,
-                frozen_balance=frozen_balance,
-                account_type=extracted.get('account_type'),
-                timestamp=timestamp,
-                raw_balance_data=raw_balance,
-                source_exchange_type=exchange.value,
-            )
-            
-            # Apply quality processing
-            if self.quality_level != DataQualityLevel.BASIC:
-                balance = self._apply_balance_quality_processing(balance)
+        tprint(f"💰 UnifiedTradingStandardizer.standardize_balance - Standardisation pour {exchange.value}", "INFO")
+        tprint_data_preview({"exchange": exchange.value, "currency": currency, "raw_keys": list(raw_balance.keys())[:5]}, "UnifiedTradingStandardizer.standardize_balance - paramètres")
+        tprint_data_format(raw_balance, "UnifiedTradingStandardizer.standardize_balance - raw_balance")
+        with tprint_timer("UnifiedTradingStandardizer.standardize_balance - Temps de standardisation"):
+            try:
+                mapping = self.balance_mappings.get(exchange)
+                if not mapping:
+                    raise ValueError(f"No field mapping found for exchange: {exchange}")
+                
+                # Extract fields
+                extracted = self._extract_fields(raw_balance, mapping)
+                
+                # Get currency (prioritize provided, then extracted)
+                currency = currency or extracted.get('currency') or raw_balance.get('currency', '')
+                if not currency:
+                    raise ValueError("Currency is required")
+                
+                # Extract balance values
+                free = float(extracted.get('free', 0))
+                used = float(extracted.get('used', 0))
+                total = extracted.get('total')
+                if total is None:
+                    total = free + used
+                else:
+                    total = float(total)
+                
+                available_balance = self._safe_float(extracted.get('available_balance'))
+                frozen_balance = self._safe_float(extracted.get('frozen_balance'))
+                
+                # Extract timestamp
+                timestamp = self._convert_timestamp(
+                    extracted.get('timestamp'),
+                    exchange,
+                    default=datetime.now(timezone.utc)
+                )
+                
+                # Create standardized balance
+                balance = StandardizedBalance(
+                    currency=str(currency).upper(),
+                    exchange=exchange.value,
+                    free=free,
+                    used=used,
+                    total=total,
+                    available_balance=available_balance,
+                    frozen_balance=frozen_balance,
+                    account_type=extracted.get('account_type'),
+                    timestamp=timestamp,
+                    raw_balance_data=raw_balance,
+                    source_exchange_type=exchange.value,
+                )
+                
+                # Apply quality processing
+                if self.quality_level != DataQualityLevel.BASIC:
+                    balance = self._apply_balance_quality_processing(balance)
 
-            tprint(f"Balance standardization successful: currency={balance.currency}, total={balance.total}", "SUCCESS")
-            return balance
+                tprint(f"Balance standardization successful: currency={balance.currency}, total={balance.total}", "SUCCESS")
+                return balance
 
-        except Exception as e:
-            self.failure_counts['balances'] += 1
-            error_msg = f"Failed to standardize balance from {exchange.value}: {e}"
-            self.logger.error(error_msg)
-            tprint(f"Balance standardization failed for {exchange.value}, currency={currency}: {e}", "ERROR")
+            except Exception as e:
+                self.failure_counts['balances'] += 1
+                error_msg = f"Failed to standardize balance from {exchange.value}: {e}"
+                self.logger.error(error_msg)
+                tprint(f"Balance standardization failed for {exchange.value}, currency={currency}: {e}", "ERROR")
 
-            # In strict mode, re-raise the exception
-            if self.strict_mode:
-                raise ValueError(error_msg) from e
+                # In strict mode, re-raise the exception
+                if self.strict_mode:
+                    raise ValueError(error_msg) from e
 
-            # In lenient mode, return invalid balance for tracking
-            return StandardizedBalance(
-                currency=str(currency).upper(),
-                exchange=exchange.value,
-                free=0.0,
-                used=0.0,
-                total=0.0,
-                timestamp=datetime.now(timezone.utc),
-                is_valid=False,
-                validation_errors=[str(e)],
-            )
+                # In lenient mode, return invalid balance for tracking
+                return StandardizedBalance(
+                    currency=str(currency).upper(),
+                    exchange=exchange.value,
+                    free=0.0,
+                    used=0.0,
+                    total=0.0,
+                    timestamp=datetime.now(timezone.utc),
+                    is_valid=False,
+                    validation_errors=[str(e)],
+                )
     
+    @tprint_logged(LogLevel.INFO)
     def standardize_balances(
         self,
         raw_balances: Union[List[Dict], Dict[str, Dict]],
         exchange: ExchangeType
     ) -> List[StandardizedBalance]:
         """Standardize all balances from account"""
-        tprint(f"standardize_balances called for exchange={exchange.value}", "INFO")
+        tprint(f"💰 UnifiedTradingStandardizer.standardize_balances - Standardisation multiple pour {exchange.value}", "INFO")
+        count = len(raw_balances) if hasattr(raw_balances, '__len__') else 'unknown'
+        tprint_data_preview({"exchange": exchange.value, "count": count}, "UnifiedTradingStandardizer.standardize_balances - paramètres")
+        with tprint_timer("UnifiedTradingStandardizer.standardize_balances - Temps de standardisation"):
+            # Handle dict of balances (keyed by currency)
+            if isinstance(raw_balances, dict):
+                balances_list = []
+                for currency, balance_data in raw_balances.items():
+                    if isinstance(balance_data, dict):
+                        balance_data['currency'] = balance_data.get('currency', currency)
+                        balances_list.append(balance_data)
+                    else:
+                        balances_list.append({'currency': currency})
+                raw_balances = balances_list
 
-        # Handle dict of balances (keyed by currency)
-        if isinstance(raw_balances, dict):
-            balances_list = []
-            for currency, balance_data in raw_balances.items():
-                if isinstance(balance_data, dict):
-                    balance_data['currency'] = balance_data.get('currency', currency)
-                    balances_list.append(balance_data)
-                else:
-                    balances_list.append({'currency': currency})
-            raw_balances = balances_list
+            standardized = []
+            for raw_balance in raw_balances:
+                try:
+                    currency = raw_balance.get('currency', '')
+                    balance = self.standardize_balance(raw_balance, exchange, currency)
+                    standardized.append(balance)
+                except Exception as e:
+                    self.logger.warning(f"Failed to standardize balance: {e}")
+                    tprint(f"Skipped balance due to standardization error: {e}", "WARNING")
+                    continue
 
-        standardized = []
-        for raw_balance in raw_balances:
-            try:
-                currency = raw_balance.get('currency', '')
-                balance = self.standardize_balance(raw_balance, exchange, currency)
-                standardized.append(balance)
-            except Exception as e:
-                self.logger.warning(f"Failed to standardize balance: {e}")
-                tprint(f"Skipped balance due to standardization error: {e}", "WARNING")
-                continue
-
-        tprint(f"Standardized {len(standardized)} balances from {exchange.value}", "SUCCESS")
-        return standardized
+            tprint(f"Standardized {len(standardized)} balances from {exchange.value}", "SUCCESS")
+            return standardized
     
     def standardize_balances_to_dataframe(
         self,
@@ -582,87 +608,92 @@ class UnifiedTradingStandardizer:
     # ACCOUNT INFO STANDARDIZATION
     # ============================================================================
     
+    @tprint_logged(LogLevel.INFO)
     def standardize_account_info(
         self,
         raw_account: Dict[str, Any],
         exchange: ExchangeType
     ) -> StandardizedAccountInfo:
         """Standardize account information response"""
-        tprint(f"standardize_account_info called for exchange={exchange.value}", "INFO")
-        try:
-            # Extract account info fields
-            account_type = raw_account.get('accountType') or raw_account.get('account_type', 'SPOT')
-            can_trade = raw_account.get('canTrade', raw_account.get('can_trade', True))
-            can_withdraw = raw_account.get('canWithdraw', raw_account.get('can_withdraw', True))
-            can_deposit = raw_account.get('canDeposit', raw_account.get('can_deposit', True))
-            
-            # Extract permissions
-            permissions = raw_account.get('permissions', raw_account.get('permission', []))
-            if isinstance(permissions, str):
-                permissions = permissions.split(',')
-            
-            # Extract balances if present
-            balances = []
-            raw_balances = raw_account.get('balances', raw_account.get('balance', []))
-            if raw_balances:
-                balances = self.standardize_balances(raw_balances, exchange)
-            
-            # Extract margin info
-            total_equity = self._safe_float(raw_account.get('totalEquity', raw_account.get('total_equity')))
-            available_margin = self._safe_float(raw_account.get('availableMargin', raw_account.get('available_margin')))
-            used_margin = self._safe_float(raw_account.get('usedMargin', raw_account.get('used_margin')))
-            margin_ratio = self._safe_float(raw_account.get('marginRatio', raw_account.get('margin_ratio')))
-            
-            # Extract timestamp
-            timestamp = self._convert_timestamp(
-                raw_account.get('updateTime', raw_account.get('update_time')),
-                exchange,
-                default=datetime.now(timezone.utc)
-            )
-            
-            # Create standardized account info
-            account_info = StandardizedAccountInfo(
-                exchange=exchange.value,
-                account_type=str(account_type).upper(),
-                can_trade=bool(can_trade),
-                can_withdraw=bool(can_withdraw),
-                can_deposit=bool(can_deposit),
-                permissions=list(permissions),
-                balances=balances,
-                total_equity=total_equity,
-                available_margin=available_margin,
-                used_margin=used_margin,
-                margin_ratio=margin_ratio,
-                timestamp=timestamp,
-                raw_account_data=raw_account,
-                source_exchange_type=exchange.value,
-            )
-            
-            # Apply quality processing
-            if self.quality_level != DataQualityLevel.BASIC:
-                account_info = self._apply_account_quality_processing(account_info)
+        tprint(f"👤 UnifiedTradingStandardizer.standardize_account_info - Standardisation pour {exchange.value}", "INFO")
+        tprint_data_preview({"exchange": exchange.value, "raw_keys": list(raw_account.keys())[:5]}, "UnifiedTradingStandardizer.standardize_account_info - paramètres")
+        tprint_data_format(raw_account, "UnifiedTradingStandardizer.standardize_account_info - raw_account")
+        with tprint_timer("UnifiedTradingStandardizer.standardize_account_info - Temps de standardisation"):
+            try:
+                # Extract account info fields
+                account_type = raw_account.get('accountType') or raw_account.get('account_type', 'SPOT')
+                can_trade = raw_account.get('canTrade', raw_account.get('can_trade', True))
+                can_withdraw = raw_account.get('canWithdraw', raw_account.get('can_withdraw', True))
+                can_deposit = raw_account.get('canDeposit', raw_account.get('can_deposit', True))
+                
+                # Extract permissions
+                permissions = raw_account.get('permissions', raw_account.get('permission', []))
+                if isinstance(permissions, str):
+                    permissions = permissions.split(',')
+                
+                # Extract balances if present
+                balances = []
+                raw_balances = raw_account.get('balances', raw_account.get('balance', []))
+                if raw_balances:
+                    balances = self.standardize_balances(raw_balances, exchange)
+                
+                # Extract margin info
+                total_equity = self._safe_float(raw_account.get('totalEquity', raw_account.get('total_equity')))
+                available_margin = self._safe_float(raw_account.get('availableMargin', raw_account.get('available_margin')))
+                used_margin = self._safe_float(raw_account.get('usedMargin', raw_account.get('used_margin')))
+                margin_ratio = self._safe_float(raw_account.get('marginRatio', raw_account.get('margin_ratio')))
+                
+                # Extract timestamp
+                timestamp = self._convert_timestamp(
+                    raw_account.get('updateTime', raw_account.get('update_time')),
+                    exchange,
+                    default=datetime.now(timezone.utc)
+                )
+                
+                # Create standardized account info
+                account_info = StandardizedAccountInfo(
+                    exchange=exchange.value,
+                    account_type=str(account_type).upper(),
+                    can_trade=bool(can_trade),
+                    can_withdraw=bool(can_withdraw),
+                    can_deposit=bool(can_deposit),
+                    permissions=list(permissions),
+                    balances=balances,
+                    total_equity=total_equity,
+                    available_margin=available_margin,
+                    used_margin=used_margin,
+                    margin_ratio=margin_ratio,
+                    timestamp=timestamp,
+                    raw_account_data=raw_account,
+                    source_exchange_type=exchange.value,
+                )
+                
+                # Apply quality processing
+                if self.quality_level != DataQualityLevel.BASIC:
+                    account_info = self._apply_account_quality_processing(account_info)
 
-            tprint(f"Account info standardization successful: exchange={account_info.exchange}, account_type={account_info.account_type}, balances={len(account_info.balances)}", "SUCCESS")
-            return account_info
+                tprint(f"Account info standardization successful: exchange={account_info.exchange}, account_type={account_info.account_type}, balances={len(account_info.balances)}", "SUCCESS")
+                return account_info
 
-        except Exception as e:
-            self.logger.error(f"Failed to standardize account info from {exchange.value}: {e}")
-            tprint(f"Account info standardization failed for {exchange.value}: {e}", "ERROR")
-            return StandardizedAccountInfo(
-                exchange=exchange.value,
-                account_type='SPOT',
-                can_trade=False,
-                can_withdraw=False,
-                can_deposit=False,
-                timestamp=datetime.now(timezone.utc),
-                is_valid=False,
-                validation_errors=[str(e)],
-            )
+            except Exception as e:
+                self.logger.error(f"Failed to standardize account info from {exchange.value}: {e}")
+                tprint(f"Account info standardization failed for {exchange.value}: {e}", "ERROR")
+                return StandardizedAccountInfo(
+                    exchange=exchange.value,
+                    account_type='SPOT',
+                    can_trade=False,
+                    can_withdraw=False,
+                    can_deposit=False,
+                    timestamp=datetime.now(timezone.utc),
+                    is_valid=False,
+                    validation_errors=[str(e)],
+                )
     
     # ============================================================================
     # TRADE STANDARDIZATION
     # ============================================================================
     
+    @tprint_logged(LogLevel.INFO)
     def standardize_trade(
         self,
         raw_trade: Dict[str, Any],
@@ -671,101 +702,105 @@ class UnifiedTradingStandardizer:
         order_id: Optional[str] = None
     ) -> StandardizedTrade:
         """Standardize trade/execution response"""
-        tprint(f"standardize_trade called for exchange={exchange.value}, symbol={symbol}, order_id={order_id}", "INFO")
-        try:
-            mapping = self.trade_mappings.get(exchange)
-            if not mapping:
-                raise ValueError(f"No field mapping found for exchange: {exchange}")
-            
-            # Extract fields
-            extracted = self._extract_fields(raw_trade, mapping)
-            
-            # Get order_id
-            if not order_id:
-                order_id = extracted.get('order_id') or raw_trade.get('orderId', '')
-            
-            # Normalize side
-            side = self._normalize_value(
-                extracted.get('side'),
-                normalize_order_side,
-                exchange,
-                default=OrderSide.BUY
-            )
-            
-            # Extract numeric fields
-            price = float(extracted.get('price', 0))
-            quantity = float(extracted.get('quantity', 0))
-            fee = float(extracted.get('fee', 0))
-            fee_currency = extracted.get('fee_currency') or 'USDT'
-            
-            # Extract flags
-            is_maker = extracted.get('is_maker')
-            if isinstance(is_maker, str):
-                is_maker = is_maker.lower() in ['true', '1', 'yes', 'maker']
-            is_buyer = extracted.get('is_buyer')
-            if isinstance(is_buyer, str):
-                is_buyer = is_buyer.lower() in ['true', '1', 'yes']
-            
-            # Extract timestamp
-            timestamp = self._convert_timestamp(
-                extracted.get('timestamp'),
-                exchange,
-                default=datetime.now(timezone.utc)
-            )
-            
-            # Create standardized trade
-            trade = StandardizedTrade(
-                trade_id=str(extracted.get('trade_id', raw_trade.get('id', ''))),
-                order_id=str(order_id),
-                symbol=str(symbol),
-                exchange=exchange.value,
-                side=side,
-                price=price,
-                quantity=quantity,
-                fee=fee,
-                fee_currency=str(fee_currency),
-                is_maker=is_maker,
-                is_buyer=is_buyer,
-                trade_type=extracted.get('trade_type'),
-                timestamp=timestamp,
-                raw_trade_data=raw_trade,
-                source_exchange_type=exchange.value,
-            )
-            
-            # Apply quality processing
-            if self.quality_level != DataQualityLevel.BASIC:
-                trade = self._apply_trade_quality_processing(trade)
+        tprint(f"🔄 UnifiedTradingStandardizer.standardize_trade - Standardisation pour {exchange.value}", "INFO")
+        tprint_data_preview({"exchange": exchange.value, "symbol": symbol, "order_id": order_id, "raw_keys": list(raw_trade.keys())[:5]}, "UnifiedTradingStandardizer.standardize_trade - paramètres")
+        tprint_data_format(raw_trade, "UnifiedTradingStandardizer.standardize_trade - raw_trade")
+        with tprint_timer("UnifiedTradingStandardizer.standardize_trade - Temps de standardisation"):
+            try:
+                mapping = self.trade_mappings.get(exchange)
+                if not mapping:
+                    raise ValueError(f"No field mapping found for exchange: {exchange}")
+                
+                # Extract fields
+                extracted = self._extract_fields(raw_trade, mapping)
+                
+                # Get order_id
+                if not order_id:
+                    order_id = extracted.get('order_id') or raw_trade.get('orderId', '')
+                
+                # Normalize side
+                side = self._normalize_value(
+                    extracted.get('side'),
+                    normalize_order_side,
+                    exchange,
+                    default=OrderSide.BUY
+                )
+                
+                # Extract numeric fields
+                price = float(extracted.get('price', 0))
+                quantity = float(extracted.get('quantity', 0))
+                fee = float(extracted.get('fee', 0))
+                fee_currency = extracted.get('fee_currency') or 'USDT'
+                
+                # Extract flags
+                is_maker = extracted.get('is_maker')
+                if isinstance(is_maker, str):
+                    is_maker = is_maker.lower() in ['true', '1', 'yes', 'maker']
+                is_buyer = extracted.get('is_buyer')
+                if isinstance(is_buyer, str):
+                    is_buyer = is_buyer.lower() in ['true', '1', 'yes']
+                
+                # Extract timestamp
+                timestamp = self._convert_timestamp(
+                    extracted.get('timestamp'),
+                    exchange,
+                    default=datetime.now(timezone.utc)
+                )
+                
+                # Create standardized trade
+                trade = StandardizedTrade(
+                    trade_id=str(extracted.get('trade_id', raw_trade.get('id', ''))),
+                    order_id=str(order_id),
+                    symbol=str(symbol),
+                    exchange=exchange.value,
+                    side=side,
+                    price=price,
+                    quantity=quantity,
+                    fee=fee,
+                    fee_currency=str(fee_currency),
+                    is_maker=is_maker,
+                    is_buyer=is_buyer,
+                    trade_type=extracted.get('trade_type'),
+                    timestamp=timestamp,
+                    raw_trade_data=raw_trade,
+                    source_exchange_type=exchange.value,
+                )
+                
+                # Apply quality processing
+                if self.quality_level != DataQualityLevel.BASIC:
+                    trade = self._apply_trade_quality_processing(trade)
 
-            tprint(f"Trade standardization successful: trade_id={trade.trade_id}, symbol={trade.symbol}, quantity={trade.quantity}@{trade.price}", "SUCCESS")
-            return trade
+                tprint(f"Trade standardization successful: trade_id={trade.trade_id}, symbol={trade.symbol}, quantity={trade.quantity}@{trade.price}", "SUCCESS")
+                return trade
 
-        except Exception as e:
-            self.failure_counts['trades'] += 1
-            error_msg = f"Failed to standardize trade from {exchange.value}: {e}"
-            self.logger.error(error_msg)
-            tprint(f"Trade standardization failed for {exchange.value}: {e}", "ERROR")
+            except Exception as e:
+                self.failure_counts['trades'] += 1
+                error_msg = f"Failed to standardize trade from {exchange.value}: {e}"
+                self.logger.error(error_msg)
+                tprint(f"Trade standardization failed for {exchange.value}: {e}", "ERROR")
 
-            # In strict mode, re-raise the exception
-            if self.strict_mode:
-                raise ValueError(error_msg) from e
+                # In strict mode, re-raise the exception
+                if self.strict_mode:
+                    raise ValueError(error_msg) from e
 
-            # In lenient mode, return invalid trade for tracking
-            invalid_trade = StandardizedTrade(
-                trade_id=str(raw_trade.get('id', 'unknown')),
-                order_id=str(order_id or 'unknown'),
-                symbol=str(symbol),
-                exchange=exchange.value,
-                side=OrderSide.BUY,
-                price=0.0,
-                quantity=0.0,
-                fee=0.0,
-                fee_currency='USDT',
-                timestamp=datetime.now(timezone.utc),
-                is_valid=False,
-                validation_errors=[str(e)],
-            )
-            return invalid_trade
+                # In lenient mode, return invalid trade for tracking
+                invalid_trade = StandardizedTrade(
+                    trade_id=str(raw_trade.get('id', 'unknown')),
+                    order_id=str(order_id or 'unknown'),
+                    symbol=str(symbol),
+                    exchange=exchange.value,
+                    side=OrderSide.BUY,
+                    price=0.0,
+                    quantity=0.0,
+                    fee=0.0,
+                    fee_currency='USDT',
+                    timestamp=datetime.now(timezone.utc),
+                    is_valid=False,
+                    validation_errors=[str(e)],
+                )
+                return invalid_trade
     
+    @tprint_logged(LogLevel.INFO)
     def standardize_trades(
         self,
         raw_trades: Union[List[Dict], pd.DataFrame],
@@ -773,23 +808,25 @@ class UnifiedTradingStandardizer:
         symbol: str
     ) -> List[StandardizedTrade]:
         """Standardize multiple trades"""
-        tprint(f"standardize_trades called for exchange={exchange.value}, symbol={symbol}, count={len(raw_trades) if hasattr(raw_trades, '__len__') else 'unknown'}", "INFO")
+        tprint(f"🔄 UnifiedTradingStandardizer.standardize_trades - Standardisation multiple pour {exchange.value}", "INFO")
+        count = len(raw_trades) if hasattr(raw_trades, '__len__') else 'unknown'
+        tprint_data_preview({"exchange": exchange.value, "symbol": symbol, "count": count}, "UnifiedTradingStandardizer.standardize_trades - paramètres")
+        with tprint_timer("UnifiedTradingStandardizer.standardize_trades - Temps de standardisation"):
+            if isinstance(raw_trades, pd.DataFrame):
+                raw_trades = raw_trades.to_dict('records')
 
-        if isinstance(raw_trades, pd.DataFrame):
-            raw_trades = raw_trades.to_dict('records')
+            standardized = []
+            for raw_trade in raw_trades:
+                try:
+                    trade = self.standardize_trade(raw_trade, exchange, symbol)
+                    standardized.append(trade)
+                except Exception as e:
+                    self.logger.warning(f"Failed to standardize trade: {e}")
+                    tprint(f"Skipped trade due to standardization error: {e}", "WARNING")
+                    continue
 
-        standardized = []
-        for raw_trade in raw_trades:
-            try:
-                trade = self.standardize_trade(raw_trade, exchange, symbol)
-                standardized.append(trade)
-            except Exception as e:
-                self.logger.warning(f"Failed to standardize trade: {e}")
-                tprint(f"Skipped trade due to standardization error: {e}", "WARNING")
-                continue
-
-        tprint(f"Standardized {len(standardized)} trades from {exchange.value}", "SUCCESS")
-        return standardized
+            tprint(f"Standardized {len(standardized)} trades from {exchange.value}", "SUCCESS")
+            return standardized
     
     def standardize_trades_to_dataframe(
         self,
@@ -1081,9 +1118,10 @@ class UnifiedTradingStandardizer:
             self.logger.info(f"✅ Field mappings validated for {len(required_exchanges)} exchanges")
             tprint(f"Field mappings validated successfully for {len(required_exchanges)} exchanges", "SUCCESS")
 
+    @tprint_logged(LogLevel.INFO)
     def get_telemetry(self) -> Dict[str, Any]:
         """Get standardization telemetry and failure statistics"""
-        tprint("Getting standardization telemetry", "INFO")
+        tprint("📊 UnifiedTradingStandardizer.get_telemetry - Récupération des statistiques", "INFO")
         total_failures = sum(self.failure_counts.values())
 
         telemetry = {
@@ -1097,12 +1135,13 @@ class UnifiedTradingStandardizer:
             }
         }
 
-        tprint(f"Telemetry retrieved: total_failures={total_failures}, quality_level={self.quality_level.value}", "SUCCESS")
+        tprint_performance(f"UnifiedTradingStandardizer.get_telemetry - statistiques", len(telemetry))
         return telemetry
 
+    @tprint_logged(LogLevel.INFO)
     def reset_telemetry(self) -> None:
         """Reset telemetry counters"""
-        tprint("Resetting telemetry counters", "INFO")
+        tprint("🔄 UnifiedTradingStandardizer.reset_telemetry - Réinitialisation des compteurs", "INFO")
 
         self.failure_counts = {
             'orders': 0,
@@ -1113,7 +1152,7 @@ class UnifiedTradingStandardizer:
         }
 
         self.logger.info("Telemetry counters reset")
-        tprint("Telemetry counters reset successfully", "SUCCESS")
+        tprint("✅ UnifiedTradingStandardizer.reset_telemetry - Compteurs réinitialisés avec succès", "SUCCESS")
 
 
 # Global instance for easy access (with strict mode enabled by default)

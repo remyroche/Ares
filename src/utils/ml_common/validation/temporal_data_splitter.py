@@ -157,46 +157,32 @@ class RegimeAwareSplitter(TemporalDataSplitter):
         logger.info(f"Val regimes: {val_regimes}")
         logger.info(f"Test regimes: {test_regimes}")
         
-        # CRITICAL FIX: If any regime is missing from training, use stratified sampling
+        # CRITICAL FIX: If any regime is missing from training, WARN but DO NOT move data
         missing_from_train = set(all_regimes) - set(train_regimes)
         if missing_from_train:
             logger.warning(f"⚠️ Regimes {missing_from_train} missing from training set")
-            logger.warning(f"⚠️ Applying stratified sampling to ensure all regimes in training")
+            logger.warning(f"⚠️ This is expected in temporal splitting - DO NOT move data from validation/test")
+            logger.warning(f"⚠️ Moving data would cause temporal leakage and lookahead bias")
+            logger.warning(f"⚠️ Accept that some regimes may not appear in all temporal splits")
             
-            # For each missing regime, move at least 1 sample from val/test to train
-            for regime in missing_from_train:
-                # Check if regime exists in validation set
-                val_regime_mask = (y_val == regime)
-                if np.any(val_regime_mask):
-                    # Move 1 sample from validation to training
-                    val_regime_idx = np.where(val_regime_mask)[0][0]
-                    X_train = np.vstack([X_train, X_val[val_regime_idx:val_regime_idx+1]])
-                    y_train = np.append(y_train, y_val[val_regime_idx:val_regime_idx+1])
-                    X_val = np.delete(X_val, val_regime_idx, axis=0)
-                    y_val = np.delete(y_val, val_regime_idx)
-                    logger.info(f"✅ Moved 1 sample of regime {regime} from validation to training")
-                # Otherwise check test set
-                elif np.any(y_test == regime):
-                    test_regime_mask = (y_test == regime)
-                    test_regime_idx = np.where(test_regime_mask)[0][0]
-                    X_train = np.vstack([X_train, X_test[test_regime_idx:test_regime_idx+1]])
-                    y_train = np.append(y_train, y_test[test_regime_idx:test_regime_idx+1])
-                    X_test = np.delete(X_test, test_regime_idx, axis=0)
-                    y_test = np.delete(y_test, test_regime_idx)
-                    logger.info(f"✅ Moved 1 sample of regime {regime} from test to training")
+            # CRITICAL: DO NOT move data between splits - this causes leakage
+            # Instead, log the missing regimes and continue with temporal split
+            logger.info(f"✅ Maintaining temporal integrity - missing regimes: {missing_from_train}")
+            logger.info(f"✅ This is correct behavior for time series data")
             
-            # Verify all regimes now in training
-            train_regimes = np.unique(y_train)
-            missing_from_train = set(all_regimes) - set(train_regimes)
-            if missing_from_train:
+            # Verify we have at least one regime in training
+            if len(train_regimes) == 0:
                 error_msg = (
-                    f"❌ CRITICAL: Regimes {missing_from_train} still missing after stratified sampling!\n"
-                    f"   This should not happen. Check data distribution."
+                    f"❌ CRITICAL: No regimes found in training set!\n"
+                    f"   Temporal split resulted in empty training data.\n"
+                    f"   Consider adjusting split ratios or using more data."
                 )
                 logger.error(error_msg)
                 raise ValueError(error_msg)
             
-            logger.info(f"✅ All regimes now present in training set: {train_regimes}")
+            logger.info(f"✅ Training regimes maintained: {train_regimes}")
+        else:
+            logger.info(f"✅ All regimes present in training set: {train_regimes}")
         
         # Check if all regimes have sufficient samples in training set
         insufficient_regimes = []

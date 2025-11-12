@@ -105,6 +105,14 @@ except ImportError:
     VECTORIZATION_AVAILABLE = False
     tprint_warning("Vectorization utilities not available")
 
+# Import regime economic relevance analyzer
+try:
+    from .regime_economic_relevance_analyzer import create_regime_economic_relevance_analyzer
+    ECONOMIC_ANALYZER_AVAILABLE = True
+except ImportError:
+    ECONOMIC_ANALYZER_AVAILABLE = False
+    tprint_warning("Regime economic relevance analyzer not available")
+
 logger = logging.getLogger(__name__)
 
 
@@ -352,6 +360,12 @@ class ClusterQualityMetrics:
     # Metadata
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     
+    # Economic relevance analysis results
+    economic_relevance_analysis: Dict[str, Any] = field(default_factory=dict)
+    strategy_performance_metrics: Dict[str, Any] = field(default_factory=dict)
+    economic_significance_test: Dict[str, Any] = field(default_factory=dict)
+    economic_report_path: Optional[str] = None
+    
     @staticmethod
     def _safe_array_to_list(arr: Optional[Union[np.ndarray, List[Any]]]) -> Optional[List[Any]]:
         """
@@ -497,7 +511,13 @@ class ClusterQualityMetrics:
             'turnover_q75': self.turnover_q75,
             
             # Metadata
-            'timestamp': self.timestamp
+            'timestamp': self.timestamp,
+            
+            # Economic relevance analysis
+            'economic_relevance_analysis': self.economic_relevance_analysis,
+            'strategy_performance_metrics': self.strategy_performance_metrics,
+            'economic_significance_test': self.economic_significance_test,
+            'economic_report_path': self.economic_report_path
         }
     
     def is_high_quality(self, 
@@ -834,6 +854,27 @@ class ClusterQualityAssessor:
             except Exception:
                 metrics.predictive_power = 0.0
 
+        # 9. Economic relevance analysis (if forward_returns available)
+        if forward_returns is not None and ECONOMIC_ANALYZER_AVAILABLE:
+            try:
+                economic_results = self.assess_economic_relevance(
+                    regime_labels=regime_labels,
+                    feature_data=feature_data,
+                    forward_returns=forward_returns,
+                    timestamps=timestamps
+                )
+                
+                # Store economic results in metrics
+                metrics.economic_relevance_analysis = economic_results
+                metrics.strategy_performance_metrics = economic_results.get('strategy_performance', {})
+                metrics.economic_significance_test = economic_results.get('significance_tests', {})
+                metrics.economic_report_path = economic_results.get('economic_report_path')
+                
+                if economic_results:
+                    tprint_success(f"✅ Analyse économique intégrée: {len(economic_results)} sections")
+            except Exception as e:
+                tprint_error(f"❌ Échec de l'analyse économique: {e}")
+
         # 10. Calculate overall quality score
         try:
             metrics.quality_score = self._calculate_quality_score(metrics)
@@ -1076,6 +1117,30 @@ class ClusterQualityAssessor:
                         metrics.tail_coverage_score = posterior_results.get('tail_coverage_score')
                     except Exception as e:
                         tprint_warning(f"⚠️ Posterior predictive check skipped: {e}")
+                
+                # VIII. ECONOMIC RELEVANCE ANALYSIS (NEW)
+                if forward_returns is not None and ECONOMIC_ANALYZER_AVAILABLE:
+                    try:
+                        tprint_info("🔍 Démarrage de l'analyse de pertinence économique HMM...")
+                        
+                        economic_results = self.assess_economic_relevance(
+                            regime_labels=regime_labels,
+                            feature_data=feature_data,
+                            forward_returns=forward_returns,
+                            timestamps=timestamps,
+                            predicted_regimes=regime_labels  # Use HMM labels as "predicted"
+                        )
+                        
+                        # Store economic results in metrics
+                        metrics.economic_relevance_analysis = economic_results
+                        metrics.strategy_performance_metrics = economic_results.get('strategy_performance', {})
+                        metrics.economic_significance_test = economic_results.get('significance_tests', {})
+                        metrics.economic_report_path = economic_results.get('economic_report_path')
+                        
+                        if economic_results:
+                            tprint_success(f"✅ Analyse économique HMM intégrée: {len(economic_results)} sections")
+                    except Exception as e:
+                        tprint_error(f"❌ Échec de l'analyse économique HMM: {e}")
                 
                 tprint_info("="*70)
                 tprint_success("✅ COMPREHENSIVE HMM validation complete!")
@@ -2921,6 +2986,103 @@ class ClusterQualityAssessor:
         
         return 0.0
     
+    def assess_economic_relevance(self,
+                                regime_labels: np.ndarray,
+                                feature_data: pd.DataFrame,
+                                forward_returns: pd.Series,
+                                timestamps: Optional[pd.DatetimeIndex] = None,
+                                predicted_regimes: Optional[np.ndarray] = None) -> Dict[str, Any]:
+        """
+        Évalue la pertinence économique des régimes en utilisant RegimeEconomicRelevanceAnalyzer.
+        
+        Cette méthode analyse si la classification correcte des régimes se traduit par de meilleures
+        performances de trading de manière stable et actionnable.
+        
+        Args:
+            regime_labels: Étiquettes de régime/réseau (-1 pour le bruit)
+            feature_data: Données de caractéristiques utilisées pour le clustering
+            forward_returns: Rendements futurs pour la validation économique
+            timestamps: Timestamps optionnels pour l'analyse temporelle
+            predicted_regimes: Régimes prédits optionnels pour l'analyse comparative
+            
+        Returns:
+            Dictionnaire contenant les résultats de l'analyse économique
+        """
+        if not ECONOMIC_ANALYZER_AVAILABLE:
+            tprint_warning("⚠️ RegimeEconomicRelevanceAnalyzer non disponible - analyse économique ignorée")
+            return {}
+        
+        try:
+            tprint_info("🔍 Démarrage de l'analyse de pertinence économique des régimes")
+            
+            # Créer une instance de RegimeEconomicRelevanceAnalyzer
+            analyzer = create_regime_economic_relevance_analyzer()
+            
+            # S'assurer que les données sont alignées
+            min_length = min(len(regime_labels), len(feature_data), len(forward_returns))
+            if predicted_regimes is not None:
+                min_length = min(min_length, len(predicted_regimes))
+            
+            regime_labels_aligned = regime_labels[:min_length]
+            feature_data_aligned = feature_data.iloc[:min_length].reset_index(drop=True)
+            forward_returns_aligned = forward_returns.iloc[:min_length].reset_index(drop=True)
+            timestamps_aligned = timestamps[:min_length] if timestamps is not None else None
+            predicted_regimes_aligned = predicted_regimes[:min_length] if predicted_regimes is not None else None
+            
+            # Exécuter l'analyse économique complète
+            # Évaluer les stratégies de trading basées sur les régimes
+            strategies = analyzer.evaluate_strategies(
+                prices=forward_returns_aligned,  # Utiliser les rendements cumulés comme "prix"
+                regime_labels=regime_labels_aligned,
+                predicted_regimes=predicted_regimes_aligned
+            )
+            
+            # Effectuer les tests de signification
+            significance_results = analyzer.perform_significance_test(
+                strategies=strategies,
+                test_method='bootstrap'
+            )
+            
+            # Générer le rapport économique
+            report_path = analyzer.generate_economic_report(
+                strategies=strategies,
+                significance_results=significance_results,
+                output_dir="outcomes"
+            )
+            
+            # Sauvegarder les résultats complets
+            results_path = analyzer.save_results(
+                strategies=strategies,
+                significance_results=significance_results,
+                output_dir="outcomes"
+            )
+            
+            # Formater les résultats pour le retour
+            economic_results = {
+                'strategy_performance': {name: strategy.to_dict() for name, strategy in strategies.items()},
+                'significance_tests': significance_results,
+                'report_path': report_path,
+                'results_path': results_path
+            }
+            
+            tprint_success("✅ Analyse de pertinence économique terminée")
+            
+            # Extraire et formater les résultats principaux
+            formatted_results = {
+                'strategy_performance': economic_results.get('strategy_performance', {}),
+                'significance_tests': economic_results.get('significance_tests', {}),
+                'economic_report_path': economic_results.get('report_path'),
+                'regime_mapping': economic_results.get('regime_mapping', {}),
+                'performance_comparison': economic_results.get('performance_comparison', {}),
+                'economic_interpretation': economic_results.get('economic_interpretation', {})
+            }
+            
+            return formatted_results
+            
+        except Exception as e:
+            tprint_error(f"❌ Échec de l'analyse de pertinence économique: {e}")
+            return {}
+    
     def save_metrics(self, metrics: ClusterQualityMetrics, artifact_name: str = "cluster_quality_metrics"):
         """
         Save quality metrics using artifact manager.
@@ -3181,6 +3343,54 @@ class ClusterQualityAssessor:
                 csv_data.append(['HMM Validation', 'State Occupancy', str(metrics.state_occupancy), 'Fraction of time in each state', 'Shows regime dominance patterns'])
             if metrics.expected_state_durations:
                 csv_data.append(['HMM Validation', 'Expected State Durations', str(metrics.expected_state_durations), 'Expected duration for each state', 'Predictive regime persistence measure'])
+            
+            # Economic Relevance Analysis (NEW)
+            if metrics.economic_relevance_analysis:
+                csv_data.append(['Economic Relevance', 'Economic Analysis Available', 'Yes', 'Economic relevance analysis was performed', 'Provides trading performance insights'])
+                
+                # Strategy Performance Summary
+                if metrics.strategy_performance_metrics:
+                    strategy_perf = metrics.strategy_performance_metrics
+                    
+                    if 'regime_based_strategy' in strategy_perf:
+                        regime_strategy = strategy_perf['regime_based_strategy']
+                        csv_data.append(['Economic Relevance', 'Regime Strategy Sharpe', f"{regime_strategy.get('sharpe_ratio', 0.0):.4f}", 'Sharpe ratio of regime-based strategy', 'Higher is better'])
+                        csv_data.append(['Economic Relevance', 'Regime Strategy Return', f"{regime_strategy.get('total_return', 0.0):.2%}", 'Total return of regime-based strategy', 'Higher is better'])
+                        csv_data.append(['Economic Relevance', 'Regime Strategy Max DD', f"{regime_strategy.get('max_drawdown', 0.0):.2%}", 'Maximum drawdown of regime-based strategy', 'Lower is better'])
+                        csv_data.append(['Economic Relevance', 'Regime Strategy Win Rate', f"{regime_strategy.get('win_rate', 0.0):.2%}", 'Win rate of regime-based strategy', 'Higher is better'])
+                    
+                    if 'buy_and_hold' in strategy_perf:
+                        bh_strategy = strategy_perf['buy_and_hold']
+                        csv_data.append(['Economic Relevance', 'Buy & Hold Sharpe', f"{bh_strategy.get('sharpe_ratio', 0.0):.4f}", 'Sharpe ratio of buy & hold strategy', 'Higher is better'])
+                        csv_data.append(['Economic Relevance', 'Buy & Hold Return', f"{bh_strategy.get('total_return', 0.0):.2%}", 'Total return of buy & hold strategy', 'Higher is better'])
+                        csv_data.append(['Economic Relevance', 'Buy & Hold Max DD', f"{bh_strategy.get('max_drawdown', 0.0):.2%}", 'Maximum drawdown of buy & hold strategy', 'Lower is better'])
+                    
+                    if 'performance_comparison' in strategy_perf:
+                        comparison = strategy_perf['performance_comparison']
+                        csv_data.append(['Economic Relevance', 'Sharpe Uplift vs B&H', f"{comparison.get('sharpe_uplift', 0.0):.2%}", 'Sharpe ratio improvement over buy & hold', 'Positive means outperformance'])
+                        csv_data.append(['Economic Relevance', 'Return Uplift vs B&H', f"{comparison.get('return_uplift', 0.0):.2%}", 'Total return improvement over buy & hold', 'Positive means outperformance'])
+                        csv_data.append(['Economic Relevance', 'Outperformance Frequency', f"{comparison.get('outperformance_frequency', 0.0):.2%}", 'Frequency of outperforming buy & hold', 'Higher is better'])
+                
+                # Significance Tests
+                if metrics.economic_significance_test:
+                    significance = metrics.economic_significance_test
+                    
+                    if 'permutation_test' in significance:
+                        perm_test = significance['permutation_test']
+                        csv_data.append(['Economic Relevance', 'Permutation P-value', f"{perm_test.get('p_value', 1.0):.4f}", 'P-value from permutation test', 'Lower < 0.05 indicates significance'])
+                        csv_data.append(['Economic Relevance', 'Permutation Test Statistic', f"{perm_test.get('test_statistic', 0.0):.4f}", 'Test statistic from permutation test', 'Higher absolute value indicates stronger effect'])
+                        csv_data.append(['Economic Relevance', 'Permutation Is Significant', str(perm_test.get('is_significant', False)), 'Whether permutation test is significant', 'True indicates statistically significant outperformance'])
+                    
+                    if 'bootstrap_test' in significance:
+                        boot_test = significance['bootstrap_test']
+                        csv_data.append(['Economic Relevance', 'Bootstrap CI Lower', f"{boot_test.get('ci_lower', 0.0):.4f}", 'Lower bound of bootstrap confidence interval', '95% confidence interval lower bound'])
+                        csv_data.append(['Economic Relevance', 'Bootstrap CI Upper', f"{boot_test.get('ci_upper', 0.0):.4f}", 'Upper bound of bootstrap confidence interval', '95% confidence interval upper bound'])
+                        csv_data.append(['Economic Relevance', 'Bootstrap Mean', f"{boot_test.get('bootstrap_mean', 0.0):.4f}", 'Mean of bootstrap distribution', 'Central estimate of performance'])
+                        csv_data.append(['Economic Relevance', 'Bootstrap Is Significant', str(boot_test.get('is_significant', False)), 'Whether bootstrap test is significant', 'True indicates statistically significant outperformance'])
+                
+                # Economic Report Path
+                if metrics.economic_report_path:
+                    csv_data.append(['Economic Relevance', 'Economic Report Path', metrics.economic_report_path, 'Path to detailed economic report', 'Contains comprehensive economic analysis'])
             
             # Method-Specific Configuration
             if method_specific_config:
@@ -3918,6 +4128,98 @@ This matrix shows the probability of transitioning from one regime to another:
 
 This metric indicates how well the clustering can predict regime assignments on unseen data.
 """
+        
+        # Economic Relevance Analysis (NEW)
+        if metrics.economic_relevance_analysis:
+            md += """
+---
+
+## Economic Relevance Analysis
+
+"""
+            economic_analysis = metrics.economic_relevance_analysis
+            
+            # Strategy Performance Summary
+            if 'strategy_performance' in economic_analysis:
+                strategy_perf = economic_analysis['strategy_performance']
+                md += "### Strategy Performance Summary\n\n"
+                
+                if 'regime_based_strategy' in strategy_perf:
+                    regime_strategy = strategy_perf['regime_based_strategy']
+                    md += "**Regime-Based Strategy Performance:**\n"
+                    md += f"- Sharpe Ratio: {regime_strategy.get('sharpe_ratio', 'N/A'):.4f}\n"
+                    md += f"- Total Return: {regime_strategy.get('total_return', 'N/A'):.2%}\n"
+                    md += f"- Max Drawdown: {regime_strategy.get('max_drawdown', 'N/A'):.2%}\n"
+                    md += f"- Win Rate: {regime_strategy.get('win_rate', 'N/A'):.2%}\n\n"
+                
+                if 'buy_and_hold' in strategy_perf:
+                    bh_strategy = strategy_perf['buy_and_hold']
+                    md += "**Buy & Hold Strategy Performance:**\n"
+                    md += f"- Sharpe Ratio: {bh_strategy.get('sharpe_ratio', 'N/A'):.4f}\n"
+                    md += f"- Total Return: {bh_strategy.get('total_return', 'N/A'):.2%}\n"
+                    md += f"- Max Drawdown: {bh_strategy.get('max_drawdown', 'N/A'):.2%}\n\n"
+                
+                if 'performance_comparison' in strategy_perf:
+                    comparison = strategy_perf['performance_comparison']
+                    md += "**Performance Comparison:**\n"
+                    md += f"- Sharpe Uplift vs Buy & Hold: {comparison.get('sharpe_uplift', 'N/A'):.2%}\n"
+                    md += f"- Return Uplift vs Buy & Hold: {comparison.get('return_uplift', 'N/A'):.2%}\n"
+                    md += f"- Outperformance Frequency: {comparison.get('outperformance_frequency', 'N/A'):.2%}\n\n"
+            
+            # Significance Tests
+            if 'significance_tests' in economic_analysis:
+                significance = economic_analysis['significance_tests']
+                md += "### Statistical Significance Tests\n\n"
+                
+                if 'permutation_test' in significance:
+                    perm_test = significance['permutation_test']
+                    md += "**Permutation Test Results:**\n"
+                    md += f"- P-value: {perm_test.get('p_value', 'N/A'):.4f}\n"
+                    md += f"- Test Statistic: {perm_test.get('test_statistic', 'N/A'):.4f}\n"
+                    md += f"- Is Significant: {'Yes' if perm_test.get('is_significant', False) else 'No'}\n\n"
+                
+                if 'bootstrap_test' in significance:
+                    boot_test = significance['bootstrap_test']
+                    md += "**Bootstrap Test Results:**\n"
+                    md += f"- Confidence Interval: [{boot_test.get('ci_lower', 'N/A'):.4f}, {boot_test.get('ci_upper', 'N/A'):.4f}]\n"
+                    md += f"- Bootstrap Mean: {boot_test.get('bootstrap_mean', 'N/A'):.4f}\n"
+                    md += f"- Is Significant: {'Yes' if boot_test.get('is_significant', False) else 'No'}\n\n"
+            
+            # Regime Mapping
+            if 'regime_mapping' in economic_analysis:
+                regime_map = economic_analysis['regime_mapping']
+                md += "### Economic Regime Mapping\n\n"
+                md += "| Regime | Economic Interpretation | Recommended Position |\n"
+                md += "|---------|----------------------|----------------------|\n"
+                
+                for regime_id, mapping_info in regime_map.items():
+                    interpretation = mapping_info.get('interpretation', 'Unknown')
+                    position = mapping_info.get('recommended_position', 'Neutral')
+                    md += f"| {regime_id} | {interpretation} | {position} |\n"
+                md += "\n"
+            
+            # Economic Interpretation
+            if 'economic_interpretation' in economic_analysis:
+                econ_interp = economic_analysis['economic_interpretation']
+                md += "### Economic Interpretation\n\n"
+                
+                if 'key_insights' in econ_interp:
+                    insights = econ_interp['key_insights']
+                    md += "**Key Insights:**\n"
+                    for insight in insights:
+                        md += f"- {insight}\n"
+                    md += "\n"
+                
+                if 'trading_recommendations' in econ_interp:
+                    recommendations = econ_interp['trading_recommendations']
+                    md += "**Trading Recommendations:**\n"
+                    for rec in recommendations:
+                        md += f"- {rec}\n"
+                    md += "\n"
+            
+            # Report Path
+            if metrics.economic_report_path:
+                md += f"**Detailed Economic Report:** {metrics.economic_report_path}\n\n"
         
         # Quality assessment
         md += """

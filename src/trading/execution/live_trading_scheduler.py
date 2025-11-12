@@ -663,13 +663,13 @@ class LiveTradingScheduler:
 
     def add_execution_callback(self, callback: Callable[[ExecutionResult], None]) -> None:
         """Add a callback for model executions."""
-        tprint(f"🚀 ModelType.add_execution_callback: callback={callback}, None]={None]}", "INFO")
+        tprint(f"🚀 ModelType.add_execution_callback: callback={callback}, None={None}", "INFO")
 
         self.on_execution_callbacks.append(callback)
 
     def add_error_callback(self, callback: Callable[[Exception], None]) -> None:
         """Add a callback for errors."""
-        tprint(f"🚀 ModelType.add_error_callback: callback={callback}, None]={None]}", "INFO")
+        tprint(f"🚀 ModelType.add_error_callback: callback={callback}, None={None}", "INFO")
 
         self.on_error_callbacks.append(callback)
 

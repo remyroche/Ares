@@ -91,7 +91,7 @@ class LiveTrader:
 
     def __init__(self, config: Dict[str, Any]):
         """
-        tprint(f"🚀 LiveTraderStatus.__init__: config={config}, Any]={Any]}", "INFO")
+        tprint(f"🚀 LiveTraderStatus.__init__: config={config}, Any={Any.__name__}", "INFO")
 
         Initialize live trader.
 
@@ -943,7 +943,7 @@ class LiveTrader:
 
     async def generate_signals(self, symbol: str, market_data: pd.DataFrame, regime_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Generate trading signals."""
-        tprint(f"🚀 LiveTraderStatus.generate_signals: symbol={symbol}, market_data={market_data}, regime_data={regime_data}, Any]]={Any]]}", "INFO")
+        tprint(f"🚀 LiveTraderStatus.generate_signals: symbol={symbol}, market_data_shape={market_data.shape if hasattr(market_data, 'shape') else 'N/A'}, regime_data_keys={list(regime_data.keys()) if regime_data else 'None'}, Any={Any.__name__}", "INFO")
 
         try:
             signals = {}
@@ -1044,7 +1044,7 @@ class LiveTrader:
 # Factory functions
 async def create_live_trader(config: Dict[str, Any]) -> LiveTrader:
     """Create and initialize a live trader."""
-    tprint(f"🚀 LiveTraderStatus.create_live_trader: config={config}, Any]={Any]}", "INFO")
+    tprint(f"🚀 LiveTraderStatus.create_live_trader: config_keys={list(config.keys()) if config else 'None'}, Any={Any.__name__}", "INFO")
 
     trader = LiveTrader(config)
     await trader.initialize()

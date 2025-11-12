@@ -175,88 +175,137 @@ class UnifiedModelsTrainingStep(BaseStep):
 
                 tprint_info(f"   Data range: {data_start} to {data_end}")
                 tprint_info(f"   Total samples: {len(training_data)}")
+                
+                # ========================================================================
+                # CRITICAL VALIDATION: Check dataset size and date range
+                # ========================================================================
+                # Validate date range is chronological
+                if data_start >= data_end:
+                    error_msg = (
+                        f"❌ CRITICAL: Invalid date range in training data!\n"
+                        f"   Start: {data_start}\n"
+                        f"   End: {data_end}\n"
+                        f"   Problem: Start date is not before end date.\n"
+                        f"   This indicates corrupted or improperly sorted data."
+                    )
+                    tprint_error(error_msg)
+                    raise ValueError(error_msg)
+                
+                # Calculate minimum required samples for temporal split with embargos
+                # For 60/20/20 split with 1-day embargo, we need at least ~7 days
+                # At 15-minute intervals: 7 days × 96 samples/day = 672 samples
+                # We use 1000 as absolute minimum (10.4 days) for robust validation
+                MIN_SAMPLES = 1000
+                RECOMMENDED_DAYS = 30  # Recommended minimum for good train/val/test split
+                total_days = (data_end - data_start).days
+                
+                if len(training_data) < MIN_SAMPLES:
+                    error_msg = (
+                        f"❌ CRITICAL: Dataset too small for training!\n"
+                        f"   Current size: {len(training_data):,} samples ({total_days} days)\n"
+                        f"   Minimum required: {MIN_SAMPLES:,} samples (~10 days)\n"
+                        f"   \n"
+                        f"   For proper temporal splitting with 1-day embargos:\n"
+                        f"   - Recommended: {RECOMMENDED_DAYS}+ days\n"
+                        f"   - Absolute minimum: {MIN_SAMPLES:,} samples\n"
+                        f"   \n"
+                        f"   Please ensure feature generation produced sufficient data."
+                    )
+                    tprint_error(error_msg)
+                    raise ValueError(error_msg)
+                
+                # Warn if dataset is small but above minimum
+                if total_days < RECOMMENDED_DAYS:
+                    tprint_warning(
+                        f"⚠️ WARNING: Dataset smaller than recommended for optimal temporal splitting\n"
+                        f"   Current: {len(training_data):,} samples ({total_days} days)\n"
+                        f"   Recommended: {RECOMMENDED_DAYS}+ days\n"
+                        f"   Small datasets may reduce model generalization."
+                    )
+                
+                tprint_success(f"✅ Dataset validation passed: {len(training_data):,} samples, {total_days} days")
 
-                # Create walk-forward split config with expanding window
-                walkforward_config = create_walkforward_split_config_for_pipeline(
+                # MODIFIED: Use simple 70/15/15% temporal split instead of walkforward
+                tprint_info("🔧 USING SIMPLE 70/15/15% TEMPORAL SPLIT (instead of walkforward)")
+                
+                # Calculate split points based on percentages
+                total_samples = len(training_data)
+                train_pct = config.get('train_percentage', 0.70)
+                val_pct = config.get('validation_percentage', 0.15)
+                test_pct = config.get('test_percentage', 0.15)
+                
+                train_end_idx = int(total_samples * train_pct)
+                val_end_idx = int(total_samples * (train_pct + val_pct))
+                
+                # Get actual timestamps for splits
+                train_end_time = training_data.index[train_end_idx - 1]
+                val_end_time = training_data.index[val_end_idx - 1]
+                
+                # Create simple temporal split config (use standard parameters)
+                temporal_config = create_temporal_split_config_for_pipeline(
                     symbol=symbol,
                     exchange=config.get('exchange', 'binance'),
                     timeframe=timeframe,
                     data_start=data_start,
-                    data_end=data_end,
-                    n_folds=3,  # 3 train/val pairs
-                    val_pct_per_fold=0.10,  # 10% validation per fold
-                    final_test_pct=0.15,  # 15% for final test
-                    min_train_pct=0.55,  # Start with 55% training
-                    embargo_days=1  # 1-day embargo
+                    data_end=data_end
                 )
 
-                # Store walk-forward config for later use
-                self._walkforward_config = walkforward_config
-                config['walkforward_config'] = walkforward_config
+                # Store temporal config (no walkforward)
+                self._walkforward_config = None  # Disable walkforward
+                self._temporal_config = temporal_config
+                config['temporal_config'] = temporal_config
 
-                # Log walk-forward split boundaries
+                # Log simple split boundaries
                 tprint_info("=" * 80)
-                tprint_info("📊 WALK-FORWARD EXPANDING WINDOW CONFIGURATION:")
+                tprint_info("📊 SIMPLE TEMPORAL SPLIT CONFIGURATION (70/15/15%):")
                 tprint_info("=" * 80)
-                for fold in walkforward_config.folds:
-                    train_samples = len(training_data.loc[fold.training.start:fold.training.effective_end])
-                    val_samples = len(training_data.loc[fold.validation.start:fold.validation.effective_end])
-                    tprint_info(f"   Fold {fold.fold_num}:")
-                    tprint_info(f"      Train: {fold.training.start} → {fold.training.effective_end} ({train_samples} samples)")
-                    tprint_info(f"      Val:   {fold.validation.start} → {fold.validation.effective_end} ({val_samples} samples)")
+                
+                train_samples = len(training_data.loc[data_start:train_end_time])
+                val_samples = len(training_data.loc[train_end_time:val_end_time]) 
+                test_samples = len(training_data.loc[val_end_time:data_end])
+                
+                tprint_info(f"   Train: {data_start} → {train_end_time} ({train_samples} samples, {train_pct:.0%})")
+                tprint_info(f"   Val:   {train_end_time} → {val_end_time} ({val_samples} samples, {val_pct:.0%})")
+                tprint_info(f"   Test:  {val_end_time} → {data_end} ({test_samples} samples, {test_pct:.0%})")
+                tprint_info(f"   Total: {train_samples + val_samples + test_samples} samples")
+                tprint_info("=" * 80)
 
-                test_samples = len(training_data.loc[walkforward_config.test.start:walkforward_config.test.end])
-                tprint_info(f"   Test:  {walkforward_config.test.start} → {walkforward_config.test.end} ({test_samples} samples)")
-                tprint_info(f"   Strategy: {walkforward_config.strategy}")
+                # For simple temporal split, we use the full dataset (no filtering needed)
                 tprint_info("=" * 80)
-
-                # For walk-forward, we keep data for the LARGEST fold (Fold 3's training period)
-                # This ensures we have all data needed for HPO across all folds
-                last_fold = walkforward_config.folds[-1]
+                tprint_info("🔒 SIMPLE TEMPORAL SPLIT - NO DATA FILTERING")
                 tprint_info("=" * 80)
-                tprint_info("🔒 WALK-FORWARD DATA FILTERING")
-                tprint_info("=" * 80)
-                tprint_info(f"Strategy: Filtering to LARGEST training period (Fold {last_fold.fold_num}) for final model training")
-                tprint_info(f"Rationale: Use the most recent data window for final model deployment")
+                tprint_info(f"Strategy: Using FULL dataset for training (no walkforward filtering)")
+                tprint_info(f"Rationale: Maximize training data usage with simple 70/15/15% split")
+                # For simple temporal split, use the FULL dataset (no filtering)
+                training_data_filtered = training_data.copy()
+                
                 original_len = len(training_data)
-                tprint_info(f"📊 Original dataset size: {original_len} samples")
-                tprint_info(f"📅 Filter period: {last_fold.training.start} → {last_fold.training.effective_end}")
-
-                # Filter to largest training period
-                training_data_filtered = training_data.loc[
-                    (training_data.index >= last_fold.training.start) &
-                    (training_data.index <= last_fold.training.effective_end)
-                ].copy()
-
                 filtered_len = len(training_data_filtered)
-                reduction_pct = ((original_len - filtered_len) / original_len * 100) if original_len > 0 else 0
+                
+                tprint_info(f"📊 Using FULL dataset: {filtered_len} samples")
+                tprint_info(f"📈 No data reduction: {original_len} → {filtered_len} (0% reduction)")
 
-                tprint_info(f"📊 Filtered dataset size: {filtered_len} samples")
-                tprint_info(f"📉 Data reduction: {original_len} → {filtered_len} (-{reduction_pct:.1f}%)")
-
-                # CRITICAL: Check if filtered dataset is sufficient
+                # Check if dataset is sufficient for training
                 n_features = len(training_data_filtered.columns)
                 samples_per_feature = filtered_len / n_features if n_features > 0 else 0
                 min_recommended = n_features * 10
 
                 if filtered_len < min_recommended:
                     tprint_error("=" * 80)
-                    tprint_error("❌ CRITICAL WARNING: INSUFFICIENT DATA AFTER WALK-FORWARD FILTERING")
+                    tprint_error("❌ CRITICAL WARNING: INSUFFICIENT DATA FOR TRAINING")
                     tprint_error("=" * 80)
-                    tprint_error(f"   Filtered samples: {filtered_len}")
+                    tprint_error(f"   Available samples: {filtered_len}")
                     tprint_error(f"   Features: {n_features}")
                     tprint_error(f"   Samples/Feature: {samples_per_feature:.2f}")
                     tprint_error(f"   Minimum recommended: {min_recommended} samples")
                     tprint_error(f"   Deficit: {min_recommended - filtered_len} samples ({((min_recommended - filtered_len) / min_recommended * 100):.1f}%)")
                     tprint_error("")
-                    tprint_error("⚠️  ROOT CAUSE: Walk-forward validation filtering reduces dataset too much!")
+                    tprint_error("⚠️  ROOT CAUSE: Insufficient training data for the number of features!")
                     tprint_error("")
                     tprint_error("💡 POSSIBLE SOLUTIONS:")
                     tprint_error("   1. Increase historical data collection period")
-                    tprint_error("   2. Use smaller validation windows (reduce val_pct_per_fold)")
-                    tprint_error("   3. Use fewer CV folds (reduce n_folds from 3 to 2)")
-                    tprint_error("   4. Increase min_train_pct (currently 55%)")
-                    tprint_error("   5. Disable walk-forward validation for initial training")
+                    tprint_error("   2. Reduce number of features through feature selection")
+                    tprint_error("   3. Use simpler models with fewer parameters")
                     tprint_error("=" * 80)
                 else:
                     tprint_success(f"✅ Filtered dataset has adequate samples ({samples_per_feature:.1f} samples/feature)")
@@ -358,6 +407,15 @@ class UnifiedModelsTrainingStep(BaseStep):
                 tprint_success(f"✅ Configured training with dynamic parameters (samples, epochs, batch size, memory, etc.)")
             else:
                 tprint_warning("No training data available, using default configuration from YAML")
+            
+            # SINGLE SOURCE OF TRUTH: Check environment variable to override HPO
+            # This takes precedence over all other config sources
+            import os
+            disable_hpo_env = os.getenv('DISABLE_HPO', 'false').lower() in ('true', '1', 'yes')
+            if disable_hpo_env:
+                tprint_warning("🚫 HPO DISABLED via DISABLE_HPO environment variable")
+                tprint_info("   Using saved optimal parameters from config")
+                config['enable_hpo'] = False
             
             # Perform hyperparameter optimization before training
             if config.get('enable_hpo', True) and training_data is not None:
@@ -567,7 +625,7 @@ class UnifiedModelsTrainingStep(BaseStep):
             'enable_analyst': training_type.startswith('analyst'),
             'enable_tactician': training_type.startswith('tactician'),
             'enable_ensemble': training_type.endswith('ensemble'),
-            'enable_hpo': True,
+            'enable_hpo': False,  # HPO already completed, use saved optimal params
             'enable_explainability': True,
             'enable_vectorization': True
         }
@@ -907,6 +965,8 @@ class UnifiedModelsTrainingStep(BaseStep):
             
             # Determine target number of features based on dataset size
             n_samples = len(training_data)
+            n_features = len(training_data.columns)
+            
             if n_samples < 500:
                 target_features = min(80, max(50, n_samples // 3))
             elif n_samples < 1000:
@@ -914,7 +974,14 @@ class UnifiedModelsTrainingStep(BaseStep):
             else:
                 target_features = min(150, max(80, n_samples // 10))
             
-            tprint_info(f"🎯 Target feature count: {target_features}")
+            # CRITICAL: Ensure target_features doesn't exceed available features
+            # This is especially important in blank mode with limited features
+            if target_features > n_features:
+                tprint_warning(f"⚠️ Target features ({target_features}) exceeds available features ({n_features})")
+                target_features = n_features
+                tprint_info(f"   Adjusted target to {target_features} features")
+            
+            tprint_info(f"🎯 Target feature count: {target_features} (out of {n_features} available)")
             
             # Use RandomForest for feature importance
             rf_selector = SelectFromModel(
@@ -2250,17 +2317,148 @@ class UnifiedModelsTrainingStep(BaseStep):
                 tprint_error(error_msg)
                 raise ValueError(error_msg)
 
+            # ========================================================================
+            # CRITICAL: ALIGN FEATURES AND TARGETS IMMEDIATELY
+            # ========================================================================
+            # This must happen BEFORE any further processing to ensure consistency
+            tprint_info("=" * 80)
+            tprint_info("🔄 CRITICAL DATA ALIGNMENT CHECK")
+            tprint_info("=" * 80)
+            
+            if training_data is not None and analyst_targets is not None:
+                tprint_info(f"📊 Initial shapes:")
+                tprint_info(f"   Features: {training_data.shape}")
+                tprint_info(f"   Targets: {analyst_targets.shape if hasattr(analyst_targets, 'shape') else len(analyst_targets)}")
+                
+                # Check if indices match (both values AND length)
+                if hasattr(training_data, 'index') and hasattr(analyst_targets, 'index'):
+                    # Check both set equality AND length equality
+                    features_len = len(training_data)
+                    targets_len = len(analyst_targets)
+                    features_idx_set = set(training_data.index)
+                    targets_idx_set = set(analyst_targets.index)
+                    
+                    # Mismatch if either sets differ OR lengths differ (duplicates/missing)
+                    if features_idx_set != targets_idx_set or features_len != targets_len:
+                        tprint_warning("⚠️ INDEX/LENGTH MISMATCH DETECTED - Aligning now...")
+                        
+                        # Find common indices
+                        common_idx = training_data.index.intersection(analyst_targets.index)
+                        features_only = len(features_idx_set - targets_idx_set)
+                        targets_only = len(targets_idx_set - features_idx_set)
+                        
+                        tprint_info(f"   Features length: {features_len:,}")
+                        tprint_info(f"   Targets length: {targets_len:,}")
+                        tprint_info(f"   Common indices: {len(common_idx):,}")
+                        tprint_info(f"   Features-only: {features_only:,}")
+                        tprint_info(f"   Targets-only: {targets_only:,}")
+                        
+                        if len(common_idx) == 0:
+                            raise ValueError(
+                                "❌ CRITICAL: No common indices between features and targets!\n"
+                                f"   Features index range: {training_data.index.min()} to {training_data.index.max()}\n"
+                                f"   Targets index range: {analyst_targets.index.min()} to {analyst_targets.index.max()}\n"
+                                "   This indicates features and targets are from different time periods."
+                            )
+                        
+                        # Align to common indices
+                        # Use the features index as the master (it's already filtered/cleaned)
+                        master_idx = training_data.index
+                        
+                        # Check if targets have duplicate indices
+                        if analyst_targets.index.duplicated().any():
+                            dup_count = analyst_targets.index.duplicated().sum()
+                            tprint_warning(f"⚠️ Targets have {dup_count} duplicate indices - removing duplicates")
+                            # Keep first occurrence of each duplicate
+                            analyst_targets = analyst_targets[~analyst_targets.index.duplicated(keep='first')]
+                        
+                        # Check if targets have all the indices we need
+                        missing_in_targets = set(master_idx) - set(analyst_targets.index)
+                        if missing_in_targets:
+                            tprint_warning(f"⚠️ {len(missing_in_targets)} indices in features but not in targets")
+                        
+                        # Align targets to features index (this will drop extra target rows)
+                        analyst_targets = analyst_targets.reindex(master_idx)
+                        
+                        # Check for NaN in targets after reindex
+                        nan_count = analyst_targets.isna().sum()
+                        if nan_count > 0:
+                            tprint_warning(f"⚠️ {nan_count} NaN values in targets after alignment - dropping those rows")
+                            valid_mask = analyst_targets.notna()
+                            training_data = training_data[valid_mask]
+                            analyst_targets = analyst_targets[valid_mask]
+                        
+                        tprint_success(f"✅ Aligned to {len(training_data):,} common samples")
+                        tprint_info(f"   New features shape: {training_data.shape}")
+                        tprint_info(f"   New targets shape: {len(analyst_targets)}")
+                    else:
+                        tprint_success("✅ Indices and lengths already match perfectly")
+                else:
+                    tprint_warning("⚠️ DataFrames lack proper indices - checking length only")
+                    if len(training_data) != len(analyst_targets):
+                        tprint_error(f"❌ Length mismatch: {len(training_data)} vs {len(analyst_targets)}")
+                        min_len = min(len(training_data), len(analyst_targets))
+                        tprint_warning(f"⚠️ Truncating to {min_len} samples")
+                        training_data = training_data.iloc[:min_len].copy()
+                        if hasattr(analyst_targets, 'iloc'):
+                            analyst_targets = analyst_targets.iloc[:min_len].copy()
+                        else:
+                            analyst_targets = analyst_targets[:min_len]
+                
+                # Verify alignment
+                final_len = len(training_data)
+                target_len = len(analyst_targets)
+                if final_len != target_len:
+                    raise ValueError(
+                        f"❌ ALIGNMENT FAILED: Features ({final_len}) and targets ({target_len}) still mismatched!"
+                    )
+                
+                tprint_success(f"✅ ALIGNMENT VERIFIED: {final_len:,} samples")
+            
+            tprint_info("=" * 80)
             tprint_info("Aligning features and targets...")
             if training_data is not None and analyst_targets is not None:
+                # DEBUG: Log detailed information about data alignment
+                tprint_info(f"🔍 [DEBUG] BEFORE ALIGNMENT:")
+                tprint_info(f"   Features shape: {training_data.shape}")
+                tprint_info(f"   Features index range: {training_data.index.min()} to {training_data.index.max()}")
+                tprint_info(f"   Targets shape: {len(analyst_targets)}")
+                tprint_info(f"   Targets index range: {analyst_targets.index.min()} to {analyst_targets.index.max()}")
+                
                 common_index = training_data.index.intersection(analyst_targets.index)
+                tprint_info(f"🔍 [DEBUG] Common index length: {len(common_index)}")
+                
                 if len(common_index) == 0:
                     raise ValueError("Data alignment failed: No common index between features and analyst targets.")
                 if len(common_index) < len(training_data) or len(common_index) < len(analyst_targets):
-                    tprint_warning(f"Index mismatch: Aligning {len(training_data)} features and {len(analyst_targets)} analyst targets to {len(common_index)} common rows.")
+                    tprint_warning(f"⚠️ Index mismatch: Aligning {len(training_data)} features and {len(analyst_targets)} analyst targets to {len(common_index)} common rows.")
+                    
+                    # DEBUG: Show what's missing
+                    features_only = training_data.index.difference(analyst_targets.index)
+                    targets_only = analyst_targets.index.difference(training_data.index)
+                    tprint_info(f"🔍 [DEBUG] Features-only indices: {len(features_only)} (sample: {features_only[:5].tolist() if len(features_only) > 0 else 'none'})")
+                    tprint_info(f"🔍 [DEBUG] Targets-only indices: {len(targets_only)} (sample: {targets_only[:5].tolist() if len(targets_only) > 0 else 'none'})")
 
                 training_data = training_data.loc[common_index]
                 analyst_targets = analyst_targets.loc[common_index]
                 tprint_success(f"✅ Aligned features and analyst targets. New shape: {training_data.shape}")
+                
+                # CRITICAL: Check if we have too few samples for reliable training
+                min_samples_required = 234  # As mentioned in the error
+                if len(training_data) < min_samples_required:
+                    tprint_error(f"❌ CRITICAL: Dataset too small for reliable training!")
+                    tprint_error(f"   Current: {len(training_data)} samples")
+                    tprint_error(f"   Absolute minimum: {min_samples_required} samples")
+                    tprint_error(f"   Recommended: 780+ samples")
+                    tprint_error(f"   This will likely result in severe overfitting and poor generalization.")
+                    
+                    # For blank mode with 180 days of 15m data, we should have ~17,280 samples
+                    expected_samples = 180 * 24 * 4  # 180 days * 24 hours * 4 samples per hour (15m)
+                    tprint_error(f"   Expected for 180 days of 15m data: ~{expected_samples} samples")
+                    tprint_error(f"   Actual: {len(training_data)} samples ({len(training_data)/expected_samples*100:.2f}% of expected)")
+                    
+                    # Continue with warning but don't fail
+                    tprint_warning("⚠️ Continuing with small dataset - results may be unreliable")
 
                 # Log label addition with comprehensive preview
                 tprint_info("=" * 80)
@@ -3379,16 +3577,16 @@ class UnifiedModelsTrainingStep(BaseStep):
             # Save report
             report_content = '\n'.join(report_lines)
 
-            # Determine output directory
-            output_dir = os.path.join('outcomes', 'training_reports')
+            # Determine output directory - save directly in outcomes/
+            output_dir = 'outcomes'
             os.makedirs(output_dir, exist_ok=True)
 
-            # Generate filename
+            # Generate filename with datetime
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             symbol = config.get('symbol', 'UNKNOWN')
             timeframe = config.get('timeframe', '15m')
             direction = config.get('direction', 'long')
-            filename = f"{training_type}_{symbol}_{timeframe}_{direction}_{timestamp}.md"
+            filename = f"{training_type}_{symbol}_{timeframe}_{direction}_report_{timestamp}.md"
             filepath = os.path.join(output_dir, filename)
 
             # Write file
@@ -4080,24 +4278,18 @@ class UnifiedModelsTrainingStep(BaseStep):
             # Extract comprehensive metrics using centralized extractor
             comprehensive_metrics = self._extract_comprehensive_metrics(result, training_type, config)
 
-            # Create reports directory
-            symbol = config.get('symbol', 'UNKNOWN')
-            timeframe = config.get('timeframe', '15m')
-            direction = config.get('direction', 'long')
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-            reports_dir = os.path.join(
-                'reports',
-                training_type,
-                f"{symbol}_{timeframe}_{direction}",
-                timestamp
-            )
-            os.makedirs(reports_dir, exist_ok=True)
+            # Create outcomes directory for reports
+            outcomes_dir = 'outcomes'
+            os.makedirs(outcomes_dir, exist_ok=True)
 
             # ========================================================================
             # COMPREHENSIVE MARKDOWN REPORT WITH ALL METRICS
             # ========================================================================
-            markdown_path = os.path.join(reports_dir, f'{training_type}_comprehensive_report.md')
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            symbol = config.get('symbol', 'UNKNOWN')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+            markdown_path = os.path.join(outcomes_dir, f'{training_type}_{symbol}_{timeframe}_{direction}_report_{timestamp}.md')
 
             with open(markdown_path, 'w') as f:
                 # ===== HEADER =====
@@ -4570,7 +4762,7 @@ class UnifiedModelsTrainingStep(BaseStep):
             # ========================================================================
             # COMPREHENSIVE JSON REPORT WITH ALL METRICS
             # ========================================================================
-            json_path = os.path.join(reports_dir, f'{training_type}_comprehensive_metrics.json')
+            json_path = os.path.join(outcomes_dir, f'{training_type}_{symbol}_{timeframe}_{direction}_metrics_{timestamp}.json')
 
             # Build comprehensive JSON report using the extracted metrics
             json_report = {
@@ -4655,7 +4847,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                 result=result,
                 training_type=training_type,
                 config=config,
-                reports_dir=reports_dir
+                reports_dir=outcomes_dir
             )
             if csv_path:
                 report_paths['csv'] = csv_path

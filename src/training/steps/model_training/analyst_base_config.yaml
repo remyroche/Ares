@@ -9,20 +9,20 @@ analyst_config:
     lgbm:
       model_type: LGBMRegressor
       params:
-        n_estimators: 1000
-        learning_rate: 0.01
+        n_estimators: 200
+        learning_rate: 0.07780348478037977
         max_depth: 3
-        num_leaves: 8
+        num_leaves: 6
         subsample: 0.6
         colsample_bytree: 0.6
         random_state: 42
         verbosity: -1
         n_jobs: -1
-        reg_lambda: 0.0
+        reg_lambda: 3.75
         sampling_rate: 0.6
-        min_child_samples: 10
+        min_child_samples: 54
       hpo:
-        enabled: true
+        enabled: false
         n_rounds: 2
         enable_final_refinement: true
         final_refinement_trials: 50
@@ -66,18 +66,18 @@ analyst_config:
             high: 1.0
         optimal_params:
           max_depth: 3
-          learning_rate: 0.01
-          reg_lambda: 0.0
+          learning_rate: 0.07780348478037977
+          reg_lambda: 3.75
           sampling_rate: 0.6
-          min_child_samples: 10
-          num_leaves: 8
+          min_child_samples: 54
+          num_leaves: 6
           subsample: 0.6
           colsample_bytree: 0.6
         last_optimization:
-          timestamp: '2025-11-10T20:27:29.726293'
-          best_score: 0.0
-          total_trials: 12
-          total_time_seconds: 0.8396461009979248
+          timestamp: '2025-11-11T23:22:56.221696'
+          best_score: 0.7836600085896851
+          total_trials: 340
+          total_time_seconds: 126.62472605705261
           n_rounds: 2
     depthwise_cnn:
       model_type: DepthwiseSeparableCNNRegressor
@@ -146,12 +146,12 @@ analyst_config:
     catboost:
       model_type: CatBoostRegressor
       params:
-        iterations: 300
-        learning_rate: 0.01
+        iterations: 608
+        learning_rate: 0.010635565227349214
         depth: 4
-        l2_leaf_reg: 1.0
-        subsample: 0.6
-        colsample_bylevel: 0.6
+        l2_leaf_reg: 5.5
+        subsample: 1.0
+        colsample_bylevel: 1.0
         border_count: 128
         max_ctr_complexity: 2
         random_seed: 42
@@ -160,7 +160,7 @@ analyst_config:
         sampling_rate: 0.6
         bootstrap_type: Bernoulli
       hpo:
-        enabled: true
+        enabled: false
         n_rounds: 2
         enable_final_refinement: true
         final_refinement_trials: 50
@@ -200,17 +200,17 @@ analyst_config:
             high: 4
         optimal_params:
           depth: 4
-          learning_rate: 0.01
-          iterations: 300
-          l2_leaf_reg: 1.0
+          learning_rate: 0.010635565227349214
+          iterations: 608
+          l2_leaf_reg: 5.5
           bootstrap_type: Bernoulli
-          subsample: 0.6
-          colsample_bylevel: 0.6
+          subsample: 1.0
+          colsample_bylevel: 1.0
         last_optimization:
-          timestamp: '2025-11-10T20:28:41.543174'
-          best_score: 0.0
-          total_trials: 12
-          total_time_seconds: 25.053800106048584
+          timestamp: '2025-11-11T23:54:29.329138'
+          best_score: 0.7801980109440216
+          total_trials: 300
+          total_time_seconds: 1892.838523864746
           n_rounds: 2
   training:
     training_samples: 50000

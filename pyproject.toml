@@ -189,5 +189,8 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
-    "asyncio: marks tests as async tests"
+    "asyncio: marks tests as async tests",
+    "exchanges: marks tests as exchange-related tests",
+    "trading: marks tests as trading-related tests",
+    "simulator: marks tests as simulator-related tests"
 ]

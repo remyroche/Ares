@@ -479,11 +479,20 @@ class CustomBalancedScoreObjective:
                 logger.warning(f"Model fit failed: {e}")
                 return 0.0
             
+            # Validate data before prediction
+            if X_val is None or len(X_val) == 0:
+                logger.warning(f"⚠️ X_val is empty (shape: {getattr(X_val, 'shape', 'None')}), skipping prediction")
+                return 0.0
+            
+            if y_val is None or len(y_val) == 0:
+                logger.warning(f"⚠️ y_val is empty (shape: {getattr(y_val, 'shape', 'None')}), skipping prediction")
+                return 0.0
+            
             # Make predictions
             try:
                 y_pred = model.predict(X_val)
             except Exception as e:
-                logger.warning(f"Model predict failed: {e}")
+                logger.warning(f"⚠️ Model predict failed: {e}")
                 return 0.0
             
             # Calculate metrics needed for custom_balanced_score
@@ -625,9 +634,17 @@ class YAMLConfigUpdater:
             # Create backup first
             backup_file = self.backup_config()
             
-            # Load current config
+            # Load current config with numpy scalar handling
             with open(self.config_file, 'r') as f:
-                config = yaml.safe_load(f)
+                try:
+                    config = yaml.safe_load(f)
+                except yaml.constructor.ConstructorError as e:
+                    logger.warning(f"Failed to load YAML with safe_load due to numpy objects: {e}")
+                    # Try with unsafe loading to handle existing numpy scalars
+                    f.seek(0)
+                    config = yaml.load(f, Loader=yaml.UnsafeLoader)
+                    # Clean the loaded config immediately
+                    config = self._clean_numpy_scalars(config)
             
             # Find the model section to update
             if model_path:
@@ -664,9 +681,11 @@ class YAMLConfigUpdater:
                 'n_rounds': len([r for r in hpo_result.group_results if r.group_name != 'final_refinement'])
             }
             
-            # Write updated config
+            # Write updated config with numpy scalar cleanup
             with open(self.config_file, 'w') as f:
-                yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+                # Clean numpy scalars before dumping
+                cleaned_config = self._clean_numpy_scalars(config)
+                yaml.dump(cleaned_config, f, default_flow_style=False, sort_keys=False)
             
             logger.info(f"✅ Updated {self.config_file} with optimal parameters for {model_name}")
             logger.info(f"   Best score: {hpo_result.best_score:.6f}")
@@ -716,6 +735,50 @@ class YAMLConfigUpdater:
             return None
         
         return search(config, model_name)
+    
+    def _clean_numpy_scalars(self, obj):
+        """
+        Recursively clean numpy scalars from configuration to prevent YAML serialization errors.
+        
+        Converts numpy scalars to native Python types that can be safely serialized.
+        
+        Args:
+            obj: Object to clean (dict, list, or scalar)
+            
+        Returns:
+            Cleaned object with numpy scalars converted to native types
+        """
+        import numpy as np
+        
+        if isinstance(obj, dict):
+            return {k: self._clean_numpy_scalars(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._clean_numpy_scalars(item) for item in obj]
+        elif isinstance(obj, np.generic):
+            # Convert numpy scalars to native Python types
+            try:
+                if np.issubdtype(obj.dtype, np.floating):
+                    return float(obj)
+                elif np.issubdtype(obj.dtype, np.integer):
+                    return int(obj)
+                elif np.issubdtype(obj.dtype, np.bool_):
+                    return bool(obj)
+                else:
+                    return str(obj)
+            except (AttributeError, TypeError):
+                # Fallback for complex numpy objects
+                return str(obj)
+        elif hasattr(obj, '__dict__'):
+            # Handle numpy objects with attributes
+            try:
+                if hasattr(obj, 'item'):
+                    return obj.item()
+                else:
+                    return str(obj)
+            except (AttributeError, TypeError):
+                return str(obj)
+        else:
+            return obj
 
 
 # ============================================================================

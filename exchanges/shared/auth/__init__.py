@@ -1,18 +1,15 @@
 """
-Authentication and Account Management Utilities
-
-Provides utilities for API key management, time synchronization,
-subaccount handling, and authentication across exchanges.
+Authentication utilities for exchange operations.
 """
 
-from .api_key_manager import APIKeyManager
-from .time_sync import TimeSyncManager
-from .subaccount_manager import SubaccountManager
 from .auth_manager import AuthenticationManager
+from .api_key_manager import APIKeyManager
+from .time_sync_manager import TimeSyncManager
+from .subaccount_manager import SubaccountManager
 
 __all__ = [
-    "APIKeyManager",
-    "TimeSyncManager", 
-    "SubaccountManager",
-    "AuthenticationManager"
+    'AuthenticationManager',
+    'APIKeyManager', 
+    'TimeSyncManager',
+    'SubaccountManager'
 ]

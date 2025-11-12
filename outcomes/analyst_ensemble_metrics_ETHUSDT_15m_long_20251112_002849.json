@@ -1,0 +1,12 @@
+{
+  "symbol": "ETHUSDT",
+  "timeframe": "15m",
+  "direction": "long",
+  "timestamp": "2025-11-12T00:28:49.475552",
+  "metrics": {
+    "meta_mse": 0.1301188938411194,
+    "meta_mae": 0.26139824258642913,
+    "meta_r2": 0.20716834470632173,
+    "meta_rmse": 0.36071996595852496
+  }
+}

@@ -11,7 +11,11 @@ from typing import Any, Dict, List, Optional, Union, Callable, Awaitable
 from dataclasses import dataclass
 from enum import Enum
 
-from src.utils.tprint import tprint
+from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success,
+    tprint_progress, tprint_performance, tprint_data_preview, tprint_data_format,
+    tprint_timer, tprint_feature_counts, tprint_logged, LogLevel
+)
 from src.utils.logger import system_logger
 from src.interfaces.base_interfaces import MarketData
 
@@ -52,6 +56,7 @@ class ExchangeConfig:
             self.additional_config = {}
 
 
+@tprint_logged(LogLevel.INFO)
 class ExchangeDispatcher:
     """
     Exchange-agnostic dispatcher that routes operations to the appropriate exchange.
@@ -91,6 +96,7 @@ class ExchangeDispatcher:
         # Initialize trading standardizer
         self.trading_standardizer = UnifiedTradingStandardizer()
     
+    @tprint_logged(LogLevel.INFO)
     def set_simulator_callback(self, callback: Callable) -> None:
         """
         Set simulator callback for paper trading mode.
@@ -99,11 +105,12 @@ class ExchangeDispatcher:
             callback: Async function that simulates order execution
                      Signature: async def(symbol, side, order_type, quantity, price, order_book, metadata)
         """
-        tprint(f"Setting simulator callback for paper trading mode", "INFO")
+        tprint_info("Setting simulator callback for paper trading mode")
         self._simulator_callback = callback
         self.logger.info("Simulator callback configured for paper trading")
-        tprint(f"Simulator callback configured successfully", "SUCCESS")
+        tprint_success("Simulator callback configured successfully")
         
+    @tprint_logged(LogLevel.INFO)
     async def initialize(self) -> bool:
         """
         Initialize the exchange dispatcher and underlying exchange.
@@ -111,9 +118,9 @@ class ExchangeDispatcher:
         Returns:
             True if initialization successful, False otherwise
         """
-        tprint(f"Initializing exchange dispatcher for {self.config.exchange_type.value}", "INFO")
+        tprint_info(f"Initializing exchange dispatcher for {self.config.exchange_type.value}")
         if self._initialized:
-            tprint(f"Exchange dispatcher already initialized", "WARNING")
+            tprint_warning("Exchange dispatcher already initialized")
             return True
             
         if self._initializing:
@@ -127,41 +134,45 @@ class ExchangeDispatcher:
         try:
             # Validate paper trading requirements
             if self.config.mode == TradingMode.PAPER and self._simulator_callback is None:
-                tprint(f"Paper trading mode requires simulator callback", "ERROR")
+                tprint_error("Paper trading mode requires simulator callback")
                 self.logger.error("❌ Paper trading mode requires simulator callback. Call set_simulator_callback() first.")
                 return False
 
             # Create exchange instance
-            tprint(f"Creating exchange instance for {self.config.exchange_type.value}", "INFO")
-            self.exchange = await self._create_exchange()
-            if not self.exchange:
-                tprint(f"Failed to create exchange instance", "ERROR")
-                self.logger.error("Failed to create exchange instance")
-                return False
+            with tprint_timer(f"ExchangeDispatcher._create_exchange - {self.config.exchange_type.value}"):
+                tprint_info(f"Creating exchange instance for {self.config.exchange_type.value}")
+                self.exchange = await self._create_exchange()
+                if not self.exchange:
+                    tprint_error("Failed to create exchange instance")
+                    self.logger.error("Failed to create exchange instance")
+                    return False
 
             # Initialize exchange
-            tprint(f"Initializing exchange {self.config.exchange_type.value}", "INFO")
-            await self.exchange._initialize_exchange()
+            with tprint_timer(f"ExchangeDispatcher.initialize - {self.config.exchange_type.value}"):
+                tprint_info(f"Initializing exchange {self.config.exchange_type.value}")
+                await self.exchange._initialize_exchange()
 
             # Initialize shared utilities
-            tprint(f"Initializing shared utilities", "INFO")
-            await self._initialize_shared_utilities()
+            with tprint_timer("ExchangeDispatcher._initialize_shared_utilities"):
+                tprint_info("Initializing shared utilities")
+                await self._initialize_shared_utilities()
 
             self._initialized = True
             self.logger.info(f"✅ Exchange dispatcher initialized for {self.config.exchange_type.value}")
-            tprint(f"Exchange dispatcher initialized successfully for {self.config.exchange_type.value}", "SUCCESS")
+            tprint_success(f"Exchange dispatcher initialized successfully for {self.config.exchange_type.value}")
             return True
             
         except Exception as e:
-            tprint(f"Failed to initialize exchange dispatcher: {e}", "ERROR")
+            tprint_error(f"Failed to initialize exchange dispatcher: {e}")
             self.logger.error(f"❌ Failed to initialize exchange dispatcher: {e}")
             return False
         finally:
             self._initializing = False
     
+    @tprint_logged(LogLevel.DEBUG)
     async def _create_exchange(self) -> Optional[BaseExchange]:
         """Create the appropriate exchange instance."""
-        tprint(f"Creating exchange instance: type={self.config.exchange_type.value}, testnet={self.config.use_testnet}", "INFO")
+        tprint_info(f"Creating exchange instance: type={self.config.exchange_type.value}, testnet={self.config.use_testnet}")
         try:
             if self.config.exchange_type == ExchangeType.OKX:
                 return create_okx_exchange(
@@ -219,12 +230,12 @@ class ExchangeDispatcher:
                     password=self.config.password
                 )
             else:
-                tprint(f"Unsupported exchange type: {self.config.exchange_type}", "ERROR")
+                tprint_error(f"Unsupported exchange type: {self.config.exchange_type}")
                 self.logger.error(f"Unsupported exchange type: {self.config.exchange_type}")
                 return None
 
         except Exception as e:
-            tprint(f"Error creating exchange instance: {e}", "ERROR")
+            tprint_error(f"Error creating exchange instance: {e}")
             self.logger.error(f"Error creating exchange instance: {e}")
             return None
     
@@ -244,28 +255,34 @@ class ExchangeDispatcher:
         self.rate_limit_manager = getattr(self.exchange, 'rate_limit_manager', None)
     
     # Market Data Operations
+    @tprint_logged(LogLevel.INFO)
     async def get_price(self, symbol: str) -> Optional[float]:
         """Get current price for symbol."""
-        tprint(f"Getting price for symbol: {symbol}", "INFO")
+        tprint_info(f"Getting price for symbol: {symbol}")
         if not self._ensure_initialized():
             return None
             
         if self.price_manager:
-            price_data = await self.price_manager.get_price(symbol)
-            if price_data:
-                tprint(f"Price retrieved for {symbol}: {price_data.price}", "SUCCESS")
-            return price_data.price if price_data else None
+            with tprint_timer(f"ExchangeDispatcher.get_price - {symbol}"):
+                price_data = await self.price_manager.get_price(symbol)
+                if price_data:
+                    tprint_success(f"Price retrieved for {symbol}: {price_data.price}")
+                    tprint_performance("ExchangeDispatcher.get_price - performance", 0.0, metrics={"symbol": symbol, "price": price_data.price})
+                return price_data.price if price_data else None
 
         # Fallback to exchange method
         if hasattr(self.exchange, 'get_price'):
-            price = await self.exchange.get_price(symbol)
-            if price:
-                tprint(f"Price retrieved for {symbol}: {price}", "SUCCESS")
-            return price
+            with tprint_timer(f"ExchangeDispatcher.get_price (fallback) - {symbol}"):
+                price = await self.exchange.get_price(symbol)
+                if price:
+                    tprint_success(f"Price retrieved for {symbol}: {price}")
+                    tprint_performance("ExchangeDispatcher.get_price (fallback) - performance", 0.0, metrics={"symbol": symbol, "price": price})
+                return price
 
-        tprint(f"Failed to get price for {symbol}", "WARNING")
+        tprint_warning(f"Failed to get price for {symbol}")
         return None
     
+    @tprint_logged(LogLevel.INFO)
     async def get_ohlcv(
         self,
         symbol: str,
@@ -277,10 +294,16 @@ class ExchangeDispatcher:
             return []
             
         if hasattr(self.exchange, 'get_ohlcv'):
-            return await self.exchange.get_ohlcv(symbol, timeframe, limit)
+            with tprint_timer(f"ExchangeDispatcher.get_ohlcv - {symbol}"):
+                result = await self.exchange.get_ohlcv(symbol, timeframe, limit)
+                if result:
+                    tprint_data_preview(result, f"OHLCV data for {symbol}", max_rows=3)
+                    tprint_performance("ExchangeDispatcher.get_ohlcv - performance", 0.0, metrics={"symbol": symbol, "timeframe": timeframe, "limit": limit, "data_points": len(result)})
+                return result
         
         return []
     
+    @tprint_logged(LogLevel.INFO)
     async def get_klines(
         self,
         symbol: str,
@@ -294,58 +317,90 @@ class ExchangeDispatcher:
             return []
             
         if hasattr(self.exchange, 'get_klines'):
-            return await self.exchange.get_klines(symbol, interval, limit)
+            with tprint_timer(f"ExchangeDispatcher.get_klines - {symbol}"):
+                result = await self.exchange.get_klines(symbol, interval, limit)
+                if result:
+                    tprint_data_preview(result, f"Klines data for {symbol}", max_rows=3)
+                    tprint_performance("ExchangeDispatcher.get_klines - performance", 0.0, metrics={"symbol": symbol, "interval": interval, "limit": limit, "data_points": len(result)})
+                return result
         elif hasattr(self.exchange, 'get_historical_klines') and start_time and end_time:
-            return await self.exchange.get_historical_klines(symbol, interval, start_time, end_time, limit)
+            with tprint_timer(f"ExchangeDispatcher.get_historical_klines - {symbol}"):
+                result = await self.exchange.get_historical_klines(symbol, interval, start_time, end_time, limit)
+                if result:
+                    tprint_data_preview(result, f"Historical klines data for {symbol}", max_rows=3)
+                    tprint_performance("ExchangeDispatcher.get_historical_klines - performance", 0.0, metrics={"symbol": symbol, "interval": interval, "start_time": start_time, "end_time": end_time, "limit": limit, "data_points": len(result)})
+                return result
         
         return []
     
+    @tprint_logged(LogLevel.INFO)
     async def get_ticker(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get ticker data for symbol."""
         if not self._ensure_initialized():
             return None
             
         if hasattr(self.exchange, 'get_ticker'):
-            return await self.exchange.get_ticker(symbol)
+            with tprint_timer(f"ExchangeDispatcher.get_ticker - {symbol}"):
+                result = await self.exchange.get_ticker(symbol)
+                if result:
+                    tprint_data_preview(result, f"Ticker data for {symbol}")
+                    tprint_performance("ExchangeDispatcher.get_ticker - performance", 0.0, metrics={"symbol": symbol, "data_keys": len(result) if result else 0})
+                return result
         
         return None
     
+    @tprint_logged(LogLevel.INFO)
     async def get_order_book(self, symbol: str, limit: int = 20) -> Optional[Dict[str, Any]]:
         """Get order book for symbol."""
         if not self._ensure_initialized():
             return None
             
         if hasattr(self.exchange, 'get_order_book'):
-            return await self.exchange.get_order_book(symbol, limit)
+            with tprint_timer(f"ExchangeDispatcher.get_order_book - {symbol}"):
+                result = await self.exchange.get_order_book(symbol, limit)
+                if result:
+                    tprint_data_preview(result, f"Order book for {symbol}", max_rows=5)
+                    tprint_performance("ExchangeDispatcher.get_order_book - performance", 0.0, metrics={"symbol": symbol, "limit": limit, "bids": len(result.get('bids', [])), "asks": len(result.get('asks', []))})
+                return result
         
         return None
     
     # Account Operations
+    @tprint_logged(LogLevel.INFO)
     async def get_balance(self, currency: str = "USDT") -> float:
         """Get balance for currency."""
-        tprint(f"Getting balance for currency: {currency}", "INFO")
+        tprint_info(f"Getting balance for currency: {currency}")
         if not self._ensure_initialized():
             return 0.0
 
         if hasattr(self.exchange, 'get_balance'):
-            balance = await self.exchange.get_balance(currency)
-            tprint(f"Balance retrieved for {currency}: {balance}", "SUCCESS")
-            return balance
+            with tprint_timer(f"ExchangeDispatcher.get_balance - {currency}"):
+                balance = await self.exchange.get_balance(currency)
+                tprint_success(f"Balance retrieved for {currency}: {balance}")
+                tprint_performance("ExchangeDispatcher.get_balance - performance", 0.0, metrics={"currency": currency, "balance": balance})
+                return balance
 
-        tprint(f"Get balance not supported by exchange", "WARNING")
+        tprint_warning("Get balance not supported by exchange")
         return 0.0
     
+    @tprint_logged(LogLevel.INFO)
     async def get_account_info(self) -> Optional[Dict[str, Any]]:
         """Get account information."""
         if not self._ensure_initialized():
             return None
             
         if hasattr(self.exchange, 'get_account_info'):
-            return await self.exchange.get_account_info()
+            with tprint_timer("ExchangeDispatcher.get_account_info"):
+                result = await self.exchange.get_account_info()
+                if result:
+                    tprint_data_preview(result, "Account information", max_rows=10)
+                    tprint_performance("ExchangeDispatcher.get_account_info - performance", 0.0, metrics={"data_keys": len(result) if result else 0})
+                return result
         
         return None
     
     # Order Operations
+    @tprint_logged(LogLevel.INFO)
     async def create_order(
         self,
         symbol: str,
@@ -362,113 +417,151 @@ class ExchangeDispatcher:
 
         In PAPER mode, routes to simulator. In TRADE mode, executes on exchange.
         """
-        tprint(f"Creating order: symbol={symbol}, side={side}, type={order_type}, quantity={quantity}, price={price}, mode={self.config.mode.value}", "INFO")
+        tprint_info(f"Creating order: symbol={symbol}, side={side}, type={order_type}, quantity={quantity}, price={price}, mode={self.config.mode.value}")
         if not self._ensure_initialized():
             return None
 
         # Check if we're in paper trading mode with simulator
         if self.config.mode == TradingMode.PAPER and self._simulator_callback:
-            tprint(f"Routing order to simulator (PAPER mode)", "INFO")
+            tprint_info("Routing order to simulator (PAPER mode)")
             # Fetch order book for simulation
             order_book = await self.get_order_book(symbol, limit=20)
             if not order_book:
-                tprint(f"Failed to fetch order book for {symbol}", "ERROR")
+                tprint_error(f"Failed to fetch order book for {symbol}")
                 self.logger.error(f"Failed to fetch order book for {symbol}")
                 return None
 
             # Call simulator
             try:
-                result = await self._simulator_callback(
-                    symbol=symbol,
-                    side=side,
-                    order_type=order_type,
-                    quantity=quantity,
-                    price=price,
-                    order_book=order_book,
-                    trading_signal_metadata=trading_signal_metadata
-                )
-                tprint(f"Order simulated successfully: {symbol}", "SUCCESS")
-                return result
+                with tprint_timer(f"ExchangeDispatcher.create_order (simulator) - {symbol}"):
+                    result = await self._simulator_callback(
+                        symbol=symbol,
+                        side=side,
+                        order_type=order_type,
+                        quantity=quantity,
+                        price=price,
+                        order_book=order_book,
+                        trading_signal_metadata=trading_signal_metadata
+                    )
+                    if result:
+                        tprint_success(f"Order simulated successfully: {symbol}")
+                        tprint_data_preview(result, f"Simulated order result for {symbol}")
+                        tprint_performance("ExchangeDispatcher.create_order (simulator) - performance", 0.0, metrics={"symbol": symbol, "side": side, "type": order_type, "quantity": quantity})
+                    return result
             except Exception as e:
-                tprint(f"Simulator error: {e}", "ERROR")
+                tprint_error(f"Simulator error: {e}")
                 self.logger.error(f"Simulator error: {e}")
                 return None
         
         # TRADE mode - execute on real exchange
-        tprint(f"Executing order on real exchange (TRADE mode)", "INFO")
+        tprint_info("Executing order on real exchange (TRADE mode)")
         if hasattr(self.exchange, 'create_order_enhanced'):
-            result = await self.exchange.create_order_enhanced(
-                symbol, side, order_type, quantity, price, stop_price, client_order_id
-            )
-            if result:
-                tprint(f"Order created successfully on exchange: {symbol}", "SUCCESS")
-            return result
+            with tprint_timer(f"ExchangeDispatcher.create_order_enhanced - {symbol}"):
+                result = await self.exchange.create_order_enhanced(
+                    symbol, side, order_type, quantity, price, stop_price, client_order_id
+                )
+                if result:
+                    tprint_success(f"Order created successfully on exchange: {symbol}")
+                    tprint_data_preview(result, f"Order result for {symbol}")
+                    tprint_performance("ExchangeDispatcher.create_order_enhanced - performance", 0.0, metrics={"symbol": symbol, "side": side, "type": order_type, "quantity": quantity})
+                return result
         elif hasattr(self.exchange, 'create_order'):
-            result = await self.exchange.create_order(
-                symbol, side, quantity, price, order_type
-            )
-            if result:
-                tprint(f"Order created successfully on exchange: {symbol}", "SUCCESS")
-            return result
+            with tprint_timer(f"ExchangeDispatcher.create_order - {symbol}"):
+                result = await self.exchange.create_order(
+                    symbol, side, quantity, price, order_type
+                )
+                if result:
+                    tprint_success(f"Order created successfully on exchange: {symbol}")
+                    tprint_data_preview(result, f"Order result for {symbol}")
+                    tprint_performance("ExchangeDispatcher.create_order - performance", 0.0, metrics={"symbol": symbol, "side": side, "type": order_type, "quantity": quantity})
+                return result
 
-        tprint(f"Failed to create order - no suitable method available", "ERROR")
+        tprint_error("Failed to create order - no suitable method available")
         return None
     
+    @tprint_logged(LogLevel.INFO)
     async def cancel_order(self, symbol: str, order_id: str) -> bool:
         """Cancel order."""
-        tprint(f"Cancelling order: symbol={symbol}, order_id={order_id}", "INFO")
+        tprint_info(f"Cancelling order: symbol={symbol}, order_id={order_id}")
         if not self._ensure_initialized():
             return False
 
         if hasattr(self.exchange, 'cancel_order'):
-            result = await self.exchange.cancel_order(symbol, order_id)
-            if result:
-                tprint(f"Order cancelled successfully: {order_id}", "SUCCESS")
-            else:
-                tprint(f"Failed to cancel order: {order_id}", "ERROR")
-            return result
+            with tprint_timer(f"ExchangeDispatcher.cancel_order - {order_id}"):
+                result = await self.exchange.cancel_order(symbol, order_id)
+                if result:
+                    tprint_success(f"Order cancelled successfully: {order_id}")
+                    tprint_performance("ExchangeDispatcher.cancel_order - performance", 0.0, metrics={"symbol": symbol, "order_id": order_id, "success": True})
+                else:
+                    tprint_error(f"Failed to cancel order: {order_id}")
+                    tprint_performance("ExchangeDispatcher.cancel_order - performance", 0.0, metrics={"symbol": symbol, "order_id": order_id, "success": False})
+                return result
 
-        tprint(f"Cancel order not supported by exchange", "WARNING")
+        tprint_warning("Cancel order not supported by exchange")
         return False
     
+    @tprint_logged(LogLevel.INFO)
     async def get_order_status(self, symbol: str, order_id: str) -> Optional[Dict[str, Any]]:
         """Get order status."""
         if not self._ensure_initialized():
             return None
             
         if hasattr(self.exchange, 'get_order_status'):
-            return await self.exchange.get_order_status(symbol, order_id)
+            with tprint_timer(f"ExchangeDispatcher.get_order_status - {order_id}"):
+                result = await self.exchange.get_order_status(symbol, order_id)
+                if result:
+                    tprint_data_preview(result, f"Order status for {order_id}")
+                    tprint_performance("ExchangeDispatcher.get_order_status - performance", 0.0, metrics={"symbol": symbol, "order_id": order_id})
+                return result
         
         return None
     
+    @tprint_logged(LogLevel.INFO)
     async def get_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get open orders."""
         if not self._ensure_initialized():
             return []
             
         if hasattr(self.exchange, 'get_open_orders'):
-            return await self.exchange.get_open_orders(symbol)
+            with tprint_timer(f"ExchangeDispatcher.get_open_orders - {symbol or 'all'}"):
+                result = await self.exchange.get_open_orders(symbol)
+                if result:
+                    tprint_data_preview(result, f"Open orders for {symbol or 'all symbols'}", max_rows=5)
+                    tprint_performance("ExchangeDispatcher.get_open_orders - performance", 0.0, metrics={"symbol": symbol, "order_count": len(result)})
+                return result
         
         return []
     
     # Position Operations
+    @tprint_logged(LogLevel.INFO)
     async def get_positions(self) -> List[Dict[str, Any]]:
         """Get current positions."""
         if not self._ensure_initialized():
             return []
             
         if hasattr(self.exchange, 'get_positions'):
-            return await self.exchange.get_positions()
+            with tprint_timer("ExchangeDispatcher.get_positions"):
+                result = await self.exchange.get_positions()
+                if result:
+                    tprint_data_preview(result, "Current positions", max_rows=5)
+                    tprint_performance("ExchangeDispatcher.get_positions - performance", 0.0, metrics={"position_count": len(result)})
+                return result
         
         return []
     
+    @tprint_logged(LogLevel.INFO)
     async def get_liquidation_risk(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get liquidation risk for symbol."""
         if not self._ensure_initialized():
             return None
             
         if hasattr(self.exchange, 'get_liquidation_risk'):
-            return await self.exchange.get_liquidation_risk(symbol)
+            with tprint_timer(f"ExchangeDispatcher.get_liquidation_risk - {symbol}"):
+                result = await self.exchange.get_liquidation_risk(symbol)
+                if result:
+                    tprint_data_preview(result, f"Liquidation risk for {symbol}")
+                    tprint_performance("ExchangeDispatcher.get_liquidation_risk - performance", 0.0, metrics={"symbol": symbol})
+                return result
         
         return None
     
@@ -478,6 +571,7 @@ class ExchangeDispatcher:
     # These methods return standardized data structures that are consistent
     # across all exchanges, using UnifiedTradingStandardizer.
     
+    @tprint_logged(LogLevel.INFO)
     async def get_standardized_order(
         self,
         symbol: str,
@@ -493,13 +587,20 @@ class ExchangeDispatcher:
             return None
         
         try:
-            return self.trading_standardizer.standardize_order(
-                raw_order, self.config.exchange_type, symbol
-            )
+            with tprint_timer(f"ExchangeDispatcher.get_standardized_order - {order_id}"):
+                result = self.trading_standardizer.standardize_order(
+                    raw_order, self.config.exchange_type, symbol
+                )
+                if result:
+                    tprint_data_preview(result.__dict__ if hasattr(result, '__dict__') else str(result), f"Standardized order for {order_id}")
+                    tprint_performance("ExchangeDispatcher.get_standardized_order - performance", 0.0, metrics={"symbol": symbol, "order_id": order_id})
+                return result
         except Exception as e:
             self.logger.error(f"Failed to standardize order: {e}")
+            tprint_error(f"Failed to standardize order: {e}")
             return None
     
+    @tprint_logged(LogLevel.INFO)
     async def get_standardized_orders(
         self,
         symbol: Optional[str] = None
@@ -514,13 +615,20 @@ class ExchangeDispatcher:
             return []
         
         try:
-            return self.trading_standardizer.standardize_orders(
-                raw_orders, self.config.exchange_type, symbol
-            )
+            with tprint_timer(f"ExchangeDispatcher.get_standardized_orders - {symbol or 'all'}"):
+                result = self.trading_standardizer.standardize_orders(
+                    raw_orders, self.config.exchange_type, symbol
+                )
+                if result:
+                    tprint_data_preview([order.__dict__ if hasattr(order, '__dict__') else str(order) for order in result], f"Standardized orders for {symbol or 'all symbols'}", max_rows=3)
+                    tprint_performance("ExchangeDispatcher.get_standardized_orders - performance", 0.0, metrics={"symbol": symbol, "order_count": len(result)})
+                return result
         except Exception as e:
             self.logger.error(f"Failed to standardize orders: {e}")
+            tprint_error(f"Failed to standardize orders: {e}")
             return []
     
+    @tprint_logged(LogLevel.INFO)
     async def get_standardized_positions(self) -> List["StandardizedPosition"]:
         """
         Get standardized positions.
@@ -532,13 +640,20 @@ class ExchangeDispatcher:
             return []
         
         try:
-            return self.trading_standardizer.standardize_positions(
-                raw_positions, self.config.exchange_type
-            )
+            with tprint_timer("ExchangeDispatcher.get_standardized_positions"):
+                result = self.trading_standardizer.standardize_positions(
+                    raw_positions, self.config.exchange_type
+                )
+                if result:
+                    tprint_data_preview([pos.__dict__ if hasattr(pos, '__dict__') else str(pos) for pos in result], "Standardized positions", max_rows=3)
+                    tprint_performance("ExchangeDispatcher.get_standardized_positions - performance", 0.0, metrics={"position_count": len(result)})
+                return result
         except Exception as e:
             self.logger.error(f"Failed to standardize positions: {e}")
+            tprint_error(f"Failed to standardize positions: {e}")
             return []
     
+    @tprint_logged(LogLevel.INFO)
     async def get_standardized_balance(
         self,
         currency: str = "USDT"
@@ -567,13 +682,20 @@ class ExchangeDispatcher:
             return None
         
         try:
-            return self.trading_standardizer.standardize_balance(
-                raw_balance, self.config.exchange_type, currency
-            )
+            with tprint_timer(f"ExchangeDispatcher.get_standardized_balance - {currency}"):
+                result = self.trading_standardizer.standardize_balance(
+                    raw_balance, self.config.exchange_type, currency
+                )
+                if result:
+                    tprint_data_preview(result.__dict__ if hasattr(result, '__dict__') else str(result), f"Standardized balance for {currency}")
+                    tprint_performance("ExchangeDispatcher.get_standardized_balance - performance", 0.0, metrics={"currency": currency})
+                return result
         except Exception as e:
             self.logger.error(f"Failed to standardize balance: {e}")
+            tprint_error(f"Failed to standardize balance: {e}")
             return None
     
+    @tprint_logged(LogLevel.INFO)
     async def get_standardized_balances(self) -> List["StandardizedBalance"]:
         """
         Get all standardized balances.
@@ -597,13 +719,20 @@ class ExchangeDispatcher:
             return []
         
         try:
-            return self.trading_standardizer.standardize_balances(
-                raw_balances, self.config.exchange_type
-            )
+            with tprint_timer("ExchangeDispatcher.get_standardized_balances"):
+                result = self.trading_standardizer.standardize_balances(
+                    raw_balances, self.config.exchange_type
+                )
+                if result:
+                    tprint_data_preview([balance.__dict__ if hasattr(balance, '__dict__') else str(balance) for balance in result], "Standardized balances", max_rows=5)
+                    tprint_performance("ExchangeDispatcher.get_standardized_balances - performance", 0.0, metrics={"balance_count": len(result)})
+                return result
         except Exception as e:
             self.logger.error(f"Failed to standardize balances: {e}")
+            tprint_error(f"Failed to standardize balances: {e}")
             return []
     
+    @tprint_logged(LogLevel.INFO)
     async def get_standardized_account_info(self) -> Optional["StandardizedAccountInfo"]:
         """
         Get standardized account information.
@@ -615,13 +744,20 @@ class ExchangeDispatcher:
             return None
         
         try:
-            return self.trading_standardizer.standardize_account_info(
-                raw_account, self.config.exchange_type
-            )
+            with tprint_timer("ExchangeDispatcher.get_standardized_account_info"):
+                result = self.trading_standardizer.standardize_account_info(
+                    raw_account, self.config.exchange_type
+                )
+                if result:
+                    tprint_data_preview(result.__dict__ if hasattr(result, '__dict__') else str(result), "Standardized account info")
+                    tprint_performance("ExchangeDispatcher.get_standardized_account_info - performance", 0.0, metrics={"exchange_type": self.config.exchange_type.value})
+                return result
         except Exception as e:
             self.logger.error(f"Failed to standardize account info: {e}")
+            tprint_error(f"Failed to standardize account info: {e}")
             return None
     
+    @tprint_logged(LogLevel.INFO)
     async def get_standardized_trades(
         self,
         symbol: str,
@@ -639,43 +775,56 @@ class ExchangeDispatcher:
             raw_trades = await self.exchange.get_order_trades(order_id) if order_id else []
         else:
             self.logger.warning("Exchange does not support trade history")
+            tprint_warning("Exchange does not support trade history")
             return []
         
         if not raw_trades:
             return []
         
         try:
-            return self.trading_standardizer.standardize_trades(
-                raw_trades, self.config.exchange_type, symbol
-            )
+            with tprint_timer(f"ExchangeDispatcher.get_standardized_trades - {symbol}"):
+                result = self.trading_standardizer.standardize_trades(
+                    raw_trades, self.config.exchange_type, symbol
+                )
+                if result:
+                    tprint_data_preview([trade.__dict__ if hasattr(trade, '__dict__') else str(trade) for trade in result], f"Standardized trades for {symbol}", max_rows=3)
+                    tprint_performance("ExchangeDispatcher.get_standardized_trades - performance", 0.0, metrics={"symbol": symbol, "order_id": order_id, "trade_count": len(result)})
+                return result
         except Exception as e:
             self.logger.error(f"Failed to standardize trades: {e}")
+            tprint_error(f"Failed to standardize trades: {e}")
             return []
     
     # Market Metadata Operations
+    @tprint_logged(LogLevel.INFO)
     async def get_instrument_info(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get instrument information."""
         if not self._ensure_initialized():
             return None
             
         if self.market_metadata:
-            instrument = self.market_metadata.get_instrument(symbol)
-            if instrument:
-                return {
-                    "symbol": instrument.symbol,
-                    "base_currency": instrument.base_currency,
-                    "quote_currency": instrument.quote_currency,
-                    "tick_size": instrument.tick_size,
-                    "lot_size": instrument.lot_size,
-                    "min_notional": instrument.min_notional,
-                    "max_leverage": instrument.max_leverage,
-                    "price_precision": instrument.price_precision,
-                    "quantity_precision": instrument.quantity_precision
-                }
+            with tprint_timer(f"ExchangeDispatcher.get_instrument_info - {symbol}"):
+                instrument = self.market_metadata.get_instrument(symbol)
+                if instrument:
+                    result = {
+                        "symbol": instrument.symbol,
+                        "base_currency": instrument.base_currency,
+                        "quote_currency": instrument.quote_currency,
+                        "tick_size": instrument.tick_size,
+                        "lot_size": instrument.lot_size,
+                        "min_notional": instrument.min_notional,
+                        "max_leverage": instrument.max_leverage,
+                        "price_precision": instrument.price_precision,
+                        "quantity_precision": instrument.quantity_precision
+                    }
+                    tprint_data_preview(result, f"Instrument info for {symbol}")
+                    tprint_performance("ExchangeDispatcher.get_instrument_info - performance", 0.0, metrics={"symbol": symbol})
+                    return result
         
         return None
     
     # Risk Management Operations
+    @tprint_logged(LogLevel.INFO)
     async def calculate_position_risk(
         self,
         symbol: str,
@@ -689,66 +838,80 @@ class ExchangeDispatcher:
             return None
             
         if self.risk_calculator:
-            position_risk = self.risk_calculator.calculate_position_risk(
-                symbol, position_size, entry_price, current_price, leverage
-            )
-            return {
-                "symbol": position_risk.symbol,
-                "margin_ratio": position_risk.margin_ratio,
-                "liquidation_price": position_risk.liquidation_price,
-                "risk_level": position_risk.risk_level.value,
-                "unrealized_pnl": position_risk.unrealized_pnl,
-                "margin_used": position_risk.margin_used
-            }
+            with tprint_timer(f"ExchangeDispatcher.calculate_position_risk - {symbol}"):
+                position_risk = self.risk_calculator.calculate_position_risk(
+                    symbol, position_size, entry_price, current_price, leverage
+                )
+                result = {
+                    "symbol": position_risk.symbol,
+                    "margin_ratio": position_risk.margin_ratio,
+                    "liquidation_price": position_risk.liquidation_price,
+                    "risk_level": position_risk.risk_level.value,
+                    "unrealized_pnl": position_risk.unrealized_pnl,
+                    "margin_used": position_risk.margin_used
+                }
+                tprint_data_preview(result, f"Position risk for {symbol}")
+                tprint_performance("ExchangeDispatcher.calculate_position_risk - performance", 0.0, metrics={"symbol": symbol, "position_size": position_size, "leverage": leverage})
+                return result
         
         return None
     
     # Utility Operations
+    @tprint_logged(LogLevel.DEBUG)
     async def is_connected(self) -> bool:
         """Check if connected to exchange."""
         if not self._initialized or not self.exchange:
             return False
             
         if hasattr(self.exchange, 'is_connected'):
-            return await self.exchange.is_connected()
+            with tprint_timer("ExchangeDispatcher.is_connected"):
+                result = await self.exchange.is_connected()
+                tprint_performance("ExchangeDispatcher.is_connected - performance", 0.0, metrics={"connected": result})
+                return result
         
         return True
     
+    @tprint_logged(LogLevel.INFO)
     async def get_exchange_status(self) -> Dict[str, Any]:
         """Get comprehensive exchange status."""
         if not self._initialized:
             return {"status": "not_initialized"}
         
-        status = {
-            "exchange_type": self.config.exchange_type.value,
-            "initialized": self._initialized,
-            "connected": await self.is_connected(),
-            "testnet": self.config.use_testnet
-        }
-        
-        # Add authentication status
-        if self.auth_manager:
-            auth_status = self.auth_manager.get_authentication_status()
-            status["authentication"] = {
-                "is_authenticated": auth_status["is_authenticated"],
-                "time_synced": auth_status["time_synced"],
-                "permissions": auth_status["permissions"]
+        with tprint_timer("ExchangeDispatcher.get_exchange_status"):
+            status = {
+                "exchange_type": self.config.exchange_type.value,
+                "initialized": self._initialized,
+                "connected": await self.is_connected(),
+                "testnet": self.config.use_testnet
             }
-        
-        # Add rate limiting status
-        if self.rate_limit_manager:
-            rate_limit_stats = self.rate_limit_manager.get_rate_limit_statistics()
-            status["rate_limiting"] = {
-                "total_requests": rate_limit_stats["total_requests"],
-                "requests_last_minute": rate_limit_stats["requests_last_minute"]
-            }
-        
-        return status
+            
+            # Add authentication status
+            if self.auth_manager:
+                auth_status = self.auth_manager.get_authentication_status()
+                status["authentication"] = {
+                    "is_authenticated": auth_status["is_authenticated"],
+                    "time_synced": auth_status["time_synced"],
+                    "permissions": auth_status["permissions"]
+                }
+            
+            # Add rate limiting status
+            if self.rate_limit_manager:
+                rate_limit_stats = self.rate_limit_manager.get_rate_limit_statistics()
+                status["rate_limiting"] = {
+                    "total_requests": rate_limit_stats["total_requests"],
+                    "requests_last_minute": rate_limit_stats["requests_last_minute"]
+                }
+            
+            tprint_data_preview(status, "Exchange status")
+            tprint_performance("ExchangeDispatcher.get_exchange_status - performance", 0.0, metrics={"exchange_type": self.config.exchange_type.value})
+            return status
     
+    @tprint_logged(LogLevel.DEBUG)
     def _ensure_initialized(self) -> bool:
         """Ensure dispatcher is initialized."""
         if not self._initialized:
             self.logger.warning("Exchange dispatcher not initialized. Call initialize() first.")
+            tprint_warning("Exchange dispatcher not initialized. Call initialize() first.")
             return False
         return True
     

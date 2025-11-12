@@ -4,11 +4,14 @@ Fee Calculator
 Calculates trading fees based on exchange-specific rates and order characteristics.
 """
 
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 from dataclasses import dataclass
 import logging
 
-from src.utils.tprint import tprint
+from src.utils.tprint import (
+    tprint, tprint_logged, tprint_timer, tprint_performance,
+    tprint_data_preview, tprint_data_format, tprint_feature_counts, LogLevel
+)
 from .config import SimulatorConfig
 
 
@@ -22,6 +25,7 @@ class FeeResult:
     is_maker: bool
 
 
+@tprint_logged(LogLevel.INFO, include_args=True)
 class FeeCalculator:
     """
     Calculate trading fees based on exchange, order type, and quantity.
@@ -41,13 +45,14 @@ class FeeCalculator:
         self.logger = logging.getLogger(__name__)
         tprint(f"[FEE_CALC] __init__ -> initialized with use_maker_taker_distinction={config.use_maker_taker_distinction}")
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def calculate_fee(
         self,
         exchange: str,
         quantity: float,
         price: float,
         order_type: str,
-        is_maker: bool = None
+        is_maker: Optional[bool] = None
     ) -> FeeResult:
         """
         Calculate fee for an order.
@@ -65,27 +70,41 @@ class FeeCalculator:
         """
         tprint(f"[FEE_CALC] calculate_fee: exchange={exchange}, qty={quantity}, price={price}, order_type={order_type}, is_maker={is_maker}")
 
-        # Determine if maker or taker
-        if is_maker is None:
-            is_maker = order_type.lower() == "limit"  # Limit orders are typically makers
-            tprint(f"[FEE_CALC] calculate_fee: Determined is_maker={is_maker} based on order_type")
+        # Preview order parameters
+        order_params = {
+            "exchange": exchange,
+            "quantity": quantity,
+            "price": price,
+            "order_type": order_type,
+            "is_maker": is_maker
+        }
+        tprint_data_preview(order_params, "Order Parameters", max_rows=5)
 
-        # Get fee rates for exchange
-        maker_fee, taker_fee = self.config.get_fee_rates(exchange)
+        # Determine if maker or taker with timer
+        with tprint_timer("Fee determination"):
+            if is_maker is None:
+                is_maker = order_type.lower() == "limit"  # Limit orders are typically makers
+                tprint(f"[FEE_CALC] calculate_fee: Determined is_maker={is_maker} based on order_type")
 
-        # Select appropriate fee rate
-        if self.config.use_maker_taker_distinction and is_maker:
-            fee_rate = maker_fee
-            fee_type = "maker"
-        else:
-            fee_rate = taker_fee
-            fee_type = "taker"
+            # Get fee rates for exchange
+            maker_fee, taker_fee = self.config.get_fee_rates(exchange)
 
-        # Calculate fee amount
-        notional_value = quantity * price
-        fee_amount = notional_value * fee_rate
+            # Select appropriate fee rate
+            if self.config.use_maker_taker_distinction and is_maker:
+                fee_rate = maker_fee
+                fee_type = "maker"
+            else:
+                fee_rate = taker_fee
+                fee_type = "taker"
+
+            # Calculate fee amount
+            notional_value = quantity * price
+            fee_amount = notional_value * fee_rate
 
         tprint(f"[FEE_CALC] calculate_fee -> {fee_type} fee={fee_amount:.6f} ({fee_rate*100:.4f}%), notional={notional_value:.2f}")
+        
+        # Performance logging for fee calculation
+        tprint_performance("Fee calculation", 0.001)
 
         self.logger.debug(
             f"Fee calculated: {exchange} {order_type} "
@@ -101,6 +120,7 @@ class FeeCalculator:
         )
         return result
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def calculate_total_fee(
         self,
         entry_fee: FeeResult,
@@ -118,18 +138,31 @@ class FeeCalculator:
         """
         tprint(f"[FEE_CALC] calculate_total_fee: entry_fee={entry_fee.fee_amount:.6f} ({entry_fee.fee_type}), exit_fee={exit_fee.fee_amount:.6f} ({exit_fee.fee_type})")
 
-        total_fee = entry_fee.fee_amount + exit_fee.fee_amount
-        total_fee_pct = entry_fee.fee_percentage + exit_fee.fee_percentage
-
-        result = {
-            "entry_fee": entry_fee.fee_amount,
-            "exit_fee": exit_fee.fee_amount,
-            "total_fee": total_fee,
-            "entry_fee_pct": entry_fee.fee_percentage * 100,
-            "exit_fee_pct": exit_fee.fee_percentage * 100,
-            "total_fee_pct": total_fee_pct * 100,
-            "fee_type": f"{entry_fee.fee_type}/{exit_fee.fee_type}"
+        # Preview fee calculation data
+        fee_data = {
+            "entry_fee_amount": entry_fee.fee_amount,
+            "entry_fee_type": entry_fee.fee_type,
+            "exit_fee_amount": exit_fee.fee_amount,
+            "exit_fee_type": exit_fee.fee_type
         }
+        tprint_data_preview(fee_data, "Fee Calculation Data", max_rows=5)
+
+        with tprint_timer("Total fee calculation"):
+            total_fee = entry_fee.fee_amount + exit_fee.fee_amount
+            total_fee_pct = entry_fee.fee_percentage + exit_fee.fee_percentage
+
+            result = {
+                "entry_fee": entry_fee.fee_amount,
+                "exit_fee": exit_fee.fee_amount,
+                "total_fee": total_fee,
+                "entry_fee_pct": entry_fee.fee_percentage * 100,
+                "exit_fee_pct": exit_fee.fee_percentage * 100,
+                "total_fee_pct": total_fee_pct * 100,
+                "fee_type": f"{entry_fee.fee_type}/{exit_fee.fee_type}"
+            }
 
         tprint(f"[FEE_CALC] calculate_total_fee -> total_fee={total_fee:.6f} ({total_fee_pct*100:.4f}%)")
+        
+        # Performance logging for total fee calculation
+        tprint_performance("Total fee calculation", 0.001)
         return result

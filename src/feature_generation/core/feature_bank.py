@@ -846,12 +846,18 @@ class FeatureBank:
             except ImportError:
                 pass
 
-            # Try to create regime volume generators
+            # Try to create regime volume generators (new robust version)
             try:
-                from ..categories.regime_features import RegimeVolumeFeatureGenerator
-                generators.append(RegimeVolumeFeatureGenerator())
+                from ..categories.regime_volume import RegimeVolumeFeatureGenerator, create_regime_volume_generators
+                # Use the factory function to create generators for multiple windows
+                generators.extend(create_regime_volume_generators(windows=[14, 20, 30]))
             except ImportError:
-                pass
+                # Fallback to old regime_features version
+                try:
+                    from ..categories.regime_features import RegimeVolumeFeatureGenerator
+                    generators.append(RegimeVolumeFeatureGenerator())
+                except ImportError:
+                    pass
 
             # Multi-timeframe EWMA generators (inspired by rolling_hmm_clustering)
             try:

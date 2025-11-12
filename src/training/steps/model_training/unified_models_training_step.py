@@ -572,6 +572,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                     'success': True,
                     'artifacts': artifacts,
                     'metrics': result.get('metrics', {}),
+                    'models': result.get('models', {}),
                     'training_type': training_type,
                     'execution_time': result.get('execution_time', 0.0),
                     'reports': report_paths

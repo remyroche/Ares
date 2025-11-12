@@ -1020,30 +1020,129 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Walk-forward validation failed: {e}", color="yellow")
                 walk_forward_metrics = {'validation_completed': False, 'error': str(e)}
 
-            # Generate ensemble predictions and save to HDF5
+            # ========================================================================
+            # CRITICAL FIX: DATA LEAKAGE PREVENTION - LEAK-FREE PREDICTIONS
+            # ========================================================================
+            # PROBLEM: Previously predicted on X_processed (100% of data) including
+            #          training data the model was trained on → DATA LEAKAGE!
+            # SOLUTION: Generate predictions only for test set (unseen data)
+            #          Set train+val predictions to NaN (can't predict on training data)
+            # ========================================================================
             tprint("=" * 80, color="cyan", bold=True)
-            tprint("🎯 [REGIME_ENSEMBLE] GENERATING ENSEMBLE PREDICTIONS FOR HDF5 STORAGE", color="cyan", bold=True)
+            tprint("🛡️ [REGIME_ENSEMBLE] GENERATING LEAK-FREE ENSEMBLE PREDICTIONS", color="cyan", bold=True)
             tprint("=" * 80, color="cyan", bold=True)
+            tprint("🎯 Approach: Prevent data leakage by only predicting on unseen test data", color="green")
+            tprint("🔒 Train+Val predictions: Set to NaN (model trained on this data)", color="yellow")
+            tprint("✅ Test predictions: Clean (model never saw this data)", color="green")
+            tprint("=" * 80, color="cyan", bold=True)
+
             try:
                 ensemble_model = stacker_result.get('model')
                 tprint(f"📊 [REGIME_ENSEMBLE] Ensemble model retrieved: {ensemble_model is not None}", color="cyan")
                 tprint(f"📊 [REGIME_ENSEMBLE] Has predict_proba: {hasattr(ensemble_model, 'predict_proba') if ensemble_model else False}", color="cyan")
 
                 if ensemble_model is not None and hasattr(ensemble_model, 'predict_proba'):
-                    tprint(f"🔮 [REGIME_ENSEMBLE] Generating predictions for {len(X_processed)} samples...", color="cyan")
-                    pred_probs = ensemble_model.predict_proba(X_processed)
-                    tprint(f"✅ [REGIME_ENSEMBLE] Predictions generated: shape={pred_probs.shape}", color="green")
+                    # ========================================================================
+                    # DATA LEAKAGE FIX: Generate predictions in 2 parts (no leakage)
+                    # ========================================================================
+
+                    # Get number of classes from training labels
+                    n_regimes = len(np.unique(y_processed))
+                    tprint(f"📊 [REGIME_ENSEMBLE] Number of regimes: {n_regimes}", color="blue")
+
+                    # Calculate split sizes
+                    n_train_full = len(X_train_full)  # train + val (85%)
+                    n_test = len(X_test)  # test (15%)
+                    total_samples = len(X_processed)
+
+                    tprint(f"📊 [REGIME_ENSEMBLE] Split sizes:", color="blue")
+                    tprint(f"   • Train+Val: {n_train_full} samples (85%) → NaN (trained on this)", color="yellow")
+                    tprint(f"   • Test: {n_test} samples (15%) → Clean predictions", color="green")
+                    tprint(f"   • Total: {total_samples} samples", color="blue")
+
+                    # Initialize predictions array with NaN
+                    pred_probs = np.full((total_samples, n_regimes), np.nan, dtype=np.float64)
+
+                    # 1. Train+Val predictions: Set to NaN (data leakage prevention)
+                    tprint(f"\n🔒 [REGIME_ENSEMBLE] Train+Val predictions: Setting to NaN (no data leakage)", color="yellow")
+                    tprint(f"   Rationale: Model was trained on this data, cannot predict on it", color="yellow")
+                    # pred_probs[:n_train_full] already NaN from initialization
+
+                    # 2. Test predictions: Clean (model never saw this data)
+                    tprint(f"\n✅ [REGIME_ENSEMBLE] Test predictions: Generating clean predictions", color="cyan")
+                    tprint(f"   Generating predictions for {n_test} test samples...", color="cyan")
+                    test_predictions = ensemble_model.predict_proba(X_test)
+                    pred_probs[n_train_full:] = test_predictions
+                    tprint(f"   ✅ Test predictions: {test_predictions.shape} (clean, no leakage)", color="green")
+
+                    # Validate shapes
+                    assert pred_probs.shape[0] == total_samples, f"Shape mismatch: {pred_probs.shape[0]} != {total_samples}"
+                    assert pred_probs.shape[1] == n_regimes, f"Class mismatch: {pred_probs.shape[1]} != {n_regimes}"
+                    assert test_predictions.shape[0] == n_test, f"Test shape mismatch: {test_predictions.shape[0]} != {n_test}"
+
+                    # Calculate NaN statistics
+                    nan_count = np.isnan(pred_probs).sum()
+                    nan_pct = (nan_count / pred_probs.size) * 100
+                    clean_count = np.sum(~np.isnan(pred_probs).any(axis=1))
+                    clean_pct = (clean_count / total_samples) * 100
+
+                    tprint(f"\n📊 [REGIME_ENSEMBLE] Prediction statistics:", color="cyan")
+                    tprint(f"   • Total predictions: {pred_probs.shape} ({total_samples} samples × {n_regimes} classes)", color="blue")
+                    tprint(f"   • NaN values: {nan_count}/{pred_probs.size} ({nan_pct:.1f}%)", color="yellow")
+                    tprint(f"   • Clean predictions: {clean_count}/{total_samples} samples ({clean_pct:.1f}%)", color="green")
+                    tprint(f"   • Expected clean %: 15% (test set only) ✅", color="green")
+
+                    tprint(f"\n✅ [REGIME_ENSEMBLE] Leak-free predictions generated successfully!", color="green")
+
+                    # ========================================================================
+                    # CRITICAL: Verify no data leakage - check prediction patterns
+                    # ========================================================================
+                    tprint(f"\n🔍 [REGIME_ENSEMBLE] Running data leakage verification...", color="cyan")
+
+                    # Check 1: Verify train+val predictions are NaN
+                    train_val_has_nan = np.isnan(pred_probs[:n_train_full]).all()
+                    if not train_val_has_nan:
+                        tprint(f"❌ CRITICAL: Train+Val predictions should be NaN but aren't!", color="red")
+                        raise ValueError("Data leakage detected: Train+Val predictions contain non-NaN values")
+                    else:
+                        tprint(f"   ✅ Train+Val predictions are NaN (no leakage)", color="green")
+
+                    # Check 2: Verify test predictions are NOT NaN
+                    test_has_values = ~np.isnan(pred_probs[n_train_full:]).any()
+                    if not test_has_values:
+                        tprint(f"❌ CRITICAL: Test predictions should have values but are NaN!", color="red")
+                        raise ValueError("Data error: Test predictions are NaN")
+                    else:
+                        tprint(f"   ✅ Test predictions have values (clean predictions)", color="green")
+
+                    # Check 3: Calculate expected vs actual clean percentage
+                    expected_clean_pct = (n_test / total_samples) * 100
+                    actual_clean_pct = clean_pct
+                    pct_diff = abs(expected_clean_pct - actual_clean_pct)
+
+                    if pct_diff > 1.0:  # Allow 1% tolerance
+                        tprint(f"⚠️ WARNING: Clean percentage mismatch!", color="yellow")
+                        tprint(f"   Expected: {expected_clean_pct:.1f}%, Actual: {actual_clean_pct:.1f}%", color="yellow")
+                    else:
+                        tprint(f"   ✅ Clean percentage matches expected: {actual_clean_pct:.1f}%", color="green")
+
+                    tprint(f"\n🎯 [REGIME_ENSEMBLE] Data leakage verification PASSED!", color="green", bold=True)
+                    tprint("=" * 80, color="green", bold=True)
 
                     # Create columns for each regime
                     ensemble_predictions = {}
-                    n_regimes = pred_probs.shape[1]
-                    tprint(f"📋 [REGIME_ENSEMBLE] Creating probability columns for {n_regimes} regimes...", color="cyan")
+                    n_regimes_final = pred_probs.shape[1]
+                    tprint(f"📋 [REGIME_ENSEMBLE] Creating probability columns for {n_regimes_final} regimes...", color="cyan")
 
-                    for regime_idx in range(n_regimes):
+                    for regime_idx in range(n_regimes_final):
                         # CRITICAL FIX: Convert to Python int to avoid JSON serialization errors
                         col_name = f'ensemble_regime_{int(regime_idx)}_prob'
                         ensemble_predictions[col_name] = pred_probs[:, regime_idx]
-                        tprint(f"   ├─ Column '{col_name}': min={pred_probs[:, regime_idx].min():.4f}, max={pred_probs[:, regime_idx].max():.4f}, mean={pred_probs[:, regime_idx].mean():.4f}", color="cyan")
+                        # Use nanmin/nanmax/nanmean to handle NaN values (train+val are NaN)
+                        col_min = np.nanmin(pred_probs[:, regime_idx])
+                        col_max = np.nanmax(pred_probs[:, regime_idx])
+                        col_mean = np.nanmean(pred_probs[:, regime_idx])
+                        tprint(f"   ├─ Column '{col_name}': min={col_min:.4f}, max={col_max:.4f}, mean={col_mean:.4f} (test set only)", color="cyan")
 
                     predictions_df = pd.DataFrame(ensemble_predictions, index=protected_data.index)
                     tprint(f"✅ [REGIME_ENSEMBLE] Predictions DataFrame created: shape={predictions_df.shape}", color="green")

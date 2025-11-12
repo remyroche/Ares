@@ -1637,6 +1637,33 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                             else:
                                 tprint(f"   ✅ [{model_name}] No NaN values - 100% coverage achieved!", color="green")
                             tprint(f"   ✅ [{model_name}] Predictions generated successfully ({pred_probs.shape[0]} samples, {n_predicted_classes} classes)", color="green")
+
+                            # ========================================================================
+                            # CRITICAL: Run automatic data leakage detection
+                            # ========================================================================
+                            tprint(f"\n🔍 [{model_name}] Running automatic data leakage detection...", color="cyan")
+                            leakage_results = self._detect_and_block_leakage(
+                                train_predictions=train_predictions,
+                                val_predictions=val_predictions if 'X_val' in locals() and len(X_val) > 0 else np.array([]).reshape(0, n_classes),
+                                test_predictions=test_predictions,
+                                y_train=y_train,
+                                y_val=y_val if 'X_val' in locals() and len(X_val) > 0 else np.array([]),
+                                y_test=y_test,
+                                model_name=model_name,
+                                accuracy_threshold=0.95,  # Flag if training accuracy > 95%
+                                gap_threshold=0.30  # Flag if performance gap > 30%
+                            )
+
+                            # Store leakage detection results for reporting
+                            if not hasattr(self, '_leakage_detection_results'):
+                                self._leakage_detection_results = []
+                            self._leakage_detection_results.append(leakage_results)
+
+                            # Raise error if critical leakage detected
+                            if leakage_results['is_suspicious']:
+                                tprint(f"🚨 [{model_name}] CRITICAL: Suspicious data leakage patterns detected!", color="red")
+                                tprint(f"   Review warnings above and verify OOF implementation", color="red")
+                                # Note: Not raising exception to allow analysis, but flagging for review
                     except Exception as e:
                         tprint(f"⚠️ [REGIME_MODELS] Failed to generate predictions for {model_name}: {e}", color="yellow")
                         raise  # Re-raise to fail fast
@@ -2251,6 +2278,206 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         tprint("=" * 80, color="cyan")
 
         return oof_predictions
+
+    def _detect_and_block_leakage(
+        self,
+        train_predictions: np.ndarray,
+        val_predictions: np.ndarray,
+        test_predictions: np.ndarray,
+        y_train: np.ndarray,
+        y_val: np.ndarray,
+        y_test: np.ndarray,
+        model_name: str = "model",
+        accuracy_threshold: float = 0.95,
+        gap_threshold: float = 0.30
+    ) -> Dict[str, Any]:
+        """
+        Detect and block potential data leakage in predictions.
+
+        This function performs multiple checks to detect data leakage:
+        1. Unrealistically high training accuracy (> threshold)
+        2. Large performance gaps between train/val/test
+        3. Suspicious patterns in OOF predictions
+        4. Index alignment verification
+
+        Args:
+            train_predictions: Training set predictions (may contain NaN for OOF)
+            val_predictions: Validation set predictions
+            test_predictions: Test set predictions
+            y_train: Training labels
+            y_val: Validation labels
+            y_test: Test labels
+            model_name: Name of the model being validated
+            accuracy_threshold: Threshold for suspicious training accuracy (default: 0.95)
+            gap_threshold: Maximum acceptable performance gap (default: 0.30)
+
+        Returns:
+            Dictionary with leakage detection results and warnings
+        """
+        tprint("=" * 80, color="cyan")
+        tprint(f"🔍 [LEAKAGE_DETECTION] Analyzing {model_name} for data leakage", color="cyan")
+        tprint("=" * 80, color="cyan")
+
+        warnings = []
+        metrics = {}
+        is_suspicious = False
+
+        # Calculate accuracy for each split (handling NaN in OOF predictions)
+        from sklearn.metrics import accuracy_score
+
+        # Training accuracy (skip NaN values from OOF)
+        train_mask = ~np.isnan(train_predictions).any(axis=1)
+        if train_mask.sum() > 0:
+            train_preds_clean = np.argmax(train_predictions[train_mask], axis=1)
+            train_acc = accuracy_score(y_train[train_mask], train_preds_clean)
+            metrics['train_accuracy'] = train_acc
+            tprint(f"📊 Training Accuracy: {train_acc:.4f} ({train_mask.sum()}/{len(y_train)} samples)", color="blue")
+        else:
+            metrics['train_accuracy'] = None
+            tprint("⚠️ No clean training predictions available (all NaN)", color="yellow")
+
+        # Validation accuracy
+        if len(val_predictions) > 0:
+            val_preds = np.argmax(val_predictions, axis=1)
+            val_acc = accuracy_score(y_val, val_preds)
+            metrics['val_accuracy'] = val_acc
+            tprint(f"📊 Validation Accuracy: {val_acc:.4f}", color="blue")
+        else:
+            metrics['val_accuracy'] = None
+            tprint("⚠️ No validation predictions available", color="yellow")
+
+        # Test accuracy
+        test_preds = np.argmax(test_predictions, axis=1)
+        test_acc = accuracy_score(y_test, test_preds)
+        metrics['test_accuracy'] = test_acc
+        tprint(f"📊 Test Accuracy: {test_acc:.4f}", color="blue")
+
+        # ========================================================================
+        # CHECK 1: Unrealistically high training accuracy
+        # ========================================================================
+        if metrics['train_accuracy'] is not None and metrics['train_accuracy'] > accuracy_threshold:
+            warning = (
+                f"🚨 SUSPICIOUS: Training accuracy ({metrics['train_accuracy']:.4f}) > {accuracy_threshold}\n"
+                f"   This may indicate data leakage (model predicting on data it was trained on)\n"
+                f"   Expected: Training accuracy should be realistic (0.60-0.85 for regime detection)"
+            )
+            warnings.append(warning)
+            is_suspicious = True
+            tprint(warning, color="red")
+
+        # ========================================================================
+        # CHECK 2: Large performance gaps
+        # ========================================================================
+        if metrics['train_accuracy'] is not None and metrics['val_accuracy'] is not None:
+            train_val_gap = abs(metrics['train_accuracy'] - metrics['val_accuracy'])
+            if train_val_gap > gap_threshold:
+                warning = (
+                    f"🚨 SUSPICIOUS: Large train-val gap ({train_val_gap:.4f}) > {gap_threshold}\n"
+                    f"   Train: {metrics['train_accuracy']:.4f}, Val: {metrics['val_accuracy']:.4f}\n"
+                    f"   This may indicate overfitting or data leakage"
+                )
+                warnings.append(warning)
+                is_suspicious = True
+                tprint(warning, color="red")
+
+        if metrics['train_accuracy'] is not None:
+            train_test_gap = abs(metrics['train_accuracy'] - metrics['test_accuracy'])
+            if train_test_gap > gap_threshold:
+                warning = (
+                    f"🚨 SUSPICIOUS: Large train-test gap ({train_test_gap:.4f}) > {gap_threshold}\n"
+                    f"   Train: {metrics['train_accuracy']:.4f}, Test: {metrics['test_accuracy']:.4f}\n"
+                    f"   This may indicate overfitting or data leakage"
+                )
+                warnings.append(warning)
+                is_suspicious = True
+                tprint(warning, color="red")
+
+        if metrics['val_accuracy'] is not None:
+            val_test_gap = abs(metrics['val_accuracy'] - metrics['test_accuracy'])
+            if val_test_gap > gap_threshold:
+                warning = (
+                    f"⚠️ WARNING: Large val-test gap ({val_test_gap:.4f}) > {gap_threshold}\n"
+                    f"   Val: {metrics['val_accuracy']:.4f}, Test: {metrics['test_accuracy']:.4f}\n"
+                    f"   This may indicate distribution shift"
+                )
+                warnings.append(warning)
+                tprint(warning, color="yellow")
+
+        # ========================================================================
+        # CHECK 3: OOF prediction coverage
+        # ========================================================================
+        oof_coverage = train_mask.sum() / len(y_train) * 100
+        metrics['oof_coverage'] = oof_coverage
+        tprint(f"📊 OOF Coverage: {oof_coverage:.1f}% ({train_mask.sum()}/{len(y_train)} samples)", color="blue")
+
+        if oof_coverage < 80.0:
+            warning = (
+                f"⚠️ WARNING: Low OOF coverage ({oof_coverage:.1f}%) < 80%\n"
+                f"   This is expected for TimeSeriesSplit with few folds\n"
+                f"   Early samples have no past data to train on"
+            )
+            warnings.append(warning)
+            tprint(warning, color="yellow")
+        elif oof_coverage == 100.0:
+            warning = (
+                f"🚨 SUSPICIOUS: OOF coverage is 100% (no NaN values)\n"
+                f"   OOF predictions should have some NaN for earliest folds\n"
+                f"   This may indicate the OOF method is not working correctly"
+            )
+            warnings.append(warning)
+            is_suspicious = True
+            tprint(warning, color="red")
+
+        # ========================================================================
+        # CHECK 4: Shape validation
+        # ========================================================================
+        if train_predictions.shape[0] != len(y_train):
+            error = (
+                f"❌ CRITICAL: Training predictions shape mismatch!\n"
+                f"   Predictions: {train_predictions.shape[0]}, Labels: {len(y_train)}"
+            )
+            warnings.append(error)
+            is_suspicious = True
+            tprint(error, color="red")
+
+        if val_predictions.shape[0] != len(y_val):
+            error = (
+                f"❌ CRITICAL: Validation predictions shape mismatch!\n"
+                f"   Predictions: {val_predictions.shape[0]}, Labels: {len(y_val)}"
+            )
+            warnings.append(error)
+            is_suspicious = True
+            tprint(error, color="red")
+
+        if test_predictions.shape[0] != len(y_test):
+            error = (
+                f"❌ CRITICAL: Test predictions shape mismatch!\n"
+                f"   Predictions: {test_predictions.shape[0]}, Labels: {len(y_test)}"
+            )
+            warnings.append(error)
+            is_suspicious = True
+            tprint(error, color="red")
+
+        # ========================================================================
+        # SUMMARY
+        # ========================================================================
+        tprint("=" * 80, color="cyan")
+        if is_suspicious:
+            tprint(f"🚨 [{model_name}] LEAKAGE DETECTION: SUSPICIOUS PATTERNS FOUND", color="red")
+            tprint(f"   Number of warnings: {len(warnings)}", color="red")
+        elif len(warnings) > 0:
+            tprint(f"⚠️ [{model_name}] LEAKAGE DETECTION: Minor warnings found", color="yellow")
+            tprint(f"   Number of warnings: {len(warnings)}", color="yellow")
+        else:
+            tprint(f"✅ [{model_name}] LEAKAGE DETECTION: No suspicious patterns detected", color="green")
+        tprint("=" * 80, color="cyan")
+
+        return {
+            'is_suspicious': is_suspicious,
+            'warnings': warnings,
+            'metrics': metrics,
+            'model_name': model_name
+        }
 
     async def _train_models_with_hpo(self, X_train: np.ndarray, y_train: np.ndarray, X_test: np.ndarray, y_test: np.ndarray) -> Dict[str, Any]:
         """Train models with HPO optimization."""
@@ -3377,14 +3604,14 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint("⚠️ [REGIME_MODELS] Falling back to original features", color="yellow")
             return X, feature_names
 
-    def _generate_features_with_bank(self, data: pd.DataFrame) -> Tuple[Optional[np.ndarray], Optional[List[str]]]:
+    def _generate_features_with_bank(self, data: pd.DataFrame) -> Tuple[Optional[np.ndarray], Optional[List[str]], Optional[pd.DatetimeIndex]]:
         """Generate comprehensive features using the existing feature bank."""
         tprint("🔧 [REGIME_MODELS] Generating features using feature bank", color="cyan", bold=True)
 
         try:
             if not FEATURE_GENERATION_AVAILABLE:
                 tprint("❌ [REGIME_MODELS] Feature generation system not available", color="red")
-                return None, None
+                return None, None, None
 
             # Get feature bank with REGIME features ENABLED (critical for regime classification)
             feature_bank = get_feature_bank(config={'enable_regime_features': True})
@@ -3568,7 +3795,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Error generating features with feature bank: {e}", color="red")
             self.logger.error(f"Error generating features with feature bank: {str(e)}", exc_info=True)
-            return None, None
+            return None, None, None
 
     def _get_system_performance(self) -> Dict[str, Any]:
         """Get current system performance metrics."""

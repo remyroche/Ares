@@ -211,8 +211,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "VOLATILITY",    # Volatility states define regimes - ESSENTIAL
             "VOLUME",        # Volume patterns indicate regime changes - ESSENTIAL
             "RETURNS",       # Return characteristics vary by regime - ESSENTIAL
+            "TREND",         # Trend direction/strength important for regime characterization - ESSENTIAL
             # "MOMENTUM",    # DISABLED: Technical indicators less relevant for regime detection
-            # "TREND",       # DISABLED: Redundant with regime features
             # "OSCILLATOR",  # DISABLED: Not relevant for regime detection
             # "MICROSTRUCTURE"  # DISABLED: More relevant for execution than regime detection
         ],

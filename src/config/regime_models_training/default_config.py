@@ -207,29 +207,29 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "enabled": True,
         "use_feature_bank": True,
         "categories": [
-            "REGIME",
-            "MOMENTUM",
-            "VOLATILITY",
-            "VOLUME",
-            "TREND",
-            # "OSCILLATOR",  # DISABLED for regime detection mode
-            "RETURNS",
-            "MICROSTRUCTURE"
+            "REGIME",        # Core regime features - ESSENTIAL
+            "VOLATILITY",    # Volatility states define regimes - ESSENTIAL
+            "VOLUME",        # Volume patterns indicate regime changes - ESSENTIAL
+            "RETURNS",       # Return characteristics vary by regime - ESSENTIAL
+            # "MOMENTUM",    # DISABLED: Technical indicators less relevant for regime detection
+            # "TREND",       # DISABLED: Redundant with regime features
+            # "OSCILLATOR",  # DISABLED: Not relevant for regime detection
+            # "MICROSTRUCTURE"  # DISABLED: More relevant for execution than regime detection
         ],
-        
-        # Configuration des caractéristiques avancées de régime
+
+        # Configuration des caractéristiques avancées de régime (responsive windows)
         "advanced_regime_features": {
             "enabled": True,
-            "window_sizes": [4, 8, 16, 24],
+            "window_sizes": [2, 4, 8, 16],  # Fast responsive windows for regime detection
             "enable_smoothed_features": True
         },
-        
-        # Configuration EWMA - simple EWMA 8 & 20 without special weights
+
+        # Configuration EWMA (fast responsive windows)
         "ewma_features": {
             "enabled": True,
-            "window_sizes": [8, 20],  # Simple EWMA windows (8 & 20 periods)
+            "window_sizes": [3, 8, 20],  # Fast EWMA windows: 3 (very fast), 8 (fast), 20 (medium)
             "alpha": 0.3,  # EWMA smoothing factor
-            "description": "Simple EWMA 8 & 20 without special weights - just standard exponential weighting"
+            "description": "Fast responsive EWMA with windows 3, 8, 20 for better regime detection"
         },
         
         # Sélection de caractéristiques

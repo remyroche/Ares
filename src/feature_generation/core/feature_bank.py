@@ -861,8 +861,8 @@ class FeatureBank:
                     MultiTimeframeEWMATrendGenerator,
                     MultiTimeframeEWMAVolumeGenerator,
                 )
-                # Add EWMA generators with multiple timeframes
-                windows = [8, 12, 16, 20, 24]
+                # Add EWMA generators with multiple timeframes (faster, more responsive)
+                windows = [3, 8, 20]
                 generators.append(MultiTimeframeEWMAReturnsGenerator(windows=windows))
                 generators.append(MultiTimeframeEWMAVolatilityGenerator(windows=windows))
                 generators.append(MultiTimeframeEWMATrendGenerator(windows=windows))

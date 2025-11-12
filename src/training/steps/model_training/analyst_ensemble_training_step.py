@@ -204,12 +204,39 @@ class AnalystEnsembleTrainingStep(BaseStep):
             tprint("=" * 80, "INFO")
             tprint("🔗 FEATURE COMBINATION: Merging All Feature Sets", "INFO")
             tprint("=" * 80, "INFO")
-            tprint(f"   Original features: {original_feature_count}", "INFO")
-            tprint(f"   Regime features: {regime_feature_count}", "INFO")
-            tprint(f"   Base predictions: {base_pred_count}", "INFO")
-            tprint(f"   Base confidence: {base_conf_count}", "INFO")
-            tprint(f"   Disagreement features: {disagreement_count}", "INFO")
-            tprint(f"   Total combined: {ensemble_features.shape[1]}", "INFO")
+            execution_mode = config.get('execution_mode', 'full')
+            tprint(f"   Execution Mode: {execution_mode.upper()}", "INFO")
+
+            if execution_mode == 'blank':
+                # In blank mode, show detailed breakdown
+                label_count = len([col for col in ensemble_features.columns
+                                 if ('label' in col.lower() or 'target' in col.lower())
+                                 and 'regime' not in col.lower()])
+                base_pred_actual = len([col for col in ensemble_features.columns
+                                      if any(term in col.lower() for term in ['_prob', '_pred', '_confidence'])])
+                disagreement_actual = len([col for col in ensemble_features.columns
+                                          if 'disagreement' in col.lower()])
+                regime_in_final = len([col for col in ensemble_features.columns
+                                     if 'regime' in col.lower()])
+
+                tprint(f"   Label columns: {label_count}", "INFO")
+                tprint(f"   Base predictions: {base_pred_actual}", "INFO")
+                tprint(f"   Disagreement features: {disagreement_actual}", "INFO")
+                tprint(f"   Regime features (should be 0): {regime_in_final}", "WARNING" if regime_in_final > 0 else "INFO")
+                tprint(f"   Total combined: {ensemble_features.shape[1]}", "INFO")
+
+                if regime_in_final > 0:
+                    regime_cols = [col for col in ensemble_features.columns if 'regime' in col.lower()]
+                    tprint(f"   ⚠️ WARNING: Regime features found in BLANK mode: {regime_cols[:5]}", "WARNING")
+            else:
+                # Full/light mode - show original breakdown
+                tprint(f"   Original features: {original_feature_count}", "INFO")
+                tprint(f"   Regime features: {regime_feature_count}", "INFO")
+                tprint(f"   Base predictions: {base_pred_count}", "INFO")
+                tprint(f"   Base confidence: {base_conf_count}", "INFO")
+                tprint(f"   Disagreement features: {disagreement_count}", "INFO")
+                tprint(f"   Total combined: {ensemble_features.shape[1]}", "INFO")
+
             tprint_data_preview(
                 ensemble_features,
                 name="Combined Ensemble Features",
@@ -385,11 +412,15 @@ class AnalystEnsembleTrainingStep(BaseStep):
         # In blank mode, only use labels from features_data
         if execution_mode == 'blank':
             tprint("🎯 BLANK MODE: Using only labels, base predictions, and disagreement features", "INFO")
-            # Extract only label columns from features_data
-            label_cols = [col for col in features_data.columns if 'label' in col.lower() or 'target' in col.lower()]
+            # Extract only label columns from features_data, excluding regime features
+            label_cols = [
+                col for col in features_data.columns
+                if ('label' in col.lower() or 'target' in col.lower())
+                and 'regime' not in col.lower()  # Explicitly exclude regime features
+            ]
             if label_cols:
                 combined = features_data[label_cols].copy()
-                tprint(f"   Extracted {len(label_cols)} label columns from features", "INFO")
+                tprint(f"   Extracted {len(label_cols)} label columns from features (regime features excluded)", "INFO")
             else:
                 # If no label columns found, create empty DataFrame with same index
                 combined = pd.DataFrame(index=features_data.index)

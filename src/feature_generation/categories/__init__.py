@@ -15,6 +15,11 @@ This module provides feature generators organized by category, including:
 - Interaction features (momentum divergence, volatility-volume, etc.)
 - Cross-timeframe features (multi-timeframe momentum, volatility, etc.)
 - Entropy features (15 comprehensive entropy indicators)
+- Regime transition features (transition probabilities, switch patterns, dynamics)
+- Regime persistence features (duration, survival probability, exhaustion indicators)
+- Market structure features (support/resistance within regimes, swing structure, fractals)
+- Regime probability features (HMM probabilities, confidence, dynamics, patterns)
+- Regime uncertainty features (classification entropy, confusion scores, ambiguity)
 """
 
 # Returns and momentum features are handled by other categories
@@ -178,6 +183,28 @@ from .advanced_regime_features import (
     RegimeHurstExponentGenerator,
     RegimeMemoryStrengthGenerator,
     create_advanced_regime_generators
+)
+
+# NEW REGIME FEATURE CATEGORIES - Enhanced Regime Analysis
+from .regime_transitions import (
+    RegimeTransitionGenerator,
+    create_regime_transition_generators
+)
+from .regime_persistence import (
+    RegimePersistenceGenerator,
+    create_regime_persistence_generators
+)
+from .market_structure import (
+    MarketStructureGenerator,
+    create_market_structure_generators
+)
+from .regime_probability import (
+    RegimeProbabilityGenerator,
+    create_regime_probability_generators
+)
+from .regime_uncertainty import (
+    RegimeUncertaintyGenerator,
+    create_regime_uncertainty_generators
 )
 
 # Ensemble disagreement features for ensemble models
@@ -392,6 +419,17 @@ __all__ = [
     "RegimeFeatureIntegration",
     "RegimeFeatureConfig",
     "generate_regime_features",
+    # NEW REGIME FEATURE CATEGORIES - Enhanced Regime Analysis
+    "RegimeTransitionGenerator",
+    "create_regime_transition_generators",
+    "RegimePersistenceGenerator",
+    "create_regime_persistence_generators",
+    "MarketStructureGenerator",
+    "create_market_structure_generators",
+    "RegimeProbabilityGenerator",
+    "create_regime_probability_generators",
+    "RegimeUncertaintyGenerator",
+    "create_regime_uncertainty_generators",
     # Multi-timeframe EWMA features
     "MultiTimeframeEWMAReturnsGenerator",
     "MultiTimeframeEWMAVolatilityGenerator",

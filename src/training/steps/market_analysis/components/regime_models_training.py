@@ -1472,37 +1472,76 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'error': str(e)
                 }
 
-            # Generate predictions only for top 3 models
-            tprint("🎯 [REGIME_MODELS] Generating predictions for top 3 models only", color="cyan")
+            # ========================================================================
+            # CRITICAL FIX: DATA LEAKAGE PREVENTION
+            # ========================================================================
+            # PROBLEM: Previous code predicted on training data the model was trained on
+            # SOLUTION: Only predict on validation and test sets (set training to NaN)
+            #
+            # This prevents data leakage by ensuring:
+            # 1. Training set predictions = NaN (can't predict on data model saw)
+            # 2. Validation set predictions = clean (model trained on train only)
+            # 3. Test set predictions = clean (model trained on train only)
+            # ========================================================================
+
+            tprint("=" * 80, color="cyan")
+            tprint("🛡️ [REGIME_MODELS] GENERATING LEAK-FREE PREDICTIONS", color="cyan")
+            tprint("=" * 80, color="cyan")
+            tprint("🔒 Data Leakage Prevention: Training set predictions will be set to NaN", color="blue")
+            tprint("🔒 Only validation and test sets will have legitimate predictions", color="blue")
+            tprint("=" * 80, color="cyan")
+
             model_predictions = {}
 
-            # CRITICAL FIX: Determine the correct data scope for predictions
-            # The models were trained on X_train + X_val + X_test, not the full X
-            # We need to concatenate the training splits to get the correct prediction scope
-            X_for_prediction = np.concatenate([X_train, X_val, X_test]) if 'X_val' in locals() else np.concatenate([X_train, X_test])
-            
-            # Get the corresponding indices from protected_data
-            # The training data was created from protected_data, so we need to find the matching indices
-            total_training_samples = len(X_for_prediction)
-            
-            # Use the last 'total_training_samples' rows from protected_data since that's where the training data came from
+            # Get the number of classes from the trained model
+            n_classes = len(np.unique(y))
+
+            # Calculate total samples and get indices
+            total_training_samples = len(X_train) + len(X_val) + len(X_test) if 'X_val' in locals() else len(X_train) + len(X_test)
             predictions_index = protected_data.index[-total_training_samples:]
-            
-            tprint(f"📊 [REGIME_MODELS] Prediction scope: {total_training_samples} samples (from {len(protected_data)} total)", color="blue")
-            tprint(f"📊 [REGIME_MODELS] Using indices from {predictions_index[0]} to {predictions_index[-1]}", color="blue")
+
+            tprint(f"📊 [REGIME_MODELS] Prediction scope:", color="blue")
+            tprint(f"   • Training samples: {len(X_train)} → NaN (data leakage prevention)", color="yellow")
+            tprint(f"   • Validation samples: {len(X_val) if 'X_val' in locals() else 0} → Clean predictions", color="green")
+            tprint(f"   • Test samples: {len(X_test)} → Clean predictions", color="green")
+            tprint(f"   • Total samples: {total_training_samples}", color="blue")
+            tprint(f"   • Index range: {predictions_index[0]} to {predictions_index[-1]}", color="blue")
+            tprint("=" * 80, color="cyan")
 
             for model_name in selected_model_names:
                 if model_name in trained_models:
                     model = trained_models[model_name]
                     try:
                         if hasattr(model, 'predict_proba'):
-                            # CRITICAL FIX: Use the correct data scope for predictions
-                            pred_probs = model.predict_proba(X_for_prediction)
-                            
+                            # ========================================================================
+                            # DATA LEAKAGE FIX: Generate predictions in 3 parts
+                            # ========================================================================
+
+                            # 1. Training set: NaN (cannot predict on data model was trained on)
+                            train_predictions = np.full((len(X_train), n_classes), np.nan)
+                            tprint(f"   🛡️ [{model_name}] Training predictions: {train_predictions.shape} (set to NaN)", color="yellow")
+
+                            # 2. Validation set: Clean predictions (model trained on train only)
+                            if 'X_val' in locals() and len(X_val) > 0:
+                                val_predictions = model.predict_proba(X_val)
+                                tprint(f"   ✅ [{model_name}] Validation predictions: {val_predictions.shape} (clean)", color="green")
+                            else:
+                                val_predictions = np.array([]).reshape(0, n_classes)
+
+                            # 3. Test set: Clean predictions (model trained on train only)
+                            test_predictions = model.predict_proba(X_test)
+                            tprint(f"   ✅ [{model_name}] Test predictions: {test_predictions.shape} (clean)", color="green")
+
+                            # Concatenate: train (NaN) + val (clean) + test (clean)
+                            pred_probs = np.vstack([train_predictions, val_predictions, test_predictions])
+                            tprint(f"   📊 [{model_name}] Total predictions: {pred_probs.shape} (train=NaN, val+test=clean)", color="cyan")
+
+                            # ========================================================================
+
                             # CRITICAL: Validate prediction dimensions match label dimensions
                             n_predicted_classes = pred_probs.shape[1]
                             n_actual_regimes = len(np.unique(y))
-                            
+
                             if n_predicted_classes != n_actual_regimes:
                                 error_msg = (
                                     f"❌ CRITICAL: Prediction dimension mismatch for {model_name}!\n"
@@ -1518,12 +1557,17 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                                 )
                                 tprint(error_msg, color="red")
                                 raise ValueError(error_msg)
-                            
+
                             # Create columns for each regime
                             for regime_idx in range(pred_probs.shape[1]):
                                 col_name = f'{model_name}_regime_{regime_idx}_prob'
                                 model_predictions[col_name] = pred_probs[:, regime_idx]
-                            tprint(f"✅ [REGIME_MODELS] Generated predictions for {model_name} ({pred_probs.shape[0]} samples, {n_predicted_classes} classes)", color="green")
+
+                            # Log NaN statistics
+                            nan_count = np.isnan(pred_probs).sum()
+                            nan_pct = (nan_count / pred_probs.size) * 100
+                            tprint(f"   📊 [{model_name}] NaN values: {nan_count}/{pred_probs.size} ({nan_pct:.1f}%) - Expected: {len(X_train) * n_classes}", color="blue")
+                            tprint(f"   ✅ [{model_name}] Predictions generated successfully ({pred_probs.shape[0]} samples, {n_predicted_classes} classes)", color="green")
                     except Exception as e:
                         tprint(f"⚠️ [REGIME_MODELS] Failed to generate predictions for {model_name}: {e}", color="yellow")
                         raise  # Re-raise to fail fast

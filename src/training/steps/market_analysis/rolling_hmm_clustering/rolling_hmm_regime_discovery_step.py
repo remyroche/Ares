@@ -48,6 +48,11 @@ from src.training.steps.market_analysis.clusters.cluster_quality_assessor import
     ClusterQualityMetrics
 )
 
+# Import economic relevance analyzer
+from src.training.steps.market_analysis.clusters.regime_economic_relevance_analyzer import (
+    RegimeEconomicRelevanceAnalyzer
+)
+
 # Import execution mode configuration
 from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import (
     get_execution_mode_config
@@ -294,7 +299,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 result['hpo_results'] = hpo_results
 
             # Generate reports
-            await self._generate_reports(result, symbol, exchange, timeframe, config)
+            await self._generate_reports(result, market_data, symbol, exchange, timeframe, config)
             
             # Cleanup quality assessor to prevent resource leaks
             if self._quality_assessor is not None:
@@ -870,12 +875,13 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
     async def _generate_reports(
         self,
         result: Dict[str, Any],
+        market_data: pd.DataFrame,
         symbol: str,
         exchange: str,
         timeframe: str,
         config: Dict[str, Any]
     ):
-        """Generate quality assessment reports."""
+        """Generate quality assessment and economic relevance reports."""
         try:
             metrics = result['quality_metrics']
 
@@ -954,7 +960,8 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             self.quality_assessor.generate_markdown_report(
                 metrics_obj,
                 symbol=symbol,
-                method_specific_config=method_config
+                method_specific_config=method_config,
+                report_prefix="rolling_hmm_quality"
             )
 
             all_trials = None
@@ -1027,6 +1034,85 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 symbol=symbol,
                 method_specific_config=method_config
             )
+
+            # Generate Economic Relevance Analysis
+            tprint("", "INFO")
+            tprint("=" * 80, "INFO")
+            tprint("💰 Generating Economic Relevance Analysis", "INFO")
+            tprint("=" * 80, "INFO")
+
+            try:
+                # Extract regime labels and align with market data
+                regime_labels = result['regime_labels']
+                timestamps = result['timestamps']
+
+                # Align market data with regime labels
+                aligned_market_data = market_data.loc[timestamps]
+                prices = aligned_market_data['close']
+
+                # Create regime labels as pandas Series with timestamps
+                regime_labels_series = pd.Series(regime_labels, index=timestamps, name='regime')
+
+                # Initialize economic analyzer
+                economic_analyzer = RegimeEconomicRelevanceAnalyzer(
+                    risk_free_rate=0.02,
+                    trading_days_per_year=365 * 24 if timeframe == '1h' else 365,  # Adjust for hourly data
+                    transaction_cost=0.001,
+                    significance_tests=True,
+                    n_permutations=1000
+                )
+
+                tprint_info("  → Evaluating trading strategies based on regimes")
+
+                # Evaluate strategies
+                strategies = economic_analyzer.evaluate_strategies(
+                    prices=prices,
+                    regime_labels=regime_labels_series,
+                    regime_types=None  # Will be auto-detected
+                )
+
+                # Perform significance tests
+                tprint_info("  → Performing statistical significance tests")
+                significance_results = None
+                if strategies:
+                    try:
+                        significance_results = economic_analyzer.perform_significance_test(
+                            strategies=strategies,
+                            test_type='block_permutation'
+                        )
+                    except Exception as sig_error:
+                        tprint_warning(f"⚠️  Significance testing failed: {sig_error}")
+
+                # Generate economic report with datetime-based naming and caller-specific prefix
+                from datetime import datetime
+                timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+                tprint_info("  → Generating economic relevance report")
+                report_path = economic_analyzer.generate_economic_report(
+                    strategies=strategies,
+                    significance_results=significance_results,
+                    output_dir="outcomes",
+                    report_prefix="rolling_hmm_economic_relevance"
+                )
+
+                # Save results JSON
+                tprint_info("  → Saving economic analysis results")
+                json_path = economic_analyzer.save_results(
+                    strategies=strategies,
+                    significance_results=significance_results,
+                    output_dir="outcomes",
+                    json_prefix="rolling_hmm_economic_analysis"
+                )
+
+                tprint("", "SUCCESS")
+                tprint(f"✅ Economic analysis complete", "SUCCESS")
+                tprint(f"   - Report: {report_path}", "SUCCESS")
+                tprint(f"   - Results: {json_path}", "SUCCESS")
+                tprint("=" * 80, "INFO")
+
+            except Exception as econ_error:
+                tprint_warning(f"⚠️  Economic relevance analysis failed: {econ_error}")
+                self.logger.warning(f"Economic relevance analysis failed: {econ_error}", exc_info=True)
 
         except Exception as e:
             tprint_warning(f"⚠️  Failed to generate reports: {e}")

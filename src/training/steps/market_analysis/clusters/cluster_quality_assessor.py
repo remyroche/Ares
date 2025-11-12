@@ -3148,19 +3148,21 @@ class ClusterQualityAssessor:
             tprint_error(f"❌ Failed to load cluster quality metrics: {e}")
             return None
     
-    def generate_markdown_report(self, metrics: ClusterQualityMetrics, 
-                                 symbol: str = "UNKNOWN", 
+    def generate_markdown_report(self, metrics: ClusterQualityMetrics,
+                                 symbol: str = "UNKNOWN",
                                  output_dir: str = "outcomes",
-                                 method_specific_config: Optional[Dict[str, Any]] = None) -> Optional[str]: # <-- 1. ADDED
+                                 method_specific_config: Optional[Dict[str, Any]] = None,
+                                 report_prefix: Optional[str] = None) -> Optional[str]: # <-- 1. ADDED
         """
         Generate a comprehensive markdown report of cluster quality metrics.
-        
+
         Args:
             metrics: ClusterQualityMetrics object
             symbol: Trading symbol or identifier
             output_dir: Output directory for the report (default: outcomes/)
             method_specific_config: Optional dict of method-specific HPs to include in the report.
-            
+            report_prefix: Optional prefix for the report filename (default: 'cluster_quality_report')
+
         Returns:
             Path to the generated report file, or None if failed
         """
@@ -3168,10 +3170,11 @@ class ClusterQualityAssessor:
             # Create output directory if it doesn't exist
             output_path = Path(output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
-            
+
             # Generate filename with datetime
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"cluster_quality_report_{symbol}_{timestamp}.md"
+            prefix = report_prefix if report_prefix else "cluster_quality_report"
+            filename = f"{prefix}_{symbol}_{timestamp}.md"
             report_path = output_path / filename
             absolute_report_path = report_path.resolve()
 

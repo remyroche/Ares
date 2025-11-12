@@ -151,6 +151,7 @@ hpo:
   early_stopping: true
   enable_pruning: true
   multi_objective: true
+  objectives: ["f1_weighted", "balanced_accuracy"]  # Multi-objective: optimize both metrics
   use_pareto_optimization: true
   hierarchical_optimization: true
   

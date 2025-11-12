@@ -25,20 +25,24 @@ class RegimeFeatureConfig:
     category: str = "REGIME"
     description: str = "Advanced regime-based features"
     required_columns: List[str] = None
-    
+
     # Regime-specific config
     regime_detection_method: str = "hmm"  # "hmm", "kmeans", "gmm"
     n_regimes: int = 3
-    lookback_period: int = 50
+    lookback_period: int = 50  # Default for backwards compatibility
+    window_sizes: List[int] = None  # Multiple responsive windows [2, 4, 8, 16]
     regime_persistence_threshold: float = 0.7
     enable_regime_transitions: bool = True
     enable_regime_persistence: bool = True
     enable_regime_volatility: bool = True
     enable_regime_momentum: bool = True
-    
+
     def __post_init__(self):
         if self.required_columns is None:
             self.required_columns = ["close", "volume"]
+        # Default to responsive windows if not specified
+        if self.window_sizes is None:
+            self.window_sizes = [2, 4, 8, 16]
 
 class RegimeEntropyGenerator(FeatureGenerator):
     """Generator for regime-based entropy features."""
@@ -70,49 +74,51 @@ class RegimeEntropyGenerator(FeatureGenerator):
             return pd.Series(np.zeros(len(data)), index=data.index, name=self.config.name)
 
     def generate_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
-        """Generate regime entropy features."""
+        """Generate regime entropy features for multiple window sizes."""
         features = {}
         try:
-            # Calculate price entropy
-            price_entropy = self._calculate_price_entropy(data)
-            features['regime_price_entropy'] = price_entropy.values
-            
-            # Calculate volume entropy
-            volume_entropy = self._calculate_volume_entropy(data)
-            features['regime_volume_entropy'] = volume_entropy.values
-            
-            # Calculate regime transition entropy
-            transition_entropy = self._calculate_transition_entropy(data)
-            features['regime_transition_entropy'] = transition_entropy.values
-            
+            # Generate features for each window size
+            for window in self.config.window_sizes:
+                # Calculate price entropy
+                price_entropy = self._calculate_price_entropy(data, window)
+                features[f'regime_price_entropy_{window}'] = price_entropy.values
+
+                # Calculate volume entropy
+                volume_entropy = self._calculate_volume_entropy(data, window)
+                features[f'regime_volume_entropy_{window}'] = volume_entropy.values
+
+                # Calculate regime transition entropy
+                transition_entropy = self._calculate_transition_entropy(data, window)
+                features[f'regime_transition_entropy_{window}'] = transition_entropy.values
+
         except Exception as e:
             logger.error(f"Error generating regime entropy features: {e}")
-            
+
         return features
     
-    def _calculate_price_entropy(self, data: pd.DataFrame) -> pd.Series:
-        """Calculate price-based entropy."""
+    def _calculate_price_entropy(self, data: pd.DataFrame, window: int) -> pd.Series:
+        """Calculate price-based entropy for given window."""
         returns = data['close'].pct_change().dropna()
-        return returns.rolling(window=self.config.lookback_period).apply(
+        return returns.rolling(window=window).apply(
             lambda x: -np.sum(x.value_counts(normalize=True) * np.log2(x.value_counts(normalize=True) + 1e-10))
         )
-    
-    def _calculate_volume_entropy(self, data: pd.DataFrame) -> pd.Series:
-        """Calculate volume-based entropy."""
+
+    def _calculate_volume_entropy(self, data: pd.DataFrame, window: int) -> pd.Series:
+        """Calculate volume-based entropy for given window."""
         volume = data['volume'].dropna()
-        return volume.rolling(window=self.config.lookback_period).apply(
+        return volume.rolling(window=window).apply(
             lambda x: -np.sum(x.value_counts(normalize=True) * np.log2(x.value_counts(normalize=True) + 1e-10))
         )
     
-    def _calculate_transition_entropy(self, data: pd.DataFrame) -> pd.Series:
-        """Calculate regime transition entropy."""
+    def _calculate_transition_entropy(self, data: pd.DataFrame, window: int) -> pd.Series:
+        """Calculate regime transition entropy for given window."""
         # Simplified regime detection using volatility
-        volatility = data['close'].pct_change().rolling(window=20).std()
+        volatility = data['close'].pct_change().rolling(window=min(20, window*2)).std()
         regimes = (volatility > volatility.quantile(0.7)).astype(int)
-        
+
         # Calculate transition entropy
         transitions = regimes.diff().dropna()
-        return transitions.rolling(window=self.config.lookback_period).apply(
+        return transitions.rolling(window=window).apply(
             lambda x: -np.sum(x.value_counts(normalize=True) * np.log2(x.value_counts(normalize=True) + 1e-10))
         )
 

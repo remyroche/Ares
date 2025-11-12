@@ -42,12 +42,12 @@ class MultiTimeframeEWMAReturnsGenerator(VectorizedFeatureGenerator):
         Initialize Multi-Timeframe EWMA Returns Generator.
 
         Args:
-            windows: List of EWMA windows (default: [8, 12, 16, 20, 24])
+            windows: List of EWMA windows (default: [3, 8, 20])
             use_log_returns: Use log returns instead of simple returns
             name: Optional custom name
         """
         super().__init__(name=name or "multi_timeframe_ewma_returns")
-        self.windows = windows or [8, 12, 16, 20, 24]
+        self.windows = windows or [3, 8, 20]
         self.use_log_returns = use_log_returns
 
     def generate_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
@@ -102,12 +102,12 @@ class MultiTimeframeEWMAVolatilityGenerator(VectorizedFeatureGenerator):
         Initialize Multi-Timeframe EWMA Volatility Generator.
 
         Args:
-            windows: List of EWMA windows (default: [8, 12, 16, 20, 24])
+            windows: List of EWMA windows (default: [3, 8, 20])
             use_log_returns: Use log returns for volatility calculation
             name: Optional custom name
         """
         super().__init__(name=name or "multi_timeframe_ewma_volatility")
-        self.windows = windows or [8, 12, 16, 20, 24]
+        self.windows = windows or [3, 8, 20]
         self.use_log_returns = use_log_returns
 
     def generate_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
@@ -178,12 +178,12 @@ class MultiTimeframeEWMATrendGenerator(VectorizedFeatureGenerator):
         Initialize Multi-Timeframe EWMA Trend Generator.
 
         Args:
-            windows: List of EWMA windows (default: [8, 12, 16, 20, 24])
+            windows: List of EWMA windows (default: [3, 8, 20])
             use_log_returns: Use log returns for Sharpe calculation
             name: Optional custom name
         """
         super().__init__(name=name or "multi_timeframe_ewma_trend")
-        self.windows = windows or [8, 12, 16, 20, 24]
+        self.windows = windows or [3, 8, 20]
         self.use_log_returns = use_log_returns
 
     def generate_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
@@ -265,12 +265,12 @@ class MultiTimeframeEWMAVolumeGenerator(VectorizedFeatureGenerator):
         Initialize Multi-Timeframe EWMA Volume Generator.
 
         Args:
-            windows: List of EWMA windows (default: [8, 12, 16, 20, 24])
+            windows: List of EWMA windows (default: [3, 8, 20])
             use_log_returns: Use log returns for volume-weighted returns
             name: Optional custom name
         """
         super().__init__(name=name or "multi_timeframe_ewma_volume")
-        self.windows = windows or [8, 12, 16, 20, 24]
+        self.windows = windows or [3, 8, 20]
         self.use_log_returns = use_log_returns
 
     def generate_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:

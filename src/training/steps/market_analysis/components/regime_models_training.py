@@ -1329,7 +1329,14 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             # Prepare training data with existing feature bank
             tprint("🔧 [REGIME_MODELS] Preparing training data with existing feature bank", color="cyan")
             try:
-                X, y, feature_names = self._prepare_training_data_improved(protected_data, regime_labels, pipeline_state)
+                X, y, feature_names, X_index = self._prepare_training_data_improved(protected_data, regime_labels, pipeline_state)
+
+                # ========================================================================
+                # CRITICAL: Store X_index for correct prediction alignment
+                # This ensures predictions are aligned with the correct timestamps
+                # ========================================================================
+                self._current_X_index = X_index
+                tprint(f"🔍 [REGIME_MODELS] Stored X_index with {len(X_index)} timestamps", color="blue")
             except ValueError as e:
                 tprint(f"❌ [REGIME_MODELS] Training data preparation failed: {e}", color="red")
                 return ComponentResult(
@@ -1472,37 +1479,114 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'error': str(e)
                 }
 
-            # Generate predictions only for top 3 models
-            tprint("🎯 [REGIME_MODELS] Generating predictions for top 3 models only", color="cyan")
+            # ========================================================================
+            # CRITICAL FIX: DATA LEAKAGE PREVENTION
+            # ========================================================================
+            # PROBLEM: Previous code predicted on training data the model was trained on
+            # SOLUTION: Only predict on validation and test sets (set training to NaN)
+            #
+            # This prevents data leakage by ensuring:
+            # 1. Training set predictions = NaN (can't predict on data model saw)
+            # 2. Validation set predictions = clean (model trained on train only)
+            # 3. Test set predictions = clean (model trained on train only)
+            # ========================================================================
+
+            tprint("=" * 80, color="cyan")
+            tprint("🛡️ [REGIME_MODELS] GENERATING LEAK-FREE PREDICTIONS", color="cyan")
+            tprint("=" * 80, color="cyan")
+            tprint("🔒 Data Leakage Prevention: Training set predictions will be set to NaN", color="blue")
+            tprint("🔒 Only validation and test sets will have legitimate predictions", color="blue")
+            tprint("=" * 80, color="cyan")
+
             model_predictions = {}
 
-            # CRITICAL FIX: Determine the correct data scope for predictions
-            # The models were trained on X_train + X_val + X_test, not the full X
-            # We need to concatenate the training splits to get the correct prediction scope
-            X_for_prediction = np.concatenate([X_train, X_val, X_test]) if 'X_val' in locals() else np.concatenate([X_train, X_test])
-            
-            # Get the corresponding indices from protected_data
-            # The training data was created from protected_data, so we need to find the matching indices
-            total_training_samples = len(X_for_prediction)
-            
-            # Use the last 'total_training_samples' rows from protected_data since that's where the training data came from
-            predictions_index = protected_data.index[-total_training_samples:]
-            
-            tprint(f"📊 [REGIME_MODELS] Prediction scope: {total_training_samples} samples (from {len(protected_data)} total)", color="blue")
-            tprint(f"📊 [REGIME_MODELS] Using indices from {predictions_index[0]} to {predictions_index[-1]}", color="blue")
+            # Get the number of classes from the trained model
+            n_classes = len(np.unique(y))
+
+            # ========================================================================
+            # CRITICAL: Calculate total samples and get correct indices
+            # Use self._current_X_index (tracked from X) instead of protected_data.index
+            # This ensures predictions align with the actual samples in X
+            # ========================================================================
+            total_training_samples = len(X_train) + len(X_val) + len(X_test) if 'X_val' in locals() else len(X_train) + len(X_test)
+
+            # Use tracked X_index for correct alignment
+            if hasattr(self, '_current_X_index') and self._current_X_index is not None:
+                # Verify X_index length matches expected
+                if len(self._current_X_index) != total_training_samples:
+                    error_msg = (
+                        f"❌ CRITICAL: X_index length mismatch!\n"
+                        f"   X_index length: {len(self._current_X_index)}\n"
+                        f"   Expected (train+val+test): {total_training_samples}\n"
+                        f"   This indicates a bug in index tracking."
+                    )
+                    tprint(error_msg, color="red")
+                    raise ValueError(error_msg)
+
+                predictions_index = self._current_X_index
+                tprint(f"✅ [REGIME_MODELS] Using tracked X_index for predictions ({len(predictions_index)} samples)", color="green")
+            else:
+                # Fallback (should not happen)
+                tprint("⚠️ [REGIME_MODELS] WARNING: X_index not found, using protected_data indices (may be incorrect!)", color="yellow")
+                predictions_index = protected_data.index[-total_training_samples:]
+
+            tprint(f"📊 [REGIME_MODELS] Prediction scope:", color="blue")
+            tprint(f"   • Training samples: {len(X_train)} → NaN (data leakage prevention)", color="yellow")
+            tprint(f"   • Validation samples: {len(X_val) if 'X_val' in locals() else 0} → Clean predictions", color="green")
+            tprint(f"   • Test samples: {len(X_test)} → Clean predictions", color="green")
+            tprint(f"   • Total samples: {total_training_samples}", color="blue")
+            tprint(f"   • Index range: {predictions_index[0]} to {predictions_index[-1]}", color="blue")
+            tprint("=" * 80, color="cyan")
 
             for model_name in selected_model_names:
                 if model_name in trained_models:
                     model = trained_models[model_name]
                     try:
                         if hasattr(model, 'predict_proba'):
-                            # CRITICAL FIX: Use the correct data scope for predictions
-                            pred_probs = model.predict_proba(X_for_prediction)
-                            
+                            # ========================================================================
+                            # DATA LEAKAGE FIX: Generate predictions in 3 parts
+                            # ========================================================================
+
+                            # 1. Training set: NaN (cannot predict on data model was trained on)
+                            train_predictions = np.full((len(X_train), n_classes), np.nan)
+                            tprint(f"   🛡️ [{model_name}] Training predictions: {train_predictions.shape} (set to NaN)", color="yellow")
+
+                            # 2. Validation set: Clean predictions (model trained on train only)
+                            if 'X_val' in locals() and len(X_val) > 0:
+                                val_predictions = model.predict_proba(X_val)
+                                tprint(f"   ✅ [{model_name}] Validation predictions: {val_predictions.shape} (clean)", color="green")
+                            else:
+                                val_predictions = np.array([]).reshape(0, n_classes)
+
+                            # 3. Test set: Clean predictions (model trained on train only)
+                            test_predictions = model.predict_proba(X_test)
+                            tprint(f"   ✅ [{model_name}] Test predictions: {test_predictions.shape} (clean)", color="green")
+
+                            # Concatenate: train (NaN) + val (clean) + test (clean)
+                            pred_probs = np.vstack([train_predictions, val_predictions, test_predictions])
+                            tprint(f"   📊 [{model_name}] Total predictions: {pred_probs.shape} (train=NaN, val+test=clean)", color="cyan")
+
+                            # ========================================================================
+                            # CRITICAL: Validate prediction shapes match split sizes
+                            # ========================================================================
+                            expected_total = len(X_train) + len(X_val) + len(X_test) if 'X_val' in locals() else len(X_train) + len(X_test)
+                            if pred_probs.shape[0] != expected_total:
+                                error_msg = (
+                                    f"❌ CRITICAL: Prediction shape mismatch for {model_name}!\n"
+                                    f"   Predictions shape: {pred_probs.shape[0]}\n"
+                                    f"   Expected: {expected_total} (train={len(X_train)} + val={len(X_val) if 'X_val' in locals() else 0} + test={len(X_test)})\n"
+                                    f"   Component shapes: train={train_predictions.shape}, val={val_predictions.shape if 'X_val' in locals() else 'N/A'}, test={test_predictions.shape}"
+                                )
+                                tprint(error_msg, color="red")
+                                raise ValueError(error_msg)
+                            tprint(f"   ✅ [{model_name}] Shape validation passed: {pred_probs.shape[0]} == {expected_total}", color="green")
+
+                            # ========================================================================
+
                             # CRITICAL: Validate prediction dimensions match label dimensions
                             n_predicted_classes = pred_probs.shape[1]
                             n_actual_regimes = len(np.unique(y))
-                            
+
                             if n_predicted_classes != n_actual_regimes:
                                 error_msg = (
                                     f"❌ CRITICAL: Prediction dimension mismatch for {model_name}!\n"
@@ -1518,12 +1602,17 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                                 )
                                 tprint(error_msg, color="red")
                                 raise ValueError(error_msg)
-                            
+
                             # Create columns for each regime
                             for regime_idx in range(pred_probs.shape[1]):
                                 col_name = f'{model_name}_regime_{regime_idx}_prob'
                                 model_predictions[col_name] = pred_probs[:, regime_idx]
-                            tprint(f"✅ [REGIME_MODELS] Generated predictions for {model_name} ({pred_probs.shape[0]} samples, {n_predicted_classes} classes)", color="green")
+
+                            # Log NaN statistics
+                            nan_count = np.isnan(pred_probs).sum()
+                            nan_pct = (nan_count / pred_probs.size) * 100
+                            tprint(f"   📊 [{model_name}] NaN values: {nan_count}/{pred_probs.size} ({nan_pct:.1f}%) - Expected: {len(X_train) * n_classes}", color="blue")
+                            tprint(f"   ✅ [{model_name}] Predictions generated successfully ({pred_probs.shape[0]} samples, {n_predicted_classes} classes)", color="green")
                     except Exception as e:
                         tprint(f"⚠️ [REGIME_MODELS] Failed to generate predictions for {model_name}: {e}", color="yellow")
                         raise  # Re-raise to fail fast
@@ -2541,7 +2630,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         data: pd.DataFrame,
         regime_labels: np.ndarray,
         pipeline_state: Dict[str, Any] = None
-    ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+    ) -> Tuple[np.ndarray, np.ndarray, List[str], pd.DatetimeIndex]:
         """Prepare training data using existing feature bank system with fast fail."""
         tprint("🔧 [REGIME_MODELS] Preparing training data with existing feature bank", color="cyan")
         
@@ -2551,7 +2640,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 raise ValueError("Feature generation system not available - cannot generate features")
             
             tprint("🔧 [REGIME_MODELS] Generating features using existing feature bank", color="cyan")
-            X, feature_names = self._generate_features_with_bank(data)
+            X, feature_names, X_index = self._generate_features_with_bank(data)
             
             min_features_required = ((self.validated_config or {}).get('data_validation', {}) or {}).get('min_features', 50)
             if X is None or X.shape[1] < min_features_required:
@@ -2566,6 +2655,15 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             min_length = min(len(X), len(regime_labels))
             X = X[:min_length]
             y = np.array(regime_labels[:min_length])
+
+            # ========================================================================
+            # CRITICAL: Keep index aligned with X after truncation
+            # ========================================================================
+            if X_index is not None:
+                X_index = X_index[:min_length]
+                tprint(f"🔍 [REGIME_MODELS] Aligned X_index after truncation: {len(X_index)} samples", color="blue")
+            else:
+                tprint("⚠️ [REGIME_MODELS] WARNING: X_index is None - predictions may be misaligned!", color="yellow")
 
             # Handle NaN values in features
             tprint("🔧 [REGIME_MODELS] Handling NaN values in features", color="cyan")
@@ -2683,8 +2781,12 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 raise ValueError(f"Insufficient regimes: {len(np.unique(y))}")
             
             tprint(f"✅ [REGIME_MODELS] Training data prepared: {X.shape[0]} samples, {X.shape[1]} features", color="green")
-            return X, y, feature_names
-            
+
+            # ========================================================================
+            # CRITICAL: Return X_index for correct prediction alignment
+            # ========================================================================
+            return X, y, feature_names, X_index
+
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Training data preparation failed: {e}", color="red")
             raise
@@ -3151,6 +3253,15 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
             # Convert to numpy array
             if not all_features.empty:
+                # ========================================================================
+                # CRITICAL: Save DataFrame index before converting to numpy
+                # This is needed to correctly align predictions with timestamps later
+                # ========================================================================
+                X_df = all_features  # Keep reference to DataFrame
+                X_original_index = X_df.index.copy()  # Save index for later use
+                tprint(f"🔍 [REGIME_MODELS] Saved original X index: {len(X_original_index)} samples", color="blue")
+                tprint(f"   Index range: {X_original_index[0]} to {X_original_index[-1]}", color="blue")
+
                 # Ensure all features are numeric and convert to float64 numpy array
                 X = np.array(all_features.values, dtype=np.float64)
                 feature_names = list(all_features.columns)
@@ -3256,10 +3367,11 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     if ewma_features:
                         tprint(f"   → Sample EWMA features: {ewma_features[:5]}...", color="blue")
 
-                return X, feature_names
+                # Return X, feature_names, and the original DataFrame index for alignment
+                return X, feature_names, X_original_index
             else:
                 tprint("❌ [REGIME_MODELS] Feature bank generated no features", color="red")
-                return None, None
+                return None, None, None
 
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Error generating features with feature bank: {e}", color="red")

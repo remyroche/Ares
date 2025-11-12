@@ -96,6 +96,15 @@ from .ensemble_meta_features import EnsembleMetaFeaturesGenerator, generate_ense
 # Import centralized disagreement features
 from src.feature_generation.categories.ensemble_disagreement import calculate_ensemble_disagreement_features
 
+# Import analysis and reporting tools
+from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
+    ClusterQualityAssessor,
+    ClusterQualityMetrics
+)
+from src.training.steps.market_analysis.clusters.regime_economic_relevance_analyzer import (
+    RegimeEconomicRelevanceAnalyzer
+)
+
 # Import centralized configuration system
 try:
     from src.config.regime_ensemble_training import (
@@ -1265,6 +1274,151 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     except Exception as e:
                         tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to generate visualizations: {e}", color="yellow")
                         self.logger.error(f"Failed to generate visualizations: {e}", exc_info=True)
+
+                    # Generate Quality Assessment and Economic Relevance Analysis
+                    try:
+                        tprint("", "INFO")
+                        tprint("=" * 80, color="cyan")
+                        tprint("📊 Generating Quality Assessment and Economic Relevance Analysis", color="cyan")
+                        tprint("=" * 80, color="cyan")
+
+                        # Extract regime predictions from tagged dataset
+                        tagged_dataset = results.get('tagged_dataset', {})
+                        if tagged_dataset and 'tagged_dataset' in tagged_dataset:
+                            tagged_data = tagged_dataset['tagged_dataset']
+
+                            if 'ensemble_regime_label' in tagged_data.columns and market_ohlcv_data is not None:
+                                # Extract regime labels
+                                regime_labels = tagged_data['ensemble_regime_label'].values
+                                timestamps = tagged_data.index
+
+                                # Align market data with predictions
+                                aligned_market_data = market_ohlcv_data.loc[timestamps]
+                                prices = aligned_market_data['close']
+
+                                # Create regime labels as pandas Series
+                                regime_labels_series = pd.Series(regime_labels, index=timestamps, name='regime')
+
+                                # 1. Quality Assessment using ClusterQualityAssessor
+                                try:
+                                    tprint("📊 [REGIME_ENSEMBLE] Performing quality assessment", color="cyan")
+
+                                    # Initialize quality assessor
+                                    quality_assessor = ClusterQualityAssessor()
+
+                                    # Prepare feature data for quality assessment
+                                    feature_data = X_processed if isinstance(X_processed, pd.DataFrame) else pd.DataFrame(X_processed, columns=feature_names)
+                                    feature_data = feature_data.loc[timestamps] if len(feature_data) >= len(timestamps) else feature_data
+
+                                    # Calculate forward returns for economic validation
+                                    forward_returns = prices.pct_change().shift(-1)
+
+                                    # Assess quality
+                                    quality_metrics = quality_assessor.assess_quality(
+                                        regime_labels=regime_labels,
+                                        feature_data=feature_data,
+                                        forward_returns=forward_returns,
+                                        timestamps=timestamps,
+                                        min_regime_size=10,
+                                        temporal_sensitivity_mode="standard",
+                                        fast_mode=False
+                                    )
+
+                                    # Generate quality assessment report with caller-specific prefix
+                                    quality_report_path = quality_assessor.generate_markdown_report(
+                                        metrics=quality_metrics,
+                                        symbol=symbol,
+                                        output_dir="outcomes",
+                                        method_specific_config={
+                                            'method': 'regime_ensemble_training',
+                                            'ensemble_type': 'stacker_lgbm_calibrated'
+                                        },
+                                        report_prefix="regime_ensemble_quality"
+                                    )
+
+                                    if quality_report_path:
+                                        results['quality_assessment_report'] = quality_report_path
+                                        tprint(f"✅ [REGIME_ENSEMBLE] Quality assessment report: {quality_report_path}", color="green")
+
+                                    # Store quality metrics
+                                    results['quality_metrics'] = quality_metrics.to_dict() if hasattr(quality_metrics, 'to_dict') else quality_metrics
+
+                                except Exception as qa_error:
+                                    tprint(f"⚠️ [REGIME_ENSEMBLE] Quality assessment failed: {qa_error}", color="yellow")
+                                    self.logger.warning(f"Quality assessment failed: {qa_error}", exc_info=True)
+
+                                # 2. Economic Relevance Analysis
+                                try:
+                                    tprint("💰 [REGIME_ENSEMBLE] Performing economic relevance analysis", color="cyan")
+
+                                    # Initialize economic analyzer
+                                    economic_analyzer = RegimeEconomicRelevanceAnalyzer(
+                                        risk_free_rate=0.02,
+                                        trading_days_per_year=365,  # Will be adjusted based on timeframe
+                                        transaction_cost=0.001,
+                                        significance_tests=True,
+                                        n_permutations=1000
+                                    )
+
+                                    # Evaluate strategies
+                                    tprint("  → Evaluating trading strategies based on regimes", color="yellow")
+                                    strategies = economic_analyzer.evaluate_strategies(
+                                        prices=prices,
+                                        regime_labels=regime_labels_series,
+                                        regime_types=None  # Will be auto-detected
+                                    )
+
+                                    # Perform significance tests
+                                    tprint("  → Performing statistical significance tests", color="yellow")
+                                    significance_results = None
+                                    if strategies:
+                                        try:
+                                            significance_results = economic_analyzer.perform_significance_test(
+                                                strategies=strategies,
+                                                test_type='block_permutation'
+                                            )
+                                        except Exception as sig_error:
+                                            tprint(f"⚠️ [REGIME_ENSEMBLE] Significance testing failed: {sig_error}", color="yellow")
+
+                                    # Generate economic report with caller-specific prefix
+                                    tprint("  → Generating economic relevance report", color="yellow")
+                                    economic_report_path = economic_analyzer.generate_economic_report(
+                                        strategies=strategies,
+                                        significance_results=significance_results,
+                                        output_dir="outcomes",
+                                        report_prefix="regime_ensemble_economic_relevance"
+                                    )
+
+                                    # Save results JSON with caller-specific prefix
+                                    tprint("  → Saving economic analysis results", color="yellow")
+                                    economic_json_path = economic_analyzer.save_results(
+                                        strategies=strategies,
+                                        significance_results=significance_results,
+                                        output_dir="outcomes",
+                                        json_prefix="regime_ensemble_economic_analysis"
+                                    )
+
+                                    if economic_report_path:
+                                        results['economic_relevance_report'] = economic_report_path
+                                        tprint(f"✅ [REGIME_ENSEMBLE] Economic relevance report: {economic_report_path}", color="green")
+
+                                    if economic_json_path:
+                                        results['economic_analysis_results'] = economic_json_path
+                                        tprint(f"✅ [REGIME_ENSEMBLE] Economic analysis results: {economic_json_path}", color="green")
+
+                                    tprint("=" * 80, color="cyan")
+
+                                except Exception as econ_error:
+                                    tprint(f"⚠️ [REGIME_ENSEMBLE] Economic relevance analysis failed: {econ_error}", color="yellow")
+                                    self.logger.warning(f"Economic relevance analysis failed: {econ_error}", exc_info=True)
+                            else:
+                                tprint("⚠️ [REGIME_ENSEMBLE] Missing required data for quality/economic analysis", color="yellow")
+                        else:
+                            tprint("⚠️ [REGIME_ENSEMBLE] Tagged dataset not available for quality/economic analysis", color="yellow")
+
+                    except Exception as analysis_error:
+                        tprint(f"⚠️ [REGIME_ENSEMBLE] Quality/Economic analysis failed: {analysis_error}", color="yellow")
+                        self.logger.warning(f"Quality/Economic analysis failed: {analysis_error}", exc_info=True)
 
                     tprint("✅ [REGIME_ENSEMBLE] All reports generated successfully", color="green")
                 except Exception as e:

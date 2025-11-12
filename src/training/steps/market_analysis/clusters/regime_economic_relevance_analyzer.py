@@ -702,30 +702,33 @@ class RegimeEconomicRelevanceAnalyzer:
         excess_returns = returns - self.risk_free_rate / self.trading_days_per_year
         return float(np.mean(excess_returns) / np.std(returns) * np.sqrt(self.trading_days_per_year))
     
-    def generate_economic_report(self, 
+    def generate_economic_report(self,
                               strategies: Dict[str, StrategyResults],
                               significance_results: Optional[Dict[str, Any]] = None,
-                              output_dir: str = "outcomes") -> str:
+                              output_dir: str = "outcomes",
+                              report_prefix: Optional[str] = None) -> str:
         """
         Crée un rapport détaillé sur la pertinence économique des régimes.
-        
+
         Args:
             strategies: Résultats des stratégies évaluées
             significance_results: Résultats des tests de signification
             output_dir: Répertoire de sortie
-            
+            report_prefix: Optional prefix for the report filename (default: 'regime_economic_relevance_report')
+
         Returns:
             Chemin du rapport généré
         """
         tprint_info("📝 Génération du rapport économique")
-        
+
         # Créer le répertoire de sortie
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        
+
         # Générer le nom de fichier avec timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_filename = f"regime_economic_relevance_report_{timestamp}.md"
+        prefix = report_prefix if report_prefix else "regime_economic_relevance_report"
+        report_filename = f"{prefix}_{timestamp}.md"
         report_path = output_path / report_filename
         
         # Construire le contenu du rapport
@@ -1067,30 +1070,33 @@ class RegimeEconomicRelevanceAnalyzer:
         
         tprint_info("=" * 60)
     
-    def save_results(self, 
+    def save_results(self,
                    strategies: Dict[str, StrategyResults],
                    significance_results: Optional[Dict[str, Any]] = None,
-                   output_dir: str = "outcomes") -> str:
+                   output_dir: str = "outcomes",
+                   json_prefix: Optional[str] = None) -> str:
         """
         Sauvegarde les résultats complets dans outcomes/ avec timestamp.
-        
+
         Args:
             strategies: Résultats des stratégies évaluées
             significance_results: Résultats des tests de signification
             output_dir: Répertoire de sortie
-            
+            json_prefix: Optional prefix for the JSON filename (default: 'regime_economic_analysis')
+
         Returns:
             Chemin du fichier JSON sauvegardé
         """
         tprint_info("💾 Sauvegarde des résultats complets")
-        
+
         # Créer le répertoire de sortie
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        
+
         # Générer le nom de fichier avec timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        json_filename = f"regime_economic_analysis_{timestamp}.json"
+        prefix = json_prefix if json_prefix else "regime_economic_analysis"
+        json_filename = f"{prefix}_{timestamp}.json"
         json_path = output_path / json_filename
         
         # Préparer les données à sauvegarder

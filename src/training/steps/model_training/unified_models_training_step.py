@@ -408,17 +408,31 @@ class UnifiedModelsTrainingStep(BaseStep):
             else:
                 tprint_warning("No training data available, using default configuration from YAML")
             
-            # SINGLE SOURCE OF TRUTH: Check environment variable to override HPO
-            # This takes precedence over all other config sources
+            # ========================================================================
+            # SESSION-BASED HPO CONTROL: Prevent infinite HPO loops
+            # ========================================================================
+            # HPO should run ONCE per session, then move to model training/testing
+            # This prevents the infinite loop where HPO keeps restarting after completion
             import os
+
+            # Check if HPO has already been completed in this session
+            hpo_already_run = os.getenv('HPO_ALREADY_RUN', 'false').lower() in ('true', '1', 'yes')
+
+            # Check if HPO is permanently disabled
             disable_hpo_env = os.getenv('DISABLE_HPO', 'false').lower() in ('true', '1', 'yes')
-            if disable_hpo_env:
-                tprint_warning("🚫 HPO DISABLED via DISABLE_HPO environment variable")
-                tprint_info("   Using saved optimal parameters from config")
-                config['enable_hpo'] = False
-            
-            # Perform hyperparameter optimization before training
-            if config.get('enable_hpo', True) and training_data is not None:
+
+            # Determine if we should run HPO
+            should_run_hpo = not hpo_already_run and not disable_hpo_env
+
+            if hpo_already_run:
+                tprint_warning("✅ HPO ALREADY COMPLETED in this session - using saved optimal parameters")
+                tprint_info("   Proceeding to model training with optimized hyperparameters")
+            elif disable_hpo_env:
+                tprint_warning("🚫 HPO PERMANENTLY DISABLED via DISABLE_HPO environment variable")
+                tprint_info("   Using default parameters from config")
+
+            # Perform hyperparameter optimization before training (only once per session)
+            if should_run_hpo and training_data is not None:
                 # Determine which targets to use for HPO
                 hpo_targets = analyst_targets if training_type.startswith('analyst') else tactician_targets
                 if hpo_targets is not None:
@@ -451,6 +465,15 @@ class UnifiedModelsTrainingStep(BaseStep):
                             config=config,
                             training_type=training_type
                         )
+
+                        # ========================================================================
+                        # MARK HPO AS COMPLETED: Set session flag to prevent re-runs
+                        # ========================================================================
+                        # After successful HPO, mark it as completed for this session
+                        # This prevents the infinite loop where HPO restarts after completion
+                        os.environ['HPO_ALREADY_RUN'] = 'true'
+                        tprint_success("✅ HPO completed successfully - session flag set to prevent re-runs")
+                        tprint_info("   Future training steps will use these optimized parameters")
                     else:
                         tprint_warning(f"No {model_config_key} found in config or config file, skipping HPO")
                 else:
@@ -625,7 +648,8 @@ class UnifiedModelsTrainingStep(BaseStep):
             'enable_analyst': training_type.startswith('analyst'),
             'enable_tactician': training_type.startswith('tactician'),
             'enable_ensemble': training_type.endswith('ensemble'),
-            'enable_hpo': False,  # HPO already completed, use saved optimal params
+            # NOTE: HPO control is now handled by HPO_ALREADY_RUN environment variable
+            # See session-based HPO control in execute() method
             'enable_explainability': True,
             'enable_vectorization': True
         }

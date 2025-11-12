@@ -1815,6 +1815,156 @@ class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
             ema = base_values.ewm(span=self.period).mean()
             return ema
 
+
+class EffRollingGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Rolling Efficiency Ratio (eff_rolling).
+
+    The Efficiency Ratio measures trend persistence versus noise by comparing
+    the net price change to the total price movement over a rolling window.
+
+    Formula:
+        net_change = |price_end - price_start|
+        total_movement = sum(|price_i - price_(i-1)|)
+        efficiency_ratio = net_change / total_movement
+
+    Values range from 0 to 1:
+        - 1.0: Perfectly efficient trend (straight line movement)
+        - 0.0: Maximum noise (no net progress despite movement)
+    """
+
+    def __init__(self,
+                 period: int = 20,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize Rolling Efficiency Ratio generator.
+
+        Args:
+            period: Rolling window period for efficiency calculation
+            base_calculation: Base calculation type (default: PRICE_RETURNS)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+
+        config = FeatureConfig(
+            name=f"eff_rolling_{period}_{base_calculation.value}",
+            category=FeatureCategory.TREND,
+            description=f"Rolling Efficiency Ratio over {period} periods - measures trend persistence vs. noise based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={
+                'period': period,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            }
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.period = period
+
+        # Initialize VectorBT optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_rolling_optimizer = None
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Rolling Efficiency Ratio based on specified base calculation."""
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
+        # Get base values
+        if self.base_calculator.config.calculation_type == BaseCalculationType.PRICE_LEVELS:
+            # For price levels, use close prices directly
+            values = data['close']
+        else:
+            # For other calculations (returns, VWAP, etc.), calculate base values
+            values = self.base_calculator.calculate(data)
+
+        # Calculate efficiency ratio
+        efficiency_ratio = self._calculate_efficiency_ratio(values, self.period)
+
+        return efficiency_ratio
+
+    def _calculate_efficiency_ratio(self, values: pd.Series, period: int) -> pd.Series:
+        """
+        Calculate rolling efficiency ratio.
+
+        Args:
+            values: Price or value series
+            period: Rolling window period
+
+        Returns:
+            Efficiency ratio series (0 to 1)
+        """
+        if len(values) < period:
+            return pd.Series(np.full(len(values), np.nan), index=values.index)
+
+        # Calculate net change (absolute distance from start to end)
+        net_change = values.diff(period).abs()
+
+        # Calculate total movement (sum of absolute changes)
+        if self.vectorbt_rolling_optimizer and self._should_use_vectorbt(values):
+            try:
+                # Use VectorBT for optimized rolling sum
+                abs_diff = values.diff().abs()
+                total_movement = self.vectorbt_rolling_optimizer.rolling_sum(abs_diff, period)
+            except Exception as e:
+                self.logger.warning(f"VectorBT efficiency ratio calculation failed: {e}, using pandas fallback")
+                abs_diff = values.diff().abs()
+                total_movement = abs_diff.rolling(period).sum()
+        else:
+            # Pandas fallback
+            abs_diff = values.diff().abs()
+            total_movement = abs_diff.rolling(period).sum()
+
+        # Calculate efficiency ratio, handling division by zero
+        efficiency_ratio = net_change / total_movement.replace(0, np.nan)
+
+        # Replace inf/-inf with NaN and fill NaN with 0
+        efficiency_ratio = efficiency_ratio.replace([np.inf, -np.inf], np.nan).fillna(0)
+
+        # Clip values to [0, 1] range (should already be in range, but just in case)
+        efficiency_ratio = efficiency_ratio.clip(0, 1)
+
+        return efficiency_ratio.rename(f"eff_rolling_{period}_{self.base_calculator.config.calculation_type.value}")
+
+
+def create_eff_rolling_generators(periods: List[int] = None,
+                                   base_calculations: List[BaseCalculationType] = None) -> List[FeatureGenerator]:
+    """
+    Create Rolling Efficiency Ratio generators for specified periods and base calculations.
+
+    Args:
+        periods: List of window periods (default: [10, 14, 20])
+        base_calculations: List of base calculation types (default: [PRICE_RETURNS, PRICE_LEVELS])
+
+    Returns:
+        List of EffRollingGenerator instances
+    """
+    if periods is None:
+        periods = [10, 14, 20]
+
+    if base_calculations is None:
+        base_calculations = [BaseCalculationType.PRICE_RETURNS, BaseCalculationType.PRICE_LEVELS]
+
+    generators = []
+    for period in periods:
+        for base_calc in base_calculations:
+            generators.append(EffRollingGenerator(period=period, base_calculation=base_calc))
+
+    return generators
+
+
 def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
     """Create a set of trend feature generators."""
     if periods is None:
@@ -1829,7 +1979,8 @@ def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[Featur
             'vwma': [20],
             'keltner_channels': [20],
             'adx': [14],
-            'trend_score': [14]
+            'trend_score': [14],
+            'eff_rolling': [10, 14, 20]
         }
 
     generators = []
@@ -1865,6 +2016,10 @@ def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[Featur
     # Keltner Channels generators
     for period in periods.get('keltner_channels', [20]):
         generators.append(KeltnerChannelsGenerator(period))
+
+    # Efficiency Ratio (eff_rolling) generators
+    for period in periods.get('eff_rolling', [10, 14, 20]):
+        generators.append(EffRollingGenerator(period))
 
     # ADX generators
     for period in periods.get('adx', [14]):

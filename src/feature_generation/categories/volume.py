@@ -166,6 +166,27 @@ from ..base_calculations import (
     create_base_calculator
 )
 
+# Import robust volume transformations
+try:
+    from src.utils.feature_common.volume_transforms import (
+        robust_z_score,
+        volume_normalized_by_tr,
+        calculate_atr,
+        log_volume,
+        rolling_median_log_volume,
+        calculate_mad
+    )
+    ROBUST_VOLUME_AVAILABLE = True
+except ImportError:
+    ROBUST_VOLUME_AVAILABLE = False
+    robust_z_score = None
+    volume_normalized_by_tr = None
+    calculate_atr = None
+    log_volume = None
+    rolling_median_log_volume = None
+    calculate_mad = None
+    warnings.warn("Robust volume transforms not available. Volume features will use standard normalization.")
+
 logger = logging.getLogger(__name__)
 
 class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
@@ -2607,7 +2628,7 @@ class VectorBTEnhancedOBVGenerator(VectorBTFeatureGenerator):
         )
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate Enhanced OBV using VectorBT."""
+        """Generate Enhanced OBV using VectorBT with robust volume normalization."""
         if len(data) == 0 or not all(col in data.columns for col in ['close', 'volume']):
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_enhanced_obv_{self.period}')
 
@@ -2633,12 +2654,19 @@ class VectorBTEnhancedOBVGenerator(VectorBTFeatureGenerator):
                 logger.warning("⚠️ Close and volume indices don't match, aligning data")
                 close, volume = close.align(volume, join='inner')
 
+            # Use robust z-score for volume if available
+            if ROBUST_VOLUME_AVAILABLE and robust_z_score is not None:
+                volume_normalized = robust_z_score(volume, window=self.period)
+            else:
+                # Fallback to standard normalization
+                volume_normalized = volume
+
             # Calculate price direction
             price_direction = np.where(close > close.shift(1), 1,
                                      np.where(close < close.shift(1), -1, 0))
 
-            # Calculate basic OBV
-            obv = (price_direction * volume).cumsum()
+            # Calculate basic OBV using robust volume
+            obv = (price_direction * volume_normalized).cumsum()
             obv_series = pd.Series(obv, index=close.index)
 
             # Apply smoothing using VectorBT rolling optimizer
@@ -3416,15 +3444,21 @@ class CMFGenerator(VectorizedFeatureGenerator):
         if len(close) < self.period:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
 
-        # Calculate CMF
+        # Use robust z-score for volume if available
+        if ROBUST_VOLUME_AVAILABLE and robust_z_score is not None:
+            volume_normalized = robust_z_score(pd.Series(volume, index=data.index), window=self.period).values
+        else:
+            volume_normalized = volume
+
+        # Calculate CMF with robust volume
         cmf = np.full(len(close), np.nan)
         for i in range(self.period - 1, len(close)):
             # Money Flow Multiplier
             mfm = ((close[i] - low[i]) - (high[i] - close[i])) / (high[i] - low[i])
             mfm = np.nan_to_num(mfm, nan=0.0)  # Handle division by zero
 
-            # Money Flow Volume
-            mfv = mfm * volume[i]
+            # Money Flow Volume (using robust volume)
+            mfv = mfm * volume_normalized[i]
 
             # CMF = sum(MFV) / sum(Volume) over period
             period_mfv = []
@@ -3433,8 +3467,8 @@ class CMFGenerator(VectorizedFeatureGenerator):
                 if high[j] != low[j]:  # Avoid division by zero
                     period_mfm = ((close[j] - low[j]) - (high[j] - close[j])) / (high[j] - low[j])
                     period_mfm = np.nan_to_num(period_mfm, nan=0.0)
-                    period_mfv.append(period_mfm * volume[j])
-                    period_vol.append(volume[j])
+                    period_mfv.append(period_mfm * volume_normalized[j])
+                    period_vol.append(volume_normalized[j])
 
             if len(period_vol) > 0 and sum(period_vol) > 0:
                 cmf[i] = sum(period_mfv) / sum(period_vol)
@@ -3472,7 +3506,22 @@ class VWAPDeviationsGenerator(VectorizedFeatureGenerator):
         if len(close) < self.vwap_window:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
 
-        # Calculate VWAP deviations
+        # Calculate ATR for normalization if available
+        if ROBUST_VOLUME_AVAILABLE and calculate_atr is not None:
+            atr = calculate_atr(
+                pd.Series(high, index=data.index),
+                pd.Series(low, index=data.index),
+                pd.Series(close, index=data.index),
+                window=14
+            )
+            if isinstance(atr, pd.Series):
+                atr = atr.values
+        else:
+            # Fallback: use simple range
+            atr = high - low
+            atr = np.maximum(atr, 1e-8)  # Avoid division by zero
+
+        # Calculate VWAP deviations normalized by ATR
         vwap_deviations = np.full(len(close), np.nan)
         closing_vwap_gap = np.full(len(close), np.nan)
 
@@ -3489,11 +3538,11 @@ class VWAPDeviationsGenerator(VectorizedFeatureGenerator):
             # VWAP
             vwap = np.sum(typical_price * window_volume) / np.sum(window_volume)
 
-            if vwap > 0:
-                # VWAP deviation
-                vwap_deviations[i] = (close[i] - vwap) / vwap
+            if vwap > 0 and atr[i] > 0:
+                # VWAP deviation normalized by ATR (more robust)
+                vwap_deviations[i] = (close[i] - vwap) / atr[i]
 
-                # Closing-VWAP gap
+                # Closing-VWAP gap (absolute)
                 closing_vwap_gap[i] = close[i] - vwap
 
         return pd.Series(vwap_deviations, index=data.index)
@@ -3780,39 +3829,67 @@ class AdvancedVolumeFeatures(VectorizedFeatureGenerator):
         features = {}
 
         try:
-            # On-Balance Volume (OBV)
+            # Calculate robust volume for use in indicators
+            if ROBUST_VOLUME_AVAILABLE and robust_z_score is not None:
+                volume_robust = robust_z_score(data['volume'], window=20)
+                # Shift back to positive range for compatibility with indicators
+                volume_robust_shifted = volume_robust - volume_robust.min() + 1.0
+            else:
+                volume_robust_shifted = data['volume']
+
+            # On-Balance Volume (OBV) with robust volume
             if self.volume_config.enable_obv and VECTORBT_AVAILABLE and OBV is not None:
                 try:
-                    obv = OBV.run(data['close'], data['volume'])
+                    obv = OBV.run(data['close'], volume_robust_shifted)
                     features['obv'] = obv.values
                     features['obv_sma'] = rolling_mean(obv, self.volume_config.obv_window).values
                 except Exception as e:
                     tprint(f"⚠️ OBV calculation failed: {e}")
 
-            # Accumulation/Distribution Line (AD)
+            # Accumulation/Distribution Line (AD) with robust volume
             if self.volume_config.enable_ad and VECTORBT_AVAILABLE and AD is not None:
                 try:
-                    ad = AD.run(data['high'], data['low'], data['close'], data['volume'])
+                    ad = AD.run(data['high'], data['low'], data['close'], volume_robust_shifted)
                     features['ad'] = ad.values
                     features['ad_sma'] = rolling_mean(ad, self.volume_config.ad_window).values
                 except Exception as e:
                     tprint(f"⚠️ AD calculation failed: {e}")
 
-            # Money Flow Index (MFI)
+            # Money Flow Index (MFI) with robust volume
             if self.volume_config.enable_mfi and VECTORBT_AVAILABLE and MFI is not None:
                 try:
-                    mfi = MFI.run(data['high'], data['low'], data['close'], data['volume'], self.volume_config.mfi_window)
+                    mfi = MFI.run(data['high'], data['low'], data['close'], volume_robust_shifted, self.volume_config.mfi_window)
                     features['mfi'] = mfi.values
                 except Exception as e:
                     tprint(f"⚠️ MFI calculation failed: {e}")
 
-            # Volume-Weighted Average Price (VWAP)
+            # Volume-Weighted Average Price (VWAP) with vol_norm
             if self.volume_config.enable_vwap and VECTORBT_AVAILABLE:
                 try:
                     typical_price = (data['high'] + data['low'] + data['close']) / 3
-                    vwap = (typical_price * data['volume']).rolling(self.volume_config.vwap_window).sum() / data['volume'].rolling(self.volume_config.vwap_window).sum()
+
+                    # Use volume normalized by ATR for VWAP
+                    if ROBUST_VOLUME_AVAILABLE and volume_normalized_by_tr is not None:
+                        vol_norm = volume_normalized_by_tr(
+                            data['volume'],
+                            data['high'],
+                            data['low'],
+                            data['close'],
+                            use_atr=True,
+                            atr_window=14
+                        )
+                    else:
+                        vol_norm = data['volume']
+
+                    vwap = (typical_price * vol_norm).rolling(self.volume_config.vwap_window).sum() / vol_norm.rolling(self.volume_config.vwap_window).sum()
                     features['vwap'] = vwap.values
-                    features['vwap_ratio'] = (data['close'] / vwap).values
+
+                    # Normalize VWAP ratio by ATR
+                    if ROBUST_VOLUME_AVAILABLE and calculate_atr is not None:
+                        atr = calculate_atr(data['high'], data['low'], data['close'], window=14)
+                        features['vwap_ratio'] = ((data['close'] - vwap) / atr).values
+                    else:
+                        features['vwap_ratio'] = (data['close'] / vwap).values
                 except Exception as e:
                     tprint(f"⚠️ VWAP calculation failed: {e}")
 

@@ -34,6 +34,30 @@ except ImportError:
     FeatureDataValidator = None
     DataLeakageDetector = None
 
+# Import volume transformations
+try:
+    from .volume_transforms import (
+        stabilize_volume,
+        log_volume,
+        rolling_median_log_volume,
+        calculate_mad,
+        robust_z_score,
+        calculate_true_range,
+        calculate_atr,
+        volume_normalized_by_tr,
+        calculate_robust_volume_features,
+    )
+except ImportError:
+    stabilize_volume = None
+    log_volume = None
+    rolling_median_log_volume = None
+    calculate_mad = None
+    robust_z_score = None
+    calculate_true_range = None
+    calculate_atr = None
+    volume_normalized_by_tr = None
+    calculate_robust_volume_features = None
+
 __all__ = [
     # Caching utilities (optimized, hardware-aware)
     'SharedComputationCache',
@@ -61,4 +85,18 @@ if FeatureDataValidator is not None:
     __all__.extend([
         'FeatureDataValidator',
         'DataLeakageDetector'
+    ])
+
+# Add volume transformations if available
+if stabilize_volume is not None:
+    __all__.extend([
+        'stabilize_volume',
+        'log_volume',
+        'rolling_median_log_volume',
+        'calculate_mad',
+        'robust_z_score',
+        'calculate_true_range',
+        'calculate_atr',
+        'volume_normalized_by_tr',
+        'calculate_robust_volume_features',
     ])

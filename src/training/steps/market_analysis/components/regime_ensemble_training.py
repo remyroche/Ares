@@ -894,22 +894,17 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     metadata={'component_type': 'regime_ensemble_training'}
                 )
 
-            if not base_models:
-                tprint("⚠️ [REGIME_ENSEMBLE] No base models found from previous training, training base models", color="yellow")
-                # Train base models if not provided
-                tprint("🏋️ [REGIME_ENSEMBLE] Training base models for ensemble", color="blue")
-                base_models = self._train_base_models(X, y, regime_labels)
-                if not base_models:
-                    tprint("❌ [REGIME_ENSEMBLE] Failed to train base models", color="red")
-                    return ComponentResult(
-                        success=False,
-                        artifacts={},
-                        error_message="Failed to train base models",
-                        metadata={'component_type': 'regime_ensemble_training'}
-                    )
+            # ========================================================================
+            # CRITICAL FIX: Split data BEFORE training base models to prevent leakage
+            # ========================================================================
+            # Previously, base models were trained on 100% of data, then split happened
+            # This caused massive data leakage: base models memorized the test set
+            # Now: Split first, train base models only on training data
+            # ========================================================================
 
-            tprint(f"📊 [REGIME_ENSEMBLE] Data shapes - X: {X.shape}, y: {y.shape}, regime_labels: {len(regime_labels) if regime_labels is not None else 'None'}", color="blue")
-            tprint(f"📊 [REGIME_ENSEMBLE] Base models available: {list(base_models.keys())}", color="blue")
+            tprint("=" * 80, color="red", bold=True)
+            tprint("🛡️ [REGIME_ENSEMBLE] DATA LEAKAGE FIX: Splitting data BEFORE base model training", color="red", bold=True)
+            tprint("=" * 80, color="red", bold=True)
 
             # Prepare data for ensemble training with proper train/test split
             tprint("🔧 [REGIME_ENSEMBLE] Preparing data for ensemble training with proper validation", color="yellow")
@@ -943,6 +938,40 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"   Train: {len(X_train)} samples", color="blue")
             tprint(f"   Val: {len(X_val)} samples", color="blue")
             tprint(f"   Test: {len(X_test)} samples", color="blue")
+
+            # ========================================================================
+            # CRITICAL FIX: Train base models ONLY on training data (after split)
+            # ========================================================================
+            # This ensures base models NEVER see validation or test data
+            # Prevents memorization of test set that caused 99.9% accuracy
+            # ========================================================================
+
+            if not base_models:
+                tprint("=" * 80, color="red", bold=True)
+                tprint("🛡️ [REGIME_ENSEMBLE] Training base models on TRAINING DATA ONLY (no test leakage)", color="red", bold=True)
+                tprint("=" * 80, color="red", bold=True)
+                tprint("⚠️ [REGIME_ENSEMBLE] No base models found from previous training, training base models", color="yellow")
+                tprint("🏋️ [REGIME_ENSEMBLE] Training base models for ensemble", color="blue")
+
+                # Extract regime labels for training set only
+                regime_labels_train = regime_labels_processed[:len(y_train)] if regime_labels_processed is not None else None
+
+                # CRITICAL: Train on X_train, y_train ONLY (not full dataset)
+                base_models = self._train_base_models(X_train, y_train, regime_labels_train)
+
+                if not base_models:
+                    tprint("❌ [REGIME_ENSEMBLE] Failed to train base models", color="red")
+                    return ComponentResult(
+                        success=False,
+                        artifacts={},
+                        error_message="Failed to train base models",
+                        metadata={'component_type': 'regime_ensemble_training'}
+                    )
+
+                tprint("✅ [REGIME_ENSEMBLE] Base models trained on training data only (no leakage)", color="green", bold=True)
+
+            tprint(f"📊 [REGIME_ENSEMBLE] Data shapes - X_train: {X_train.shape}, y_train: {y_train.shape}", color="blue")
+            tprint(f"📊 [REGIME_ENSEMBLE] Base models available: {list(base_models.keys())}", color="blue")
 
             # Create indices for weight splitting
             n_train = len(X_train)

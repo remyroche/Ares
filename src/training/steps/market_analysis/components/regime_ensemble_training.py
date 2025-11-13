@@ -1020,7 +1020,13 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"📊 [REGIME_ENSEMBLE] Base models: {list(base_models.keys()) if base_models else 'None'}", color="blue")
             tprint(f"📊 [REGIME_ENSEMBLE] Sample weights: {'Yes' if weights_train_full is not None else 'No'}", color="blue")
             tprint("=" * 80, color="cyan")
-            stacker_result = self._train_stacker_lgbm_calibrated(X_train_full, y_train_full, base_models, weights_train_full)
+
+            # Pass split information to enable OOF predictions for train portion
+            # This prevents data leakage from base models predicting on their training data
+            stacker_result = self._train_stacker_lgbm_calibrated(
+                X_train_full, y_train_full, base_models, weights_train_full,
+                train_size=len(X_train)  # Tell it where train ends and val begins
+            )
 
             # Evaluate ensemble on holdout test data
             tprint("📊 [REGIME_ENSEMBLE] Evaluating ensemble performance on holdout test data", color="yellow")
@@ -1863,6 +1869,167 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 include_disagreement=True
             )
 
+    def _generate_oof_meta_features(self, base_models: Dict[str, Any], X: np.ndarray, y: np.ndarray, n_splits: int = 5) -> Tuple[np.ndarray, List[str]]:
+        """
+        Generate Out-Of-Fold (OOF) meta-features to prevent data leakage.
+
+        For each base model, we retrain it using time series cross-validation
+        to generate predictions on data it hasn't seen during training.
+
+        This is critical because base models were trained on X, so directly
+        calling predict_proba(X) would leak training data.
+
+        Args:
+            base_models: Dictionary of trained base models (structure reference only)
+            X: Feature matrix to generate OOF predictions for
+            y: Target labels
+            n_splits: Number of CV folds for OOF generation
+
+        Returns:
+            Tuple of (oof_meta_features, feature_names)
+        """
+        from sklearn.model_selection import TimeSeriesSplit
+
+        tprint(f"🔄 [REGIME_ENSEMBLE] Generating OOF meta-features using {n_splits}-fold time series CV", color="cyan", bold=True)
+        tprint(f"   This prevents data leakage from base models predicting on their training data", color="yellow")
+
+        n_samples = len(X)
+        n_regimes = len(np.unique(y))
+
+        # Initialize OOF prediction storage for each model
+        oof_predictions = {}
+        feature_names = []
+
+        # For each base model, generate OOF predictions
+        for model_name, trained_model in base_models.items():
+            tprint(f"🔧 [REGIME_ENSEMBLE] Generating OOF predictions for {model_name}", color="blue")
+
+            # Initialize OOF predictions array
+            oof_probs = np.zeros((n_samples, n_regimes))
+            oof_counts = np.zeros(n_samples)  # Track which samples got predictions
+
+            # Use TimeSeriesSplit for temporal validation
+            tscv = TimeSeriesSplit(n_splits=n_splits)
+
+            fold_idx = 0
+            for train_idx, val_idx in tscv.split(X):
+                fold_idx += 1
+
+                # Split data for this fold
+                X_train_fold = X[train_idx]
+                y_train_fold = y[train_idx]
+                X_val_fold = X[val_idx]
+
+                try:
+                    # Recreate model with same parameters
+                    model_class = type(trained_model)
+                    model_params = trained_model.get_params() if hasattr(trained_model, 'get_params') else {}
+
+                    # Create new model instance
+                    fold_model = model_class(**model_params)
+
+                    # Train on fold's training data
+                    fold_model.fit(X_train_fold, y_train_fold)
+
+                    # Predict on fold's validation data (out-of-fold)
+                    if hasattr(fold_model, 'predict_proba'):
+                        fold_probs = fold_model.predict_proba(X_val_fold)
+                    else:
+                        # If no predict_proba, convert predictions to one-hot
+                        fold_preds = fold_model.predict(X_val_fold)
+                        fold_probs = np.zeros((len(fold_preds), n_regimes))
+                        for i, pred in enumerate(fold_preds):
+                            fold_probs[i, int(pred)] = 1.0
+
+                    # Store OOF predictions
+                    oof_probs[val_idx] = fold_probs
+                    oof_counts[val_idx] += 1
+
+                    tprint(f"   ✅ Fold {fold_idx}/{n_splits}: {len(val_idx)} OOF predictions", color="green")
+
+                except Exception as e:
+                    tprint(f"   ⚠️ Fold {fold_idx}/{n_splits} failed: {e}", color="yellow")
+                    # Fill with uniform probabilities as fallback
+                    oof_probs[val_idx] = 1.0 / n_regimes
+                    oof_counts[val_idx] += 1
+
+            # Check coverage
+            missing_samples = np.sum(oof_counts == 0)
+            if missing_samples > 0:
+                tprint(f"   ⚠️ {missing_samples} samples have no OOF predictions (early folds)", color="yellow")
+                # Fill missing samples with uniform probabilities
+                oof_probs[oof_counts == 0] = 1.0 / n_regimes
+
+            # Store OOF predictions for this model
+            oof_predictions[model_name] = oof_probs
+
+            # Add feature names for this model's predictions
+            for regime_idx in range(n_regimes):
+                feature_names.append(f"{model_name}_class_{regime_idx}_prob")
+
+            tprint(f"   ✅ {model_name}: {oof_probs.shape} OOF predictions generated", color="green")
+
+        # Stack all OOF predictions into meta-features
+        all_oof_probs = []
+        for model_name in base_models.keys():
+            all_oof_probs.append(oof_predictions[model_name])
+
+        oof_meta_features = np.column_stack(all_oof_probs)
+
+        # Now generate uncertainty, confidence, and disagreement features from OOF predictions
+        # These are derived from the OOF predictions, so they're also leak-free
+        tprint(f"🔧 [REGIME_ENSEMBLE] Generating uncertainty/confidence/disagreement from OOF predictions", color="cyan")
+
+        # Calculate uncertainty features
+        uncertainty_features = []
+        for model_name in base_models.keys():
+            model_probs = oof_predictions[model_name]
+            # Entropy for each sample
+            from scipy.stats import entropy
+            model_entropy = np.array([entropy(model_probs[i] + 1e-10) for i in range(n_samples)])
+            uncertainty_features.append(model_entropy.reshape(-1, 1))
+            feature_names.append(f"{model_name}_uncertainty_entropy")
+
+        # Calculate confidence features
+        confidence_features = []
+        for model_name in base_models.keys():
+            model_probs = oof_predictions[model_name]
+            # Max probability (confidence)
+            max_prob = np.max(model_probs, axis=1).reshape(-1, 1)
+            confidence_features.append(max_prob)
+            feature_names.append(f"{model_name}_confidence_max_prob")
+
+        # Calculate disagreement features
+        # Standard deviation across models for each class
+        if len(oof_predictions) > 1:
+            all_probs_array = np.array([oof_predictions[name] for name in base_models.keys()])  # (n_models, n_samples, n_classes)
+            disagreement_std = np.std(all_probs_array, axis=0)  # (n_samples, n_classes)
+            disagreement_mean = np.mean(disagreement_std, axis=1).reshape(-1, 1)
+            feature_names.append("disagreement_mean_std")
+        else:
+            disagreement_mean = np.zeros((n_samples, 1))
+            feature_names.append("disagreement_mean_std")
+
+        # Combine all meta-features
+        all_meta_features = [oof_meta_features] + uncertainty_features + confidence_features + [disagreement_mean]
+        combined_oof_meta_features = np.column_stack(all_meta_features)
+
+        # Apply controlled feature selection (limit to 30-50 features)
+        if combined_oof_meta_features.shape[1] > 50:
+            tprint(f"⚠️ [REGIME_ENSEMBLE] OOF meta-features ({combined_oof_meta_features.shape[1]}) exceed 50, selecting top 50", color="yellow")
+            # Keep base predictions + top uncertainty/confidence features
+            base_pred_count = len(base_models) * n_regimes
+            combined_oof_meta_features = combined_oof_meta_features[:, :50]
+            feature_names = feature_names[:50]
+
+        tprint(f"✅ [REGIME_ENSEMBLE] OOF meta-features complete: {combined_oof_meta_features.shape}", color="green", bold=True)
+        tprint(f"   ├─ Base OOF predictions: {oof_meta_features.shape[1]} features", color="blue")
+        tprint(f"   ├─ Uncertainty features: {len(uncertainty_features)} features", color="blue")
+        tprint(f"   ├─ Confidence features: {len(confidence_features)} features", color="blue")
+        tprint(f"   └─ Disagreement features: 1 feature", color="blue")
+
+        return combined_oof_meta_features, feature_names
+
     def _generate_controlled_meta_features(self, base_models: Dict[str, Any], X: np.ndarray, y: np.ndarray,
                                       max_features: int = 50, min_features: int = 30) -> Tuple[np.ndarray, List[str]]:
         """
@@ -2439,27 +2606,31 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 'fold_results': []
             }
 
-    def _train_stacker_lgbm_calibrated(self, X: np.ndarray, y: np.ndarray, base_models: Dict[str, Any], sample_weight: Optional[np.ndarray] = None) -> Dict[str, Any]:
+    def _train_stacker_lgbm_calibrated(self, X: np.ndarray, y: np.ndarray, base_models: Dict[str, Any], sample_weight: Optional[np.ndarray] = None, train_size: Optional[int] = None) -> Dict[str, Any]:
         """
         Train stacker with LightGBM and calibration using isolated and controlled meta-features.
-        
-        This function implements Phase 1 fixes:
+
+        This function implements Phase 1 + Phase 2 fixes:
         1. Isolation des méta-features pour prévenir la contamination entre entraînement/validation
         2. Contrôle du nombre de méta-features (30-50 maximum) pour éviter l'explosion
         3. Validation des dimensions pour détecter les incohérences
-        
+        4. **PHASE 2**: OOF predictions for training portion to eliminate remaining leakage
+
         Args:
-            X: Feature matrix for base models
-            y: Target labels
-            base_models: Dictionary of trained base models
+            X: Feature matrix for base models (train+val concatenated)
+            y: Target labels (train+val concatenated)
+            base_models: Dictionary of trained base models (trained on train only)
             sample_weight: Optional sample weights for training
-            
+            train_size: If provided, X[:train_size] will use OOF predictions, X[train_size:] will use clean predictions
+
         Returns:
             Dictionary containing trained meta-learner, contracts, and metrics
         """
-        tprint("🎭 [REGIME_ENSEMBLE] Training stacker_lgbm_calibrated with Phase 1 fixes", color="yellow", bold=True)
+        tprint("🎭 [REGIME_ENSEMBLE] Training stacker_lgbm_calibrated with Phase 1+2 fixes", color="yellow", bold=True)
         tprint(f"🔍 [REGIME_ENSEMBLE] Function entry - X shape: {X.shape}, y shape: {y.shape}", color="cyan")
         tprint(f"🔍 [REGIME_ENSEMBLE] Base models provided: {base_models is not None}, count: {len(base_models) if base_models else 0}", color="cyan")
+        if train_size is not None:
+            tprint(f"🔍 [REGIME_ENSEMBLE] Train/val split at index {train_size} (train: 0-{train_size}, val: {train_size}-{len(X)})", color="cyan", bold=True)
 
         try:
             # Validate base models
@@ -2471,29 +2642,72 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 f"📊 [REGIME_ENSEMBLE] Using {len(base_models)} base models: {list(base_models.keys())}",
                 color="blue"
             )
-            
+
             # Log base model input features for validation
             tprint(f"📊 [REGIME_ENSEMBLE] Base model input shape: {X.shape}", color="blue")
             tprint(f"📊 [REGIME_ENSEMBLE] Target shape: {y.shape}", color="blue")
             tprint(f"📊 [REGIME_ENSEMBLE] Number of classes: {len(np.unique(y))}", color="blue")
 
-            # PHASE 1 FIX 1: Generate isolated meta-features to prevent data leakage
-            tprint("🔒 [REGIME_ENSEMBLE] PHASE 1 FIX 1: Generating isolated meta-features", color="cyan", bold=True)
-            isolated_meta_features, isolated_meta_names = self._generate_isolated_meta_features(
-                base_models=base_models,
-                X=X,
-                y=y
-            )
-            
-            # PHASE 1 FIX 2: Generate controlled meta-features to limit feature count
-            tprint("🎛️ [REGIME_ENSEMBLE] PHASE 1 FIX 2: Generating controlled meta-features (30-50 max)", color="cyan", bold=True)
-            controlled_meta_features, controlled_meta_names = self._generate_controlled_meta_features(
-                base_models=base_models,
-                X=X,
-                y=y,
-                max_features=50,
-                min_features=30
-            )
+            # ========================================================================
+            # PHASE 2 FIX: Generate leak-free meta-features using OOF + clean predictions
+            # ========================================================================
+            tprint("=" * 80, color="red", bold=True)
+            tprint("🛡️ [REGIME_ENSEMBLE] PHASE 2: LEAK-FREE META-FEATURES GENERATION", color="red", bold=True)
+            tprint("=" * 80, color="red", bold=True)
+
+            if train_size is not None and train_size > 0 and train_size < len(X):
+                # Split X and y into train and val portions
+                X_train_portion = X[:train_size]
+                y_train_portion = y[:train_size]
+                X_val_portion = X[train_size:]
+                y_val_portion = y[train_size:]
+
+                tprint(f"🔒 [REGIME_ENSEMBLE] Generating OOF predictions for train portion (0:{train_size})", color="cyan", bold=True)
+                tprint(f"   Base models were trained on this data → need OOF to prevent leakage", color="yellow")
+
+                # Generate OOF meta-features for train portion (no leakage)
+                train_meta_features, train_meta_names = self._generate_oof_meta_features(
+                    base_models=base_models,
+                    X=X_train_portion,
+                    y=y_train_portion,
+                    n_splits=5
+                )
+
+                tprint(f"✅ [REGIME_ENSEMBLE] OOF meta-features for train: {train_meta_features.shape}", color="green")
+
+                tprint(f"✅ [REGIME_ENSEMBLE] Generating clean predictions for val portion ({train_size}:{len(X)})", color="cyan", bold=True)
+                tprint(f"   Base models never saw this data → clean predictions", color="green")
+
+                # Generate clean meta-features for val portion (already leak-free)
+                val_meta_features, val_meta_names = self._generate_controlled_meta_features(
+                    base_models=base_models,
+                    X=X_val_portion,
+                    y=y_val_portion,
+                    max_features=50,
+                    min_features=30
+                )
+
+                tprint(f"✅ [REGIME_ENSEMBLE] Clean meta-features for val: {val_meta_features.shape}", color="green")
+
+                # Combine train (OOF) + val (clean) meta-features
+                controlled_meta_features = np.vstack([train_meta_features, val_meta_features])
+                controlled_meta_names = train_meta_names  # Same feature names
+
+                tprint(f"✅ [REGIME_ENSEMBLE] Combined leak-free meta-features: {controlled_meta_features.shape}", color="green", bold=True)
+                tprint(f"   ├─ Train (OOF): {train_meta_features.shape[0]} samples", color="blue")
+                tprint(f"   └─ Val (clean): {val_meta_features.shape[0]} samples", color="blue")
+            else:
+                # No split info provided or invalid - use standard generation (may have leakage)
+                tprint("⚠️ [REGIME_ENSEMBLE] No valid train/val split info - using standard meta-features", color="yellow", bold=True)
+                tprint("   WARNING: This may include data leakage if X contains training data", color="yellow")
+
+                controlled_meta_features, controlled_meta_names = self._generate_controlled_meta_features(
+                    base_models=base_models,
+                    X=X,
+                    y=y,
+                    max_features=50,
+                    min_features=30
+                )
             
             # PHASE 1 FIX 3: Validate expected dimensions
             tprint("🔍 [REGIME_ENSEMBLE] PHASE 1 FIX 3: Validating expected dimensions", color="cyan", bold=True)

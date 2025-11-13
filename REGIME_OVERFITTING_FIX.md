@@ -2,7 +2,7 @@
 
 ## Problem Summary
 
-The regime ensemble training was achieving unrealistic perfect scores (99.9%+ accuracy, 1.0 ROC-AUC) due to **data leakage** in the base model training process.
+The regime ensemble training was achieving unrealistic perfect scores (99.9%+ accuracy, 1.0 ROC-AUC) due to **TWO data leakage issues** in the base model training and meta-learner training processes.
 
 ### Evidence from Training Report
 
@@ -141,6 +141,94 @@ To verify the fix worked:
 - [ ] Cross-validation uses proper temporal/purged splits
 - [ ] Meta-features generated using same split logic
 
+## Phase 2: Meta-Learner Data Leakage Fix
+
+### The Second Leakage Problem
+
+After fixing Phase 1 (base model training), a **second data leakage issue** was discovered in the meta-learner training:
+
+**Location:** `src/training/steps/market_analysis/components/regime_ensemble_training.py:2448+`
+
+**The Problem:**
+1. Base models trained on `X_train` (70%)
+2. Meta-learner receives `X_train_full = [X_train (70%) + X_val (15%)]` = 85%
+3. **Meta-feature generation:** `base_models.predict_proba(X_train_full)` directly predicts on full data
+
+**Leakage Mechanism:**
+```python
+# Base models trained on X_train (70%)
+base_models.fit(X_train, y_train)
+
+# Meta-features for meta-learner
+meta_features = base_models.predict_proba(X_train_full)  # ⚠️ LEAKAGE!
+# X_train_full contains:
+#   - X_train (70%): Base models trained on this → overly confident predictions
+#   - X_val (15%): Base models never saw → realistic predictions
+
+# Meta-learner sees mixed data:
+#   - 70% artificially confident (leakage)
+#   - 15% realistic
+```
+
+### Phase 2 Fix: OOF Meta-Features
+
+**Solution:** Use Out-Of-Fold (OOF) predictions for the training portion, similar to `regime_models_training.py`.
+
+**Implementation:**
+
+1. **Modified `_train_stacker_lgbm_calibrated`** to accept `train_size` parameter
+2. **Created `_generate_oof_meta_features`** method for leak-free predictions
+3. **Split meta-feature generation:**
+   - Train portion (70%): Generate OOF predictions using 5-fold time series CV
+   - Val portion (15%): Generate clean predictions (base models never saw this)
+   - Combine for meta-learner training
+
+**Code Flow:**
+```python
+# Phase 2 CORRECT approach:
+if train_size is not None:
+    # 1. OOF predictions for train portion (no leakage)
+    train_meta_features = _generate_oof_meta_features(
+        base_models, X_train_portion, y_train_portion, n_splits=5
+    )
+
+    # 2. Clean predictions for val portion
+    val_meta_features = base_models.predict_proba(X_val_portion)
+
+    # 3. Combine for leak-free meta-learner training
+    meta_features = np.vstack([train_meta_features, val_meta_features])
+
+meta_learner.fit(meta_features, y_train_full)
+```
+
+**Key Changes:**
+- **Line 1026-1029:** Pass `train_size` to `_train_stacker_lgbm_calibrated`
+- **Lines 2497-2549:** Conditional OOF vs clean meta-feature generation
+- **Lines 1872-2031:** New `_generate_oof_meta_features` method
+
+### OOF Generation Details
+
+The `_generate_oof_meta_features` method:
+1. **Time Series CV:** Uses 5-fold `TimeSeriesSplit` for temporal validation
+2. **Retraining:** For each fold, recreates models and trains on fold's train data
+3. **OOF Predictions:** Predicts on fold's validation data (never seen)
+4. **Coverage:** Handles early folds with no predictions (fills with uniform probs)
+5. **Meta-Features:** Generates uncertainty, confidence, and disagreement features from OOF predictions
+
+### Combined Fix Impact
+
+**Before (Both Leakages):**
+- Base models: Memorized test set → 99.9% on test
+- Meta-learner: Trained on leaked predictions → Perfect ensemble
+
+**After Phase 1 Only:**
+- Base models: Never see test set → Realistic test performance
+- Meta-learner: Still sees leaked train predictions → Slightly inflated
+
+**After Phase 1 + Phase 2:**
+- Base models: Never see test set → Realistic test performance
+- Meta-learner: Trained on OOF + clean predictions → True generalization
+
 ## Related Issues
 
 This fix addresses the same class of issue that was previously fixed in:
@@ -150,8 +238,10 @@ This fix addresses the same class of issue that was previously fixed in:
 ## Timeline
 
 - **Issue Discovered:** 2025-11-12 (report showed 99.9% accuracy)
-- **Root Cause Identified:** 2025-11-13 (data leakage in base model training)
-- **Fix Implemented:** 2025-11-13 (reordered operations)
+- **Phase 1 Root Cause:** 2025-11-13 (data leakage in base model training)
+- **Phase 1 Fix:** 2025-11-13 (reordered operations - train base models after split)
+- **Phase 2 Root Cause:** 2025-11-13 (data leakage in meta-feature generation)
+- **Phase 2 Fix:** 2025-11-13 (OOF meta-features for training portion)
 
 ## Testing Recommendations
 
@@ -162,7 +252,19 @@ This fix addresses the same class of issue that was previously fixed in:
 
 ---
 
-**Status:** ✅ Fixed
+**Status:** ✅ Fixed (Phase 1 + Phase 2)
 **Priority:** Critical (P0)
 **Component:** Regime Ensemble Training
 **Impact:** High (affects all regime detection downstream)
+
+### Fixes Summary
+
+**Phase 1: Base Model Training**
+- File: `regime_ensemble_training.py`
+- Lines: 897-974
+- Change: Split data BEFORE training base models
+
+**Phase 2: Meta-Learner Training**
+- File: `regime_ensemble_training.py`
+- Lines: 1026-1029, 1872-2031, 2448-2549
+- Change: Use OOF predictions for train portion + clean predictions for val portion

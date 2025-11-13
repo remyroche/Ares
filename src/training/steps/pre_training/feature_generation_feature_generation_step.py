@@ -268,22 +268,93 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             self.logger.error(f"Failed to load market data: {e}")
             return None
 
+    def _load_optimized_lookbacks(self, config: Dict[str, Any]) -> Optional[Dict[str, int]]:
+        """
+        Load optimized lookback periods from the lookback optimization step.
+
+        Args:
+            config: Configuration dictionary
+
+        Returns:
+            Dictionary mapping category names to optimal lookback periods, or None if not available
+        """
+        try:
+            # Set context to the optimization step to load its artifacts
+            symbol = config.get('symbol')
+            exchange = config.get('exchange')
+            timeframe = config.get('timeframe')
+            direction = config.get('direction')
+            model = config.get('model')
+
+            # Load the lookback optimization artifact
+            from src.utils.artifact_manager import ArtifactManager
+
+            # Create a temporary artifact manager with the optimization step context
+            temp_artifact_manager = ArtifactManager(config={})
+            temp_artifact_manager.set_context(
+                step_name='feature_generation_period_lookback_optimization_step',
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                direction=direction,
+                model=model
+            )
+
+            # Try to get the lookback optimization artifact
+            lookback_artifact = temp_artifact_manager.get_artifact(
+                artifact_name='lookback_optimization',
+                artifact_type='data'
+            )
+
+            if lookback_artifact is not None and isinstance(lookback_artifact, dict):
+                optimized_lookbacks = lookback_artifact.get('optimized_lookbacks', {})
+
+                if optimized_lookbacks:
+                    tprint(f"✅ Loaded optimized lookback periods from optimization step:")
+                    for category, lookback in optimized_lookbacks.items():
+                        tprint(f"   • {category}: {lookback}")
+
+                    # Map category names from optimization format to FeatureBank format
+                    # Optimization uses: 'momentum_features', 'trend_features', etc.
+                    # FeatureBank uses: 'momentum', 'trend', etc.
+                    mapped_lookbacks = {}
+                    for category, lookback in optimized_lookbacks.items():
+                        # Remove '_features' suffix if present
+                        clean_category = category.replace('_features', '')
+                        mapped_lookbacks[clean_category] = lookback
+
+                    return mapped_lookbacks
+                else:
+                    tprint("ℹ️ No optimized lookback periods found in artifact")
+                    return None
+            else:
+                tprint("ℹ️ No lookback optimization artifact found - will use default lookback periods")
+                return None
+
+        except Exception as e:
+            self.logger.debug(f"Could not load optimized lookbacks: {e}")
+            tprint(f"ℹ️ Could not load optimized lookbacks - will use default lookback periods")
+            return None
+
     async def _generate_features(self, market_data: Any, config: Dict[str, Any]) -> Any:
         """Generate features from market data using the unified feature generation system."""
         from src.feature_generation.core.feature_bank import FeatureBank
-        
+
         if market_data is None:
             return pd.DataFrame()
 
         tprint(f"🔧 Generating features using FeatureBank")
-        
+
+        # Load optimized lookback periods if available
+        optimized_lookbacks = self._load_optimized_lookbacks(config)
+
         # Use the unified feature generation system
         feature_bank = FeatureBank()
-        
+
         # Get all registered feature categories
         feature_categories = [
             'returns',
-            'momentum', 
+            'momentum',
             'volume',
             'volatility',
             'trend',
@@ -295,28 +366,53 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             'advanced_statistical',
             'spectral_wavelet'
         ]
-        
+
         # Fix FeatureBank bug by disabling optimized pipeline
         # The optimized pipeline has a bug where all features get identical values
         tprint(f"🔧 Using FeatureBank with standard generation (fixing optimized pipeline bug)")
-        
+
         try:
             # Generate features using FeatureBank but with optimized pipeline disabled
             # Add minimum data validation to prevent all-NaN columns
             data_length = len(market_data)
-            
-            # Adjust lookback periods based on available data to prevent all-NaN columns
-            max_lookback = min(20, data_length // 3) if data_length < 60 else 20
-            
-            if data_length < 50:
-                tprint(f"⚠️ Warning: Only {data_length} rows of data available. Some indicators may produce all-NaN columns.")
-                tprint("💡 Consider increasing data size or using shorter lookback periods")
+
+            # Determine lookback periods to use
+            # Priority: 1) Optimized lookbacks, 2) Data-based adjustment, 3) Default
+            if optimized_lookbacks:
+                # Use optimized lookback periods from the optimization step
+                tprint(f"✅ Using optimized lookback periods for feature generation")
+
+                # Create kwargs with category-specific lookback periods
+                # We'll pass these to the generators via kwargs
+                generation_kwargs = {
+                    'optimized_lookbacks': optimized_lookbacks,
+                    'use_optimized_pipeline': False,
+                    'progressive_loading': True,
+                    'auto_normalize': False
+                }
+
+                # For each category, pass the specific lookback period
+                for category in feature_categories:
+                    if category in optimized_lookbacks:
+                        generation_kwargs[f'{category}_lookback'] = optimized_lookbacks[category]
+                        tprint(f"   • {category}: using lookback period {optimized_lookbacks[category]}")
+
+                generated_features = feature_bank.generate_features(
+                    data=market_data,
+                    categories=feature_categories,
+                    **generation_kwargs
+                )
             elif data_length < 100:
-                tprint(f"⚠️ Limited data: {data_length} rows. Adjusting lookback periods to prevent all-NaN columns.")
-                tprint(f"🔧 Using maximum lookback period of {max_lookback} instead of 20")
-            
-            # Override lookback periods in FeatureBank configuration if needed
-            if data_length < 100:
+                # Adjust lookback periods based on available data to prevent all-NaN columns
+                max_lookback = min(20, data_length // 3) if data_length < 60 else 20
+
+                if data_length < 50:
+                    tprint(f"⚠️ Warning: Only {data_length} rows of data available. Some indicators may produce all-NaN columns.")
+                    tprint("💡 Consider increasing data size or using shorter lookback periods")
+                else:
+                    tprint(f"⚠️ Limited data: {data_length} rows. Adjusting lookback periods to prevent all-NaN columns.")
+                    tprint(f"🔧 Using maximum lookback period of {max_lookback} instead of 20")
+
                 # Create a custom configuration with adjusted lookback periods
                 custom_config = {
                     'lookback_periods': {
@@ -325,7 +421,7 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
                         'long': max_lookback
                     }
                 }
-                
+
                 generated_features = feature_bank.generate_features(
                     data=market_data,
                     categories=feature_categories,
@@ -335,6 +431,8 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
                     custom_config=custom_config  # Pass custom configuration
                 )
             else:
+                # Use default lookback periods
+                tprint(f"ℹ️ Using default lookback periods for feature generation")
                 generated_features = feature_bank.generate_features(
                     data=market_data,
                     categories=feature_categories,

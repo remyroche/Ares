@@ -321,6 +321,16 @@ class ModelTrainer(BaseTrainer):
                 all_model_metrics=all_model_metrics
             )
 
+            # Calculate SHAP explanations for model interpretability
+            shap_explanations = self._calculate_shap_explanations(
+                training_results=training_results,
+                processed_data=processed_data,
+                processed_targets=processed_targets,
+                max_samples=100,  # Limit to 100 samples for performance
+                max_features_to_report=20
+            )
+            comprehensive_metadata['shap_explanations'] = shap_explanations
+
             result = TrainingResult(
                 success=len(training_results) > 0,
                 model=best_model,
@@ -1841,6 +1851,192 @@ class ModelTrainer(BaseTrainer):
             metadata['error_analysis'] = {}
 
         return metadata
+
+    def _calculate_shap_explanations(
+        self,
+        training_results: Dict[str, Any],
+        processed_data: pd.DataFrame,
+        processed_targets: pd.Series,
+        max_samples: int = 100,
+        max_features_to_report: int = 20
+    ) -> Dict[str, Any]:
+        """
+        Calculate SHAP (SHapley Additive exPlanations) values for model interpretability.
+
+        SHAP provides:
+        - Feature importance based on game theory (Shapley values)
+        - Individual prediction explanations
+        - Global feature importance rankings
+        - Feature interaction detection
+
+        Args:
+            training_results: Dictionary of training results by model
+            processed_data: Processed training data
+            processed_targets: Processed target values
+            max_samples: Maximum samples to use for SHAP calculation (for performance)
+            max_features_to_report: Number of top features to report
+
+        Returns:
+            Dictionary with SHAP explanations and statistics
+        """
+        shap_data = {}
+
+        try:
+            # Try to import SHAP
+            import shap
+            import matplotlib
+            matplotlib.use('Agg')  # Non-interactive backend for saving plots
+            import matplotlib.pyplot as plt
+            from src.utils.tprint import tprint_info, tprint_success, tprint_warning
+
+            tprint_info("🔍 Calculating SHAP explanations for model interpretability...")
+
+            # Sample data if too large (SHAP can be slow on large datasets)
+            if len(processed_data) > max_samples:
+                sample_indices = np.random.choice(len(processed_data), max_samples, replace=False)
+                X_shap = processed_data.iloc[sample_indices]
+                tprint_info(f"   Using {max_samples} samples for SHAP calculation (sampled from {len(processed_data)})")
+            else:
+                X_shap = processed_data
+                tprint_info(f"   Using all {len(X_shap)} samples for SHAP calculation")
+
+            # Calculate SHAP for each model
+            for model_name, result in training_results.items():
+                if not result.success or not result.model:
+                    continue
+
+                try:
+                    model = result.model
+                    model_shap_data = {}
+
+                    # Determine model type and create appropriate explainer
+                    if hasattr(model, 'predict') and hasattr(model, 'num_trees'):
+                        # LightGBM model
+                        tprint_info(f"   📊 Calculating SHAP for {model_name} (LightGBM)...")
+                        explainer = shap.TreeExplainer(model)
+                        shap_values = explainer.shap_values(X_shap)
+
+                    elif hasattr(model, 'predict') and hasattr(model, 'tree_count_'):
+                        # CatBoost model
+                        tprint_info(f"   📊 Calculating SHAP for {model_name} (CatBoost)...")
+                        explainer = shap.TreeExplainer(model)
+                        shap_values = explainer.shap_values(X_shap)
+
+                    else:
+                        tprint_warning(f"   ⚠️  Skipping SHAP for {model_name} (unsupported model type)")
+                        continue
+
+                    # Handle multi-output SHAP values (for classification)
+                    if isinstance(shap_values, list):
+                        # For binary classification, use positive class
+                        shap_values = shap_values[1] if len(shap_values) > 1 else shap_values[0]
+
+                    # Calculate mean absolute SHAP values for feature importance
+                    mean_abs_shap = np.abs(shap_values).mean(axis=0)
+                    feature_names = X_shap.columns.tolist()
+
+                    # Create feature importance dict
+                    shap_importance = dict(zip(feature_names, mean_abs_shap))
+                    sorted_features = sorted(shap_importance.items(), key=lambda x: x[1], reverse=True)
+
+                    # Store top features
+                    top_features = dict(sorted_features[:max_features_to_report])
+                    model_shap_data['top_features'] = top_features
+                    model_shap_data['feature_count'] = len(feature_names)
+                    model_shap_data['samples_used'] = len(X_shap)
+
+                    # Calculate SHAP statistics
+                    model_shap_data['mean_abs_shap_value'] = float(np.mean(np.abs(shap_values)))
+                    model_shap_data['max_abs_shap_value'] = float(np.max(np.abs(shap_values)))
+                    model_shap_data['shap_value_std'] = float(np.std(shap_values))
+
+                    # Top 3 features for quick reference
+                    model_shap_data['top_1_feature'] = sorted_features[0][0] if len(sorted_features) > 0 else None
+                    model_shap_data['top_2_feature'] = sorted_features[1][0] if len(sorted_features) > 1 else None
+                    model_shap_data['top_3_feature'] = sorted_features[2][0] if len(sorted_features) > 2 else None
+                    model_shap_data['top_1_importance'] = float(sorted_features[0][1]) if len(sorted_features) > 0 else None
+                    model_shap_data['top_2_importance'] = float(sorted_features[1][1]) if len(sorted_features) > 1 else None
+                    model_shap_data['top_3_importance'] = float(sorted_features[2][1]) if len(sorted_features) > 2 else None
+
+                    # Try to save SHAP summary plot
+                    try:
+                        import os
+                        plots_dir = 'outcomes/shap_plots'
+                        os.makedirs(plots_dir, exist_ok=True)
+
+                        # Summary plot (bar)
+                        plt.figure(figsize=(10, 8))
+                        shap.summary_plot(shap_values, X_shap, plot_type="bar", show=False, max_display=20)
+                        summary_plot_path = os.path.join(plots_dir, f'shap_summary_{model_name}.png')
+                        plt.tight_layout()
+                        plt.savefig(summary_plot_path, dpi=150, bbox_inches='tight')
+                        plt.close()
+                        model_shap_data['summary_plot_path'] = summary_plot_path
+
+                        # Beeswarm plot (detailed)
+                        plt.figure(figsize=(10, 8))
+                        shap.summary_plot(shap_values, X_shap, show=False, max_display=20)
+                        beeswarm_plot_path = os.path.join(plots_dir, f'shap_beeswarm_{model_name}.png')
+                        plt.tight_layout()
+                        plt.savefig(beeswarm_plot_path, dpi=150, bbox_inches='tight')
+                        plt.close()
+                        model_shap_data['beeswarm_plot_path'] = beeswarm_plot_path
+
+                        tprint_success(f"   ✅ SHAP plots saved: {summary_plot_path}")
+
+                    except Exception as e:
+                        tprint_warning(f"   ⚠️  Could not save SHAP plots: {e}")
+                        model_shap_data['plot_error'] = str(e)
+
+                    # Store model SHAP data
+                    shap_data[model_name] = model_shap_data
+                    tprint_success(f"   ✅ SHAP calculated for {model_name}: top feature = {model_shap_data.get('top_1_feature', 'N/A')}")
+
+                except Exception as e:
+                    self.logger.warning(f"Failed to calculate SHAP for {model_name}: {e}")
+                    tprint_warning(f"   ⚠️  SHAP calculation failed for {model_name}: {e}")
+                    shap_data[model_name] = {'error': str(e)}
+
+            # Calculate aggregate SHAP importance across all models
+            if shap_data:
+                all_features_importance = {}
+                for model_name, model_data in shap_data.items():
+                    if 'top_features' in model_data:
+                        for feature, importance in model_data['top_features'].items():
+                            if feature not in all_features_importance:
+                                all_features_importance[feature] = []
+                            all_features_importance[feature].append(importance)
+
+                # Average importance across models
+                avg_importance = {
+                    feature: float(np.mean(importances))
+                    for feature, importances in all_features_importance.items()
+                }
+                sorted_avg = sorted(avg_importance.items(), key=lambda x: x[1], reverse=True)
+
+                shap_data['aggregate_top_features'] = dict(sorted_avg[:max_features_to_report])
+                shap_data['shap_calculated'] = True
+                shap_data['models_with_shap'] = len([d for d in shap_data.values() if isinstance(d, dict) and 'top_features' in d])
+
+                tprint_success(f"✅ SHAP explanations calculated for {shap_data['models_with_shap']} models")
+
+        except ImportError:
+            self.logger.warning("SHAP library not installed. Install with: pip install shap")
+            from src.utils.tprint import tprint_warning, tprint_info
+            tprint_warning("⚠️  SHAP library not installed. Skipping SHAP explanations.")
+            tprint_info("   To enable SHAP: pip install shap")
+            shap_data['shap_calculated'] = False
+            shap_data['shap_not_available'] = True
+            shap_data['install_command'] = 'pip install shap'
+
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate SHAP explanations: {e}")
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"⚠️  SHAP calculation failed: {e}")
+            shap_data['shap_calculated'] = False
+            shap_data['error'] = str(e)
+
+        return shap_data
 
     @handles_errors(
         exceptions=(ValueError, RuntimeError),

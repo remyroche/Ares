@@ -4044,6 +4044,14 @@ class UnifiedModelsTrainingStep(BaseStep):
         # ===== SHAPLEY-BASED EXPLANATIONS (SHAP) =====
         # Model interpretability and feature attribution
         # Note: Complex objects like plots are stored separately, only metadata here
+
+        # NEW: Extract SHAP data from result metadata (from model_trainer)
+        if 'shap_explanations' in result_metadata:
+            shap_from_metadata = result_metadata['shap_explanations']
+            if shap_from_metadata:
+                comprehensive_metrics['shap_explanations'].update(shap_from_metadata)
+
+        # Legacy: Also check metrics dict for backward compatibility
         shap_keys = [
             'shap_values_available', 'shap_summary_plot_path', 'shap_dependence_plot_path',
             'shap_force_plot_path', 'shap_waterfall_plot_path',
@@ -4059,7 +4067,7 @@ class UnifiedModelsTrainingStep(BaseStep):
             if key in metrics:
                 comprehensive_metrics['shap_explanations'][key] = metrics[key]
 
-        # Per-model SHAP data
+        # Per-model SHAP data (legacy)
         for model_name in models.keys():
             for shap_metric in ['shap_values', 'shap_feature_importance', 'shap_summary_plot_path']:
                 key = f"{model_name}_{shap_metric}"
@@ -4268,6 +4276,49 @@ class UnifiedModelsTrainingStep(BaseStep):
                 if comprehensive_metrics.get('ensemble_specific'):
                     ensemble_flat = flatten_metrics(comprehensive_metrics['ensemble_specific'], 'ensemble_')
                     row.update(ensemble_flat)
+
+                # Add SHAP explanations (simplified for CSV)
+                if comprehensive_metrics.get('shap_explanations'):
+                    shap_data = comprehensive_metrics['shap_explanations']
+
+                    # Add aggregate SHAP metrics
+                    if 'shap_calculated' in shap_data:
+                        row['shap_calculated'] = shap_data['shap_calculated']
+                    if 'models_with_shap' in shap_data:
+                        row['shap_models_with_shap'] = shap_data['models_with_shap']
+
+                    # Add aggregate top features (easier to analyze across models)
+                    if 'aggregate_top_features' in shap_data and shap_data['aggregate_top_features']:
+                        agg_features = shap_data['aggregate_top_features']
+                        sorted_agg = sorted(agg_features.items(), key=lambda x: x[1], reverse=True)
+
+                        # Top 3 aggregate features for CSV
+                        if len(sorted_agg) > 0:
+                            row['shap_top1_feature'] = sorted_agg[0][0]
+                            row['shap_top1_importance'] = sorted_agg[0][1]
+                        if len(sorted_agg) > 1:
+                            row['shap_top2_feature'] = sorted_agg[1][0]
+                            row['shap_top2_importance'] = sorted_agg[1][1]
+                        if len(sorted_agg) > 2:
+                            row['shap_top3_feature'] = sorted_agg[2][0]
+                            row['shap_top3_importance'] = sorted_agg[2][1]
+
+                    # Add per-model SHAP data for this specific model
+                    if model_name in shap_data and isinstance(shap_data[model_name], dict):
+                        model_shap = shap_data[model_name]
+
+                        # Top 3 for this specific model
+                        for field in ['top_1_feature', 'top_1_importance', 'top_2_feature', 'top_2_importance',
+                                     'top_3_feature', 'top_3_importance', 'mean_abs_shap_value',
+                                     'max_abs_shap_value', 'samples_used']:
+                            if field in model_shap:
+                                row[f'shap_{model_name}_{field}'] = model_shap[field]
+
+                        # Add plot paths (useful for reference)
+                        if 'summary_plot_path' in model_shap:
+                            row[f'shap_{model_name}_summary_plot'] = model_shap['summary_plot_path']
+                        if 'beeswarm_plot_path' in model_shap:
+                            row[f'shap_{model_name}_beeswarm_plot'] = model_shap['beeswarm_plot_path']
 
                 # Collect all column names
                 for key in row.keys():

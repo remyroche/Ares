@@ -1735,6 +1735,229 @@ class FinalFeatureSelectionComponent:
             traceback.print_exc()
             return {"error": str(e)}
 
+    def detect_potential_leakage(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        selected_features: List[str],
+        suspicious_threshold: float = 0.95,
+        perfect_threshold: float = 0.99
+    ) -> Dict[str, Any]:
+        """
+        Detect potential data leakage through suspiciously high correlations.
+
+        Data leakage occurs when features contain information from the future or
+        are calculated using the target variable, leading to unrealistic performance.
+
+        Args:
+            X: Feature matrix
+            y: Target variable
+            selected_features: List of selected features
+            suspicious_threshold: Correlation threshold for warnings (default: 0.95)
+            perfect_threshold: Correlation threshold for critical alerts (default: 0.99)
+
+        Returns:
+            Dictionary containing leakage detection results
+        """
+        try:
+            self.logger.info(f"🔍 Detecting potential data leakage...")
+
+            import time
+            start_time = time.time()
+
+            suspicious_features = []
+            perfect_features = []
+            feature_correlations = {}
+
+            for feature in selected_features:
+                try:
+                    # Calculate absolute correlation with target
+                    corr = abs(X[feature].corr(y))
+
+                    if np.isnan(corr):
+                        continue
+
+                    feature_correlations[feature] = corr
+
+                    # Check thresholds
+                    if corr >= perfect_threshold:
+                        perfect_features.append((feature, corr))
+                    elif corr >= suspicious_threshold:
+                        suspicious_features.append((feature, corr))
+
+                except Exception as e:
+                    self.logger.warning(f"Could not calculate correlation for {feature}: {e}")
+                    continue
+
+            # Sort by correlation (descending)
+            suspicious_features.sort(key=lambda x: x[1], reverse=True)
+            perfect_features.sort(key=lambda x: x[1], reverse=True)
+
+            execution_time = time.time() - start_time
+
+            # Generate warnings
+            warnings = []
+            if perfect_features:
+                warnings.append(
+                    f"🚨 CRITICAL: {len(perfect_features)} features have near-perfect correlation (>{perfect_threshold}) - "
+                    "likely data leakage!"
+                )
+            if suspicious_features:
+                warnings.append(
+                    f"⚠️ WARNING: {len(suspicious_features)} features have very high correlation (>{suspicious_threshold}) - "
+                    "investigate for potential leakage"
+                )
+
+            analysis = {
+                'perfect_features': perfect_features,
+                'suspicious_features': suspicious_features,
+                'feature_correlations': feature_correlations,
+                'n_perfect': len(perfect_features),
+                'n_suspicious': len(suspicious_features),
+                'warnings': warnings,
+                'perfect_threshold': perfect_threshold,
+                'suspicious_threshold': suspicious_threshold,
+                'execution_time': execution_time
+            }
+
+            self.leakage_detection = analysis
+
+            # Log findings
+            if perfect_features:
+                self.logger.error(f"🚨 POTENTIAL LEAKAGE: {len(perfect_features)} features with r > {perfect_threshold}")
+                for feature, corr in perfect_features[:5]:  # Show top 5
+                    self.logger.error(f"   - {feature}: r = {corr:.4f}")
+
+            if suspicious_features:
+                self.logger.warning(f"⚠️ SUSPICIOUS: {len(suspicious_features)} features with r > {suspicious_threshold}")
+                for feature, corr in suspicious_features[:5]:  # Show top 5
+                    self.logger.warning(f"   - {feature}: r = {corr:.4f}")
+
+            if not perfect_features and not suspicious_features:
+                self.logger.info("✅ No data leakage detected")
+
+            return analysis
+
+        except Exception as e:
+            self.logger.error(f"❌ Leakage detection failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"error": str(e)}
+
+    def check_feature_information_content(
+        self,
+        X: pd.DataFrame,
+        selected_features: List[str],
+        variance_threshold: float = 0.01,
+        quasi_constant_threshold: float = 0.99
+    ) -> Dict[str, Any]:
+        """
+        Check if features have sufficient information content for ML.
+
+        Features with very low variance or that are quasi-constant (same value
+        for >99% of samples) provide little to no predictive value.
+
+        Args:
+            X: Feature matrix
+            selected_features: List of selected features
+            variance_threshold: Minimum variance required (default: 0.01)
+            quasi_constant_threshold: Maximum proportion of most frequent value (default: 0.99)
+
+        Returns:
+            Dictionary containing information content analysis
+        """
+        try:
+            self.logger.info(f"📊 Checking feature information content...")
+
+            import time
+            start_time = time.time()
+
+            low_variance_features = []
+            quasi_constant_features = []
+            feature_stats = {}
+
+            for feature in selected_features:
+                try:
+                    values = X[feature]
+
+                    # Calculate variance
+                    variance = values.var()
+
+                    # Calculate most frequent value proportion
+                    value_counts = values.value_counts(normalize=True)
+                    max_proportion = value_counts.iloc[0] if len(value_counts) > 0 else 1.0
+
+                    # Calculate number of unique values
+                    n_unique = values.nunique()
+
+                    feature_stats[feature] = {
+                        'variance': variance,
+                        'max_value_proportion': max_proportion,
+                        'n_unique': n_unique,
+                        'mean': values.mean(),
+                        'std': values.std()
+                    }
+
+                    # Check thresholds
+                    if variance < variance_threshold:
+                        low_variance_features.append((feature, variance))
+
+                    if max_proportion >= quasi_constant_threshold:
+                        quasi_constant_features.append((feature, max_proportion))
+
+                except Exception as e:
+                    self.logger.warning(f"Could not analyze {feature}: {e}")
+                    continue
+
+            execution_time = time.time() - start_time
+
+            # Generate warnings
+            warnings = []
+            if low_variance_features:
+                warnings.append(
+                    f"⚠️ {len(low_variance_features)} features have very low variance (<{variance_threshold})"
+                )
+            if quasi_constant_features:
+                warnings.append(
+                    f"⚠️ {len(quasi_constant_features)} features are quasi-constant (>{quasi_constant_threshold*100}% same value)"
+                )
+
+            analysis = {
+                'low_variance_features': low_variance_features,
+                'quasi_constant_features': quasi_constant_features,
+                'feature_stats': feature_stats,
+                'n_low_variance': len(low_variance_features),
+                'n_quasi_constant': len(quasi_constant_features),
+                'warnings': warnings,
+                'variance_threshold': variance_threshold,
+                'quasi_constant_threshold': quasi_constant_threshold,
+                'execution_time': execution_time
+            }
+
+            self.information_content_analysis = analysis
+
+            # Log findings
+            if low_variance_features:
+                self.logger.warning(f"⚠️ {len(low_variance_features)} low variance features")
+                for feature, var in low_variance_features[:5]:
+                    self.logger.warning(f"   - {feature}: variance = {var:.6f}")
+
+            if quasi_constant_features:
+                self.logger.warning(f"⚠️ {len(quasi_constant_features)} quasi-constant features")
+                for feature, prop in quasi_constant_features[:5]:
+                    self.logger.warning(f"   - {feature}: {prop*100:.1f}% same value")
+
+            if not low_variance_features and not quasi_constant_features:
+                self.logger.info("✅ All features have sufficient information content")
+
+            return analysis
+
+        except Exception as e:
+            self.logger.error(f"❌ Information content check failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"error": str(e)}
+
     def get_enhanced_analysis(self) -> Dict[str, Any]:
         """
         Get all enhanced analysis results including new statistical validation metrics.
@@ -1756,6 +1979,10 @@ class FinalFeatureSelectionComponent:
             'walk_forward_validation': getattr(self, 'walk_forward_validation', None),
             'redundancy_clustering': getattr(self, 'redundancy_clustering', None),
             'mi_stability': getattr(self, 'mi_stability_analysis', None),
+
+            # Phase 3: Critical validation metrics
+            'leakage_detection': getattr(self, 'leakage_detection', None),
+            'information_content': getattr(self, 'information_content_analysis', None),
         }
     
     def select_features_with_stability_optimization(self, X: pd.DataFrame, y: pd.Series, 

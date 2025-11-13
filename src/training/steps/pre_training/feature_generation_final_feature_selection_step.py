@@ -1872,7 +1872,17 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             mi_stability = temp_component.calculate_mi_stability(X, y, selected_features, cv_folds=5)
             analysis_results['mi_stability'] = mi_stability
 
-            # 11. Method Results Analysis (if available)
+            # 11. PHASE 3: Data Leakage Detection (CRITICAL)
+            tprint_info("🔍 Detecting potential data leakage...")
+            leakage_detection = temp_component.detect_potential_leakage(X, y, selected_features)
+            analysis_results['leakage_detection'] = leakage_detection
+
+            # 12. PHASE 3: Feature Information Content
+            tprint_info("📊 Checking feature information content...")
+            information_content = temp_component.check_feature_information_content(X, selected_features)
+            analysis_results['information_content'] = information_content
+
+            # 13. Method Results Analysis (if available)
             if method_results:
                 tprint_info("🔍 Analyzing method-specific results...")
                 analysis_results['method_analysis'] = {
@@ -3030,6 +3040,70 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                         report += f"\n⚠️ Moderate MI stability\n"
                     else:
                         report += f"\n🚨 Low MI stability - features may not generalize well\n"
+                    report += f"\n"
+
+                # PHASE 3: Data Leakage Detection
+                if 'leakage_detection' in enhanced_analysis and enhanced_analysis['leakage_detection'] and 'error' not in enhanced_analysis['leakage_detection']:
+                    leakage = enhanced_analysis['leakage_detection']
+                    report += f"### Data Leakage Detection (Phase 3)\n\n"
+                    report += f"- **Perfect Correlations (>0.99):** {leakage.get('n_perfect', 0)}\n"
+                    report += f"- **Suspicious Correlations (>0.95):** {leakage.get('n_suspicious', 0)}\n"
+                    report += f"- **Execution Time:** {leakage.get('execution_time', 'N/A'):.1f}s\n"
+
+                    # Show perfect features (critical)
+                    perfect_features = leakage.get('perfect_features', [])
+                    if perfect_features:
+                        report += f"\n🚨 **CRITICAL - Potential Data Leakage:**\n"
+                        for feature, corr in perfect_features[:10]:
+                            report += f"- {feature}: r = {corr:.4f}\n"
+                        report += f"\n**ACTION REQUIRED:** Investigate these features for data leakage!\n"
+
+                    # Show suspicious features (warning)
+                    suspicious_features = leakage.get('suspicious_features', [])
+                    if suspicious_features and not perfect_features:
+                        report += f"\n⚠️ **Suspicious Features:**\n"
+                        for feature, corr in suspicious_features[:5]:
+                            report += f"- {feature}: r = {corr:.4f}\n"
+                        report += f"\n**RECOMMENDED:** Review these features to ensure no leakage\n"
+
+                    # All clear
+                    if not perfect_features and not suspicious_features:
+                        report += f"\n✅ No data leakage detected\n"
+
+                    report += f"\n"
+
+                # PHASE 3: Feature Information Content
+                if 'information_content' in enhanced_analysis and enhanced_analysis['information_content'] and 'error' not in enhanced_analysis['information_content']:
+                    info_content = enhanced_analysis['information_content']
+                    report += f"### Feature Information Content (Phase 3)\n\n"
+                    report += f"- **Low Variance Features (<0.01):** {info_content.get('n_low_variance', 0)}\n"
+                    report += f"- **Quasi-Constant Features (>99%):** {info_content.get('n_quasi_constant', 0)}\n"
+                    report += f"- **Execution Time:** {info_content.get('execution_time', 'N/A'):.1f}s\n"
+
+                    # Show low variance features
+                    low_variance = info_content.get('low_variance_features', [])
+                    if low_variance:
+                        report += f"\n⚠️ **Low Variance Features:**\n"
+                        for feature, var in low_variance[:5]:
+                            report += f"- {feature}: variance = {var:.6f}\n"
+                        if len(low_variance) > 5:
+                            report += f"- ... and {len(low_variance) - 5} more\n"
+                        report += f"\n**RECOMMENDED:** Remove low variance features\n"
+
+                    # Show quasi-constant features
+                    quasi_constant = info_content.get('quasi_constant_features', [])
+                    if quasi_constant:
+                        report += f"\n⚠️ **Quasi-Constant Features:**\n"
+                        for feature, prop in quasi_constant[:5]:
+                            report += f"- {feature}: {prop*100:.1f}% same value\n"
+                        if len(quasi_constant) > 5:
+                            report += f"- ... and {len(quasi_constant) - 5} more\n"
+                        report += f"\n**RECOMMENDED:** Remove quasi-constant features\n"
+
+                    # All clear
+                    if not low_variance and not quasi_constant:
+                        report += f"\n✅ All features have sufficient information content\n"
+
                     report += f"\n"
 
                 # Method Analysis

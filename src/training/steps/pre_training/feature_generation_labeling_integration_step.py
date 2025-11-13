@@ -680,7 +680,14 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             vol_config.label_smoothing.apply_causal_ema = smoothing_params['apply_causal_ema']
             vol_config.label_smoothing.uncertainty_source = 'quality_inverse'
             vol_config.label_smoothing.ema_group_by = 'instrument' if 'instrument' in market_data.columns else None
-            
+
+            # Enable pre-processing: clipping and log transform (good for tree models)
+            vol_config.label_smoothing.apply_clipping = True
+            vol_config.label_smoothing.clip_percentile = 99.0  # Clip at 1st and 99th percentiles
+            vol_config.label_smoothing.apply_log_transform = True
+            vol_config.label_smoothing.log_transform_shift = 1.0  # For log1p
+            tprint("📊 Label pre-processing enabled: clipping (99th percentile) + log transform", "INFO")
+
             # Enable simplified target generation (target_long, target_short)
             vol_config.use_simplified_targets = True
             

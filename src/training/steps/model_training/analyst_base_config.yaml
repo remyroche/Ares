@@ -21,6 +21,8 @@ analyst_config:
         reg_lambda: 2.75
         sampling_rate: 0.6
         min_child_samples: 53
+        objective: 'regression'  # Explicit regression objective
+        metric: 'rmse'  # Root Mean Squared Error
       hpo:
         enabled: false
         n_rounds: 2
@@ -159,6 +161,8 @@ analyst_config:
         early_stopping_rounds: 50
         sampling_rate: 0.6
         bootstrap_type: Bernoulli
+        loss_function: 'RMSE'  # Explicit regression loss (RMSE, MAE, Quantile also supported)
+        eval_metric: 'RMSE'
       hpo:
         enabled: false
         n_rounds: 2

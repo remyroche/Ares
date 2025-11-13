@@ -33,6 +33,13 @@ class LabelSmoothingConfig:
         apply_uncertainty_shrinkage: Shrink labels based on quality/uncertainty
         apply_causal_ema: Apply temporal smoothing per instrument
 
+        # Pre-processing params (NEW)
+        apply_clipping: Clip extreme labels to reduce outliers
+        clip_percentile: Percentile for clipping (e.g., 99.0 = clip at 1st and 99th percentiles)
+        clip_std_multiplier: Alternatively, clip at mean ± N*std (if percentile=None)
+        apply_log_transform: Apply log1p transform to reduce skew (good for trees)
+        log_transform_shift: Shift before log transform (default 1.0 for log1p)
+
         # Classification smoothing params
         epsilon: Label smoothing strength (0.0-0.3). Higher = more smoothing.
                  Default 0.08 means 92% weight on hard class, 8% on uniform.
@@ -79,6 +86,13 @@ class LabelSmoothingConfig:
     apply_classification_smoothing: bool = True
     apply_uncertainty_shrinkage: bool = True
     apply_causal_ema: bool = True
+
+    # Pre-processing (NEW)
+    apply_clipping: bool = True
+    clip_percentile: Optional[float] = 99.0  # Clip at 1st and 99th percentiles
+    clip_std_multiplier: Optional[float] = None  # Or use mean ± N*std (if percentile=None)
+    apply_log_transform: bool = True
+    log_transform_shift: float = 1.0  # For log1p
 
     # Classification smoothing
     epsilon: float = 0.08  # 0.05-0.15 range
@@ -212,6 +226,7 @@ class LabelSmoother:
             Dictionary with:
                 - 'labels_final': Final smoothed labels
                 - 'labels_raw': Original labels (for reference)
+                - 'labels_preprocessing': After clipping/log transform (if applied)
                 - 'labels_stage1': After classification smoothing (if applied)
                 - 'labels_stage2': After uncertainty shrinkage (if applied)
                 - 'labels_stage3': After causal EMA (if applied)
@@ -223,6 +238,11 @@ class LabelSmoother:
         # Initialize result dictionary
         result = {'labels_raw': labels.copy()}
         current_labels = labels.copy()
+
+        # Pre-processing: Clipping and log transform (NEW)
+        if self.config.apply_clipping or self.config.apply_log_transform:
+            current_labels = self._apply_preprocessing(current_labels)
+            result['labels_preprocessing'] = current_labels.copy()
 
         # Get uncertainty metric if needed for stage 2
         sigma = None
@@ -266,6 +286,78 @@ class LabelSmoother:
             self._intermediate = result.copy()
 
         return result
+
+    def _apply_preprocessing(
+        self,
+        labels: pd.Series | pd.DataFrame
+    ) -> pd.Series | pd.DataFrame:
+        """Apply pre-processing: clipping and log transform.
+
+        Args:
+            labels: Raw labels
+
+        Returns:
+            Pre-processed labels
+        """
+        labels_processed = labels.copy()
+
+        # Step 1: Clipping extreme values
+        if self.config.apply_clipping:
+            if self.config.clip_percentile is not None:
+                # Percentile-based clipping
+                lower_percentile = (100 - self.config.clip_percentile) / 2
+                upper_percentile = 100 - lower_percentile
+
+                if isinstance(labels_processed, pd.Series):
+                    lower = labels_processed.quantile(lower_percentile / 100)
+                    upper = labels_processed.quantile(upper_percentile / 100)
+                    labels_processed = labels_processed.clip(lower=lower, upper=upper)
+                else:
+                    # DataFrame - clip each column
+                    for col in labels_processed.columns:
+                        lower = labels_processed[col].quantile(lower_percentile / 100)
+                        upper = labels_processed[col].quantile(upper_percentile / 100)
+                        labels_processed[col] = labels_processed[col].clip(lower=lower, upper=upper)
+
+            elif self.config.clip_std_multiplier is not None:
+                # Std-based clipping (mean ± N*std)
+                if isinstance(labels_processed, pd.Series):
+                    mean = labels_processed.mean()
+                    std = labels_processed.std()
+                    lower = mean - self.config.clip_std_multiplier * std
+                    upper = mean + self.config.clip_std_multiplier * std
+                    labels_processed = labels_processed.clip(lower=lower, upper=upper)
+                else:
+                    # DataFrame - clip each column
+                    for col in labels_processed.columns:
+                        mean = labels_processed[col].mean()
+                        std = labels_processed[col].std()
+                        lower = mean - self.config.clip_std_multiplier * std
+                        upper = mean + self.config.clip_std_multiplier * std
+                        labels_processed[col] = labels_processed[col].clip(lower=lower, upper=upper)
+
+        # Step 2: Log transform to reduce skew
+        if self.config.apply_log_transform:
+            shift = self.config.log_transform_shift
+
+            if isinstance(labels_processed, pd.Series):
+                # Check if labels are already mostly positive or negative
+                if labels_processed.min() >= 0:
+                    # All positive - apply log1p directly
+                    labels_processed = np.sign(labels_processed) * np.log1p(np.abs(labels_processed))
+                else:
+                    # Mixed signs - apply sign-preserving log transform
+                    # log1p(|x|) * sign(x)
+                    labels_processed = np.sign(labels_processed) * np.log1p(np.abs(labels_processed) + shift)
+            else:
+                # DataFrame - transform each column
+                for col in labels_processed.columns:
+                    if labels_processed[col].min() >= 0:
+                        labels_processed[col] = np.sign(labels_processed[col]) * np.log1p(np.abs(labels_processed[col]))
+                    else:
+                        labels_processed[col] = np.sign(labels_processed[col]) * np.log1p(np.abs(labels_processed[col]) + shift)
+
+        return labels_processed
 
     def _classification_smooth(
         self,

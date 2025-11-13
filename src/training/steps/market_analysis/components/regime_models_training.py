@@ -2058,6 +2058,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 'regime_models_training_result': {
                     'models': trained_models,
                     'model_metrics': model_metrics,
+                    'y_train_full': y,  # Full regime labels for report generation
                     'training_time': execution_time,
                     'success': True,
                     'validation_report': {
@@ -4209,44 +4210,77 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 return None
 
             # Get top 3 models from walk-forward validation if available
-            top_models = None
+            top_models_list = []
             walk_forward_metrics = training_results.get('metadata', {}).get('walk_forward_validation', {})
-            if walk_forward_metrics.get('validation_completed', False):
+            if not walk_forward_metrics.get('validation_completed', False):
                 tprint("⚠️ [REGIME_MODELS] Walk-forward validation not completed, using single best model", color="yellow")
                 # Fall back to single best model logic
                 model_metrics = training_results.get('model_metrics', {})
                 best_model_name = None
                 best_accuracy = -1.0
-                
-                for model_name, metrics in model_metrics.items():
-                    if 'error' not in metrics and model_name in models:
+                best_f1 = -1.0
+
+                # Build list of all models with their scores
+                model_scores = []
+                for model_name_iter, metrics in model_metrics.items():
+                    if 'error' not in metrics and model_name_iter in models:
                         accuracy = metrics.get('accuracy', 0)
-                        if accuracy > best_accuracy:
-                            best_accuracy = accuracy
-                            best_model_name = model_name
-                
-                # Fallback to first model if no metrics available
-                if best_model_name is None:
+                        f1_score = metrics.get('f1_score', 0)
+                        combined_score = (accuracy + f1_score) / 2
+                        model_scores.append({
+                            'name': model_name_iter,
+                            'accuracy': accuracy,
+                            'f1_score': f1_score,
+                            'combined_score': combined_score,
+                            'metrics': metrics
+                        })
+
+                # Sort by combined score
+                model_scores.sort(key=lambda x: x['combined_score'], reverse=True)
+
+                # Get top 3 models
+                top_models_list = model_scores[:min(3, len(model_scores))]
+
+                # Select best model
+                if model_scores:
+                    best_model_name = model_scores[0]['name']
+                    best_accuracy = model_scores[0]['accuracy']
+                    best_f1 = model_scores[0]['f1_score']
+                    tprint(f"✅ [REGIME_MODELS] Selected best performing model: {best_model_name} (accuracy: {best_accuracy:.4f}, F1: {best_f1:.4f})", color="green")
+                else:
+                    # Fallback to first model if no metrics available
                     tprint("⚠️ [REGIME_MODELS] No model metrics available, using first model", color="yellow")
                     best_model_name = list(models.keys())[0]
-                else:
-                    tprint(f"✅ [REGIME_MODELS] Selected best performing model: {best_model_name} (accuracy: {best_accuracy:.4f})", color="green")
-                
+
                 model_name = best_model_name
                 model = models[model_name]
             else:
                 # Use top 3 models from walk-forward validation
-                top_models = walk_forward_metrics.get('selected_models', [])
-                if not top_models:
+                selected_models = walk_forward_metrics.get('selected_models', [])
+                if not selected_models:
                     tprint("⚠️ [REGIME_MODELS] No top models found in walk-forward validation", color="yellow")
                     return None
-                
-                tprint(f"✅ [REGIME_MODELS] Using top 3 models from walk-forward validation: {top_models}", color="green")
-                
+
+                tprint(f"✅ [REGIME_MODELS] Using top 3 models from walk-forward validation: {selected_models}", color="green")
+
+                # Build top_models_list from walk-forward validation
+                model_rankings = walk_forward_metrics.get('model_rankings', [])
+                for rank in model_rankings[:3]:
+                    top_models_list.append({
+                        'name': rank.get('model_name', 'Unknown'),
+                        'accuracy': rank.get('accuracy', 0),
+                        'f1_score': rank.get('f1_score', 0),
+                        'combined_score': rank.get('composite_score', 0),
+                        'accuracy_ci': rank.get('accuracy_ci', (0, 0)),
+                        'f1_ci': rank.get('f1_ci', (0, 0)),
+                        'mel': rank.get('mel', 0),
+                        'sfpr': rank.get('sfpr', 0)
+                    })
+
                 # Use the top-ranked model for probability analysis
-                model_name = top_models[0] if top_models else None
+                model_name = selected_models[0] if selected_models else None
                 model = models[model_name] if model_name and model_name in models else None
-                
+
                 if not model:
                     tprint(f"⚠️ [REGIME_MODELS] Top model {model_name} not found in trained models", color="yellow")
                     return None
@@ -4258,28 +4292,54 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             # Generate regime probabilities for all samples
             tprint(f"🔮 [REGIME_MODELS] Generating regime probabilities using {model_name} (best performing model)", color="cyan")
             regime_probabilities = model.predict_proba(X)
-            regime_labels = model.predict(X)
+            regime_predictions = model.predict(X)
 
             n_regimes = regime_probabilities.shape[1]
             n_samples = len(regime_probabilities)
 
-            # Calculate regime statistics
+            # Get ground truth regime labels from training results
+            y_train_full = training_results.get('y_train_full', None)
+            if y_train_full is None:
+                tprint("⚠️ [REGIME_MODELS] No y_train_full in training results, using model predictions for regime stats", color="yellow")
+                ground_truth_labels = regime_predictions
+            else:
+                ground_truth_labels = y_train_full
+                tprint(f"✅ [REGIME_MODELS] Using ground truth labels for regime statistics: {len(ground_truth_labels)} samples", color="green")
+
+            # Calculate regime statistics based on ground truth labels
             regime_stats = {}
             for i in range(n_regimes):
                 regime_probs = regime_probabilities[:, i]
-                regime_count = np.sum(regime_labels == i)
+                # Count samples where ground truth label is i
+                regime_count = np.sum(ground_truth_labels == i)
+
+                # For samples assigned to this regime, get their prediction confidences
+                regime_mask = ground_truth_labels == i
+                if regime_count > 0:
+                    regime_max_probs = np.max(regime_probabilities[regime_mask], axis=1)
+                    mean_prob = float(np.mean(regime_max_probs))
+                    std_prob = float(np.std(regime_max_probs))
+                    high_conf = int(np.sum(regime_max_probs > 0.8))
+                    med_conf = int(np.sum((regime_max_probs > 0.5) & (regime_max_probs <= 0.8)))
+                    low_conf = int(np.sum(regime_max_probs <= 0.5))
+                else:
+                    mean_prob = 0.0
+                    std_prob = 0.0
+                    high_conf = 0
+                    med_conf = 0
+                    low_conf = 0
 
                 regime_stats[f'regime_{i}'] = {
                     'sample_count': int(regime_count),
-                    'percentage': float(regime_count / n_samples * 100),
-                    'mean_probability': float(np.mean(regime_probs)),
-                    'std_probability': float(np.std(regime_probs)),
+                    'percentage': float(regime_count / n_samples * 100) if n_samples > 0 else 0.0,
+                    'mean_probability': mean_prob,
+                    'std_probability': std_prob,
                     'min_probability': float(np.min(regime_probs)),
                     'max_probability': float(np.max(regime_probs)),
                     'confidence_distribution': {
-                        'high_confidence': int(np.sum(regime_probs > 0.8)),
-                        'medium_confidence': int(np.sum((regime_probs > 0.5) & (regime_probs <= 0.8))),
-                        'low_confidence': int(np.sum(regime_probs <= 0.5))
+                        'high_confidence': high_conf,
+                        'medium_confidence': med_conf,
+                        'low_confidence': low_conf
                     }
                 }
 
@@ -4430,18 +4490,41 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 'overall_statistics': overall_stats,
                 'regime_statistics': regime_stats,
                 'regime_probabilities': regime_probabilities.tolist(),
-                'regime_labels': regime_labels.tolist(),
+                'regime_labels': regime_predictions.tolist(),
+                'ground_truth_labels': ground_truth_labels.tolist() if isinstance(ground_truth_labels, np.ndarray) else ground_truth_labels,
                 'feature_names': feature_names,
                 'data_shape': X.shape,
                 'feature_importance': feature_importance,
                 'top_60_features': top_60_features,
                 'report_type': 'regime_probability_analysis'
             }
-            
+
+            # Add top models comparison
+            if top_models_list:
+                report['top_models'] = top_models_list
+                tprint(f"✅ [REGIME_MODELS] Added top {len(top_models_list)} models to report", color="green")
+
             # Add model metrics if available
             model_metrics = training_results.get('model_metrics', {})
             if model_name in model_metrics:
-                report['model_metrics'] = model_metrics[model_name]
+                metrics = model_metrics[model_name].copy()
+
+                # Calculate R2 score if possible
+                try:
+                    from sklearn.metrics import r2_score
+                    # For classification, use a pseudo R2 based on accuracy
+                    # R2 = 1 - (1 - accuracy)^2 (simplified version)
+                    accuracy = metrics.get('accuracy', 0)
+                    # Use Cohen's Kappa as a better alternative to R2 for classification
+                    from sklearn.metrics import cohen_kappa_score
+                    if y_train_full is not None:
+                        kappa = cohen_kappa_score(ground_truth_labels, regime_predictions)
+                        metrics['cohen_kappa'] = float(kappa)
+                        tprint(f"✅ [REGIME_MODELS] Cohen's Kappa: {kappa:.4f}", color="green")
+                except Exception as e:
+                    tprint(f"⚠️ [REGIME_MODELS] Failed to calculate additional metrics: {e}", color="yellow")
+
+                report['model_metrics'] = metrics
 
             # Generate text report
             text_report = self._generate_text_report(report)
@@ -4609,10 +4692,12 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 md_lines.append("")
                 md_lines.append("| Metric | Value |")
                 md_lines.append("|--------|-------|")
-                md_lines.append(f"| Accuracy | {metrics.get('accuracy', 'N/A'):.4f} |")
-                md_lines.append(f"| Precision (Weighted) | {metrics.get('precision', 'N/A'):.4f} |")
-                md_lines.append(f"| Recall (Weighted) | {metrics.get('recall', 'N/A'):.4f} |")
-                md_lines.append(f"| F1-Score (Weighted) | {metrics.get('f1_score', 'N/A'):.4f} |")
+                md_lines.append(f"| Accuracy | {metrics.get('accuracy', 0):.4f} |")
+                md_lines.append(f"| Precision (Weighted) | {metrics.get('precision', 0):.4f} |")
+                md_lines.append(f"| Recall (Weighted) | {metrics.get('recall', 0):.4f} |")
+                md_lines.append(f"| F1-Score (Weighted) | {metrics.get('f1_score', 0):.4f} |")
+                if 'cohen_kappa' in metrics:
+                    md_lines.append(f"| Cohen's Kappa | {metrics.get('cohen_kappa', 0):.4f} |")
                 md_lines.append("")
             
             # Regime Statistics

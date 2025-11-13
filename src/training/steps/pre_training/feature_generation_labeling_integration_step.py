@@ -20,6 +20,7 @@ from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 from src.training.steps.pre_training.utils.comprehensive_report_generator import ComprehensiveReportGenerator
+from src.training.steps.pre_training.utils.target_quality_metrics import calculate_target_quality_metrics
 
 # Import memory optimization utilities
 try:
@@ -1212,6 +1213,34 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             label_smoothing_config = label_smoothing_metadata.get('config', {})
             label_smoothing_stages = label_smoothing_metadata.get('stages_applied', {})
 
+            # Calculate target quality metrics for predictability assessment
+            tprint("📊 Calculating target quality metrics...", "INFO")
+            target_quality_metrics = {}
+            try:
+                target_quality_metrics = calculate_target_quality_metrics(
+                    labels=labeling_result.labels,
+                    market_data=market_data,
+                    bins=10,
+                    max_lag=10
+                )
+                tprint(f"✅ Target quality metrics calculated successfully", "SUCCESS")
+
+                # Log key quality indicators
+                overall = target_quality_metrics.get('overall_assessment', {})
+                quality_grade = overall.get('quality_grade', 'UNKNOWN')
+                quality_score = overall.get('quality_score', 0.0)
+                tprint(f"🎯 Target Quality: {quality_grade} (Score: {quality_score:.1f}/100)", "INFO")
+
+                # Log issues if any
+                issues = overall.get('issues_detected', [])
+                if issues:
+                    for issue in issues:
+                        tprint(f"⚠️ Quality Issue: {issue}", "WARNING")
+
+            except Exception as e:
+                tprint(f"⚠️ Failed to calculate target quality metrics: {e}", "WARNING")
+                target_quality_metrics = {}
+
             financial_metrics = {
                 'labeling_method': 'volatility_aware_multi_horizon',
                 'volatility_config': {
@@ -1282,7 +1311,8 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'low_volume_warnings': volume_confidence_stats.get('opportunities_penalized', 0)
                 },
                 'label_distribution': label_distrib,
-                'temporal_stability': temporal_stability
+                'temporal_stability': temporal_stability,
+                'target_quality_metrics': target_quality_metrics
             }
 
             technical_metrics = {

@@ -2,12 +2,12 @@
 
 ## 📊 Executive Summary
 
-**Generated:** 2025-11-11 14:36:43 UTC  
+**Generated:** 2025-11-13 08:20:47 UTC  
 **Symbol:** ETHUSDT  
 **Exchange:** binance  
 **Timeframe:** 15m  
 **Direction:** long  
-**Execution Mode:** blank  
+**Execution Mode:** full  
 
 ---
 
@@ -25,36 +25,36 @@
 - **Predictability Threshold**: 30.0%
 
 ### Opportunity Detection
-- **Total Samples Processed**: 173,434
-- **Opportunities Detected**: 66,556
-- **Detection Rate**: 38.38%
-- **Long Opportunities**: 33,279
-- **Short Opportunities**: 33,277
-- **Long/Short Ratio**: 1.00- **Opportunities per Day**: 36.80 (target: ≤8/day)
+- **Total Samples Processed**: 135,775
+- **Opportunities Detected**: 57,493
+- **Detection Rate**: 42.34%
+- **Long Opportunities**: 28,922
+- **Short Opportunities**: 28,571
+- **Long/Short Ratio**: 1.01- **Opportunities per Day**: 40.70 (target: ≤8/day)
 
 ### Quality Filtering
-- **High Quality Opportunities**: 66,556
+- **High Quality Opportunities**: 57,493
 - **Filtered Opportunities**: 0
 - **Quality Acceptance Rate**: 100.00%
-- **Avg Confidence Score**: 0.423
-- **Avg Volatility Adaptation**: 1.17x
+- **Avg Confidence Score**: 0.490
+- **Avg Volatility Adaptation**: 1.18x
 - **Volatility Range**: 1.00x - 2.00x
 
 ### Expected Performance
 - **Expected Profit Target**: 0.7% base (adaptive)
 - **Volatility Adjusted Targets**: 0.7% - 1.4% (based on market conditions)
-- **Quality Weighted Signals**: 66556 of 66556 (100.0%)
+- **Quality Weighted Signals**: 57493 of 57493 (100.0%)
 - **Filtering Efficiency**: 100.0%
-- **Trading Signal Strength**: 0.423
+- **Trading Signal Strength**: 0.490
 - **Market Regime Adaptation**: 1.17x threshold adaptation
 
 ## 🔧 Technical Metrics
 
 ### System Performance
-- **Memory Usage**: 4853.48 MB
-- **Execution Time**: 204.66 seconds
-- **CPU Usage**: 93.90%
-- **Throughput**: 847.44 rows/sec
+- **Memory Usage**: 6701.42 MB
+- **Execution Time**: 41.82 seconds
+- **CPU Usage**: 78.90%
+- **Throughput**: 3246.36 rows/sec
 
 ### Labeling Engine
 - **Method**: volatility_aware_multi_horizon
@@ -73,7 +73,7 @@
 
 ### Performance Optimization
 - **Rolling Window Optimization**: True
-- **Batch Processing Size**: 173434
+- **Batch Processing Size**: 135775
 - **Memory Management**: efficient
 - **Cache Utilization**: 0.0%
 
@@ -85,7 +85,7 @@
 - **Validation Tests Passed**: 8
 - **Validation Tests Failed**: 0
 - **Validation Coverage**: 1.0000
-- **Validation Confidence**: 0.4230
+- **Validation Confidence**: 0.4902
 
 ### Volatility Calibration
 - **Base Threshold**: 0.01%
@@ -99,13 +99,13 @@
 ### Expanded Analysis
 
 #### Signal Distribution
-- **Long Rate**: 50.00%
-- **Short Rate**: 50.00%
+- **Long Rate**: 50.31%
+- **Short Rate**: 49.69%
 - **Signal Balance**: balanced
 
 #### Performance Metrics
-- **Opportunities Per Week**: 257.9
-- **Detection Efficiency**: 38.38%
+- **Opportunities Per Week**: 284.6
+- **Detection Efficiency**: 42.34%
 - **Quality Signal Ratio**: 1.000
 
 #### Market Adaptation
@@ -117,14 +117,14 @@
 
 ### Step Performance
 - **Step Name**: feature_generation_labeling_integration_step
-- **Execution Time**: 204.6570
+- **Execution Time**: 41.8240
 - **Success Rate**: 1.0000
 - **Total Operations**: 1
-- **Data Samples Processed**: 173,434
-- **Labeling Operations**: 66,556
-- **Quality Filtering Operations**: 66,556
-- **Time Coverage**: {'total_days': 1806.6, 'timeframe_minutes': 15.0, 'samples_per_hour': 4.0, 'samples_per_day': 96.0}
-- **Opportunity Analysis**: {'avg_opportunities_per_day': 36.8, 'opportunities_per_hour': 1.54, 'detection_frequency': '1.54 per hour', 'quality_acceptance_rate': 100.0}
+- **Data Samples Processed**: 135,775
+- **Labeling Operations**: 57,493
+- **Quality Filtering Operations**: 57,493
+- **Time Coverage**: {'total_days': 1414.3, 'timeframe_minutes': 15.0, 'samples_per_hour': 4.0, 'samples_per_day': 96.0}
+- **Opportunity Analysis**: {'avg_opportunities_per_day': 40.7, 'opportunities_per_hour': 1.69, 'detection_frequency': '1.69 per hour', 'quality_acceptance_rate': 100.0}
 
 ## 🔍 Troubleshooting Guide
 

@@ -1712,6 +1712,57 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             else:
                 tprint("⚠️ Failed to generate outcome report", "WARNING")
 
+            # EXHAUSTIVE CSV METRICS EXPORT
+            try:
+                # Flatten key metrics for CSV
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                csv_metrics = {
+                    'symbol': config['symbol'],
+                    'exchange': config['exchange'],
+                    'timeframe': config['timeframe'],
+                    'execution_mode': config.get('execution_mode', 'light'),
+                    'total_samples': total_samples,
+                    'opportunities_detected': opportunities_detected,
+                    'long_opportunities': long_opportunities,
+                    'short_opportunities': short_opportunities,
+                    'detection_rate_pct': round(opportunities_detected / total_samples * 100, 4) if total_samples > 0 else 0.0,
+                    'avg_opportunities_per_day': round(avg_opportunities_per_day, 4),
+                    'high_quality_opportunities': high_quality_opportunities,
+                    'filtered_opportunities': filtered_opportunities,
+                    'quality_acceptance_rate_pct': round(high_quality_opportunities / opportunities_detected * 100, 4) if opportunities_detected > 0 else 0.0,
+                    'avg_confidence_score': round(avg_confidence_score, 6),
+                    'avg_volatility_adaptation': round(avg_volatility_adaptation, 6),
+                    'min_volatility_adaptation': round(min_volatility_adaptation, 6),
+                    'max_volatility_adaptation': round(max_volatility_adaptation, 6),
+                    'spikes_detected': spike_detection_stats.get('spikes_detected', 0),
+                    'spikes_corrected': spike_detection_stats.get('spikes_corrected', 0),
+                    'spike_correction_rate_pct': round(spike_detection_stats.get('spike_correction_rate', 0.0) * 100, 4),
+                    'avg_spike_magnitude_pct': round(spike_detection_stats.get('avg_spike_magnitude', 0.0) * 100, 6),
+                    'max_spike_magnitude_pct': round(spike_detection_stats.get('max_spike_magnitude', 0.0) * 100, 6),
+                    'volume_available': volume_confidence_stats.get('volume_available', False),
+                    'avg_volume_ratio': round(volume_confidence_stats.get('avg_volume_ratio', 0.0), 6),
+                    'median_volume_ratio': round(volume_confidence_stats.get('median_volume_ratio', 0.0), 6),
+                    'volume_opportunities_boosted': volume_confidence_stats.get('opportunities_boosted', 0),
+                    'volume_opportunities_penalized': volume_confidence_stats.get('opportunities_penalized', 0),
+                    'volume_opportunities_neutral': volume_confidence_stats.get('opportunities_neutral', 0),
+                    'volume_opportunities_capped': volume_confidence_stats.get('opportunities_capped', 0),
+                    'volume_divergences_detected': volume_confidence_stats.get('divergences_detected', 0),
+                    'volume_avg_adjustment_factor': round(volume_confidence_stats.get('avg_adjustment_factor', 1.0), 6),
+                    'label_mean': (round(financial_metrics.get('label_distribution', {}).get('mean', 0.0), 6) if isinstance(financial_metrics.get('label_distribution', {}), dict) else 0.0),
+                    'label_std': (round(financial_metrics.get('label_distribution', {}).get('std', 0.0), 6) if isinstance(financial_metrics.get('label_distribution', {}), dict) else 0.0),
+                    'label_skew': (round(financial_metrics.get('label_distribution', {}).get('skew', 0.0), 6) if isinstance(financial_metrics.get('label_distribution', {}), dict) else 0.0),
+                    'label_kurtosis': (round(financial_metrics.get('label_distribution', {}).get('kurtosis', 0.0), 6) if isinstance(financial_metrics.get('label_distribution', {}), dict) else 0.0),
+                    'data_completeness_pct': (round(technical_metrics.get('data_characteristics', {}).get('data_completeness', 0.0).rstrip('%') if isinstance(technical_metrics.get('data_characteristics', {}).get('data_completeness', ''), str) else 0.0, 2) if isinstance(technical_metrics.get('data_characteristics', {}), dict) else 0.0),
+                }
+                # Write CSV
+                outcomes_dir = Path('outcomes')
+                outcomes_dir.mkdir(parents=True, exist_ok=True)
+                csv_path = outcomes_dir / f"label_quality_metrics_{config['symbol']}_{config['timeframe']}_{timestamp}.csv"
+                pd.DataFrame([csv_metrics]).to_csv(csv_path, index=False)
+                tprint_success(f"✅ Saved label quality metrics CSV: {csv_path}")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to save label quality metrics CSV: {e}")
+
             # Display spike detection results first
             tprint(f"🔍 Spike Detection Results:", "INFO")
             tprint(f"   • Spikes detected: {spike_detection_stats.get('spikes_detected', 0):,}", "INFO")

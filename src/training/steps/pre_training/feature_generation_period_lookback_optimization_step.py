@@ -3505,13 +3505,17 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             # Generate outcome report
             # Generate both markdown report and CSV export
+            tprint("📊 Generating per-feature metrics CSV export...")
             csv_path = self._generate_csv_export(metrics, artifacts, config)
-            
+
             # Add CSV path to artifacts for report generation
             if csv_path:
                 artifacts['csv_export_path'] = csv_path
-                tprint(f"📊 CSV export: {csv_path}")
-            
+                tprint(f"✅ CSV export completed: {csv_path}")
+            else:
+                tprint("⚠️ CSV export failed - report will be generated without CSV reference")
+
+            tprint("📄 Generating outcome report...")
             report_path = self._generate_outcome_report(metrics, artifacts, config)
             
             if report_path:
@@ -3763,7 +3767,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     'source_artifact': 'labeled_data',
                     'target_columns_used': 'auto_detected',
                     'feature_categories': list(artifacts.get('optimized_lookbacks', {}).keys()),
-                    'optimization_range': '1-100',
+                    'optimization_range': '1-50',
                     'step_size': 1  # Fine granularity for individual feature optimization
                 },
                 
@@ -3866,7 +3870,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             opt_config = FeatureOptimizationConfig(
                 optimization_method=OptimizationMethod.CROSS_VALIDATION,
                 min_lookback=1,
-                max_lookback=101,
+                max_lookback=51,
                 step_size=1,  # Standard step size
                 cv_folds=cv_folds,
                 parallel_processing=True,
@@ -3875,8 +3879,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 use_adaptive_search=True,
                 adaptive_search_method='bayesian'
             )
-            
-            tprint(f"🔧 Using {cv_folds}-fold CV for {execution_mode} mode, range 1-100")
+
+            tprint(f"🔧 Using {cv_folds}-fold CV for {execution_mode} mode, range 1-50")
             
             optimizer = FeatureGenerationOptimizer(opt_config)
             
@@ -4068,35 +4072,35 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                             available_features.append(col)
                     
                     # Set appropriate lookback ranges based on category
-                    # All ranges now span 1-100 as requested
+                    # All ranges now span 1-50 as requested
                     if category == FeatureCategory.MOMENTUM:
-                        lookback_range = (1, 100)
+                        lookback_range = (1, 50)
                     elif category == FeatureCategory.TREND:
-                        lookback_range = (1, 100)
+                        lookback_range = (1, 50)
                     elif category == FeatureCategory.VOLATILITY:
-                        lookback_range = (1, 100)
+                        lookback_range = (1, 50)
                     elif category == FeatureCategory.VOLUME:
-                        lookback_range = (1, 100)
+                        lookback_range = (1, 50)
                     elif category == FeatureCategory.OSCILLATOR:
-                        lookback_range = (1, 100)
+                        lookback_range = (1, 50)
                     elif category == FeatureCategory.SUPPORT_RESISTANCE:
-                        lookback_range = (1, 100)
+                        lookback_range = (1, 50)
                     elif category == FeatureCategory.RETURNS:
-                        lookback_range = (1, 100)
+                        lookback_range = (1, 50)
                     elif category == FeatureCategory.CANDLESTICK_PATTERN:
-                        lookback_range = (1, 100)
+                        lookback_range = (1, 50)
                     elif category == FeatureCategory.ENTROPY:
-                        lookback_range = (1, 100)
+                        lookback_range = (1, 50)
                     elif category == FeatureCategory.ORDER_FLOW:
-                        lookback_range = (1, 100)
+                        lookback_range = (1, 50)
                     elif category == FeatureCategory.ACCELERATION:
-                        lookback_range = (1, 100)
+                        lookback_range = (1, 50)
                     elif category == FeatureCategory.ADVANCED_STATISTICAL:
-                        lookback_range = (1, 100)
+                        lookback_range = (1, 50)
                     elif category == FeatureCategory.SPECTRAL_WAVELET:
-                        lookback_range = (1, 100)
+                        lookback_range = (1, 50)
                     else:
-                        lookback_range = (1, 100)
+                        lookback_range = (1, 50)
                     
                     feature_categories[f"{category.value}_features"] = {
                         'features': available_features,
@@ -4164,35 +4168,35 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                             'momentum', 'rsi', 'stoch', 'roc', 'rate_of_change', 'price_momentum',
                             'return', 'log_return', 'pct_change', 'change', 'diff'
                         ])],
-                    'lookback_range': (1, 100)
+                    'lookback_range': (1, 50)
                 },
                 'trend_features': {
                         'features': [col for col in generated_features.columns if any(x in col.lower() for x in [
                             'ma', 'sma', 'ema', 'trend', 'adx', 'macd', 'moving_average',
                             'close', 'open', 'high', 'low', 'price'
                         ])],
-                    'lookback_range': (1, 100)
+                    'lookback_range': (1, 50)
                 },
                 'volatility_features': {
                         'features': [col for col in generated_features.columns if any(x in col.lower() for x in [
                             'volatility', 'bb', 'atr', 'std', 'variance', 'vol', 'range',
                             'price_range', 'body_size'
                         ])],
-                    'lookback_range': (1, 100)
+                    'lookback_range': (1, 50)
                 },
                 'volume_features': {
                         'features': [col for col in generated_features.columns if any(x in col.lower() for x in [
                             'volume', 'vwap', 'obv', 'volume_ratio', 'money_flow', 'vol',
                             'quote_volume', 'trades'
                         ])],
-                    'lookback_range': (1, 100)
+                    'lookback_range': (1, 50)
                 },
                 'oscillator_features': {
                         'features': [col for col in generated_features.columns if any(x in col.lower() for x in [
                             'oscillator', 'cci', 'williams', 'ultimate', 'osc',
                             'hour', 'day', 'weekend', 'time'
                         ])],
-                    'lookback_range': (1, 100)
+                    'lookback_range': (1, 50)
                 }
             }
             
@@ -4288,7 +4292,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                     'information_score': result.get('information_score', 0.0),
                                     'optimization_method': result.get('optimization_method', 'cross_validation'),
                                     'cv_folds': result.get('cv_folds', 2),
-                                    'lookback_range': result.get('lookback_range', '1-100'),
+                                    'lookback_range': result.get('lookback_range', '1-50'),
                                     'optimization_time': result.get('optimization_time', 0.0),
                                     'memory_usage': result.get('memory_usage', 0.0),
                                     'success': not result.get('error', False)
@@ -4712,7 +4716,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 f.write(f"| Categories Processed | {successful_categories} |\n")
                 avg_lookback_str = f"{avg_lookback:.1f}" if isinstance(avg_lookback, (int, float)) else str(avg_lookback)
                 f.write(f"| Average Lookback Period | {avg_lookback_str} |\n")
-                f.write(f"| Lookback Range | {metrics.get('lookback_range', '1-100')} |\n")
+                f.write(f"| Lookback Range | {metrics.get('lookback_range', '1-50')} |\n")
                 f.write(f"| Step Size | {metrics.get('step_size', 1)} |\n")
                 f.write(f"| Cross-Validation Folds | {metrics.get('cv_folds', 2)} |\n")
                 f.write(f"| Total Optimization Time | {metrics.get('total_optimization_time', 'N/A')} seconds |\n")
@@ -4725,41 +4729,85 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 
                 # Lookback period analysis - Individual Feature Optimization Results
                 f.write("### Individual Feature Optimization Results\n\n")
-                f.write(f"| Feature Category | Optimal Lookback | Performance | Stability | Information |\n")
-                f.write(f"|------------------|------------------|-------------|-----------|-------------|\n")
-                
+                f.write("This table shows detailed optimization results for each feature category.\n\n")
+                f.write(f"| Feature Category | Features | Optimal Lookback | Performance | Stability | Information | Composite | Best Feature | Method |\n")
+                f.write(f"|------------------|----------|------------------|-------------|-----------|-------------|-----------|--------------|--------|\n")
+
                 # Only show categories that were actually optimized
                 categories_to_show = [
                     'momentum', 'trend', 'volatility', 'volume', 'oscillator',
                     'acceleration', 'order_flow', 'advanced_statistical', 'spectral_wavelet',
                     'candlestick_pattern', 'returns', 'support_resistance', 'entropy'
                 ]
-                
+
                 for category in categories_to_show:
                     category_data = optimization_stats['category_analysis'].get(category, {})
                     # Only show if there's actual data
                     if category_data.get('features_count', 0) > 0:
+                        features_count = category_data.get('features_count', 0)
                         avg_perf = category_data.get('avg_performance', 0.0)
                         stability = category_data.get('stability', 0.0)
                         information = category_data.get('information', 0.0)
-                        
+                        composite = category_data.get('composite_score', stability * information if (stability > 0 and information > 0) else 0.0)
+                        best_feature = category_data.get('best_feature', 'N/A')
+                        method = category_data.get('optimization_method', 'cv')
+
                         # Safe formatting for numeric values
                         avg_perf_str = f"{avg_perf:.3f}" if isinstance(avg_perf, (int, float)) else str(avg_perf)
                         stability_str = f"{stability:.3f}" if isinstance(stability, (int, float)) else str(stability)
                         information_str = f"{information:.3f}" if isinstance(information, (int, float)) else str(information)
-                        
-                        f.write(f"| {category.replace('_', ' ').title()} Features | {category_data.get('optimal_lookback', 'N/A')} | {avg_perf_str} | {stability_str} | {information_str} |\n")
-                f.write("\n")
+                        composite_str = f"{composite:.3f}" if isinstance(composite, (int, float)) else str(composite)
+
+                        # Truncate feature name if too long
+                        if isinstance(best_feature, str) and len(best_feature) > 20:
+                            best_feature = best_feature[:17] + "..."
+
+                        f.write(f"| {category.replace('_', ' ').title()} | {features_count} | {category_data.get('optimal_lookback', 'N/A')} | {avg_perf_str} | {stability_str} | {information_str} | {composite_str} | {best_feature} | {method} |\n")
+
+                f.write("\n**Column Descriptions:**\n")
+                f.write("- **Features**: Number of features optimized in this category\n")
+                f.write("- **Optimal Lookback**: Best lookback period across all features in category\n")
+                f.write("- **Performance**: Average performance score (higher is better)\n")
+                f.write("- **Stability**: Average stability across market regimes (higher is better)\n")
+                f.write("- **Information**: Average information content (non-redundancy)\n")
+                f.write("- **Composite**: Stability × Information (quality metric for feature weighting)\n")
+                f.write("- **Best Feature**: Top performing feature in this category\n")
+                f.write("- **Method**: Optimization method used (cv=cross-validation)\n\n")
                 
                 # Feature category optimization
                 f.write("### Feature Category Optimization\n\n")
-                f.write(f"| Category | Optimal Lookback | Features Count | Avg Performance |\n")
-                f.write(f"|----------|------------------|----------------|----------------|\n")
+                f.write("Summary of optimization results by category with all key metrics.\n\n")
+                f.write(f"| Category | Features | Optimal Lookback | Lookback Range | Performance | Stability | Information | Composite | Success Rate |\n")
+                f.write(f"|----------|----------|------------------|----------------|-------------|-----------|-------------|-----------|-------------|\n")
                 for category, data in optimization_stats['category_analysis'].items():
-                    avg_perf = data.get('avg_performance', 0.0)
-                    avg_perf_str = f"{avg_perf:.3f}" if isinstance(avg_perf, (int, float)) else str(avg_perf)
-                    f.write(f"| {category} | {data.get('optimal_lookback', 'N/A')} | {data.get('features_count', 0)} | {avg_perf_str} |\n")
-                f.write("\n")
+                    if data.get('features_count', 0) > 0:
+                        features_count = data.get('features_count', 0)
+                        optimal_lookback = data.get('optimal_lookback', 'N/A')
+                        lookback_range = data.get('lookback_range', '1-50')
+                        avg_perf = data.get('avg_performance', 0.0)
+                        stability = data.get('stability', 0.0)
+                        information = data.get('information', 0.0)
+                        composite = data.get('composite_score', stability * information if (stability > 0 and information > 0) else 0.0)
+                        success_rate = data.get('success_rate', 1.0)
+
+                        # Safe formatting
+                        avg_perf_str = f"{avg_perf:.3f}" if isinstance(avg_perf, (int, float)) else str(avg_perf)
+                        stability_str = f"{stability:.3f}" if isinstance(stability, (int, float)) else str(stability)
+                        information_str = f"{information:.3f}" if isinstance(information, (int, float)) else str(information)
+                        composite_str = f"{composite:.3f}" if isinstance(composite, (int, float)) else str(composite)
+                        success_rate_str = f"{success_rate:.1%}" if isinstance(success_rate, (int, float)) else str(success_rate)
+
+                        f.write(f"| {category} | {features_count} | {optimal_lookback} | {lookback_range} | {avg_perf_str} | {stability_str} | {information_str} | {composite_str} | {success_rate_str} |\n")
+
+                f.write("\n**Column Descriptions:**\n")
+                f.write("- **Features**: Total features in category\n")
+                f.write("- **Optimal Lookback**: Best performing lookback period\n")
+                f.write("- **Lookback Range**: Range of lookback periods tested\n")
+                f.write("- **Performance**: Average cross-validated performance score\n")
+                f.write("- **Stability**: Average stability across different market conditions\n")
+                f.write("- **Information**: Non-redundancy / unique information content\n")
+                f.write("- **Composite**: Combined quality score (Stability × Information)\n")
+                f.write("- **Success Rate**: Percentage of features successfully optimized\n\n")
                 
                 # Stability analysis
                 f.write("### Stability Analysis\n\n")
@@ -4773,13 +4821,34 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 
                 # Performance analysis
                 f.write("### Performance Analysis\n\n")
-                f.write(f"| Metric | Value |\n")
-                f.write(f"|--------|-------|\n")
-                f.write(f"| Average Performance | {optimization_stats['performance_metrics']['average']:.3f} |\n")
-                f.write(f"| Best Performance | {optimization_stats['performance_metrics']['best']:.3f} |\n")
-                f.write(f"| Worst Performance | {optimization_stats['performance_metrics']['worst']:.3f} |\n")
-                f.write(f"| Performance Range | {optimization_stats['performance_metrics']['range']:.3f} |\n")
-                f.write(f"| Performance Std | {optimization_stats['performance_metrics']['std']:.3f} |\n\n")
+                f.write("Cross-validated performance metrics across all optimized features.\n\n")
+                f.write(f"| Metric | Value | Description |\n")
+                f.write(f"|--------|-------|-------------|\n")
+                f.write(f"| Average Performance | {optimization_stats['performance_metrics']['average']:.3f} | Mean cross-validation score across all features |\n")
+                f.write(f"| Best Performance | {optimization_stats['performance_metrics']['best']:.3f} | Highest performing feature's CV score |\n")
+                f.write(f"| Worst Performance | {optimization_stats['performance_metrics']['worst']:.3f} | Lowest performing feature's CV score |\n")
+                f.write(f"| Performance Range | {optimization_stats['performance_metrics']['range']:.3f} | Difference between best and worst (diversity metric) |\n")
+                f.write(f"| Performance Std | {optimization_stats['performance_metrics']['std']:.3f} | Standard deviation of performance scores |\n\n")
+
+                f.write("**Understanding Performance Metrics:**\n\n")
+                f.write("- **Average Performance**: Indicates overall feature quality. Higher values (>0.70) suggest strong predictive features.\n")
+                f.write("- **Best Performance**: Shows the ceiling of feature quality. Values >0.85 indicate excellent features.\n")
+                f.write("- **Worst Performance**: Identifies weakest features. Values <0.60 may need review or removal.\n")
+                f.write("- **Performance Range**: Large ranges (>0.20) suggest diverse feature quality; consider feature selection.\n")
+                f.write("- **Performance Std**: High std (>0.10) indicates inconsistent feature quality across categories.\n\n")
+
+                f.write("**Performance Metric Calculation:**\n\n")
+                f.write("Performance scores are computed using:\n")
+                f.write("1. **Cross-Validation**: K-fold CV (typically 2-5 folds) to assess generalization\n")
+                f.write("2. **Information Criterion**: Measures feature's unique information content\n")
+                f.write("3. **Stability Score**: Consistency across different market regimes\n")
+                f.write("4. **Final Score**: Weighted combination of CV score, information, and stability\n\n")
+
+                f.write("**Quality Thresholds:**\n")
+                f.write("- **Excellent** (≥0.85): High-quality features for model training\n")
+                f.write("- **Good** (0.70-0.85): Solid features, suitable for most models\n")
+                f.write("- **Acceptable** (0.60-0.70): May be useful but require validation\n")
+                f.write("- **Poor** (<0.60): Consider excluding or investigating for issues\n\n")
                 
                 # Detailed per-category feature analysis with individual feature results
                 f.write("### Individual Feature Analysis by Category\n\n")
@@ -4998,7 +5067,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                     'information_score': feature_data.get('information_score', 0.0),
                                     'optimization_method': feature_data.get('optimization_method', 'cross_validation'),
                                     'cv_folds': feature_data.get('cv_folds', 2),
-                                    'lookback_range_tested': feature_data.get('lookback_range', '1-101'),
+                                    'lookback_range_tested': feature_data.get('lookback_range', '1-51'),
                                     'optimization_time_seconds': feature_data.get('optimization_time', 0.0),
                                     'memory_usage_mb': feature_data.get('memory_usage', 0.0),
                                     'success': feature_data.get('success', True)
@@ -5021,7 +5090,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                     'information_score': feature_data.get('information_score', 0.0),
                                     'optimization_method': feature_data.get('optimization_method', 'cross_validation'),
                                     'cv_folds': feature_data.get('cv_folds', 2),
-                                    'lookback_range_tested': feature_data.get('lookback_range', '1-101'),
+                                    'lookback_range_tested': feature_data.get('lookback_range', '1-51'),
                                     'optimization_time_seconds': feature_data.get('optimization_time', 0.0),
                                     'memory_usage_mb': feature_data.get('memory_usage', 0.0),
                                     'success': feature_data.get('success', True)
@@ -5047,7 +5116,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                 'information_score': feature_data.get('information_score', 0.0),
                                 'optimization_method': feature_data.get('optimization_method', 'cross_validation'),
                                 'cv_folds': feature_data.get('cv_folds', 2),
-                                'lookback_range_tested': feature_data.get('lookback_range', '1-100'),
+                                'lookback_range_tested': feature_data.get('lookback_range', '1-50'),
                                 'optimization_time_seconds': feature_data.get('optimization_time', 0.0),
                                 'memory_usage_mb': feature_data.get('memory_usage', 0.0),
                                 'success': feature_data.get('success', True)
@@ -5066,7 +5135,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                             'information_score': category_data.get('information_score', 0.0),
                             'optimization_method': 'cross_validation',
                             'cv_folds': 2,
-                            'lookback_range_tested': '1-100',
+                            'lookback_range_tested': '1-50',
                             'optimization_time_seconds': 0.0,
                             'memory_usage_mb': 0.0,
                             'success': True
@@ -5109,7 +5178,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                             'composite_score': composite_score,  # stability × information for feature weighting
                             'optimization_method': feature_info.get('optimization_method', 'intelligent_ranges'),
                             'cv_folds': 2,
-                            'lookback_range_tested': '1-101',
+                            'lookback_range_tested': '1-51',
                             'optimization_time_seconds': 0.0,
                             'memory_usage_mb': 0.0,
                             'success': True
@@ -5132,15 +5201,33 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             tprint(f"📊 CSV: Collected {len(per_feature_data)} individual feature rows")
             if len(per_feature_data) == 0:
                 tprint("⚠️ CSV: No individual feature data collected - CSV will be empty")
-            
+
             # Create DataFrame and save to CSV
             df = pd.DataFrame(per_feature_data)
-            df.to_csv(csv_path, index=False)
-            
+
+            # Ensure the CSV is created even if empty
+            try:
+                df.to_csv(csv_path, index=False)
+                tprint(f"✅ CSV successfully created with {len(per_feature_data)} rows: {csv_path}")
+
+                # Verify the file was actually created
+                if csv_path.exists():
+                    file_size = csv_path.stat().st_size
+                    tprint(f"   CSV file size: {file_size} bytes")
+                else:
+                    tprint("⚠️ CSV file not found after creation attempt")
+
+            except Exception as write_error:
+                tprint(f"❌ Failed to write CSV file: {write_error}")
+                raise
+
             return str(csv_path)
-            
+
         except Exception as e:
             self.logger.error(f"Failed to generate CSV export: {e}")
+            import traceback
+            tprint(f"❌ CSV Export Error: {e}")
+            tprint(f"   Traceback: {traceback.format_exc()}")
             return None
 
     def _apply_quality_filters(self, per_feature_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -5719,11 +5806,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 'order_flow', 'acceleration', 'advanced_statistical', 'spectral_wavelet',
                 'microstructure', 'cross_timeframe', 'interaction', 'time'
             ]
-            
+
             stats = {
                 'method': artifacts.get('optimization_method', 'default'),
                 'features_analyzed': 0,
-                'lookback_range': '1-100',
+                'lookback_range': '1-50',
                 'cv_folds': cv_folds,
                 'efficiency': 0.85,
                 'stability_score': 0.0,

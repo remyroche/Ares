@@ -572,7 +572,7 @@ class LabelMetricsExporter:
     metrics for label quality assessment.
     """
 
-    def __init__(self, outcomes_dir: Path = Path("/home/user/Ares/outcomes")):
+    def __init__(self, outcomes_dir: Path = Path("outcomes")):
         """
         Initialize the exporter.
 

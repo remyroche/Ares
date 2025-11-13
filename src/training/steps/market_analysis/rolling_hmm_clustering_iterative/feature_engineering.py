@@ -576,6 +576,10 @@ class RollingHMMFeatureEngineer:
         features['momentum_direction_1h'] = np.sign(features['momentum_1h'])
         features['momentum_direction_2h'] = np.sign(features['momentum_2h'])
 
+        # Trend persistence: count consecutive up/down moves (regime characteristic)
+        returns_sign = np.sign(returns)
+        features['trend_persistence'] = returns_sign.rolling(10, min_periods=1).sum()  # -10 to +10 range
+
         return features
 
     def _generate_volatility_features(
@@ -659,6 +663,10 @@ class RollingHMMFeatureEngineer:
         # Log volatility (stabilizes scale)
         features[f'log_volatility_{ewma_config.short_window}'] = np.log(vol_short + 1e-8)
         features[f'log_volatility_{ewma_config.long_window}'] = np.log(vol_long + 1e-8)
+
+        # Volatility breakout indicator: 1 when vol in top 10%, 0 otherwise (regime characteristic)
+        vol_percentile = vol_short.rolling(100, min_periods=20).rank(pct=True)
+        features['vol_breakout'] = (vol_percentile > 0.90).astype(float).fillna(0.0)
 
         return features
 
@@ -1208,6 +1216,10 @@ class RollingHMMFeatureEngineer:
         if 'momentum_direction_1h' in features.columns:
             economic_features['momentum_direction'] = features['momentum_direction_1h']
 
+        # Add trend persistence (captures sustained directional moves - key regime characteristic)
+        if 'trend_persistence' in features.columns:
+            economic_features['trend_persistence'] = features['trend_persistence']
+
         # 2. Volatility features
         if f'volatility_{ewma_config.short_window}' in features.columns:
             economic_features['volatility_short'] = features[f'volatility_{ewma_config.short_window}']
@@ -1215,6 +1227,10 @@ class RollingHMMFeatureEngineer:
             economic_features['volatility_long'] = features[f'volatility_{ewma_config.long_window}']
         if f'volatility_ratio_{ewma_config.name}' in features.columns:
             economic_features['volatility_regime'] = features[f'volatility_ratio_{ewma_config.name}']
+
+        # Add volatility breakout indicator (identifies high-vol regime shifts)
+        if 'vol_breakout' in features.columns:
+            economic_features['vol_breakout'] = features['vol_breakout']
 
         # 3. Volume features (if available)
         volume_cols = [col for col in features.columns if 'volume' in col.lower()]

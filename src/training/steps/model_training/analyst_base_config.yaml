@@ -95,6 +95,7 @@ analyst_config:
         reduce_lr_patience: 7
         verbose: 0
         use_batch_norm: true
+        loss_function: 'mse'  # Explicit regression loss (MSE, MAE, Huber also supported)
       hpo:
         enabled: true
         n_rounds: 3

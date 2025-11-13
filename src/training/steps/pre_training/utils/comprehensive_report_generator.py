@@ -392,7 +392,155 @@ tail -f logs/{step_name}.log
             content += f"- **Trading Signal Strength**: {trading_strength:.3f}\n"
             market_adaptation = ep.get('market_regime_adaptation', 'N/A')
             content += f"- **Market Regime Adaptation**: {market_adaptation}\n"
-        
+
+        # Target Quality Metrics - comprehensive predictability assessment
+        if 'target_quality_metrics' in metrics:
+            content += f"\n### Target Quality Assessment\n"
+            tqm = metrics['target_quality_metrics']
+
+            # Overall assessment
+            if 'overall_assessment' in tqm:
+                overall = tqm['overall_assessment']
+                quality_grade = overall.get('quality_grade', 'UNKNOWN')
+                quality_score = overall.get('quality_score', 0.0)
+
+                # Use emoji/icon based on grade
+                grade_icon = {
+                    'EXCELLENT': '🟢',
+                    'GOOD': '🟡',
+                    'FAIR': '🟠',
+                    'POOR': '🔴',
+                    'CRITICAL': '🚨'
+                }.get(quality_grade, '⚪')
+
+                content += f"\n**Overall Quality: {grade_icon} {quality_grade}** (Score: {quality_score:.1f}/100)\n\n"
+
+                # Issues detected
+                issues = overall.get('issues_detected', [])
+                if issues:
+                    content += f"**Issues Detected:**\n"
+                    for issue in issues:
+                        content += f"- ⚠️ {issue}\n"
+                    content += "\n"
+
+                # Strengths identified
+                strengths = overall.get('strengths_identified', [])
+                if strengths:
+                    content += f"**Strengths Identified:**\n"
+                    for strength in strengths:
+                        content += f"- ✅ {strength}\n"
+                    content += "\n"
+
+                # Recommendations
+                recommendations = overall.get('recommendations', [])
+                if recommendations:
+                    content += f"**Recommendations:**\n"
+                    for rec in recommendations:
+                        content += f"- 💡 {rec}\n"
+                    content += "\n"
+
+            # Variance & Distribution
+            if 'variance_distribution' in tqm:
+                vd = tqm['variance_distribution']
+                content += f"#### a. Variance & Distribution\n"
+                content += f"- **Mean**: {vd.get('mean', 0):.6f}\n"
+                content += f"- **Variance**: {vd.get('variance', 0):.6f}\n"
+                content += f"- **Std Deviation**: {vd.get('std_deviation', 0):.6f}\n"
+                cv = vd.get('coefficient_of_variation', 'N/A')
+                if cv != 'inf' and cv != 'N/A':
+                    content += f"- **Coefficient of Variation**: {cv:.4f}\n"
+                else:
+                    content += f"- **Coefficient of Variation**: {cv}\n"
+                content += f"- **Range**: [{vd.get('min', 0):.4f}, {vd.get('max', 0):.4f}]\n"
+                content += f"- **Has Sufficient Variation**: {'✅ Yes' if vd.get('has_sufficient_variation', False) else '❌ No'}\n"
+                interp = vd.get('interpretation', '')
+                if interp:
+                    content += f"- *{interp}*\n"
+                content += "\n"
+
+            # Autocorrelation & Self-Consistency
+            if 'autocorrelation' in tqm:
+                ac = tqm['autocorrelation']
+                content += f"#### b. Autocorrelation & Self-Consistency\n"
+                content += f"- **Lag-1 Autocorrelation**: {ac.get('lag1_autocorrelation', 0):.4f}\n"
+                content += f"- **Mean Autocorrelation**: {ac.get('mean_autocorrelation', 0):.4f}\n"
+                content += f"- **Max Abs Autocorrelation**: {ac.get('max_abs_autocorrelation', 0):.4f}\n"
+                content += f"- **Has Temporal Structure**: {'✅ Yes' if ac.get('has_temporal_structure', False) else '❌ No'}\n"
+                content += f"- **Is Highly Noisy**: {'⚠️ Yes' if ac.get('is_highly_noisy', False) else '✅ No'}\n"
+                interp = ac.get('interpretation', '')
+                if interp:
+                    content += f"- *{interp}*\n"
+                content += "\n"
+
+            # Distribution & Outliers
+            if 'distribution_outliers' in tqm:
+                do = tqm['distribution_outliers']
+                content += f"#### c. Distribution & Outliers\n"
+                content += f"- **Median**: {do.get('median', 0):.6f}\n"
+                content += f"- **IQR (25th-75th)**: {do.get('iqr', 0):.6f}\n"
+                content += f"- **Skewness**: {do.get('skewness', 0):.4f}\n"
+                content += f"- **Kurtosis**: {do.get('kurtosis', 0):.4f}\n"
+                content += f"- **Outliers Detected**: {do.get('n_outliers', 0)} ({do.get('outlier_percentage', 0):.2f}%)\n"
+                content += f"- **Is Symmetric**: {'✅ Yes' if do.get('is_symmetric', False) else '❌ No'}\n"
+                content += f"- **Is Heavy-Tailed**: {'⚠️ Yes' if do.get('is_heavy_tailed', False) else '✅ No'}\n"
+                interp = do.get('interpretation', '')
+                if interp:
+                    content += f"- *{interp}*\n"
+                content += "\n"
+
+            # Target Entropy
+            if 'entropy' in tqm:
+                ent = tqm['entropy']
+                content += f"#### d. Target Entropy\n"
+                content += f"- **Shannon Entropy**: {ent.get('shannon_entropy', 0):.4f}\n"
+                content += f"- **Normalized Entropy**: {ent.get('normalized_entropy', 0):.4f} (0=deterministic, 1=random)\n"
+                content += f"- **Is Predictable**: {'✅ Yes' if ent.get('is_predictable', False) else '❌ No'}\n"
+                content += f"- **Is Highly Diverse**: {'⚠️ Yes' if ent.get('is_highly_diverse', False) else '✅ No'}\n"
+                interp = ent.get('interpretation', '')
+                if interp:
+                    content += f"- *{interp}*\n"
+                content += "\n"
+
+            # Naive Feature-Free Baselines
+            if 'baseline_predictors' in tqm:
+                bp = tqm['baseline_predictors']
+                content += f"#### e. Naive Feature-Free Baselines\n"
+
+                # Mean predictor
+                if 'mean_predictor' in bp:
+                    mp = bp['mean_predictor']
+                    content += f"- **Mean Predictor**: MSE={mp.get('mse', 0):.6f}, RMSE={mp.get('rmse', 0):.6f}\n"
+
+                # Median predictor
+                if 'median_predictor' in bp:
+                    mdp = bp['median_predictor']
+                    content += f"- **Median Predictor**: MSE={mdp.get('mse', 0):.6f}, RMSE={mdp.get('rmse', 0):.6f}\n"
+
+                # Persistence predictor
+                if 'persistence_predictor' in bp:
+                    pp = bp['persistence_predictor']
+                    content += f"- **Persistence Predictor**: MSE={pp.get('mse', 0):.6f}, RMSE={pp.get('rmse', 0):.6f}\n"
+
+                # Random sampling
+                if 'random_sampling_predictor' in bp:
+                    rsp = bp['random_sampling_predictor']
+                    content += f"- **Random Sampling**: MSE={rsp.get('mse', 0):.6f}, RMSE={rsp.get('rmse', 0):.6f}\n"
+
+                # Zero predictor
+                if 'zero_predictor' in bp:
+                    zp = bp['zero_predictor']
+                    content += f"- **Zero Predictor**: MSE={zp.get('mse', 0):.6f}, RMSE={zp.get('rmse', 0):.6f}\n"
+
+                # Best baseline
+                if 'best_baseline' in bp:
+                    bb = bp['best_baseline']
+                    content += f"\n- **🏆 Best Baseline**: {bb.get('name', 'unknown')} (MSE={bb.get('mse', 0):.6f})\n"
+
+                interp = bp.get('interpretation', '')
+                if interp:
+                    content += f"- *{interp}*\n"
+                content += "\n"
+
         return content + "\n"
 
     def _format_technical_metrics(self, metrics: Dict[str, Any]) -> str:

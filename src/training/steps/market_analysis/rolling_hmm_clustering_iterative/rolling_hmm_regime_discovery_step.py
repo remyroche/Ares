@@ -705,16 +705,21 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             tprint(f"🐛 DEBUG: [STEP 6] regime_labels after HMM predict: shape={regime_labels.shape}, unique={np.unique(regime_labels)}", "INFO")
             tprint(f"🐛 DEBUG: [STEP 6] regime_probs after HMM predict: {regime_probs.shape}", "INFO")
 
-            # FIX #2: Apply regime quality filter (only trade when confidence is high)
-            confidence_threshold = params.get('regime_confidence_threshold', 0.65)
+            # FIX #2: Apply regime quality filter (only remove worst offenders by confidence)
+            # Instead of fixed threshold, remove bottom 10% by confidence
+            confidence_filter_pct = params.get('regime_confidence_filter_pct', 0.10)
             max_probs = regime_probs.max(axis=1)
+
+            # Calculate dynamic threshold: remove only bottom X% by confidence
+            confidence_threshold = np.percentile(max_probs, confidence_filter_pct * 100)
             confident_mask = max_probs >= confidence_threshold
 
             # Count filtered regimes
             n_filtered = int(np.sum(~confident_mask))
             filter_pct = (n_filtered / len(regime_labels)) * 100 if len(regime_labels) > 0 else 0
 
-            tprint_info(f"  → FIX #2: Applying regime confidence filter (threshold={confidence_threshold:.1%})")
+            tprint_info(f"  → FIX #2: Applying regime confidence filter (bottom {confidence_filter_pct:.0%})")
+            tprint_info(f"     Dynamic threshold: {confidence_threshold:.3f}")
             tprint_info(f"     Filtered {n_filtered}/{len(regime_labels)} samples ({filter_pct:.1f}%) due to low confidence")
 
             # Apply filter: mark low-confidence regimes as -1 (no trade)

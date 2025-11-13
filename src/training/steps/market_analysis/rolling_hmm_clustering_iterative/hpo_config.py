@@ -875,9 +875,9 @@ class RollingHMMOptimizer:
 
         coarse_grid = {
             'ewma_config_idx': [0, 1, 2],  # Test all EWMA configs (4+20, 6+20, 8+20)
-            'n_components': [4, 5, 6],  # States to try
+            'n_components': [3, 4, 5],  # States to try (REDUCED: fewer regimes = better separation)
             'min_covar': [1e-3, 5e-3, 1e-2],  # Min covariance: 0.001, 0.005, 0.01
-            'kappa': [0.5, 1.0, 2.0, 3.0, 4.0]  # Kappa values
+            'kappa': [2.0, 5.0, 10.0, 20.0, 50.0]  # Kappa values (INCREASED: higher stickiness = better CV accuracy)
         }
 
         best_score = -np.inf

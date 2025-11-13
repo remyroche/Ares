@@ -333,6 +333,11 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         # Filter normalization validation
         validation['validations']['filter_normalization'] = self._validate_filter_normalization(dataset, config)
 
+        # Baseline predictive check
+        if config.get('run_baseline_check', True):  # Default: enabled
+            tprint_info(f"🔍 Running baseline predictive check for {dataset_name}...")
+            validation['validations']['baseline_predictive_check'] = self._run_baseline_predictive_check(dataset, config)
+
         # Overall assessment
         validation['overall_assessment'] = self._assess_dataset_quality(validation['validations'], config, dataset)
 
@@ -729,6 +734,77 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             filter_validation['recommendations'].append("❌ Multiple filter grades need normalization/scaling fixes")
 
         return filter_validation
+
+    def _run_baseline_predictive_check(self, dataset: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Run baseline predictive check on the dataset."""
+        try:
+            from src.training.steps.pre_training.baseline_predictive_check import BaselinePredictiveCheck
+            from pathlib import Path
+
+            # Identify target and feature columns
+            target_patterns = ['target', 'label', 'return', 'quality_scores', 'price_target', 'volatility_target', 'direction']
+            target_cols = []
+
+            for col in dataset.columns:
+                col_lower = col.lower()
+                if any(pattern in col_lower for pattern in target_patterns):
+                    target_cols.append(col)
+
+            # If no obvious targets found, look for columns with target-like suffixes
+            if not target_cols:
+                for col in dataset.columns:
+                    col_lower = col.lower()
+                    if any(suffix in col_lower for suffix in ['_target', '_label', '_score', '_signal', '_direction']):
+                        target_cols.append(col)
+
+            if not target_cols:
+                return {
+                    'success': False,
+                    'error': 'No target column found in dataset',
+                    'recommendation': 'Ensure labeled data contains target columns'
+                }
+
+            target_col = target_cols[0]
+            feature_cols = [col for col in dataset.columns
+                           if col not in target_cols + ['timestamp', 'open_time', 'close_time']]
+
+            if not feature_cols:
+                return {
+                    'success': False,
+                    'error': 'No feature columns found in dataset',
+                    'recommendation': 'Ensure dataset contains feature columns'
+                }
+
+            # Prepare data
+            X = dataset[feature_cols]
+            y = dataset[target_col]
+
+            # Run the check (no feature limit for validation step - use all features)
+            tprint_info(f"🔍 Running baseline check on all {len(feature_cols)} features...")
+            checker = BaselinePredictiveCheck(max_features=None, random_state=42)
+            results = checker.run_check(X, y)
+
+            # Save CSV to outcomes directory
+            if results.get('success', False):
+                outcomes_dir = Path('outcomes')
+                outcomes_dir.mkdir(exist_ok=True)
+                csv_path = checker.save_results_to_csv(
+                    outcomes_dir,
+                    filename_prefix="baseline_check_final_validation"
+                )
+                if csv_path:
+                    tprint_info(f"📊 Baseline check CSV saved: {csv_path}")
+                    results['csv_path'] = csv_path
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Baseline predictive check failed: {e}", exc_info=True)
+            return {
+                'success': False,
+                'error': str(e),
+                'recommendation': 'Check logs for detailed error information'
+            }
 
     def _assess_dataset_quality(self, validations: Dict[str, Any], config: Dict[str, Any], dataset: pd.DataFrame) -> Dict[str, Any]:
         """Assess overall dataset quality based on all validations."""
@@ -1256,6 +1332,24 @@ class FeatureGenerationFinalValidationStep(BaseStep):
                         report += f"- **Status:** Failed - {cv.get('error', 'Unknown error')}\n"
                         if 'insufficient_data' in cv:
                             report += f"- **Sample Size:** {cv.get('sample_size', 0)} (minimum required: 100)\n"
+
+                # Baseline Predictive Check Details
+                if 'baseline_predictive_check' in validations:
+                    bpc = validations['baseline_predictive_check']
+                    if bpc.get('success', False):
+                        from src.training.steps.pre_training.baseline_predictive_check import BaselinePredictiveCheck
+
+                        # Create a temporary checker to format results
+                        temp_checker = BaselinePredictiveCheck()
+                        temp_checker.results = bpc
+
+                        # Add formatted markdown section
+                        report += "\n" + temp_checker.format_for_markdown()
+                    else:
+                        report += f"\n#### ⚠️ Baseline Predictive Check\n"
+                        report += f"- **Status:** Failed - {bpc.get('error', 'Unknown error')}\n"
+                        if bpc.get('recommendation'):
+                            report += f"- **Recommendation:** {bpc.get('recommendation')}\n"
 
                 # Issues and warnings
                 issues = assessment.get('issues', [])

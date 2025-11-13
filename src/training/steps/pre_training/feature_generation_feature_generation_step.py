@@ -177,9 +177,27 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
                     tprint(f"✅ Artifact updated: {features_artifact_path}")
                 elif not remove_constants:
                     tprint("ℹ️  Keeping constant features (remove_constant_features=False)")
-            
+
+            # Run baseline predictive check if enabled
+            baseline_check_enabled = config.get('run_baseline_check', True)  # Default: enabled
+            baseline_check_results = None
+            if baseline_check_enabled:
+                tprint(f"🔍 Running baseline predictive check...")
+                try:
+                    baseline_check_results = self._run_baseline_predictive_check(features, config)
+                    if baseline_check_results and baseline_check_results.get('success', False):
+                        tprint(f"✅ Baseline predictive check completed")
+                        metrics['baseline_check'] = baseline_check_results
+                    else:
+                        tprint(f"⚠️ Baseline predictive check failed or returned no results")
+                except Exception as e:
+                    tprint(f"⚠️ Baseline predictive check failed: {e}")
+                    self.logger.warning(f"Baseline predictive check failed: {e}")
+            else:
+                tprint(f"ℹ️ Baseline predictive check disabled (run_baseline_check=False)")
+
             # Generate outcome report
-            report_path = self._generate_outcome_report(metrics, artifacts, config)
+            report_path = self._generate_outcome_report(metrics, artifacts, config, baseline_check_results)
             if report_path:
                 tprint(f"📄 Outcome report: {report_path}")
             
@@ -462,6 +480,58 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             tprint(f"✅ Generated {len(features.columns)} features using fallback simple generation")
             return features
 
+    def _run_baseline_predictive_check(self, features: pd.DataFrame, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Run baseline predictive check on generated features."""
+        try:
+            from src.training.steps.pre_training.baseline_predictive_check import BaselinePredictiveCheck
+            from pathlib import Path
+
+            # Need a target variable - try to load it or create a simple one
+            # For feature generation step, we may not have targets yet, so create a simple target
+            # based on returns if available, or skip the check
+
+            if 'close' in features.columns:
+                # Create a simple target: next period return
+                target = features['close'].pct_change().shift(-1)
+                target = target.dropna()
+            elif 'returns_features_returns' in features.columns:
+                # Use returns feature as target
+                target = features['returns_features_returns'].shift(-1)
+                target = target.dropna()
+            else:
+                # Try to find any column with 'return' in name
+                return_cols = [col for col in features.columns if 'return' in col.lower()]
+                if return_cols:
+                    target = features[return_cols[0]].shift(-1)
+                    target = target.dropna()
+                else:
+                    tprint("⚠️ No suitable target found for baseline check, skipping")
+                    return None
+
+            # Remove target column from features if it exists
+            feature_cols = [col for col in features.columns if col not in ['close', 'returns_features_returns']]
+            X = features[feature_cols]
+
+            # Run the check with max 400 features
+            tprint(f"🔍 Running baseline check on {len(X.columns)} features (sampling max 400)...")
+            checker = BaselinePredictiveCheck(max_features=400, random_state=42)
+            results = checker.run_check(X, target)
+
+            # Save CSV to outcomes directory
+            if results.get('success', False):
+                outcomes_dir = Path('outcomes')
+                outcomes_dir.mkdir(exist_ok=True)
+                csv_path = checker.save_results_to_csv(outcomes_dir, filename_prefix="baseline_check_feature_generation")
+                if csv_path:
+                    tprint(f"📊 Baseline check CSV saved: {csv_path}")
+                    results['csv_path'] = csv_path
+
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Baseline predictive check failed: {e}", exc_info=True)
+            return None
+
     def _add_basic_features(self, features: pd.DataFrame, market_data: pd.DataFrame) -> pd.DataFrame:
         """Add basic features as fallback when FeatureBank doesn't generate enough."""
         import pandas as pd
@@ -584,7 +654,7 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
         tprint(f"✅ Added {len(features.columns)} basic features as fallback")
         return features
 
-    def _generate_outcome_report(self, metrics: Dict[str, Any], artifacts: Dict[str, Any], config: Dict[str, Any]) -> Optional[str]:
+    def _generate_outcome_report(self, metrics: Dict[str, Any], artifacts: Dict[str, Any], config: Dict[str, Any], baseline_check_results: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Generate comprehensive outcome report in markdown format."""
         try:
             from pathlib import Path
@@ -763,6 +833,17 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
                     f.write(f"**Path:** `{artifact_path}`\n")
                     f.write(f"**Size:** {file_size:.2f} KB\n\n")
                 
+                # Add baseline predictive check results if available
+                if baseline_check_results and baseline_check_results.get('success', False):
+                    from src.training.steps.pre_training.baseline_predictive_check import BaselinePredictiveCheck
+
+                    # Create a temporary checker to format results
+                    temp_checker = BaselinePredictiveCheck()
+                    temp_checker.results = baseline_check_results
+
+                    # Add formatted markdown section
+                    f.write(temp_checker.format_for_markdown())
+
                 f.write("## Next Steps\n\n")
                 f.write("- Features are ready for feature selection and interaction generation\n")
                 f.write("- Consider running lookback optimization for optimal feature parameters\n")

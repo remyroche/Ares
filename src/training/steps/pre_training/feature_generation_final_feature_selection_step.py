@@ -593,13 +593,47 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             shap_values = self._generate_shap_values(feature_sets, combined_features_df, targets, config)
             tprint_info(f"✅ SHAP values generated in {time.time()-t0:.2f}s")
 
+            # Run baseline predictive check if enabled
+            baseline_check_results = None
+            baseline_check_enabled = config.get('run_baseline_check', True)  # Default: enabled
+            if baseline_check_enabled:
+                t0 = time.time()
+                tprint_info("🔍 Running baseline predictive check on selected features...")
+                try:
+                    # Run check on the largest feature set (60 features)
+                    largest_set_name = None
+                    for name in ['selected_feature_dataframe_60', 'selected_feature_dataframe_50', 'selected_feature_dataframe_40']:
+                        if name in feature_sets:
+                            largest_set_name = name
+                            break
+
+                    if largest_set_name and isinstance(feature_sets[largest_set_name], pd.DataFrame):
+                        baseline_check_results = self._run_baseline_predictive_check(
+                            feature_sets[largest_set_name],
+                            targets,
+                            config
+                        )
+                        if baseline_check_results and baseline_check_results.get('success', False):
+                            tprint_success(f"✅ Baseline predictive check completed in {time.time()-t0:.2f}s")
+                            # Add to feature_sets so it's included in the report
+                            feature_sets['baseline_check'] = baseline_check_results
+                        else:
+                            tprint_warning(f"⚠️ Baseline predictive check failed or returned no results")
+                    else:
+                        tprint_warning(f"⚠️ No suitable feature set found for baseline check")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Baseline predictive check failed: {e}")
+                    logger.warning(f"Baseline predictive check failed: {e}")
+            else:
+                tprint_info(f"ℹ️ Baseline predictive check disabled (run_baseline_check=False)")
+
             # Generate artifacts
             t0 = time.time()
             tprint_info("⏱️ [10/10] Generating and saving artifacts...")
             artifacts = self._generate_artifacts(feature_sets, shap_values, config, combined_features_df)
 
             # Create comprehensive outcome report
-            outcome_report = self._create_outcome_report(feature_sets, shap_values, config)
+            outcome_report = self._create_outcome_report(feature_sets, shap_values, config, baseline_check_results)
 
             # Save artifacts
             saved_artifacts = []
@@ -2673,7 +2707,70 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_warning(f"⚠️ Failed to get detailed vectorization stats: {e}")
             return {'enabled': True, 'error': str(e)}
 
-    def _create_outcome_report(self, feature_sets: Dict[str, List[str]], shap_values: Dict[str, Any], config: Dict[str, Any]) -> str:
+    def _run_baseline_predictive_check(
+        self,
+        feature_dataframe: pd.DataFrame,
+        targets: pd.Series,
+        config: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Run baseline predictive check on selected features."""
+        try:
+            from src.training.steps.pre_training.baseline_predictive_check import BaselinePredictiveCheck
+            from pathlib import Path
+
+            # Identify target column
+            if isinstance(targets, pd.Series):
+                target = targets
+            elif isinstance(targets, pd.DataFrame):
+                # Try to find the target column
+                target_col = None
+                for col in ['target', 'price_target_vol_normalized', 'label', 'return']:
+                    if col in targets.columns:
+                        target_col = col
+                        break
+                if target_col:
+                    target = targets[target_col]
+                else:
+                    # Use last column
+                    target = targets.iloc[:, -1]
+            else:
+                tprint_warning("⚠️ Invalid target type, skipping baseline check")
+                return None
+
+            # Get feature columns (exclude target columns)
+            target_column_names = TARGET_COLUMN_NAMES
+            feature_cols = [col for col in feature_dataframe.columns if col not in target_column_names]
+
+            if not feature_cols:
+                tprint_warning("⚠️ No feature columns found, skipping baseline check")
+                return None
+
+            X = feature_dataframe[feature_cols]
+
+            # Run the check (no feature limit - use all selected features)
+            tprint_info(f"🔍 Running baseline check on all {len(feature_cols)} selected features...")
+            checker = BaselinePredictiveCheck(max_features=None, random_state=42)
+            results = checker.run_check(X, target)
+
+            # Save CSV to outcomes directory
+            if results.get('success', False):
+                outcomes_dir = Path('outcomes')
+                outcomes_dir.mkdir(exist_ok=True)
+                csv_path = checker.save_results_to_csv(
+                    outcomes_dir,
+                    filename_prefix="baseline_check_final_feature_selection"
+                )
+                if csv_path:
+                    tprint_info(f"📊 Baseline check CSV saved: {csv_path}")
+                    results['csv_path'] = csv_path
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Baseline predictive check failed: {e}", exc_info=True)
+            return None
+
+    def _create_outcome_report(self, feature_sets: Dict[str, List[str]], shap_values: Dict[str, Any], config: Dict[str, Any], baseline_check_results: Optional[Dict[str, Any]] = None) -> str:
         """Create comprehensive outcome report."""
         try:
             report = f"""# Final Feature Selection Outcome Report
@@ -2751,6 +2848,17 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             report += f"- **CPU Optimizer:** {'Available' if self.cpu_optimizer else 'Not Available'}\n"
             report += f"- **GPU Manager:** {'Available' if self.gpu_manager else 'Not Available'}\n"
             report += f"- **Memory Optimizer:** {'Available' if self.memory_optimizer else 'Not Available'}\n"
+
+            # Add baseline predictive check results if available
+            if baseline_check_results and baseline_check_results.get('success', False):
+                from src.training.steps.pre_training.baseline_predictive_check import BaselinePredictiveCheck
+
+                # Create a temporary checker to format results
+                temp_checker = BaselinePredictiveCheck()
+                temp_checker.results = baseline_check_results
+
+                # Add formatted markdown section
+                report += "\n" + temp_checker.format_for_markdown()
 
             # Generated artifacts
             report += "\n## Generated Artifacts\n"

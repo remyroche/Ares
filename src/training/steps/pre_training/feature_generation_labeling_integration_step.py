@@ -582,6 +582,14 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 VolatilityAwareConfig, VolatilityAwareMultiHorizonLabeler, LabelDefinitionType
             )
 
+            # Import advanced ML-based quality assessment and validation tools
+            from src.research.profit_labeling.ml_label_quality_assessor import (
+                MLLabelQualityAssessor, MLQualityAssessmentConfig, MLModelType
+            )
+            from src.research.profit_labeling.labeling_validator import (
+                LabelingValidator, LabelingValidatorConfig
+            )
+
             # Get optimal threshold for this symbol/timeframe combination
             optimal_threshold = get_optimal_threshold(config['symbol'], config['timeframe'])
             
@@ -655,6 +663,127 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     raise ValueError(f"Labeling failed: {labeling_result.error if hasattr(labeling_result, 'error') else 'Unknown error'}")
 
                 tprint(f"📈 Labeling completed: success={labeling_result.success}", "SUCCESS")
+
+                # ============================================================================
+                # ADVANCED ML-BASED QUALITY ASSESSMENT & VALIDATION
+                # ============================================================================
+                # Wire in the advanced labeling analysis capabilities to ensure labels
+                # are fit for ML model training
+
+                ml_quality_result = None
+                validation_results = {}
+
+                try:
+                    tprint("🤖 Running ML-based label quality assessment...", "INFO")
+
+                    # Initialize ML quality assessor with configuration
+                    ml_config = MLQualityAssessmentConfig(
+                        primary_model=MLModelType.ENSEMBLE,
+                        ensemble_models=[
+                            MLModelType.RANDOM_FOREST,
+                            MLModelType.GRADIENT_BOOSTING,
+                        ],
+                        max_features=50,
+                        feature_selection_method="mutual_info",
+                        include_technical_indicators=True,
+                        include_market_microstructure=True,
+                        train_test_split=0.7,
+                        cv_folds=5,
+                        enable_online_learning=True,
+                        update_frequency=100,
+                        min_r2_score=0.1,
+                        min_feature_importance=0.01,
+                    )
+
+                    ml_assessor = MLLabelQualityAssessor(ml_config)
+
+                    # Prepare labeled data for ML assessment
+                    labeled_data = market_data.copy()
+                    if isinstance(labeling_result.labels, pd.DataFrame):
+                        # Use first column for ML assessment
+                        labeled_data['label'] = labeling_result.labels.iloc[:, 0]
+                    else:
+                        labeled_data['label'] = labeling_result.labels
+
+                    # Run ML quality assessment (only if enough non-zero labels)
+                    if (labeled_data['label'] != 0).sum() >= 100:
+                        ml_quality_result = ml_assessor.assess_label_quality(
+                            labeled_data=labeled_data,
+                            market_data=market_data,
+                            target_column='label'
+                        )
+
+                        tprint(f"✅ ML Quality Assessment completed:", "SUCCESS")
+                        tprint(f"   → Predictive Power: {ml_quality_result.quality_scores.get('predictive_power', 0):.3f}", "INFO")
+                        tprint(f"   → Information Content: {ml_quality_result.quality_scores.get('information_content', 0):.3f}", "INFO")
+                        tprint(f"   → Stability Score: {ml_quality_result.quality_scores.get('stability_score', 0):.3f}", "INFO")
+                    else:
+                        tprint(f"⚠️ Skipping ML assessment: insufficient non-zero labels ({(labeled_data['label'] != 0).sum()} < 100)", "WARNING")
+
+                except Exception as e:
+                    tprint(f"⚠️ ML quality assessment failed: {e}", "WARNING")
+                    tprint("📊 Continuing with basic quality scoring", "INFO")
+
+                try:
+                    tprint("🔍 Running comprehensive labeling validation...", "INFO")
+
+                    # Initialize validator with configuration
+                    validator_config = LabelingValidatorConfig(
+                        validate_consistency=True,
+                        validate_stability=True,
+                        validate_predictiveness=True,
+                        validate_significance=True,
+                        validate_bias=True,
+                        min_sample_size=100,
+                        consistency_threshold=0.7,
+                        stability_window=50,
+                        predictiveness_threshold=0.05,
+                        significance_level=0.05,
+                    )
+
+                    validator = LabelingValidator(validator_config)
+
+                    # Run comprehensive validation (only if enough data)
+                    if len(market_data) >= validator_config.min_sample_size:
+                        validation_results = validator.validate_labeling_quality(
+                            market_data=market_data,
+                            labeled_data=labeled_data,
+                            labeling_config=None  # Already labeled
+                        )
+
+                        tprint(f"✅ Labeling Validation completed: {len(validation_results)} validations", "SUCCESS")
+
+                        # Report key validation results
+                        for metric_name, result in validation_results.items():
+                            if hasattr(result, 'passed') and hasattr(result, 'score'):
+                                status = "✅" if result.passed else "⚠️"
+                                tprint(f"   {status} {metric_name}: {result.score:.3f} ({'PASS' if result.passed else 'FAIL'})", "INFO")
+                    else:
+                        tprint(f"⚠️ Skipping validation: insufficient data ({len(market_data)} < {validator_config.min_sample_size})", "WARNING")
+
+                except Exception as e:
+                    tprint(f"⚠️ Labeling validation failed: {e}", "WARNING")
+                    tprint("📊 Continuing with basic quality checks", "INFO")
+
+                # Store ML quality and validation results in labeling_result metadata
+                if ml_quality_result:
+                    labeling_result.metadata['ml_quality_assessment'] = {
+                        'quality_scores': {k.value: v for k, v in ml_quality_result.quality_scores.items()},
+                        'feature_importance': ml_quality_result.feature_importance,
+                        'model_performance': ml_quality_result.model_performance,
+                    }
+
+                if validation_results:
+                    labeling_result.metadata['labeling_validation'] = {
+                        metric_name: {
+                            'passed': result.passed if hasattr(result, 'passed') else None,
+                            'score': result.score if hasattr(result, 'score') else None,
+                            'message': result.message if hasattr(result, 'message') else None,
+                        }
+                        for metric_name, result in validation_results.items()
+                    }
+
+                tprint("✅ Advanced labeling analysis complete", "SUCCESS")
 
             except Exception as e:
                 tprint(f"❌ Labeling process failed: {e}", "ERROR")

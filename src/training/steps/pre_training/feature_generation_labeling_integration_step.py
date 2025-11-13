@@ -61,6 +61,62 @@ def get_optimal_threshold(symbol: str, timeframe: str) -> float:
     return thresholds.get(symbol, {}).get(timeframe, BASE_VOLATILITY_THRESHOLD)
 
 
+def get_label_smoothing_params(timeframe: str) -> Dict[str, Any]:
+    """
+    Get optimal label smoothing parameters based on timeframe.
+
+    Args:
+        timeframe: Timeframe string (e.g., '15m', '1h', '4h', '1d')
+
+    Returns:
+        Dictionary with smoothing parameters optimized for the timeframe
+
+    Timeframe recommendations:
+        - High-frequency (1m-5m): More smoothing for noisy signals
+        - Medium-frequency (15m-1h): Balanced smoothing (default)
+        - Low-frequency (4h-daily): Lighter smoothing, slower EMA
+    """
+    # Parse timeframe to minutes
+    try:
+        tf_minutes = timeframe_to_minutes(timeframe)
+    except:
+        # Default to 15m if parsing fails
+        tf_minutes = 15
+
+    # High-frequency: 1m - 5m bars
+    if tf_minutes <= 5:
+        return {
+            'epsilon': 0.12,        # More smoothing for noisy signals
+            'gamma': 1.5,           # Stronger shrinkage for uncertain samples
+            'ema_decay': 0.90,      # Faster reaction to regime changes
+            'apply_classification_smoothing': True,
+            'apply_uncertainty_shrinkage': True,
+            'apply_causal_ema': True,
+        }
+
+    # Medium-frequency: 15m - 1h bars (DEFAULT)
+    elif tf_minutes <= 60:
+        return {
+            'epsilon': 0.08,        # Moderate smoothing
+            'gamma': 1.0,           # Balanced shrinkage
+            'ema_decay': 0.95,      # Standard temporal smoothing
+            'apply_classification_smoothing': True,
+            'apply_uncertainty_shrinkage': True,
+            'apply_causal_ema': True,
+        }
+
+    # Low-frequency: 4h - daily bars
+    else:
+        return {
+            'epsilon': 0.05,        # Lighter smoothing (data less noisy)
+            'gamma': 0.5,           # Gentler shrinkage
+            'ema_decay': 0.98,      # Slower reaction (preserve long-term signal)
+            'apply_classification_smoothing': True,
+            'apply_uncertainty_shrinkage': True,
+            'apply_causal_ema': False,  # May skip EMA for daily data
+        }
+
+
 def calculate_volume_confidence_adjustment(
     data: pd.DataFrame,
     labels: pd.Series,
@@ -592,7 +648,11 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
 
             # Get optimal threshold for this symbol/timeframe combination
             optimal_threshold = get_optimal_threshold(config['symbol'], config['timeframe'])
-            
+
+            # Get timeframe-optimized label smoothing parameters
+            smoothing_params = get_label_smoothing_params(config['timeframe'])
+            tprint(f"🎨 Label smoothing configured for {config['timeframe']}: ε={smoothing_params['epsilon']:.3f}, γ={smoothing_params['gamma']:.2f}, decay={smoothing_params['ema_decay']:.3f}", "INFO")
+
             label_type = LabelDefinitionType.BINARY
             vol_config = VolatilityAwareConfig(
                 volatility_threshold=optimal_threshold,  # Use optimal threshold
@@ -609,6 +669,17 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 min_label_quality=0.0,  # Quality gate disabled - let all opportunities through
                 min_predictability=0.0   # Predictability gate disabled - let all opportunities through
             )
+
+            # Configure label smoothing with timeframe-optimized parameters
+            vol_config.label_smoothing.enabled = True
+            vol_config.label_smoothing.epsilon = smoothing_params['epsilon']
+            vol_config.label_smoothing.gamma = smoothing_params['gamma']
+            vol_config.label_smoothing.ema_decay = smoothing_params['ema_decay']
+            vol_config.label_smoothing.apply_classification_smoothing = smoothing_params['apply_classification_smoothing']
+            vol_config.label_smoothing.apply_uncertainty_shrinkage = smoothing_params['apply_uncertainty_shrinkage']
+            vol_config.label_smoothing.apply_causal_ema = smoothing_params['apply_causal_ema']
+            vol_config.label_smoothing.uncertainty_source = 'quality_inverse'
+            vol_config.label_smoothing.ema_group_by = 'instrument' if 'instrument' in market_data.columns else None
             
             # Enable simplified target generation (target_long, target_short)
             vol_config.use_simplified_targets = True
@@ -1128,6 +1199,12 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 }
             }
 
+            # Extract label smoothing metadata if available
+            label_smoothing_metadata = labeling_result.metadata.get('label_smoothing', {})
+            label_smoothing_stats = label_smoothing_metadata.get('statistics', {})
+            label_smoothing_config = label_smoothing_metadata.get('config', {})
+            label_smoothing_stages = label_smoothing_metadata.get('stages_applied', {})
+
             financial_metrics = {
                 'labeling_method': 'volatility_aware_multi_horizon',
                 'volatility_config': {
@@ -1138,6 +1215,31 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'quality_threshold': 0.3,  # More reasonable quality threshold for long-only strategy
                     'rate_control_enabled': True,
                     'predictability_threshold': 0.3
+                },
+                'label_smoothing': {
+                    'enabled': label_smoothing_metadata.get('enabled', False),
+                    'timeframe_optimized': True,
+                    'config': {
+                        'epsilon': label_smoothing_config.get('epsilon', 0.08),
+                        'gamma': label_smoothing_config.get('gamma', 1.0),
+                        'ema_decay': label_smoothing_config.get('ema_decay', 0.95),
+                        'ablation_mode': label_smoothing_config.get('ablation_mode', 'full')
+                    },
+                    'stages_applied': {
+                        'classification_smoothing': label_smoothing_stages.get('classification_smoothing', False),
+                        'uncertainty_shrinkage': label_smoothing_stages.get('uncertainty_shrinkage', False),
+                        'causal_ema': label_smoothing_stages.get('causal_ema', False)
+                    },
+                    'impact': {
+                        'raw_label_mean': label_smoothing_stats.get('raw_mean', 0.0),
+                        'raw_label_std': label_smoothing_stats.get('raw_std', 0.0),
+                        'final_label_mean': label_smoothing_stats.get('final_mean', 0.0),
+                        'final_label_std': label_smoothing_stats.get('final_std', 0.0),
+                        'mean_absolute_change': label_smoothing_stats.get('mean_absolute_change', 0.0),
+                        'max_absolute_change': label_smoothing_stats.get('max_absolute_change', 0.0),
+                        'correlation_raw_final': label_smoothing_stats.get('correlation_raw_final', 1.0),
+                        'pct_labels_changed': label_smoothing_stats.get('pct_changed', 0.0)
+                    }
                 },
                 'opportunity_detection': {
                     'total_samples_processed': total_samples,

@@ -3885,9 +3885,15 @@ class UnifiedModelsTrainingStep(BaseStep):
             comprehensive_metrics['feature_importance'] = feature_importance_data
 
         # ===== DATA QUALITY METRICS =====
+        # Extract from metrics dict
         data_quality = metrics.get('data_quality', {})
         if data_quality:
             comprehensive_metrics['data_quality'] = data_quality
+
+        # Also extract from result metadata (NEW: from model_trainer comprehensive metadata)
+        result_metadata = result.get('metadata', {})
+        if 'data_quality' in result_metadata:
+            comprehensive_metrics['data_quality'].update(result_metadata['data_quality'])
 
         # Add basic data stats if available
         # Note: Top-level metrics override nested data_quality values if duplicates exist
@@ -3899,6 +3905,7 @@ class UnifiedModelsTrainingStep(BaseStep):
             comprehensive_metrics['data_quality']['missing_values_pct'] = metrics['missing_values_pct']
 
         # ===== MODEL COMPLEXITY =====
+        # Extract from metrics dict
         complexity_keys = [
             'total_parameters', 'trainable_parameters', 'model_size_mb',
             'inference_time_ms', 'memory_usage_mb'
@@ -3907,7 +3914,12 @@ class UnifiedModelsTrainingStep(BaseStep):
             if key in metrics:
                 comprehensive_metrics['model_complexity'][key] = metrics[key]
 
+        # Also extract from result metadata (NEW: from model_trainer comprehensive metadata)
+        if 'model_complexity' in result_metadata:
+            comprehensive_metrics['model_complexity'].update(result_metadata['model_complexity'])
+
         # ===== PREDICTION STATISTICS =====
+        # Extract from metrics dict
         pred_stats_keys = [
             'prediction_mean', 'prediction_std', 'prediction_min', 'prediction_max',
             'prediction_skewness', 'prediction_kurtosis',
@@ -3917,6 +3929,10 @@ class UnifiedModelsTrainingStep(BaseStep):
         for key in pred_stats_keys:
             if key in metrics:
                 comprehensive_metrics['prediction_statistics'][key] = metrics[key]
+
+        # Also extract from result metadata (NEW: from model_trainer comprehensive metadata)
+        if 'prediction_statistics' in result_metadata:
+            comprehensive_metrics['prediction_statistics'].update(result_metadata['prediction_statistics'])
 
         # ===== ENSEMBLE-SPECIFIC METRICS =====
         if 'ensemble' in training_type and comprehensive_metrics['ensemble_specific'] is not None:
@@ -3961,6 +3977,10 @@ class UnifiedModelsTrainingStep(BaseStep):
         for key in error_keys:
             if key in metrics:
                 comprehensive_metrics['error_analysis'][key] = metrics[key]
+
+        # Also extract from result metadata (NEW: from model_trainer comprehensive metadata)
+        if 'error_analysis' in result_metadata:
+            comprehensive_metrics['error_analysis'].update(result_metadata['error_analysis'])
 
         # ===== DATA DRIFT / DISTRIBUTION SHIFT CHECKS =====
         # Detects if train/val/test distributions differ significantly

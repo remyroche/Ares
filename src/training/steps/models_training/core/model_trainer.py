@@ -312,7 +312,15 @@ class ModelTrainer(BaseTrainer):
                 for model_type in self.config.model_types
                 if model_type.value in self._model_instances
             }
-            
+
+            # Calculate comprehensive additional metrics
+            comprehensive_metadata = self._calculate_comprehensive_metadata(
+                training_results=training_results,
+                processed_data=processed_data,
+                processed_targets=processed_targets,
+                all_model_metrics=all_model_metrics
+            )
+
             result = TrainingResult(
                 success=len(training_results) > 0,
                 model=best_model,
@@ -325,9 +333,12 @@ class ModelTrainer(BaseTrainer):
                     'individual_results': training_results,
                     'comprehensive_metrics': all_model_metrics,
                     'report_path': str(report_path),
-                    'trained_models': trained_models,  # Add models dict for reporting
-                    'model_instances': self._model_instances,  # Store all model instances
-                    'trained_feature_columns': list(model_result.metadata.get('engineered_data', processed_data).columns)
+                    'trained_models': trained_models,
+                    'model_instances': self._model_instances,
+                    'trained_feature_columns': list(model_result.metadata.get('engineered_data', processed_data).columns),
+                    'n_features': len(processed_data.columns),
+                    'n_samples': len(processed_data),
+                    **comprehensive_metadata  # Unpack comprehensive metrics
                 }
             )
             
@@ -862,14 +873,21 @@ class ModelTrainer(BaseTrainer):
                 tprint_warning(f"   ⚠️  Moderate overfitting detected.")
             else:
                 tprint_success(f"   ✅ Good generalization (overfitting ratio < 10%)")
-            
+
             return TrainingResult(
                 success=True,
                 model=model,
                 metrics=metrics,
-                feature_importance=feature_importance
+                feature_importance=feature_importance,
+                metadata={
+                    'n_features': len(data.columns),
+                    'n_samples': len(data),
+                    'test_predictions': test_pred.tolist() if hasattr(test_pred, 'tolist') else list(test_pred),
+                    'train_predictions': train_pred.tolist() if hasattr(train_pred, 'tolist') else list(train_pred),
+                    'val_predictions': val_pred.tolist() if hasattr(val_pred, 'tolist') else list(val_pred)
+                }
             )
-            
+
         except Exception as e:
             self.logger.error(f"LightGBM training failed: {e}")
             import traceback
@@ -1142,14 +1160,21 @@ class ModelTrainer(BaseTrainer):
                 tprint_warning(f"   ⚠️  Moderate overfitting detected.")
             else:
                 tprint_success(f"   ✅ Good generalization (overfitting ratio < 10%)")
-            
+
             return TrainingResult(
                 success=True,
                 model=model,
                 metrics=metrics,
-                feature_importance=feature_importance
+                feature_importance=feature_importance,
+                metadata={
+                    'n_features': len(data.columns),
+                    'n_samples': len(data),
+                    'test_predictions': test_pred.tolist() if hasattr(test_pred, 'tolist') else list(test_pred),
+                    'train_predictions': train_pred.tolist() if hasattr(train_pred, 'tolist') else list(train_pred),
+                    'val_predictions': val_pred.tolist() if hasattr(val_pred, 'tolist') else list(val_pred)
+                }
             )
-            
+
         except Exception as e:
             self.logger.error(f"CatBoost training failed: {e}")
             import traceback
@@ -1616,27 +1641,207 @@ class ModelTrainer(BaseTrainer):
         return False
     
     def _calculate_overall_metrics(self, training_results: Dict[str, TrainingResult]) -> Dict[str, float]:
-        """Calculate overall metrics from individual model results."""
+        """
+        Calculate overall metrics from individual model results.
+
+        CRITICAL FIX: This method now properly organizes metrics by split type
+        (train/val/test) so they can be extracted by the report generator.
+        """
         if not training_results:
             return {}
-        
-        # Average metrics across all successful models
+
+        # Collect all metrics from successful models
         all_metrics = {}
-        for result in training_results.values():
+        all_feature_importance = {}
+
+        for model_name, result in training_results.items():
             if result.success and result.metrics:
                 for metric, value in result.metrics.items():
                     if metric not in all_metrics:
                         all_metrics[metric] = []
                     all_metrics[metric].append(value)
-        
-        # Calculate averages
+
+            # Collect feature importance if available
+            if result.success and result.feature_importance:
+                for feature, importance in result.feature_importance.items():
+                    if feature not in all_feature_importance:
+                        all_feature_importance[feature] = []
+                    all_feature_importance[feature].append(importance)
+
+        # Calculate averages and organize by split type
         overall_metrics = {}
+
         for metric, values in all_metrics.items():
-            overall_metrics[f'avg_{metric}'] = np.mean(values)
-            overall_metrics[f'std_{metric}'] = np.std(values)
-        
+            avg_value = np.mean(values)
+            std_value = np.std(values)
+
+            # Add to overall with avg/std prefix (backward compatibility)
+            overall_metrics[f'avg_{metric}'] = avg_value
+            overall_metrics[f'std_{metric}'] = std_value
+
+            # CRITICAL FIX: Also add split-specific metrics WITHOUT prefix
+            # This allows _extract_comprehensive_metrics to find them
+            if metric.startswith('train_'):
+                # Keep both prefixed and non-prefixed for compatibility
+                overall_metrics[metric] = avg_value
+            elif metric.startswith('val_'):
+                overall_metrics[metric] = avg_value
+            elif metric.startswith('test_'):
+                overall_metrics[metric] = avg_value
+            else:
+                # Non-split metrics (like overfitting_ratio, generalization_score, etc.)
+                overall_metrics[metric] = avg_value
+
+        # Add aggregated feature importance (top 20 features by average importance)
+        if all_feature_importance:
+            feature_importance_avg = {
+                feature: np.mean(importances)
+                for feature, importances in all_feature_importance.items()
+            }
+            # Store as dict for report extraction
+            overall_metrics['feature_importance'] = feature_importance_avg
+
+        # Add data quality metrics
+        if training_results:
+            # Get first successful result to extract data info
+            first_result = next((r for r in training_results.values() if r.success), None)
+            if first_result and first_result.metadata:
+                overall_metrics['feature_count'] = first_result.metadata.get('n_features', 0)
+                overall_metrics['sample_count'] = first_result.metadata.get('n_samples', 0)
+
         return overall_metrics
-    
+
+    def _calculate_comprehensive_metadata(
+        self,
+        training_results: Dict[str, Any],
+        processed_data: pd.DataFrame,
+        processed_targets: pd.Series,
+        all_model_metrics: List[Any]
+    ) -> Dict[str, Any]:
+        """
+        Calculate comprehensive metadata including data quality, model complexity,
+        prediction statistics, and error analysis.
+
+        Args:
+            training_results: Dictionary of training results by model
+            processed_data: Processed training data
+            processed_targets: Processed target values
+            all_model_metrics: List of model metrics objects
+
+        Returns:
+            Dictionary with comprehensive metadata for reporting
+        """
+        metadata = {}
+
+        # ===== DATA QUALITY METRICS =====
+        data_quality = {}
+        try:
+            # Missing values analysis
+            missing_counts = processed_data.isnull().sum()
+            total_values = len(processed_data) * len(processed_data.columns)
+            data_quality['missing_values_count'] = int(missing_counts.sum())
+            data_quality['missing_values_pct'] = float(missing_counts.sum() / total_values * 100)
+
+            # Feature statistics
+            numeric_cols = processed_data.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) > 0:
+                data_quality['numeric_features_count'] = len(numeric_cols)
+                data_quality['mean_feature_variance'] = float(processed_data[numeric_cols].var().mean())
+                data_quality['mean_feature_std'] = float(processed_data[numeric_cols].std().mean())
+
+            # Target statistics
+            data_quality['target_mean'] = float(processed_targets.mean())
+            data_quality['target_std'] = float(processed_targets.std())
+            data_quality['target_min'] = float(processed_targets.min())
+            data_quality['target_max'] = float(processed_targets.max())
+            data_quality['target_range'] = float(processed_targets.max() - processed_targets.min())
+
+            metadata['data_quality'] = data_quality
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate data quality metrics: {e}")
+            metadata['data_quality'] = {}
+
+        # ===== MODEL COMPLEXITY METRICS =====
+        model_complexity = {}
+        try:
+            for model_name, result in training_results.items():
+                if result.success and result.model:
+                    model = result.model
+                    complexity_info = {}
+
+                    # LightGBM complexity
+                    if hasattr(model, 'num_trees'):
+                        complexity_info['num_trees'] = model.num_trees()
+                        complexity_info['num_leaves'] = model.params.get('num_leaves', 'N/A')
+                        complexity_info['max_depth'] = model.params.get('max_depth', 'N/A')
+
+                    # CatBoost complexity
+                    elif hasattr(model, 'tree_count_'):
+                        complexity_info['num_trees'] = model.tree_count_
+                        complexity_info['depth'] = getattr(model, 'get_param', lambda x: 'N/A')('depth')
+
+                    # Store model-specific complexity
+                    if complexity_info:
+                        model_complexity[model_name] = complexity_info
+
+            metadata['model_complexity'] = model_complexity
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate model complexity metrics: {e}")
+            metadata['model_complexity'] = {}
+
+        # ===== PREDICTION STATISTICS =====
+        prediction_stats = {}
+        try:
+            # Collect predictions from all models
+            all_predictions = []
+            for result in training_results.values():
+                if result.success and result.metadata and 'test_predictions' in result.metadata:
+                    all_predictions.extend(result.metadata['test_predictions'])
+
+            if all_predictions:
+                predictions_array = np.array(all_predictions)
+                prediction_stats['prediction_mean'] = float(np.mean(predictions_array))
+                prediction_stats['prediction_std'] = float(np.std(predictions_array))
+                prediction_stats['prediction_min'] = float(np.min(predictions_array))
+                prediction_stats['prediction_max'] = float(np.max(predictions_array))
+                prediction_stats['prediction_median'] = float(np.median(predictions_array))
+
+                # Skewness and kurtosis
+                from scipy import stats
+                prediction_stats['prediction_skewness'] = float(stats.skew(predictions_array))
+                prediction_stats['prediction_kurtosis'] = float(stats.kurtosis(predictions_array))
+
+            metadata['prediction_statistics'] = prediction_stats
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate prediction statistics: {e}")
+            metadata['prediction_statistics'] = {}
+
+        # ===== ERROR ANALYSIS =====
+        error_analysis = {}
+        try:
+            # Calculate directional accuracy (sign agreement)
+            for model_name, result in training_results.items():
+                if result.success and result.metrics:
+                    # Directional accuracy from residuals
+                    if 'test_mae' in result.metrics and 'test_rmse' in result.metrics:
+                        # MAE/RMSE ratio indicates error distribution
+                        mae = result.metrics['test_mae']
+                        rmse = result.metrics['test_rmse']
+                        if rmse > 0:
+                            error_analysis[f'{model_name}_mae_rmse_ratio'] = float(mae / rmse)
+
+            # Overall error statistics
+            if any(key.endswith('_mae_rmse_ratio') for key in error_analysis):
+                ratios = [v for k, v in error_analysis.items() if k.endswith('_mae_rmse_ratio')]
+                error_analysis['avg_mae_rmse_ratio'] = float(np.mean(ratios))
+
+            metadata['error_analysis'] = error_analysis
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate error analysis: {e}")
+            metadata['error_analysis'] = {}
+
+        return metadata
+
     @handles_errors(
         exceptions=(ValueError, RuntimeError),
         default_return=ValidationResult(success=False, error_message="Validation failed"),

@@ -21,6 +21,8 @@ analyst_config:
       reg_lambda: 3.75
       sampling_rate: 1.0
       min_child_samples: 100
+      objective: 'regression'  # Explicit regression objective for meta-learner
+      metric: 'rmse'
     calibration:
       method: isotonic
       enable_temperature_scaling: true

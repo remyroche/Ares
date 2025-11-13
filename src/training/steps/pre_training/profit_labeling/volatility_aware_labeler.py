@@ -9,6 +9,9 @@ from enum import Enum
 import pandas as pd
 import numpy as np
 
+# Import label smoothing
+from .label_smoother import LabelSmoother, LabelSmoothingConfig
+
 # Import tprint utilities
 try:
     from src.utils.tprint import (
@@ -208,14 +211,34 @@ class VolatilityAwareConfig:
         
         # Initialize multi-target configuration
         self.multi_target = MultiTargetConfig()
-        
+
         # Initialize volatility configuration
         self.volatility = VolatilityConfig()
         # Rate control (data-driven calibration)
         self.rate_control = RateControlConfig()
         # Data-driven labeling calibration (quantile-based)
         self.data_driven = DataDrivenLabelingConfig()
-        
+
+        # Initialize label smoothing configuration
+        self.label_smoothing = LabelSmoothingConfig(
+            enabled=True,
+            apply_classification_smoothing=True,
+            apply_uncertainty_shrinkage=True,
+            apply_causal_ema=True,
+            epsilon=0.08,
+            temperature=1.2,
+            gamma=1.0,
+            min_alpha=0.12,
+            baseline=0.0,
+            uncertainty_source='quality_inverse',
+            ema_decay=0.95,
+            ema_group_by=None,  # Will be set dynamically if instrument column exists
+            ema_seed_method='first',
+            ablation_mode='full',
+            store_intermediate=False,
+            validate_causality=True
+        )
+
         # Validate configuration
         self._validate_config()
     
@@ -593,7 +616,9 @@ class VolatilityAwareMultiHorizonLabeler:
                 # Export first-passage windows if available (for Tactician training)
                 "opportunity_windows": getattr(self, '_last_opportunity_windows', []),
                 # Data-driven calibration diagnostics (if enabled)
-                "data_driven": self._last_data_driven_report if hasattr(self, '_last_data_driven_report') else None
+                "data_driven": self._last_data_driven_report if hasattr(self, '_last_data_driven_report') else None,
+                # Sample weights for PROXIMITY_REGRESSION labels (bugfix: was missing)
+                "sample_weights": self.get_all_sample_weights() if hasattr(self, '_sample_weights') else None
             }
             
             # Log data-driven diagnostics if available
@@ -642,12 +667,102 @@ class VolatilityAwareMultiHorizonLabeler:
                 self.logger.warning("No positive labels found - check thresholds")
             elif positive_rate == 1:
                 self.logger.warning("All labels positive - check thresholds")
-            
+
+            # Apply label smoothing if enabled
+            if self.config.label_smoothing.enabled:
+                result_labels, smoothing_metadata = self._apply_label_smoothing(
+                    result_labels,
+                    quality_scores,
+                    data
+                )
+                # Add smoothing metadata to main metadata
+                metadata['label_smoothing'] = smoothing_metadata
+                self.logger.info(
+                    f"Label smoothing applied: "
+                    f"mean_abs_change={smoothing_metadata.get('statistics', {}).get('mean_absolute_change', 0):.4f}, "
+                    f"correlation={smoothing_metadata.get('statistics', {}).get('correlation_raw_final', 1.0):.3f}"
+                )
+
             return LabelingResult(result_labels, metadata, success=True, quality_scores=quality_scores)
         except Exception as e:
             self.logger.error(f"Error generating labels: {e}")
             raise
-    
+
+    def _apply_label_smoothing(
+        self,
+        labels: Union[pd.Series, pd.DataFrame],
+        quality_scores: Dict[str, Any],
+        data: pd.DataFrame
+    ) -> Tuple[Union[pd.Series, pd.DataFrame], Dict[str, Any]]:
+        """
+        Apply three-stage label smoothing pipeline.
+
+        Args:
+            labels: Raw labels to smooth
+            quality_scores: Quality metrics from labeler
+            data: Original market data (for grouping and volatility)
+
+        Returns:
+            Tuple of (smoothed_labels, smoothing_metadata)
+        """
+        try:
+            # Extract quality scores for uncertainty shrinkage
+            opportunity_quality = None
+            if quality_scores and 'opportunity_quality_scores' in quality_scores:
+                opportunity_quality = quality_scores['opportunity_quality_scores']
+                # Ensure alignment with labels
+                if isinstance(opportunity_quality, pd.Series):
+                    opportunity_quality = opportunity_quality.reindex(labels.index)
+
+            # Extract volatility if available
+            volatility = None
+            if 'volatility' in data.columns:
+                volatility = data['volatility'].reindex(labels.index)
+
+            # Prepare group_by_data for EMA
+            group_by_data = None
+            if self.config.label_smoothing.ema_group_by:
+                group_cols = []
+                # Check for instrument column
+                if 'instrument' in data.columns:
+                    group_cols.append('instrument')
+                    if self.config.label_smoothing.ema_group_by is None:
+                        # Auto-enable if instrument column exists
+                        self.config.label_smoothing.ema_group_by = 'instrument'
+                # Check for timestamp/datetime
+                if data.index.name in ['timestamp', 'datetime'] or isinstance(data.index, pd.DatetimeIndex):
+                    group_cols.append('timestamp')
+                elif 'timestamp' in data.columns:
+                    group_cols.append('timestamp')
+
+                if group_cols:
+                    group_by_data = data[group_cols].copy() if all(c in data.columns for c in group_cols) else None
+                    if group_by_data is None and data.index.name in ['timestamp', 'datetime']:
+                        # Index is timestamp
+                        group_by_data = pd.DataFrame({'timestamp': data.index})
+                        if 'instrument' in data.columns:
+                            group_by_data['instrument'] = data['instrument'].values
+
+            # Create smoother and apply
+            smoother = LabelSmoother(self.config.label_smoothing)
+
+            result = smoother.smooth(
+                labels=labels,
+                quality_scores=opportunity_quality,
+                volatility=volatility,
+                group_by_data=group_by_data
+            )
+
+            smoothed_labels = result['labels_final']
+            smoothing_metadata = result['metadata']
+
+            return smoothed_labels, smoothing_metadata
+
+        except Exception as e:
+            self.logger.warning(f"Label smoothing failed: {e}. Returning raw labels.")
+            # Return raw labels on error
+            return labels, {'enabled': False, 'error': str(e)}
+
     def _calculate_quality_scores(self, labels: Union[pd.Series, pd.DataFrame], prices: pd.Series) -> Dict[str, Any]:
         """Calculate comprehensive quality scores with IC, Hit Rate, Uplift, Stability, and Risk-aware metrics."""
         try:
@@ -2374,10 +2489,14 @@ class VolatilityAwareMultiHorizonLabeler:
         
         # 7. RISK ASSESSMENT & WARNINGS
         self._log_risk_assessment(quality_scores, metadata)
-        
-        # 8. NEXT STEPS & RECOMMENDATIONS
+
+        # 8. LABEL SMOOTHING ANALYSIS
+        if 'label_smoothing' in metadata and metadata['label_smoothing'].get('enabled', False):
+            self._log_label_smoothing_analysis(metadata['label_smoothing'])
+
+        # 9. NEXT STEPS & RECOMMENDATIONS
         self._log_next_steps_recommendations(quality_scores, training_strategy, performance_config)
-        
+
         self.logger.info("=" * 80)
         self.logger.info("📋 REPORT COMPLETE")
         self.logger.info("=" * 80)
@@ -2756,7 +2875,63 @@ class VolatilityAwareMultiHorizonLabeler:
                 self.logger.warning(f"  🚨 {warning}")
         else:
             self.logger.info("  ✅ No significant risks identified")
-    
+
+    def _log_label_smoothing_analysis(self, smoothing_metadata: Dict[str, Any]) -> None:
+        """Log label smoothing analysis and effects."""
+        self.logger.info("")
+        self.logger.info("🎨 LABEL SMOOTHING ANALYSIS")
+        self.logger.info("-" * 40)
+
+        # Show configuration
+        config = smoothing_metadata.get('config', {})
+        stages_applied = smoothing_metadata.get('stages_applied', {})
+
+        self.logger.info(f"  Configuration:")
+        self.logger.info(f"    • Ablation Mode: {config.get('ablation_mode', 'full')}")
+        self.logger.info(f"    • Stages Applied:")
+        if stages_applied.get('classification_smoothing', False):
+            self.logger.info(f"      ✓ Classification Smoothing (ε={config.get('epsilon', 0.08):.3f}, T={config.get('temperature', 1.2):.2f})")
+        if stages_applied.get('uncertainty_shrinkage', False):
+            self.logger.info(f"      ✓ Uncertainty Shrinkage (γ={config.get('gamma', 1.0):.2f}, min_α={config.get('min_alpha', 0.12):.2f})")
+        if stages_applied.get('causal_ema', False):
+            ema_group = config.get('ema_group_by', 'none')
+            self.logger.info(f"      ✓ Causal EMA (decay={config.get('ema_decay', 0.95):.3f}, group_by={ema_group})")
+
+        # Show statistics
+        stats = smoothing_metadata.get('statistics', {})
+        if stats:
+            self.logger.info(f"  ")
+            self.logger.info(f"  Label Statistics:")
+            self.logger.info(f"    • Raw Labels:   mean={stats.get('raw_mean', 0):.4f}, std={stats.get('raw_std', 0):.4f}")
+            self.logger.info(f"    • Final Labels: mean={stats.get('final_mean', 0):.4f}, std={stats.get('final_std', 0):.4f}")
+            self.logger.info(f"  ")
+            self.logger.info(f"  Smoothing Impact:")
+            self.logger.info(f"    • Mean Absolute Change: {stats.get('mean_absolute_change', 0):.4f}")
+            self.logger.info(f"    • Max Absolute Change:  {stats.get('max_absolute_change', 0):.4f}")
+            self.logger.info(f"    • Raw-Final Correlation: {stats.get('correlation_raw_final', 1.0):.4f}")
+            self.logger.info(f"    • % Labels Changed:     {stats.get('pct_changed', 0):.2f}%")
+
+            # Interpretation
+            correlation = stats.get('correlation_raw_final', 1.0)
+            mean_change = stats.get('mean_absolute_change', 0)
+
+            self.logger.info(f"  ")
+            self.logger.info(f"  Interpretation:")
+            if correlation > 0.95 and mean_change < 0.05:
+                self.logger.info(f"    ✅ Conservative smoothing - labels mostly preserved")
+            elif correlation > 0.85 and mean_change < 0.15:
+                self.logger.info(f"    ✅ Moderate smoothing - good balance of stability and signal")
+            elif correlation > 0.70:
+                self.logger.info(f"    ⚠️  Strong smoothing - verify not over-smoothing")
+            else:
+                self.logger.info(f"    🚨 Very strong smoothing - labels significantly altered")
+
+            # Recommendations
+            if mean_change < 0.02:
+                self.logger.info(f"    💡 Consider increasing smoothing strength (ε, γ, decay)")
+            elif mean_change > 0.25:
+                self.logger.info(f"    💡 Consider reducing smoothing strength to preserve signal")
+
     def _log_next_steps_recommendations(self, quality_scores: Dict[str, Any], training_strategy: Dict[str, Any], 
                                       performance_config: Dict[str, Any]) -> None:
         """Log next steps and recommendations."""

@@ -2396,8 +2396,29 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         # Align both datasets to common indices (always do this)
         features_aligned = features.loc[common_indices]
         targets_aligned = targets.loc[common_indices]
-        
-        
+
+        # 🔍 INDEX ALIGNMENT VERIFICATION
+        tprint_info("🔍 Verifying index alignment...")
+        assert (features_aligned.index == targets_aligned.index).all(), "❌ Indices not properly aligned after alignment step!"
+        tprint_success(f"✅ Index alignment verified: {len(features_aligned)} rows perfectly aligned")
+
+        # 🔍 TEMPORAL ORDERING CHECK: Detect data leakage risks
+        tprint_info("🔍 Checking temporal ordering for data leakage risks...")
+        if hasattr(features_aligned.index, 'is_monotonic_increasing'):
+            is_temporal_sorted = features_aligned.index.is_monotonic_increasing
+            if not is_temporal_sorted:
+                tprint_warning("⚠️ WARNING: Data is NOT temporally sorted! This may cause data leakage in time-series CV.")
+                tprint_warning("⚠️ Consider sorting by index before training to ensure proper temporal splits.")
+            else:
+                tprint_success("✅ Data is temporally sorted (monotonic increasing index)")
+
+        # Check for duplicate timestamps (another leakage risk)
+        dup_count = features_aligned.index.duplicated().sum()
+        if dup_count > 0:
+            tprint_warning(f"⚠️ WARNING: Found {dup_count} duplicate timestamps! This may cause leakage between train/test splits.")
+        else:
+            tprint_success("✅ No duplicate timestamps found")
+
         # Validate alignment success
         if len(features_aligned) == 0 or len(targets_aligned) == 0:
             error_msg = f"""
@@ -2410,10 +2431,35 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             """
             tprint_error(error_msg)
             raise ValueError("Alignment resulted in empty datasets")
-        
+
+        # 📊 NaN DIAGNOSTICS: Check NaN counts beyond first 50 rows
+        tprint_info("🔍 NaN Diagnostics:")
+        if len(features_aligned) > 50:
+            features_beyond_50 = features_aligned.iloc[50:]
+            nan_count_features = features_beyond_50.isna().sum().sum()
+            nan_pct_features = (nan_count_features / features_beyond_50.size) * 100
+            tprint_info(f"  📈 Features NaN beyond row 50: {nan_count_features:,} ({nan_pct_features:.2f}% of data)")
+
+            # Show top columns with NaN
+            nan_per_col = features_beyond_50.isna().sum()
+            top_nan_cols = nan_per_col[nan_per_col > 0].sort_values(ascending=False).head(5)
+            if len(top_nan_cols) > 0:
+                tprint_warning(f"  ⚠️ Top 5 feature columns with NaN: {dict(top_nan_cols)}")
+
+        if len(targets_aligned) > 50:
+            targets_beyond_50 = targets_aligned.iloc[50:]
+            nan_count_targets = targets_beyond_50.isna().sum().sum()
+            nan_pct_targets = (nan_count_targets / targets_beyond_50.size) * 100
+            tprint_info(f"  🎯 Targets NaN beyond row 50: {nan_count_targets:,} ({nan_pct_targets:.2f}% of data)")
+
+            # Show target columns with NaN
+            nan_per_target = targets_beyond_50.isna().sum()
+            if nan_per_target.sum() > 0:
+                tprint_warning(f"  ⚠️ Target columns with NaN: {dict(nan_per_target[nan_per_target > 0])}")
+
         # Handle NaN values in features
         features_cleaned = features_aligned.fillna(0)  # Fill NaN with 0
-        
+
         # Handle NaN values in targets with validation
         targets_cleaned = targets_aligned.fillna(0)  # Fill NaN with 0
         
@@ -2462,7 +2508,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         try:
             # Reduce sample size in blank mode to lower memory/compute
             blank_mode = str(config.get('execution_mode', '')).lower() == 'blank'
-            max_samples = config.get('max_samples_phase3', 6000 if blank_mode else 8000)
+            max_samples = config.get('max_samples_phase3', 10000 if blank_mode else 15000)
             features_sample, targets_sample = self._get_consistent_sample(features_cleaned, targets_cleaned, max_samples=max_samples)
             tprint_info(f"  🔍 DEBUG: _get_consistent_sample returned successfully with max_samples={max_samples}!")
         except Exception as e:
@@ -2530,25 +2576,35 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     test_size=None,  # Use default test size
                     scoring='r2'
                 )
-                cv_score = cv_results.get('mean_score', 0.0)
-                cv_scores_std = cv_results.get('std_score', 0.0)
+                cv_score = cv_results.get('mean', 0.0)
+                cv_scores_std = cv_results.get('std', 0.0)
                 tprint_info(f"  ✅ Time-series CV completed: {cv_score:.4f} ± {cv_scores_std:.4f}")
+                tprint_info(f"  📊 CV Fold Scores: {cv_results.get('scores', [])}")
+                tprint_info(f"  📊 CV Score Range: [{cv_results.get('min', 0.0):.4f}, {cv_results.get('max', 0.0):.4f}]")
             else:
                 # Fallback to standard cross-validation
                 from sklearn.model_selection import cross_val_score
                 cv_scores = cross_val_score(model, features_sample, targets_sample, cv=3, scoring='r2')
                 cv_score = cv_scores.mean()
                 cv_scores_std = cv_scores.std()
-            
+
+            # 📊 Calculate Mutual Information between features and targets
+            tprint_info("  📊 Calculating Mutual Information between features and targets...")
+            mi_scores = self._calculate_feature_target_mi(features_sample, targets_sample)
+            mean_mi = np.mean(list(mi_scores.values())) if mi_scores else 0.0
+            tprint_info(f"  ✅ Mean MI across all targets: {mean_mi:.6f}")
+
             # Calculate feature importance consistency
             importance_consistency = self._calculate_importance_consistency(model, features_sample, targets_sample)
-            
+
             # Store performance metrics
             self._phase3_1_performance = {
                 'accuracy': accuracy,
                 'cv_score': cv_score,
                 'importance_consistency': importance_consistency,
-                'cv_scores_std': cv_scores_std
+                'cv_scores_std': cv_scores_std,
+                'mean_mi': mean_mi,
+                'mi_scores': mi_scores
             }
             
             tprint_success(f"  ✅ Performance metrics calculated: Accuracy={accuracy:.4f}, CV Score={cv_score:.4f}")
@@ -2751,18 +2807,19 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
     def _calculate_importance_consistency(self, model, features: pd.DataFrame, targets: pd.DataFrame) -> float:
         """
         Calculate feature importance consistency across different CV folds.
-        
+
+        Uses TimeSeriesSplit to respect temporal ordering and prevent data leakage.
         Returns a score between 0 and 1 indicating how consistent feature importance is.
         """
         try:
-            from sklearn.model_selection import KFold
+            from sklearn.model_selection import TimeSeriesSplit
             from sklearn.metrics import r2_score
-            
-            # Get feature importance from multiple CV folds
-            kf = KFold(n_splits=3, shuffle=True, random_state=42)
+
+            # Get feature importance from multiple CV folds (using TimeSeriesSplit for temporal data)
+            tscv = TimeSeriesSplit(n_splits=3, gap=1)  # Gap of 1 to prevent data leakage
             importance_folds = []
-            
-            for train_idx, val_idx in kf.split(features):
+
+            for train_idx, val_idx in tscv.split(features):
                 X_train, X_val = features.iloc[train_idx], features.iloc[val_idx]
                 y_train, y_val = targets.iloc[train_idx], targets.iloc[val_idx]
                 
@@ -2793,7 +2850,43 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         except Exception as e:
             self.logger.warning(f"Error calculating importance consistency: {e}")
             return 0.0
-    
+
+    def _calculate_feature_target_mi(self, features: pd.DataFrame, targets: pd.DataFrame) -> Dict[str, float]:
+        """
+        Calculate Mutual Information between features and each target.
+
+        Returns a dictionary mapping target names to their average MI with all features.
+        Higher MI indicates stronger predictive relationships.
+        """
+        try:
+            from sklearn.feature_selection import mutual_info_regression
+
+            mi_scores = {}
+
+            for target_col in targets.columns:
+                # Calculate MI between all features and this target
+                mi = mutual_info_regression(
+                    features.values,
+                    targets[target_col].values,
+                    discrete_features=False,
+                    random_state=42
+                )
+
+                # Average MI across all features for this target
+                avg_mi = np.mean(mi)
+                mi_scores[target_col] = float(avg_mi)
+
+                # Log top features for this target
+                top_mi_indices = np.argsort(mi)[-5:][::-1]
+                top_features = [(features.columns[i], mi[i]) for i in top_mi_indices]
+                tprint_info(f"    Target '{target_col}': Avg MI={avg_mi:.6f}, Top features: {top_features[:3]}")
+
+            return mi_scores
+
+        except Exception as e:
+            self.logger.warning(f"Error calculating feature-target MI: {e}")
+            return {}
+
     async def _phase3_2_deeper_refinement(
         self,
         features: pd.DataFrame,
@@ -2844,8 +2937,29 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         # Align both datasets to common indices (always do this)
         features_aligned = features.loc[common_indices]
         targets_aligned = targets.loc[common_indices]
-        
-        
+
+        # 🔍 INDEX ALIGNMENT VERIFICATION
+        tprint_info("🔍 Verifying index alignment...")
+        assert (features_aligned.index == targets_aligned.index).all(), "❌ Indices not properly aligned after alignment step!"
+        tprint_success(f"✅ Index alignment verified: {len(features_aligned)} rows perfectly aligned")
+
+        # 🔍 TEMPORAL ORDERING CHECK: Detect data leakage risks
+        tprint_info("🔍 Checking temporal ordering for data leakage risks...")
+        if hasattr(features_aligned.index, 'is_monotonic_increasing'):
+            is_temporal_sorted = features_aligned.index.is_monotonic_increasing
+            if not is_temporal_sorted:
+                tprint_warning("⚠️ WARNING: Data is NOT temporally sorted! This may cause data leakage in time-series CV.")
+                tprint_warning("⚠️ Consider sorting by index before training to ensure proper temporal splits.")
+            else:
+                tprint_success("✅ Data is temporally sorted (monotonic increasing index)")
+
+        # Check for duplicate timestamps (another leakage risk)
+        dup_count = features_aligned.index.duplicated().sum()
+        if dup_count > 0:
+            tprint_warning(f"⚠️ WARNING: Found {dup_count} duplicate timestamps! This may cause leakage between train/test splits.")
+        else:
+            tprint_success("✅ No duplicate timestamps found")
+
         # Validate alignment success
         if len(features_aligned) == 0 or len(targets_aligned) == 0:
             error_msg = f"""
@@ -2858,10 +2972,35 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             """
             tprint_error(error_msg)
             raise ValueError("Alignment resulted in empty datasets")
-        
+
+        # 📊 NaN DIAGNOSTICS: Check NaN counts beyond first 50 rows
+        tprint_info("🔍 NaN Diagnostics:")
+        if len(features_aligned) > 50:
+            features_beyond_50 = features_aligned.iloc[50:]
+            nan_count_features = features_beyond_50.isna().sum().sum()
+            nan_pct_features = (nan_count_features / features_beyond_50.size) * 100
+            tprint_info(f"  📈 Features NaN beyond row 50: {nan_count_features:,} ({nan_pct_features:.2f}% of data)")
+
+            # Show top columns with NaN
+            nan_per_col = features_beyond_50.isna().sum()
+            top_nan_cols = nan_per_col[nan_per_col > 0].sort_values(ascending=False).head(5)
+            if len(top_nan_cols) > 0:
+                tprint_warning(f"  ⚠️ Top 5 feature columns with NaN: {dict(top_nan_cols)}")
+
+        if len(targets_aligned) > 50:
+            targets_beyond_50 = targets_aligned.iloc[50:]
+            nan_count_targets = targets_beyond_50.isna().sum().sum()
+            nan_pct_targets = (nan_count_targets / targets_beyond_50.size) * 100
+            tprint_info(f"  🎯 Targets NaN beyond row 50: {nan_count_targets:,} ({nan_pct_targets:.2f}% of data)")
+
+            # Show target columns with NaN
+            nan_per_target = targets_beyond_50.isna().sum()
+            if nan_per_target.sum() > 0:
+                tprint_warning(f"  ⚠️ Target columns with NaN: {dict(nan_per_target[nan_per_target > 0])}")
+
         # Handle NaN values in features
         features_cleaned = features_aligned.fillna(0)  # Fill NaN with 0
-        
+
         # Handle NaN values in targets with validation
         targets_cleaned = targets_aligned.fillna(0)  # Fill NaN with 0
         
@@ -2957,24 +3096,34 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     test_size=None,
                     scoring='r2'
                 )
-                cv_score = cv_results.get('mean_score', 0.0)
-                cv_scores_std = cv_results.get('std_score', 0.0)
+                cv_score = cv_results.get('mean', 0.0)
+                cv_scores_std = cv_results.get('std', 0.0)
                 tprint_info(f"  ✅ Phase 3.2 Time-series CV: {cv_score:.4f} ± {cv_scores_std:.4f}")
+                tprint_info(f"  📊 Phase 3.2 CV Fold Scores: {cv_results.get('scores', [])}")
+                tprint_info(f"  📊 Phase 3.2 CV Score Range: [{cv_results.get('min', 0.0):.4f}, {cv_results.get('max', 0.0):.4f}]")
             else:
                 # Fallback to standard cross-validation
                 cv_scores = cross_val_score(model, features_sample, targets_sample, cv=3, scoring='r2')
                 cv_score = cv_scores.mean()
                 cv_scores_std = cv_scores.std()
-            
+
+            # 📊 Calculate Mutual Information between features and targets (Phase 3.2)
+            tprint_info("  📊 Phase 3.2: Calculating Mutual Information between features and targets...")
+            mi_scores = self._calculate_feature_target_mi(features_sample, targets_sample)
+            mean_mi = np.mean(list(mi_scores.values())) if mi_scores else 0.0
+            tprint_info(f"  ✅ Phase 3.2 Mean MI across all targets: {mean_mi:.6f}")
+
             # Calculate feature importance consistency
             importance_consistency = self._calculate_importance_consistency(model, features_sample, targets_sample)
-            
+
             # Store performance metrics
             self._phase3_2_performance = {
                 'accuracy': accuracy,
                 'cv_score': cv_score,
                 'importance_consistency': importance_consistency,
-                'cv_scores_std': cv_scores_std
+                'cv_scores_std': cv_scores_std,
+                'mean_mi': mean_mi,
+                'mi_scores': mi_scores
             }
             
             tprint_success(f"  ✅ Phase 3.2 Performance: Accuracy={accuracy:.4f}, CV Score={cv_score:.4f}")
@@ -3118,7 +3267,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         # Use consistent sampling strategy with chunked processing
         try:
-            features_sample, targets_sample = self._get_consistent_sample(features_cleaned, targets_cleaned, max_samples=8000)
+            features_sample, targets_sample = self._get_consistent_sample(features_cleaned, targets_cleaned, max_samples=15000)
             tprint_info(f"  🔍 DEBUG: _get_consistent_sample returned successfully!")
         except Exception as e:
             tprint_error(f"  🔍 DEBUG: Exception in _get_consistent_sample: {e}")
@@ -4019,7 +4168,18 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
 - **Model Accuracy**: {perf_stats.get('accuracy', 0):.4f}
 - **Cross-Validation Score**: {perf_stats.get('cv_score', 0):.4f}
 - **Feature Importance Consistency**: {perf_stats.get('importance_consistency', 0):.2f}/1.0
+- **Mean Feature-Target MI**: {perf_stats.get('mean_mi', 0):.6f}
+
+### Feature-Target Mutual Information by Target
 """
+            # Add MI scores per target if available
+            mi_scores = perf_stats.get('mi_scores', {})
+            if mi_scores:
+                for target_name, mi_value in sorted(mi_scores.items(), key=lambda x: x[1], reverse=True):
+                    content += f"- `{target_name}`: {mi_value:.6f}\n"
+            else:
+                content += "- *No MI scores available*\n"
+            content += "\n"
         
         # Add data quality metrics
         if 'data_quality' in shap_metadata:

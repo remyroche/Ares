@@ -705,6 +705,30 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             tprint(f"🐛 DEBUG: [STEP 6] regime_labels after HMM predict: shape={regime_labels.shape}, unique={np.unique(regime_labels)}", "INFO")
             tprint(f"🐛 DEBUG: [STEP 6] regime_probs after HMM predict: {regime_probs.shape}", "INFO")
 
+            # FIX #2: Apply regime quality filter (only remove worst offenders by confidence)
+            # Instead of fixed threshold, remove bottom 10% by confidence
+            confidence_filter_pct = params.get('regime_confidence_filter_pct', 0.10)
+            max_probs = regime_probs.max(axis=1)
+
+            # Calculate dynamic threshold: remove only bottom X% by confidence
+            confidence_threshold = np.percentile(max_probs, confidence_filter_pct * 100)
+            confident_mask = max_probs >= confidence_threshold
+
+            # Count filtered regimes
+            n_filtered = int(np.sum(~confident_mask))
+            filter_pct = (n_filtered / len(regime_labels)) * 100 if len(regime_labels) > 0 else 0
+
+            tprint_info(f"  → FIX #2: Applying regime confidence filter (bottom {confidence_filter_pct:.0%})")
+            tprint_info(f"     Dynamic threshold: {confidence_threshold:.3f}")
+            tprint_info(f"     Filtered {n_filtered}/{len(regime_labels)} samples ({filter_pct:.1f}%) due to low confidence")
+
+            # Apply filter: mark low-confidence regimes as -1 (no trade)
+            regime_labels_filtered = regime_labels.copy()
+            regime_labels_filtered[~confident_mask] = -1
+
+            # Use filtered labels for downstream processing
+            regime_labels = regime_labels_filtered
+
             # Get model summary
             model_summary = hmm_model.get_model_summary()
 
@@ -715,10 +739,10 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             # Assess quality
             tprint_info("  → Assessing regime quality")
 
-            # Diagnostic: Check regime transitions
+            # Diagnostic: Check regime transitions (after filtering)
             unique_regimes = np.unique(regime_labels)
             regime_transitions = np.sum(regime_labels[1:] != regime_labels[:-1])
-            tprint_info(f"  → Found {len(unique_regimes)} unique regimes, {regime_transitions} transitions in {len(regime_labels)} samples")
+            tprint_info(f"  → Found {len(unique_regimes)} unique regimes (including -1=no trade), {regime_transitions} transitions in {len(regime_labels)} samples")
 
             metrics = self.quality_assessor.assess_hmm_regime_quality(
                 regime_labels=regime_labels,

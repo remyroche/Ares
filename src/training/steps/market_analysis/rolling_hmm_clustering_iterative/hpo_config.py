@@ -148,10 +148,10 @@ class HPOConfig:
     cv_folds: int = 5
     cv_type: str = 'time_series'  # 'time_series', 'blocked', 'rolling'
 
-    # Objective function weights
-    weight_between_within_cv: float = 0.40
-    weight_temporal: float = 0.20
-    weight_economic: float = 0.40
+    # Objective function weights (must sum to 1.0)
+    weight_between_within_cv: float = 0.30  # Reduced to prioritize economic performance
+    weight_temporal: float = 0.20  # Keep same
+    weight_economic: float = 0.50  # INCREASED: Focus on economic relevance (Sharpe, returns)
 
     # Optimization settings
     direction: str = 'maximize'
@@ -875,9 +875,9 @@ class RollingHMMOptimizer:
 
         coarse_grid = {
             'ewma_config_idx': [0, 1, 2],  # Test all EWMA configs (4+20, 6+20, 8+20)
-            'n_components': [4, 5, 6],  # States to try
+            'n_components': [4],  # Fixed at 4 regimes for optimal balance
             'min_covar': [1e-3, 5e-3, 1e-2],  # Min covariance: 0.001, 0.005, 0.01
-            'kappa': [0.5, 1.0, 2.0, 3.0, 4.0]  # Kappa values
+            'kappa': [1.0, 3.0, 5.0, 7.5, 10.0, 15.0, 20.0, 30.0]  # Extended kappa range for regime stickiness tuning
         }
 
         best_score = -np.inf

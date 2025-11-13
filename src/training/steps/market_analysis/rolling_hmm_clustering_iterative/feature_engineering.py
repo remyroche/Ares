@@ -557,6 +557,29 @@ class RollingHMMFeatureEngineer:
             rolling_std = returns.rolling(span, min_periods=2).std()
             features[f'zscore_{span}'] = (returns - rolling_mean) / (rolling_std + 1e-8)
 
+        # FIX #5: Add direct momentum features at trading horizons (1h, 2h)
+        # These capture recent price momentum that's directly relevant to trading decisions
+        if self.config.use_log_returns:
+            # 1-period momentum (1h on 1h data)
+            features['momentum_1h'] = close.pct_change(1).fillna(0.0)
+            # 2-period momentum (2h on 1h data)
+            features['momentum_2h'] = close.pct_change(2).fillna(0.0)
+        else:
+            features['momentum_1h'] = returns.copy()
+            features['momentum_2h'] = close.pct_change(2).fillna(0.0)
+
+        # Momentum strength indicators (absolute values)
+        features['momentum_1h_abs'] = features['momentum_1h'].abs()
+        features['momentum_2h_abs'] = features['momentum_2h'].abs()
+
+        # Momentum direction consistency (sign of momentum)
+        features['momentum_direction_1h'] = np.sign(features['momentum_1h'])
+        features['momentum_direction_2h'] = np.sign(features['momentum_2h'])
+
+        # Trend persistence: count consecutive up/down moves (regime characteristic)
+        returns_sign = np.sign(returns)
+        features['trend_persistence'] = returns_sign.rolling(10, min_periods=1).sum()  # -10 to +10 range
+
         return features
 
     def _generate_volatility_features(
@@ -640,6 +663,10 @@ class RollingHMMFeatureEngineer:
         # Log volatility (stabilizes scale)
         features[f'log_volatility_{ewma_config.short_window}'] = np.log(vol_short + 1e-8)
         features[f'log_volatility_{ewma_config.long_window}'] = np.log(vol_long + 1e-8)
+
+        # Volatility breakout indicator: 1 when vol in top 10%, 0 otherwise (regime characteristic)
+        vol_percentile = vol_short.rolling(100, min_periods=20).rank(pct=True)
+        features['vol_breakout'] = (vol_percentile > 0.90).astype(float).fillna(0.0)
 
         return features
 
@@ -1179,6 +1206,20 @@ class RollingHMMFeatureEngineer:
         if f'ewma_returns_diff_{ewma_config.name}' in features.columns:
             economic_features['return_momentum'] = features[f'ewma_returns_diff_{ewma_config.name}']
 
+        # FIX #5: Add direct momentum features (1h, 2h) for better regime prediction
+        if 'momentum_1h' in features.columns:
+            economic_features['momentum_1h'] = features['momentum_1h']
+        if 'momentum_2h' in features.columns:
+            economic_features['momentum_2h'] = features['momentum_2h']
+        if 'momentum_1h_abs' in features.columns:
+            economic_features['momentum_strength_1h'] = features['momentum_1h_abs']
+        if 'momentum_direction_1h' in features.columns:
+            economic_features['momentum_direction'] = features['momentum_direction_1h']
+
+        # Add trend persistence (captures sustained directional moves - key regime characteristic)
+        if 'trend_persistence' in features.columns:
+            economic_features['trend_persistence'] = features['trend_persistence']
+
         # 2. Volatility features
         if f'volatility_{ewma_config.short_window}' in features.columns:
             economic_features['volatility_short'] = features[f'volatility_{ewma_config.short_window}']
@@ -1186,6 +1227,10 @@ class RollingHMMFeatureEngineer:
             economic_features['volatility_long'] = features[f'volatility_{ewma_config.long_window}']
         if f'volatility_ratio_{ewma_config.name}' in features.columns:
             economic_features['volatility_regime'] = features[f'volatility_ratio_{ewma_config.name}']
+
+        # Add volatility breakout indicator (identifies high-vol regime shifts)
+        if 'vol_breakout' in features.columns:
+            economic_features['vol_breakout'] = features['vol_breakout']
 
         # 3. Volume features (if available)
         volume_cols = [col for col in features.columns if 'volume' in col.lower()]

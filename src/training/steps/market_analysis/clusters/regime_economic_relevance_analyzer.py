@@ -243,31 +243,81 @@ class RegimeEconomicRelevanceAnalyzer:
         # Mapping par ID de régime numérique (si les régimes sont numérotés)
         self.numeric_regime_mapping = {}
         
-    def convert_regimes_to_positions(self, 
+    def convert_regimes_to_positions(self,
                                    regime_labels: Union[pd.Series, np.ndarray],
                                    regime_types: Optional[Dict[int, str]] = None,
-                                   custom_mapping: Optional[Dict[Union[int, str], float]] = None) -> pd.Series:
+                                   custom_mapping: Optional[Dict[Union[int, str], float]] = None,
+                                   forward_returns: Optional[pd.Series] = None,
+                                   use_return_based_mapping: bool = True) -> pd.Series:
         """
         Convertit les étiquettes de régimes en positions de trading.
-        
+
         Args:
             regime_labels: Étiquettes des régimes (numériques ou textuelles)
             regime_types: Dictionnaire mapping ID de régime → type de régime
             custom_mapping: Mapping personnalisé régime → position
-            
+            forward_returns: Rendements futurs pour mapping basé sur performance (FIX #1)
+            use_return_based_mapping: Si True, utilise forward_returns pour mapper les positions
+
         Returns:
             Série temporelle des positions de trading
         """
         tprint_info("🔄 Conversion des régimes en positions de trading")
-        
+
         # Conversion en Series si nécessaire
         if isinstance(regime_labels, np.ndarray):
             regime_labels = pd.Series(regime_labels)
-        
+
         # Utiliser le mapping personnalisé si fourni
         if custom_mapping:
             mapping = custom_mapping
             tprint_info("   • Utilisation du mapping personnalisé")
+        # FIX #1: Use forward-return-based position mapping (CRITICAL)
+        elif use_return_based_mapping and forward_returns is not None:
+            tprint_info("   • FIX #1: Mapping basé sur les rendements futurs observés")
+
+            # Aligner forward_returns avec regime_labels
+            if len(forward_returns) != len(regime_labels):
+                forward_returns = forward_returns.reindex(regime_labels.index)
+
+            # Calculer le rendement moyen par régime
+            regime_mean_returns = {}
+            unique_regimes = regime_labels.unique()
+
+            for regime_id in unique_regimes:
+                if regime_id == -1:  # Noise/No Trade
+                    regime_mean_returns[regime_id] = 0.0
+                else:
+                    mask = (regime_labels == regime_id)
+                    regime_returns = forward_returns[mask].dropna()
+                    if len(regime_returns) > 0:
+                        regime_mean_returns[regime_id] = float(regime_returns.mean())
+                    else:
+                        regime_mean_returns[regime_id] = 0.0
+
+            # Trier les régimes par rendement moyen
+            sorted_regimes = sorted(
+                [(rid, ret) for rid, ret in regime_mean_returns.items() if rid != -1],
+                key=lambda x: x[1]
+            )
+
+            # Mapper les positions: worst → -1, best → +1
+            mapping = {-1: 0.0}  # Noise stays at 0
+            n_regimes = len(sorted_regimes)
+
+            for i, (regime_id, mean_ret) in enumerate(sorted_regimes):
+                # Position normalisée: pire régime → -1, meilleur régime → +1
+                if n_regimes > 1:
+                    normalized_pos = (2.0 * i / (n_regimes - 1)) - 1.0
+                else:
+                    normalized_pos = 0.0
+                mapping[regime_id] = np.clip(normalized_pos, -1.0, 1.0)
+
+            # Afficher le mapping
+            tprint_info(f"   • Mapping basé sur performance réelle:")
+            for regime_id, mean_ret in sorted_regimes:
+                pos = mapping[regime_id]
+                tprint_info(f"     - Régime {regime_id}: ret={mean_ret:+.4%} → pos={pos:+.2f}")
         else:
             # Déterminer le mapping approprié
             if regime_types:
@@ -285,10 +335,11 @@ class RegimeEconomicRelevanceAnalyzer:
                     mapping = self.numeric_regime_mapping
                     tprint_info("   • Mapping numérique pré-configuré")
                 else:
-                    # Mapping par défaut basé sur l'ordre des régimes
+                    # Mapping par défaut basé sur l'ordre des régimes (OLD BEHAVIOR - WARNING)
+                    tprint_warning("   • ⚠️  ATTENTION: Mapping linéaire arbitraire (considérer use_return_based_mapping=True)")
                     unique_regimes = sorted(regime_labels.unique())
                     n_regimes = len(unique_regimes)
-                    
+
                     mapping = {}
                     for i, regime_id in enumerate(unique_regimes):
                         # Distribution symétrique autour de 0
@@ -298,7 +349,7 @@ class RegimeEconomicRelevanceAnalyzer:
                             # Mapping linéaire: -1 → -0.5, 0 → 0.0, 1 → 0.5, etc.
                             normalized_pos = (i - n_regimes/2) / (n_regimes/2)
                             mapping[regime_id] = np.clip(normalized_pos, -1.0, 1.0)
-                    
+
                     tprint_info(f"   • Mapping par défaut linéaire pour {n_regimes} régimes")
         
         # Appliquer le mapping
@@ -323,52 +374,60 @@ class RegimeEconomicRelevanceAnalyzer:
                           regime_types: Optional[Dict[int, str]] = None,
                           predicted_regimes: Optional[Union[pd.Series, np.ndarray]] = None,
                           custom_mapping: Optional[Dict[Union[int, str], float]] = None,
-                          returns_input: bool = False) -> Dict[str, StrategyResults]:
+                          returns_input: bool = False,
+                          use_return_based_mapping: bool = True) -> Dict[str, StrategyResults]:
         """
         Évalue les trois stratégies : prédite, réelle, et buy & hold.
-        
+
         Args:
             prices: Série des prix (close)
             regime_labels: Étiquettes réelles des régimes
             regime_types: Dictionnaire mapping ID de régime → type de régime
             predicted_regimes: Étiquettes prédites des régimes (optionnel)
             custom_mapping: Mapping personnalisé régime → position
-            
+            returns_input: Si True, prices contient déjà des rendements
+            use_return_based_mapping: Si True, utilise FIX #1 (mapping basé sur rendements futurs)
+
         Returns:
             Dictionnaire des résultats par stratégie
         """
         tprint_info("📊 Évaluation des stratégies de trading")
-        
+
         # Calculer les rendements (ou utiliser directement si déjà fournis)
         if returns_input:
             returns = prices.fillna(0)
         else:
             returns = prices.pct_change().fillna(0)
-        
+
+        # FIX #1: Calculer les rendements futurs pour le mapping basé sur performance
+        forward_returns = returns.shift(-1)  # 1-period ahead returns
+
         # Initialiser les résultats
         strategies = {}
-        
+
         # 1. Stratégie Buy & Hold (benchmark)
         tprint_info("   • Évaluation de la stratégie Buy & Hold")
         buy_hold_positions = pd.Series(1.0, index=prices.index)
         buy_hold_returns = returns.copy()
         buy_hold_metrics = self.calculate_performance_metrics(buy_hold_returns, buy_hold_positions)
-        
+
         strategies['buy_hold'] = StrategyResults(
             name='Buy & Hold',
             positions=buy_hold_positions,
             returns=buy_hold_returns,
             metrics=buy_hold_metrics
         )
-        
+
         # 2. Stratégie basée sur les régimes réels
         tprint_info("   • Évaluation de la stratégie basée sur les régimes réels")
         real_positions = self.convert_regimes_to_positions(
-            regime_labels, regime_types, custom_mapping
+            regime_labels, regime_types, custom_mapping,
+            forward_returns=forward_returns,
+            use_return_based_mapping=use_return_based_mapping
         )
         real_returns = self._calculate_strategy_returns(returns, real_positions)
         real_metrics = self.calculate_performance_metrics(real_returns, real_positions)
-        
+
         strategies['real_regime'] = StrategyResults(
             name='Régimes Réels',
             positions=real_positions,
@@ -376,16 +435,18 @@ class RegimeEconomicRelevanceAnalyzer:
             metrics=real_metrics,
             benchmark_returns=buy_hold_returns
         )
-        
+
         # 3. Stratégie basée sur les régimes prédits (si disponible)
         if predicted_regimes is not None:
             tprint_info("   • Évaluation de la stratégie basée sur les régimes prédits")
             pred_positions = self.convert_regimes_to_positions(
-                predicted_regimes, regime_types, custom_mapping
+                predicted_regimes, regime_types, custom_mapping,
+                forward_returns=forward_returns,
+                use_return_based_mapping=use_return_based_mapping
             )
             pred_returns = self._calculate_strategy_returns(returns, pred_positions)
             pred_metrics = self.calculate_performance_metrics(pred_returns, pred_positions)
-            
+
             strategies['predicted_regime'] = StrategyResults(
                 name='Régimes Prédits',
                 positions=pred_positions,

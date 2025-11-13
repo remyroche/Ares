@@ -45,7 +45,7 @@ class StabilityAnalyzer:
         # compatibility with existing pipelines.
         self.stability_threshold = self.config.get(
             'stable_feature_threshold',
-            self.config.get('stability_threshold', 0.7)
+            self.config.get('stability_threshold', 0.8)  # Increased from 0.7 to 0.8 for more stringent selection
         )
 
         # Temporal analysis parameters
@@ -68,7 +68,7 @@ class StabilityAnalyzer:
         # Define bootstrap counts per mode
         bootstrap_counts = {
             'full': 100,   # FULL mode: 100 bootstrap samples
-            'blank': 5,    # BLANK mode: 5 bootstrap samples
+            'blank': 30,   # BLANK mode: 30 bootstrap samples (increased for better stability)
             'light': 2     # LIGHT mode: 2 bootstrap samples
         }
 

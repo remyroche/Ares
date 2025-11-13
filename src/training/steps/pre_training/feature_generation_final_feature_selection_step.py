@@ -1846,8 +1846,33 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_info("📈 Comparing with baseline random selection...")
             baseline_analysis = temp_component.compare_with_baseline(X, y, selected_features)
             analysis_results['baseline_analysis'] = baseline_analysis
-            
-            # 6. Method Results Analysis (if available)
+
+            # 6. NEW: Selection Frequency Distribution Analysis
+            tprint_info("📊 Analyzing selection frequency distribution...")
+            freq_dist_analysis = temp_component.analyze_selection_frequency_distribution()
+            analysis_results['frequency_distribution'] = freq_dist_analysis
+
+            # 7. NEW: Null Importance Analysis (statistical significance)
+            tprint_info("🎲 Calculating null importance baseline...")
+            null_importance = temp_component.calculate_null_importance_baseline(X, y, selected_features, n_permutations=50)
+            analysis_results['null_importance'] = null_importance
+
+            # 8. NEW: Walk-Forward Validation
+            tprint_info("🚶 Performing walk-forward validation...")
+            walk_forward = temp_component.walk_forward_feature_validation(X, y, selected_features, n_splits=5)
+            analysis_results['walk_forward_validation'] = walk_forward
+
+            # 9. NEW: Feature Redundancy Clustering
+            tprint_info("🔗 Clustering redundant features...")
+            redundancy_clustering = temp_component.cluster_redundant_features(X, selected_features, corr_threshold=0.85)
+            analysis_results['redundancy_clustering'] = redundancy_clustering
+
+            # 10. NEW: Mutual Information Stability (vectorized proxy)
+            tprint_info("📊 Calculating MI stability...")
+            mi_stability = temp_component.calculate_mi_stability(X, y, selected_features, cv_folds=5)
+            analysis_results['mi_stability'] = mi_stability
+
+            # 11. Method Results Analysis (if available)
             if method_results:
                 tprint_info("🔍 Analyzing method-specific results...")
                 analysis_results['method_analysis'] = {
@@ -2898,7 +2923,115 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     report += f"- **Baseline Avg Score:** {base_analysis.get('average_baseline_score', 'N/A'):.6f}\n"
                     report += f"- **Baseline Trials:** {base_analysis.get('n_baseline_trials', 'N/A')}\n"
                     report += f"- **Features Compared:** {base_analysis.get('n_features', 'N/A')}\n\n"
-                
+
+                # NEW: Selection Frequency Distribution
+                if 'frequency_distribution' in enhanced_analysis and enhanced_analysis['frequency_distribution'] and 'error' not in enhanced_analysis['frequency_distribution']:
+                    freq_dist = enhanced_analysis['frequency_distribution']
+                    report += f"### Selection Frequency Distribution\n\n"
+                    report += f"- **Distribution Mode:** {freq_dist.get('selection_mode', 'N/A')}\n"
+                    report += f"- **Interpretation:** {freq_dist.get('interpretation', 'N/A')}\n"
+                    report += f"- **Highly Stable Features (>80%):** {freq_dist.get('highly_stable_count', 'N/A')}\n"
+                    report += f"- **Highly Unstable Features (<20%):** {freq_dist.get('highly_unstable_count', 'N/A')}\n"
+                    report += f"- **Unstable Features Ratio:** {freq_dist.get('unstable_features_ratio', 0):.1%}\n"
+
+                    # Add frequency histogram
+                    histogram = freq_dist.get('frequency_histogram', {})
+                    if histogram:
+                        report += f"\n**Frequency Breakdown:**\n"
+                        for bin_name, data in sorted(histogram.items()):
+                            if isinstance(data, dict):
+                                report += f"- {bin_name}: {data.get('count', 0)} features ({data.get('percentage', 0):.1f}%)\n"
+                            else:
+                                report += f"- {bin_name}: {data} features\n"
+
+                    # Add warnings
+                    warnings = freq_dist.get('warnings', [])
+                    if warnings:
+                        report += f"\n**⚠️ Warnings:**\n"
+                        for warning in warnings:
+                            report += f"- {warning}\n"
+                    report += f"\n"
+
+                # NEW: Null Importance Analysis
+                if 'null_importance' in enhanced_analysis and enhanced_analysis['null_importance'] and 'error' not in enhanced_analysis['null_importance']:
+                    null_analysis = enhanced_analysis['null_importance']
+                    report += f"### Null Importance Analysis (Statistical Significance)\n\n"
+                    report += f"- **Significant Features (p < 0.05):** {null_analysis.get('n_significant', 'N/A')}\n"
+                    report += f"- **FDR-Adjusted Significant:** {null_analysis.get('n_fdr_significant', 'N/A')}\n"
+                    report += f"- **Mean P-Value:** {null_analysis.get('mean_p_value', 'N/A'):.4f}\n"
+                    report += f"- **Permutations:** {null_analysis.get('n_permutations', 'N/A')}\n"
+                    report += f"- **Execution Time:** {null_analysis.get('execution_time', 'N/A'):.1f}s\n"
+
+                    # Add significance interpretation
+                    total_features = len(selected_features_60) if selected_features_60 else 1
+                    sig_ratio = null_analysis.get('n_significant', 0) / total_features if total_features > 0 else 0
+                    if sig_ratio >= 0.8:
+                        report += f"\n✅ **{sig_ratio:.0%}** of features are statistically significant\n"
+                    elif sig_ratio >= 0.6:
+                        report += f"\n⚠️ Only **{sig_ratio:.0%}** of features are statistically significant\n"
+                    else:
+                        report += f"\n🚨 **WARNING:** Only **{sig_ratio:.0%}** of features are statistically significant!\n"
+                    report += f"\n"
+
+                # NEW: Walk-Forward Validation
+                if 'walk_forward_validation' in enhanced_analysis and enhanced_analysis['walk_forward_validation'] and 'error' not in enhanced_analysis['walk_forward_validation']:
+                    wf_analysis = enhanced_analysis['walk_forward_validation']
+                    report += f"### Walk-Forward Validation (OOS Performance)\n\n"
+                    report += f"- **Optimal Feature Count:** {wf_analysis.get('optimal_feature_count', 'N/A')}\n"
+                    report += f"- **Maximum OOS R²:** {wf_analysis.get('max_r2', 'N/A'):.4f}\n"
+                    report += f"- **Positive Contribution Features:** {wf_analysis.get('n_positive_features', 'N/A')}\n"
+                    report += f"- **Execution Time:** {wf_analysis.get('execution_time', 'N/A'):.1f}s\n"
+
+                    # Add performance interpretation
+                    max_r2 = wf_analysis.get('max_r2', 0)
+                    if max_r2 >= 0.1:
+                        report += f"\n✅ Good OOS performance (R² = {max_r2:.3f})\n"
+                    elif max_r2 >= 0.05:
+                        report += f"\n⚠️ Moderate OOS performance (R² = {max_r2:.3f})\n"
+                    else:
+                        report += f"\n🚨 **WARNING:** Low OOS performance (R² = {max_r2:.3f})\n"
+                    report += f"\n"
+
+                # NEW: Redundancy Clustering
+                if 'redundancy_clustering' in enhanced_analysis and enhanced_analysis['redundancy_clustering'] and 'error' not in enhanced_analysis['redundancy_clustering']:
+                    redun_cluster = enhanced_analysis['redundancy_clustering']
+                    report += f"### Feature Redundancy Clustering\n\n"
+                    report += f"- **Clusters Found:** {redun_cluster.get('n_clusters', 'N/A')}\n"
+                    report += f"- **Representative Features:** {redun_cluster.get('n_representatives', 'N/A')}\n"
+                    report += f"- **Redundant Features:** {redun_cluster.get('n_redundant', 'N/A')}\n"
+                    report += f"- **Redundancy Ratio:** {redun_cluster.get('redundancy_ratio', 0):.1%}\n"
+                    report += f"- **Execution Time:** {redun_cluster.get('execution_time', 'N/A'):.1f}s\n"
+
+                    # Add redundancy interpretation
+                    redun_ratio = redun_cluster.get('redundancy_ratio', 0)
+                    if redun_ratio < 0.2:
+                        report += f"\n✅ Low redundancy ({redun_ratio:.0%})\n"
+                    elif redun_ratio < 0.4:
+                        report += f"\n⚠️ Moderate redundancy ({redun_ratio:.0%}) - consider using representatives only\n"
+                    else:
+                        report += f"\n🚨 High redundancy ({redun_ratio:.0%}) - recommend filtering to representatives\n"
+                    report += f"\n"
+
+                # NEW: MI Stability Analysis
+                if 'mi_stability' in enhanced_analysis and enhanced_analysis['mi_stability'] and 'error' not in enhanced_analysis['mi_stability']:
+                    mi_stab = enhanced_analysis['mi_stability']
+                    report += f"### Mutual Information Stability (Correlation Proxy)\n\n"
+                    report += f"- **Stable Features (CV < 0.3):** {mi_stab.get('n_stable', 'N/A')}\n"
+                    report += f"- **High MI Features (>0.1):** {mi_stab.get('n_high_mi', 'N/A')}\n"
+                    report += f"- **Mean MI Stability:** {mi_stab.get('mean_mi_stability', 'N/A'):.3f}\n"
+                    report += f"- **Method:** {mi_stab.get('method', 'N/A')}\n"
+                    report += f"- **Execution Time:** {mi_stab.get('execution_time', 'N/A'):.1f}s\n"
+
+                    # Add MI interpretation
+                    mean_stability = mi_stab.get('mean_mi_stability', 0)
+                    if mean_stability >= 0.7:
+                        report += f"\n✅ High MI stability across folds\n"
+                    elif mean_stability >= 0.5:
+                        report += f"\n⚠️ Moderate MI stability\n"
+                    else:
+                        report += f"\n🚨 Low MI stability - features may not generalize well\n"
+                    report += f"\n"
+
                 # Method Analysis
                 if 'method_analysis' in enhanced_analysis:
                     method_analysis = enhanced_analysis['method_analysis']

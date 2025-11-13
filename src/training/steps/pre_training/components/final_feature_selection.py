@@ -7,6 +7,7 @@ redundancy detection, stability analysis, and cross-validation.
 """
 
 from typing import Any, Dict, List, Optional, Tuple
+from collections import defaultdict
 import pandas as pd
 import numpy as np
 from sklearn.feature_selection import SelectKBest, mutual_info_regression, RFE, SelectFromModel
@@ -1195,20 +1196,566 @@ class FinalFeatureSelectionComponent:
         except Exception as e:
             self.logger.error(f"Error in baseline comparison: {e}")
             return {"error": str(e)}
-    
+
+    def calculate_null_importance_baseline(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        selected_features: List[str],
+        n_permutations: int = 50
+    ) -> Dict[str, Any]:
+        """
+        Calculate null importance distribution by permuting target.
+
+        This provides statistical significance testing for feature importance.
+
+        Args:
+            X: Feature matrix
+            y: Target variable
+            selected_features: List of selected features
+            n_permutations: Number of target permutations
+
+        Returns:
+            Dictionary containing null importance analysis
+        """
+        try:
+            self.logger.info(f"🎲 Calculating null importance distribution with {n_permutations} permutations...")
+
+            import time
+
+            start_time = time.time()
+
+            # Get true importances
+            true_importances = self.all_permutation_importances
+
+            if not true_importances:
+                return {"error": "No true importances available"}
+
+            # Calculate null importances
+            null_importances = defaultdict(list)
+
+            np.random.seed(42)
+
+            for perm_idx in range(n_permutations):
+                if perm_idx % 10 == 0:
+                    self.logger.debug(f"🔄 Permutation {perm_idx}/{n_permutations}")
+
+                # Permute target
+                y_permuted = y.sample(frac=1, random_state=42 + perm_idx).values
+
+                # Calculate importances on permuted data
+                X_selected = X[selected_features]
+
+                # Use same method as main selection
+                model = ExtraTreesRegressor(
+                    n_estimators=50,
+                    random_state=42,
+                    n_jobs=-1,
+                    max_depth=10
+                )
+                model.fit(X_selected, y_permuted)
+
+                perm_importance = permutation_importance(
+                    model, X_selected, y_permuted,
+                    n_repeats=5,
+                    random_state=42,
+                    n_jobs=-1
+                )
+
+                for idx, feature in enumerate(selected_features):
+                    null_importances[feature].append(perm_importance.importances_mean[idx])
+
+            # Calculate p-values
+            p_values = {}
+            significant_features = []
+
+            for feature in selected_features:
+                true_imp = true_importances.get(feature, 0)
+                null_dist = null_importances[feature]
+
+                # P-value: proportion of null >= true
+                p_value = np.mean([null_imp >= true_imp for null_imp in null_dist])
+                p_values[feature] = p_value
+
+                if p_value < 0.05:
+                    significant_features.append(feature)
+
+            # Calculate False Discovery Rate (Benjamini-Hochberg)
+            sorted_p_values = sorted(p_values.items(), key=lambda x: x[1])
+            n_tests = len(p_values)
+            fdr_threshold = 0.05
+
+            fdr_significant = []
+            for rank, (feature, p_val) in enumerate(sorted_p_values, start=1):
+                bh_threshold = (rank / n_tests) * fdr_threshold
+                if p_val <= bh_threshold:
+                    fdr_significant.append(feature)
+                else:
+                    break
+
+            execution_time = time.time() - start_time
+
+            analysis = {
+                'null_importances': dict(null_importances),
+                'true_importances': {f: true_importances.get(f, 0) for f in selected_features},
+                'p_values': p_values,
+                'significant_features': significant_features,
+                'fdr_significant_features': fdr_significant,
+                'n_significant': len(significant_features),
+                'n_fdr_significant': len(fdr_significant),
+                'n_permutations': n_permutations,
+                'mean_p_value': np.mean(list(p_values.values())),
+                'execution_time': execution_time
+            }
+
+            self.null_importance_analysis = analysis
+
+            self.logger.info(
+                f"✅ Null importance analysis: {len(significant_features)}/{len(selected_features)} "
+                f"significant features (p < 0.05)"
+            )
+            self.logger.info(
+                f"📊 FDR-adjusted: {len(fdr_significant)} significant features"
+            )
+
+            return analysis
+
+        except Exception as e:
+            self.logger.error(f"❌ Null importance analysis failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"error": str(e)}
+
+    def analyze_selection_frequency_distribution(self) -> Dict[str, Any]:
+        """
+        Analyze the distribution of feature selection frequencies.
+
+        Returns:
+            Dictionary containing frequency distribution analysis
+        """
+        try:
+            if not hasattr(self, 'cv_analysis') or not self.cv_analysis:
+                return {"error": "CV analysis not available"}
+
+            cv_results = self.cv_analysis.get('cv_results', {})
+            selection_consistency = cv_results.get('selection_consistency', {})
+
+            if not selection_consistency:
+                return {"error": "No selection consistency data"}
+
+            frequencies = list(selection_consistency.values())
+
+            # Create histogram bins
+            bins = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
+            histogram = {}
+
+            for i in range(len(bins) - 1):
+                bin_name = f"{int(bins[i]*100)}-{int(bins[i+1]*100)}%"
+                count = sum(1 for f in frequencies if bins[i] <= f < bins[i+1])
+                percentage = (count / len(frequencies)) * 100
+                histogram[bin_name] = {
+                    'count': count,
+                    'percentage': percentage
+                }
+
+            # Add 100% bin (inclusive)
+            count_100 = sum(1 for f in frequencies if f == 1.0)
+            histogram["100%"] = {
+                'count': count_100,
+                'percentage': (count_100 / len(frequencies)) * 100
+            }
+
+            # Detect distribution mode
+            low_freq = histogram["0-20%"]['count'] + histogram.get("20-40%", {}).get('count', 0)
+            high_freq = histogram.get("80-100%", {}).get('count', 0) + histogram.get("100%", {}).get('count', 0)
+
+            if (low_freq + high_freq) > 0.7 * len(frequencies):
+                mode = "bimodal"  # Good: clear separation
+                interpretation = "✅ Clear separation between stable and unstable features"
+            elif all(h.get('count', 0) < len(frequencies) * 0.3 for h in histogram.values()):
+                mode = "uniform"  # Bad: no clear winners
+                interpretation = "⚠️ No clear distinction - all features similarly unstable"
+            else:
+                mode = "concentrated"
+                interpretation = "📊 Features concentrated in middle ranges"
+
+            # Calculate unstable ratio
+            unstable_ratio = (
+                histogram["0-20%"]['count'] + histogram.get("20-40%", {}).get('count', 0)
+            ) / len(frequencies)
+
+            # Warnings
+            warnings = []
+            if unstable_ratio > 0.6:
+                warnings.append("🚨 >60% of features are highly unstable (selected <40% of time)")
+            if histogram.get("80-100%", {}).get('count', 0) < len(frequencies) * 0.2:
+                warnings.append("⚠️ <20% of features are highly stable (selected >80% of time)")
+            if mode == "uniform":
+                warnings.append("❌ No stable features identified - feature selection is random")
+
+            analysis = {
+                'frequency_histogram': histogram,
+                'selection_mode': mode,
+                'interpretation': interpretation,
+                'unstable_features_ratio': unstable_ratio,
+                'highly_stable_count': histogram.get("80-100%", {}).get('count', 0),
+                'highly_unstable_count': histogram["0-20%"]['count'],
+                'warnings': warnings
+            }
+
+            self.frequency_distribution_analysis = analysis
+
+            # Log summary
+            self.logger.info(f"📊 Selection Frequency Distribution: {mode}")
+            self.logger.info(f"   - Unstable features (<40%): {unstable_ratio:.1%}")
+            self.logger.info(f"   - Highly stable features (>80%): {analysis['highly_stable_count']}")
+
+            for warning in warnings:
+                self.logger.warning(warning)
+
+            return analysis
+
+        except Exception as e:
+            self.logger.error(f"❌ Frequency distribution analysis failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"error": str(e)}
+
+    def walk_forward_feature_validation(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        selected_features: List[str],
+        n_splits: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Validate features using walk-forward analysis on time series.
+
+        Args:
+            X: Feature matrix
+            y: Target variable
+            selected_features: List of selected features
+            n_splits: Number of time series splits
+
+        Returns:
+            Dictionary containing walk-forward validation results
+        """
+        try:
+            self.logger.info(f"🚶 Performing walk-forward validation with {n_splits} splits...")
+
+            import time
+            from sklearn.metrics import r2_score, mean_squared_error
+
+            start_time = time.time()
+
+            tscv = TimeSeriesSplit(n_splits=n_splits)
+
+            # Sort features by importance (descending)
+            feature_importances = self.all_permutation_importances
+            if not feature_importances:
+                return {"error": "No feature importances available"}
+
+            sorted_features = sorted(
+                selected_features,
+                key=lambda f: feature_importances.get(f, 0),
+                reverse=True
+            )
+
+            cumulative_performance = []
+            feature_contributions = {}
+
+            # Incrementally add features and measure OOS performance
+            for n_features in range(1, min(len(sorted_features) + 1, 50)):  # Limit to 50 features for performance
+                current_features = sorted_features[:n_features]
+
+                # Walk-forward validation
+                r2_scores = []
+                mse_scores = []
+
+                for train_idx, test_idx in tscv.split(X):
+                    X_train = X[current_features].iloc[train_idx]
+                    y_train = y.iloc[train_idx]
+                    X_test = X[current_features].iloc[test_idx]
+                    y_test = y.iloc[test_idx]
+
+                    model = ExtraTreesRegressor(
+                        n_estimators=100,
+                        random_state=42,
+                        n_jobs=-1,
+                        max_depth=10
+                    )
+                    model.fit(X_train, y_train)
+
+                    y_pred = model.predict(X_test)
+                    r2 = r2_score(y_test, y_pred)
+                    mse = mean_squared_error(y_test, y_pred)
+                    r2_scores.append(r2)
+                    mse_scores.append(mse)
+
+                avg_r2 = np.mean(r2_scores)
+                std_r2 = np.std(r2_scores)
+                avg_mse = np.mean(mse_scores)
+
+                # Calculate marginal contribution
+                if n_features > 1:
+                    marginal_contribution = avg_r2 - cumulative_performance[-1]['avg_r2']
+                else:
+                    marginal_contribution = avg_r2
+
+                feature_contributions[sorted_features[n_features - 1]] = marginal_contribution
+
+                cumulative_performance.append({
+                    'n_features': n_features,
+                    'avg_r2': avg_r2,
+                    'std_r2': std_r2,
+                    'avg_mse': avg_mse,
+                    'marginal_contribution': marginal_contribution
+                })
+
+            # Find optimal feature count (highest R²)
+            best_idx = max(range(len(cumulative_performance)), key=lambda i: cumulative_performance[i]['avg_r2'])
+            optimal_feature_count = cumulative_performance[best_idx]['n_features']
+
+            # Features with positive marginal contribution
+            positive_contrib_features = [
+                f for f, contrib in feature_contributions.items() if contrib > 0.001
+            ]
+
+            execution_time = time.time() - start_time
+
+            analysis = {
+                'feature_contributions': feature_contributions,
+                'cumulative_performance': cumulative_performance,
+                'optimal_feature_count': optimal_feature_count,
+                'max_r2': cumulative_performance[best_idx]['avg_r2'],
+                'positive_contribution_features': positive_contrib_features,
+                'n_positive_features': len(positive_contrib_features),
+                'execution_time': execution_time
+            }
+
+            self.walk_forward_validation = analysis
+
+            self.logger.info(f"✅ Walk-forward validation complete")
+            self.logger.info(f"   - Optimal feature count: {optimal_feature_count}")
+            self.logger.info(f"   - Maximum OOS R²: {cumulative_performance[best_idx]['avg_r2']:.4f}")
+            self.logger.info(f"   - Features with positive contribution: {len(positive_contrib_features)}")
+
+            return analysis
+
+        except Exception as e:
+            self.logger.error(f"❌ Walk-forward validation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"error": str(e)}
+
+    def cluster_redundant_features(
+        self,
+        X: pd.DataFrame,
+        selected_features: List[str],
+        corr_threshold: float = 0.85
+    ) -> Dict[str, Any]:
+        """
+        Cluster highly correlated features and select best from each cluster.
+
+        Args:
+            X: Feature matrix
+            selected_features: List of selected features
+            corr_threshold: Correlation threshold for clustering
+
+        Returns:
+            Dictionary containing redundancy clustering results
+        """
+        try:
+            self.logger.info(f"🔗 Clustering redundant features with threshold {corr_threshold}...")
+
+            import time
+
+            start_time = time.time()
+
+            # Calculate correlation matrix
+            X_selected = X[selected_features]
+            corr_matrix = X_selected.corr().abs()
+
+            # Convert correlation to distance (1 - correlation)
+            distance_matrix = 1 - corr_matrix
+
+            # Hierarchical clustering
+            from scipy.cluster.hierarchy import linkage, fcluster
+            from scipy.spatial.distance import squareform
+
+            linkage_matrix = linkage(squareform(distance_matrix), method='average')
+
+            # Cut tree at threshold
+            cluster_labels = fcluster(linkage_matrix, 1 - corr_threshold, criterion='distance')
+
+            # Group features by cluster
+            feature_clusters = defaultdict(list)
+            for feature, cluster_id in zip(selected_features, cluster_labels):
+                feature_clusters[cluster_id].append(feature)
+
+            # Select best feature from each cluster (highest importance)
+            feature_importances = self.all_permutation_importances
+            if not feature_importances:
+                return {"error": "No feature importances available"}
+
+            representative_features = []
+            redundant_features = {}
+
+            for cluster_id, cluster_features in feature_clusters.items():
+                # Sort by importance
+                cluster_features_sorted = sorted(
+                    cluster_features,
+                    key=lambda f: feature_importances.get(f, 0),
+                    reverse=True
+                )
+
+                representative = cluster_features_sorted[0]
+                representative_features.append(representative)
+
+                # Mark others as redundant
+                for feature in cluster_features_sorted[1:]:
+                    redundant_features[feature] = representative
+
+            execution_time = time.time() - start_time
+
+            analysis = {
+                'feature_clusters': {int(k): v for k, v in feature_clusters.items()},
+                'representative_features': representative_features,
+                'redundant_features': redundant_features,
+                'n_clusters': len(feature_clusters),
+                'n_representatives': len(representative_features),
+                'n_redundant': len(redundant_features),
+                'redundancy_ratio': len(redundant_features) / len(selected_features) if selected_features else 0,
+                'execution_time': execution_time
+            }
+
+            self.redundancy_clustering = analysis
+
+            self.logger.info(f"✅ Redundancy clustering complete")
+            self.logger.info(f"   - Clusters found: {len(feature_clusters)}")
+            self.logger.info(f"   - Representative features: {len(representative_features)}")
+            self.logger.info(f"   - Redundant features: {len(redundant_features)} ({analysis['redundancy_ratio']:.1%})")
+
+            return analysis
+
+        except Exception as e:
+            self.logger.error(f"❌ Redundancy clustering failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"error": str(e)}
+
+    def calculate_mi_stability(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        selected_features: List[str],
+        cv_folds: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Calculate mutual information stability across CV folds using vectorized correlation proxy.
+
+        Uses Pearson correlation as a fast, vectorized proxy for mutual information.
+        This is computationally efficient and provides similar insights for feature-target relationships.
+
+        Args:
+            X: Feature matrix
+            y: Target variable
+            selected_features: List of selected features
+            cv_folds: Number of CV folds
+
+        Returns:
+            Dictionary containing MI stability analysis
+        """
+        try:
+            self.logger.info(f"📊 Calculating MI stability proxy (correlation-based) across {cv_folds} folds...")
+
+            import time
+
+            start_time = time.time()
+
+            tscv = TimeSeriesSplit(n_splits=cv_folds)
+
+            # Use correlation as vectorized MI proxy
+            mi_proxy_scores = defaultdict(list)
+
+            for fold_idx, (train_idx, _) in enumerate(tscv.split(X)):
+                X_fold = X.iloc[train_idx][selected_features]
+                y_fold = y.iloc[train_idx]
+
+                # Vectorized correlation calculation (fast MI proxy)
+                correlations = X_fold.corrwith(y_fold).abs()
+
+                for feature in selected_features:
+                    mi_proxy = correlations.get(feature, 0)
+                    if not np.isnan(mi_proxy):
+                        mi_proxy_scores[feature].append(mi_proxy)
+
+            # Calculate stability metrics
+            mi_mean = {f: np.mean(scores) for f, scores in mi_proxy_scores.items()}
+            mi_std = {f: np.std(scores) for f, scores in mi_proxy_scores.items()}
+            mi_cv = {
+                f: (mi_std[f] / mi_mean[f] if mi_mean[f] > 0 else np.inf)
+                for f in selected_features
+            }
+
+            # Features with stable MI (low CV < 0.3)
+            stable_mi_features = [f for f in selected_features if mi_cv.get(f, np.inf) < 0.3 and mi_mean.get(f, 0) > 0.01]
+
+            # Features with high mean MI (strong relationship)
+            high_mi_features = [f for f in selected_features if mi_mean.get(f, 0) > 0.1]
+
+            execution_time = time.time() - start_time
+
+            analysis = {
+                'mi_proxy_scores': dict(mi_proxy_scores),
+                'mi_mean': mi_mean,
+                'mi_std': mi_std,
+                'mi_cv': mi_cv,
+                'stable_mi_features': stable_mi_features,
+                'high_mi_features': high_mi_features,
+                'n_stable': len(stable_mi_features),
+                'n_high_mi': len(high_mi_features),
+                'mean_mi_stability': np.mean([1 - cv for cv in mi_cv.values() if cv < np.inf]),
+                'execution_time': execution_time,
+                'method': 'correlation_proxy'  # Indicate this is a proxy, not true MI
+            }
+
+            self.mi_stability_analysis = analysis
+
+            self.logger.info(f"✅ MI stability analysis complete")
+            self.logger.info(f"   - Stable features (CV < 0.3): {len(stable_mi_features)}")
+            self.logger.info(f"   - High MI features (>0.1): {len(high_mi_features)}")
+            self.logger.info(f"   - Mean MI stability: {analysis['mean_mi_stability']:.3f}")
+
+            return analysis
+
+        except Exception as e:
+            self.logger.error(f"❌ MI stability analysis failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"error": str(e)}
+
     def get_enhanced_analysis(self) -> Dict[str, Any]:
         """
-        Get all enhanced analysis results.
-        
+        Get all enhanced analysis results including new statistical validation metrics.
+
         Returns:
             Dictionary containing all analysis results
         """
         return {
+            # Original metrics
             'correlation_analysis': self.correlation_matrix,
             'redundancy_analysis': self.redundancy_analysis,
             'stability_analysis': self.stability_analysis,
             'cv_analysis': self.cv_analysis,
-            'baseline_comparison': self.baseline_comparison
+            'baseline_comparison': self.baseline_comparison,
+
+            # New enhanced metrics (Phase 1 & Phase 2)
+            'frequency_distribution': getattr(self, 'frequency_distribution_analysis', None),
+            'null_importance': getattr(self, 'null_importance_analysis', None),
+            'walk_forward_validation': getattr(self, 'walk_forward_validation', None),
+            'redundancy_clustering': getattr(self, 'redundancy_clustering', None),
+            'mi_stability': getattr(self, 'mi_stability_analysis', None),
         }
     
     def select_features_with_stability_optimization(self, X: pd.DataFrame, y: pd.Series, 

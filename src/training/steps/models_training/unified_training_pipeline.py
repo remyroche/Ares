@@ -642,6 +642,17 @@ class UnifiedTrainingPipeline:
             if config:
                 default_config.update(config)
             
+            # Ensure walk-forward configs are available to downstream via custom_params
+            custom_params = default_config.get('custom_params', {}).copy()
+            if 'walkforward_config' in default_config:
+                custom_params['walkforward_config'] = default_config['walkforward_config']
+            if 'temporal_config' in default_config:
+                custom_params['temporal_config'] = default_config['temporal_config']
+            # Also pass any WF tuning knobs if present
+            for k in ['wf_n_folds','wf_val_pct_per_fold','wf_final_test_pct','wf_embargo_days','wf_min_train_pct']:
+                if k in default_config:
+                    custom_params[k] = default_config[k]
+            
             # Create pipeline configuration
             pipeline_config = PipelineConfig(
                 symbol=default_config.get('symbol', 'ETHUSDT'),
@@ -659,7 +670,7 @@ class UnifiedTrainingPipeline:
                 analyst_config=default_config.get('analyst_config'),
                 tactician_config=default_config.get('tactician_config'),
                 ensemble_config=default_config.get('ensemble_config'),
-                custom_params=default_config.get('custom_params', {})
+                custom_params=custom_params
             )
             
             self.logger.info(f"Created pipeline configuration: {pipeline_config.symbol} {pipeline_config.timeframe}")

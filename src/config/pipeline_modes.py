@@ -9,6 +9,7 @@ from typing import Final, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
 
+
 class PipelineMode(Enum):
     """Pipeline execution modes."""
     FULL = "full"
@@ -47,8 +48,8 @@ class ModeConfiguration:
 FULL_MODE_CONFIG: Final[ModeConfiguration] = ModeConfiguration(
     name="full",
     description="Production mode - Complete training with full dataset",
-    lookback_days=1460,  # 4 years
-    lookback_years=4,
+    lookback_days=1095,  # 3 years (keep in sync with launcher)
+    lookback_years=3,
     intensity_percentage=1.0,  # 100% intensity
     computational_intensity="high",
     estimated_duration_minutes=240,
@@ -74,7 +75,7 @@ FULL_MODE_CONFIG: Final[ModeConfiguration] = ModeConfiguration(
 LIGHT_MODE_CONFIG: Final[ModeConfiguration] = ModeConfiguration(
     name="light",
     description="Development mode - Minimal data with all features/models",
-    lookback_days=20,  # 20 days (increased from 10 for better regime diversity)
+    lookback_days=30,  # keep in sync with launcher
     lookback_years=0,  # Less than a year
     intensity_percentage=0.025,  # 2.5% intensity
     computational_intensity="minimal",
@@ -100,8 +101,8 @@ LIGHT_MODE_CONFIG: Final[ModeConfiguration] = ModeConfiguration(
 
 BLANK_MODE_CONFIG: Final[ModeConfiguration] = ModeConfiguration(
     name="blank",
-    description="Quick testing mode - All features/models with 180 days and 268+ samples",
-    lookback_days=180,  # 6 months
+    description="Quick testing mode - All features/models with centralized days and 268+ samples",
+    lookback_days=180,  # keep in sync with launcher
     lookback_years=0,  # Less than a year
     intensity_percentage=0.1,  # 10% intensity
     computational_intensity="medium",

@@ -912,6 +912,70 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             
             data_completeness = calculate_data_completeness(market_data, timeframe_minutes, total_samples)
 
+            # Label distribution diagnostics (from labeling_result, fused preferred later)
+            label_distrib = {}
+            try:
+                s = None
+                if hasattr(labeling_result, 'labels') and labeling_result.labels is not None:
+                    ld = labeling_result.labels
+                    if isinstance(ld, pd.DataFrame):
+                        # Prefer fused if present; else use target_long/short; else first numeric
+                        cols_pref = [c for c in ['target_long_fused','target_short_fused','target_long','target_short'] if c in ld.columns]
+                        if cols_pref:
+                            series = ld[cols_pref].sum(axis=1) if len(cols_pref) > 1 else ld[cols_pref[0]]
+                        else:
+                            num_cols = [c for c in ld.columns if pd.api.types.is_numeric_dtype(ld[c])]
+                            series = ld[num_cols[0]] if num_cols else None
+                    else:
+                        series = ld
+                    if series is not None:
+                        s = pd.to_numeric(series, errors='coerce').dropna()
+                if s is not None and len(s) > 0:
+                    hist_counts, hist_bins = np.histogram(s.values.astype(float), bins=20)
+                    label_distrib['histogram'] = {'bins': hist_bins.tolist(), 'counts': hist_counts.tolist()}
+                    label_distrib['mean'] = float(s.mean())
+                    label_distrib['std'] = float(s.std())
+                    label_distrib['skew'] = float(pd.Series(s).skew())
+                    label_distrib['kurtosis'] = float(pd.Series(s).kurt())
+                    qs = np.linspace(0.01, 0.99, 25)
+                    label_distrib['qq_quantiles'] = {'p': qs.tolist(), 'empirical': np.quantile(s.values.astype(float), qs).tolist()}
+                    win = max(20, min(200, max(20, len(s)//20)))
+                    roll_mean = pd.Series(s).rolling(win).mean().dropna()
+                    roll_std = pd.Series(s).rolling(win).std().dropna()
+                    label_distrib['rolling_mean_std'] = {
+                        'window': int(win),
+                        'mean': roll_mean.iloc[-10:].astype(float).tolist() if len(roll_mean) else [],
+                        'std': roll_std.iloc[-10:].astype(float).tolist() if len(roll_std) else []
+                    }
+                else:
+                    label_distrib['note'] = 'labels unavailable for distribution diagnostics'
+            except Exception as e:
+                label_distrib = {'error': f'distribution calc failed: {e}'}
+
+            # Temporal stability by folds (best-effort using config temporal_splits if present)
+            temporal_stability = {}
+            try:
+                tf_splits = config.get('temporal_splits') or {}
+                if isinstance(tf_splits, dict) and 'folds' in tf_splits and 'labeled_data_df' in locals():
+                    fold_stats = []
+                    for fold in tf_splits['folds']:
+                        start = pd.to_datetime(fold.get('start')) if fold.get('start') else None
+                        end = pd.to_datetime(fold.get('end')) if fold.get('end') else None
+                        if start is None or end is None:
+                            continue
+                        df_slice = labeled_data_df.loc[(labeled_data_df.index>=start)&(labeled_data_df.index<=end)]
+                        if len(df_slice)==0:
+                            continue
+                        col = 'target_long_fused' if 'target_long_fused' in df_slice.columns else ('target_long' if 'target_long' in df_slice.columns else df_slice.columns[-1])
+                        ser = pd.to_numeric(df_slice[col], errors='coerce').dropna()
+                        fold_stats.append({
+                            'start': start.isoformat(), 'end': end.isoformat(),
+                            'mean': float(ser.mean()), 'variance': float(ser.var()), 'count': int(len(ser))
+                        })
+                    temporal_stability['folds'] = fold_stats
+            except Exception as e:
+                temporal_stability = {'error': f'temporal stability failed: {e}'}
+
             # Prepare comprehensive metrics based on actual labeling results
             general_metrics = {
                 'step_name': 'feature_generation_labeling_integration_step',
@@ -978,7 +1042,9 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'volume_confidence_enhancement': volume_confidence_stats.get('avg_adjustment_factor', 1.0),
                     'high_volume_confirmations': volume_confidence_stats.get('opportunities_boosted', 0),
                     'low_volume_warnings': volume_confidence_stats.get('opportunities_penalized', 0)
-                }
+                },
+                'label_distribution': label_distrib,
+                'temporal_stability': temporal_stability
             }
 
             technical_metrics = {
@@ -1770,7 +1836,143 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             missing_targets = [col for col in required_targets if col not in target_df.columns]
             if missing_targets:
                 raise ValueError(f"Missing required target columns: {missing_targets}")
-            
+
+            # ======================================================================
+            # Fused targets and sample weights (backward-compatible, strict-causal)
+            # ======================================================================
+            try:
+                cfg = (self._current_context.get('fused_targets_config')
+                       if hasattr(self, '_current_context') else None)
+                fused_cfg = cfg or {}
+                enable_fused = fused_cfg.get('enable_fused_targets', True)
+                enable_weights = fused_cfg.get('enable_sample_weights_from_fused', True)
+                k_soft = float(fused_cfg.get('fused_k', 0.75))
+                lambda_tth = float(fused_cfg.get('lambda_tth', 0.5))
+                eps_amb = float(fused_cfg.get('ambiguity_epsilon', 0.3))
+                use_cost_gate = bool(fused_cfg.get('use_cost_gate', True))
+                use_regime_weight = bool(fused_cfg.get('use_regime_weight', False))
+                min_w = float(fused_cfg.get('min_weight', 0.05))
+                cap_w = float(fused_cfg.get('cap_weight', 3.0))
+
+                if enable_fused:
+                    close = market_data['close'].reindex(target_df.index)
+                    # Strict-causal sigma: past-only rolling std of returns
+                    ret1 = close.pct_change()
+                    vol_win = getattr(vol_config.volatility, 'window', 20)
+                    sigma = ret1.rolling(window=vol_win, min_periods=max(2, vol_win//2)).std().shift(1)
+                    # Volatility modulation (past-only)
+                    vol_mean = sigma.rolling(window=max(50, vol_win*5), min_periods=max(10, vol_win)).mean()
+                    vol_norm = (sigma / vol_mean).replace([np.inf, -np.inf], np.nan)
+                    sens = getattr(vol_config.volatility, 'sensitivity', 1.0)
+                    eff_mult = np.clip(1.0 + sens * ((vol_norm - 1.0).fillna(0.0)), 1.0, 2.0)
+                    base_thr = float(vol_config.volatility_threshold)
+                    thr_eff = base_thr * eff_mult
+
+                    # Forward returns for horizons up to H (used only for labels)
+                    H = int(max(1, getattr(vol_config, 'lookahead_periods', 6)))
+                    fut_ret_H = close.pct_change(H).shift(-H)
+
+                    # Winsorize fut_ret to reduce outlier domination (scale-aware)
+                    # Use 5*sigma band (past sigma)
+                    sigma_band = (sigma * 5.0).clip(lower=1e-6)
+                    fut_ret_w = fut_ret_H.clip(lower=-sigma_band, upper=sigma_band)
+
+                    # Ambiguity band around threshold
+                    amb_band = eps_amb * thr_eff
+
+                    # Margins (normalized by sigma)
+                    denom = (sigma + 1e-8)
+                    margin_long = (fut_ret_w - thr_eff) / denom
+                    margin_short = (-fut_ret_w - thr_eff) / denom
+
+                    # Softness via sigmoid
+                    s_long = 1.0 / (1.0 + np.exp(-(margin_long / max(1e-6, k_soft))))
+                    s_short = 1.0 / (1.0 + np.exp(-(margin_short / max(1e-6, k_soft))))
+
+                    # Time-to-hit (approx) and triple-barrier ordering gate
+                    try:
+                        tth_long = pd.Series(np.nan, index=target_df.index)
+                        tth_short = pd.Series(np.nan, index=target_df.index)
+                        first_hit_up = pd.Series(np.nan, index=target_df.index)
+                        first_hit_dn = pd.Series(np.nan, index=target_df.index)
+                        for n in range(1, H+1):
+                            fr_n = close.pct_change(n).shift(-n)
+                            hit_l = (fr_n >= base_thr)
+                            hit_s = (fr_n <= -base_thr)
+                            # Fill first hit if not already set
+                            tth_long = tth_long.where(~hit_l, n)
+                            tth_short = tth_short.where(~hit_s, n)
+                            first_hit_up = first_hit_up.where(~hit_l, n)
+                            first_hit_dn = first_hit_dn.where(~hit_s, n)
+                        # Convert to weights (faster is better)
+                        w_tth_l = np.exp(-lambda_tth * (tth_long.fillna(H) / H))
+                        w_tth_s = np.exp(-lambda_tth * (tth_short.fillna(H) / H))
+                        # Triple-barrier ordering: penalize if adverse hit before favorable
+                        early_adverse_l = (first_hit_dn.fillna(H+1) < first_hit_up.fillna(H+1)).astype(float)
+                        early_adverse_s = (first_hit_up.fillna(H+1) < first_hit_dn.fillna(H+1)).astype(float)
+                        w_tb_l = (1.0 - 0.5 * early_adverse_l).astype(float)
+                        w_tb_s = (1.0 - 0.5 * early_adverse_s).astype(float)
+                    except Exception:
+                        w_tth_l = pd.Series(1.0, index=target_df.index)
+                        w_tth_s = pd.Series(1.0, index=target_df.index)
+                        w_tb_l = pd.Series(1.0, index=target_df.index)
+                        w_tb_s = pd.Series(1.0, index=target_df.index)
+                        tth_long = pd.Series(np.nan, index=target_df.index)
+                        tth_short = pd.Series(np.nan, index=target_df.index)
+
+                    # Ambiguity weight: down-weight near-threshold cases
+                    w_amb_l = ((fut_ret_w - thr_eff).abs() - amb_band).clip(lower=0.0) / (amb_band + 1e-8)
+                    w_amb_l = w_amb_l.clip(0.0, 1.0)
+                    w_amb_s = ((-fut_ret_w - thr_eff).abs() - amb_band).clip(lower=0.0) / (amb_band + 1e-8)
+                    w_amb_s = w_amb_s.clip(0.0, 1.0)
+
+                    # Cost gate (simple): if net payoff below 0 after base costs, set to zero weight
+                    if use_cost_gate:
+                        # Assume cost ~ 0.0005 as default round-trip; can be overridden later
+                        cost = 0.0005
+                        net_long_ok = ((fut_ret_H - base_thr - cost) > 0).astype(float)
+                        net_short_ok = ((-fut_ret_H - base_thr - cost) > 0).astype(float)
+                    else:
+                        net_long_ok = pd.Series(1.0, index=target_df.index)
+                        net_short_ok = pd.Series(1.0, index=target_df.index)
+
+                    # Volume-based confidence (already computed earlier as volume_adjustments in execute)
+                    # For strict local usage here, default to 1.0; executed earlier path also computes stats.
+                    w_vol = pd.Series(1.0, index=target_df.index)
+
+                    # Regime weight placeholder
+                    w_reg = pd.Series(1.0, index=target_df.index) if not use_regime_weight else pd.Series(1.0, index=target_df.index)
+
+                    # Fused/confidence targets (only positive-side when binary=1)
+                    tl = target_df['target_long']
+                    ts = target_df['target_short']
+                    fused_long = (s_long * w_tth_l * w_tb_l * w_amb_l * w_vol * w_reg * net_long_ok).where(tl > 0, 0.0)
+                    fused_short = (s_short * w_tth_s * w_tb_s * w_amb_s * w_vol * w_reg * net_short_ok).where(ts > 0, 0.0)
+
+                    # Clip to [0,1]
+                    fused_long = fused_long.clip(0.0, 1.0).astype(np.float32)
+                    fused_short = fused_short.clip(0.0, 1.0).astype(np.float32)
+
+                    # Sample weights (direction-agnostic)
+                    if enable_weights:
+                        sample_w = np.maximum(fused_long.fillna(0.0), fused_short.fillna(0.0))
+                        sample_w = sample_w.clip(lower=min_w)
+                        sample_w = sample_w.clip(upper=cap_w)
+                        target_df['target_sample_weight'] = sample_w.astype(np.float32)
+
+                    # Diagnostics columns
+                    target_df['target_long_fused'] = fused_long
+                    target_df['target_short_fused'] = fused_short
+                    target_df['target_margin_long'] = margin_long.replace([np.inf, -np.inf], np.nan).astype(np.float32)
+                    target_df['target_margin_short'] = margin_short.replace([np.inf, -np.inf], np.nan).astype(np.float32)
+                    target_df['target_tth_long'] = tth_long.astype('float32')
+                    target_df['target_tth_short'] = tth_short.astype('float32')
+
+                # Ensure no future leakage in auxiliary columns used by features
+                # All above use only past sigma/threshold; forward returns only influence targets/diagnostics
+            except Exception as e:
+                tprint_warning(f"⚠️ Fused target computation failed, continuing with binary labels only: {e}")
+
             tprint_success(f"✅ Created simplified target DataFrame with columns: {list(target_df.columns)}")
             tprint(f"🐛 DEBUG: Final target DataFrame shape: {target_df.shape}", "INFO")
             

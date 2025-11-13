@@ -60,36 +60,51 @@ class PerformanceMetrics:
     Attributes:
         cagr: Compound Annual Growth Rate
         sharpe_ratio: Ratio de Sharpe annualisé
+        nw_sharpe_ratio: Ratio de Sharpe ajusté Newey-West (robuste à l'autocorrélation)
         max_drawdown: Drawdown maximum
+        max_drawdown_duration: Durée maximale de drawdown (périodes)
+        avg_drawdown_duration: Durée moyenne des drawdowns (périodes)
         volatility: Volatilité annualisée
         turnover: Taux de rotation du portefeuille
         hit_rate: Taux de réussite (proportion de trades positifs)
         total_return: Rendement total sur la période
         calmar_ratio: Ratio Calmar (rendement / drawdown max)
         sortino_ratio: Ratio de Sortino (rendement / volatilité négative)
+        var_95: Value-at-Risk à 95%
+        cvar_95: Conditional VaR (Expected Shortfall) à 95%
     """
     cagr: float = 0.0
     sharpe_ratio: float = 0.0
+    nw_sharpe_ratio: float = 0.0
     max_drawdown: float = 0.0
+    max_drawdown_duration: float = 0.0
+    avg_drawdown_duration: float = 0.0
     volatility: float = 0.0
     turnover: float = 0.0
     hit_rate: float = 0.0
     total_return: float = 0.0
     calmar_ratio: float = 0.0
     sortino_ratio: float = 0.0
+    var_95: float = 0.0
+    cvar_95: float = 0.0
     
     def to_dict(self) -> Dict[str, float]:
         """Convertit les métriques en dictionnaire."""
         return {
             'cagr': self.cagr,
             'sharpe_ratio': self.sharpe_ratio,
+            'nw_sharpe_ratio': self.nw_sharpe_ratio,
             'max_drawdown': self.max_drawdown,
+            'max_drawdown_duration': self.max_drawdown_duration,
+            'avg_drawdown_duration': self.avg_drawdown_duration,
             'volatility': self.volatility,
             'turnover': self.turnover,
             'hit_rate': self.hit_rate,
             'total_return': self.total_return,
             'calmar_ratio': self.calmar_ratio,
-            'sortino_ratio': self.sortino_ratio
+            'sortino_ratio': self.sortino_ratio,
+            'var_95': self.var_95,
+            'cvar_95': self.cvar_95
         }
 
 
@@ -175,7 +190,8 @@ class RegimeEconomicRelevanceAnalyzer:
                  transaction_cost: float = 0.001,
                  significance_tests: bool = True,
                  n_permutations: int = 1000,
-                 block_size: Optional[int] = None):
+                 block_size: Optional[int] = None,
+                 random_state: Optional[int] = None):
         """
         Initialise l'analyseur de pertinence économique.
         
@@ -194,6 +210,7 @@ class RegimeEconomicRelevanceAnalyzer:
         self.significance_tests = significance_tests
         self.n_permutations = n_permutations
         self.block_size = block_size or 10  # Valeur par défaut si None
+        self.rng = np.random.default_rng(random_state)
         
         tprint_info("🔧 Initialisation de RegimeEconomicRelevanceAnalyzer")
         tprint_info(f"   • Taux sans risque: {risk_free_rate:.1%}")
@@ -305,7 +322,8 @@ class RegimeEconomicRelevanceAnalyzer:
                           regime_labels: Union[pd.Series, np.ndarray],
                           regime_types: Optional[Dict[int, str]] = None,
                           predicted_regimes: Optional[Union[pd.Series, np.ndarray]] = None,
-                          custom_mapping: Optional[Dict[Union[int, str], float]] = None) -> Dict[str, StrategyResults]:
+                          custom_mapping: Optional[Dict[Union[int, str], float]] = None,
+                          returns_input: bool = False) -> Dict[str, StrategyResults]:
         """
         Évalue les trois stratégies : prédite, réelle, et buy & hold.
         
@@ -321,8 +339,11 @@ class RegimeEconomicRelevanceAnalyzer:
         """
         tprint_info("📊 Évaluation des stratégies de trading")
         
-        # Calculer les rendements
-        returns = prices.pct_change().fillna(0)
+        # Calculer les rendements (ou utiliser directement si déjà fournis)
+        if returns_input:
+            returns = prices.fillna(0)
+        else:
+            returns = prices.pct_change().fillna(0)
         
         # Initialiser les résultats
         strategies = {}
@@ -439,11 +460,25 @@ class RegimeEconomicRelevanceAnalyzer:
         excess_returns = returns - self.risk_free_rate / self.trading_days_per_year
         sharpe_ratio = float(excess_returns.mean() / returns.std() * np.sqrt(self.trading_days_per_year)) if len(returns) > 0 and returns.std() > 0 else 0.0
         
-        # Maximum Drawdown
+        # Maximum Drawdown and durations
         cumulative = (1 + returns).cumprod()
         running_max = cumulative.expanding().max()
         drawdown = (cumulative - running_max) / running_max
         max_drawdown = float(drawdown.min()) if len(drawdown) > 0 else 0.0
+        # Drawdown durations
+        dd = drawdown.values
+        durations = []
+        cur = 0
+        for v in dd:
+            if v < 0:
+                cur += 1
+            elif cur > 0:
+                durations.append(cur)
+                cur = 0
+        if cur > 0:
+            durations.append(cur)
+        max_dd_duration = float(max(durations)) if durations else 0.0
+        avg_dd_duration = float(np.mean(durations)) if durations else 0.0
         
         # Calmar Ratio
         calmar_ratio = float(cagr / abs(max_drawdown)) if max_drawdown != 0 else 0.0
@@ -452,6 +487,16 @@ class RegimeEconomicRelevanceAnalyzer:
         negative_returns = returns[returns < 0]
         downside_std = float(negative_returns.std() * np.sqrt(self.trading_days_per_year)) if len(negative_returns) > 0 else 0.0
         sortino_ratio = float((cagr - self.risk_free_rate) / downside_std) if downside_std > 0 else 0.0
+        
+        # Newey-West adjusted Sharpe
+        nw_sharpe_ratio = self._newey_west_sharpe(returns)
+        
+        # Tail risk metrics
+        try:
+            var_95 = float(np.percentile(returns, 5))
+            cvar_95 = float(returns[returns <= var_95].mean()) if np.sum(returns <= var_95) > 0 else var_95
+        except Exception:
+            var_95, cvar_95 = 0.0, 0.0
         
         # Hit Rate
         hit_rate = float((returns > 0).mean()) if len(returns) > 0 else 0.0
@@ -465,13 +510,18 @@ class RegimeEconomicRelevanceAnalyzer:
         return PerformanceMetrics(
             cagr=cagr,
             sharpe_ratio=sharpe_ratio,
+            nw_sharpe_ratio=nw_sharpe_ratio,
             max_drawdown=max_drawdown,
+            max_drawdown_duration=max_dd_duration,
+            avg_drawdown_duration=avg_dd_duration,
             volatility=volatility,
             turnover=turnover,
             hit_rate=hit_rate,
             total_return=total_return,
             calmar_ratio=calmar_ratio,
-            sortino_ratio=sortino_ratio
+            sortino_ratio=sortino_ratio,
+            var_95=var_95,
+            cvar_95=cvar_95
         )
     
     def _safe_return_calc(self, returns: pd.Series) -> float:
@@ -494,7 +544,9 @@ class RegimeEconomicRelevanceAnalyzer:
     
     def perform_significance_test(self, 
                                strategies: Dict[str, StrategyResults],
-                               test_method: str = 'block_permutation') -> Dict[str, Any]:
+                               test_method: str = 'block_permutation',
+                               market_returns: Optional[pd.Series] = None,
+                               positions_by_strategy: Optional[Dict[str, pd.Series]] = None) -> Dict[str, Any]:
         """
         Implémente le test de permutation par blocs pour évaluer la signification.
         
@@ -531,7 +583,10 @@ class RegimeEconomicRelevanceAnalyzer:
         
         # Effectuer les tests
         if test_method == 'block_permutation':
-            results = self._block_permutation_test(strategy_returns, block_size)
+            if market_returns is not None and positions_by_strategy is not None:
+                results = self._block_permutation_positions_test(market_returns, positions_by_strategy, block_size)
+            else:
+                results = self._block_permutation_test(strategy_returns, block_size)
         elif test_method == 'bootstrap':
             results = self._bootstrap_test(strategy_returns)
         else:
@@ -578,19 +633,22 @@ class RegimeEconomicRelevanceAnalyzer:
                 
                 null_distributions[name]['mean'].append(float(np.mean(permuted_returns)))
                 null_distributions[name]['sharpe'].append(float(self._calculate_sharpe(permuted_returns)))
-                null_distributions[name]['total_return'].append(float(np.sum(permuted_returns)))
+                null_distributions[name]['total_return'].append(float(np.prod(1.0 + permuted_returns) - 1.0))
         
         # Calculer les p-values
         p_values = {}
+        p_values_two_sided = {}
         for name in strategy_returns.keys():
             p_values[name] = {}
+            p_values_two_sided[name] = {}
             for metric in ['mean', 'sharpe', 'total_return']:
                 observed = observed_stats[name][metric]
-                null_dist = null_distributions[name][metric]
+                null_dist = np.array(null_distributions[name][metric])
                 
-                # P-value unilatérale (supérieure)
-                p_value = (np.sum(null_dist >= observed) + 1) / (len(null_dist) + 1)
-                p_values[name][metric] = p_value
+                p_upper = (np.sum(null_dist >= observed) + 1) / (len(null_dist) + 1)
+                p_lower = (np.sum(null_dist <= observed) + 1) / (len(null_dist) + 1)
+                p_values[name][metric] = p_upper
+                p_values_two_sided[name][metric] = min(1.0, 2.0 * min(p_upper, p_lower))
         
         # Assembler les résultats
         results = {
@@ -599,10 +657,67 @@ class RegimeEconomicRelevanceAnalyzer:
             'n_permutations': self.n_permutations,
             'observed_stats': observed_stats,
             'p_values': p_values,
+            'p_values_two_sided': p_values_two_sided,
             'null_distributions': null_distributions
         }
         
         return results
+    
+    def _block_permutation_positions_test(self, market_returns: pd.Series, positions_by_strategy: Dict[str, pd.Series], block_size: int) -> Dict[str, Any]:
+        """Block-permutation on positions, recomputing strategy returns vs market.
+        This preserves market structure and tests regime timing alignment."""
+        # Align inputs
+        mr = market_returns.dropna()
+        pos_aligned = {}
+        for name, pos in positions_by_strategy.items():
+            ps = pos.reindex(mr.index, method='ffill').fillna(0.0)
+            pos_aligned[name] = ps
+        
+        # Observed stats
+        observed_stats = {}
+        for name, ps in pos_aligned.items():
+            sr = self._calculate_strategy_returns(mr, ps)
+            observed_stats[name] = {
+                'mean': float(sr.mean()),
+                'sharpe': self._calculate_sharpe(sr.values),
+                'total_return': float((1.0 + sr).prod() - 1.0)
+            }
+        
+        # Null distributions
+        null_distributions = {name: {metric: [] for metric in ['mean','sharpe','total_return']} for name in pos_aligned.keys()}
+        n = len(mr)
+        for i in range(self.n_permutations):
+            perm_idx = self._generate_block_permutation(n, block_size)
+            for name, ps in pos_aligned.items():
+                perm_ps = pd.Series(ps.values[perm_idx], index=mr.index)
+                sr = self._calculate_strategy_returns(mr, perm_ps)
+                null_distributions[name]['mean'].append(float(sr.mean()))
+                null_distributions[name]['sharpe'].append(float(self._calculate_sharpe(sr.values)))
+                null_distributions[name]['total_return'].append(float((1.0 + sr).prod() - 1.0))
+        
+        # P-values (one- and two-sided)
+        p_values = {}
+        p_values_two_sided = {}
+        for name in pos_aligned.keys():
+            p_values[name] = {}
+            p_values_two_sided[name] = {}
+            for metric in ['mean','sharpe','total_return']:
+                obs = observed_stats[name][metric]
+                dist = np.array(null_distributions[name][metric])
+                p_up = (np.sum(dist >= obs) + 1) / (len(dist) + 1)
+                p_lo = (np.sum(dist <= obs) + 1) / (len(dist) + 1)
+                p_values[name][metric] = p_up
+                p_values_two_sided[name][metric] = float(min(1.0, 2.0 * min(p_up, p_lo)))
+        
+        return {
+            'method': 'block_permutation_positions',
+            'block_size': block_size,
+            'n_permutations': self.n_permutations,
+            'observed_stats': observed_stats,
+            'p_values': p_values,
+            'p_values_two_sided': p_values_two_sided,
+            'null_distributions': null_distributions
+        }
     
     def _bootstrap_test(self, strategy_returns: Dict[str, np.ndarray]) -> Dict[str, Any]:
         """
@@ -623,18 +738,26 @@ class RegimeEconomicRelevanceAnalyzer:
         bootstrap_distributions = {name: {metric: [] for metric in ['mean', 'sharpe', 'total_return']} 
                                for name in strategy_returns.keys()}
         
-        # Générer les échantillons bootstrap
+        n = len(next(iter(strategy_returns.values())))
+        bsize = int(self.block_size) if self.block_size is not None else 10
+        
+        # Générer les échantillons bootstrap (Moving Block Bootstrap)
         for i in range(self.n_permutations):
             if i % 100 == 0 and i > 0:
                 tprint_debug(f"     • Bootstrap {i}/{self.n_permutations}")
             
             for name, returns in strategy_returns.items():
-                # Échantillonnage avec remise
-                bootstrap_sample = resample(returns, replace=True)
+                indices = []
+                while len(indices) < n:
+                    start = int(self.rng.integers(0, max(1, n - bsize + 1)))
+                    end = min(start + bsize, n)
+                    indices.extend(range(start, end))
+                indices = np.array(indices[:n])
+                bootstrap_sample = returns[indices]
                 
                 bootstrap_distributions[name]['mean'].append(float(np.mean(bootstrap_sample)))
                 bootstrap_distributions[name]['sharpe'].append(float(self._calculate_sharpe(bootstrap_sample)))
-                bootstrap_distributions[name]['total_return'].append(float(np.sum(bootstrap_sample)))
+                bootstrap_distributions[name]['total_return'].append(float(np.prod(1.0 + bootstrap_sample) - 1.0))
         
         # Calculer les intervalles de confiance et p-values
         results = {
@@ -655,40 +778,35 @@ class RegimeEconomicRelevanceAnalyzer:
                 ci_lower = np.percentile(dist, 2.5)
                 ci_upper = np.percentile(dist, 97.5)
                 
-                # P-value (proportion d'échantillons bootstrap >= observé)
-                p_value = (np.sum(np.array(dist) >= observed) + 1) / (len(dist) + 1)
+                p_upper = (np.sum(np.array(dist) >= observed) + 1) / (len(dist) + 1)
+                p_lower = (np.sum(np.array(dist) <= observed) + 1) / (len(dist) + 1)
+                p_value = p_upper
+                p_value_two_sided = min(1.0, 2.0 * min(p_upper, p_lower))
                 
                 results['confidence_intervals'][name][metric] = {
                     'ci_95_lower': float(ci_lower),
                     'ci_95_upper': float(ci_upper),
-                    'p_value': p_value
+                    'p_value': p_value,
+                    'p_value_two_sided': p_value_two_sided,
+                    'observed': float(observed)
                 }
-        
-        return results
-    
     def _generate_block_permutation(self, n: int, block_size: int) -> np.ndarray:
         """
         Génère une permutation par blocs pour préserver la structure temporelle.
         """
-        # Diviser en blocs
         n_blocks = n // block_size
         if n % block_size != 0:
             n_blocks += 1
         
-        # Créer les blocs
         blocks = []
         for i in range(n_blocks):
             start = i * block_size
             end = min((i + 1) * block_size, n)
             blocks.append(np.arange(start, end))
         
-        # Permuter les blocs
-        np.random.shuffle(blocks)
+        order = self.rng.permutation(n_blocks)
+        permuted_indices = np.concatenate([blocks[i] for i in order])
         
-        # Reconstruire l'indice permuté
-        permuted_indices = np.concatenate(blocks)
-        
-        # Si la longueur ne correspond pas (à cause du dernier bloc), tronquer
         if len(permuted_indices) > n:
             permuted_indices = permuted_indices[:n]
         
@@ -698,9 +816,54 @@ class RegimeEconomicRelevanceAnalyzer:
         """Calcule le ratio de Sharpe pour un tableau de rendements."""
         if len(returns) < 2 or np.std(returns) == 0:
             return 0.0
-        
         excess_returns = returns - self.risk_free_rate / self.trading_days_per_year
         return float(np.mean(excess_returns) / np.std(returns) * np.sqrt(self.trading_days_per_year))
+    
+    def _newey_west_sharpe(self, returns: pd.Series, max_lag: Optional[int] = None) -> float:
+        """Sharpe ajusté Newey-West (HAC) pour returns journaliers."""
+        try:
+            r = returns.values if isinstance(returns, pd.Series) else np.asarray(returns)
+            if r.size < 2:
+                return 0.0
+            ex = r - self.risk_free_rate / self.trading_days_per_year
+            mu = np.mean(ex)
+            n = len(ex)
+            if max_lag is None:
+                max_lag = int(1.5 * np.sqrt(n))
+            gamma0 = np.var(ex, ddof=0)
+            s = gamma0
+            for lag in range(1, max_lag + 1):
+                w = 1 - lag / (max_lag + 1)
+                cov = np.cov(ex[:-lag], ex[lag:], ddof=0)[0, 1]
+                s += 2 * w * cov
+            se = np.sqrt(s / n)
+            if se == 0:
+                return 0.0
+            sharpe_nw = (mu / se) * np.sqrt(self.trading_days_per_year)
+            return float(sharpe_nw)
+        except Exception:
+            return 0.0
+    
+    def _transaction_cost_sensitivity(self, market_returns: pd.Series, positions_by_strategy: Dict[str, pd.Series], cost_grid: Optional[List[float]] = None) -> Dict[str, Any]:
+        """Evaluate performance vs different proportional transaction costs."""
+        if cost_grid is None:
+            cost_grid = [0.0, 0.0005, 0.001, 0.002]
+        results = {}
+        base_cost = self.transaction_cost
+        for c in cost_grid:
+            self.transaction_cost = c
+            perf = {}
+            for name, ps in positions_by_strategy.items():
+                sr = self._calculate_strategy_returns(market_returns, ps)
+                metrics = self.calculate_performance_metrics(sr, ps)
+                perf[name] = {
+                    'total_return': metrics.total_return,
+                    'sharpe': metrics.sharpe_ratio,
+                    'nw_sharpe': metrics.nw_sharpe_ratio
+                }
+            results[c] = perf
+        self.transaction_cost = base_cost
+        return results
     
     def generate_economic_report(self,
                               strategies: Dict[str, StrategyResults],
@@ -734,9 +897,31 @@ class RegimeEconomicRelevanceAnalyzer:
         # Construire le contenu du rapport
         md_content = self._build_economic_report_content(strategies, significance_results)
         
-        # Écrire le fichier
+        # Écrire le fichier MD
         with open(report_path, 'w', encoding='utf-8') as f:
             f.write(md_content)
+        
+        # Écrire le JSON avec le même timestamp
+        json_filename = f"{prefix}_{timestamp}.json"
+        json_path = output_path / json_filename
+        save_data = {
+            'metadata': {
+                'timestamp': timestamp,
+                'analysis_type': 'regime_economic_relevance',
+                'configuration': {
+                    'risk_free_rate': self.risk_free_rate,
+                    'trading_days_per_year': self.trading_days_per_year,
+                    'transaction_cost': self.transaction_cost,
+                    'significance_tests': self.significance_tests,
+                    'n_permutations': self.n_permutations,
+                    'block_size': self.block_size
+                }
+            },
+            'strategies': {name: strategy.to_dict() for name, strategy in strategies.items()},
+            'significance_results': significance_results or {}
+        }
+        with open(json_path, 'w', encoding='utf-8') as jf:
+            json.dump(save_data, jf, indent=2, ensure_ascii=False)
         
         # Générer les graphiques
         self._generate_performance_charts(strategies, output_path, timestamp)
@@ -1133,7 +1318,8 @@ def create_regime_economic_relevance_analyzer(
     transaction_cost: float = 0.001,
     significance_tests: bool = True,
     n_permutations: int = 1000,
-    block_size: Optional[int] = None
+    block_size: Optional[int] = None,
+    random_state: Optional[int] = None
 ) -> RegimeEconomicRelevanceAnalyzer:
     """
     Fonction usine pour créer un analyseur de pertinence économique des régimes.
@@ -1155,5 +1341,6 @@ def create_regime_economic_relevance_analyzer(
         transaction_cost=transaction_cost,
         significance_tests=significance_tests,
         n_permutations=n_permutations,
-        block_size=block_size
+        block_size=block_size,
+        random_state=random_state
     )

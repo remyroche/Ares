@@ -1,0 +1,309 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rapport de Validation des Migrations d'Assertions</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+        .stat-number {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 1.1em;
+        }
+        .score-indicator {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .score-excellent { background: #28a745; color: white; }
+        .score-good { background: #ffc107; color: #333; }
+        .score-poor { background: #dc3545; color: white; }
+        .file-section {
+            background: white;
+            margin-bottom: 25px;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .file-header {
+            padding: 20px;
+            font-weight: bold;
+            font-size: 1.2em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .file-content {
+            padding: 0 20px 20px;
+        }
+        .issue {
+            background: #f8f9fa;
+            border-left: 4px solid #dc3545;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 0 5px 5px 0;
+        }
+        .issue.warning {
+            border-left-color: #ffc107;
+        }
+        .issue.error {
+            border-left-color: #dc3545;
+        }
+        .issue-suggestion {
+            background: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 0 5px 5px 0;
+        }
+        .summary-section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #e9ecef;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #dc3545, #ffc107);
+            transition: width 1s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+        .status-fail { color: #dc3545; font-weight: bold; }
+        .status-success { color: #28a745; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔍 Rapport de Validation des Migrations d'Assertions</h1>
+        <p>Généré le 2025-11-12 21:03:57</p>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-number">4</div>
+            <div class="stat-label">Fichiers validés</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">4</div>
+            <div class="stat-label">Fichiers avec problèmes</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">6</div>
+            <div class="stat-label">Total des problèmes</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">67.5/100</div>
+            <div class="stat-label">Score moyen de qualité</div>
+        </div>
+    </div>
+
+    <div class="summary-section">
+        <h2>📊 Résumé de la Migration</h2>
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: 67.5%">
+                67.5%
+            </div>
+        </div>
+        
+        <h3>🎯 Objectifs de Migration</h3>
+        <ul>
+            <li>Score de qualité cible: 85/100 <span class="status-fail">❌ NON ATTEINT</span></li>
+            <li>Assertions manuelles restantes: 10 <span class="status-fail">⚠️ 10 restantes</span></li>
+            <li>Imports manquants: 4 <span class="status-fail">❌ 4 manquants</span></li>
+        </ul>
+        
+        <h3>📈 Statistiques Détaillées</h3>
+        <ul>
+            <li>Fichiers avec score excellent (≥90): 3/4</li>
+            <li>Fichiers nécessitant des améliorations (<80): 1/4</li>
+            <li>Assertions manuelles à migrer: 10</li>
+            <li>Imports standardisés à ajouter: 4</li>
+        </ul>
+    </div>
+
+    <h2>📁 Détail par Fichier</h2>
+
+    <div class="file-section">
+        <div class="file-header">
+            <span>📄 test_order_manager.py</span>
+            <span class="score-indicator score-poor">0/100 (À améliorer)</span>
+        </div>
+        <div class="file-content">
+
+            <div class="issue error">
+                <strong>Import des assertions standardisées manquant</strong>
+                
+
+                <div class="issue-suggestion">
+                    💡 <strong>Suggestion:</strong> Ajouter: from tests.utils import (assert_success_response, assert_error_response, ...)
+                </div>
+</div>
+            <div class="issue warning">
+                <strong>Assertions de succès manuelles</strong>
+                 (9 occurrences)
+
+                <div class="issue-suggestion">
+                    💡 <strong>Suggestion:</strong> Remplacer par les assertions standardisées correspondantes
+                </div>
+</div>
+            <div class="issue warning">
+                <strong>Assertions d'erreur manuelles</strong>
+                
+
+                <div class="issue-suggestion">
+                    💡 <strong>Suggestion:</strong> Remplacer par les assertions standardisées correspondantes
+                </div>
+</div>
+        </div>
+    </div>
+
+    <div class="file-section">
+        <div class="file-header">
+            <span>📄 test_regime_economic_relevance.py</span>
+            <span class="score-indicator score-excellent">90/100 (Excellent)</span>
+        </div>
+        <div class="file-content">
+
+            <div class="issue error">
+                <strong>Import des assertions standardisées manquant</strong>
+                
+
+                <div class="issue-suggestion">
+                    💡 <strong>Suggestion:</strong> Ajouter: from tests.utils import (assert_success_response, assert_error_response, ...)
+                </div>
+</div>
+        </div>
+    </div>
+
+    <div class="file-section">
+        <div class="file-header">
+            <span>📄 test_paper_trading_simulator.py</span>
+            <span class="score-indicator score-excellent">90/100 (Excellent)</span>
+        </div>
+        <div class="file-content">
+
+            <div class="issue error">
+                <strong>Import des assertions standardisées manquant</strong>
+                
+
+                <div class="issue-suggestion">
+                    💡 <strong>Suggestion:</strong> Ajouter: from tests.utils import (assert_success_response, assert_error_response, ...)
+                </div>
+</div>
+        </div>
+    </div>
+
+    <div class="file-section">
+        <div class="file-header">
+            <span>📄 test_exchange_dispatcher.py</span>
+            <span class="score-indicator score-excellent">90/100 (Excellent)</span>
+        </div>
+        <div class="file-content">
+
+            <div class="issue error">
+                <strong>Import des assertions standardisées manquant</strong>
+                
+
+                <div class="issue-suggestion">
+                    💡 <strong>Suggestion:</strong> Ajouter: from tests.utils import (assert_success_response, assert_error_response, ...)
+                </div>
+</div>
+        </div>
+    </div>
+
+    <div class="summary-section">
+        <h2>🚀 Recommandations d'Amélioration</h2>
+        <ol>
+            <li><strong>Corriger les erreurs critiques</strong> - Ajouter les 4 imports manquants dans tous les fichiers</li>
+            <li><strong>Compléter la migration</strong> - Remplacer les 10 assertions manuelles par les assertions standardisées</li>
+            <li><strong>Améliorer test_order_manager.py</strong> - Ce fichier a le score le plus bas (0/100) et nécessite une attention particulière</li>
+            <li><strong>Valider les tests</strong> - Exécuter les tests après corrections pour vérifier le fonctionnement</li>
+        </ol>
+        
+        <h3>📋 Actions Immédiates</h3>
+        <ul>
+            <li>➕ Ajouter <code>from tests.utils.assertions import (...)</code> dans tous les fichiers</li>
+            <li>🔄 Remplacer <code>assert result['success'] is True</code> par <code>assert_success_response(result)</code></li>
+            <li>🔄 Remplacer <code>assert result['success'] is False</code> par <code>assert_error_response(result)</code></li>
+            <li>✅ Valider la syntaxe Python avec <code>python -m py_compile</code></li>
+            <li>🧪 Exécuter les tests unitaires pour vérifier le fonctionnement</li>
+        </ul>
+        
+        <h3>🎯 Prochaines Étapes</h3>
+        <ul>
+            <li>Corriger les imports manquants (priorité haute)</li>
+            <li>Migrer les assertions manuelles dans test_order_manager.py (priorité haute)</li>
+            <li>Relancer la validation pour vérifier l'atteinte de l'objectif 85/100</li>
+            <li>Générer un rapport final de migration complète</li>
+        </ul>
+    </div>
+
+    <footer style="text-align: center; margin-top: 50px; padding: 20px; color: #666;">
+        <p>Rapport généré par l'outil de validation des migrations ARES</p>
+        <p>Score actuel: 67.5/100 (Objectif: 85/100)</p>
+    </footer>
+</body>
+</html>

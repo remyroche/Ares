@@ -70,7 +70,7 @@ class ModelExplainer:
             config: Configuration dictionary for explanation parameters
         """
         self.config = config or {}
-        self.logger = create_fallback_logger()
+        self.logger = create_fallback_logger('ModelExplainer')
 
         _LOGGER.info("🚀 Initializing ModelExplainer...")
 

@@ -112,10 +112,8 @@ def get_training_mode_config(training_mode: str, sub_pipeline_name: Optional[str
 
     mode_data = modes[training_mode]
 
-    # Special exception: HMM regime discovery always uses 1460 days (4 years) regardless of training mode
+    # Use mode-configured lookback days from centralized source
     lookback_days = mode_data.get("lookback_days", 30)
-    if sub_pipeline_name == "hmm_regime_discovery":
-        lookback_days = 1460
 
     return TrainingModeConfig(
         description=mode_data.get("description", ""),
@@ -228,10 +226,8 @@ def get_training_input_dict(training_mode: str, sub_pipeline_name: Optional[str]
     """Get training input dictionary for a mode."""
     mode_config = get_training_mode_config(training_mode)
 
-    # Special exception: HMM regime discovery always uses 1460 days (4 years) regardless of training mode
+    # Use mode-configured lookback days from centralized source
     lookback_days = mode_config.lookback_days
-    if sub_pipeline_name == "hmm_regime_discovery":
-        lookback_days = 1460
 
     return {
         "training_mode": training_mode,

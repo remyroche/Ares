@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from src.utils.logger import get_logger
+from src.launcher.ares_launcher import get_mode_lookback_days
 
 logger = get_logger(__name__)
 
@@ -63,8 +64,8 @@ class ExecutionModeLookbackConfig:
         # Define configurations for each execution mode
         self._configurations = {
             ExecutionMode.FULL: LookbackConfiguration(
-                # General data loading - Full dataset
-                data_loading_days=None,  # None = use all available data
+                # General data loading - Centralized full lookback window
+                data_loading_days=get_mode_lookback_days("full"),
 
                 # Feature lookback optimization - Full intensity
                 optimization_window_days=1460,  # ~4 years of daily data
@@ -92,8 +93,8 @@ class ExecutionModeLookbackConfig:
             ),
 
             ExecutionMode.LIGHT: LookbackConfiguration(
-                # General data loading - 60 days (INCREASED from 20 for sufficient training data)
-                data_loading_days=60,  # 60 days for adequate sample size
+                # General data loading - Centralized light lookback window
+                data_loading_days=get_mode_lookback_days("light"),
 
                 # Feature lookback optimization - Light intensity
                 optimization_window_days=60,  # Aligned with data loading window
@@ -121,8 +122,8 @@ class ExecutionModeLookbackConfig:
             ),
 
             ExecutionMode.BLANK: LookbackConfiguration(
-                # General data loading - 180 days for validation
-                data_loading_days=180,  # 180 days for validation
+                # General data loading - Centralized blank lookback window
+                data_loading_days=get_mode_lookback_days("blank"),
 
                 # Feature lookback optimization - Minimal intensity
                 optimization_window_days=180,  # 180 days for validation

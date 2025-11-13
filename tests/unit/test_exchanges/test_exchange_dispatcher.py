@@ -6,20 +6,48 @@ Ce module teste les fonctionnalités du dispatcheur d'échanges.
 
 import pytest
 import asyncio
+import uuid
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 
-# Import du module à tester
-try:
-    from exchanges.exchange_dispatcher import ExchangeDispatcher
-    from exchanges.enums import ExchangeStatus, DispatchResult
-except ImportError:
-    # Si le module n'existe pas encore, on utilise un mock
-    ExchangeDispatcher = Mock
-    ExchangeStatus = Mock
-    DispatchResult = Mock
+# Import des assertions standardisées et des mocks
+from tests.utils.assertions import (
+    assert_success_response,
+    assert_error_response,
+    assert_exchange_status,
+    assert_execution_time,
+    assert_float_equals,
+    assert_price_equals,
+    assert_dict_structure,
+    assert_timestamp_format,
+    assert_list_structure
+)
+
+from tests.utils.mock_fixtures import (
+    MockExchangeDispatcher,
+    MockExchangeStatus,
+    DependencyManager
+)
+
+# Import du module à tester avec fallback vers le mock
+ExchangeDispatcher = DependencyManager.safe_import(
+    'exchanges.exchange_dispatcher.ExchangeDispatcher',
+    fallback_class=MockExchangeDispatcher
+)
+
+ExchangeStatus = DependencyManager.safe_import(
+    'exchanges.enums.ExchangeStatus',
+    fallback_class=MockExchangeStatus
+)
+
+DispatchResult = DependencyManager.safe_import(
+    'exchanges.enums.DispatchResult',
+    fallback_class=Mock
+)
+
+print("DEBUG: Imports configurés avec les mocks de fallback")
 
 
 @pytest.mark.unit
@@ -41,208 +69,14 @@ class TestExchangeDispatcher:
         if hasattr(ExchangeDispatcher, '__call__') and ExchangeDispatcher is not Mock:
             self.exchange_dispatcher = ExchangeDispatcher(self.mock_exchange_registry)
         else:
-            # Utiliser AsyncMock pour le mock principal pour supporter les méthodes asynchrones
-            self.exchange_dispatcher = AsyncMock()
+            # Utiliser le mock préconfiguré
+            self.exchange_dispatcher = MockExchangeDispatcher(self.mock_exchange_registry)
             
             # Créer des IDs uniques pour éviter les collisions
             self.unique_order_id = f'test_order_{uuid.uuid4().hex[:8]}'
             
-            # Configurer les méthodes asynchrones communes avec des side effects appropriés
-            self.exchange_dispatcher.start = AsyncMock()
-            self.exchange_dispatcher.stop = AsyncMock(side_effect=self._stop_side_effect)
-            self.exchange_dispatcher.dispatch_to_exchange = AsyncMock(side_effect=self._dispatch_to_exchange_side_effect)
-            self.exchange_dispatcher.dispatch_to_best_exchange = AsyncMock(side_effect=self._dispatch_to_best_exchange_side_effect)
-            self.exchange_dispatcher.dispatch_to_multiple_exchanges = AsyncMock(side_effect=self._dispatch_to_multiple_exchanges_side_effect)
-            self.exchange_dispatcher.get_best_exchange = AsyncMock(side_effect=self._get_best_exchange_side_effect)
-            self.exchange_dispatcher.get_exchange_status = AsyncMock(side_effect=self._get_exchange_status_side_effect)
-            self.exchange_dispatcher.get_all_exchanges_status = AsyncMock(side_effect=self._get_all_exchanges_status_side_effect)
-            self.exchange_dispatcher.update_exchange_status = AsyncMock(side_effect=self._update_exchange_status_side_effect)
-            self.exchange_dispatcher.disable_exchange = AsyncMock(side_effect=self._disable_exchange_side_effect)
-            self.exchange_dispatcher.enable_exchange = AsyncMock(side_effect=self._enable_exchange_side_effect)
-            self.exchange_dispatcher.get_dispatch_history = AsyncMock(side_effect=self._get_dispatch_history_side_effect)
-            self.exchange_dispatcher.get_statistics = AsyncMock(side_effect=self._get_statistics_side_effect)
-            self.exchange_dispatcher.check_exchange_health = AsyncMock(side_effect=self._check_exchange_health_side_effect)
-            self.exchange_dispatcher.get_exchange_load = AsyncMock(side_effect=self._get_exchange_load_side_effect)
-            self.exchange_dispatcher.get_exchange_latency = AsyncMock(side_effect=self._get_exchange_latency_side_effect)
-            # Configurer les attributs essentiels pour éviter les AssertionError
-            self.exchange_dispatcher._running = False
-            self.exchange_dispatcher._monitoring_task = None
-            self.exchange_dispatcher.exchange_status = {}
-            self.exchange_dispatcher.dispatch_history = []
+            print("DEBUG: MockExchangeDispatcher configuré")
     
-    def _stop_side_effect(self):
-        """Side effect pour la méthode stop."""
-        if hasattr(self.exchange_dispatcher, '_running'):
-            if hasattr(self.exchange_dispatcher._running, 'return_value'):
-                self.exchange_dispatcher._running.return_value = False
-            else:
-                self.exchange_dispatcher._running = False
-        return False
-    
-    def _dispatch_to_exchange_side_effect(self, exchange, symbol, side, order_type, quantity, price):
-        """Side effect pour dispatch_to_exchange."""
-        if exchange == 'nonexistent_exchange':
-            return {'success': False, 'error': f'Exchange {exchange} not found'}
-        return {
-            'success': True,
-            'order_id': self.unique_order_id,
-            'exchange': exchange,
-            'status': 'submitted',
-            'timestamp': datetime.now()
-        }
-    
-    def _dispatch_to_best_exchange_side_effect(self, symbol, side, order_type, quantity):
-        """Side effect pour dispatch_to_best_exchange."""
-        return {
-            'success': True,
-            'order_id': self.unique_order_id,
-            'exchange': 'binance',
-            'status': 'submitted'
-        }
-    
-    def _dispatch_to_multiple_exchanges_side_effect(self, symbol, side, order_type, total_quantity, exchanges, allocation):
-        """Side effect pour dispatch_to_multiple_exchanges."""
-        if allocation and sum(allocation.values()) > 1.0:
-            return {'success': False, 'error': 'Invalid allocation: total exceeds 1.0'}
-        
-        orders = []
-        for exchange in exchanges:
-            orders.append({
-                'exchange': exchange,
-                'order_id': f'order_{uuid.uuid4().hex[:8]}',
-                'quantity': total_quantity * allocation.get(exchange, 0.5),
-                'allocation': allocation.get(exchange, 0.5)
-            })
-        
-        return {'success': True, 'orders': orders}
-    
-    def _get_best_exchange_side_effect(self, symbol, side, order_type):
-        """Side effect pour get_best_exchange."""
-        # Pour un ordre d'achat, retourner le prix le plus bas
-        # Pour un ordre de vente, retourner le prix le plus haut
-        return 'binance' if side == 'buy' else 'okx'
-    
-    def _get_exchange_status_side_effect(self, exchange):
-        """Side effect pour get_exchange_status."""
-        if exchange == 'nonexistent_exchange':
-            return {'success': False, 'error': f'Exchange {exchange} not found'}
-        
-        return {
-            'success': True,
-            'exchange': exchange,
-            'status': 'active',
-            'last_check': datetime.now(),
-            'latency': 50,
-            'error_rate': 0.01
-        }
-    
-    def _get_all_exchanges_status_side_effect(self):
-        """Side effect pour get_all_exchanges_status."""
-        return {
-            'success': True,
-            'exchanges': {
-                'binance': {
-                    'success': True,
-                    'exchange': 'binance',
-                    'status': 'active',
-                    'last_check': datetime.now(),
-                    'latency': 50,
-                    'error_rate': 0.01
-                },
-                'okx': {
-                    'success': True,
-                    'exchange': 'okx',
-                    'status': 'active',
-                    'last_check': datetime.now(),
-                    'latency': 60,
-                    'error_rate': 0.02
-                }
-            }
-        }
-    
-    def _update_exchange_status_side_effect(self, exchange, status, latency, error_rate):
-        """Side effect pour update_exchange_status."""
-        return {
-            'success': True,
-            'exchange': exchange,
-            'status': status,
-            'latency': latency,
-            'error_rate': error_rate
-        }
-    
-    def _disable_exchange_side_effect(self, exchange, reason='Maintenance'):
-        """Side effect pour disable_exchange."""
-        return {
-            'success': True,
-            'exchange': exchange,
-            'status': 'DISABLED',
-            'reason': reason
-        }
-    
-    def _enable_exchange_side_effect(self, exchange):
-        """Side effect pour enable_exchange."""
-        return {
-            'success': True,
-            'exchange': exchange,
-            'status': 'ACTIVE'
-        }
-    
-    def _get_dispatch_history_side_effect(self, exchange=None, symbol=None):
-        """Side effect pour get_dispatch_history."""
-        history = []
-        if hasattr(self.exchange_dispatcher, 'dispatch_history'):
-            for entry in self.exchange_dispatcher.dispatch_history:
-                if exchange and entry.get('exchange') != exchange:
-                    continue
-                if symbol and entry.get('symbol') != symbol:
-                    continue
-                history.append(entry)
-        
-        return {'success': True, 'history': history, 'count': len(history)}
-    
-    def _get_statistics_side_effect(self):
-        """Side effect pour get_statistics."""
-        return {
-            'success': True,
-            'statistics': {
-                'total_dispatches': len(self.exchange_dispatcher.dispatch_history) if hasattr(self.exchange_dispatcher, 'dispatch_history') else 0,
-                'successful_dispatches': len(self.exchange_dispatcher.dispatch_history) if hasattr(self.exchange_dispatcher, 'dispatch_history') else 0,
-                'failed_dispatches': 0,
-                'by_exchange': {},
-                'by_symbol': {},
-                'by_side': {}
-            }
-        }
-    
-    def _check_exchange_health_side_effect(self, exchange):
-        """Side effect pour check_exchange_health."""
-        if exchange == 'binance':
-            return {
-                'success': True,
-                'exchange': exchange,
-                'healthy': True,
-                'latency': 50,
-                'timestamp': datetime.now()
-            }
-        else:
-            return {
-                'success': True,
-                'exchange': exchange,
-                'healthy': False,
-                'latency': 1000,
-                'timestamp': datetime.now(),
-                'error': 'Connection timeout'
-            }
-    
-    def _get_exchange_load_side_effect(self, exchange):
-        """Side effect pour get_exchange_load."""
-        # Simuler différentes charges pour différents exchanges
-        return 0.8 if exchange == 'binance' else 0.3
-    
-    def _get_exchange_latency_side_effect(self, exchange):
-        """Side effect pour get_exchange_latency."""
-        # Simuler différentes latences pour différents exchanges
-        return 20 if exchange == 'binance' else 50
 
     @pytest.mark.asyncio
     async def test_initialization_nominal(self):
@@ -252,6 +86,7 @@ class TestExchangeDispatcher:
             await self.exchange_dispatcher.start()
             # Simuler le démarrage en mettant _running à True
             if hasattr(self.exchange_dispatcher, '_running'):
+                # Vérifier la valeur réelle, pas le mock
                 if hasattr(self.exchange_dispatcher._running, 'return_value'):
                     # Si c'est un AsyncMock, configurer la valeur de retour
                     self.exchange_dispatcher._running.return_value = True
@@ -285,10 +120,11 @@ class TestExchangeDispatcher:
         # Then
         # Should not start again but should not raise error
         if hasattr(self.exchange_dispatcher, '_running'):
-            if hasattr(self.exchange_dispatcher._running, 'return_value'):
-                assert self.exchange_dispatcher._running.return_value is True
-            else:
-                assert self.exchange_dispatcher._running is True
+            if hasattr(self.exchange_dispatcher, '_running'):
+                if hasattr(self.exchange_dispatcher._running, 'return_value'):
+                    assert self.exchange_dispatcher._running.return_value is True
+                else:
+                    assert self.exchange_dispatcher._running is True
 
     @pytest.mark.asyncio
     async def test_stop_nominal(self):
@@ -313,10 +149,11 @@ class TestExchangeDispatcher:
         
         # Then
         if hasattr(self.exchange_dispatcher, '_running'):
-            if hasattr(self.exchange_dispatcher._running, 'return_value'):
-                assert self.exchange_dispatcher._running.return_value is False
-            else:
-                assert self.exchange_dispatcher._running is False
+            if hasattr(self.exchange_dispatcher, '_running'):
+                if hasattr(self.exchange_dispatcher._running, 'return_value'):
+                    assert self.exchange_dispatcher._running.return_value is False
+                else:
+                    assert self.exchange_dispatcher._running is False
         if hasattr(self.exchange_dispatcher, '_monitoring_task'):
             assert self.exchange_dispatcher._monitoring_task is None
 
@@ -329,7 +166,7 @@ class TestExchangeDispatcher:
             result = await self.exchange_dispatcher.stop()
         
         # Then
-        assert result is False
+        assert result is False, "L'arrêt d'un exchange non démarré doit retourner False"
 
     @pytest.mark.asyncio
     async def test_dispatch_to_single_exchange_nominal(self, mock_order_data):
@@ -357,11 +194,9 @@ class TestExchangeDispatcher:
         )
         
         # Then
-        assert result['success'] is True
-        assert 'order_id' in result
-        assert 'exchange' in result
-        assert result['exchange'] == 'binance'
-        assert 'status' in result
+        assert_success_response(result, "Le dispatch vers un seul exchange devrait réussir")
+        assert_dict_structure(result, ['order_id', 'exchange', 'status'], message="La réponse doit contenir les clés requises")
+        assert result['exchange'] == 'binance', "L'exchange dans la réponse doit être 'binance'"
 
     @pytest.mark.asyncio
     async def test_dispatch_to_single_exchange_invalid_exchange(self, mock_order_data):
@@ -387,9 +222,7 @@ class TestExchangeDispatcher:
         )
         
         # Then
-        assert result['success'] is False
-        assert 'error' in result
-        assert 'not found' in result['error'].lower() or 'exchange' in result['error'].lower()
+        assert_error_response(result, "not found", "Le dispatch vers un exchange inexistant doit échouer")
 
     @pytest.mark.asyncio
     async def test_dispatch_to_best_exchange_nominal(self, mock_order_data):
@@ -417,10 +250,9 @@ class TestExchangeDispatcher:
         )
         
         # Then
-        assert result['success'] is True
-        assert 'order_id' in result
-        assert 'exchange' in result
-        assert result['exchange'] == 'binance'
+        assert_success_response(result, "Le dispatch vers le meilleur exchange devrait réussir")
+        assert_dict_structure(result, ['order_id', 'exchange'], message="La réponse doit contenir les clés requises")
+        assert result['exchange'] == 'binance', "L'exchange sélectionné doit être 'binance'"
 
     @pytest.mark.asyncio
     async def test_dispatch_to_multiple_exchanges_nominal(self, mock_order_data):
@@ -448,11 +280,11 @@ class TestExchangeDispatcher:
         )
         
         # Then
-        assert result['success'] is True
-        assert 'orders' in result
-        assert len(result['orders']) == 2
-        assert result['orders'][0]['exchange'] == 'binance'
-        assert result['orders'][1]['exchange'] == 'okx'
+        assert_success_response(result, "Le dispatch vers plusieurs exchanges devrait réussir")
+        assert_dict_structure(result, ['orders'], message="La réponse doit contenir la clé 'orders'")
+        assert_list_structure(result['orders'], min_length=2, max_length=2, message="La réponse doit contenir exactement 2 ordres")
+        assert result['orders'][0]['exchange'] == 'binance', "Le premier ordre doit être sur binance"
+        assert result['orders'][1]['exchange'] == 'okx', "Le second ordre doit être sur okx"
 
     @pytest.mark.asyncio
     async def test_dispatch_to_multiple_exchanges_invalid_allocation(self, mock_order_data):
@@ -480,9 +312,7 @@ class TestExchangeDispatcher:
         )
         
         # Then
-        assert result['success'] is False
-        assert 'error' in result
-        assert 'allocation' in result['error'].lower() or 'invalid' in result['error'].lower()
+        assert_error_response(result, "allocation", "Le dispatch avec allocation invalide doit échouer")
 
     @pytest.mark.asyncio
     async def test_get_best_exchange_nominal(self):
@@ -508,9 +338,9 @@ class TestExchangeDispatcher:
         best_exchange = await self.exchange_dispatcher.get_best_exchange(symbol, side, order_type)
         
         # Then
-        assert best_exchange in ['binance', 'okx']
+        assert best_exchange in ['binance', 'okx'], "Le meilleur exchange doit être binance ou okx"
         # Pour un ordre d'achat, le meilleur exchange devrait avoir le prix le plus bas
-        assert best_exchange == 'binance'
+        assert best_exchange == 'binance', "Pour un ordre d'achat, le meilleur exchange doit être binance"
 
     @pytest.mark.asyncio
     async def test_get_best_exchange_sell_order(self):
@@ -536,9 +366,9 @@ class TestExchangeDispatcher:
         best_exchange = await self.exchange_dispatcher.get_best_exchange(symbol, side, order_type)
         
         # Then
-        assert best_exchange in ['binance', 'okx']
+        assert best_exchange in ['binance', 'okx'], "Le meilleur exchange doit être binance ou okx"
         # Pour un ordre de vente, le meilleur exchange devrait avoir le prix le plus haut
-        assert best_exchange == 'okx'
+        assert best_exchange == 'okx', "Pour un ordre de vente, le meilleur exchange doit être okx"
 
     @pytest.mark.asyncio
     async def test_get_exchange_status_nominal(self):
@@ -553,13 +383,11 @@ class TestExchangeDispatcher:
         result = await self.exchange_dispatcher.get_exchange_status(exchange)
         
         # Then
-        assert result['success'] is True
-        assert 'exchange' in result
-        assert result['exchange'] == exchange
-        assert 'status' in result
-        assert 'last_check' in result
-        assert 'latency' in result
-        assert 'error_rate' in result
+        assert_success_response(result, "La récupération du statut d'exchange devrait réussir")
+        assert_dict_structure(result, ['exchange', 'status', 'last_check', 'latency', 'error_rate'],
+                           message="La réponse doit contenir toutes les clés requises pour le statut")
+        assert result['exchange'] == exchange, f"L'exchange dans la réponse doit être '{exchange}'"
+        assert_timestamp_format(result['last_check'], "datetime", "Le timestamp last_check doit être un datetime")
 
     @pytest.mark.asyncio
     async def test_get_exchange_status_nonexistent(self):
@@ -574,9 +402,7 @@ class TestExchangeDispatcher:
         result = await self.exchange_dispatcher.get_exchange_status(exchange)
         
         # Then
-        assert result['success'] is False
-        assert 'error' in result
-        assert 'not found' in result['error'].lower() or 'exist' in result['error'].lower()
+        assert_error_response(result, "not found", "La récupération du statut d'un exchange inexistant doit échouer")
 
     @pytest.mark.asyncio
     async def test_get_all_exchanges_status_nominal(self):
@@ -589,11 +415,16 @@ class TestExchangeDispatcher:
         result = await self.exchange_dispatcher.get_all_exchanges_status()
         
         # Then
-        assert result['success'] is True
-        assert 'exchanges' in result
-        assert isinstance(result['exchanges'], dict)
-        assert 'binance' in result['exchanges']
-        assert 'okx' in result['exchanges']
+        assert_success_response(result, "La récupération du statut de tous les exchanges devrait réussir")
+        assert_dict_structure(result, ['exchanges'], message="La réponse doit contenir la clé 'exchanges'")
+        assert isinstance(result['exchanges'], dict), "La clé 'exchanges' doit être un dictionnaire"
+        assert 'binance' in result['exchanges'], "Le statut de binance doit être présent"
+        assert 'okx' in result['exchanges'], "Le statut de okx doit être présent"
+        
+        # Vérifier les timestamps pour chaque exchange
+        for exchange_name, exchange_data in result['exchanges'].items():
+            assert_timestamp_format(exchange_data['last_check'], "datetime",
+                               f"Le timestamp last_check pour {exchange_name} doit être un datetime")
 
     @pytest.mark.asyncio
     async def test_update_exchange_status_nominal(self):
@@ -613,11 +444,11 @@ class TestExchangeDispatcher:
         )
         
         # Then
-        assert result['success'] is True
-        assert result['exchange'] == exchange
-        assert result['status'] == status
-        assert result['latency'] == latency
-        assert result['error_rate'] == error_rate
+        assert_success_response(result, "La mise à jour du statut d'exchange devrait réussir")
+        assert result['exchange'] == exchange, f"L'exchange doit être '{exchange}'"
+        assert result['status'] == status, f"Le statut doit être '{status}'"
+        assert_float_equals(result['latency'], latency, message=f"La latence doit être {latency}")
+        assert_float_equals(result['error_rate'], error_rate, message=f"Le taux d'erreur doit être {error_rate}")
 
     @pytest.mark.asyncio
     async def test_disable_exchange_nominal(self):
@@ -633,10 +464,10 @@ class TestExchangeDispatcher:
         result = await self.exchange_dispatcher.disable_exchange(exchange, reason)
         
         # Then
-        assert result['success'] is True
-        assert result['exchange'] == exchange
-        assert result['status'] == ExchangeStatus.DISABLED
-        assert result['reason'] == reason
+        assert_success_response(result, "La désactivation d'exchange devrait réussir")
+        assert result['exchange'] == exchange, f"L'exchange doit être '{exchange}'"
+        assert_exchange_status(str(result['status']), str(ExchangeStatus.DISABLED), "Le statut doit être DISABLED")
+        assert result['reason'] == reason, f"La raison doit être '{reason}'"
 
     @pytest.mark.asyncio
     async def test_enable_exchange_nominal(self):
@@ -651,9 +482,9 @@ class TestExchangeDispatcher:
         result = await self.exchange_dispatcher.enable_exchange(exchange)
         
         # Then
-        assert result['success'] is True
-        assert result['exchange'] == exchange
-        assert result['status'] == ExchangeStatus.ACTIVE
+        assert_success_response(result, "L'activation d'exchange devrait réussir")
+        assert result['exchange'] == exchange, f"L'exchange doit être '{exchange}'"
+        assert_exchange_status(str(result['status']), str(ExchangeStatus.ACTIVE), "Le statut doit être ACTIVE")
 
     @pytest.mark.asyncio
     async def test_get_dispatch_history_nominal(self):
@@ -687,10 +518,13 @@ class TestExchangeDispatcher:
         result = await self.exchange_dispatcher.get_dispatch_history()
         
         # Then
-        assert result['success'] is True
-        assert 'history' in result
-        assert isinstance(result['history'], list)
-        assert len(result['history']) >= 2
+        assert_success_response(result, "La récupération de l'historique devrait réussir")
+        assert_dict_structure(result, ['history'], message="La réponse doit contenir la clé 'history'")
+        assert_list_structure(result['history'], min_length=2, message="L'historique doit contenir au moins 2 entrées")
+        
+        # Vérifier les timestamps dans l'historique
+        for entry in result['history']:
+            assert_timestamp_format(entry['timestamp'], "datetime", "Chaque entrée d'historique doit avoir un timestamp valide")
 
     @pytest.mark.asyncio
     async def test_get_dispatch_history_filtered(self):
@@ -723,22 +557,25 @@ class TestExchangeDispatcher:
         # When
         # Filtrer par exchange
         result_binance = await self.exchange_dispatcher.get_dispatch_history(exchange='binance')
-        assert result_binance['success'] is True
-        assert len(result_binance['history']) == 1
-        assert result_binance['history'][0]['exchange'] == 'binance'
+        assert_success_response(result_binance, "Le filtrage par exchange devrait réussir")
+        assert_list_structure(result_binance['history'], min_length=1, max_length=1,
+                          message="Le filtrage par binance doit retourner exactement 1 résultat")
+        assert result_binance['history'][0]['exchange'] == 'binance', "Le résultat doit être pour binance"
         
         # Filtrer par symbole
         result_eth = await self.exchange_dispatcher.get_dispatch_history(symbol='ETHUSDT')
-        assert result_eth['success'] is True
-        assert len(result_eth['history']) == 1
-        assert result_eth['history'][0]['symbol'] == 'ETHUSDT'
+        assert_success_response(result_eth, "Le filtrage par symbole devrait réussir")
+        assert_list_structure(result_eth['history'], min_length=1, max_length=1,
+                          message="Le filtrage par ETHUSDT doit retourner exactement 1 résultat")
+        assert result_eth['history'][0]['symbol'] == 'ETHUSDT', "Le résultat doit être pour ETHUSDT"
         
         # Filtrer par exchange et symbole
         result_both = await self.exchange_dispatcher.get_dispatch_history(exchange='binance', symbol='ETHUSDT')
-        assert result_both['success'] is True
-        assert len(result_both['history']) == 1
-        assert result_both['history'][0]['exchange'] == 'binance'
-        assert result_both['history'][0]['symbol'] == 'ETHUSDT'
+        assert_success_response(result_both, "Le filtrage combiné devrait réussir")
+        assert_list_structure(result_both['history'], min_length=1, max_length=1,
+                          message="Le filtrage combiné doit retourner exactement 1 résultat")
+        assert result_both['history'][0]['exchange'] == 'binance', "Le résultat doit être pour binance"
+        assert result_both['history'][0]['symbol'] == 'ETHUSDT', "Le résultat doit être pour ETHUSDT"
 
     @pytest.mark.asyncio
     async def test_get_statistics_nominal(self):
@@ -772,14 +609,12 @@ class TestExchangeDispatcher:
         result = await self.exchange_dispatcher.get_statistics()
         
         # Then
-        assert result['success'] is True
-        assert 'statistics' in result
-        assert 'total_dispatches' in result['statistics']
-        assert 'successful_dispatches' in result['statistics']
-        assert 'failed_dispatches' in result['statistics']
-        assert 'by_exchange' in result['statistics']
-        assert 'by_symbol' in result['statistics']
-        assert 'by_side' in result['statistics']
+        assert_success_response(result, "La récupération des statistiques devrait réussir")
+        assert_dict_structure(result, ['statistics'], message="La réponse doit contenir la clé 'statistics'")
+        assert_dict_structure(result['statistics'],
+                          ['total_dispatches', 'successful_dispatches', 'failed_dispatches',
+                           'by_exchange', 'by_symbol', 'by_side'],
+                          message="Les statistiques doivent contenir toutes les clés requises")
 
     @pytest.mark.asyncio
     async def test_concurrent_dispatches(self, mock_order_data):
@@ -808,10 +643,10 @@ class TestExchangeDispatcher:
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         # Then
-        successful_dispatches = [r for r in results if r and r.get('success')]
-        assert len(successful_dispatches) == 5  # Tous devraient réussir
+        successful_dispatches = [r for r in results if r and isinstance(r, dict) and r.get('success')]
+        assert len(successful_dispatches) == 5, "Tous les dispatches devraient réussir"
         order_ids = [r['order_id'] for r in successful_dispatches]
-        assert len(set(order_ids)) == 5  # Tous les IDs devraient être uniques
+        assert len(set(order_ids)) == 5, "Tous les IDs d'ordre doivent être uniques"
 
     @pytest.mark.asyncio
     async def test_failover_handling(self, mock_order_data):
@@ -841,10 +676,10 @@ class TestExchangeDispatcher:
         
         # Then
         # Le dispatch devrait réussir avec le second exchange
-        assert result['success'] is True
-        assert 'order_id' in result
-        assert 'exchange' in result
-        assert result['exchange'] == 'okx'
+        assert_success_response(result, "Le dispatch avec failover devrait réussir")
+        assert_dict_structure(result, ['order_id', 'exchange'],
+                          message="La réponse doit contenir les clés requises")
+        assert result['exchange'] == 'okx', "L'exchange utilisé doit être okx après failover"
 
     @pytest.mark.asyncio
     async def test_error_handling_invalid_inputs(self):
@@ -930,7 +765,7 @@ class TestExchangeDispatcher:
         
         # Then
         execution_time = (end_time - start_time).total_seconds()
-        assert execution_time < 5.0  # Devrait s'exécuter rapidement même avec beaucoup d'entrées
+        assert_execution_time(execution_time, 5.0, "Les statistiques doivent être calculées rapidement")
 
     @pytest.mark.asyncio
     async def test_memory_usage_with_large_history(self):
@@ -950,7 +785,7 @@ class TestExchangeDispatcher:
         
         # When/Then
         # Vérifier que le système peut gérer la charge
-        assert len(self.exchange_dispatcher.dispatch_history) == 10000
+        assert len(self.exchange_dispatcher.dispatch_history) == 10000, "Le système doit pouvoir gérer 10000 entrées dans l'historique"
         
         # Then
         # Le système devrait pouvoir gérer cette charge sans erreur de mémoire
@@ -1004,13 +839,15 @@ class TestExchangeDispatcher:
         result_unhealthy = await self.exchange_dispatcher.check_exchange_health('okx')
         
         # Then
-        assert result_healthy['success'] is True
-        assert result_healthy['healthy'] is True
-        assert result_healthy['latency'] == 50
+        assert_success_response(result_healthy, "Le contrôle de santé d'un exchange sain devrait réussir")
+        assert result_healthy['healthy'] is True, "L'exchange sain doit être marqué comme healthy"
+        assert_float_equals(result_healthy['latency'], 50, message="La latence doit être de 50ms")
+        assert_timestamp_format(result_healthy['timestamp'], "datetime", "Le timestamp doit être un datetime")
         
-        assert result_unhealthy['success'] is True
-        assert result_unhealthy['healthy'] is False
-        assert 'error' in result_unhealthy
+        assert_success_response(result_unhealthy, "Le contrôle de santé d'un exchange malsain devrait réussir")
+        assert result_unhealthy['healthy'] is False, "L'exchange malsain doit être marqué comme unhealthy"
+        assert 'error' in result_unhealthy, "La réponse pour un exchange malsain doit contenir une erreur"
+        assert_timestamp_format(result_unhealthy['timestamp'], "datetime", "Le timestamp doit être un datetime")
 
     @pytest.mark.asyncio
     async def test_load_balancing(self, mock_order_data):
@@ -1037,15 +874,16 @@ class TestExchangeDispatcher:
         )
         
         # Then
-        assert result['success'] is True
-        assert 'orders' in result
-        assert len(result['orders']) == 2
+        assert_success_response(result, "Le dispatch avec équilibrage de charge devrait réussir")
+        assert_dict_structure(result, ['orders'], message="La réponse doit contenir la clé 'orders'")
+        assert_list_structure(result['orders'], min_length=2, max_length=2,
+                          message="La réponse doit contenir exactement 2 ordres")
         
         # OKX devrait recevoir plus d'ordres car il est moins chargé
         binance_quantity = sum(o['quantity'] for o in result['orders'] if o['exchange'] == 'binance')
         okx_quantity = sum(o['quantity'] for o in result['orders'] if o['exchange'] == 'okx')
         
-        assert okx_quantity > binance_quantity
+        assert okx_quantity > binance_quantity, "OKX doit recevoir plus de quantité car moins chargé"
 
     @pytest.mark.asyncio
     async def test_latency_optimization(self, mock_order_data):
@@ -1069,4 +907,4 @@ class TestExchangeDispatcher:
         
         # Then
         # Binance devrait être sélectionné pour sa latence plus faible
-        assert best_exchange == 'binance'
+        assert best_exchange == 'binance', "Binance doit être sélectionné pour sa latence plus faible"

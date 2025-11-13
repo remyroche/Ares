@@ -608,15 +608,24 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             tprint("📊 Computing feature importance from merged data...")
             
-            # Identify target and feature columns
-            target_cols = [col for col in merged_data.columns if 'target' in col.lower()]
-            if not target_cols:
-                tprint("⚠️ No target columns found in merged data")
+            # Identify target and feature columns (prefer fused, fallback to binary)
+            preferred_targets = [
+                'target_long_fused', 'target_short_fused',
+                'target_long', 'target_short'
+            ]
+            available = [c for c in preferred_targets if c in merged_data.columns]
+            if not available:
+                tprint("⚠️ No fused/binary target columns found in merged data")
                 return {}
             
-            target_col = target_cols[0]  # Use first target column
-            feature_cols = [col for col in merged_data.columns 
-                           if col not in target_cols and col not in ['timestamp', 'labeling_method_id', 'labeling_timestamp']]
+            # Use first available preferred target
+            target_col = available[0]
+            if target_col in ('target_long', 'target_short'):
+                tprint("⚠️ Fused targets not found; falling back to binary targets for importance")
+            
+            # Exclude all target-like columns from features
+            exclude_cols = set([c for c in merged_data.columns if 'target' in c.lower()] + ['timestamp', 'labeling_method_id', 'labeling_timestamp'])
+            feature_cols = [col for col in merged_data.columns if col not in exclude_cols]
             
             if len(feature_cols) == 0:
                 tprint("⚠️ No feature columns found")
@@ -627,6 +636,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Prepare data
             X = merged_data[feature_cols].fillna(0)
             y = merged_data[target_col].fillna(0)
+            
+            # Optional sample weights from fused pipeline
+            sample_weight = None
+            if 'target_sample_weight' in merged_data.columns:
+                sample_weight = merged_data['target_sample_weight'].reindex(X.index).fillna(1.0).values
             
             # Remove rows with all-zero targets (no opportunities)
             valid_mask = y != 0

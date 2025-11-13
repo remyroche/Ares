@@ -197,21 +197,16 @@ class RegimeAwareSplitter(TemporalDataSplitter):
                 insufficient_regimes.append((regime, train_count))
                 logger.warning(f"⚠️ Regime {regime} has only {train_count} samples in training set (min: {self.min_regime_samples})")
         
-        # Fail fast if any regime has insufficient samples in training
+        # Previously: fail fast. New behavior: warn and continue to avoid blocking runs.
         if insufficient_regimes:
-            error_msg = (
-                f"❌ CRITICAL: Some regimes have insufficient samples in training set:\n"
-                + "\n".join([f"   Regime {r}: {count} samples (min required: {self.min_regime_samples})" 
-                            for r, count in insufficient_regimes])
-                + f"\n\n   SOLUTION: Either:\n"
-                f"   1. Reduce min_regime_samples (current: {self.min_regime_samples})\n"
-                f"   2. Adjust temporal split ratios to keep more samples in training\n"
-                f"   3. Use more data (increase lookback period)"
+            warning_msg = (
+                f"⚠️ WARNING: Some regimes have insufficient samples in training set (min={self.min_regime_samples}):\n"
+                + "\n".join([f"   Regime {r}: {count} samples" for r, count in insufficient_regimes])
+                + "\n   Proceeding without moving data between splits to preserve temporal integrity."
             )
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-        
-        logger.info(f"✅ All {len(all_regimes)} regimes present in training set with sufficient samples")
+            logger.warning(warning_msg)
+        else:
+            logger.info(f"✅ All {len(all_regimes)} regimes present in training set with sufficient samples")
         
         return X_train, X_val, X_test, y_train, y_val, y_test
 

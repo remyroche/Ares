@@ -326,24 +326,34 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
 
         for name, feature in features.items():
             try:
-                # Convert to numpy array
-                feature_values = feature.values.reshape(-1, 1)
+                # Convert to float64 numpy array and ensure 2D (n, 1)
+                x_col = np.asarray(feature, dtype=np.float64).reshape(-1, 1)
 
-                # Handle NaN values
-                mask = ~np.isnan(feature_values).flatten()
+                # Handle NaN values using column mask (n,)
+                col = x_col[:, 0]
+                mask = ~np.isnan(col)
                 if mask.sum() == 0:
                     # All NaN, return zeros
                     scaled_features[name] = pd.Series(np.zeros(len(feature)), index=index, name=name)
                     continue
 
-                # Fit and transform using RobustScaler
-                scaled_values = np.full_like(feature_values, np.nan, dtype=float)
+                # Prepare output buffer
+                scaled_values = np.full_like(x_col, np.nan, dtype=float)
+
+                # Fit and transform using RobustScaler on 2D slices to preserve shape
                 if mask.sum() > 10:  # Need at least 10 non-NaN values for robust scaling
-                    self.scaler.fit(feature_values[mask])
-                    scaled_values[mask] = self.scaler.transform(feature_values[mask]).flatten()
+                    x_fit = x_col[mask].reshape(-1, 1)
+                    self.scaler.fit(x_fit)
+                    transformed = self.scaler.transform(x_fit)  # (k, 1)
+                    scaled_values[mask, 0] = transformed[:, 0]
+                else:
+                    # Not enough points for robust scaling; fall back to centering
+                    valid = col[mask]
+                    centered = valid - np.nanmedian(valid)
+                    scaled_values[mask, 0] = centered
 
                 # Create scaled series
-                scaled_features[name] = pd.Series(scaled_values.flatten(), index=index, name=name)
+                scaled_features[name] = pd.Series(scaled_values[:, 0], index=index, name=name)
 
             except Exception as e:
                 logger.warning(f"Failed to apply RobustScaler to {name}: {e}")

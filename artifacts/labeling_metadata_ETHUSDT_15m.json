@@ -2,17 +2,17 @@
   "data": {
     "labeling_result": {
       "success": true,
-      "total_samples": 173434,
-      "opportunities_detected": 66556,
-      "long_opportunities": "33279",
-      "short_opportunities": "33277",
-      "high_quality_opportunities": 66556,
+      "total_samples": 135775,
+      "opportunities_detected": 57493,
+      "long_opportunities": "28922",
+      "short_opportunities": "28571",
+      "high_quality_opportunities": 57493,
       "filtered_opportunities": 0,
-      "detection_rate": 0.3837540505321909,
+      "detection_rate": 0.42344319646473944,
       "quality_acceptance_rate": 1.0,
-      "avg_confidence_score": 0.42302224191124266,
+      "avg_confidence_score": 0.49023782304211005,
       "volatility_adaptation": {
-        "avg": 1.17236433788316,
+        "avg": 1.1747305136210107,
         "min": 1.0,
         "max": 2.0
       }
@@ -30,16 +30,16 @@
       "symbol": "ETHUSDT",
       "exchange": "binance",
       "timeframe": "15m",
-      "execution_mode": "blank",
-      "execution_time": 177.28074158300296,
-      "created_at": "2025-11-11T15:33:48.637070"
+      "execution_mode": "full",
+      "execution_time": 47.2049593339907,
+      "created_at": "2025-11-13T08:09:38.421803"
     }
   },
   "metadata": {
     "symbol": "ETHUSDT",
     "exchange": "binance",
     "timeframe": "15m",
-    "created_at": "2025-11-11T15:33:48.637075"
+    "created_at": "2025-11-13T08:09:38.421817"
   },
-  "saved_at": "2025-11-11T15:33:48.638807"
+  "saved_at": "2025-11-13T08:09:38.423325"
 }

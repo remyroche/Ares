@@ -161,7 +161,24 @@ class EnhancedModelTrainer:
             _LOGGER.info(f'🔄 Training {model_name}...')
             training_start = time.time()
 
-            if sample_weight_train is not None:
+            # External sample weights override (aligned to X_train order)
+            ext_sw = None
+            try:
+                if isinstance(self.config, dict):
+                    sw_full = self.config.get('target_sample_weight_full')
+                else:
+                    sw_full = getattr(self.config, 'target_sample_weight_full', None)
+                if sw_full is not None:
+                    # If provided as full-length array, slice to X_train length when pre-split
+                    # Assumption: X_train is a contiguous slice of the original order
+                    if len(sw_full) >= len(X_train):
+                        ext_sw = np.array(sw_full)[:len(X_train)]
+            except Exception:
+                ext_sw = None
+
+            if ext_sw is not None:
+                model.fit(X_train, y_train, sample_weight=ext_sw)
+            elif sample_weight_train is not None:
                 model.fit(X_train, y_train, sample_weight=sample_weight_train)
             else:
                 model.fit(X_train, y_train)

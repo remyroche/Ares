@@ -1,0 +1,90 @@
+{
+  "metadata": {
+    "timestamp": "20251113_005217",
+    "analysis_type": "regime_economic_relevance",
+    "configuration": {
+      "risk_free_rate": 0.02,
+      "trading_days_per_year": 8760,
+      "transaction_cost": 0.001,
+      "significance_tests": true,
+      "n_permutations": 1000,
+      "block_size": 10
+    }
+  },
+  "strategies": {
+    "buy_hold": {
+      "name": "Buy & Hold",
+      "metrics": {
+        "cagr": -0.028683403208769498,
+        "sharpe_ratio": 0.2754617853122405,
+        "nw_sharpe_ratio": 50.724592713834376,
+        "max_drawdown": -0.8134306794968283,
+        "max_drawdown_duration": 32818.0,
+        "avg_drawdown_duration": 1782.4736842105262,
+        "volatility": 0.6916060365336963,
+        "turnover": 0.0,
+        "hit_rate": 0.5035990323912916,
+        "total_return": -0.10650742053985596,
+        "calmar_ratio": -0.035262258889119436,
+        "sortino_ratio": -0.08778395618349391,
+        "var_95": -0.010569557547569275,
+        "cvar_95": -0.018055757507681847
+      },
+      "positions_summary": {
+        "mean": 1.0,
+        "std": 0.0,
+        "min": 1.0,
+        "max": 1.0,
+        "unique_values": 1
+      },
+      "returns_summary": {
+        "mean": 2.4031014618230984e-05,
+        "std": 0.00738935824483633,
+        "skew": -0.2856847941875458,
+        "kurt": 16.955930709838867,
+        "min": -0.1174079179763794,
+        "max": 0.09555459022521973
+      }
+    },
+    "real_regime": {
+      "name": "Régimes Réels",
+      "metrics": {
+        "cagr": -0.4349280113526469,
+        "sharpe_ratio": -1.5485128155159014,
+        "nw_sharpe_ratio": -284.3382124382413,
+        "max_drawdown": -0.9192894349891847,
+        "max_drawdown_duration": 25876.0,
+        "avg_drawdown_duration": 649.7115384615385,
+        "volatility": 0.34346668440623024,
+        "turnover": 0.11306310292946278,
+        "hit_rate": 0.393592542332881,
+        "total_return": -0.8901671680819118,
+        "calmar_ratio": -0.47311324899297225,
+        "sortino_ratio": -1.620952001788309,
+        "var_95": -0.005227949690818787,
+        "cvar_95": -0.00880112853106496
+      },
+      "positions_summary": {
+        "mean": -0.2534367809310284,
+        "std": 0.6209560944400799,
+        "min": -1.0,
+        "max": 0.5,
+        "unique_values": 4
+      },
+      "returns_summary": {
+        "mean": -5.8431799372808666e-05,
+        "std": 0.0036697169228946127,
+        "skew": 0.5553522495190576,
+        "kurt": 35.92359033034025,
+        "min": -0.04940830612182617,
+        "max": 0.10290788316726684
+      },
+      "benchmark_summary": {
+        "mean": 2.4031014618230984e-05,
+        "std": 0.00738935824483633,
+        "total_return": -0.10650742053985596
+      }
+    }
+  },
+  "significance_results": {}
+}

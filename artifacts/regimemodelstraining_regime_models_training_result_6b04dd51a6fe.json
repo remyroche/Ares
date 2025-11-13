@@ -1,0 +1,209 @@
+{
+  "models": {
+    "random_forest": null,
+    "extratrees": null
+  },
+  "model_metrics": {
+    "random_forest": {
+      "accuracy": null,
+      "precision": null,
+      "recall": null,
+      "f1_score": null,
+      "classification_report": {
+        "5": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "6": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "8": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "9": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "accuracy": null,
+        "macro avg": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "weighted avg": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        }
+      }
+    },
+    "extratrees": {
+      "accuracy": null,
+      "precision": null,
+      "recall": null,
+      "f1_score": null,
+      "classification_report": {
+        "5": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "6": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "8": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "9": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "accuracy": null,
+        "macro avg": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        },
+        "weighted avg": {
+          "precision": null,
+          "recall": null,
+          "f1-score": null,
+          "support": null
+        }
+      }
+    }
+  },
+  "training_time": null,
+  "success": null,
+  "validation_report": {
+    "temporal_order_valid": null,
+    "leakage_detected": null,
+    "validation_score": null,
+    "warnings": [],
+    "recommendations": [
+      null
+    ]
+  },
+  "hardware_optimization": {
+    "enabled": null,
+    "workload_type": null,
+    "optimization_applied": null
+  },
+  "lookahead_protection": {
+    "enabled": null,
+    "protection_applied": null
+  },
+  "metadata": {
+    "component_type": null,
+    "data_shape": [
+      null,
+      null
+    ],
+    "train_shape": [
+      null,
+      null
+    ],
+    "test_shape": [
+      null,
+      null
+    ],
+    "n_regimes": null,
+    "feature_names": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "timestamp": null,
+    "centralized_config_used": null,
+    "walk_forward_validation": {
+      "validation_completed": null,
+      "n_folds": null,
+      "model_rankings": [],
+      "selected_models": []
+    }
+  },
+  "reports": {
+    "markdown_report": null,
+    "csv_metrics": null,
+    "csv_comparison": null
+  }
+}

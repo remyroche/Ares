@@ -23,6 +23,21 @@ from .assertions import (
     assert_percentage_equals
 )
 
+from .mock_fixtures import (
+    MockExchangeStatus,
+    MockOrderStatus,
+    MockOrderType,
+    MockOrderSide,
+    MockSimulatorConfig,
+    MockSlippageModel,
+    MockPaperTradingSimulator,
+    MockExchangeDispatcher,
+    MockOrderManager,
+    MockHelpers,
+    DependencyManager,
+    setup_test_imports
+)
+
 __all__ = [
     'AssertionHelpers',
     'assert_success_response',
@@ -38,5 +53,17 @@ __all__ = [
     'assert_exchange_status',
     'assert_signal_status',
     'assert_dataframe_structure',
-    'assert_percentage_equals'
+    'assert_percentage_equals',
+    'MockExchangeStatus',
+    'MockOrderStatus',
+    'MockOrderType',
+    'MockOrderSide',
+    'MockSimulatorConfig',
+    'MockSlippageModel',
+    'MockPaperTradingSimulator',
+    'MockExchangeDispatcher',
+    'MockOrderManager',
+    'MockHelpers',
+    'DependencyManager',
+    'setup_test_imports'
 ]

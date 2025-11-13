@@ -42,7 +42,7 @@ from sklearn.metrics import (
     calinski_harabasz_score
 )
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, StratifiedKFold
 
 # Import comprehensive temporal score from clustering optimization goals
 try:
@@ -54,7 +54,7 @@ try:
     COMPREHENSIVE_TEMPORAL_AVAILABLE = True
 except ImportError:
     COMPREHENSIVE_TEMPORAL_AVAILABLE = False
-    logger.warning("Comprehensive temporal score functions not available")
+    logging.warning("Comprehensive temporal score functions not available")
 
 # Import tprint utilities
 try:
@@ -568,7 +568,7 @@ class ClusterQualityAssessor:
     manager and computes comprehensive quality metrics.
     """
     
-    def __init__(self, artifact_manager=None, enable_hardware_optimization=True, enable_vectorization=True):
+    def __init__(self, artifact_manager=None, enable_hardware_optimization=True, enable_vectorization=True, random_state: Optional[int] = None):
         """
         Initialize the cluster quality assessor.
         
@@ -579,6 +579,8 @@ class ClusterQualityAssessor:
         """
         self.logger = logging.getLogger(self.__class__.__name__)
         self.artifact_manager = artifact_manager
+        self.random_state = 42 if random_state is None else int(random_state)
+        self.rng = np.random.default_rng(self.random_state)
         
         tprint_info("🔧 Initializing ClusterQualityAssessor")
         
@@ -683,7 +685,8 @@ class ClusterQualityAssessor:
                        timestamps: Optional[pd.DatetimeIndex] = None,
                        min_regime_size: int = 10,
                        temporal_sensitivity_mode: str = "standard",
-                       fast_mode: bool = False) -> ClusterQualityMetrics:
+                       fast_mode: bool = False,
+                       standardize_for_metrics: bool = True) -> ClusterQualityMetrics:
         """
         Comprehensive cluster quality assessment.
 
@@ -729,6 +732,17 @@ class ClusterQualityAssessor:
             tprint_warning("⚠️ No numeric features available for quality assessment")
             return metrics
         
+        # Optional standardization for scale-sensitive metrics (DBI/CH/Silhouette/CV)
+        features_for_metrics = features_clean
+        if standardize_for_metrics:
+            try:
+                mu = features_clean.mean(axis=0)
+                sigma = features_clean.std(axis=0, ddof=0).replace(0, QualityThresholds.DBI_EPSILON)
+                features_for_metrics = (features_clean - mu) / sigma
+            except Exception as e:
+                tprint_warning(f"⚠️ Feature standardization failed, using raw features: {e}")
+                features_for_metrics = features_clean
+        
         # Calculate basic statistics
         metrics.n_regimes = len(set(regime_labels[non_noise_mask]))
         metrics.noise_ratio = np.sum(~non_noise_mask) / len(regime_labels)
@@ -737,7 +751,7 @@ class ClusterQualityAssessor:
         if not fast_mode:
             try:
                 metrics.silhouette_score, metrics.silhouette_per_cluster = self._calculate_silhouette_scores(
-                regime_labels, features_clean, non_noise_mask
+                regime_labels, features_for_metrics, non_noise_mask
                 )
             except Exception as e:
                 tprint_error(f"❌ Silhouette calculation failed: {e}")
@@ -748,7 +762,7 @@ class ClusterQualityAssessor:
         if not fast_mode:
             try:
                 metrics.davies_bouldin_score = self._calculate_dbi(
-                    regime_labels, features_clean, non_noise_mask
+                    regime_labels, features_for_metrics, non_noise_mask
                 )
             except Exception as e:
                 tprint_error(f"❌ DBI calculation failed: {e}")
@@ -758,7 +772,7 @@ class ClusterQualityAssessor:
         # 3. Calinski-Harabasz Index
         try:
             metrics.calinski_harabasz_score = self._calculate_ch(
-                regime_labels, features_clean, non_noise_mask
+                regime_labels, features_for_metrics, non_noise_mask
             )
         except Exception as e:
             tprint_error(f"❌ CH calculation failed: {e}")
@@ -768,7 +782,7 @@ class ClusterQualityAssessor:
             (metrics.within_regime_cv, metrics.within_regime_cv_std,
                 metrics.between_regime_cv, metrics.between_regime_cv_std,
                 metrics.per_regime_cv) = self._calculate_cv_metrics(
-                regime_labels, features_clean, non_noise_mask
+                regime_labels, features_for_metrics, non_noise_mask
             )
         except Exception as e:
             tprint_error(f"❌ CV metrics failed: {e}")
@@ -812,7 +826,7 @@ class ClusterQualityAssessor:
         # 6b. Per-category CV metrics
         try:
             metrics.feature_category_cv_metrics = self._calculate_cv_metrics_by_category(
-                regime_labels, features_clean, non_noise_mask
+                regime_labels, features_for_metrics, non_noise_mask
             )
         except Exception as e:
             tprint_error(f"❌ Per-category CV failed: {e}")
@@ -1243,15 +1257,36 @@ class ClusterQualityAssessor:
         if len(set(labels_clean)) < 2:
             return 0.0, {}
         
+        # Optional stratified subsampling for scalability
+        MAX_SAMPLES = 10000
+        if len(labels_clean) > MAX_SAMPLES:
+            # Sample up to max per cluster to keep class balance
+            unique_labels, counts = np.unique(labels_clean, return_counts=True)
+            per_cluster_cap = max(50, int(MAX_SAMPLES / max(1, len(unique_labels))))
+            sample_indices = []
+            for lab in unique_labels:
+                idx = np.where(labels_clean == lab)[0]
+                if len(idx) > per_cluster_cap:
+                    chosen = self.rng.choice(idx, size=per_cluster_cap, replace=False)
+                else:
+                    chosen = idx
+                sample_indices.append(chosen)
+            sample_indices = np.concatenate(sample_indices)
+            features_sub = features_clean.iloc[sample_indices]
+            labels_sub = labels_clean[sample_indices]
+        else:
+            features_sub = features_clean
+            labels_sub = labels_clean
+        
         # Global silhouette score
-        global_silhouette = silhouette_score(features_clean, labels_clean)
+        global_silhouette = silhouette_score(features_sub, labels_sub)
         
         # Per-cluster silhouette scores
-        silhouette_samples_scores = silhouette_samples(features_clean, labels_clean)
+        silhouette_samples_scores = silhouette_samples(features_sub, labels_sub)
         per_cluster_silhouette = {}
         
-        for cluster_id in set(labels_clean):
-            cluster_mask = labels_clean == cluster_id
+        for cluster_id in set(labels_sub):
+            cluster_mask = labels_sub == cluster_id
             cluster_scores = silhouette_samples_scores[cluster_mask]
             
             per_cluster_silhouette[int(cluster_id)] = {
@@ -2893,10 +2928,10 @@ class ClusterQualityAssessor:
             if max_folds < 2:
                 return 0.0
 
-            # Logistic Regression is much faster than RandomForest
             from sklearn.linear_model import LogisticRegression
-            clf = LogisticRegression(max_iter=100, random_state=42, solver='lbfgs')
-            cv_scores = cross_val_score(clf, X, y, cv=max_folds)
+            clf = LogisticRegression(max_iter=100, random_state=self.random_state, solver='lbfgs')
+            skf = StratifiedKFold(n_splits=max_folds, shuffle=True, random_state=self.random_state)
+            cv_scores = cross_val_score(clf, X, y, cv=skf)
 
             if len(cv_scores) == 0:
                 return 0.0
@@ -2991,7 +3026,8 @@ class ClusterQualityAssessor:
                                 feature_data: pd.DataFrame,
                                 forward_returns: pd.Series,
                                 timestamps: Optional[pd.DatetimeIndex] = None,
-                                predicted_regimes: Optional[np.ndarray] = None) -> Dict[str, Any]:
+                                predicted_regimes: Optional[np.ndarray] = None,
+                                price_series: Optional[pd.Series] = None) -> Dict[str, Any]:
         """
         Évalue la pertinence économique des régimes en utilisant RegimeEconomicRelevanceAnalyzer.
         
@@ -3016,7 +3052,7 @@ class ClusterQualityAssessor:
             tprint_info("🔍 Démarrage de l'analyse de pertinence économique des régimes")
             
             # Créer une instance de RegimeEconomicRelevanceAnalyzer
-            analyzer = create_regime_economic_relevance_analyzer()
+            analyzer = create_regime_economic_relevance_analyzer(random_state=self.random_state)
             
             # S'assurer que les données sont alignées
             min_length = min(len(regime_labels), len(feature_data), len(forward_returns))
@@ -3029,19 +3065,49 @@ class ClusterQualityAssessor:
             timestamps_aligned = timestamps[:min_length] if timestamps is not None else None
             predicted_regimes_aligned = predicted_regimes[:min_length] if predicted_regimes is not None else None
             
-            # Exécuter l'analyse économique complète
-            # Évaluer les stratégies de trading basées sur les régimes
+            # Build price series
+            if price_series is None:
+                # Fallback: attempt to reconstruct pseudo prices from forward returns
+                # Start at 1.0 and cumulatively apply returns; this is inferior to true close prices
+                prices_aligned = (1.0 + forward_returns_aligned.fillna(0)).cumprod()
+            else:
+                prices_aligned = price_series.iloc[:min_length].reset_index(drop=True)
+                # Align index to features/returns timeline
+                prices_aligned.index = forward_returns_aligned.index
+            
+            # Returns-only evaluation path
             strategies = analyzer.evaluate_strategies(
-                prices=forward_returns_aligned,  # Utiliser les rendements cumulés comme "prix"
+                prices=forward_returns_aligned.fillna(0.0),
                 regime_labels=regime_labels_aligned,
-                predicted_regimes=predicted_regimes_aligned
+                predicted_regimes=predicted_regimes_aligned,
+                returns_input=True
             )
             
             # Effectuer les tests de signification
-            significance_results = analyzer.perform_significance_test(
+            # 1) Block-permutation on positions (preferred null)
+            try:
+                market_returns = forward_returns_aligned.fillna(0.0)
+                positions_by_strategy = {name: s.positions for name, s in strategies.items() if name != 'buy_hold'}
+                perm_results = analyzer.perform_significance_test(
+                    strategies=strategies,
+                    test_method='block_permutation',
+                    market_returns=market_returns,
+                    positions_by_strategy=positions_by_strategy
+                )
+            except Exception as e:
+                tprint_warning(f"⚠️ Position-permutation significance test failed: {e}")
+                perm_results = {}
+            
+            # 2) Bootstrap (MBB) on returns (complementary)
+            boot_results = analyzer.perform_significance_test(
                 strategies=strategies,
                 test_method='bootstrap'
             )
+            # Merge results
+            significance_results = {
+                'position_permutation': perm_results,
+                'bootstrap': boot_results
+            }
             
             # Générer le rapport économique
             report_path = analyzer.generate_economic_report(

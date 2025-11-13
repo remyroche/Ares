@@ -2,7 +2,7 @@
 Ares Launcher Data Loading Utility
 
 This module provides data loading utilities that respect the ares_launcher
-configuration, ensuring that the lookback period (20 days in "light" mode)
+configuration, ensuring that the centralized lookback period per mode
 is properly applied when loading data using KlinesParquetManager or other utilities.
 """
 
@@ -15,14 +15,14 @@ from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
 )
 from src.utils.data.klines_parquet import KlinesParquetManager, get_klines_manager
-from src.config.pipeline_modes import get_light_mode_config, get_blank_mode_config, get_full_mode_config
+from src.launcher.ares_launcher import get_mode_lookback_days
 
 class AresLauncherDataLoader:
     """
     Data loader that respects ares_launcher configuration and lookback periods.
 
-    This class ensures that the lookback period specified in ares_launcher
-    (e.g., 20 days in "light" mode) is properly applied when loading data.
+    This class ensures that the centralized lookback period specified in ares_launcher
+    is properly applied when loading data.
     """
 
     def __init__(self, data_dir: str = "historical_data"):
@@ -50,19 +50,9 @@ class AresLauncherDataLoader:
         tprint("🔍 [ARES_DATA_LOADER] Getting lookback dates for mode configuration")
         tprint_debug(f"   → Requested mode: {mode}")
 
-        # Get mode configuration
-        if mode == "light":
-            config = get_light_mode_config()
-            tprint_info("📊 [ARES_DATA_LOADER] Using LIGHT mode configuration")
-        elif mode == "blank":
-            config = get_blank_mode_config()
-            tprint_info("📊 [ARES_DATA_LOADER] Using BLANK mode configuration")
-        elif mode == "full":
-            config = get_full_mode_config()
-            tprint_info("📊 [ARES_DATA_LOADER] Using FULL mode configuration")
-        else:
-            tprint_warning(f"⚠️ [ARES_DATA_LOADER] Unknown mode '{mode}', defaulting to light mode")
-            config = get_light_mode_config()
+        # Resolve lookback days via centralized launcher config
+        days = get_mode_lookback_days(mode)
+        tprint_info(f"📊 [ARES_DATA_LOADER] Using centralized lookback: {days} days for mode {mode.upper()}")
 
         # Calculate dates - use last available data date instead of current date
         end_date = datetime.now()
@@ -93,15 +83,15 @@ class AresLauncherDataLoader:
                 tprint_warning(f"⚠️ [ARES_DATA_LOADER] Error detecting last available date: {e}")
                 tprint_debug("   → Falling back to current date")
 
-        start_date = end_date - timedelta(days=config.lookback_days)
+        start_date = end_date - timedelta(days=days)
         # Normalize to start of day to include all data from that day
         start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        tprint_success(f"✅ [ARES_DATA_LOADER] {mode.upper()} mode: {config.lookback_days} days lookback")
+        tprint_success(f"✅ [ARES_DATA_LOADER] {mode.upper()} mode: {days} days lookback")
         tprint_info(f"📅 [ARES_DATA_LOADER] Date range: {start_date.date()} to {end_date.date()}")
         tprint_debug(f"   → Start timestamp: {start_date}")
         tprint_debug(f"   → End timestamp: {end_date}")
-        tprint_debug(f"   → Total duration: {config.lookback_days} days")
+        tprint_debug(f"   → Total duration: {days} days")
 
         return start_date, end_date
 
@@ -317,15 +307,8 @@ class AresLauncherDataLoader:
         """
         tprint(f"📊 Getting data info for {symbol} ({interval}) in {mode.upper()} mode")
 
-        # Get mode configuration
-        if mode == "light":
-            config = get_light_mode_config()
-        elif mode == "blank":
-            config = get_blank_mode_config()
-        elif mode == "full":
-            config = get_full_mode_config()
-        else:
-            config = get_light_mode_config()
+        # Resolve lookback via centralized launcher
+        days = get_mode_lookback_days(mode)
 
         # Get basic data info
         info = self.klines_manager.get_data_info(symbol, interval, "raw")
@@ -335,10 +318,9 @@ class AresLauncherDataLoader:
 
         info.update({
             'mode': mode,
-            'lookback_days': config.lookback_days,
+            'lookback_days': days,
             'requested_start_date': start_date.isoformat(),
-            'requested_end_date': end_date.isoformat(),
-            'mode_description': config.description
+            'requested_end_date': end_date.isoformat()
         })
 
         return info
@@ -370,8 +352,7 @@ class AresLauncherDataLoader:
             return False
 
         # Check if we have enough data for the requested lookback period
-        config = get_light_mode_config() if mode == "light" else get_blank_mode_config() if mode == "blank" else get_full_mode_config()
-        required_days = config.lookback_days
+        required_days = get_mode_lookback_days(mode)
 
         if info.get('total_records', 0) == 0:
             tprint_warning(f"⚠️ No records found for {symbol} ({interval})")
@@ -467,11 +448,11 @@ if __name__ == "__main__":
         # Example usage
         loader = AresLauncherDataLoader()
 
-        # Load data in light mode (20 days)
+        # Load data in light mode (centralized days)
         data_light = loader.load_data_with_mode("ETHUSDT", "15m", "light")
         print(f"Light mode data shape: {data_light.shape if data_light is not None else 'None'}")
 
-        # Load data in blank mode (180 days)
+        # Load data in blank mode (centralized days)
         data_blank = loader.load_data_with_mode("ETHUSDT", "15m", "blank")
         print(f"Blank mode data shape: {data_blank.shape if data_blank is not None else 'None'}")
 

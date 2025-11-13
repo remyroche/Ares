@@ -14,6 +14,15 @@ from typing import Dict, Any, Tuple
 from src.simulator.config import SimulatorConfig, SlippageModel
 from tests.conftest import TPRINT_AVAILABLE, tprint_logged, LogLevel
 
+# Import des assertions standardisées
+from tests.utils.assertions import (
+    assert_float_equals,
+    assert_dict_structure,
+    assert_list_structure,
+    assert_execution_time,
+    assert_timestamp_format
+)
+
 
 class TestSlippageModel:
     """Test suite for SlippageModel enum."""
@@ -67,25 +76,25 @@ class TestSimulatorConfig:
         """Test default SimulatorConfig creation."""
         assert isinstance(default_config, SimulatorConfig)
         assert default_config.use_maker_taker_distinction is True
-        assert default_config.default_maker_fee == 0.0006
-        assert default_config.default_taker_fee == 0.0008
-        assert default_config.base_spread_bps == 2.0
-        assert default_config.max_slippage_pct == 0.01
-        assert default_config.max_positions_per_symbol == 3
-        assert default_config.max_position_size_usd == 50000.0
-        assert default_config.max_total_exposure_usd == 100000.0
+        assert_float_equals(default_config.default_maker_fee, 0.0006, message="Le maker fee par défaut doit être 0.0006")
+        assert_float_equals(default_config.default_taker_fee, 0.0008, message="Le taker fee par défaut doit être 0.0008")
+        assert_float_equals(default_config.base_spread_bps, 2.0, message="Le spread de base par défaut doit être 2.0 bps")
+        assert_float_equals(default_config.max_slippage_pct, 0.01, message="Le slippage maximal par défaut doit être 0.01")
+        assert_float_equals(default_config.max_positions_per_symbol, 3, message="Le nombre max de positions par symbole par défaut doit être 3")
+        assert_float_equals(default_config.max_position_size_usd, 50000.0, message="La taille max de position par défaut doit être 50000.0 USD")
+        assert_float_equals(default_config.max_total_exposure_usd, 100000.0, message="L'exposition totale max par défaut doit être 100000.0 USD")
     
     @tprint_logged(LogLevel.DEBUG, include_args=True)
     def test_custom_config_creation(self, custom_config: SimulatorConfig):
         """Test custom SimulatorConfig creation with tprint tracing."""
         assert custom_config.use_maker_taker_distinction is False
-        assert custom_config.default_maker_fee == 0.0004
-        assert custom_config.default_taker_fee == 0.0006
-        assert custom_config.base_spread_bps == 3.0
-        assert custom_config.max_slippage_pct == 0.02
-        assert custom_config.max_positions_per_symbol == 5
-        assert custom_config.max_position_size_usd == 100000.0
-        assert custom_config.max_total_exposure_usd == 200000.0
+        assert_float_equals(custom_config.default_maker_fee, 0.0004, message="Le maker fee personnalisé doit être 0.0004")
+        assert_float_equals(custom_config.default_taker_fee, 0.0006, message="Le taker fee personnalisé doit être 0.0006")
+        assert_float_equals(custom_config.base_spread_bps, 3.0, message="Le spread de base personnalisé doit être 3.0 bps")
+        assert_float_equals(custom_config.max_slippage_pct, 0.02, message="Le slippage maximal personnalisé doit être 0.02")
+        assert_float_equals(custom_config.max_positions_per_symbol, 5, message="Le nombre max de positions personnalisé doit être 5")
+        assert_float_equals(custom_config.max_position_size_usd, 100000.0, message="La taille max de position personnalisée doit être 100000.0 USD")
+        assert_float_equals(custom_config.max_total_exposure_usd, 200000.0, message="L'exposition totale max personnalisée doit être 200000.0 USD")
         return custom_config
     
     def test_fee_structure_defaults(self, default_config: SimulatorConfig):
@@ -124,8 +133,8 @@ class TestSimulatorConfig:
     def test_get_fee_rates_custom_defaults(self, custom_config: SimulatorConfig):
         """Test get_fee_rates with custom default fees."""
         maker, taker = custom_config.get_fee_rates("unknown_exchange")
-        assert maker == custom_config.default_maker_fee
-        assert taker == custom_config.default_taker_fee
+        assert_float_equals(maker, custom_config.default_maker_fee, message="Le maker fee pour exchange inconnu doit être celui personnalisé par défaut")
+        assert_float_equals(taker, custom_config.default_taker_fee, message="Le taker fee pour exchange inconnu doit être celui personnalisé par défaut")
     
     @pytest.mark.parametrize("exchange,expected_maker,expected_taker", [
         ("binance", 0.0006, 0.001),
@@ -169,7 +178,7 @@ class TestSimulatorConfig:
         """Test get_spread_pct with custom base spread."""
         spread = custom_config.get_spread_pct("binance")
         expected = (3.0 * 1.0) / 10000.0  # 3.0 bps * 1.0 / 10000
-        assert math.isclose(spread, expected, rel_tol=1e-9)
+        assert_float_equals(spread, expected, tolerance=1e-9, message="Le spread personnalisé pour Binance doit être calculé correctement")
     
     @pytest.mark.parametrize("exchange,expected_multiplier,expected_spread", [
         ("binance", 1.0, 0.0002),  # 2.0 bps * 1.0 / 10000 = 0.0002
@@ -192,7 +201,7 @@ class TestSimulatorConfig:
     def test_validate_success(self, default_config: SimulatorConfig):
         """Test successful validation."""
         result = default_config.validate()
-        assert result is True
+        assert result is True, "La validation par défaut doit réussir"
     
     def test_validate_negative_fees(self, default_config: SimulatorConfig):
         """Test validation with negative fees."""
@@ -240,31 +249,25 @@ class TestSimulatorConfig:
     def test_to_dict_basic(self, default_config: SimulatorConfig):
         """Test basic to_dict conversion."""
         result = default_config.to_dict()
-        assert isinstance(result, dict)
-        
-        # Check required keys
-        required_keys = [
+        assert_dict_structure(result, required_keys=[
             "fee_structure", "default_taker_fee", "default_maker_fee",
             "use_maker_taker_distinction", "slippage_model", "max_slippage_pct",
             "orderbook_depth_limit", "enable_latency_simulation", "latency_range_ms",
             "allow_multiple_positions", "allow_pyramiding", "max_positions_per_symbol",
             "allow_partial_closes", "max_position_size_usd", "max_total_exposure_usd",
             "orderbook_staleness_threshold_sec", "price_deviation_threshold_pct"
-        ]
-        
-        for key in required_keys:
-            assert key in result
+        ], message="Le dictionnaire doit contenir toutes les clés requises")
     
     def test_to_dict_values(self, default_config: SimulatorConfig):
         """Test to_dict value conversion."""
         result = default_config.to_dict()
         
         # Check some specific values
-        assert result["default_taker_fee"] == default_config.default_taker_fee
-        assert result["default_maker_fee"] == default_config.default_maker_fee
+        assert_float_equals(result["default_taker_fee"], default_config.default_taker_fee, message="Le taker fee dans le dict doit correspondre")
+        assert_float_equals(result["default_maker_fee"], default_config.default_maker_fee, message="Le maker fee dans le dict doit correspondre")
         assert result["use_maker_taker_distinction"] == default_config.use_maker_taker_distinction
         assert result["slippage_model"] == default_config.slippage_model.value
-        assert result["max_slippage_pct"] == default_config.max_slippage_pct
+        assert_float_equals(result["max_slippage_pct"], default_config.max_slippage_pct, message="Le slippage max dans le dict doit correspondre")
         assert result["fee_structure"] == default_config.fee_structure
         assert result["latency_range_ms"] == default_config.latency_range_ms
     
@@ -272,10 +275,10 @@ class TestSimulatorConfig:
         """Test to_dict with custom configuration."""
         result = custom_config.to_dict()
         
-        assert result["default_taker_fee"] == custom_config.default_taker_fee
-        assert result["default_maker_fee"] == custom_config.default_maker_fee
+        assert_float_equals(result["default_taker_fee"], custom_config.default_taker_fee, message="Le taker fee personnalisé dans le dict doit correspondre")
+        assert_float_equals(result["default_maker_fee"], custom_config.default_maker_fee, message="Le maker fee personnalisé dans le dict doit correspondre")
         assert result["use_maker_taker_distinction"] == custom_config.use_maker_taker_distinction
-        assert result["max_slippage_pct"] == custom_config.max_slippage_pct
+        assert_float_equals(result["max_slippage_pct"], custom_config.max_slippage_pct, message="Le slippage max personnalisé dans le dict doit correspondre")
         assert result["fee_structure"] == custom_config.fee_structure
     
     @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
@@ -296,8 +299,8 @@ class TestSimulatorConfig:
         
         # Create new config - should have original defaults
         config2 = SimulatorConfig()
-        assert config2.default_maker_fee == original_maker_fee
-        assert config2.default_maker_fee != config1.default_maker_fee
+        assert_float_equals(config2.default_maker_fee, original_maker_fee, message="La nouvelle config doit avoir le maker fee par défaut")
+        assert_float_equals(config2.default_maker_fee, original_maker_fee, message="La nouvelle config ne doit pas être affectée par la modification")
     
     def test_config_deep_copy_behavior(self):
         """Test that config objects behave correctly with deep copy scenarios."""
@@ -308,8 +311,8 @@ class TestSimulatorConfig:
         
         # Create new config - should have original fee structure
         config2 = SimulatorConfig()
-        assert config2.fee_structure["binance"]["maker"] == 0.0006
-        assert config2.fee_structure["binance"]["maker"] != config1.fee_structure["binance"]["maker"]
+        assert_float_equals(config2.fee_structure["binance"]["maker"], 0.0006, message="La nouvelle config doit avoir le maker fee original")
+        assert_float_equals(config2.fee_structure["binance"]["maker"], 0.0006, message="La nouvelle config ne doit pas être affectée par la modification")
     
     def test_config_spread_multiplier_modification(self, default_config: SimulatorConfig):
         """Test modifying spread multipliers."""
@@ -319,7 +322,7 @@ class TestSimulatorConfig:
         # Test that spread calculation uses new multiplier
         spread = default_config.get_spread_pct("binance")
         expected = (2.0 * 2.0) / 10000.0  # 2.0 bps * 2.0 / 10000
-        assert math.isclose(spread, expected, rel_tol=1e-9)
+        assert_float_equals(spread, expected, tolerance=1e-9, message="Le spread modifié doit être calculé correctement")
     
     def test_config_fee_structure_modification(self, default_config: SimulatorConfig):
         """Test modifying fee structure."""
@@ -411,12 +414,12 @@ class TestSimulatorConfig:
         
         # Test that custom fees are used
         maker_a, taker_a = config.get_fee_rates("exchange_a")
-        assert maker_a == 0.001
-        assert taker_a == 0.002
+        assert_float_equals(maker_a, 0.001, message="Le maker fee pour exchange_a doit être 0.001")
+        assert_float_equals(taker_a, 0.002, message="Le taker fee pour exchange_a doit être 0.002")
         
         maker_b, taker_b = config.get_fee_rates("exchange_b")
-        assert maker_b == 0.0005
-        assert taker_b == 0.0015
+        assert_float_equals(maker_b, 0.0005, message="Le maker fee pour exchange_b doit être 0.0005")
+        assert_float_equals(taker_b, 0.0015, message="Le taker fee pour exchange_b doit être 0.0015")
         
         # Test that default exchanges are not present
         with pytest.raises(KeyError):

@@ -10,7 +10,7 @@ analyst_config:
       model_type: LGBMRegressor
       params:
         n_estimators: 200
-        learning_rate: 0.07780348478037977
+        learning_rate: 0.058670691149840734
         max_depth: 3
         num_leaves: 6
         subsample: 0.6
@@ -18,9 +18,9 @@ analyst_config:
         random_state: 42
         verbosity: -1
         n_jobs: -1
-        reg_lambda: 3.75
+        reg_lambda: 2.75
         sampling_rate: 0.6
-        min_child_samples: 54
+        min_child_samples: 53
       hpo:
         enabled: false
         n_rounds: 2
@@ -66,18 +66,18 @@ analyst_config:
             high: 1.0
         optimal_params:
           max_depth: 3
-          learning_rate: 0.07780348478037977
-          reg_lambda: 3.75
+          learning_rate: 0.058670691149840734
+          reg_lambda: 2.75
           sampling_rate: 0.6
-          min_child_samples: 54
+          min_child_samples: 53
           num_leaves: 6
           subsample: 0.6
           colsample_bytree: 0.6
         last_optimization:
-          timestamp: '2025-11-11T23:22:56.221696'
-          best_score: 0.7836600085896851
+          timestamp: '2025-11-12T19:36:02.222271'
+          best_score: 0.782520355557602
           total_trials: 340
-          total_time_seconds: 126.62472605705261
+          total_time_seconds: 380.45713567733765
           n_rounds: 2
     depthwise_cnn:
       model_type: DepthwiseSeparableCNNRegressor
@@ -207,10 +207,10 @@ analyst_config:
           subsample: 1.0
           colsample_bylevel: 1.0
         last_optimization:
-          timestamp: '2025-11-11T23:54:29.329138'
+          timestamp: '2025-11-12T20:18:29.282490'
           best_score: 0.7801980109440216
           total_trials: 300
-          total_time_seconds: 1892.838523864746
+          total_time_seconds: 2546.1753358840942
           n_rounds: 2
   training:
     training_samples: 50000

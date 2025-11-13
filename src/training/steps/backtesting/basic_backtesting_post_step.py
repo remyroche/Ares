@@ -1106,6 +1106,149 @@ class BasicBacktestingPostStep(BaseStep):
 
         return comparison
 
+    def _generate_stratified_reports(
+        self,
+        ml_scored_data: Optional[pd.DataFrame],
+        backtest_results: Dict[str, Any],
+        config: Dict[str, Any]
+    ) -> Dict[str, str]:
+        """Generate optional stratified reports by fused deciles and TTH quartiles.
+        Returns a dict of saved artifact paths. No changes to backtesting mechanics.
+        """
+        saved = {}
+        try:
+            if ml_scored_data is None or len(ml_scored_data) == 0:
+                return saved
+            trades = backtest_results.get('trades')
+            if trades is None or len(trades) == 0:
+                return saved
+
+            enable_fused = bool(config.get('enable_fused_stratification', True))
+            enable_tth = bool(config.get('enable_tth_stratification', True))
+            if not enable_fused and not enable_tth:
+                return saved
+
+            direction = config.get('direction', 'long')
+            # Identify fused score and TTH columns
+            fused_col_candidates = ['target_long_fused','target_short_fused']
+            tth_col_candidates = ['target_tth_long','target_tth_short','tth_long','tth_short']
+            fused_col = None
+            tth_col = None
+            for c in fused_col_candidates:
+                if c in ml_scored_data.columns:
+                    fused_col = c
+            # Prefer direction-specific if both present
+            if 'target_long_fused' in ml_scored_data.columns and direction == 'long':
+                fused_col = 'target_long_fused'
+            if 'target_short_fused' in ml_scored_data.columns and direction == 'short':
+                fused_col = 'target_short_fused'
+            for c in tth_col_candidates:
+                if c in ml_scored_data.columns:
+                    tth_col = c
+                    break
+
+            # Prepare trade-level frame keyed by Entry Timestamp
+            entry_ts_col = None
+            for col in ['Entry Timestamp','Entry_Date','EntryTime','Entry Time','entry_ts']:
+                if col in trades.columns:
+                    entry_ts_col = col
+                    break
+            # Some vectorbt versions store index as entry timestamps
+            if entry_ts_col is None and hasattr(trades.index, 'dtype'):
+                # Try to use index if it's datetime-like
+                try:
+                    if pd.api.types.is_datetime64_any_dtype(trades.index):
+                        entry_ts_col = '_index_as_ts_'
+                except Exception:
+                    entry_ts_col = None
+            if entry_ts_col is None:
+                return saved
+
+            trade_df = trades.copy()
+            # Normalize entry timestamp series
+            if entry_ts_col == '_index_as_ts_':
+                entry_ts = pd.to_datetime(trade_df.index)
+            else:
+                entry_ts = pd.to_datetime(trade_df[entry_ts_col])
+            # Align to ml_scored_data index
+            ml_df = ml_scored_data.copy()
+            ml_df = ml_df.sort_index()
+
+            # Map entry timestamps to same-index rows (exact match only; skip unmatched)
+            # Build a small DataFrame of matching rows
+            matched = []
+            if len(entry_ts) > 0:
+                idx_set = set(ml_df.index)
+                for i, ts in enumerate(entry_ts):
+                    if ts in idx_set:
+                        row = {
+                            'trade_idx': i,
+                            'ts': ts
+                        }
+                        if fused_col is not None:
+                            row['fused'] = float(ml_df.at[ts, fused_col]) if pd.notna(ml_df.at[ts, fused_col]) else np.nan
+                        if tth_col is not None:
+                            val = ml_df.at[ts, tth_col]
+                            try:
+                                row['tth'] = float(val)
+                            except Exception:
+                                row['tth'] = np.nan
+                        # Trade return proxy
+                        if 'Return' in trade_df.columns:
+                            row['trade_return'] = float(trade_df.iloc[i]['Return'])
+                        elif 'PnL' in trade_df.columns:
+                            # Normalize by entry price if available
+                            try:
+                                entry_price = float(trade_df.iloc[i].get('Entry Price', 1.0) or 1.0)
+                                row['trade_return'] = float(trade_df.iloc[i]['PnL']) / max(entry_price, 1e-8)
+                            except Exception:
+                                row['trade_return'] = float(trade_df.iloc[i]['PnL'])
+                        else:
+                            row['trade_return'] = np.nan
+                        matched.append(row)
+            if not matched:
+                return saved
+
+            mdf = pd.DataFrame(matched).dropna(subset=['trade_return'])
+
+            outcomes = Path('outcomes'); outcomes.mkdir(exist_ok=True)
+            ts_now = datetime.now().strftime('%Y%m%d_%H%M%S')
+            symbol = config.get('symbol','UNKNOWN')
+            prefix = f"backtest_strata_{symbol}_{direction}_{ts_now}"
+
+            # Fused decile stratification
+            if enable_fused and 'fused' in mdf.columns and mdf['fused'].notna().sum() > 0:
+                try:
+                    # Clip to [0,1] then deciles
+                    s = mdf['fused'].clip(0,1)
+                    mdf['fused_decile'] = pd.qcut(s, 10, labels=False, duplicates='drop') + 1
+                    g = mdf.dropna(subset=['fused_decile']).groupby('fused_decile')
+                    fused_stats = g['trade_return'].agg(['count','mean','median','std'])
+                    fused_stats['win_rate'] = g['trade_return'].apply(lambda x: (x>0).mean())
+                    fused_csv = outcomes / f"{prefix}_fused_deciles.csv"
+                    fused_stats.to_csv(fused_csv)
+                    saved['fused_deciles_csv'] = str(fused_csv)
+                except Exception:
+                    pass
+
+            # TTH quartile stratification
+            if enable_tth and 'tth' in mdf.columns and mdf['tth'].notna().sum() > 0:
+                try:
+                    # Lower TTH is better/faster; quartiles
+                    mdf['tth_quartile'] = pd.qcut(mdf['tth'], 4, labels=False, duplicates='drop') + 1
+                    g2 = mdf.dropna(subset=['tth_quartile']).groupby('tth_quartile')
+                    tth_stats = g2['trade_return'].agg(['count','mean','median','std'])
+                    tth_stats['win_rate'] = g2['trade_return'].apply(lambda x: (x>0).mean())
+                    tth_csv = outcomes / f"{prefix}_tth_quartiles.csv"
+                    tth_stats.to_csv(tth_csv)
+                    saved['tth_quartiles_csv'] = str(tth_csv)
+                except Exception:
+                    pass
+
+            return saved
+        except Exception:
+            return saved
+
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute post-optimization backtesting.
@@ -1361,6 +1504,18 @@ class BasicBacktestingPostStep(BaseStep):
                 'data'
             )
             
+            # Step 7.5: Optional stratified reports (no core changes)
+            try:
+                strat_artifacts = self._generate_stratified_reports(
+                    ml_scored_data if use_ml_signals else None,
+                    backtest_results,
+                    config
+                )
+                for p in strat_artifacts.values():
+                    artifacts_saved.append(p)
+            except Exception:
+                pass
+
             # Step 8: Generate markdown report
             tprint("📝 Generating comprehensive report...", "INFO")
             # Add ML usage info to config for report

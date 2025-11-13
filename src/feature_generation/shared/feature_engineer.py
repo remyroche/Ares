@@ -86,6 +86,7 @@ class AnalystFeatureEngineer(FeatureEngineer):
         self,
         data: pd.DataFrame,
         regime_probabilities: Optional[Dict[int, Union[pd.Series, np.ndarray, float]]] = None,
+        allow_uniform_defaults: bool = True,
         **kwargs
     ) -> pd.DataFrame:
         """

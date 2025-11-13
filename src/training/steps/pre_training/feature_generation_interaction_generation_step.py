@@ -1258,6 +1258,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 )
                 
                 if ohlcv_data is not None and len(ohlcv_data) > 0:
+                    # Ensure unique time index to allow reindexing safely
+                    if ohlcv_data.index.has_duplicates:
+                        tprint_warning("⚠️ OHLCV index has duplicates. Collapsing to last occurrence per timestamp for safe reindexing")
+                        ohlcv_data = ohlcv_data[~ohlcv_data.index.duplicated(keep='last')]
+                    
                     # Ensure the index matches generated_features
                     ohlcv_data = ohlcv_data.reindex(generated_features.index, method='ffill')
                     
@@ -2026,12 +2031,13 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             # Create DataFrame from interactions
             if cross_timeframe_interactions:
                 result_df = pd.DataFrame(cross_timeframe_interactions, index=features.index)
+                # Memory optimization: use float32 to reduce footprint
+                result_df = result_df.astype(np.float32)
                 tprint_success(f"  ✅ Generated {len(result_df.columns)} cross-timeframe interactions")
                 return result_df
             else:
                 tprint_info("  ℹ️ No cross-timeframe interactions generated")
-                return pd.DataFrame()
-                
+                return pd.DataFrame()                
         except Exception as e:
             tprint_error(f"  ❌ Failed to extract cross-timeframe interactions: {e}")
             return pd.DataFrame()
@@ -2065,12 +2071,15 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         # Get targets from labeled data - comprehensive detection
         
         # Primary target columns (from labeling integration step)
-        primary_target_columns = [col for col in labeled_data.columns if col in [
-            'target_long', 'target_short',  # New simplified target structure
+        # Prefer fused targets when available for more informative selection
+        preferred_order = [
+            'target_long_fused', 'target_short_fused',
+            'target_long', 'target_short',
             'directional_confidence', 'opportunity_asymmetry',
             'long_overall_opportunity', 'short_overall_opportunity', 'opportunity',
             'confidence_score', 'quality_score', 'signal_strength'
-        ]]
+        ]
+        primary_target_columns = [col for col in labeled_data.columns if col in preferred_order]
         
         # Secondary target columns (pattern-based detection)
         secondary_target_columns = []
@@ -2135,11 +2144,18 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         if not target_columns:
             raise ValueError("No target columns found in labeled_data")
         
-        # Handle different target column scenarios
-        if target_columns == ['opportunity']:
+        # Handle different target column scenarios (prefer fused when present)
+        if set(target_columns) >= {'target_long_fused', 'target_short_fused'}:
+            tprint_info("📊 Using fused targets: target_long_fused and target_short_fused")
+            targets = labeled_data[['target_long_fused', 'target_short_fused']].copy()
+            # Derived compatibility columns
+            targets['directional_confidence'] = (targets['target_long_fused'] + targets['target_short_fused']).abs()
+            targets['opportunity_asymmetry'] = targets['target_long_fused'] - targets['target_short_fused']
+            targets['long_overall_opportunity'] = targets['target_long_fused']
+            targets['short_overall_opportunity'] = targets['target_short_fused']
+        elif target_columns == ['opportunity']:
             tprint_info("📊 Using 'opportunity' column as primary target")
             targets = labeled_data[['opportunity']]
-            # Create derived targets for compatibility
             targets['directional_confidence'] = labeled_data['opportunity'].abs()
             targets['opportunity_asymmetry'] = labeled_data['opportunity']
             targets['long_overall_opportunity'] = labeled_data['opportunity'].clip(lower=0)
@@ -2147,27 +2163,21 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         elif target_columns == ['dummy_target']:
             tprint_info("📊 Using dummy target for testing")
             targets = labeled_data[['dummy_target']]
-            # Create derived targets for compatibility
             targets['directional_confidence'] = labeled_data['dummy_target'].abs()
             targets['opportunity_asymmetry'] = labeled_data['dummy_target']
             targets['long_overall_opportunity'] = labeled_data['dummy_target'].clip(lower=0)
             targets['short_overall_opportunity'] = labeled_data['dummy_target'].clip(upper=0).abs()
         elif set(target_columns) == {'target_long', 'target_short'}:
-            # New simplified target structure from labeling integration step
-            # Binary targets for long and short positions (volume-normalized)
-            tprint_info("📊 Using new simplified target structure: target_long and target_short")
-            targets = labeled_data[['target_long', 'target_short']]
-            # Create derived targets for compatibility
+            tprint_info("📊 Using simplified binary targets: target_long and target_short")
+            targets = labeled_data[['target_long', 'target_short']].copy()
             targets['directional_confidence'] = (labeled_data['target_long'] + labeled_data['target_short']).abs()
             targets['opportunity_asymmetry'] = labeled_data['target_long'] - labeled_data['target_short']
             targets['long_overall_opportunity'] = labeled_data['target_long']
             targets['short_overall_opportunity'] = labeled_data['target_short']
         else:
-            # Use alternative target columns
             tprint_info(f"📊 Using alternative target columns: {target_columns}")
-            targets = labeled_data[target_columns]
-            # Only create derived targets if we don't have the specific targets we want
-            if len(target_columns) == 1 and target_columns[0] not in ['target_long', 'target_short']:
+            targets = labeled_data[target_columns].copy()
+            if len(target_columns) == 1 and target_columns[0] not in ['target_long', 'target_short', 'target_long_fused', 'target_short_fused']:
                 target_col = target_columns[0]
                 targets['directional_confidence'] = labeled_data[target_col].abs()
                 targets['opportunity_asymmetry'] = labeled_data[target_col]
@@ -2450,8 +2460,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         # Use consistent sampling strategy with chunked processing
         try:
-            features_sample, targets_sample = self._get_consistent_sample(features_cleaned, targets_cleaned, max_samples=8000)
-            tprint_info(f"  🔍 DEBUG: _get_consistent_sample returned successfully!")
+            # Reduce sample size in blank mode to lower memory/compute
+            blank_mode = str(config.get('execution_mode', '')).lower() == 'blank'
+            max_samples = config.get('max_samples_phase3', 6000 if blank_mode else 8000)
+            features_sample, targets_sample = self._get_consistent_sample(features_cleaned, targets_cleaned, max_samples=max_samples)
+            tprint_info(f"  🔍 DEBUG: _get_consistent_sample returned successfully with max_samples={max_samples}!")
         except Exception as e:
             tprint_error(f"  🔍 DEBUG: Exception in _get_consistent_sample: {e}")
             raise
@@ -2894,7 +2907,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         tprint_success(f"✅ Target data quality validation passed - using {len(valid_targets)} valid targets: {valid_targets}")
         
         # Use consistent sampling strategy with chunked processing
-        features_sample, targets_sample = self._get_consistent_sample(features_cleaned, targets_cleaned, max_samples=8000)
+        blank_mode = str(config.get('execution_mode', '')).lower() == 'blank'
+        max_samples = config.get('max_samples_phase3', 6000 if blank_mode else 8000)
+        features_sample, targets_sample = self._get_consistent_sample(features_cleaned, targets_cleaned, max_samples=max_samples)
         
         # Apply chunked processing for large datasets
         if len(features_sample) > 5000:
@@ -3186,7 +3201,12 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         tprint_info("  🔧 Generating interaction candidates...")
         interaction_candidates = []
         
-        for i, (f1, f2, co_occurrence) in enumerate(feature_pairs[:80]):  # Top 80 pairs
+        # Candidate generation limits for memory efficiency
+        blank_mode = str(config.get('execution_mode', '')).lower() == 'blank'
+        pairs_limit = int(config.get('interaction_pairs_limit', 40 if blank_mode else 80))
+        ops_mode = str(config.get('interaction_ops_mode', 'reduced' if blank_mode else 'full')).lower()
+        
+        for i, (f1, f2, co_occurrence) in enumerate(feature_pairs[:pairs_limit]):
             # Convert integer indices to column names
             if isinstance(f1, int) and isinstance(f2, int):
                 if f1 < len(features.columns) and f2 < len(features.columns):
@@ -3215,13 +3235,13 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         tprint_info("="*80)
         tprint_info("📊 COMPOSITE SCORING WITH RFE FOR INTERACTION SELECTION")
         tprint_info("="*80)
-        tprint_info(f"  📊 Testing {len(interaction_candidates)} interaction candidates...")
+        tprint_info(f"  📊 Testing {len(interaction_candidates)} interaction candidates (pre-prune in chunks)...")
         tprint_info(f"  📊 Target: Select top 80 interactions")
-        tprint_info(f"  📊 Method: 5-way composite scoring with RFE (33% removal per round)")
-        tprint_info(f"  📊 Weights: MI(20%) + Redundancy(20%) + LGBM(20%) + SHAP(20%) + Stability(20%)")
+        tprint_info(f"  📊 Method: Chunked MI preselection + redundancy pruning → Composite RFE")
         
         # Prepare data for CompositeFeatureScorer
         from src.training.utils.feature_selection import CompositeFeatureScorer
+        from sklearn.feature_selection import mutual_info_regression
         
         # Find common indices between features and targets
         common_indices = features.index.intersection(targets.index)
@@ -3232,22 +3252,102 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         # Align targets
         targets_aligned = targets.loc[common_indices]
         target_col = targets_aligned.columns[0]
+        y_vec = targets_aligned[target_col].values
         
-        # Create interaction DataFrame aligned to common indices
+        # Chunked candidate building with MI preselection and redundancy pruning
+        batch_size = int(config.get('candidate_batch_size', 4000))
+        per_batch_keep = int(config.get('per_batch_keep', 400))
+        global_keep = int(config.get('global_preselect', 600))
+        redundancy_threshold = float(config.get('redundancy_corr_threshold', 0.98))
+        redundancy_check_tail = int(config.get('redundancy_check_tail', 100))
+        
+        kept_names = []
+        kept_series = []  # store as list of pd.Series aligned to common_indices for quick corr checks
+        kept_scores = {}
+        
+        def _update_global_keep(cand_names, cand_scores, cand_series_list):
+            nonlocal kept_names, kept_series, kept_scores
+            # Merge into globals with score-based trimming
+            for nm, sc, ser in zip(cand_names, cand_scores, cand_series_list):
+                prev = kept_scores.get(nm)
+                if (prev is None) or (sc > prev):
+                    kept_scores[nm] = sc
+            # Rebuild top by score
+            top_sorted = sorted(kept_scores.items(), key=lambda x: x[1], reverse=True)[:global_keep]
+            top_set = {nm for nm, _ in top_sorted}
+            # Filter names/series to top_set preserving order
+            new_kept_names = []
+            new_kept_series = []
+            for nm, ser in zip(kept_names + cand_names, kept_series + cand_series_list):
+                if nm in top_set and nm not in new_kept_names:
+                    new_kept_names.append(nm)
+                    new_kept_series.append(ser)
+            kept_names, kept_series = new_kept_names, new_kept_series
+            
+        # Iterate in batches
+        for i in range(0, len(interaction_candidates), batch_size):
+            batch = interaction_candidates[i:i+batch_size]
+            if not batch:
+                continue
+            # Build batch DataFrame (float32 + robustness: fillna, finite)
+            batch_cols = []
+            batch_names = []
+            for nm, ser in batch:
+                # Align and sanitize
+                if hasattr(ser, 'reindex'):
+                    s = ser.reindex(common_indices)
+                else:
+                    s = pd.Series(ser, index=common_indices)
+                s = s.replace([np.inf, -np.inf], 0).fillna(0).astype(np.float32)
+                batch_cols.append(s.values)
+                batch_names.append(nm)
+            if not batch_cols:
+                continue
+            X = np.vstack(batch_cols).T  # shape (n_samples, n_batch_features)
+            # Efficient MI scoring in batch
+            try:
+                mi = mutual_info_regression(X, y_vec, random_state=42, n_neighbors=3)
+            except Exception as e:
+                tprint_warning(f"  ⚠️ MI scoring failed on batch {i//batch_size}: {e} - using variance proxy")
+                var = X.var(axis=0)
+                mi = (var - var.min()) / (var.ptp() + 1e-8)
+            # Select per-batch top
+            order = np.argsort(-mi)[:per_batch_keep]
+            cand_names = [batch_names[j] for j in order]
+            cand_scores = [float(mi[j]) for j in order]
+            cand_series_list = [pd.Series(X[:, j], index=common_indices) for j in order]
+            
+            # Early redundancy pruning vs most recent kept tail
+            pruned_names, pruned_scores, pruned_series = [], [], []
+            # Build tail matrix once for speed
+            tail_series = kept_series[-redundancy_check_tail:] if redundancy_check_tail > 0 else []
+            tail_mat = None
+            if tail_series:
+                tail_mat = np.vstack([s.values for s in tail_series]).T  # (n_samples, k)
+            for nm, sc, ser in zip(cand_names, cand_scores, cand_series_list):
+                if tail_mat is not None and tail_mat.size > 0:
+                    # Corr with tail
+                    a = ser.values
+                    # compute max |corr| to tail quickly
+                    denom = (a.std() + 1e-12) * (tail_mat.std(axis=0) + 1e-12)
+                    corr = ((a - a.mean())[:, None] * (tail_mat - tail_mat.mean(axis=0))).mean(axis=0) / denom
+                    if np.nanmax(np.abs(corr)) >= redundancy_threshold:
+                        continue  # skip redundant
+                pruned_names.append(nm)
+                pruned_scores.append(sc)
+                pruned_series.append(ser)
+            
+            _update_global_keep(pruned_names, pruned_scores, pruned_series)
+            tprint_info(f"  🔍 Batch {i//batch_size+1}: kept {len(pruned_names)}/{len(batch_names)} after redundancy; global={len(kept_names)}")
+        
+        # Assemble preselected candidates DataFrame for composite scoring
         interaction_df_candidates = pd.DataFrame(index=common_indices)
         candidate_names = []
-        
-        for name, interaction_series in interaction_candidates:
-            # Align interaction to common indices
-            if hasattr(interaction_series, 'loc'):
-                aligned_series = interaction_series.reindex(common_indices, fill_value=0)
-            else:
-                aligned_series = pd.Series(interaction_series, index=common_indices)
-            
-            interaction_df_candidates[name] = aligned_series.fillna(0)
-            candidate_names.append(name)
-        
-        tprint_info(f"  📊 Prepared {len(candidate_names)} candidates for composite scoring")
+        for nm, ser in zip(kept_names, kept_series):
+            interaction_df_candidates[nm] = ser.values
+            candidate_names.append(nm)
+        interaction_df_candidates = interaction_df_candidates.fillna(0).astype(np.float32)
+        tprint_info(f"  📊 Prepared {len(candidate_names)} preselected candidates for composite scoring")
         
         # Use CompositeFeatureScorer with RFE
         composite_scorer = CompositeFeatureScorer(config={
@@ -3327,6 +3427,8 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         # Create interaction DataFrame
         interaction_df = pd.DataFrame(interaction_features, index=features.index)
+        # Memory optimization: narrow dtype and pre-fill NAs
+        interaction_df = interaction_df.fillna(0).astype(np.float32)
         
         # Apply causality shift
         interaction_df = interaction_df.shift(1)

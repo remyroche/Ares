@@ -135,11 +135,22 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 model='analyst'
             )
 
+            # Prefer OOF base predictions if available
             base_predictions = self._get_artifact(
-                'analyst_base_predictions',
+                'analyst_base_predictions_oof',
                 artifact_type='data',
                 data_category='predictions'
             )
+            used_oof = base_predictions is not None
+            if base_predictions is None:
+                base_predictions = self._get_artifact(
+                    'analyst_base_predictions',
+                    artifact_type='data',
+                    data_category='predictions'
+                )
+            tprint(f"   Base predictions source: OOF={used_oof}", "INFO")
+            if not used_oof:
+                tprint("   ⚠️ Using in-sample base predictions for stacking may inflate performance; prefer OOF artifacts.", "WARNING")
 
             base_confidence = self._get_artifact(
                 'analyst_base_confidence',
@@ -409,25 +420,15 @@ class AnalystEnsembleTrainingStep(BaseStep):
         """Combine all features for ensemble training."""
         execution_mode = config.get('execution_mode', 'full')
         
-        # In blank mode, only use labels from features_data
         if execution_mode == 'blank':
-            tprint("🎯 BLANK MODE: Using only labels, base predictions, and disagreement features", "INFO")
-            # Extract only label columns from features_data, excluding regime features
-            label_cols = [
-                col for col in features_data.columns
-                if ('label' in col.lower() or 'target' in col.lower())
-                and 'regime' not in col.lower()  # Explicitly exclude regime features
-            ]
-            if label_cols:
-                combined = features_data[label_cols].copy()
-                tprint(f"   Extracted {len(label_cols)} label columns from features (regime features excluded)", "INFO")
-            else:
-                # If no label columns found, create empty DataFrame with same index
-                combined = pd.DataFrame(index=features_data.index)
-                tprint("   No label columns found in features_data", "WARNING")
+            tprint("🎯 BLANK MODE: Using only base predictions and disagreement features", "INFO")
+            combined = pd.DataFrame(index=features_data.index)
         else:
-            # Start with features_data as base
             combined = features_data.copy()
+            leak_cols = [col for col in combined.columns if ('label' in col.lower() or 'target' in col.lower())]
+            if leak_cols:
+                tprint(f"⚠️ Removing {len(leak_cols)} target/label columns from features", "WARNING")
+                combined = combined.drop(columns=leak_cols)
 
         # Align all dataframes to the same index
         common_index = combined.index if not combined.empty else features_data.index
@@ -442,14 +443,14 @@ class AnalystEnsembleTrainingStep(BaseStep):
                     if len(regime_probs) == len(common_index):
                         regime_probs.index = common_index
                     else:
-                        tprint(f"⚠️ Regime probs length ({len(regime_probs)}) != features length ({len(common_index)}), using ffill alignment", "WARNING")
+                        tprint(f"⚠️ Regime probs length ({len(regime_probs)}) != features length ({len(common_index)}), using reindex+ffill alignment (possible leakage if labels/features lookahead-dependent)", "WARNING")
                         # Create a mapping - this is a fallback
                         regime_probs = regime_probs.reindex(range(len(common_index)), method='ffill')
                         regime_probs.index = common_index
             
             # Align regime probs to analyst timeframe if needed
             if not regime_probs.index.equals(common_index):
-                tprint("🔄 Aligning regime probabilities to analyst timeframe...", "INFO")
+                tprint("🔄 Aligning regime probabilities to analyst timeframe via reindex+ffill", "INFO")
                 regime_probs_aligned = regime_probs.reindex(common_index, method='ffill')
                 combined = combined.join(regime_probs_aligned, how='left', rsuffix='_regime')
             else:
@@ -461,7 +462,13 @@ class AnalystEnsembleTrainingStep(BaseStep):
             base_predictions = base_predictions[~base_predictions.index.duplicated(keep='first')]
         
         if not base_predictions.index.equals(common_index):
+            tprint("   Aligning base_predictions to common index via reindex (no ffill)", "INFO")
             base_predictions = base_predictions.reindex(common_index)
+            tprint(f"   Base predictions alignment: {base_predictions.isna().sum().sum()} nulls", "INFO")
+            if base_predictions.isna().any().any():
+                tprint("⚠️ Base predictions leakage detected", "WARNING")
+            else:
+                tprint("✅ No base predictions leakage detected", "SUCCESS")
         combined = combined.join(base_predictions, how='left', rsuffix='_base')
 
         # Add base confidence if available (remove duplicates first)
@@ -471,6 +478,7 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 base_confidence = base_confidence[~base_confidence.index.duplicated(keep='first')]
             
             if not base_confidence.index.equals(common_index):
+                tprint("   Aligning base_confidence to common index via reindex (no ffill)", "INFO")
                 base_confidence = base_confidence.reindex(common_index)
             combined = combined.join(base_confidence, how='left', rsuffix='_conf')
 
@@ -481,11 +489,17 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 disagreement_features = disagreement_features[~disagreement_features.index.duplicated(keep='first')]
             
             if not disagreement_features.index.equals(common_index):
+                tprint("   Aligning disagreement_features to common index via reindex (no ffill)", "INFO")
                 disagreement_features = disagreement_features.reindex(common_index)
             combined = combined.join(disagreement_features, how='left')
 
-        # Fill NaN values
-        combined = combined.fillna(method='ffill').fillna(method='bfill').fillna(0)
+        # Final NA handling (may hide alignment issues if excessive)
+        pre_rows = len(combined)
+        na_before = int(combined.isna().sum().sum())
+        combined = combined.fillna(method='ffill')
+        combined = combined.dropna()
+        na_after = int(combined.isna().sum().sum())
+        tprint(f"   NA handling: before={na_before} nulls, after={na_after} nulls; rows before={pre_rows}, after={len(combined)}", "INFO")
 
         return combined
 

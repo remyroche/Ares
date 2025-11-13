@@ -6,11 +6,10 @@ for model training metrics including HPO results, accuracy, R2 scores, and other
 performance metrics for analyst and tactician models.
 """
 
-import os
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 
 
 class ModelTrainingReportGenerator:
@@ -183,10 +182,58 @@ class ModelTrainingReportGenerator:
                 else:
                     report += f"- **{metric_label}:** {value}\n"
 
+        # Train/Val/Test comparison (if available)
+        has_split_metrics = any(k in metrics for k in [
+            'train_r2','val_r2','test_r2','train_rmse','val_rmse','test_rmse','train_accuracy','val_accuracy','test_accuracy'
+        ])
+        if has_split_metrics:
+            # Safely extract metrics with defaults
+            def _get(name, default=None):
+                return metrics.get(name, default)
+
+            train_acc, val_acc, test_acc = _get('train_accuracy'), _get('val_accuracy'), _get('test_accuracy')
+            train_r2, val_r2, test_r2 = _get('train_r2'), _get('val_r2'), _get('test_r2')
+            train_rmse, val_rmse, test_rmse = _get('train_rmse'), _get('val_rmse'), _get('test_rmse')
+
+            # Gaps and ratios
+            train_test_gap = (train_r2 - test_r2) if (train_r2 is not None and test_r2 is not None) else None
+            overfit_ratio = (train_test_gap / max(train_r2, 0.01)) if (train_test_gap is not None and train_r2 is not None) else None
+
+            report += "\n### Train/Val/Test Performance Comparison\n\n"
+            # Build table header
+            report += "| Metric | Train | Validation | Test | Train-Test Gap |\n"
+            report += "|--------|-------|------------|------|----------------|\n"
+
+            # Helper to format floats
+            def fmt(x, nd=4):
+                if x is None:
+                    return 'N/A'
+                try:
+                    return f"{x:.{nd}f}"
+                except Exception:
+                    return str(x)
+
+            # Accuracy row (only if at least one present)
+            if any(v is not None for v in [train_acc, val_acc, test_acc]):
+                report += f"| Accuracy | {fmt(train_acc)} | {fmt(val_acc)} | {fmt(test_acc)} | {fmt(None)} |\n"
+            # R2 row
+            report += f"| R² | {fmt(train_r2)} | {fmt(val_r2)} | {fmt(test_r2)} | {fmt(train_test_gap)} |\n"
+            # RMSE row
+            report += f"| RMSE | {fmt(train_rmse)} | {fmt(val_rmse)} | {fmt(test_rmse)} | - |\n\n"
+
+            # Overfitting analysis
+            report += "### Overfitting Analysis\n\n"
+            if overfit_ratio is not None:
+                status = '✅ Good' if overfit_ratio < 0.1 else ('⚠️ Moderate' if overfit_ratio < 0.2 else '❌ High')
+                report += f"- **Train-Test R² Gap:** {fmt(train_test_gap)}\n"
+                report += f"- **Overfitting Ratio:** {fmt(overfit_ratio)}\n"
+                report += f"- **Status:** {status}\n\n"
+            else:
+                report += "- Split metrics incomplete for overfitting analysis\n\n"
+
         report += "\n### Per-Model Metrics\n\n"
 
         # Individual model metrics
-        model_metric_keys = [k for k in metrics.keys() if any(k.startswith(f"{m}_") for m in models_trained.keys())]
 
         for model_name in models_trained.keys():
             model_specific_metrics = {k: v for k, v in metrics.items() if k.startswith(f"{model_name}_")}

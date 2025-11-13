@@ -142,8 +142,20 @@ class TrainingUtils:
         Returns:
             Tuple[Any, Dict]: (trained_model, validation_results)
         """
-        # Train the model
-        model.fit(X_train, y_train)
+        # Train the model with optional external sample weights
+        sw = None
+        try:
+            sw_full = getattr(self.config, 'target_sample_weight_full', None)
+            if sw_full is None and isinstance(self.config, dict):
+                sw_full = self.config.get('target_sample_weight_full')
+            if sw_full is not None and len(sw_full) >= len(X_train):
+                sw = np.array(sw_full)[:len(X_train)]
+        except Exception:
+            sw = None
+        if sw is not None:
+            model.fit(X_train, y_train, sample_weight=sw)
+        else:
+            model.fit(X_train, y_train)
 
         # Validate the trained model
         validation_results = validate_trained_model(
@@ -195,8 +207,20 @@ class TrainingUtils:
         Returns:
             Tuple[Any, Dict]: (trained_model, validation_results)
         """
-        # Train the model
-        model.fit(X_train, y_train)
+        # Train the model with optional external sample weights
+        sw = None
+        try:
+            sw_full = getattr(self.config, 'target_sample_weight_full', None)
+            if sw_full is None and isinstance(self.config, dict):
+                sw_full = self.config.get('target_sample_weight_full')
+            if sw_full is not None and len(sw_full) >= len(X_train):
+                sw = np.array(sw_full)[:len(X_train)]
+        except Exception:
+            sw = None
+        if sw is not None:
+            model.fit(X_train, y_train, sample_weight=sw)
+        else:
+            model.fit(X_train, y_train)
 
         # Validate the HPO trial
         validation_results = validate_hpo_trial(

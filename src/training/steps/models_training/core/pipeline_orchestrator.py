@@ -23,6 +23,7 @@ from enum import Enum
 from pathlib import Path
 import pandas as pd
 import numpy as np
+from sklearn.model_selection import TimeSeriesSplit
 
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
@@ -319,7 +320,7 @@ class TrainingPipelineOrchestrator:
                 timeframe=self.config.timeframe,
                 symbol=self.config.symbol,
                 enable_ensemble=False,  # Individual models only
-                enable_hyperparameter_optimization=False,  # HPO already completed, use saved params
+                enable_hyperparameter_optimization=True,  # Enable HPO (we'll control when it's run)
                 custom_params=self.config.analyst_config or {}
             )
             
@@ -555,10 +556,185 @@ class TrainingPipelineOrchestrator:
 
             tprint_info("📊 Starting analyst base models training...")
 
-            # Train analyst base models
+            # Generate OOF predictions using time-series splits for leakage-safe stacking
+            try:
+                n_splits = int(self.config.custom_params.get('oof_splits', 5)) if hasattr(self, 'config') else 5
+            except Exception:
+                n_splits = 5
+            tprint_info(f"🧪 Generating OOF predictions with TimeSeriesSplit(n_splits={n_splits})...")
+            # Disable HPO during OOF folds to avoid repeated optimization cycles
+            _orig_hpo_flag = getattr(self._analyst_trainer.config, 'enable_hyperparameter_optimization', False)
+            self._analyst_trainer.config.enable_hyperparameter_optimization = False
+            # In BLANK mode, pre-configure smaller HPO trials for the later final pass
+            if getattr(self.config, 'execution_mode', '').lower() == 'blank':
+                self._analyst_trainer.config.custom_params['hpo_n_trials'] = min(
+                    int(self._analyst_trainer.config.custom_params.get('hpo_n_trials', 10)), 5
+                )
+            oof_df = pd.DataFrame(index=data.index)
+            tscv = TimeSeriesSplit(n_splits=n_splits)
+
+            # Compute embargo gap in bars if available
+            def _bars_per_day(tf: str) -> int:
+                mapping = {'1m': 1440, '5m': 288, '15m': 96, '30m': 48, '1h': 24, '2h': 12, '4h': 6, '1d': 1}
+                return mapping.get(str(self.config.timeframe).lower(), 96)
+            embargo_days = int(self.config.custom_params.get('wf_embargo_days', 1))
+            gap_bars = max(0, embargo_days * _bars_per_day(str(self.config.timeframe)))
+            tprint_info(f"🔒 OOF CV setup: n_splits={n_splits}, timeframe={self.config.timeframe}, bars_per_day={_bars_per_day(str(self.config.timeframe))}, wf_embargo_days={embargo_days}, gap_bars={gap_bars}")
+            if gap_bars == 0:
+                tprint_warning("⚠️ OOF CV running with gap_bars=0 (no embargo). Increase embargo to reduce leakage risk.")
+
+            fold_num = 0
+            for train_idx, val_idx in tscv.split(data):
+                # Apply purged gap between train and val
+                if gap_bars > 0:
+                    # Trim the last gap_bars from train and first gap_bars from val if possible
+                    if len(train_idx) > gap_bars:
+                        train_idx = train_idx[:len(train_idx)-gap_bars]
+                    if len(val_idx) > gap_bars:
+                        val_idx = val_idx[gap_bars:]
+                if len(train_idx) == 0 or len(val_idx) == 0:
+                    continue
+                fold_num += 1
+                tprint_info(f"   ↪ OOF fold {fold_num}/{n_splits}: train={len(train_idx)}, val={len(val_idx)} (gap={gap_bars})")
+                train_data, val_data = data.iloc[train_idx], data.iloc[val_idx]
+                train_targets = targets.iloc[train_idx] if targets is not None else None
+                # Sanity: drop potential leak columns
+                leak_cols = [c for c in train_data.columns if any(term in c.lower() for term in ['label', 'target', 'future_', 'lead_'])]
+                if leak_cols:
+                    tprint_info(f"   🔍 Dropping potential leakage columns from fold data: {len(leak_cols)} (e.g., {leak_cols[:5]})")
+                    train_data = train_data.drop(columns=leak_cols, errors='ignore')
+                    val_data = val_data.drop(columns=leak_cols, errors='ignore')
+                # Train on fold-train only
+                fold_result = await self._analyst_trainer.train(train_data, train_targets)
+                if not getattr(fold_result, 'success', False):
+                    tprint_warning(f"⚠️ OOF fold {fold_num} training failed, skipping fold")
+                    continue
+                # Determine models to predict
+                models_to_predict = {}
+                if hasattr(fold_result, 'metadata') and 'trained_models' in fold_result.metadata:
+                    models_to_predict = fold_result.metadata['trained_models']
+                elif hasattr(fold_result, 'metadata') and 'model_instances' in fold_result.metadata:
+                    models_to_predict = fold_result.metadata['model_instances']
+                elif hasattr(fold_result, 'models') and fold_result.models is not None:
+                    models_to_predict = fold_result.models
+                else:
+                    models_to_predict = {'best_model': getattr(fold_result, 'model', None)}
+                # Select trained features if available
+                data_for_prediction = val_data
+                if hasattr(fold_result, 'metadata') and 'trained_feature_columns' in fold_result.metadata:
+                    trained_features = fold_result.metadata['trained_feature_columns']
+                    missing = set(trained_features) - set(data_for_prediction.columns)
+                    if missing:
+                        tprint_warning(f"⚠️ OOF fold {fold_num}: missing {len(missing)} trained features; skipping fold predictions")
+                        continue
+                    data_for_prediction = data_for_prediction[trained_features]
+                # Predict on fold-val
+                fold_preds = await self._generate_predictions(models_to_predict, data_for_prediction)
+                if fold_preds is None or fold_preds.empty:
+                    tprint_warning(f"⚠️ OOF fold {fold_num}: no predictions generated")
+                    continue
+                # Allocate columns in oof_df as needed and fill fold indices
+                for col in fold_preds.columns:
+                    if col not in oof_df.columns:
+                        oof_df[col] = np.nan
+                    oof_df.iloc[val_idx, oof_df.columns.get_loc(col)] = fold_preds[col].values
+            # End OOF loop
+            if not oof_df.empty and oof_df.isna().any().any():
+                filled = oof_df.notna().sum().min()
+                tprint_info(f"   OOF coverage: min non-NaN count per column = {filled}")
+            # If walk-forward config is available, compute honest fold-aggregated metrics
+            wf_cfg = self.config.custom_params.get('walkforward_config') if hasattr(self.config, 'custom_params') else None
+            walkforward_metrics = []
+            if wf_cfg is not None and hasattr(wf_cfg, 'folds') and len(wf_cfg.folds) > 0:
+                import pandas as _pd
+                from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+                embargo_days = int(self.config.custom_params.get('wf_embargo_days', 1))
+                def _bars_per_day(tf: str) -> int:
+                    mapping = {'1m': 1440, '5m': 288, '15m': 96, '30m': 48, '1h': 24, '2h': 12, '4h': 6, '1d': 1}
+                    return mapping.get(str(self.config.timeframe).lower(), 96)
+                gap_bars = max(0, embargo_days * _bars_per_day(str(self.config.timeframe)))
+
+                for fold in wf_cfg.folds:
+                    tr_start, tr_end = fold.training.start, fold.training.effective_end
+                    va_start, va_end = fold.validation.start, fold.validation.effective_end
+                    train_mask = (data.index >= _pd.Timestamp(tr_start)) & (data.index <= _pd.Timestamp(tr_end))
+                    val_mask = (data.index >= _pd.Timestamp(va_start)) & (data.index <= _pd.Timestamp(va_end))
+                    train_idx = data.index[train_mask]
+                    val_idx = data.index[val_mask]
+                    if len(train_idx) == 0 or len(val_idx) == 0:
+                        continue
+                    # Apply gap by trimming trailing/leading bars
+                    if gap_bars > 0:
+                        if len(train_idx) > gap_bars:
+                            train_idx = train_idx[:-gap_bars]
+                        if len(val_idx) > gap_bars:
+                            val_idx = val_idx[gap_bars:]
+                    if len(train_idx) == 0 or len(val_idx) == 0:
+                        continue
+                    X_tr = data.loc[train_idx]
+                    X_va = data.loc[val_idx]
+                    y_tr = targets.loc[train_idx] if targets is not None else None
+                    # Sanity: drop potential leak columns
+                    leak_cols = [c for c in X_tr.columns if any(term in c.lower() for term in ['label', 'target', 'future_', 'lead_'])]
+                    if leak_cols:
+                        X_tr = X_tr.drop(columns=leak_cols, errors='ignore')
+                        X_va = X_va.drop(columns=leak_cols, errors='ignore')
+                    fold_result = await self._analyst_trainer.train(X_tr, y_tr)
+                    if not getattr(fold_result, 'success', False):
+                        continue
+                    models_to_predict = {}
+                    if hasattr(fold_result, 'metadata') and 'trained_models' in fold_result.metadata:
+                        models_to_predict = fold_result.metadata['trained_models']
+                    elif hasattr(fold_result, 'metadata') and 'model_instances' in fold_result.metadata:
+                        models_to_predict = fold_result.metadata['model_instances']
+                    elif hasattr(fold_result, 'models') and fold_result.models is not None:
+                        models_to_predict = fold_result.models
+                    else:
+                        models_to_predict = {'best_model': getattr(fold_result, 'model', None)}
+                    X_pred = X_va
+                    if hasattr(fold_result, 'metadata') and 'trained_feature_columns' in fold_result.metadata:
+                        trained_features = fold_result.metadata['trained_feature_columns']
+                        if set(trained_features).issubset(set(X_pred.columns)):
+                            X_pred = X_pred[trained_features]
+                    y_va = targets.loc[val_idx] if targets is not None else None
+                    preds = await self._generate_predictions(models_to_predict, X_pred)
+                    if preds is None or preds.empty or y_va is None:
+                        continue
+                    # Use average across model columns for fold metric
+                    y_hat = preds.mean(axis=1).loc[y_va.index]
+                    fold_metrics = {
+                        'val_mse': mean_squared_error(y_va, y_hat),
+                        'val_mae': mean_absolute_error(y_va, y_hat),
+                        'val_r2': r2_score(y_va, y_hat),
+                        'n_train': len(X_tr),
+                        'n_val': len(X_va),
+                    }
+                    walkforward_metrics.append(fold_metrics)
+                # Aggregate
+                if walkforward_metrics:
+                    import numpy as _np
+                    agg = {
+                        'wf_val_mse_mean': float(_np.mean([m['val_mse'] for m in walkforward_metrics])),
+                        'wf_val_mae_mean': float(_np.mean([m['val_mae'] for m in walkforward_metrics])),
+                        'wf_val_r2_mean': float(_np.mean([m['val_r2'] for m in walkforward_metrics])),
+                        'wf_folds': len(walkforward_metrics),
+                    }
+                else:
+                    agg = None
+            else:
+                agg = None
+
+            # Train analyst base models on full data after OOF generation
+            # Re-enable HPO for the single final training pass
+            self._analyst_trainer.config.enable_hyperparameter_optimization = _orig_hpo_flag or True
             result = await self._analyst_trainer.train(data, targets)
 
             if result.success:
+                # Attach walk-forward metrics if available
+                if agg is not None:
+                    if not hasattr(result, 'metrics') or result.metrics is None:
+                        result.metrics = {}
+                    result.metrics.update(agg)
                 # CRITICAL: Models were trained on 104 features (60 base + analyst engineered features)
                 # We need to use the SAME feature set for predictions
                 # The training data flow is: base features (60) -> analyst feature engineering -> 104 features
@@ -676,6 +852,7 @@ class TrainingPipelineOrchestrator:
                     'models': trained_models,
                     'predictions': predictions,
                     'confidence': confidence if predictions is not None else None,
+                    'oof_predictions': oof_df if 'oof_df' in locals() and not oof_df.empty else None,
                     'metrics': result.metrics,
                     'training_time': result.training_time,
                     'validation_metrics': result.validation_metrics,

@@ -449,7 +449,9 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             elif indicator == 'sma':
                 return vbt.MA.run(data['close'], **kwargs).ma
             elif indicator == 'ema':
-                return vbt.EMA.run(data['close'], **kwargs).ema
+                # Use pandas EWM for EMA to ensure compatibility
+                span = kwargs.get('window') or kwargs.get('span') or 20
+                return data['close'].ewm(span=span, adjust=False).mean()
             elif indicator == 'wma':
                 return vbt.WMA.run(data['close'], **kwargs).wma
             elif indicator == 'willr':
@@ -484,7 +486,25 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                 mfi = 100 - (100 / (1 + mfr))
                 return mfi.fillna(50)  # Neutral value when no data
             elif indicator == 'adx':
-                return vbt.ADX.run(data['high'], data['low'], data['close'], **kwargs).adx
+                # Compute ADX manually for compatibility
+                window = int(kwargs.get('window', 14))
+                high = data['high']
+                low = data['low']
+                close = data['close']
+                plus_dm = (high.diff()).clip(lower=0)
+                minus_dm = (-low.diff()).clip(lower=0)
+                plus_dm[plus_dm < minus_dm] = 0
+                minus_dm[minus_dm < plus_dm] = 0
+                tr1 = (high - low).abs()
+                tr2 = (high - close.shift()).abs()
+                tr3 = (low - close.shift()).abs()
+                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                atr = tr.rolling(window=window).mean()
+                plus_di = 100 * (plus_dm.rolling(window=window).mean() / atr).replace([np.inf, -np.inf], np.nan)
+                minus_di = 100 * (minus_dm.rolling(window=window).mean() / atr).replace([np.inf, -np.inf], np.nan)
+                dx = (100 * (plus_di - minus_di).abs() / (plus_di + minus_di)).replace([np.inf, -np.inf], np.nan)
+                adx = dx.rolling(window=window).mean().fillna(method='bfill').fillna(0)
+                return adx
             elif indicator == 'roc':
                 # Rate of Change using VectorBT optimized operations
                 window = kwargs.get('window', 10)
@@ -539,19 +559,34 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                 return mfi.fillna(50)  # Neutral value when no data
             
             elif indicator == 'roc':
-                # Rate of Change calculation
                 window = kwargs.get('window', 10)
                 roc = ((data['close'] - data['close'].shift(window)) / data['close'].shift(window)) * 100
                 return roc.fillna(0)
-            
             elif indicator == 'mom':
-                # Momentum calculation
                 window = kwargs.get('window', 10)
                 mom = data['close'] - data['close'].shift(window)
                 return mom.fillna(0)
-            
+            elif indicator == 'ema':
+                span = kwargs.get('window') or kwargs.get('span') or 20
+                return data['close'].ewm(span=span, adjust=False).mean()
+            elif indicator == 'adx':
+                window = int(kwargs.get('window', 14))
+                high = data['high']; low = data['low']; close = data['close']
+                plus_dm = (high.diff()).clip(lower=0)
+                minus_dm = (-low.diff()).clip(lower=0)
+                plus_dm[plus_dm < minus_dm] = 0
+                minus_dm[minus_dm < plus_dm] = 0
+                tr1 = (high - low).abs()
+                tr2 = (high - close.shift()).abs()
+                tr3 = (low - close.shift()).abs()
+                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                atr = tr.rolling(window=window).mean()
+                plus_di = 100 * (plus_dm.rolling(window=window).mean() / atr).replace([np.inf, -np.inf], np.nan)
+                minus_di = 100 * (minus_dm.rolling(window=window).mean() / atr).replace([np.inf, -np.inf], np.nan)
+                dx = (100 * (plus_di - minus_di).abs() / (plus_di + minus_di)).replace([np.inf, -np.inf], np.nan)
+                adx = dx.rolling(window=window).mean().fillna(method='bfill').fillna(0)
+                return adx
             else:
-                # For other indicators, return NaN series
                 return pd.Series(np.nan, index=data.index)
                 
         except Exception as e:
@@ -1092,7 +1127,19 @@ class VectorBTVolatilityGenerator(VectorBTFeatureGenerator):
 
         # Use VectorBT ATR for volatility calculation
         atr = self._vectorbt_technical_indicator(data, 'atr', window=self.period)
-        return atr.rename(f'vectorbt_volatility_{self.period}')
+        # Ensure Series aligned to index
+        if np.isscalar(atr):
+            atr = pd.Series(atr, index=data.index)
+        elif isinstance(atr, pd.Series):
+            atr = atr.reindex(data.index)
+        else:
+            try:
+                atr = pd.Series(atr, index=data.index)
+            except Exception:
+                atr = pd.Series(np.nan, index=data.index)
+        atr = pd.to_numeric(atr, errors='coerce').replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        atr.name = f'vectorbt_volatility_{self.period}'
+        return atr
 
 class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized momentum feature generator."""
@@ -1126,7 +1173,19 @@ class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
 
         # Use VectorBT RSI
         rsi = self._vectorbt_technical_indicator(data, 'rsi', window=self.period)
-        return rsi.rename(f'vectorbt_rsi_{self.period}')
+        # Ensure Series aligned to index
+        if np.isscalar(rsi):
+            rsi = pd.Series(rsi, index=data.index)
+        elif isinstance(rsi, pd.Series):
+            rsi = rsi.reindex(data.index)
+        else:
+            try:
+                rsi = pd.Series(rsi, index=data.index)
+            except Exception:
+                rsi = pd.Series(np.nan, index=data.index)
+        rsi = pd.to_numeric(rsi, errors='coerce').replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        rsi.name = f'vectorbt_rsi_{self.period}'
+        return rsi
 
 class VectorBTTrendGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized trend feature generator."""
@@ -1160,7 +1219,19 @@ class VectorBTTrendGenerator(VectorBTFeatureGenerator):
 
         # Use VectorBT rolling mean for SMA
         sma = self._vectorbt_rolling_operation(data['close'], 'mean', window=self.period)
-        return sma.rename(f'vectorbt_sma_{self.period}')
+        # Ensure Series aligned to index
+        if np.isscalar(sma):
+            sma = pd.Series(sma, index=data.index)
+        elif isinstance(sma, pd.Series):
+            sma = sma.reindex(data.index)
+        else:
+            try:
+                sma = pd.Series(sma, index=data.index)
+            except Exception:
+                sma = pd.Series(np.nan, index=data.index)
+        sma = pd.to_numeric(sma, errors='coerce').replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        sma.name = f'vectorbt_sma_{self.period}'
+        return sma
 
 def create_vectorbt_generators() -> List[VectorBTFeatureGenerator]:
     """Create a comprehensive set of VectorBT feature generators."""

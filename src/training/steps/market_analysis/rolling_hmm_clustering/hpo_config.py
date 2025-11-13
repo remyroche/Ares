@@ -890,10 +890,10 @@ class RollingHMMOptimizer:
         tprint_info("Running custom hierarchical optimization with successive halving")
 
         coarse_grid = {
-            'ewma_config_idx': [0, 1, 2],  # Test all EWMA configs (4+20, 6+20, 8+20)
-            'n_components': [4, 5, 6],  # States to try
+            'ewma_config_idx': [2],  # Only 8+20
+            'n_components': [4],  # Fixed to 4 regimes
             'min_covar': [1e-3, 5e-3, 1e-2],  # Min covariance: 0.001, 0.005, 0.01
-            'kappa': [0.5, 1.0, 2.0, 3.0, 4.0]  # Kappa values
+            'kappa': [0.5, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 10.0]  # Extended kappa values
         }
 
         best_score = -np.inf
@@ -1305,8 +1305,8 @@ class RollingHMMOptimizer:
         best_kappa = best_params.get('kappa', 2.0)
 
         # Create fine-tuned ranges around best values
-        ewma_candidates = [max(0, best_ewma - 1), best_ewma, min(2, best_ewma + 1)]
-        n_comp_candidates = [max(4, best_n_comp - 1), best_n_comp, min(6, best_n_comp + 1)]
+        ewma_candidates = [2]
+        n_comp_candidates = [4]
         min_cov_candidates = [best_min_cov * 0.5, best_min_cov, best_min_cov * 2.0]
         kappa_candidates = [best_kappa * 0.5, best_kappa, best_kappa * 1.5]
 
@@ -1390,15 +1390,15 @@ class RollingHMMOptimizer:
 
         for key in perturb_keys:
             if key == 'ewma_config_idx':
-                params[key] = int(np.clip(params[key] + np.random.randint(-1, 2), 0, 2))
+                params[key] = 2
             elif key == 'n_components':
-                params[key] = int(np.clip(params[key] + np.random.randint(-1, 2), 4, 6))
+                params[key] = 4
             elif key == 'min_covar':
                 log_val = np.log10(params[key])
                 log_val += np.random.uniform(-0.5, 0.5)
                 params[key] = float(np.clip(10 ** log_val, 1e-3, 1e-2))  # 0.001 to 0.01
             elif key == 'kappa':
-                params[key] = float(np.clip(params[key] + np.random.uniform(-1, 1), 0.5, 4.0))  # 0.5 to 4.0
+                params[key] = float(np.clip(params[key] + np.random.uniform(-1, 1), 0.5, 10.0))  # 0.5 to 10.0
 
         return params
 
@@ -1489,8 +1489,8 @@ class RollingHMMOptimizer:
         min_covar = float(base_params.get('min_covar', 1e-3))
         kappa = float(base_params.get('kappa', 2.0))
 
-        ewma_candidates = list(range(max(0, ewma_idx - 1), min(2, ewma_idx + 1) + 1))
-        n_comp_candidates = list(range(max(4, n_comp - 1), min(6, n_comp + 1) + 1))
+        ewma_candidates = [2]
+        n_comp_candidates = [4]
 
         min_covar_multipliers = [0.5, 1.0, 2.0]
         min_covar_candidates = sorted({
@@ -1500,7 +1500,7 @@ class RollingHMMOptimizer:
 
         kappa_offsets = [-1.0, -0.5, 0.0, 0.5, 1.0]  # Refined kappa grid
         kappa_candidates = sorted({
-            float(np.clip(kappa + offset, 0.5, 4.0))  # 0.5 to 4.0
+            float(np.clip(kappa + offset, 0.5, 10.0))  # 0.5 to 10.0
             for offset in kappa_offsets
         })
 

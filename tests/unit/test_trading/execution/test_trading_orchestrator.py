@@ -18,6 +18,17 @@ except ImportError:
     # Si le module n'existe pas encore, on utilise un mock
     TradingOrchestrator = Mock
 
+# Import des assertions standardisées
+from tests.utils.assertions import (
+    assert_success_response,
+    assert_error_response,
+    assert_float_equals,
+    assert_dict_structure,
+    assert_list_structure,
+    assert_execution_time,
+    assert_performance_metrics
+)
+
 
 @pytest.mark.unit
 @pytest.mark.trading
@@ -63,12 +74,12 @@ class TestTradingOrchestrator:
             result = await self.orchestrator.initialize()
         
         # Then
-        assert result is True
+        assert result is True, "L'initialisation doit réussir"
         if hasattr(self.orchestrator, 'config'):
-            assert self.orchestrator.config == expected_config
+            assert self.orchestrator.config == expected_config, "La configuration doit correspondre à celle attendue"
         if hasattr(self.orchestrator, 'status'):
             from src.trading.execution.trading_orchestrator import OrchestratorStatus
-            assert self.orchestrator.status == OrchestratorStatus.STOPPED
+            assert self.orchestrator.status == OrchestratorStatus.STOPPED, "Le statut initial doit être STOPPED"
 
     async def test_initialization_missing_config(self):
         """Test d'initialisation avec configuration manquante."""
@@ -89,12 +100,12 @@ class TestTradingOrchestrator:
         result = await self.orchestrator.start_trading_session()
         
         # Then
-        assert result is True
+        assert result is True, "Le démarrage de session doit réussir"
         if hasattr(self.orchestrator, 'status'):
             from src.trading.execution.trading_orchestrator import OrchestratorStatus
-            assert self.orchestrator.status == OrchestratorStatus.RUNNING
+            assert self.orchestrator.status == OrchestratorStatus.RUNNING, "Le statut doit être RUNNING après démarrage"
         if hasattr(self.orchestrator, 'current_session'):
-            assert self.orchestrator.current_session is not None
+            assert self.orchestrator.current_session is not None, "La session courante doit être définie"
 
     async def test_start_trading_session_already_running(self):
         """Test de démarrage de session déjà en cours."""
@@ -113,7 +124,7 @@ class TestTradingOrchestrator:
         result = await self.orchestrator.start_trading_session()
         
         # Then
-        assert result is False
+        assert result is False, "Le démarrage doit échouer si déjà en cours"
 
     async def test_stop_trading_session_nominal(self):
         """Test d'arrêt de session de trading nominale."""
@@ -128,10 +139,10 @@ class TestTradingOrchestrator:
         result = await self.orchestrator.stop_trading_session()
         
         # Then
-        assert result is True
+        assert result is True, "L'arrêt de session doit réussir"
         if hasattr(self.orchestrator, 'status'):
             from src.trading.execution.trading_orchestrator import OrchestratorStatus
-            assert self.orchestrator.status == OrchestratorStatus.STOPPED
+            assert self.orchestrator.status == OrchestratorStatus.STOPPED, "Le statut doit être STOPPED après arrêt"
 
     async def test_stop_trading_session_not_running(self):
         """Test d'arrêt de session non démarrée."""
@@ -145,7 +156,7 @@ class TestTradingOrchestrator:
         result = await self.orchestrator.stop_trading_session()
         
         # Then
-        assert result is False
+        assert result is False, "L'arrêt doit échouer si aucune session en cours"
 
     async def test_generate_trading_decision_nominal(self, mock_market_snapshot, mock_trading_signals):
         """Test de génération de décision de trading nominale."""
@@ -161,13 +172,13 @@ class TestTradingOrchestrator:
         decision = await self.orchestrator._generate_trading_decision(mock_market_snapshot)
         
         # Then
-        assert decision is not None
-        assert hasattr(decision, 'symbol')
-        assert hasattr(decision, 'action')
-        assert hasattr(decision, 'quantity')
-        assert hasattr(decision, 'price')
-        assert hasattr(decision, 'confidence')
-        assert decision.symbol == self.config['symbol']
+        assert decision is not None, "La décision de trading ne doit pas être None"
+        assert hasattr(decision, 'symbol'), "La décision doit avoir un attribut symbol"
+        assert hasattr(decision, 'action'), "La décision doit avoir un attribut action"
+        assert hasattr(decision, 'quantity'), "La décision doit avoir un attribut quantity"
+        assert hasattr(decision, 'price'), "La décision doit avoir un attribut price"
+        assert hasattr(decision, 'confidence'), "La décision doit avoir un attribut confidence"
+        assert decision.symbol == self.config['symbol'], "Le symbole doit correspondre à celui de la config"
 
     async def test_generate_trading_decision_no_market_data(self):
         """Test de génération de décision sans données de marché."""
@@ -181,7 +192,7 @@ class TestTradingOrchestrator:
         decision = await self.orchestrator._generate_trading_decision(empty_snapshot)
         
         # Then
-        assert decision is None
+        assert decision is None, "La décision doit être None sans données de marché"
 
     async def test_execute_trading_decision_nominal(self, mock_trading_decision, mock_market_snapshot):
         """Test d'exécution de décision de trading nominale."""
@@ -197,8 +208,8 @@ class TestTradingOrchestrator:
         # Then
         # Vérifier que la décision a été ajoutée à l'historique
         if hasattr(self.orchestrator, 'trading_decisions'):
-            assert len(self.orchestrator.trading_decisions) > 0
-            assert self.orchestrator.trading_decisions[-1] == decision
+            assert len(self.orchestrator.trading_decisions) > 0, "L'historique des décisions ne doit pas être vide"
+            assert self.orchestrator.trading_decisions[-1] == decision, "La dernière décision doit correspondre"
 
     async def test_execute_trading_decision_invalid_decision(self):
         """Test d'exécution de décision invalide."""
@@ -228,7 +239,7 @@ class TestTradingOrchestrator:
         result = await self.orchestrator._validate_position_limits(decision)
         
         # Then
-        assert result is True
+        assert result is True, "La validation doit réussir pour les limites respectées"
 
     async def test_validate_position_limits_exceeded(self, mock_trading_decision):
         """Test de validation des limites de position dépassées."""
@@ -244,7 +255,7 @@ class TestTradingOrchestrator:
         result = await self.orchestrator._validate_position_limits(decision)
         
         # Then
-        assert result is False
+        assert result is False, "La validation doit échouer pour les limites dépassées"
 
     async def test_get_market_snapshot_nominal(self, mock_market_data):
         """Test de récupération du snapshot de marché nominale."""
@@ -261,8 +272,8 @@ class TestTradingOrchestrator:
         snapshot = await self.orchestrator._get_market_snapshot()
         
         # Then
-        assert snapshot is not None
-        assert 'market_data' in snapshot
+        assert snapshot is not None, "Le snapshot ne doit pas être None"
+        assert 'market_data' in snapshot, "Le snapshot doit contenir les données de marché"
 
     async def test_get_market_snapshot_no_data(self):
         """Test de récupération du snapshot de marché sans données."""
@@ -279,7 +290,7 @@ class TestTradingOrchestrator:
         snapshot = await self.orchestrator._get_market_snapshot()
         
         # Then
-        assert snapshot is None
+        assert snapshot is None, "Le snapshot doit être None sans données"
 
     async def test_evaluate_trailing_positions_nominal(self, mock_market_snapshot, mock_position_data):
         """Test d'évaluation des positions avec trailing nominale."""
@@ -314,7 +325,7 @@ class TestTradingOrchestrator:
         # Then
         # Vérifier que la position a été ajoutée
         if hasattr(self.orchestrator, 'active_positions'):
-            assert 'test_position' in self.orchestrator.active_positions
+            assert 'test_position' in self.orchestrator.active_positions, "La position doit être ajoutée aux positions actives"
 
     async def test_update_active_positions_close_position(self, mock_trading_decision, mock_position_data):
         """Test de mise à jour des positions avec fermeture."""
@@ -335,7 +346,7 @@ class TestTradingOrchestrator:
         # Then
         # Vérifier que la position a été fermée
         if hasattr(self.orchestrator, 'active_positions'):
-            assert 'test_position' not in self.orchestrator.active_positions
+            assert 'test_position' not in self.orchestrator.active_positions, "La position doit être retirée des positions actives"
 
     def test_build_ml_context_nominal(self, mock_position_data, mock_trading_signals):
         """Test de construction du contexte ML nominale."""
@@ -350,9 +361,9 @@ class TestTradingOrchestrator:
         context = self.orchestrator._build_ml_context(position)
         
         # Then
-        assert isinstance(context, dict)
-        assert 'entry' in context
-        assert context['entry'] == position.get('ml_entry', {})
+        assert isinstance(context, dict), "Le contexte ML doit être un dictionnaire"
+        assert 'entry' in context, "Le contexte doit contenir une clé 'entry'"
+        assert context['entry'] == position.get('ml_entry', {}), "L'entrée doit correspondre à ml_entry"
 
     async def test_simulate_order_execution_nominal(self, mock_trading_decision):
         """Test de simulation d'exécution d'ordre nominale."""
@@ -369,7 +380,7 @@ class TestTradingOrchestrator:
         
         # Then
         # Avec une confiance élevée, devrait réussir la plupart du temps
-        assert result is True or isinstance(result, bool)
+        assert result is True or isinstance(result, bool), "Le résultat doit être True ou un booléen"
 
     async def test_simulate_order_execution_low_confidence(self, mock_trading_decision):
         """Test de simulation d'exécution d'ordre avec faible confiance."""
@@ -407,9 +418,9 @@ class TestTradingOrchestrator:
         stats = self.orchestrator.get_orchestrator_stats()
         
         # Then
-        assert isinstance(stats, dict)
-        assert 'performance_metrics' in stats
-        assert stats['performance_metrics']['total_sessions'] == 5
+        assert isinstance(stats, dict), "Les statistiques doivent être un dictionnaire"
+        assert 'performance_metrics' in stats, "Les statistiques doivent contenir les métriques de performance"
+        assert stats['performance_metrics']['total_sessions'] == 5, "Le nombre total de sessions doit être 5"
 
     async def test_generate_live_dashboard_nominal(self):
         """Test de génération du dashboard live nominale."""
@@ -421,7 +432,7 @@ class TestTradingOrchestrator:
         dashboard = await self.orchestrator.generate_live_dashboard()
         
         # Then
-        assert isinstance(dashboard, dict)
+        assert isinstance(dashboard, dict), "Le dashboard doit être un dictionnaire"
         # La structure exacte dépend de l'implémentation
 
     async def test_generate_performance_report_nominal(self):
@@ -434,7 +445,7 @@ class TestTradingOrchestrator:
         report = await self.orchestrator.generate_performance_report('session')
         
         # Then
-        assert isinstance(report, dict)
+        assert isinstance(report, dict), "Le rapport doit être un dictionnaire"
         # La structure exacte dépend de l'implémentation
 
     async def test_concurrent_operations(self, mock_trading_decision):
@@ -454,7 +465,7 @@ class TestTradingOrchestrator:
         # Then
         # Vérifier que toutes les décisions ont été générées
         successful_decisions = [r for r in results if r is not None]
-        assert len(successful_decisions) == 5
+        assert len(successful_decisions) == 5, "Toutes les décisions doivent être générées"
 
     async def test_error_handling_invalid_config(self):
         """Test de gestion des erreurs avec configuration invalide."""
@@ -493,7 +504,11 @@ class TestTradingOrchestrator:
         
         # Then
         execution_time = (end_time - start_time).total_seconds()
-        assert execution_time < 5.0  # Devrait s'exécuter rapidement même avec beaucoup de données
+        assert_execution_time(
+            execution_time,
+            5.0,
+            message="L'exécution doit prendre moins de 5 secondes même avec beaucoup de données"
+        )
 
     async def test_edge_case_zero_balance(self):
         """Test des cas limites avec solde nul."""
@@ -522,9 +537,9 @@ class TestTradingOrchestrator:
         
         # Then
         # Devrait gérer les valeurs extrêmes sans erreur
-        assert orchestrator is not None
+        assert orchestrator is not None, "L'orchestrateur doit être créé même avec des valeurs extrêmes"
         if hasattr(orchestrator, 'config'):
-            assert orchestrator.config['max_positions_per_symbol'] == 1000
+            assert orchestrator.config['max_positions_per_symbol'] == 1000, "La configuration doit conserver les valeurs extrêmes"
 
     async def test_memory_leak_prevention(self, mock_trading_decision):
         """Test de prévention des fuites mémoire."""
@@ -548,7 +563,7 @@ class TestTradingOrchestrator:
         # Vérifier que la liste ne croît pas indéfiniment
         if hasattr(self.orchestrator, 'trading_decisions'):
             final_count = len(self.orchestrator.trading_decisions)
-            assert final_count >= initial_count
+            assert final_count >= initial_count, "Le nombre de décisions doit augmenter"
             # En pratique, il faudrait vérifier que les anciennes décisions sont nettoyées
 
     async def test_state_consistency(self):
@@ -561,8 +576,8 @@ class TestTradingOrchestrator:
         # Vérifier que l'état initial est cohérent
         if hasattr(orchestrator, 'status'):
             from src.trading.execution.trading_orchestrator import OrchestratorStatus
-            assert orchestrator.status == OrchestratorStatus.STOPPED
+            assert orchestrator.status == OrchestratorStatus.STOPPED, "Le statut initial doit être STOPPED"
         if hasattr(orchestrator, 'trading_decisions'):
-            assert len(orchestrator.trading_decisions) == 0
+            assert len(orchestrator.trading_decisions) == 0, "L'historique des décisions doit être vide initialement"
         if hasattr(orchestrator, 'active_positions'):
-            assert len(orchestrator.active_positions) == 0
+            assert len(orchestrator.active_positions) == 0, "Les positions actives doivent être vides initialement"

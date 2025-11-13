@@ -147,12 +147,26 @@ class RegimeEnsembleTrainingStep(BaseStep):
                 ohlcv_aligned = ohlcv_data.tail(n_regime_samples).reset_index(drop=True)
                 regime_probs_aligned = regime_probs.reset_index(drop=True)
 
+                # Alignment diagnostics (no ffill path here)
+                try:
+                    tprint(f"   Index types → regime_probs: {type(regime_probs.index).__name__}, ohlcv: {type(ohlcv_data.index).__name__}", "INFO")
+                    tprint(f"   Using tail()+reset_index(drop=True) for index alignment (no forward-fill)", "INFO")
+                except Exception:
+                    pass
+
                 tprint(f"   Aligned OHLCV to last {n_regime_samples} samples", "INFO")
                 tprint(f"   OHLCV close sample (aligned): {ohlcv_aligned['close'].head(3).tolist() if 'close' in ohlcv_aligned.columns else 'N/A'}", "INFO")
 
                 # Merge on aligned integer index
                 market_data = regime_probs_aligned.join(ohlcv_aligned[['open', 'high', 'low', 'close', 'volume']], how='left')
                 tprint(f"✅ Combined regime probabilities with OHLCV: {market_data.shape}", "SUCCESS")
+                # NaN diagnostics across OHLCV columns
+                try:
+                    if all(c in market_data.columns for c in ['open','high','low','close','volume']):
+                        nan_counts = {c: int(market_data[c].isna().sum()) for c in ['open','high','low','close','volume']}
+                        tprint(f"   NaN counts (OHLCV after join): {nan_counts}", "INFO")
+                except Exception:
+                    pass
                 tprint(f"   Combined close sample: {market_data['close'].head(3).tolist() if 'close' in market_data.columns else 'N/A'}", "INFO")
                 tprint(f"   Close NaN count: {market_data['close'].isna().sum() if 'close' in market_data.columns else 'N/A'}", "INFO")
 

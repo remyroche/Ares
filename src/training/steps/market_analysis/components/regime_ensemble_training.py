@@ -13,7 +13,7 @@ import pickle
 import json
 import time
 import warnings
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Union
 from datetime import datetime
 
 from src.utils.logger import system_logger
@@ -59,6 +59,9 @@ except ImportError:
     ObjectiveDirection = None
 from src.utils.ml_common.validation.universal_temporal_validation import (
     UniversalTemporalValidator, TemporalValidationConfig
+)
+from src.utils.ml_common.validation.data_leakage_prevention import (
+    DataLeakagePrevention, DataLeakageConfig
 )
 from src.utils.ml_common.utils.lookahead_protection import LookaheadProtection
 from src.utils.hardware.unified_hardware_manager import (
@@ -326,9 +329,9 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         # Initialize temporal splitter for proper train/test splits
         temporal_config = {
             'test_size': 0.3,
-            'gap_size': 1,
+            'gap_size': 50,  # increase gap to reduce overlap leakage; tune to max feature lookback
             'validation_size': 0.2,
-            'min_regime_samples': 1,  # CRITICAL FIX: Allow training with very limited data
+            'min_regime_samples': 1,  # allow training with very limited data
             'regime_aware': True
         }
         self.temporal_splitter = create_temporal_splitter(temporal_config)
@@ -526,9 +529,17 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint("🔍 [REGIME_ENSEMBLE] Checking timeframe frequency...", color="cyan")
             if predictions.index.freq != '15T':
                 original_len = len(predictions)
-                tprint(f"   ⚠️  Resampling from freq={predictions.index.freq} to 15T (15 minutes)", color="yellow")
+                tprint(f"   ⚠️  Resampling from freq={predictions.index.freq} to 15T (15 minutes) with shift to prevent intra-hour lookahead", color="yellow")
+                # Shift predictions forward by one native period to ensure they are valid-from the next period
+                try:
+                    inferred = pd.infer_freq(predictions.index)
+                except Exception:
+                    inferred = None
+                # Default to 1H shift if unknown
+                shift_rule = '1H' if inferred is None else inferred
+                predictions = predictions.shift(1, freq=shift_rule)
                 predictions = predictions.resample('15T').ffill()
-                tprint(f"   ✅ Resampled: {original_len} → {len(predictions)} rows", color="green")
+                tprint(f"   ✅ Resampled (shifted + ffill): {original_len} → {len(predictions)} rows", color="green")
             else:
                 tprint(f"   ✅ Frequency already 15T", color="green")
 
@@ -620,10 +631,10 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             self.hardware_manager.optimize_for_workload(WorkloadType.ML_TRAINING)
             tprint("✅ [REGIME_ENSEMBLE] Hardware optimization initialized", color="green")
 
-            # Apply lookahead protection
-            tprint("🔒 [REGIME_ENSEMBLE] Applying lookahead protection", color="cyan")
-            protected_data = self.lookahead_protection.automated_future_data_filtering(data)
-            tprint("✅ [REGIME_ENSEMBLE] Lookahead protection applied", color="green")
+            # Do not globally filter historical data by current wall-clock time.
+            # Enforce causality via feature engineering and temporal splitting only.
+            protected_data = data
+            tprint("✅ [REGIME_ENSEMBLE] Using historical data without global time filtering (causality via temporal splits)", color="green")
             
             # STORE OHLCV COLUMNS FOR TEMPORAL ANALYSIS (before protected_data gets modified)
             # Extract only the columns needed for returns calculation
@@ -816,7 +827,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             # EXTRACT SOFT LABELS (POSTERIOR PROBABILITIES)
             soft_labels = None
             sample_weights = None
-            if self.enable_soft_labels: # This flag exists in ensemble component too
+            if False and self.enable_soft_labels:  # Temporarily disable soft-label weighting to avoid potential leakage until walk-forward soft labels are guaranteed
                 try:
                     # Try to get HDP-HMM probabilities first
                     hdp_probs_artifact = self.artifact_extractor.extract_artifact(
@@ -2166,26 +2177,35 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             for fold_idx in range(n_folds):
                 tprint(f"🔄 [REGIME_ENSEMBLE] Fold {fold_idx + 1}/{n_folds}", color="cyan")
                 
-                # Calculer les indices pour ce fold
-                train_start = fold_idx * fold_size
-                train_end = min((fold_idx + 1) * fold_size, n_samples)
-                
-                # Ajouter l'embargo pour éviter la fuite
-                embargo_size = int(fold_size * embargo_pct)
+                # Calculer les indices pour ce fold (fenêtre entraînement EXPANSIVE)
+                # Entraînement: [0, train_end) s'étend avec les folds
+                train_start = 0
+                train_end = min(max(min_train_size, (fold_idx + 1) * fold_size), n_samples)
+
+                # Ajouter l'embargo pour éviter la fuite (au moins 1 échantillon)
+                embargo_size = max(1, int(round(fold_size * embargo_pct)))
                 test_start = train_end + embargo_size
                 test_end = min(test_start + fold_size, n_samples)
-                
+
+                # Garde-fous: taille d'entraînement minimale et non chevauchement
+                if (train_end - train_start) < min_train_size:
+                    tprint(f"⚠️ [REGIME_ENSEMBLE] Fold {fold_idx + 1}: taille d'entraînement insuffisante ({train_end - train_start} < {min_train_size})", color="yellow")
+                    break
+                if test_start <= train_end:
+                    tprint(f"⚠️ [REGIME_ENSEMBLE] Fold {fold_idx + 1}: chevauchement train/test détecté (test_start={test_start}, train_end={train_end})", color="yellow")
+                    break
+
                 # Vérifier que nous avons assez de données pour le test
-                if test_start >= n_samples or test_end - test_start < 10:
+                if test_start >= n_samples or (test_end - test_start) < 10:
                     tprint(f"⚠️ [REGIME_ENSEMBLE] Fold {fold_idx + 1}: pas assez de données pour le test", color="yellow")
                     break
-                
+
                 # Extraire les données d'entraînement et de test
                 X_train = X[train_start:train_end]
                 y_train = y[train_start:train_end]
                 X_test = X[test_start:test_end]
                 y_test = y[test_start:test_end]
-                
+
                 tprint(f"📊 [REGIME_ENSEMBLE] Fold {fold_idx + 1}:", color="blue")
                 tprint(f"   - Train: {train_start}-{train_end} ({len(X_train)} échantillons)", color="blue")
                 tprint(f"   - Embargo: {train_end}-{test_start} ({embargo_size} échantillons)", color="blue")
@@ -2763,38 +2783,113 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"❌ [REGIME_ENSEMBLE] Phase 1 stacker_lgbm_calibrated training failed: {e}", color="red")
             return None
 
-    def _detect_and_block_leakage(self, validation_results: Dict[str, Any],
-                                   accuracy_threshold: float = 0.95) -> Dict[str, Any]:
+    def _detect_and_block_leakage(
+        self,
+        validation_results: Optional[Dict[str, Any]] = None,
+        accuracy_threshold: float = 0.95,
+        *,
+        features: Optional[pd.DataFrame] = None,
+        targets: Optional[Union[pd.Series, pd.DataFrame]] = None,
+        temporal_info: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
-        Détecte et bloque les fuites de données basées sur l'accuracy.
+        Détecte et bloque les fuites de données.
         
-        Cette fonction identifie les résultats de validation avec une accuracy > 95%
-        qui indiquent probablement une fuite de données temporelle.
+        Deux modes:
+        - Mode Validation (par défaut): analyse `validation_results` (accuracy > seuil, etc.).
+        - Mode Nettoyage (Phase 3): si `features` et `targets` sont fournis, détecte les fuites via
+          DataLeakagePrevention et renvoie des données nettoyées en plus d'un rapport.
         
         Args:
-            validation_results: Résultats de validation à analyser
-            accuracy_threshold: Seuil d'accuracy pour détecter la fuite (défaut: 0.95)
-            
-        Returns:
-            Dictionnaire contenant les résultats de détection de fuite
+            validation_results: Résultats de validation à analyser (Mode Validation)
+            accuracy_threshold: Seuil d'accuracy pour détecter la fuite (Mode Validation)
+            features: DataFrame des features à auditer/nettoyer (Mode Nettoyage)
+            targets: Series ou DataFrame 1-colonne des cibles alignées (Mode Nettoyage)
+            temporal_info: Infos temporelles optionnelles, ex: {'timestamp_col': 'timestamp'} (Mode Nettoyage)
         """
         try:
-            tprint("🔍 [REGIME_ENSEMBLE] Détection automatique des fuites de données", color="cyan", bold=True)
-            
-            # Extraire les métriques globales
+            tprint("🔍 [REGIME_ENSEMBLE] Détection/Blocage des fuites de données", color="cyan", bold=True)
+
+            # Mode Nettoyage: si données brutes fournies, utiliser DataLeakagePrevention
+            if features is not None and targets is not None:
+                if not isinstance(features, pd.DataFrame):
+                    raise ValueError("features must be a pandas DataFrame")
+                if isinstance(targets, pd.DataFrame):
+                    if targets.shape[1] != 1:
+                        raise ValueError("targets DataFrame must have exactly one column")
+                    targets_series = targets.iloc[:, 0]
+                elif isinstance(targets, pd.Series):
+                    targets_series = targets
+                else:
+                    raise ValueError("targets must be a pandas Series or single-column DataFrame")
+
+                # Déterminer/assurer la colonne temporelle
+                ts_col = None
+                if temporal_info and isinstance(temporal_info, dict):
+                    ts_col = temporal_info.get('timestamp_col')
+
+                working_df = features.copy()
+                if ts_col and ts_col in working_df.columns:
+                    # Trier pour garantir l'ordre temporel
+                    working_df = working_df.sort_values(ts_col)
+                    targets_series = targets_series.loc[working_df.index]
+                else:
+                    # Ajouter un timestamp synthétique si absent
+                    ts_col = '__synthetic_ts__'
+                    working_df[ts_col] = pd.RangeIndex(start=0, stop=len(working_df))
+
+                # Ajouter la cible pour checks optionnels
+                working_df['__target__'] = targets_series.values
+
+                # Lancer la prévention complète
+                dlp = DataLeakagePrevention(DataLeakageConfig())
+                temporal_report = dlp.detect_temporal_leakage(
+                    data=working_df,
+                    timestamp_column=ts_col,
+                    target_column='__target__',
+                    dataset_name='regime_ensemble_features'
+                )
+
+                leaked_cols = set(temporal_report.leaked_features or [])
+                cleaned_features = features.drop(columns=[c for c in leaked_cols if c in features.columns], errors='ignore')
+                cleaned_targets = targets_series
+
+                # Nettoyer colonnes auxiliaires si présentes
+                if '__synthetic_ts__' in cleaned_features.columns:
+                    cleaned_features = cleaned_features.drop(columns='__synthetic_ts__', errors='ignore')
+
+                # Construire résultat enrichi
+                return {
+                    'leakage_detected': (
+                        temporal_report.temporal_leakage_detected
+                        or temporal_report.lookahead_bias_detected
+                        or temporal_report.feature_leakage_detected
+                        or temporal_report.train_test_leakage_detected
+                    ),
+                    'severity': temporal_report.severity_level,
+                    'leakage_rate': float(temporal_report.overall_leakage_rate),
+                    'recommendations': list(temporal_report.recommendations or []),
+                    'dropped_features': [c for c in leaked_cols if c in features.columns],
+                    'cleaned_features': cleaned_features,
+                    'cleaned_targets': cleaned_targets,
+                    'timestamp_column_used': ts_col,
+                }
+
+            # Mode Validation: analyse des résultats de validation
+            if validation_results is None:
+                raise ValueError("Either validation_results or (features and targets) must be provided")
+
             global_metrics = validation_results.get('global_metrics', {})
             global_accuracy = global_metrics.get('accuracy', 0.0)
-            
+
             tprint(f"📊 [REGIME_ENSEMBLE] Analyse de l'accuracy globale:", color="blue")
             tprint(f"   - Accuracy actuelle: {global_accuracy:.4f}", color="blue")
             tprint(f"   - Seuil de fuite: {accuracy_threshold:.4f}", color="blue")
-            
-            # Détection initiale de fuite
+
             leakage_detected = global_accuracy > accuracy_threshold
             leakage_severity = "none"
-            
+
             if leakage_detected:
-                # Calculer la sévérité de la fuite
                 if global_accuracy > 0.99:
                     leakage_severity = "critical"
                     tprint(f"🚨 [REGIME_ENSEMBLE] FUITE CRITIQUE DÉTECTÉE!", color="red", bold=True)
@@ -2811,87 +2906,45 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     leakage_severity = "low"
                     tprint(f"⚠️ [REGIME_ENSEMBLE] FUITE FAIBLE DÉTECTÉE!", color="yellow", bold=True)
                     tprint(f"   Accuracy: {global_accuracy:.4f} > 95%", color="yellow")
-                
-                # Analyse détaillée de la fuite
-                tprint(f"🔍 [REGIME_ENSEMBLE] Analyse détaillée de la fuite:", color="cyan")
-                
-                # Vérifier les métriques par fold
+
                 fold_metrics = validation_results.get('fold_metrics', {})
                 fold_accuracies = fold_metrics.get('accuracies', [])
-                
-                if fold_accuracies:
-                    min_fold_acc = min(fold_accuracies)
-                    max_fold_acc = max(fold_accuracies)
-                    mean_fold_acc = np.mean(fold_accuracies)
-                    std_fold_acc = np.std(fold_accuracies)
-                    
-                    tprint(f"   - Accuracy par fold: min={min_fold_acc:.4f}, max={max_fold_acc:.4f}, mean={mean_fold_acc:.4f}, std={std_fold_acc:.4f}", color="blue")
-                    
-                    # Détection de patterns suspects
-                    if max_fold_acc > 0.98 and std_fold_acc < 0.01:
-                        tprint(f"   ⚠️ Pattern suspect: Toutes les folds ont une accuracy très élevée et stable", color="yellow")
-                        tprint(f"      Ceci indique probablement une fuite systémique", color="yellow")
-                    
-                    if min_fold_acc > 0.95:
-                        tprint(f"   ⚠️ Pattern suspect: Même le pire fold a une accuracy > 95%", color="yellow")
-                        tprint(f"      Ceci indique probablement une fuite généralisée", color="yellow")
-                
-                # Vérifier les métriques temporelles
                 temporal_metrics = global_metrics.get('temporal_metrics', {})
-                if temporal_metrics:
-                    detection_delay = temporal_metrics.get('detection_delay', {}).get('mean_lag', 0)
-                    transition_accuracy = temporal_metrics.get('transition_accuracy', 0)
-                    
-                    tprint(f"   - Métriques temporelles:", color="blue")
-                    tprint(f"     Délai de détection moyen: {detection_delay:.2f}", color="blue")
-                    tprint(f"     Accuracy des transitions: {transition_accuracy:.4f}", color="blue")
-                    
-                    # Patterns suspects dans les métriques temporelles
-                    if detection_delay < 0.5 and transition_accuracy > 0.95:
-                        tprint(f"     ⚠️ Pattern suspect: Détection instantanée et transitions parfaites", color="yellow")
-                        tprint(f"        Ceci indique probablement une fuite temporelle", color="yellow")
-                
-                # Vérifier la distribution des classes
+
                 fold_results = validation_results.get('fold_results', [])
+                class_distributions = []
                 if fold_results:
-                    class_distributions = []
                     for fold in fold_results:
                         class_dist = fold.get('class_distribution', {})
                         if class_dist:
-                            # Calculer l'entropie de la distribution
                             total_samples = sum(class_dist.values())
                             if total_samples > 0:
                                 probs = [count / total_samples for count in class_dist.values()]
                                 entropy = -sum(p * np.log(p) for p in probs if p > 0)
                                 class_distributions.append(entropy)
-                    
-                    if class_distributions:
-                        mean_entropy = np.mean(class_distributions)
-                        tprint(f"   - Entropie moyenne des distributions de classes: {mean_entropy:.4f}", color="blue")
-                        
-                        # Une entropie très faible peut indiquer une fuite
-                        if mean_entropy < 0.5:
-                            tprint(f"     ⚠️ Entropie très faible: distributions de classes très prévisibles", color="yellow")
-                            tprint(f"        Ceci peut indiquer une fuite de données", color="yellow")
-                
-                # Recommandations basées sur la sévérité
+                mean_entropy = np.mean(class_distributions) if class_distributions else None
+
                 recommendations = []
-                
                 if leakage_severity in ["critical", "high"]:
-                    recommendations.append("URGENT: Réviser la séparation temporelle des données")
-                    recommendations.append("URGENT: Vérifier l'isolation des méta-features")
-                    recommendations.append("URGENT: Désactiver les features qui utilisent des données futures")
-                    recommendations.append("URGENT: Implémenter une validation walk-forward stricte")
+                    recommendations += [
+                        "URGENT: Réviser la séparation temporelle des données",
+                        "URGENT: Vérifier l'isolation des méta-features",
+                        "URGENT: Désactiver les features qui utilisent des données futures",
+                        "URGENT: Implémenter une validation walk-forward stricte",
+                    ]
                 elif leakage_severity == "medium":
-                    recommendations.append("IMPORTANT: Renforcer la validation temporelle")
-                    recommendations.append("IMPORTANT: Ajouter des embargos plus larges entre train/test")
-                    recommendations.append("IMPORTANT: Réduire le nombre de features pour éviter l'overfitting")
-                else:  # low severity
-                    recommendations.append("CONSEIL: Vérifier manuellement les résultats de validation")
-                    recommendations.append("CONSEIL: Comparer avec des modèles de référence")
-                    recommendations.append("CONSEIL: Effectuer une analyse de sensibilité")
-                
-                # Créer le rapport de fuite
+                    recommendations += [
+                        "IMPORTANT: Renforcer la validation temporelle",
+                        "IMPORTANT: Ajouter des embargos plus larges entre train/test",
+                        "IMPORTANT: Réduire le nombre de features pour éviter l'overfitting",
+                    ]
+                else:
+                    recommendations += [
+                        "CONSEIL: Vérifier manuellement les résultats de validation",
+                        "CONSEIL: Comparer avec des modèles de référence",
+                        "CONSEIL: Effectuer une analyse de sensibilité",
+                    ]
+
                 leakage_report = {
                     'leakage_detected': leakage_detected,
                     'severity': leakage_severity,
@@ -2902,58 +2955,44 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     'detailed_analysis': {
                         'fold_accuracies': fold_accuracies,
                         'temporal_metrics': temporal_metrics,
-                        'class_distribution_entropy': mean_entropy if class_distributions else None
+                        'class_distribution_entropy': mean_entropy,
                     },
                     'recommendations': recommendations,
                     'blocking_required': leakage_severity in ["critical", "high"],
-                    'blocking_actions': []
+                    'blocking_actions': [],
+                    'cleaned_features': None,
+                    'cleaned_targets': None,
                 }
-                
-                # Actions de blocage si nécessaire
+
                 if leakage_report['blocking_required']:
                     tprint(f"🚫 [REGIME_ENSEMBLE] BLOCAGE AUTOMATIQUE REQUIS (sévérité: {leakage_severity})", color="red", bold=True)
-                    
-                    # Actions de blocage spécifiques
-                    blocking_actions = []
-                    
                     if leakage_severity == "critical":
-                        blocking_actions.append("Blocage de l'entraînement du modèle")
-                        blocking_actions.append("Invalidation des résultats de validation")
-                        blocking_actions.append("Alerte immédiate à l'utilisateur")
-                    elif leakage_severity == "high":
-                        blocking_actions.append("Suspension de l'entraînement")
-                        blocking_actions.append("Validation avec des données plus strictes")
-                        blocking_actions.append("Réduction drastique des features")
-                    
-                    leakage_report['blocking_actions'] = blocking_actions
-                    
-                    for action in blocking_actions:
-                        tprint(f"   🚫 Action: {action}", color="red")
-                
-                # Résultat final
-                if leakage_detected:
-                    tprint(f"❌ [REGIME_ENSEMBLE] FUITE DE DONNÉES CONFIRMÉE", color="red", bold=True)
-                    tprint(f"   Sévérité: {leakage_severity}", color="red")
-                    tprint(f"   Accuracy: {global_accuracy:.4f} > {accuracy_threshold:.4f}", color="red")
-                    tprint(f"   Actions requises: {len(recommendations)}", color="red")
-                else:
-                    tprint(f"✅ [REGIME_ENSEMBLE] PAS DE FUITE DE DONNÉES DÉTECTÉE", color="green", bold=True)
-                    tprint(f"   Accuracy: {global_accuracy:.4f} <= {accuracy_threshold:.4f}", color="green")
-                
+                        leakage_report['blocking_actions'] = [
+                            "Blocage de l'entraînement du modèle",
+                            "Invalidation des résultats de validation",
+                            "Alerte immédiate à l'utilisateur",
+                        ]
+                    else:
+                        leakage_report['blocking_actions'] = [
+                            "Suspension de l'entraînement",
+                            "Validation avec des données plus strictes",
+                            "Réduction drastique des features",
+                        ]
                 return leakage_report
-            else:
-                tprint(f"✅ [REGIME_ENSEMBLE] PAS DE FUITE DE DONNÉES (accuracy: {global_accuracy:.4f})", color="green")
-                return {
-                    'leakage_detected': False,
-                    'severity': 'none',
-                    'global_accuracy': global_accuracy,
-                    'accuracy_threshold': accuracy_threshold,
-                    'analysis_timestamp': datetime.now().isoformat(),
-                    'recommendations': ["Continuer avec la validation actuelle"],
-                    'blocking_required': False,
-                    'blocking_actions': []
-                }
-                
+
+            tprint(f"✅ [REGIME_ENSEMBLE] PAS DE FUITE DE DONNÉES (accuracy: {global_accuracy:.4f})", color="green")
+            return {
+                'leakage_detected': False,
+                'severity': 'none',
+                'global_accuracy': global_accuracy,
+                'accuracy_threshold': accuracy_threshold,
+                'analysis_timestamp': datetime.now().isoformat(),
+                'recommendations': ["Continuer avec la validation actuelle"],
+                'blocking_required': False,
+                'blocking_actions': [],
+                'cleaned_features': None,
+                'cleaned_targets': None,
+            }
         except Exception as e:
             tprint(f"❌ [REGIME_ENSEMBLE] Erreur lors de la détection de fuite: {e}", color="red")
             self.logger.error(f"Error detecting data leakage: {e}", exc_info=True)

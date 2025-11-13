@@ -215,6 +215,19 @@ class FeatureBank:
             # Copy the auto-registration completion flag from global instance
             if hasattr(_global_feature_bank, '_auto_registration_completed'):
                 self._auto_registration_completed = _global_feature_bank._auto_registration_completed
+            # If REGIME features are requested but not present in registry, register them now
+            try:
+                if self.config.enable_regime_features:
+                    from .feature_generator import FeatureCategory
+                    existing = self.registry.get_by_category(FeatureCategory.REGIME)
+                    if not existing:
+                        tprint("🎯 [FEATURE_BANK] Enabling REGIME generators on existing global bank", color="green")
+                        gens = self._create_default_generators_for_category(FeatureCategory.REGIME)
+                        if gens:
+                            self.register_generators(gens)
+                            tprint(f"✅ Registered {len(gens)} REGIME generators on existing bank", color="green")
+            except Exception:
+                pass
 
         # Check if this is a repeated initialization
         from src.utils.initialization_guard import check_initialization_status
@@ -859,6 +872,33 @@ class FeatureBank:
                 except ImportError:
                     pass
 
+            # NEW: Register regime analysis generators
+            try:
+                from ..categories.market_structure import MarketStructureGenerator
+                generators.append(MarketStructureGenerator())
+            except ImportError:
+                pass
+            try:
+                from ..categories.regime_persistence import RegimePersistenceGenerator
+                generators.append(RegimePersistenceGenerator())
+            except ImportError:
+                pass
+            try:
+                from ..categories.regime_probability import RegimeProbabilityGenerator
+                generators.append(RegimeProbabilityGenerator())
+            except ImportError:
+                pass
+            try:
+                from ..categories.regime_transitions import RegimeTransitionGenerator
+                generators.append(RegimeTransitionGenerator())
+            except ImportError:
+                pass
+            try:
+                from ..categories.regime_uncertainty import RegimeUncertaintyGenerator
+                generators.append(RegimeUncertaintyGenerator())
+            except ImportError:
+                pass
+
             # Multi-timeframe EWMA generators (inspired by rolling_hmm_clustering)
             try:
                 from ..categories.multi_timeframe_ewma import (
@@ -880,6 +920,20 @@ class FeatureBank:
 
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to create regime generators: {e}")
+
+        # Normalize category and names to REGIME for all created generators
+        try:
+            normalized = []
+            for gen in generators:
+                if hasattr(gen, 'config'):
+                    gen.config.category = FeatureCategory.REGIME
+                    if isinstance(gen.config.name, str) and not gen.config.name.lower().startswith('regime_'):
+                        gen.config.name = f"regime_{gen.config.name}"
+                normalized.append(gen)
+            generators = normalized
+            tprint(f"✅ Normalized {len(generators)} generators to REGIME category", color="green")
+        except Exception as _:
+            pass
 
         return generators
 

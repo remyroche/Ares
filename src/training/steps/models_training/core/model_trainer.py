@@ -70,6 +70,9 @@ class ModelTrainer(BaseTrainer):
         # Metrics collector
         self._metrics_collector = TrainingMetricsCollector(logger)
         
+        # HPO guard to ensure we only run optimization once per training session
+        self._hpo_completed = False
+        
         # Shared feature engineers
         self._analyst_feature_engineer = AnalystFeatureEngineer(logger=logger)
         self._tactician_feature_engineer = TacticianFeatureEngineer(logger=logger)
@@ -213,7 +216,7 @@ class ModelTrainer(BaseTrainer):
                 hpo_n_trials = 0
                 hpo_time = 0.0
                 
-                if self.config.enable_hyperparameter_optimization:
+                if self.config.enable_hyperparameter_optimization and not self._hpo_completed:
                     tprint_info(f"🔧 Phase 2: Running hyperparameter optimization for {model_type.value}...")
                     hpo_start = time.time()
                     
@@ -222,7 +225,8 @@ class ModelTrainer(BaseTrainer):
                     )
                     
                     hpo_time = time.time() - hpo_start
-                    hpo_n_trials = self.config.custom_params.get('hpo_n_trials', 50)
+                    hpo_n_trials = int(self.config.custom_params.get('hpo_n_trials', 20))
+                    self._hpo_completed = True
                     
                     tprint_success(f"✅ HPO completed in {hpo_time:.2f}s with {hpo_n_trials} trials")
                     
@@ -231,6 +235,12 @@ class ModelTrainer(BaseTrainer):
                     tprint_info(f"🎯 Phase 3: Training final model with optimized parameters and evaluating on test set...")
                     model_result = await self._train_single_model(
                         model, model_type, processed_data, processed_targets, best_params
+                    )
+                elif self.config.enable_hyperparameter_optimization and self._hpo_completed:
+                    tprint_info("⏭️  Skipping HPO (already completed this session)")
+                    tprint_info(f"🎯 Phase 3: Training model with previously optimized parameters...")
+                    model_result = await self._train_single_model(
+                        model, model_type, processed_data, processed_targets, getattr(self, '_best_params', {})
                     )
                 else:
                     tprint_info(f"⏭️  Skipping HPO (disabled in config)")
@@ -317,7 +327,7 @@ class ModelTrainer(BaseTrainer):
                     'report_path': str(report_path),
                     'trained_models': trained_models,  # Add models dict for reporting
                     'model_instances': self._model_instances,  # Store all model instances
-                    'trained_feature_columns': list(processed_data.columns)  # CRITICAL: Store feature columns for prediction
+                    'trained_feature_columns': list(model_result.metadata.get('engineered_data', processed_data).columns)
                 }
             )
             
@@ -365,7 +375,7 @@ class ModelTrainer(BaseTrainer):
             
             engineered_data = data
             if self.config.role == TrainingRole.ANALYST:
-                engineered_data = self._engineer_analyst_features(data, targets)
+                engineered_data = self._engineer_analyst_features(data, targets, allow_uniform_defaults=False)
                 tprint_info(f"   After ANALYST engineering: {engineered_data.shape}")
                 tprint_info(f"   Engineered columns (first 20): {list(engineered_data.columns[:20])}")
             elif self.config.role == TrainingRole.TACTICIAN:
@@ -453,15 +463,19 @@ class ModelTrainer(BaseTrainer):
                 search_space = {
                     'num_leaves': ('int', 20, 100),
                     'learning_rate': ('float', 0.01, 0.1),
-                    'feature_fraction': ('float', 0.6, 1.0),
-                    'bagging_fraction': ('float', 0.6, 1.0),
-                    'min_child_samples': ('int', 5, 50)
+                    'feature_fraction': ('float', 0.6, 0.8),   # enforce min regularization via lower cap
+                    'bagging_fraction': ('float', 0.6, 0.9),   # enforce min regularization via lower cap
+                    'min_child_samples': ('int', 64, 256),     # stronger min leaf
+                    'reg_alpha': ('float', 0.3, 2.0),          # lambda_l1
+                    'reg_lambda': ('float', 0.8, 3.0)          # lambda_l2
                 }
             elif model_type == ModelType.CATBOOST:
                 search_space = {
-                    'depth': ('int', 4, 10),
+                    'depth': ('int', 4, 6),
                     'learning_rate': ('float', 0.01, 0.1),
-                    'l2_leaf_reg': ('float', 1, 10),
+                    'l2_leaf_reg': ('float', 10.0, 20.0),
+                    'colsample_bylevel': ('float', 0.6, 0.8),
+                    'subsample': ('float', 0.6, 0.8),
                     'border_count': ('int', 32, 255)
                 }
             elif model_type == ModelType.DEPTHWISE_CNN:
@@ -560,11 +574,20 @@ class ModelTrainer(BaseTrainer):
             self.logger.error(f"HPO failed: {e}, using default model")
             return model, {}
     
-    def _engineer_analyst_features(self, data: pd.DataFrame, targets: pd.Series) -> pd.DataFrame:
+    def _engineer_analyst_features(self, data: pd.DataFrame, targets: pd.Series, **kwargs) -> pd.DataFrame:
         """Engineer features specific to Analyst role using shared module."""
         try:
             # Use shared feature engineer for consistency with inference
-            engineered_data = self._analyst_feature_engineer.engineer_features(data)
+            engineered_data = self._analyst_feature_engineer.engineer_features(data, **kwargs)
+            # Remove uniform default regime columns if they were auto-inserted (e.g., all 0.25)
+            try:
+                regime_cols = [c for c in engineered_data.columns if c.startswith('regime_confidence_')]
+                for c in regime_cols:
+                    col = engineered_data[c]
+                    if col.nunique(dropna=False) == 1 and float(col.iloc[0]) == 0.25:
+                        engineered_data = engineered_data.drop(columns=[c])
+            except Exception:
+                pass
             return engineered_data
             
         except Exception as e:
@@ -669,15 +692,21 @@ class ModelTrainer(BaseTrainer):
                     model_params = {}
             
             # Extract hyperparameters (from HPO, YAML, or defaults)
-            n_estimators = model_params.get('n_estimators', 1000)
-            learning_rate = model_params.get('learning_rate', 0.1)
-            max_depth = model_params.get('max_depth', 8)
+            n_estimators = model_params.get('n_estimators', 800)
+            learning_rate = model_params.get('learning_rate', 0.05)
+            max_depth = model_params.get('max_depth', 6)
             num_leaves = model_params.get('num_leaves', 31)
-            subsample = model_params.get('subsample', 0.8)
-            colsample_bytree = model_params.get('colsample_bytree', 0.8)
-            reg_alpha = model_params.get('reg_alpha', 0.0)
-            reg_lambda = model_params.get('reg_lambda', 0.0)
-            min_child_samples = model_params.get('min_child_samples', 20)
+            subsample = model_params.get('subsample', 0.7)  # bagging_fraction
+            colsample_bytree = model_params.get('colsample_bytree', 0.7)  # feature_fraction
+            # Stronger regularization defaults when HPO is off
+            reg_alpha = model_params.get('reg_alpha', 0.5)   # lambda_l1
+            reg_lambda = model_params.get('reg_lambda', 1.0) # lambda_l2
+            min_child_samples = model_params.get('min_child_samples', 128)
+            
+            # Early stopping controls
+            es_rounds = model_params.get('early_stopping_rounds', 50)
+            min_boost_rounds = model_params.get('min_boost_rounds', 100)
+            num_boost_round = max(n_estimators, min_boost_rounds)
             
             # Adjust parameters for small datasets to avoid "no more leaves" warning
             n_samples = len(X_train)
@@ -710,8 +739,41 @@ class ModelTrainer(BaseTrainer):
                 'n_jobs': n_threads,
                 'bagging_freq': 5,
                 'verbose': -1,
-                'force_col_wise': True,  # Faster for many features
+                'force_col_wise': True,
             }
+
+            # Derive monotonic constraints aligned with data columns
+            try:
+                cols = list(data.columns)
+                constraints = []
+                for c in cols:
+                    lc = c.lower()
+                    v = 0
+                    # Regime confidences: bullish +1, bearish -1
+                    if 'regime_confidence_bull' in lc or 'regime_bull' in lc:
+                        v = 1
+                    elif 'regime_confidence_bear' in lc or 'regime_bear' in lc:
+                        v = -1
+                    # Volatility/Range proxies: assume higher vol tends to increase absolute move; conservatively +1
+                    elif 'price_range' in lc or 'true_range' in lc or 'atr' in lc or 'volatility' in lc:
+                        v = 1
+                    # Volume and liquidity: conservatively +1
+                    elif 'volume' in lc or 'quote_volume' in lc or 'trades' in lc:
+                        v = 1
+                    # Momentum: price change indicators often positively related to future return at short horizons
+                    elif 'mom' in lc or 'momentum' in lc or 'roc' in lc:
+                        v = 1
+                    # Bearish-type momentum flags
+                    elif 'drawdown' in lc or 'down' in lc:
+                        v = -1
+                    constraints.append(v)
+                if constraints and any(v != 0 for v in constraints):
+                    params['monotone_constraints'] = constraints
+                    tprint_info(f"   ✅ Applied monotone constraints for {sum(1 for v in constraints if v!=0)}/{len(constraints)} features")
+                else:
+                    tprint_info("   ℹ️ No monotone constraints inferred (all zero)")
+            except Exception as _e:
+                tprint_warning(f"   ⚠️ Failed to set monotone constraints: {_e}")
             
             tprint_info(f"Training LightGBM: depth={max_depth}, leaves={num_leaves}, lr={learning_rate}")
             tprint_info(f"📊 LightGBM training data: {data.shape}")
@@ -722,84 +784,78 @@ class ModelTrainer(BaseTrainer):
             train_data = lgb.Dataset(X_train, label=y_train)
             valid_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
             
-            # Train model WITHOUT early stopping for final training
-            # Early stopping is only used during HPO
-            tprint_info(f"   Training for full {n_estimators} iterations (no early stopping)")
+            # Train with early stopping on validation set, enforcing a minimum number of rounds
+            tprint_info(f"   Training up to {num_boost_round} iterations with early stopping ({es_rounds} rounds)")
             model = lgb.train(
                 params,
                 train_data,
-                num_boost_round=n_estimators,
+                num_boost_round=num_boost_round,
                 valid_sets=[valid_data],
-                callbacks=[]  # No early stopping for final training
+                callbacks=[lgb.early_stopping(es_rounds, verbose=False)]
             )
             
             # CRITICAL FIX: Evaluate on train/val/test splits separately
-            # This provides honest metrics and detects overfitting
             from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
             
-            # Predictions on each split
-            train_pred = model.predict(X_train)
-            val_pred = model.predict(X_val)
-            test_pred = model.predict(X_test)
+            # Use best_iteration if available for predictions
+            best_iter = model.best_iteration if getattr(model, 'best_iteration', None) else model.current_iteration()
+            train_pred = model.predict(X_train, num_iteration=best_iter)
+            val_pred = model.predict(X_val, num_iteration=best_iter)
+            test_pred = model.predict(X_test, num_iteration=best_iter)
             
-            # Calculate directional accuracy (for regression)
-            # Accuracy = % of predictions within acceptable error threshold
-            def calculate_accuracy(y_true, y_pred, threshold=0.1):
-                """Calculate accuracy as % of predictions within threshold of true value"""
-                errors = np.abs(y_true - y_pred)
-                within_threshold = errors <= threshold
-                return np.mean(within_threshold)
+            def calculate_accuracy(y_true, y_pred, rel=0.1, min_abs=0.01):
+                tol = np.maximum(min_abs, rel * np.std(y_true))
+                return float(np.mean(np.abs(y_true - y_pred) <= tol))
             
-            # Metrics for each split
             metrics = {
-                # Training set metrics
                 'train_mse': mean_squared_error(y_train, train_pred),
                 'train_mae': mean_absolute_error(y_train, train_pred),
                 'train_r2': r2_score(y_train, train_pred),
                 'train_rmse': np.sqrt(mean_squared_error(y_train, train_pred)),
                 'train_accuracy': calculate_accuracy(y_train, train_pred),
-                
-                # Validation set metrics
                 'val_mse': mean_squared_error(y_val, val_pred),
                 'val_mae': mean_absolute_error(y_val, val_pred),
                 'val_r2': r2_score(y_val, val_pred),
                 'val_rmse': np.sqrt(mean_squared_error(y_val, val_pred)),
                 'val_accuracy': calculate_accuracy(y_val, val_pred),
-                
-                # Test set metrics (CRITICAL - unseen data)
                 'test_mse': mean_squared_error(y_test, test_pred),
                 'test_mae': mean_absolute_error(y_test, test_pred),
                 'test_r2': r2_score(y_test, test_pred),
                 'test_rmse': np.sqrt(mean_squared_error(y_test, test_pred)),
                 'test_accuracy': calculate_accuracy(y_test, test_pred),
-                
-                # Overfitting analysis
                 'train_test_r2_gap': r2_score(y_train, train_pred) - r2_score(y_test, test_pred),
                 'overfitting_ratio': (r2_score(y_train, train_pred) - r2_score(y_test, test_pred)) / max(r2_score(y_train, train_pred), 0.01),
                 'generalization_score': r2_score(y_test, test_pred) / max(r2_score(y_train, train_pred), 0.01),
-                
-                # Legacy metrics (for backward compatibility - use test metrics)
                 'mse': mean_squared_error(y_test, test_pred),
                 'mae': mean_absolute_error(y_test, test_pred),
                 'r2': r2_score(y_test, test_pred),
                 'rmse': np.sqrt(mean_squared_error(y_test, test_pred)),
-                
-                # Model info
-                'iterations_used': model.current_iteration(),
-                'best_iteration': model.best_iteration
+                'iterations_used': best_iter,
+                'best_iteration': best_iter
             }
             
-            # Get feature importance
             feature_importance = dict(zip(data.columns, model.feature_importance()))
             
-            # Log comprehensive results
-            tprint_success(f"✅ LightGBM trained: {model.current_iteration()} iterations")
+            # Top features and basic leakage flags
+            top_features = sorted(feature_importance.items(), key=lambda kv: kv[1], reverse=True)[:20]
+            tprint_info("✨ Top 20 features by importance:")
+            for name, imp in top_features:
+                tprint_info(f"   {name:<40} {imp:>8.1f}")
+            leakage_flags = []
+            leakage_markers = ['target', 'label', 'future', 'lead', 't+', 'shift(-', 'ahead', 'lookahead', 'leak']
+            for name, _ in top_features:
+                lname = name.lower()
+                if any(m in lname for m in leakage_markers):
+                    leakage_flags.append(name)
+            if leakage_flags:
+                tprint_warning(f"⚠️ Potential leakage features among top importance: {leakage_flags}")
+            
+            tprint_success(f"✅ LightGBM trained: {best_iter} iterations (best)")
             tprint_info(f"   📊 Train R²: {metrics['train_r2']:.4f}, RMSE: {metrics['train_rmse']:.4f}, Accuracy: {metrics['train_accuracy']:.2%}")
             tprint_info(f"   📊 Val R²: {metrics['val_r2']:.4f}, RMSE: {metrics['val_rmse']:.4f}, Accuracy: {metrics['val_accuracy']:.2%}")
             tprint_info(f"   📊 Test R²: {metrics['test_r2']:.4f}, RMSE: {metrics['test_rmse']:.4f}, Accuracy: {metrics['test_accuracy']:.2%}")
             tprint_info(f"   ⚠️  Train-Test Gap: {metrics['train_test_r2_gap']:.4f} ({metrics['overfitting_ratio']*100:.1f}%)")
             
-            # Overfitting warning
             if metrics['overfitting_ratio'] > 0.2:
                 tprint_warning(f"   ⚠️  HIGH OVERFITTING detected! Model may not generalize well.")
             elif metrics['overfitting_ratio'] > 0.1:
@@ -921,12 +977,13 @@ class ModelTrainer(BaseTrainer):
                     model_params = {}
             
             # Extract hyperparameters (from HPO, YAML, or defaults)
-            iterations = model_params.get('iterations', 500)
-            learning_rate = model_params.get('learning_rate', 0.1)
-            depth = model_params.get('depth', 6)
-            l2_leaf_reg = model_params.get('l2_leaf_reg', 3.0)
-            subsample = model_params.get('subsample', 0.8)
-            colsample_bylevel = model_params.get('colsample_bylevel', 0.8)
+            iterations = model_params.get('iterations', 600)
+            learning_rate = model_params.get('learning_rate', 0.05)
+            depth = model_params.get('depth', 5)
+            # Stronger regularization defaults when HPO is off
+            l2_leaf_reg = model_params.get('l2_leaf_reg', 12.0)
+            subsample = model_params.get('subsample', 0.7)  # CPU only
+            colsample_bylevel = model_params.get('colsample_bylevel', 0.7)
             border_count = model_params.get('border_count', 128)
             max_ctr_complexity = model_params.get('max_ctr_complexity', 2)
             early_stopping_rounds = model_params.get('early_stopping_rounds', 50)
@@ -934,17 +991,15 @@ class ModelTrainer(BaseTrainer):
             
             # Performance optimizations (NOT tuned by HPO)
             performance_params = {
-                'thread_count': n_threads,  # Use all available CPU threads
-                'bootstrap_type': 'Bernoulli',  # Changed from 'Bayesian' to support subsample parameter
+                'thread_count': n_threads,
+                'bootstrap_type': 'Bernoulli',
                 'verbose': False,
                 'random_seed': random_seed,
-                'allow_writing_files': False,  # Disable temp file writing
+                'allow_writing_files': False,
             }
             
-            # CatBoost GPU support: Disable for now as it's not properly configured on M1/M2/M3 Macs
-            # Can be enabled later when CatBoost properly supports Metal GPU
             performance_params['task_type'] = 'CPU'
-            gpu_available = False  # Force CPU to enable colsample_bylevel
+            gpu_available = False
             tprint_info(f"🔧 CatBoost using CPU with {n_threads} threads")
             
             # Hyperparameters (tuned by HPO)
@@ -958,18 +1013,13 @@ class ModelTrainer(BaseTrainer):
                 'max_ctr_complexity': max_ctr_complexity,
             }
             
-            # Only add colsample_bylevel if not using GPU (GPU doesn't support RSM in non-pairwise modes)
             if not gpu_available:
                 hyperparameters['colsample_bylevel'] = colsample_bylevel
             
-            # Combine all parameters
             all_params = {**performance_params, **hyperparameters}
-            
-            # Add loss function and eval metric based on role
             all_params['loss_function'] = 'RMSE'
             all_params['eval_metric'] = 'RMSE'
             
-            # Create CatBoost model (always Regressor for continuous targets)
             model = CatBoostRegressor(**all_params)
             
             tprint_info(f"Training CatBoost: depth={depth}, iterations={iterations}, lr={learning_rate}")
@@ -977,16 +1027,49 @@ class ModelTrainer(BaseTrainer):
             tprint_info(f"   Feature columns (first 20): {list(data.columns[:20])}")
             tprint_info(f"   Feature columns (last 10): {list(data.columns[-10:])}")
             
-            # Train model WITHOUT early stopping for final training
-            # Early stopping is only used during HPO
-            tprint_info(f"   Training for full {iterations} iterations (no early stopping)")
-            model.fit(
-                X_train, y_train, 
-                eval_set=(X_val, y_val), 
-                early_stopping_rounds=None,  # No early stopping for final training
-                verbose=False,
-                use_best_model=False  # Train for full iterations
-            )
+            # Enable early stopping and use best model
+            fit_params = {
+                'X': X_train,
+                'y': y_train,
+                'eval_set': (X_val, y_val),
+                'use_best_model': True,
+                'verbose': False,
+                'early_stopping_rounds': early_stopping_rounds,
+            }
+            
+            # Fit model with validation for early stopping
+            model.fit(**fit_params)
+            
+            # Evaluate on splits using best iteration implicitly
+            from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+            train_pred = model.predict(X_train)
+            val_pred = model.predict(X_val)
+            test_pred = model.predict(X_test)
+            
+            def calculate_accuracy(y_true, y_pred, rel=0.1, min_abs=0.01):
+                tol = np.maximum(min_abs, rel * np.std(y_true))
+                return float(np.mean(np.abs(y_true - y_pred) <= tol))
+            
+            metrics = {
+                'train_mse': mean_squared_error(y_train, train_pred),
+                'train_mae': mean_absolute_error(y_train, train_pred),
+                'train_r2': r2_score(y_train, train_pred),
+                'train_rmse': np.sqrt(mean_squared_error(y_train, train_pred)),
+                'train_accuracy': calculate_accuracy(y_train, train_pred),
+                'val_mse': mean_squared_error(y_val, val_pred),
+                'val_mae': mean_absolute_error(y_val, val_pred),
+                'val_r2': r2_score(y_val, val_pred),
+                'val_rmse': np.sqrt(mean_squared_error(y_val, val_pred)),
+                'val_accuracy': calculate_accuracy(y_val, val_pred),
+                'test_mse': mean_squared_error(y_test, test_pred),
+                'test_mae': mean_absolute_error(y_test, test_pred),
+                'test_r2': r2_score(y_test, test_pred),
+                'test_rmse': np.sqrt(mean_squared_error(y_test, test_pred)),
+                'test_accuracy': calculate_accuracy(y_test, test_pred),
+            }
+            
+            tprint_success("✅ CatBoost trained with early stopping")
+            
             
             # CRITICAL FIX: Evaluate on train/val/test splits separately
             from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score

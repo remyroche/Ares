@@ -8,10 +8,12 @@ NOT SIMULATED - detects levels on each TF and finds alignment.
 import pandas as pd
 import numpy as np
 import logging
+import os
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
 from .multi_tf_data_loader import MultiTimeframeDataLoader, get_multi_tf_data_loader
+from src.launcher.ares_launcher import get_mode_lookback_days
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +71,8 @@ class MultiTimeframeSRDetector:
     """
     
     def __init__(self, data_loader: Optional[MultiTimeframeDataLoader] = None,
-                 alignment_tolerance: float = 0.005):
+                 alignment_tolerance: float = 0.005,
+                 lookback_days: Optional[int] = None):
         """Initialize multi-TF SR detector.
         
         Args:
@@ -79,6 +82,10 @@ class MultiTimeframeSRDetector:
         self.data_loader = data_loader or get_multi_tf_data_loader()
         self.alignment_tolerance = alignment_tolerance
         self.logger = logging.getLogger(self.__class__.__name__)
+
+        # Centralized lookback
+        exec_mode = os.environ.get('EXECUTION_MODE', 'light')
+        self.lookback_days = lookback_days if lookback_days is not None else get_mode_lookback_days(exec_mode)
         
         # Will be set when SR detector is needed
         self.sr_detector = None
@@ -106,7 +113,7 @@ class MultiTimeframeSRDetector:
             
             # Load data from all higher timeframes
             tf_data = self.data_loader.load_multiple_timeframes(
-                symbol, exchange, base_timeframe, lookback_days=90
+                symbol, exchange, base_timeframe, lookback_days=self.lookback_days
             )
             
             # Add base timeframe data if not already loaded

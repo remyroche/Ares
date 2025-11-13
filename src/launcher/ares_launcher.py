@@ -27,6 +27,17 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 from pathlib import Path
 
+# Centralized lookback configuration for execution modes
+MODE_LOOKBACK_DAYS: Dict[str, int] = {
+    "light": 30,    # 30 days
+    "blank": 180,   # 180 days
+    "full": 365 * 3  # 3 years
+}
+
+def get_mode_lookback_days(mode: str) -> int:
+    """Return centralized lookback days for a given execution mode."""
+    return MODE_LOOKBACK_DAYS.get(mode, MODE_LOOKBACK_DAYS["light"])
+
 
 FEATURE_GENERATION_STEP_FLAGS = [
     'feature_generation_data_validation_step',
@@ -553,19 +564,15 @@ async def main():
         def tprint(*args, **kwargs):
             print(*args)
     
-    # Add mode-specific days configuration for regime models training
-    tprint(f"🔧 CONFIG: Setting execution_mode={args.execution_mode} with mode-specific days", "INFO")
-    if args.execution_mode == 'blank':
-        config['blank_mode_days'] = 180
-        tprint(f"🔧 CONFIG: Setting blank_mode_days=180", "INFO")
-    elif args.execution_mode == 'light':
-        config['light_mode_days'] = 20
-        tprint(f"🔧 CONFIG: Setting light_mode_days=20", "INFO")
+    # Add centralized lookback days to config
+    lookback_days = get_mode_lookback_days(args.execution_mode)
+    config['lookback_days'] = lookback_days
+    tprint(f"🔧 CONFIG: Centralized lookback_days={lookback_days} for mode={args.execution_mode}", "INFO")
+    tprint("🔒 LEAKAGE GUARD: Use non-zero embargo (gap) and OOF predictions for stacking; avoid joining future-derived columns.", "INFO")
     
-    # Add both as defaults for all modes (can be overridden by mode-specific values above)
-    config.setdefault('blank_mode_days', 180)
-    config.setdefault('light_mode_days', 20)
-    
+    # Set execution mode globally
+    os.environ["EXECUTION_MODE"] = args.execution_mode
+
     # Set execution mode for HPO optimizations
     from src.utils.ml_common.optimization import set_execution_mode
     set_execution_mode(args.execution_mode)

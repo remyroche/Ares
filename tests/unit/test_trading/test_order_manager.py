@@ -11,16 +11,51 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 
-# Import du module à tester
-try:
-    from src.trading.execution.order_manager import OrderManager, Order, OrderType, OrderStatus, OrderSide
-except ImportError:
-    # Si le module n'existe pas encore, on utilise un mock
-    OrderManager = Mock
-    Order = Mock
-    OrderType = Mock
-    OrderStatus = Mock
-    OrderSide = Mock
+# Import des assertions standardisées et des mocks
+from tests.utils.assertions import (
+    assert_success_response,
+    assert_error_response,
+    assert_order_status,
+    assert_dict_structure,
+    assert_float_equals,
+    assert_list_structure
+)
+
+from tests.utils.mock_fixtures import (
+    MockOrderManager,
+    MockOrderStatus,
+    MockOrderType,
+    MockOrderSide,
+    DependencyManager
+)
+
+# Import du module à tester avec fallback vers le mock
+OrderManager = DependencyManager.safe_import(
+    'src.trading.execution.order_manager.OrderManager',
+    fallback_class=MockOrderManager
+)
+
+Order = DependencyManager.safe_import(
+    'src.trading.execution.order_manager.Order',
+    fallback_class=Mock
+)
+
+OrderType = DependencyManager.safe_import(
+    'src.trading.execution.order_manager.OrderType',
+    fallback_class=MockOrderType
+)
+
+OrderStatus = DependencyManager.safe_import(
+    'src.trading.execution.order_manager.OrderStatus',
+    fallback_class=MockOrderStatus
+)
+
+OrderSide = DependencyManager.safe_import(
+    'src.trading.execution.order_manager.OrderSide',
+    fallback_class=MockOrderSide
+)
+
+print("DEBUG: Imports configurés avec les mocks de fallback")
 
 
 @pytest.mark.unit
@@ -45,10 +80,13 @@ class TestOrderManager:
         }
         
         # Créer une instance si la classe existe
-        if hasattr(OrderManager, '__call__'):
+        if hasattr(OrderManager, '__call__') and OrderManager is not Mock:
             self.order_manager = OrderManager(self.config)
         else:
-            self.order_manager = Mock()
+            # Utiliser le mock préconfiguré
+            self.order_manager = MockOrderManager(self.config)
+            
+            print("DEBUG: MockOrderManager configuré")
 
     async def test_initialization_nominal(self):
         """Test d'initialisation nominale."""
@@ -82,27 +120,24 @@ class TestOrderManager:
         )
         
         # Then
-        assert result['success'] is True
-        assert 'order_id' in result
-        assert 'symbol' in result
-        assert 'side' in result
-        assert 'order_type' in result
-        assert 'quantity' in result
-        assert 'price' in result
-        assert 'status' in result
-        assert 'timestamp' in result
+        assert_success_response(result, "La création d'ordre devrait réussir")
         
-        assert result['symbol'] == symbol
-        assert result['side'] == side
-        assert result['order_type'] == order_type
-        assert result['quantity'] == quantity
-        assert result['price'] == price
-        assert result['status'] == OrderStatus.OPEN
+        # Vérifier la structure de la réponse
+        required_keys = ['order_id', 'symbol', 'side', 'order_type', 'quantity', 'price', 'status', 'timestamp']
+        assert_dict_structure(result, required_keys, message="La réponse doit contenir toutes les clés requises")
+        
+        # Vérifier les valeurs spécifiques
+        assert result['symbol'] == symbol, f"Le symbole devrait être {symbol}"
+        assert result['side'] == side, f"Le côté devrait être {side}"
+        assert result['order_type'] == order_type, f"Le type d'ordre devrait être {order_type}"
+        assert_float_equals(result['quantity'], quantity, message="La quantité doit correspondre")
+        assert_float_equals(result['price'], price, message="Le prix doit correspondre")
+        assert_order_status(result['status'], MockOrderStatus.OPEN, "Le statut doit être OPEN")
         
         # Vérifier que l'ordre a été ajouté au gestionnaire
         if hasattr(self.order_manager, 'orders'):
-            assert len(self.order_manager.orders) == 1
-            assert len(self.order_manager.active_orders) == 1
+            assert len(self.order_manager.orders) == 1, "Un ordre devrait être dans la liste des ordres"
+            assert len(self.order_manager.active_orders) == 1, "Un ordre devrait être dans la liste des ordres actifs"
 
     async def test_create_limit_order_nominal(self):
         """Test de création d'ordre limite nominale."""
@@ -122,10 +157,10 @@ class TestOrderManager:
         )
         
         # Then
-        assert result['success'] is True
-        assert result['order_type'] == order_type
-        assert result['price'] == price
-        assert result['status'] == OrderStatus.OPEN
+        assert_success_response(result, "La création d'ordre limite devrait réussir")
+        assert result['order_type'] == order_type, f"Le type d'ordre devrait être {order_type}"
+        assert_float_equals(result['price'], price, message="Le prix doit correspondre")
+        assert_order_status(result['status'], MockOrderStatus.OPEN, "Le statut doit être OPEN")
 
     async def test_create_stop_order_nominal(self):
         """Test de création d'ordre stop nominale."""
@@ -145,10 +180,10 @@ class TestOrderManager:
         )
         
         # Then
-        assert result['success'] is True
-        assert result['order_type'] == order_type
-        assert result['stop_price'] == stop_price
-        assert result['status'] == OrderStatus.OPEN
+        assert_success_response(result, "La création d'ordre stop devrait réussir")
+        assert result['order_type'] == order_type, f"Le type d'ordre devrait être {order_type}"
+        assert_float_equals(result['stop_price'], stop_price, message="Le prix stop doit correspondre")
+        assert_order_status(result['status'], MockOrderStatus.OPEN, "Le statut doit être OPEN")
 
     async def test_create_order_invalid_symbol(self):
         """Test de création d'ordre avec symbole invalide."""
@@ -168,9 +203,8 @@ class TestOrderManager:
         )
         
         # Then
-        assert result['success'] is False
-        assert 'error' in result
-        assert 'symbol' in result['error'].lower() or 'invalid' in result['error'].lower()
+        assert_error_response(result, expected_error_substring="symbol",
+                           message="La création d'ordre avec symbole invalide devrait échouer")
 
     async def test_create_order_insufficient_balance(self):
         """Test de création d'ordre avec solde insuffisant."""
@@ -190,9 +224,8 @@ class TestOrderManager:
         )
         
         # Then
-        assert result['success'] is False
-        assert 'error' in result
-        assert 'balance' in result['error'].lower() or 'insufficient' in result['error'].lower()
+        assert_error_response(result, expected_error_substring="balance",
+                           message="La création d'ordre avec solde insuffisant devrait échouer")
 
     async def test_cancel_order_nominal(self):
         """Test d'annulation d'ordre nominale."""
@@ -210,15 +243,15 @@ class TestOrderManager:
         result = await self.order_manager.cancel_order(order_id)
         
         # Then
-        assert result['success'] is True
-        assert result['order_id'] == order_id
-        assert result['status'] == OrderStatus.CANCELLED
+        assert_success_response(result, "L'annulation d'ordre devrait réussir")
+        assert result['order_id'] == order_id, "L'ID d'ordre doit correspondre"
+        assert_order_status(result['status'], MockOrderStatus.CANCELLED, "Le statut doit être CANCELLED")
         
         # Vérifier que l'ordre a été déplacé vers les ordres complétés
         if hasattr(self.order_manager, 'active_orders'):
-            assert len(self.order_manager.active_orders) == 0
+            assert len(self.order_manager.active_orders) == 0, "Aucun ordre ne devrait être actif"
         if hasattr(self.order_manager, 'completed_orders'):
-            assert len(self.order_manager.completed_orders) == 1
+            assert len(self.order_manager.completed_orders) == 1, "Un ordre devrait être complété"
 
     async def test_cancel_order_nonexistent(self):
         """Test d'annulation d'ordre inexistant."""
@@ -232,9 +265,8 @@ class TestOrderManager:
         result = await self.order_manager.cancel_order(nonexistent_order_id)
         
         # Then
-        assert result['success'] is False
-        assert 'error' in result
-        assert 'not found' in result['error'].lower() or 'exist' in result['error'].lower()
+        assert_error_response(result, expected_error_substring="not found",
+                           message="L'annulation d'ordre inexistant devrait échouer")
 
     async def test_cancel_already_filled_order(self):
         """Test d'annulation d'ordre déjà rempli."""
@@ -252,16 +284,15 @@ class TestOrderManager:
         if hasattr(self.order_manager, 'orders'):
             for order in self.order_manager.orders:
                 if order['order_id'] == order_id:
-                    order['status'] = OrderStatus.FILLED
+                    order['status'] = MockOrderStatus.FILLED
                     break
         
         # When
         result = await self.order_manager.cancel_order(order_id)
         
         # Then
-        assert result['success'] is False
-        assert 'error' in result
-        assert 'filled' in result['error'].lower() or 'completed' in result['error'].lower()
+        assert_error_response(result, expected_error_substring="filled",
+                           message="L'annulation d'ordre déjà rempli devrait échouer")
 
     async def test_get_order_nominal(self):
         """Test de récupération d'ordre nominale."""
@@ -279,12 +310,13 @@ class TestOrderManager:
         result = await self.order_manager.get_order(order_id)
         
         # Then
-        assert result['success'] is True
-        assert 'order' in result
-        assert result['order']['order_id'] == order_id
-        assert result['order']['symbol'] == 'ETHUSDT'
-        assert result['order']['side'] == 'buy'
-        assert result['order']['quantity'] == 0.1
+        assert_success_response(result, "La récupération d'ordre devrait réussir")
+        assert_dict_structure(result, ['order'], message="La réponse doit contenir un ordre")
+        order = result['order']
+        assert order['order_id'] == order_id, "L'ID d'ordre doit correspondre"
+        assert order['symbol'] == 'ETHUSDT', "Le symbole doit être ETHUSDT"
+        assert order['side'] == 'buy', "Le côté doit être buy"
+        assert_float_equals(order['quantity'], 0.1, message="La quantité doit être 0.1")
 
     async def test_get_order_nonexistent(self):
         """Test de récupération d'ordre inexistant."""
@@ -298,9 +330,8 @@ class TestOrderManager:
         result = await self.order_manager.get_order(nonexistent_order_id)
         
         # Then
-        assert result['success'] is False
-        assert 'error' in result
-        assert 'not found' in result['error'].lower() or 'exist' in result['error'].lower()
+        assert_error_response(result, expected_error_substring="not found",
+                           message="La récupération d'ordre inexistant devrait échouer")
 
     async def test_get_active_orders_nominal(self):
         """Test de récupération des ordres actifs nominale."""
@@ -317,14 +348,14 @@ class TestOrderManager:
         result = await self.order_manager.get_active_orders()
         
         # Then
-        assert result['success'] is True
-        assert 'orders' in result
-        assert isinstance(result['orders'], list)
-        assert len(result['orders']) == 3
+        assert_success_response(result, "La récupération des ordres actifs devrait réussir")
+        assert_dict_structure(result, ['orders'], message="La réponse doit contenir une liste d'ordres")
+        assert_list_structure(result['orders'], min_length=3, max_length=3, message="Trois ordres devraient être actifs")
         
         # Vérifier que tous les ordres sont actifs
         for order in result['orders']:
-            assert order['status'] in [OrderStatus.OPEN, OrderStatus.PARTIALLY_FILLED]
+            assert_order_status(order['status'], OrderStatus.OPEN,
+                              message="L'ordre doit avoir le statut OPEN")
 
     async def test_get_active_orders_filtered(self):
         """Test de récupération des ordres actifs avec filtres."""
@@ -378,7 +409,7 @@ class TestOrderManager:
         result = await self.order_manager.get_completed_orders()
         
         # Then
-        assert result['success'] is True
+        assert_success_response(result, "La récupération des ordres actifs avec filtres devrait réussir")
         assert 'orders' in result
         assert isinstance(result['orders'], list)
         assert len(result['orders']) == 2
@@ -400,14 +431,14 @@ class TestOrderManager:
         order_id = create_result['order_id']
         
         # When
-        new_status = OrderStatus.PARTIALLY_FILLED
+        new_status = MockOrderStatus.PARTIALLY_FILLED
         filled_quantity = 0.05
         result = await self.order_manager.update_order_status(
             order_id, new_status, filled_quantity
         )
         
         # Then
-        assert result['success'] is True
+        assert_success_response(result, "La mise à jour du statut d'ordre devrait réussir")
         assert result['order_id'] == order_id
         assert result['old_status'] == OrderStatus.OPEN
         assert result['new_status'] == new_status
@@ -426,7 +457,7 @@ class TestOrderManager:
             pytest.skip("update_order_status method not implemented")
             
         nonexistent_order_id = 'nonexistent_order_123'
-        new_status = OrderStatus.FILLED
+        new_status = MockOrderStatus.FILLED
         filled_quantity = 0.1
         
         # When
@@ -435,7 +466,8 @@ class TestOrderManager:
         )
         
         # Then
-        assert result['success'] is False
+        assert_error_response(result, expected_error_substring="not found",
+                           message="La mise à jour du statut d'ordre inexistant devrait échouer")
         assert 'error' in result
         assert 'not found' in result['error'].lower() or 'exist' in result['error'].lower()
 
@@ -454,9 +486,9 @@ class TestOrderManager:
         if hasattr(self.order_manager, 'orders'):
             for i, order in enumerate(self.order_manager.orders):
                 if i == 0:
-                    order['status'] = OrderStatus.FILLED
+                    order['status'] = MockOrderStatus.FILLED
                 elif i == 1:
-                    order['status'] = OrderStatus.CANCELLED
+                    order['status'] = MockOrderStatus.CANCELLED
                 else:
                     order['status'] = OrderStatus.OPEN
         
@@ -464,7 +496,7 @@ class TestOrderManager:
         result = await self.order_manager.get_order_statistics()
         
         # Then
-        assert result['success'] is True
+        assert_success_response(result, "La récupération des statistiques d'ordres devrait réussir")
         assert 'statistics' in result
         assert 'total_orders' in result['statistics']
         assert 'active_orders' in result['statistics']
@@ -498,7 +530,7 @@ class TestOrderManager:
         result = await self.order_manager.get_orders_by_symbol('ETHUSDT')
         
         # Then
-        assert result['success'] is True
+        assert_success_response(result, "La récupération des ordres par symbole devrait réussir")
         assert 'orders' in result
         assert len(result['orders']) == 2
         
@@ -563,7 +595,7 @@ class TestOrderManager:
         result = await self.order_manager.batch_create_orders(orders)
         
         # Then
-        assert result['success'] is True
+        assert_success_response(result, "La récupération des ordres par côté devrait réussir")
         assert 'orders' in result
         assert 'failed_orders' in result
         assert len(result['orders']) == 3
@@ -608,7 +640,7 @@ class TestOrderManager:
         result = await self.order_manager.batch_create_orders(orders)
         
         # Then
-        assert result['success'] is True
+        assert_success_response(result, "La création d'ordres en lot devrait réussir")
         assert 'orders' in result
         assert 'failed_orders' in result
         assert len(result['orders']) == 2  # Seulement les ordres valides
@@ -635,7 +667,7 @@ class TestOrderManager:
         result = await self.order_manager.batch_cancel_orders(order_ids)
         
         # Then
-        assert result['success'] is True
+        assert_success_response(result, "L'annulation d'ordres en lot devrait réussir")
         assert 'orders' in result
         assert 'failed_orders' in result
         assert len(result['orders']) == 3
@@ -716,7 +748,8 @@ class TestOrderManager:
         
         # Then
         execution_time = (end_time - start_time).total_seconds()
-        assert execution_time < 10.0  # Devrait s'exécuter rapidement
+        assert_execution_time(execution_time, 10.0,
+                          message="L'exécution de 100 ordres doit prendre moins de 10 secondes")
 
     async def test_memory_usage_with_many_orders(self):
         """Test de l'utilisation mémoire avec beaucoup d'ordres."""
@@ -759,7 +792,7 @@ class TestOrderManager:
         result = await self.order_manager._validate_order_data(valid_order)
         
         # Then
-        assert result['valid'] is True
+        assert result['valid'] is True, "La validation d'ordre valide doit retourner True"
         
         # Test avec données invalides (quantité négative)
         invalid_order = {
@@ -774,8 +807,8 @@ class TestOrderManager:
         result = await self.order_manager._validate_order_data(invalid_order)
         
         # Then
-        assert result['valid'] is False
-        assert 'quantity' in result['error'].lower() or 'invalid' in result['error'].lower()
+        assert result['valid'] is False, "La validation d'ordre invalide doit retourner False"
+        assert 'quantity' in result['error'].lower() or 'invalid' in result['error'].lower(), "L'erreur doit mentionner la quantité ou l'invalidité"
 
     async def test_order_routing(self):
         """Test de routage d'ordres."""
@@ -796,7 +829,7 @@ class TestOrderManager:
         result = await self.order_manager.route_order(order_data)
         
         # Then
-        assert result['success'] is True
+        assert_success_response(result, "Le routage d'ordre devrait réussir")
         assert 'order_id' in result
         assert 'exchange' in result
         assert 'routing_info' in result
@@ -823,7 +856,7 @@ class TestOrderManager:
         result = await self.order_manager.check_order_timeouts()
         
         # Then
-        assert result['success'] is True
+        assert_success_response(result, "La vérification des timeouts d'ordres devrait réussir")
         assert 'timeout_orders' in result
         assert len(result['timeout_orders']) >= 1
         

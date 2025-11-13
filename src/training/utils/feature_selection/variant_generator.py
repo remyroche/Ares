@@ -224,42 +224,51 @@ class OptimizedVariantGenerator:
             
             # 2. Volatility-normalized (skip only for volatility features)
             if category.lower() != 'volatility':
-                vol_norm = self._generate_volatility_normalized_optimized(
-                    data[feature_name], ohlcv_data['close'], optimal_lookback
-                )
-                if vol_norm is not None:
-                    variants[f"{feature_name}_volnorm"] = vol_norm
-                    self.stats['variants_by_type']['volnorm'] += 1
-                    tprint_info(f"    ✅ Generated volnorm variant for {feature_name}")
+                if isinstance(ohlcv_data, pd.DataFrame) and 'close' in ohlcv_data.columns:
+                    vol_norm = self._generate_volatility_normalized_optimized(
+                        data[feature_name], ohlcv_data['close'], optimal_lookback
+                    )
+                    if vol_norm is not None:
+                        variants[f"{feature_name}_volnorm"] = vol_norm
+                        self.stats['variants_by_type']['volnorm'] += 1
+                        tprint_info(f"    ✅ Generated volnorm variant for {feature_name}")
+                    else:
+                        skipped_variants.append(f"{feature_name}_volnorm (generation failed)")
                 else:
-                    skipped_variants.append(f"{feature_name}_volnorm (generation failed)")
+                    skipped_variants.append(f"{feature_name}_volnorm (skipped: missing close column)")
             else:
                 skipped_variants.append(f"{feature_name}_volnorm (skipped: volatility category)")
             
             # 3. VWAP-weighted (generate for all features except volume category)
             if category.lower() != 'volume':
-                vwap_weighted = self._generate_vwap_weighted_optimized(
-                    data[feature_name], ohlcv_data['volume'], optimal_lookback
-                )
-                if vwap_weighted is not None:
-                    variants[f"{feature_name}_vwap"] = vwap_weighted
-                    self.stats['variants_by_type']['vwap'] += 1
-                    tprint_info(f"    ✅ Generated vwap variant for {feature_name}")
+                if isinstance(ohlcv_data, pd.DataFrame) and 'volume' in ohlcv_data.columns:
+                    vwap_weighted = self._generate_vwap_weighted_optimized(
+                        data[feature_name], ohlcv_data['volume'], optimal_lookback
+                    )
+                    if vwap_weighted is not None:
+                        variants[f"{feature_name}_vwap"] = vwap_weighted
+                        self.stats['variants_by_type']['vwap'] += 1
+                        tprint_info(f"    ✅ Generated vwap variant for {feature_name}")
+                    else:
+                        skipped_variants.append(f"{feature_name}_vwap (generation failed)")
                 else:
-                    skipped_variants.append(f"{feature_name}_vwap (generation failed)")
+                    skipped_variants.append(f"{feature_name}_vwap (skipped: missing volume column)")
             else:
                 skipped_variants.append(f"{feature_name}_vwap (skipped: volume category)")
             
             # 4. Trend-adjusted (generate for all features)
-            trend_adj = self._generate_trend_adjusted_optimized(
-                data[feature_name], ohlcv_data, optimal_lookback
-            )
-            if trend_adj is not None:
-                variants[f"{feature_name}_trend_adj"] = trend_adj
-                self.stats['variants_by_type']['trend_adj'] += 1
-                tprint_info(f"    ✅ Generated trend_adj variant for {feature_name}")
+            if isinstance(ohlcv_data, pd.DataFrame) and all(col in ohlcv_data.columns for col in ['close','high','low']):
+                trend_adj = self._generate_trend_adjusted_optimized(
+                    data[feature_name], ohlcv_data, optimal_lookback
+                )
+                if trend_adj is not None:
+                    variants[f"{feature_name}_trend_adj"] = trend_adj
+                    self.stats['variants_by_type']['trend_adj'] += 1
+                    tprint_info(f"    ✅ Generated trend_adj variant for {feature_name}")
+                else:
+                    skipped_variants.append(f"{feature_name}_trend_adj (generation failed)")
             else:
-                skipped_variants.append(f"{feature_name}_trend_adj (generation failed)")
+                skipped_variants.append(f"{feature_name}_trend_adj (skipped: missing OHLC columns)")
             
             # Log detailed variant generation summary for this feature
             total_possible = 4

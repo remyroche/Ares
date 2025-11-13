@@ -785,6 +785,11 @@ class KlinesParquetManager:
 
             combined_df = combined_df[~duplicate_mask]
 
+            # FINAL SAFETY: ensure unique timestamp index for downstream operations
+            if combined_df.index.has_duplicates:
+                self.logger.warning("⚠️ Detected remaining duplicate timestamps with differing data. Collapsing by keeping the last occurrence per timestamp to ensure a unique index.")
+                combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+
             # Apply date filtering if specified
             if start_date is not None or end_date is not None:
 

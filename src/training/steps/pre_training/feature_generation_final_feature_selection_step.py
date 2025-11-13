@@ -135,8 +135,13 @@ configure_tprint(TPrintConfig(
 logger = logging.getLogger(__name__)
 
 # Define target column names once to avoid hardcoding throughout the codebase
-# Updated to include new simplified target structure (target_long, target_short)
-TARGET_COLUMN_NAMES = ['target', 'label', 'return', 'price_target_vol_normalized', 'target_long', 'target_short']
+# Updated to include fused/simplified target structures
+TARGET_COLUMN_NAMES = [
+    'target', 'label', 'return', 'price_target_vol_normalized',
+    'target_long_fused', 'target_short_fused',
+    'target_long', 'target_short',
+    'target_sample_weight', 'labeling_method_id', 'labeling_timestamp'
+]
 
 
 class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
@@ -770,10 +775,13 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 tprint_info(f"   Could not load '{artifact_name}': {e}")
         
         if not interaction_loaded:
-            tprint_warning("⚠️ No interaction features found from any artifact name")
-            tprint_warning("⚠️ Tried: " + ", ".join(interaction_artifact_names))
-            tprint_warning("⚠️ This means interaction_generation_step may not have run yet")
-            tprint_warning("⚠️ Continuing with only generated features")
+            error_msg = (
+                "❌ CRITICAL: No interaction features found from any artifact name. "
+                "Tried: " + ", ".join(interaction_artifact_names) + ". "
+                "The interaction generation step must run successfully and emit 'analyst_interaction_features' (or an accepted alias) before final selection."
+            )
+            tprint_error(error_msg)
+            raise ValueError(error_msg)
 
         # FINAL VALIDATION
         if 'generated_features' in features_data:
@@ -2137,7 +2145,14 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
             # Train a simple model for SHAP analysis
             rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
-            rf_model.fit(X_train, y_train)
+            # Pass sample weights if present alongside features
+            sw = None
+            if 'target_sample_weight' in features_df.columns:
+                try:
+                    sw = features_df.loc[X_train.index, 'target_sample_weight'].values
+                except Exception:
+                    sw = None
+            rf_model.fit(X_train, y_train, sample_weight=sw)
 
                 # Create SHAP explainer with additivity check disabled
             explainer = shap.TreeExplainer(rf_model)
@@ -2278,6 +2293,12 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         }
         artifacts['selection_metadata'] = selection_metadata
 
+        # Generate CSV quality report in outcomes/ with datetime
+        try:
+            self._generate_feature_quality_csv_report(combined_features_df, feature_sets, config)
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to generate feature quality CSV report: {e}")
+
         return artifacts
 
     def _calculate_metrics(self, feature_sets: Dict[str, List[str]], shap_values: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
@@ -2317,6 +2338,220 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     summary[f'top_10_features_{size}'] = top_features
 
         return summary
+
+    def _generate_feature_quality_csv_report(self, combined_features_df: pd.DataFrame, feature_sets: Dict[str, List[str]], config: Dict[str, Any]) -> None:
+        """Generate a CSV with predictive power, stability, robustness, and collinearity metrics per feature.
+        Saved to outcomes/feature_quality_<timestamp>.csv.
+        """
+        import os
+        import numpy as np
+        import pandas as pd
+        from datetime import datetime
+        from sklearn.model_selection import TimeSeriesSplit
+        from sklearn.metrics import roc_auc_score, r2_score
+        from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+        from sklearn.inspection import permutation_importance
+
+        # Choose target
+        target_cols_pref = ['target_long', 'target_short', 'opportunity']
+        target_cols = [c for c in target_cols_pref if c in combined_features_df.columns]
+        if not target_cols:
+            # fallback to any 'target' column
+            target_cols = [c for c in combined_features_df.columns if 'target' in c.lower()]
+        if not target_cols:
+            tprint_warning("⚠️ No target column found for quality CSV report; skipping")
+            return
+        target_col = target_cols[0]
+
+        # Get selected features for 60-set
+        sel_key = 'selected_feature_dataframe_60'
+        selected_cols = []
+        if sel_key in feature_sets:
+            # Some code paths store DataFrame under this key
+            df60 = feature_sets[sel_key]
+            if isinstance(df60, pd.DataFrame):
+                selected_cols = [c for c in df60.columns if c != target_col and c in combined_features_df.columns]
+        if not selected_cols:
+            # Try list key
+            list_key = 'selected_features_60'
+            if list_key in feature_sets:
+                selected_cols = [c for c in feature_sets[list_key] if c in combined_features_df.columns]
+        if not selected_cols:
+            # Fallback: use all non-target numeric columns (cap to 60)
+            candidate = combined_features_df.select_dtypes(include=[np.number]).columns.tolist()
+            selected_cols = [c for c in candidate if c != target_col][:60]
+
+        if not selected_cols:
+            tprint_warning("⚠️ No selected features found for quality CSV report; skipping")
+            return
+
+        df = combined_features_df[selected_cols + [target_col]].dropna()
+        if len(df) < 200:
+            tprint_warning("⚠️ Too few samples for quality report; skipping")
+            return
+
+        X = df[selected_cols].astype(float)
+        y = df[target_col]
+        is_classification = set(np.unique(y)).issubset({0, 1}) and y.nunique() <= 2
+
+        # Baseline predictions
+        if is_classification:
+            baseline_pred = np.full(len(y), y.mean())
+        else:
+            baseline_pred = np.full(len(y), y.mean())
+
+        # Model
+        if is_classification:
+            model = RandomForestClassifier(n_estimators=200, random_state=42, n_jobs=-1)
+            score_fn = lambda yt, pr: roc_auc_score(yt, pr)
+        else:
+            model = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
+            # Information Coefficient proxy: Spearman is costly; use Pearson IC
+            score_fn = lambda yt, pr: np.corrcoef(yt, pr)[0,1] if np.std(pr) > 0 else 0.0
+
+        # TimeSeries CV uplift
+        tscv = TimeSeriesSplit(n_splits=5)
+        scores, base_scores = [], []
+        for train_idx, test_idx in tscv.split(X):
+            Xtr, Xte = X.iloc[train_idx], X.iloc[test_idx]
+            ytr, yte = y.iloc[train_idx], y.iloc[test_idx]
+            model.fit(Xtr, ytr)
+            pr = model.predict_proba(Xte)[:,1] if is_classification else model.predict(Xte)
+            scores.append(score_fn(yte, pr))
+            base_scores.append(score_fn(yte, baseline_pred[test_idx]))
+        cv_score = float(np.nanmean(scores))
+        cv_base = float(np.nanmean(base_scores))
+        cv_uplift = float(cv_score - cv_base)
+
+        # Permutation importance on full data
+        pi = permutation_importance(model.fit(X, y), X, y, n_repeats=5, random_state=42, n_jobs=-1)
+        pi_scores = dict(zip(selected_cols, pi.importances_mean))
+        topk = set(sorted(pi_scores, key=pi_scores.get, reverse=True)[:20])
+
+        # SHAP placeholder (skipped earlier); fill NaN
+        shap_importance = {c: np.nan for c in selected_cols}
+
+        # Rolling IC monthly/quarterly based on model predictions on full data
+        preds_full = model.predict_proba(X)[:,1] if is_classification else model.predict(X)
+        df_preds = pd.DataFrame({'pred': preds_full, 'target': y.values}, index=df.index)
+        monthly_ic = df_preds.resample('M').apply(lambda s: s['pred'].corr(s['target'])).dropna()
+        quarterly_ic = df_preds.resample('Q').apply(lambda s: s['pred'].corr(s['target'])).dropna()
+        rolling_ic_mean = float(np.nanmean(monthly_ic.values)) if len(monthly_ic) else np.nan
+        rolling_ic_std = float(np.nanstd(monthly_ic.values)) if len(monthly_ic) else np.nan
+
+        # PSI across time splits: first half vs last half
+        mid = len(df) // 2
+        psi_values = {}
+        n_bins = 10
+        for c in selected_cols:
+            a = df[c].values[:mid]
+            b = df[c].values[mid:]
+            try:
+                # Bin by combined quantiles
+                qs = np.quantile(np.concatenate([a, b]), np.linspace(0,1,n_bins+1))
+                qs[0], qs[-1] = -np.inf, np.inf
+                def dist(v):
+                    hist, _ = np.histogram(v, bins=qs)
+                    p = hist / max(len(v),1)
+                    p = np.where(p==0, 1e-6, p)
+                    return p
+                p, q = dist(a), dist(b)
+                psi = np.sum((p - q) * np.log(p / q))
+            except Exception:
+                psi = np.nan
+            psi_values[c] = float(psi)
+
+        # Robustness: Outlier clipping sensitivity (p99, p95)
+        def clip_and_score(p):
+            Xc = X.copy()
+            lo = Xc.quantile(1-p)
+            hi = Xc.quantile(p)
+            Xc = Xc.clip(lower=lo, upper=hi, axis=1)
+            m = model.__class__(**model.get_params())
+            m.fit(Xc, y)
+            pr = m.predict_proba(Xc)[:,1] if is_classification else m.predict(Xc)
+            return float(score_fn(y, pr))
+        try:
+            full_score = float(score_fn(y, preds_full))
+        except Exception:
+            full_score = np.nan
+        try:
+            clip_p99 = clip_and_score(0.99)
+            clip_p95 = clip_and_score(0.95)
+        except Exception:
+            clip_p99 = np.nan
+            clip_p95 = np.nan
+        delta_p99 = float(clip_p99 - full_score) if not np.isnan(clip_p99) and not np.isnan(full_score) else np.nan
+        delta_p95 = float(clip_p95 - full_score) if not np.isnan(clip_p95) and not np.isnan(full_score) else np.nan
+
+        # Temporal robustness: train early, test late
+        split = int(len(X)*0.6)
+        try:
+            model.fit(X.iloc[:split], y.iloc[:split])
+            pr_early = model.predict_proba(X.iloc[split:])[:,1] if is_classification else model.predict(X.iloc[split:])
+            temporal_score = float(score_fn(y.iloc[split:], pr_early))
+            early_score = float(score_fn(y.iloc[:split], model.predict_proba(X.iloc[:split])[:,1] if is_classification else model.predict(X.iloc[:split])))
+            temporal_degradation = float(early_score - temporal_score)
+        except Exception:
+            temporal_degradation = np.nan
+
+        # Collinearity clusters (|rho|>0.9) and stable representative (highest pi)
+        corr = X.corr().abs()
+        visited = set()
+        cluster_id = {}
+        representative = {}
+        max_abs_corr = {c: float(np.nanmax(corr[c].drop(c))) if c in corr.columns else np.nan for c in selected_cols}
+        cid = 0
+        for c in selected_cols:
+            if c in visited:
+                continue
+            cluster = set([c])
+            # Expand cluster by threshold
+            added = True
+            while added:
+                added = False
+                for d in selected_cols:
+                    if d in cluster:
+                        continue
+                    if any(corr.loc[d, m] > 0.9 for m in cluster if d in corr.index and m in corr.columns):
+                        cluster.add(d)
+                        added = True
+            for m in cluster:
+                cluster_id[m] = cid
+            # Representative: highest permutation importance
+            rep = max(list(cluster), key=lambda z: pi_scores.get(z, 0.0))
+            representative[cid] = rep
+            visited |= cluster
+            cid += 1
+
+        # Build CSV rows
+        rows = []
+        for f in selected_cols:
+            rows.append({
+                'feature': f,
+                'perm_importance': float(pi_scores.get(f, np.nan)),
+                'shap_importance': float(shap_importance.get(f, np.nan)),
+                'in_top20_perm': f in topk,
+                'rolling_ic_mean_monthly': rolling_ic_mean,
+                'rolling_ic_std_monthly': rolling_ic_std,
+                'psi_first_last': psi_values.get(f, np.nan),
+                'robust_clip_p99_delta': delta_p99,
+                'robust_clip_p95_delta': delta_p95,
+                'temporal_degradation': temporal_degradation,
+                'cluster_id': cluster_id.get(f, -1),
+                'is_cluster_rep': representative.get(cluster_id.get(f, -1), None) == f,
+                'max_abs_corr': max_abs_corr.get(f, np.nan),
+                'cv_score': cv_score,
+                'cv_baseline': cv_base,
+                'cv_uplift': cv_uplift
+            })
+
+        outcomes_dir = Path('outcomes')
+        outcomes_dir.mkdir(exist_ok=True)
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        csv_path = outcomes_dir / f"final_selection_feature_quality_{config.get('symbol','UNKNOWN')}_{ts}.csv"
+        pd.DataFrame(rows).to_csv(csv_path, index=False)
+        tprint_success(f"✅ Feature quality CSV report saved: {csv_path}")
 
     def _get_optimization_metrics(self) -> Dict[str, Any]:
         """Get optimization performance metrics."""

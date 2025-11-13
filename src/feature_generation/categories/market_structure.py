@@ -15,8 +15,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ..core.feature_generator import FeatureGenerator
-from ..core.feature_config import FeatureConfig, FeatureCategory
+from ..core.feature_generator import FeatureGenerator, FeatureConfig, FeatureCategory
 
 
 @dataclass
@@ -419,6 +418,18 @@ class MarketStructureGenerator(FeatureGenerator):
         ]
 
         return {name: np.full(n_samples, np.nan) for name in feature_names}
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Return a representative single feature as a Series for FeatureBank integration."""
+        all_features = self.generate_features(data, **kwargs)
+        preferred_name = 'fractal_dimension_regime'
+        arr = all_features.get(preferred_name)
+        if arr is None and all_features:
+            # Fallback to first available feature
+            preferred_name, arr = next(iter(all_features.items()))
+        if isinstance(arr, pd.Series):
+            return arr.rename(preferred_name)
+        return pd.Series(arr if arr is not None else np.full(len(data), np.nan), index=data.index, name=preferred_name)
 
 
 def create_market_structure_generators(

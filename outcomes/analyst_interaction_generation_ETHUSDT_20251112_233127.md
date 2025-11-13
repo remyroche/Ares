@@ -1,0 +1,128 @@
+# Analyst Interaction Generation Report
+
+## Executive Summary
+- **Symbol**: ETHUSDT
+- **Exchange**: binance
+- **Timeframe**: 15m
+- **Execution Mode**: blank
+- **Generated**: 2025-11-12 23:31:27
+- **Total Features Generated**: 159
+- **Processing Efficiency**: 0.0 features/second
+- **Overall Status**: ✅ SUCCESS
+
+## Feature Statistics
+- **Total Features**: 159
+- **Base Features**: 80
+- **Interaction Features**: 79
+- **Feature Density**: 14.5 features per category
+- **Interaction Ratio**: 49.7%
+
+## Category Coverage Analysis
+- 🟢 **Trend**: 37 features (Excellent)
+- 🟢 **Oscillator**: 35 features (Excellent)
+- 🔴 **Momentum**: 0 features (Poor)
+- 🔴 **Returns**: 1 features (Poor)
+- 🟢 **Volatility**: 22 features (Excellent)
+- 🟢 **Volume**: 41 features (Excellent)
+- 🔴 **Acceleration**: 0 features (Poor)
+- 🔴 **Advanced_Statistical**: 0 features (Poor)
+- 🟢 **Candlestick_Pattern**: 15 features (Excellent)
+- 🔴 **Entropy**: 0 features (Poor)
+- 🟠 **Spectral_Wavelet**: 4 features (Adequate)
+
+### Category Health Summary
+- **Total Categories**: 11
+- **Balanced Categories**: 2 (18.2%)
+- **Imbalanced Categories**: 9 (81.8%)
+- **Category Diversity Score**: 0.18/1.0
+
+## Performance Metrics & Efficiency
+- **Phase 0 Time**: 14.11s
+- **Phase 1 Time**: 30.86s
+- **Phase 2 Time**: 116.11s
+- **Phase 3.1 Time**: 31.89s
+- **Phase 3.2 Time**: 21.50s
+- **Phase 3.3 Time**: 250.57s
+- **Phase 4 Time**: 0.00s
+- **Total Time**: 0.00s
+- **Processing Efficiency**: 0.0 features/second
+- **Memory Usage**: 0.0 MB
+- **CPU Utilization**: 0.0%
+
+## Feature Engineering Pipeline Details
+
+## Variant Generation Statistics
+
+## Pruning Statistics & Quality Control
+- **Correlation_Clustering**: Removed 22 features
+- **Total Features Removed**: 22
+- **Pruning Efficiency**: 12.2%
+
+## Interaction Discovery & Analysis
+- **Feature Pairs Analyzed**: 80
+- **Total Interactions Generated**: 79
+- **Operations Per Pair**: 5 (x, div, minus, log, log_ratio)
+- **Max Candidates Processed**: 120
+- **Selection Method**: MI-based selection
+- **Valid Interactions Found**: 79
+- **Interaction Success Rate**: 65.8%
+- **Top Interaction Examples**:
+  1. `wavelet_energy_base_minus_vectorbt_enhanced_ad_line_20_base_x_27x` (Score: 0.6886)
+  2. `candlestick_piercing_line_pattern_base_3x_ratio_div_volume_entropy_ma_5_5_volume_returns_vwap` (Score: 0.6504)
+  3. `fibonacci_0.618_20_price_returns_base_x_vectorbt_enhanced_ad_line_20_base_x_27x` (Score: 0.6251)
+  4. `vectorbt_enhanced_ad_line_20_base_27x_ratio_div_cycle_length_vwap_3x_ratio` (Score: 0.5928)
+  5. `candlestick_harami_cross_pattern_base_27x_ratio_minus_volume_price_trend_base_27x_ratio` (Score: 0.5601)
+
+## Model Performance & Validation
+- **LGBM Training**: ✅ Successful
+- **Tree Analysis**: ✅ Successful
+- **Interaction Generation**: ✅ Successful
+- **Model Accuracy**: 0.1015
+- **Cross-Validation Score**: 0.0000
+- **Feature Importance Consistency**: 0.27/1.0
+
+## Technical Implementation Details
+- **Adaptive Feature Selection**: 3-6 features per category based on signal strength
+- **RobustScaler Bounding**: Prevents extreme values with percentile clipping
+- **Category Protection**: Maintains ≥3 features per category during pruning
+- **Corrected SHAP Analysis**: Standard SHAP values for interaction features
+- **Causality Enforcement**: All features shifted to prevent lookahead bias
+- **Memory Optimization**: VectorBT integration for efficient computation
+- **Parallel Processing**: Multi-threaded variant generation
+- **Error Handling**: Comprehensive exception management with fallbacks
+
+## Actionable Insights & Recommendations
+
+### Immediate Actions
+1. **Category Balance**: ⚠️ Address 9 imbalanced categories
+2. **Feature Quality**: ✅ High quality
+3. **Processing Efficiency**: ⚠️ Consider optimization
+
+### Strategic Recommendations
+1. **Model Selection**: Prioritize features with highest SHAP importance scores
+2. **Feature Engineering**: Focus on categories with <5 features for expansion
+3. **Performance Monitoring**: Track feature stability across different market conditions
+4. **Resource Optimization**: Consider parallel processing
+
+### Next Steps
+1. **Validation**: Test features on out-of-sample data
+2. **Integration**: Incorporate into downstream model training pipeline
+3. **Monitoring**: Set up feature drift detection
+4. **Iteration**: Refine feature selection based on model performance
+
+## Risk Assessment & Overfitting Prevention
+- **Overfitting Risk**: Medium
+- **Prevention Measures Applied**:
+  - ✅ L1/L2 Regularization (reg_alpha=0.1, reg_lambda=0.1)
+  - ✅ Time-series Cross-Validation with Gap (5-fold, gap=1)
+  - ✅ Early Stopping (patience=20 rounds)
+  - ✅ Feature Subsampling (subsample=0.8, colsample_bytree=0.8)
+  - ✅ Increased min_child_samples (50-75)
+  - ✅ Reduced Model Complexity (max_depth=4-5, num_leaves=15-20)
+- **Computational Risk**: High
+- **Data Quality Risk**: Low
+- **Data Leakage Prevention**: Gap-based time-series splits implemented
+
+---
+*Comprehensive report generated by Analyst Interaction Generation Step v2.0*  
+*Generated on 2025-11-12 23:31:27*

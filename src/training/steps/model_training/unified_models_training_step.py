@@ -30,7 +30,7 @@ from src.feature_generation.categories.ensemble_disagreement import calculate_en
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error, tprint_warning, tprint_data_preview
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error, tprint_warning, tprint_data_preview, tprint_feature_counts
 
 # Import model training report generator
 from src.training.steps.model_training.model_training_report_generator import create_model_training_report
@@ -225,92 +225,80 @@ class UnifiedModelsTrainingStep(BaseStep):
                 
                 tprint_success(f"✅ Dataset validation passed: {len(training_data):,} samples, {total_days} days")
 
-                # MODIFIED: Use simple 70/15/15% temporal split instead of walkforward
-                tprint_info("🔧 USING SIMPLE 70/15/15% TEMPORAL SPLIT (instead of walkforward)")
-                
-                # Calculate split points based on percentages
-                total_samples = len(training_data)
-                train_pct = config.get('train_percentage', 0.70)
-                val_pct = config.get('validation_percentage', 0.15)
-                test_pct = config.get('test_percentage', 0.15)
-                
-                train_end_idx = int(total_samples * train_pct)
-                val_end_idx = int(total_samples * (train_pct + val_pct))
-                
-                # Get actual timestamps for splits
-                train_end_time = training_data.index[train_end_idx - 1]
-                val_end_time = training_data.index[val_end_idx - 1]
-                
-                # Create simple temporal split config (use standard parameters)
+                # Use Walk-Forward with embargo instead of a simple fixed split
+                tprint_info("🔧 ENABLING PURGED WALK-FORWARD SPLIT WITH EMBARGO")
+
+                # Create walk-forward configuration (expanding window) and final temporal split for test
+                from src.utils.versioned_artifacts.temporal_splits import (
+                    create_walkforward_split_config_for_pipeline,
+                    create_temporal_split_config_for_pipeline,
+                )
+
+                # Parameters can be overridden via config
+                n_folds = int(config.get('wf_n_folds', 3))
+                val_pct_per_fold = float(config.get('wf_val_pct_per_fold', 0.10))
+                final_test_pct = float(config.get('wf_final_test_pct', 0.15))
+                embargo_days = int(config.get('wf_embargo_days', 1))
+
+                walkforward_config = create_walkforward_split_config_for_pipeline(
+                    symbol=symbol,
+                    exchange=config.get('exchange', 'binance'),
+                    timeframe=timeframe,
+                    data_start=data_start,
+                    data_end=data_end,
+                    n_folds=n_folds,
+                    val_pct_per_fold=val_pct_per_fold,
+                    final_test_pct=final_test_pct,
+                    min_train_pct=float(config.get('wf_min_train_pct', 0.55)),
+                    embargo_days=embargo_days,
+                )
+
                 temporal_config = create_temporal_split_config_for_pipeline(
                     symbol=symbol,
                     exchange=config.get('exchange', 'binance'),
                     timeframe=timeframe,
                     data_start=data_start,
-                    data_end=data_end
+                    data_end=data_end,
                 )
 
-                # Store temporal config (no walkforward)
-                self._walkforward_config = None  # Disable walkforward
+                # Store configs for downstream consumers (HPO, pipeline, reports)
+                self._walkforward_config = walkforward_config
                 self._temporal_config = temporal_config
+                config['walkforward_config'] = walkforward_config
                 config['temporal_config'] = temporal_config
 
-                # Log simple split boundaries
+                # Log split summary
                 tprint_info("=" * 80)
-                tprint_info("📊 SIMPLE TEMPORAL SPLIT CONFIGURATION (70/15/15%):")
+                tprint_info("📊 WALK-FORWARD CONFIGURATION (expanding)")
                 tprint_info("=" * 80)
-                
-                train_samples = len(training_data.loc[data_start:train_end_time])
-                val_samples = len(training_data.loc[train_end_time:val_end_time]) 
-                test_samples = len(training_data.loc[val_end_time:data_end])
-                
-                tprint_info(f"   Train: {data_start} → {train_end_time} ({train_samples} samples, {train_pct:.0%})")
-                tprint_info(f"   Val:   {train_end_time} → {val_end_time} ({val_samples} samples, {val_pct:.0%})")
-                tprint_info(f"   Test:  {val_end_time} → {data_end} ({test_samples} samples, {test_pct:.0%})")
-                tprint_info(f"   Total: {train_samples + val_samples + test_samples} samples")
+                tprint_info(f"   Folds: {len(walkforward_config.folds)} | Embargo days: {embargo_days}")
+                tprint_info(f"   Final test period: {walkforward_config.test.start} → {walkforward_config.test.end}")
+                for fold in walkforward_config.folds:
+                    tprint_info(
+                        f"   Fold {fold.fold_num}: train {fold.training.start} → {fold.training.effective_end} | "
+                        f"val {fold.validation.start} → {fold.validation.effective_end}"
+                    )
                 tprint_info("=" * 80)
 
-                # For simple temporal split, we use the full dataset (no filtering needed)
-                tprint_info("=" * 80)
-                tprint_info("🔒 SIMPLE TEMPORAL SPLIT - NO DATA FILTERING")
-                tprint_info("=" * 80)
-                tprint_info(f"Strategy: Using FULL dataset for training (no walkforward filtering)")
-                tprint_info(f"Rationale: Maximize training data usage with simple 70/15/15% split")
-                # For simple temporal split, use the FULL dataset (no filtering)
+                # Do NOT filter data here; keep full dataset. Downstream training/HPO should respect the configs.
                 training_data_filtered = training_data.copy()
-                
+
+                # Basic sufficiency check
                 original_len = len(training_data)
                 filtered_len = len(training_data_filtered)
-                
-                tprint_info(f"📊 Using FULL dataset: {filtered_len} samples")
-                tprint_info(f"📈 No data reduction: {original_len} → {filtered_len} (0% reduction)")
-
-                # Check if dataset is sufficient for training
                 n_features = len(training_data_filtered.columns)
                 samples_per_feature = filtered_len / n_features if n_features > 0 else 0
-                min_recommended = n_features * 10
+                min_recommended = max(n_features * 10, 1000)
 
+                tprint_info(f"📊 Using FULL dataset: {filtered_len} samples (no pre-filtering)")
                 if filtered_len < min_recommended:
-                    tprint_error("=" * 80)
-                    tprint_error("❌ CRITICAL WARNING: INSUFFICIENT DATA FOR TRAINING")
-                    tprint_error("=" * 80)
-                    tprint_error(f"   Available samples: {filtered_len}")
-                    tprint_error(f"   Features: {n_features}")
-                    tprint_error(f"   Samples/Feature: {samples_per_feature:.2f}")
-                    tprint_error(f"   Minimum recommended: {min_recommended} samples")
-                    tprint_error(f"   Deficit: {min_recommended - filtered_len} samples ({((min_recommended - filtered_len) / min_recommended * 100):.1f}%)")
-                    tprint_error("")
-                    tprint_error("⚠️  ROOT CAUSE: Insufficient training data for the number of features!")
-                    tprint_error("")
-                    tprint_error("💡 POSSIBLE SOLUTIONS:")
-                    tprint_error("   1. Increase historical data collection period")
-                    tprint_error("   2. Reduce number of features through feature selection")
-                    tprint_error("   3. Use simpler models with fewer parameters")
-                    tprint_error("=" * 80)
+                    tprint_warning(
+                        "⚠️ Dataset may be insufficient for robust training given feature count "
+                        f"({filtered_len} samples, {n_features} features, {samples_per_feature:.2f} samples/feature)"
+                    )
                 else:
-                    tprint_success(f"✅ Filtered dataset has adequate samples ({samples_per_feature:.1f} samples/feature)")
+                    tprint_success(f"✅ Dataset size looks adequate ({samples_per_feature:.1f} samples/feature)")
 
-                # Store filtered data for final model training
                 training_data = training_data_filtered
 
                 # Filter targets to match largest training period
@@ -534,29 +522,27 @@ class UnifiedModelsTrainingStep(BaseStep):
                     tprint_warning(f"⚠️ Failed to generate training reports: {e}")
                     self.logger.warning(f"Training report generation failed: {e}")
 
-                # Save ML-scored historical data for backtesting
-                if training_data is not None and 'predictions' in result:
+                # Save ML-scored historical data for backtesting (OOS only)
+                if training_data is not None:
                     try:
                         model_type = 'analyst' if training_type.startswith('analyst') else 'tactician'
-                        tprint_info(f"📊 Saving ML-scored historical data ({model_type})...")
-
-                        # Combine training data with predictions
-                        ml_scored_data = training_data.copy()
-                        predictions_df = result['predictions']
-                        if isinstance(predictions_df, pd.DataFrame):
-                            ml_scored_data = pd.concat([ml_scored_data, predictions_df], axis=1)
-                        
-                        # Save using artifact system
-                        artifact_name = f"ml_scored_historical_data_{model_type}_{direction}"
-                        self._save_artifact(
-                            ml_scored_data,
-                            artifact_name,
-                            artifact_type='data',
-                            data_category='predictions'
-                        )
-
-                        artifacts['ml_scored_historical_data'] = artifact_name
-                        tprint_success(f"✅ ML-scored data saved: {artifact_name}")
+                        # Prefer explicit OOS keys
+                        oos_key_candidates = ['oof_predictions', 'oos_predictions', 'predictions_oos']
+                        oos_key = next((k for k in oos_key_candidates if k in result), None)
+                        if oos_key and isinstance(result[oos_key], pd.DataFrame):
+                            tprint_info(f"📊 Saving ML-scored historical data ({model_type}) using OOS predictions: {oos_key}")
+                            ml_scored_data = pd.concat([training_data.loc[result[oos_key].index], result[oos_key]], axis=1)
+                            artifact_name = f"ml_scored_historical_data_{model_type}_{direction}_oos"
+                            self._save_artifact(
+                                ml_scored_data,
+                                artifact_name,
+                                artifact_type='data',
+                                data_category='predictions'
+                            )
+                            artifacts['ml_scored_historical_data_oos'] = artifact_name
+                            tprint_success(f"✅ ML-scored OOS data saved: {artifact_name}")
+                        else:
+                            tprint_warning("⚠️ Skipping ML-scored historical data save: OOS predictions not available")
                     except Exception as e:
                         tprint_warning(f"⚠️ Failed to save ML-scored data: {e}")
                         self.logger.warning(f"ML-scored data save failed: {e}")
@@ -1929,10 +1915,6 @@ class UnifiedModelsTrainingStep(BaseStep):
             feature_artifact_names = [
                 f'selected_feature_dataframe_{feature_set_size}',  # Primary: selected features DataFrame (with size from config)
                 'selected_feature_dataframe_60',                   # Standard 60-feature DataFrame
-                f'selected_features_{feature_set_size}',           # Feature names list (with size from config)
-                'selected_features_60',                            # Standard 60-feature names list
-                f'final_dataset_{feature_set_size}',               # Validation step generic alias
-                f'final_analyst_dataset_{feature_set_size}',       # Analyst-specific validation alias
             ]
 
             tprint_info(f"🔎 Attempting to load training features from HDF5 artifacts...")
@@ -1952,64 +1934,17 @@ class UnifiedModelsTrainingStep(BaseStep):
                     self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
                     continue
             
-            # FAIL FAST: If no training data found, raise error
-            if training_data is None:
+            # FAIL FAST: If no training data DataFrame found, raise error
+            if training_data is None or not isinstance(training_data, pd.DataFrame):
                 error_msg = (
-                    "❌ CRITICAL: No training data found in artifacts!\n"
-                    f"   Expected artifacts from 'feature_generation_final_feature_selection_step':\n"
-                    f"   - selected_feature_dataframe_{feature_set_size} (DataFrame with selected features)\n"
-                    f"   - selected_feature_dataframe_60 (standard 60-feature DataFrame)\n"
-                    f"   - selected_features_{feature_set_size} (list of feature names)\n"
-                    f"   - selected_features_60 (standard 60-feature names list)\n"
-                    f"   - final_dataset_{feature_set_size}\n"
-                    f"   - final_analyst_dataset_{feature_set_size}\n"
-                    f"   \n"
-                    f"   Note: If artifact contains feature names list, labeled_data is also required.\n"
-                    f"   \n"
-                    f"   Please ensure feature_generation_final_feature_selection_step has run successfully\n"
-                    f"   and generated the selected feature set with {feature_set_size} features.\n"
-                    f"   Check artifacts directory for available artifacts."
+                    "❌ CRITICAL: No training feature DataFrame found!\n"
+                    f"   Allowed artifacts (from 'feature_generation_final_feature_selection_step'):\n"
+                    f"   - selected_feature_dataframe_{feature_set_size}\n"
+                    f"   - selected_feature_dataframe_60\n"
+                    f"   No fallback to feature name lists or labeled_data reconstruction is permitted."
                 )
                 tprint_error(error_msg)
                 raise ValueError(error_msg)
-            
-            # Handle case where artifact contains feature names list instead of DataFrame
-            if training_data is not None and not isinstance(training_data, pd.DataFrame):
-                # Check if we got a list of feature names instead of actual data
-                if isinstance(training_data, list):
-                    tprint_info(f"📋 Artifact '{feature_source_name}' contains {len(training_data)} feature names")
-                    tprint_info(f"   Loading labeled_data to get actual feature values...")
-
-                    # Load labeled_data to get the actual feature values
-                    try:
-                        labeled_data = self._get_artifact('labeled_data', 'data')
-                        if labeled_data is not None and isinstance(labeled_data, pd.DataFrame):
-                            tprint_success(f"✅ Loaded labeled_data: {labeled_data.shape}")
-
-                            # Select only the features from the list
-                            available_features = [f for f in training_data if f in labeled_data.columns]
-                            if available_features:
-                                training_data = labeled_data[available_features].copy()
-                                tprint_success(f"✅ Selected {len(available_features)} features from labeled_data")
-                            else:
-                                tprint_error(f"❌ None of the {len(training_data)} feature names found in labeled_data")
-                                tprint_error(f"   Feature names sample: {training_data[:5]}")
-                                tprint_error(f"   labeled_data columns sample: {list(labeled_data.columns[:5])}")
-                                raise ValueError(f"Feature names from {feature_source_name} not found in labeled_data")
-                        else:
-                            tprint_error("❌ Could not load labeled_data to get actual feature values")
-                            raise ValueError("Got feature names but no labeled_data available")
-                    except Exception as e:
-                        tprint_error(f"❌ Failed to load feature data from labeled_data: {e}")
-                        raise
-                else:
-                    error_msg = (
-                        f"❌ CRITICAL: Training data from '{feature_source_name}' has unexpected type!\n"
-                        f"   Expected: pandas.DataFrame or list of feature names\n"
-                        f"   Got: {type(training_data)}\n"
-                    )
-                    tprint_error(error_msg)
-                    raise ValueError(error_msg)
 
             if training_data is not None and isinstance(training_data, pd.DataFrame):
                 # Comprehensive feature loading verification and logging
@@ -2023,6 +1958,19 @@ class UnifiedModelsTrainingStep(BaseStep):
                 tprint_info(f"📋 Column Names (first 20): {list(training_data.columns[:20])}")
                 if len(training_data.columns) > 20:
                     tprint_info(f"    ... and {len(training_data.columns) - 20} more columns")
+
+                # Explicit log: which features are loaded from selected_feature_dataframe
+                exclude_cols = {'timestamp', 'target', 'label', 'target_long', 'target_short'}
+                loaded_feature_names = [
+                    c for c in training_data.columns
+                    if c not in exclude_cols and not c.lower().endswith('_target') and not c.lower().endswith('_label')
+                ]
+                tprint_info("🧾 Loaded features from selected_feature_dataframe (pre-cleaning):")
+                # Print in chunks to avoid overly long single lines
+                chunk_size = 25
+                for i in range(0, len(loaded_feature_names), chunk_size):
+                    chunk = loaded_feature_names[i:i+chunk_size]
+                    tprint_info(f"  - {i:03d}-{i+len(chunk)-1:03d}: {chunk}")
 
                 # Check for missing data
                 null_counts = training_data.isnull().sum()
@@ -2168,14 +2116,26 @@ class UnifiedModelsTrainingStep(BaseStep):
             tprint_info(f"   Direction: {direction}")
             tprint_info(f"   Storage Format: HDF5 (via versioned_artifacts)")
 
-            # Try to get analyst targets (direction-specific first, then generic)
-            analyst_artifact_names = [
-                f'analyst_targets_{direction}',  # Direction-specific (e.g., analyst_targets_long)
-                f'{direction}_analyst_targets',  # Alternative naming
-                f'{direction}_targets',           # Generic direction-specific
-                'analyst_targets',                # Generic analyst targets
-                'targets'                         # Fallback to generic targets
-            ]
+            # Try to get analyst targets (long-only for long/both directions)
+            if direction in ('long', 'both'):
+                analyst_artifact_names = [
+                    'analyst_targets_long',      # Direction-specific (preferred)
+                    'long_analyst_targets',      # Alternative naming
+                    'long_targets'               # Generic direction-specific
+                ]
+            elif direction == 'short':
+                analyst_artifact_names = [
+                    'analyst_targets_short',
+                    'short_analyst_targets',
+                    'short_targets'
+                ]
+            else:
+                # Default to long-only policy for unknown direction strings
+                analyst_artifact_names = [
+                    'analyst_targets_long',
+                    'long_analyst_targets',
+                    'long_targets'
+                ]
 
             for artifact_name in analyst_artifact_names:
                 try:
@@ -2282,18 +2242,16 @@ class UnifiedModelsTrainingStep(BaseStep):
                                             analyst_targets = labeled_data.loc[common_idx, target_cols[0]]
                                             tprint_success(f"✅ Aligned by index - Features: {training_data.shape}, Targets: {len(analyst_targets)} samples")
                                         else:
-                                            tprint_warning(f"⚠️ No common indices found, using first N samples for alignment...")
-                                            # Align by position: use the smaller dataset size
-                                            min_len = min(len(training_data), len(analyst_targets))
-                                            training_data = training_data.iloc[:min_len]
-                                            analyst_targets = analyst_targets.iloc[:min_len]
-                                            tprint_success(f"✅ Aligned by position - Features: {training_data.shape}, Targets: {len(analyst_targets)} samples")
+                                            # Strict mode: do not align by position, fail fast
+                                            raise ValueError(
+                                                "Data alignment failed: no common indices between features and labeled_data. "
+                                                "Ensure indices are datetime-aligned and originate from the same pipeline."
+                                            )
                                     else:
-                                        tprint_warning(f"⚠️ DataFrames lack indices, using first N samples for alignment...")
-                                        min_len = min(len(training_data), len(analyst_targets))
-                                        training_data = training_data.iloc[:min_len] if hasattr(training_data, 'iloc') else training_data[:min_len]
-                                        analyst_targets = analyst_targets.iloc[:min_len] if hasattr(analyst_targets, 'iloc') else analyst_targets[:min_len]
-                                        tprint_success(f"✅ Aligned by position - Features: {len(training_data)}, Targets: {len(analyst_targets)} samples")
+                                        # Strict mode: require proper indices
+                                        raise ValueError(
+                                            "Features and targets must both have DatetimeIndex for temporal alignment."
+                                        )
                                 
                                 break
                     except Exception as e:
@@ -2419,16 +2377,10 @@ class UnifiedModelsTrainingStep(BaseStep):
                     else:
                         tprint_success("✅ Indices and lengths already match perfectly")
                 else:
-                    tprint_warning("⚠️ DataFrames lack proper indices - checking length only")
-                    if len(training_data) != len(analyst_targets):
-                        tprint_error(f"❌ Length mismatch: {len(training_data)} vs {len(analyst_targets)}")
-                        min_len = min(len(training_data), len(analyst_targets))
-                        tprint_warning(f"⚠️ Truncating to {min_len} samples")
-                        training_data = training_data.iloc[:min_len].copy()
-                        if hasattr(analyst_targets, 'iloc'):
-                            analyst_targets = analyst_targets.iloc[:min_len].copy()
-                        else:
-                            analyst_targets = analyst_targets[:min_len]
+                    # Strict mode: require proper indices; do not truncate by length
+                    raise ValueError(
+                        "Features and targets must have matching DatetimeIndex for alignment; length-only alignment is disallowed."
+                    )
                 
                 # Verify alignment
                 final_len = len(training_data)
@@ -2439,6 +2391,46 @@ class UnifiedModelsTrainingStep(BaseStep):
                     )
                 
                 tprint_success(f"✅ ALIGNMENT VERIFIED: {final_len:,} samples")
+
+                # Attempt to load and align external sample weights for training
+                try:
+                    weight_series = None
+                    # Reuse labeled_data if available in locals(); else fetch from artifacts
+                    ld = None
+                    try:
+                        if 'labeled_data' in locals():
+                            ld = locals()['labeled_data']
+                    except Exception:
+                        ld = None
+                    if ld is None or not isinstance(ld, pd.DataFrame):
+                        try:
+                            ld = self._get_artifact('labeled_data', 'data')
+                        except Exception:
+                            ld = None
+                    if isinstance(ld, pd.DataFrame):
+                        # Prefer explicit weight column name
+                        for cname in ['target_sample_weight', 'sample_weight', 'label_sample_weight']:
+                            if cname in ld.columns:
+                                weight_series = ld[cname]
+                                break
+                        # If not found, try to derive a weight from fused targets (fallback: average)
+                        if weight_series is None:
+                            candidates = [c for c in ld.columns if c in ['target_long_fused','target_short_fused']]
+                            if candidates:
+                                weight_series = ld[candidates].mean(axis=1)
+                    if weight_series is not None:
+                        # Align to training_data index and fill missing with 1.0
+                        aligned_weights = weight_series.reindex(training_data.index).fillna(1.0).astype(float)
+                        # Store into yaml_config for downstream trainers
+                        try:
+                            yaml_config['target_sample_weight_full'] = aligned_weights.tolist()
+                            tprint_info(f"⚖️ Injected target_sample_weight_full into config (len={len(aligned_weights)})")
+                        except Exception as e_cfg:
+                            tprint_warning(f"⚠️ Failed to inject sample weights into config: {e_cfg}")
+                    else:
+                        tprint_info("ℹ️ No target_sample_weight column found; proceeding without external weights")
+                except Exception as e_sw:
+                    tprint_warning(f"⚠️ Sample weight extraction failed: {e_sw}")
             
             tprint_info("=" * 80)
             tprint_info("Aligning features and targets...")
@@ -2790,11 +2782,37 @@ class UnifiedModelsTrainingStep(BaseStep):
                 # Load regime model predictions (from regime steps) - REQUIRED
                 # Try ensemble predictions first, then base model predictions
                 regime_features = None
-                for artifact_name in ['regime_ensemble_predictions', 'regime_models_predictions']:
+                # Prefer OOS/OOF artifacts to avoid leakage
+                regime_candidates = [
+                    'regime_ensemble_predictions_oof',
+                    'regime_ensemble_predictions_oos',
+                    'regime_models_predictions_oof',
+                    'regime_models_predictions_oos',
+                    'regime_ensemble_predictions',
+                    'regime_models_predictions'
+                ]
+                for artifact_name in regime_candidates:
                     try:
                         regime_features = self._get_artifact(artifact_name, 'data')
                         if regime_features is not None:
-                            tprint_success(f"✅ Found regime features in '{artifact_name}'")
+                            tprint_success(f"✅ Found regime features in '{artifact_name}' (preferred OOF/OOS if available)")
+                            # If not OOF/OOS, create a causally safe OOS proxy by shifting one step forward
+                            if ('oof' not in artifact_name.lower()) and ('oos' not in artifact_name.lower()):
+                                try:
+                                    tprint_warning("⚠️ Regime features are in-sample; creating OOS proxy via 1-step shift (ffill)")
+                                    regime_features = regime_features.shift(1).fillna(method='ffill')
+                                    # Save for reuse
+                                    try:
+                                        saved_path = self._save_artifact(
+                                            data=regime_features,
+                                            artifact_name='regime_ensemble_predictions_oos',
+                                            artifact_type='data'
+                                        )
+                                        tprint_info(f"   ↪ Saved OOS proxy regime features at: {saved_path}")
+                                    except Exception as e:
+                                        tprint_warning(f"   ⚠️ Failed to save OOS proxy regime features: {e}")
+                                except Exception as e:
+                                    tprint_warning(f"⚠️ Failed to create OOS proxy for regime features: {e}")
                             # DEBUG: Print first few rows of regime data
                             tprint_info(f"🔍 [DEBUG] Regime features shape: {regime_features.shape}")
                             tprint_info(f"🔍 [DEBUG] Regime features columns: {list(regime_features.columns)}")
@@ -2865,7 +2883,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                 if not regime_features.index.equals(training_data.index):
                     tprint_warning(f"Regime features index mismatch. Resampling {len(regime_features)} rows to match {len(training_data)} rows.")
                     # Use ffill and bfill for any alignment issues
-                    regime_features_resampled = regime_features.reindex(training_data.index, method='ffill').fillna(method='bfill')
+                    regime_features_resampled = regime_features.reindex(training_data.index, method='ffill')
                     tprint_info(
                         f"   ↪ Resampled regime features -> shape={regime_features_resampled.shape}, columns={len(regime_features_resampled.columns)}"
                     )
@@ -2906,28 +2924,61 @@ class UnifiedModelsTrainingStep(BaseStep):
 
             if training_type == 'analyst_ensemble':
                 # Base models for analyst_ensemble are the analyst_base outputs
-                base_outputs = self._get_artifact('analyst_base_outputs', 'data') # Changed to sync
+                # Prefer OOF/OOS artifacts to avoid leakage
+                base_candidates = [
+                    'analyst_base_outputs_oof',
+                    'analyst_base_predictions_oof',
+                    'analyst_base_outputs_oos',
+                    'analyst_base_outputs'
+                ]
+                base_outputs = None
+                for name in base_candidates:
+                    base_outputs = self._get_artifact(name, 'data')
+                    if base_outputs is not None:
+                        tprint_info(f"   ↪ Using additional features from '{name}' (preferred OOF/OOS)")
+                        break
                 if base_outputs is not None:
-                    # --- FIX 5: Resample/Reindex ---
+                    # Enforce strict temporal alignment
+                    if not hasattr(base_outputs, 'index') or not isinstance(base_outputs.index, type(training_data.index)):
+                        raise ValueError("Analyst base outputs lack proper DatetimeIndex for alignment")
+                    if not base_outputs.index.is_monotonic_increasing:
+                        base_outputs = base_outputs.sort_index()
+                    if not training_data.index.is_monotonic_increasing:
+                        training_data.sort_index(inplace=True)
                     if not base_outputs.index.equals(training_data.index):
-                        tprint_warning(f"Aligning 'analyst_base_outputs' index to training data.")
-                        base_outputs = base_outputs.reindex(training_data.index, method='ffill').fillna(method='bfill')
+                        tprint_warning("Aligning 'analyst_base_outputs' to training_data index (ffill)")
+                        base_outputs = base_outputs.reindex(training_data.index, method='ffill')
                         tprint_info(
                             f"   ↪ Resampled analyst_base_outputs -> shape={base_outputs.shape}, columns={len(base_outputs.columns)}"
                         )
                     additional_features_list.append(base_outputs)
-                    base_outputs_for_stats = base_outputs # Calculate stats on these
+                    base_outputs_for_stats = base_outputs  # For disagreement features
                     tprint_info(
                         f"   ↪ Added analyst_base_outputs features, cumulative={sum(df.shape[1] for df in additional_features_list)} columns"
                     )
 
             elif training_type == 'tactician_base':
                 # Base model for tactician_base is the analyst_ensemble output
-                analyst_outputs = self._get_artifact('analyst_ensemble_outputs', 'data') # Changed to sync
+                analyst_candidates = [
+                    'analyst_ensemble_outputs_oof',
+                    'analyst_ensemble_outputs_oos',
+                    'analyst_ensemble_outputs'
+                ]
+                analyst_outputs = None
+                for name in analyst_candidates:
+                    analyst_outputs = self._get_artifact(name, 'data')
+                    if analyst_outputs is not None:
+                        tprint_info(f"   ↪ Using additional features from '{name}' (preferred OOF/OOS)")
+                        break
                 if analyst_outputs is not None:
-                    # --- FIX 5: Resample/Reindex ---
+                    if not hasattr(analyst_outputs, 'index') or not isinstance(analyst_outputs.index, type(training_data.index)):
+                        raise ValueError("Analyst ensemble outputs lack proper DatetimeIndex for alignment")
+                    if not analyst_outputs.index.is_monotonic_increasing:
+                        analyst_outputs = analyst_outputs.sort_index()
+                    if not training_data.index.is_monotonic_increasing:
+                        training_data.sort_index(inplace=True)
                     if not analyst_outputs.index.equals(training_data.index):
-                        tprint_warning(f"Aligning 'analyst_ensemble_outputs' index to training data.")
+                        tprint_warning("Aligning 'analyst_ensemble_outputs' to training_data index (ffill/bfill)")
                         analyst_outputs = analyst_outputs.reindex(training_data.index, method='ffill').fillna(method='bfill')
                         tprint_info(
                             f"   ↪ Resampled analyst_ensemble_outputs -> shape={analyst_outputs.shape}, columns={len(analyst_outputs.columns)}"
@@ -2941,13 +2992,38 @@ class UnifiedModelsTrainingStep(BaseStep):
             elif training_type == 'tactician_ensemble':
                 # Base models for tactician_ensemble are the tactician_base outputs
                 # Analyst_ensemble outputs are also included as features.
-                analyst_outputs = self._get_artifact('analyst_ensemble_outputs', 'data') # Changed to sync
-                tactician_base_outputs = self._get_artifact('tactician_base_outputs', 'data') # Changed to sync
+                analyst_candidates = [
+                    'analyst_ensemble_outputs_oof',
+                    'analyst_ensemble_outputs_oos',
+                    'analyst_ensemble_outputs'
+                ]
+                tactician_candidates = [
+                    'tactician_base_outputs_oof',
+                    'tactician_base_outputs_oos',
+                    'tactician_base_outputs'
+                ]
+                analyst_outputs = None
+                for name in analyst_candidates:
+                    analyst_outputs = self._get_artifact(name, 'data')
+                    if analyst_outputs is not None:
+                        tprint_info(f"   ↪ Using additional features from '{name}' (preferred OOF/OOS)")
+                        break
+                tactician_base_outputs = None
+                for name in tactician_candidates:
+                    tactician_base_outputs = self._get_artifact(name, 'data')
+                    if tactician_base_outputs is not None:
+                        tprint_info(f"   ↪ Using additional features from '{name}' (preferred OOF/OOS)")
+                        break
 
                 if analyst_outputs is not None:
-                    # --- FIX 5: Resample/Reindex ---
+                    if not hasattr(analyst_outputs, 'index') or not isinstance(analyst_outputs.index, type(training_data.index)):
+                        raise ValueError("Analyst ensemble outputs lack proper DatetimeIndex for alignment")
+                    if not analyst_outputs.index.is_monotonic_increasing:
+                        analyst_outputs = analyst_outputs.sort_index()
+                    if not training_data.index.is_monotonic_increasing:
+                        training_data.sort_index(inplace=True)
                     if not analyst_outputs.index.equals(training_data.index):
-                        tprint_warning(f"Aligning 'analyst_ensemble_outputs' index to training data.")
+                        tprint_warning("Aligning 'analyst_ensemble_outputs' to training_data index (ffill/bfill)")
                         analyst_outputs = analyst_outputs.reindex(training_data.index, method='ffill').fillna(method='bfill')
                         tprint_info(
                             f"   ↪ Resampled analyst_ensemble_outputs -> shape={analyst_outputs.shape}, columns={len(analyst_outputs.columns)}"
@@ -2958,10 +3034,15 @@ class UnifiedModelsTrainingStep(BaseStep):
                     )
 
                 if tactician_base_outputs is not None:
-                    # --- FIX 5: Resample/Reindex ---
+                    if not hasattr(tactician_base_outputs, 'index') or not isinstance(tactician_base_outputs.index, type(training_data.index)):
+                        raise ValueError("Tactician base outputs lack proper DatetimeIndex for alignment")
+                    if not tactician_base_outputs.index.is_monotonic_increasing:
+                        tactician_base_outputs = tactician_base_outputs.sort_index()
+                    if not training_data.index.is_monotonic_increasing:
+                        training_data.sort_index(inplace=True)
                     if not tactician_base_outputs.index.equals(training_data.index):
-                        tprint_warning(f"Aligning 'tactician_base_outputs' index to training data.")
-                        tactician_base_outputs = tactician_base_outputs.reindex(training_data.index, method='ffill').fillna(method='bfill')
+                        tprint_warning("Aligning 'tactician_base_outputs' to training_data index (ffill)")
+                        tactician_base_outputs = tactician_base_outputs.reindex(training_data.index, method='ffill')
                         tprint_info(
                             f"   ↪ Resampled tactician_base_outputs -> shape={tactician_base_outputs.shape}, columns={len(tactician_base_outputs.columns)}"
                         )
@@ -2969,7 +3050,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                     tprint_info(
                         f"   ↪ Added tactician_base_outputs features, cumulative={sum(df.shape[1] for df in additional_features_list)} columns"
                     )
-                    base_outputs_for_stats = tactician_base_outputs # Calculate stats on these
+                    base_outputs_for_stats = tactician_base_outputs  # For disagreement features
 
             # --- NEW: Calculate ensemble meta-features (disagreement features) ---
             if base_outputs_for_stats is not None and not base_outputs_for_stats.empty:
@@ -3178,7 +3259,10 @@ class UnifiedModelsTrainingStep(BaseStep):
         tprint_info(f"🔍 [DEBUG] Model-specific features count: {len(model_specific_features)}")
         tprint_info(f"🔍 [DEBUG] Model-specific features: {model_specific_features}")
 
-        # Save feature list for comparison during prediction
+        leak_cols = [c for c in training_data.columns if any(term in c.lower() for term in ['label', 'target', 'future_', 'lead_'])]
+        if leak_cols:
+            tprint_warning(f"Removing {len(leak_cols)} target-like columns from training data")
+            training_data = training_data.drop(columns=leak_cols)
         self._training_features = list(training_data.columns)
         self._training_feature_count = len(training_data.columns)
         tprint_info(f"🔍 [DEBUG] Saved training feature list ({len(self._training_features)} features) for prediction comparison")
@@ -3356,6 +3440,29 @@ class UnifiedModelsTrainingStep(BaseStep):
                         tprint_info(f"   Models: {list(all_predictions.keys())}")
                         if disagreement_features is not None:
                             tprint_info(f"   Disagreement features: {list(disagreement_features.columns)}")
+
+                        # Save OOF predictions if provided by training pipeline
+                        try:
+                            oof = result.get('oof_predictions')
+                            if oof is not None:
+                                if isinstance(oof, pd.DataFrame):
+                                    oof_df = oof
+                                elif isinstance(oof, dict):
+                                    # If dict of series, convert to DataFrame
+                                    oof_df = pd.DataFrame(oof)
+                                else:
+                                    # If Series or ndarray-like
+                                    oof_df = pd.DataFrame({'oof_pred': oof})
+                                oof_path = self._save_artifact(
+                                    data=oof_df,
+                                    artifact_name='analyst_base_predictions_oof',
+                                    artifact_type='data',
+                                    data_category='predictions'
+                                )
+                                artifacts['analyst_base_predictions_oof'] = oof_path
+                                tprint_success(f"✅ Saved analyst_base_predictions_oof: {oof_df.shape}")
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Failed to save OOF predictions: {e}")
                     
                     # Save combined confidence scores
                     if all_confidence:

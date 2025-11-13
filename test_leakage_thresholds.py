@@ -13,6 +13,13 @@ import pandas as pd
 from datetime import datetime, timedelta
 import logging
 
+# Import des assertions standardisées
+from tests.utils.assertions import (
+    assert_float_equals,
+    assert_dict_structure,
+    assert_list_structure
+)
+
 # Configuration du logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
@@ -35,15 +42,27 @@ def test_threshold_values():
     config = DataLeakageConfig()
     
     # Vérification des seuils critiques
-    assert config.critical_leakage_threshold == 0.05, f"Seuil critique incorrect: {config.critical_leakage_threshold} (attendu: 0.05)"
+    assert_float_equals(
+        config.critical_leakage_threshold,
+        0.05,
+        message=f"Seuil critique incorrect: {config.critical_leakage_threshold} (attendu: 0.05)"
+    )
     logger.info(f"✅ Seuil critique correct: {config.critical_leakage_threshold:.1%}")
     
     # Vérification des seuils d'avertissement
-    assert config.warning_leakage_threshold == 0.02, f"Seuil d'avertissement incorrect: {config.warning_leakage_threshold} (attendu: 0.02)"
+    assert_float_equals(
+        config.warning_leakage_threshold,
+        0.02,
+        message=f"Seuil d'avertissement incorrect: {config.warning_leakage_threshold} (attendu: 0.02)"
+    )
     logger.info(f"✅ Seuil d'avertissement correct: {config.warning_leakage_threshold:.1%}")
     
     # Vérification du multiplicateur pour petits datasets
-    assert config.small_dataset_leakage_multiplier == 1.0, f"Multiplicateur incorrect: {config.small_dataset_leakage_multiplier} (attendu: 1.0)"
+    assert_float_equals(
+        config.small_dataset_leakage_multiplier,
+        1.0,
+        message=f"Multiplicateur incorrect: {config.small_dataset_leakage_multiplier} (attendu: 1.0)"
+    )
     logger.info(f"✅ Multiplicateur pour petits datasets correct: {config.small_dataset_leakage_multiplier}")
     
     logger.info("✅ Test 1 réussi: Tous les seuils sont correctement définis")
@@ -67,7 +86,11 @@ def test_leakage_detection():
     })
     
     report_clean = prevention.detect_temporal_leakage(data_clean, 'timestamp', 'target', 'test_clean')
-    assert report_clean.overall_leakage_rate == 0.0, f"Taux de fuite incorrect pour données propres: {report_clean.overall_leakage_rate}"
+    assert_float_equals(
+        report_clean.overall_leakage_rate,
+        0.0,
+        message=f"Taux de fuite incorrect pour données propres: {report_clean.overall_leakage_rate}"
+    )
     logger.info(f"✅ Données propres: taux de fuite = {report_clean.overall_leakage_rate:.2%}")
     
     # Test 2: Fuite faible (1.5%) - devrait être en dessous du seuil d'avertissement

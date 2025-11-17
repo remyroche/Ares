@@ -165,7 +165,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         # search focused and avoids very long lookbacks that are unlikely to
         # be appropriate for a 3-bar profit target.
         lookbacks = [
-            3, 5, 8, 10, 15, 20,
+            2, 3, 4, 5, 8, 10, 15, 20,
             25, 30, 35, 40, 45, 50,
         ]
         self.logger.info(
@@ -191,6 +191,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     'optimal_lookback': 5,
                     'performance_score': 0.0,
                     'stability_score': 0.0,
+                    'r2_score': 0.0,
                     'optimization_method': 'intelligent_ranges_batch',
                     'cv_folds': 2,
                     'lookback_range': f"{min(self.intelligent_lookbacks)}-{max(self.intelligent_lookbacks)}",
@@ -199,22 +200,23 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     'success': False,
                     'error': 'Insufficient data'
                 }
-            
+
             # Extract valid arrays
             feature_valid = feature_data[valid_mask]
             target_valid = target_data[valid_mask]
-            
+
             # Use batch evaluation for all lookback periods simultaneously
             lookback_scores = self._batch_evaluate_lookback_periods(
                 feature_valid, target_valid, self.intelligent_lookbacks
             )
-            
+
             if not lookback_scores:
                 return {
                     'feature_name': feature_name,
                     'optimal_lookback': 5,
                     'performance_score': 0.0,
                     'stability_score': 0.0,
+                    'r2_score': 0.0,
                     'optimization_method': 'intelligent_ranges_batch',
                     'cv_folds': 2,
                     'lookback_range': f"{min(self.intelligent_lookbacks)}-{max(self.intelligent_lookbacks)}",
@@ -249,14 +251,16 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Calculate performance and stability scores
             performance_score = self._calculate_performance_score(data, feature_name, target_column, best_lookback)
             stability_score = self._calculate_stability_score(data, feature_name, best_lookback)
-            
+            r2_score = self._calculate_r2_score(data, feature_name, target_column, best_lookback)
+
             optimization_time = time.time() - start_time
-            
+
             return {
                 'feature_name': feature_name,
                 'optimal_lookback': best_lookback,
                 'performance_score': performance_score,
                 'stability_score': stability_score,
+                'r2_score': r2_score,
                 'optimization_method': 'intelligent_ranges_batch',
                 'cv_folds': 2,
                 'lookback_range': f"{min(self.intelligent_lookbacks)}-{max(self.intelligent_lookbacks)}",
@@ -273,6 +277,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 'optimal_lookback': 5,
                 'performance_score': 0.0,
                 'stability_score': 0.0,
+                'r2_score': 0.0,
                 'optimization_method': 'intelligent_ranges_batch',
                 'cv_folds': 2,
                 'lookback_range': f"{min(self.intelligent_lookbacks)}-{max(self.intelligent_lookbacks)}",
@@ -932,6 +937,14 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 except Exception:
                     stability_phys = float(stability_mi)
 
+                # Calculate R² score for regression predictive power
+                try:
+                    r2 = float(
+                        self._calculate_r2_score(merged_data, feature_name, target_column, int(optimal_lookback))
+                    )
+                except Exception:
+                    r2 = 0.0
+
                 result_entry: Dict[str, Any] = {
                     'optimal_lookback': int(optimal_lookback),
                     'performance_score': importance,
@@ -940,6 +953,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     # Expose physical rolling-std stability separately for
                     # leak detection and reporting.
                     'stability_phys_score': stability_phys,
+                    # R² regression score via LGBM
+                    'r2_score': r2,
                     'feature_name': feature_name,
                     'category': category,
                     'success': True,
@@ -1008,6 +1023,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     base_stability = float(feature_data.get('stability_score', 0.0))
                     # Physical rolling-std-based stability (time-series smoothness)
                     base_stability_phys = float(feature_data.get('stability_phys_score', base_stability))
+                    # R² regression score
+                    base_r2 = float(feature_data.get('r2_score', 0.0))
 
                     # Optional: per-lookback scores if available (from earlier MI proxy evaluations)
                     # Expect shape like {lookback: score}
@@ -1076,6 +1093,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         'stability_score': base_stability,
                         # Physical stability (rolling-std based); used for leak checks
                         'stability_phys_score': base_stability_phys,
+                        # R² regression score
+                        'r2_score': base_r2,
                         'rf_importance': base_performance,
                         'optimal_lookback': optimal_lookback,
                         'alternative_lookbacks': alternatives,
@@ -2337,6 +2356,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             'optimal_lookback': optimal_lookback,
             'performance_score': 0.0,
             'stability_score': 0.0,
+            'r2_score': 0.0,
             'optimization_method': 'category_fallback',
             'cv_folds': 2,
             'lookback_range': f"{category}_curated:{curated_lookbacks}",
@@ -2610,6 +2630,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     'optimal_lookback': 10,
                     'performance_score': 0.0,
                     'stability_score': 0.0,
+                    'r2_score': 0.0,
                     'optimization_method': 'proxy_insufficient_data',
                     'cv_folds': 2,
                     'lookback_range': 'proxy_filtered',
@@ -2646,6 +2667,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     'optimal_lookback': 10,
                     'performance_score': 0.0,
                     'stability_score': 0.0,
+                    'r2_score': 0.0,
                     'optimization_method': 'proxy_no_valid_scores',
                     'cv_folds': 2,
                     'lookback_range': 'proxy_filtered',
@@ -2658,18 +2680,20 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Find best lookback period
             best_lookback = max(lookback_scores, key=lookback_scores.get)
             best_score = lookback_scores[best_lookback]
-            
+
             # Calculate performance and stability scores
             performance_score = self._calculate_performance_score(data, feature_name, target_column, best_lookback)
             stability_score = self._calculate_stability_score(data, feature_name, best_lookback)
-            
+            r2_score = self._calculate_r2_score(data, feature_name, target_column, best_lookback)
+
             optimization_time = time.time() - start_time
-            
+
             return {
                 'feature_name': feature_name,
                 'optimal_lookback': best_lookback,
                 'performance_score': performance_score,
                 'stability_score': stability_score,
+                'r2_score': r2_score,
                 'optimization_method': 'proxy_filtered_lookbacks',
                 'cv_folds': 2,
                 'lookback_range': f"filtered_{min(promising_lookbacks)}-{max(promising_lookbacks)}",
@@ -2687,6 +2711,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 'optimal_lookback': 10,
                 'performance_score': 0.0,
                 'stability_score': 0.0,
+                'r2_score': 0.0,
                 'optimization_method': 'proxy_error',
                 'cv_folds': 2,
                 'lookback_range': 'proxy_error',
@@ -3430,34 +3455,122 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         """Calculate stability score for a feature with given lookback."""
         try:
             feature_col = data[feature_name]
-            
+
             # Calculate rolling standard deviation as stability metric
             rolling_std = feature_col.rolling(window=lookback).std()
             global_std = feature_col.std()
-            
+
             # Handle edge cases where feature has no variation
             if global_std == 0 or np.isnan(global_std):
                 # Feature is constant - stability is undefined, return low score
                 self.logger.debug(f"Feature {feature_name} has zero variance, returning low stability")
                 return 0.1
-            
+
             rolling_std_mean = rolling_std.mean()
-            
+
             # Detect suspiciously low rolling std (potential data issue)
             if rolling_std_mean < global_std * 0.02:  # Rolling std < 2% of global std
                 self.logger.warning(f"⚠️ Suspicious stability for {feature_name}: rolling_std={rolling_std_mean:.6f}, global_std={global_std:.6f}")
                 # Return capped stability to avoid false inflation
                 capped_stability = 1.0 - (global_std * 0.02) / global_std
                 return min(max(capped_stability, 0.0), 0.95)  # Cap at 0.95
-            
+
             stability = 1.0 - (rolling_std_mean / global_std)
-            
+
             # Normalize to 0-1 range
             return min(max(stability, 0.0), 1.0)
-            
+
         except Exception as e:
             self.logger.debug(f"Stability calculation failed for {feature_name}: {e}")
             return 0.5  # Default fallback
+
+    def _calculate_r2_score(self, data: pd.DataFrame, feature_name: str, target_column: str, lookback: int) -> float:
+        """
+        Calculate R² regression score using per-feature LGBM.
+
+        This provides a direct measure of predictive power via regression,
+        complementing the custom MI/stability metric (performance_score).
+
+        Args:
+            data: DataFrame containing feature and target
+            feature_name: Name of the feature column
+            target_column: Name of the target column
+            lookback: Lookback period (not directly used but maintained for API consistency)
+
+        Returns:
+            R² score between 0 and 1, or 0.0 on failure
+        """
+        try:
+            import lightgbm as lgb
+            from sklearn.model_selection import train_test_split
+            from sklearn.metrics import r2_score
+
+            # Extract feature and target data
+            feature_col = data[[feature_name]].copy()
+            target_col = data[target_column].copy()
+
+            # Remove NaN values
+            valid_mask = feature_col[feature_name].notna() & target_col.notna()
+            feature_clean = feature_col[valid_mask]
+            target_clean = target_col[valid_mask]
+
+            # Need sufficient data for meaningful regression
+            if len(feature_clean) < 100:
+                self.logger.debug(f"Insufficient data for R² calculation: {len(feature_clean)} samples")
+                return 0.0
+
+            # Handle constant features
+            if feature_clean[feature_name].std() == 0:
+                self.logger.debug(f"Feature {feature_name} has zero variance, R²=0.0")
+                return 0.0
+
+            # Handle constant targets
+            if target_clean.std() == 0:
+                self.logger.debug(f"Target {target_column} has zero variance, R²=0.0")
+                return 0.0
+
+            # Split into train/test (80/20)
+            X_train, X_test, y_train, y_test = train_test_split(
+                feature_clean, target_clean,
+                test_size=0.2,
+                random_state=42,
+                shuffle=False  # Preserve temporal order
+            )
+
+            # Train a simple LGBM regressor
+            # Use minimal parameters for speed
+            lgb_params = {
+                'objective': 'regression',
+                'metric': 'rmse',
+                'verbosity': -1,
+                'num_leaves': 15,
+                'max_depth': 3,
+                'learning_rate': 0.1,
+                'n_estimators': 50,
+                'min_child_samples': 20,
+                'random_state': 42
+            }
+
+            model = lgb.LGBMRegressor(**lgb_params)
+            model.fit(X_train, y_train, verbose=False)
+
+            # Predict on test set
+            y_pred = model.predict(X_test)
+
+            # Calculate R² score
+            r2 = r2_score(y_test, y_pred)
+
+            # Clip to [0, 1] range (R² can be negative for very poor models)
+            r2 = max(0.0, min(r2, 1.0))
+
+            return float(r2)
+
+        except ImportError:
+            self.logger.warning("LightGBM not available for R² calculation, returning 0.0")
+            return 0.0
+        except Exception as e:
+            self.logger.debug(f"R² calculation failed for {feature_name}: {e}")
+            return 0.0
     
     def _should_use_vectorbt(self, data: pd.DataFrame) -> bool:
         """Determine if VectorBT should be used based on data size and availability."""
@@ -4864,6 +4977,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                     'stability_score': float(stab),
                                     # Physical rolling-std stability for leak analysis
                                     'stability_phys_score': float(stab_phys),
+                                    # R² regression score
+                                    'r2_score': float(feature_info.get('r2_score', 0.0)),
                                 }
 
                     if perfs or stabs:
@@ -5475,6 +5590,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                     'performance_score': feature_data.get('performance_score', 0.0),
                                     'stability_score': feature_data.get('stability_score', 0.0),
                                     'stability_phys_score': feature_data.get('stability_phys_score', feature_data.get('stability_score', 0.0)),
+                                    'r2_score': feature_data.get('r2_score', 0.0),
                                     'information_score': feature_data.get('information_score', 0.0),
                                     'optimization_method': feature_data.get('optimization_method', 'cross_validation'),
                                     'cv_folds': feature_data.get('cv_folds', 2),
@@ -5498,6 +5614,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                     'optimal_lookback': feature_data.get('optimal_lookback', 'N/A'),
                                     'performance_score': feature_data.get('performance_score', 0.0),
                                     'stability_score': feature_data.get('stability_score', 0.0),
+                                    'r2_score': feature_data.get('r2_score', 0.0),
                                     'information_score': feature_data.get('information_score', 0.0),
                                     'optimization_method': feature_data.get('optimization_method', 'cross_validation'),
                                     'cv_folds': feature_data.get('cv_folds', 2),
@@ -5525,6 +5642,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                 'performance_score': feature_data.get('performance_score', 0.0),
                                 'stability_score': feature_data.get('stability_score', 0.0),
                                 'stability_phys_score': feature_data.get('stability_phys_score', feature_data.get('stability_score', 0.0)),
+                                'r2_score': feature_data.get('r2_score', 0.0),
                                 'information_score': feature_data.get('information_score', 0.0),
                                 'optimization_method': feature_data.get('optimization_method', 'cross_validation'),
                                 'cv_folds': feature_data.get('cv_folds', 2),
@@ -5545,6 +5663,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                             'performance_score': category_data.get('performance_score', 0.0),
                             'stability_score': category_data.get('stability_score', 0.0),
                             'stability_phys_score': category_data.get('stability_phys_score', category_data.get('stability_score', 0.0)),
+                            'r2_score': category_data.get('r2_score', 0.0),
                             'information_score': category_data.get('information_score', 0.0),
                             'optimization_method': 'cross_validation',
                             'cv_folds': 2,
@@ -5572,12 +5691,16 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         # Calculate information_score from performance and MI-based stability
                         perf_score = feature_info['performance_score']
                         stab_score = feature_info['stability_score']
+                        r2 = feature_info.get('r2_score', 0.0)
                         information_score = (perf_score + stab_score) / 2.0 if (perf_score > 0 or stab_score > 0) else 0.0
-                        
-                        # Calculate composite_score = stability × information for downstream feature weighting
-                        # This often correlates better with out-of-sample resilience than raw performance
-                        composite_score = stab_score * information_score if (stab_score > 0 and information_score > 0) else 0.0
-                        
+
+                        # Calculate composite_score = weighted combination of stability, information, and R²
+                        # Includes R² regression score for direct predictive power assessment
+                        # Formula: 0.4 * stability * information + 0.6 * R²
+                        # This balances MI/stability metrics with direct regression performance
+                        base_score = stab_score * information_score if (stab_score > 0 and information_score > 0) else 0.0
+                        composite_score = 0.4 * base_score + 0.6 * r2
+
                         row_data = {
                             'feature_name': feature_name,
                             'category': category,
@@ -5588,8 +5711,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                             'performance_score': perf_score,
                             'stability_score': stab_score,
                             'stability_phys_score': feature_info.get('stability_phys_score', stab_score),
+                            'r2_score': r2,
                             'information_score': information_score,
-                            'composite_score': composite_score,  # stability × information for feature weighting
+                            'composite_score': composite_score,  # weighted: 0.4*(stability × information) + 0.6*R²
                             'optimization_method': feature_info.get('optimization_method', 'intelligent_ranges'),
                             'cv_folds': 2,
                             'lookback_range_tested': '1-51',

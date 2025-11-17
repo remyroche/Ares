@@ -1163,6 +1163,391 @@ def generate_diagnostics_report(
     return str(report_path)
 
 
+def create_base_models(config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Create base models for ensemble with proper regularization.
+
+    Three models optimized for different strengths:
+    - LGBM: Gradient boosting for ranking and AUC
+    - LogisticRegression: Linear blender with elastic net regularization
+    - RandomForest: Non-linear ensemble for robustness
+
+    Args:
+        config: Configuration dictionary
+
+    Returns:
+        Dictionary of {model_name: model_instance}
+    """
+    models = {}
+
+    # LightGBM: Optimized for AUC with early stopping and regularization
+    models['lgbm'] = lgb.LGBMClassifier(
+        objective='binary',
+        metric='auc',
+        n_estimators=500,
+        max_depth=5,
+        learning_rate=0.01,
+        num_leaves=31,
+        min_child_samples=20,
+        subsample=0.8,
+        subsample_freq=1,
+        colsample_bytree=0.8,
+        reg_alpha=0.1,  # L1 regularization
+        reg_lambda=0.1,  # L2 regularization
+        n_jobs=-1,
+        verbose=-1,
+        random_state=42
+    )
+
+    # Logistic Regression with elastic net (L1 + L2)
+    models['logreg'] = LogisticRegression(
+        penalty='elasticnet',
+        solver='saga',
+        C=1.0,
+        l1_ratio=0.5,  # Balance between L1 and L2
+        max_iter=1000,
+        n_jobs=-1,
+        random_state=42
+    )
+
+    # Random Forest with conservative parameters
+    models['rf'] = RandomForestClassifier(
+        n_estimators=100,
+        max_depth=8,
+        min_samples_leaf=20,
+        max_features='sqrt',
+        n_jobs=-1,
+        random_state=42
+    )
+
+    return models
+
+
+def train_ensemble_with_kfold(
+    X: pd.DataFrame,
+    y: pd.Series,
+    horizon: int,
+    n_splits: int = 5,
+    verbose: bool = True
+) -> Tuple[Dict[str, Any], pd.Series]:
+    """
+    Train ensemble models with K-fold cross-fitting to prevent leakage.
+
+    CRITICAL: Uses purged time-series CV to avoid lookahead bias.
+    Each model is trained on fold ∖i and predicts on fold i.
+
+    Args:
+        X: Feature matrix
+        y: Binary labels
+        horizon: Forward-looking horizon (for purging)
+        n_splits: Number of CV folds
+        verbose: Whether to print progress
+
+    Returns:
+        Tuple of (trained_models_dict, out_of_fold_predictions_series)
+    """
+    # Initialize storage
+    trained_models = {'lgbm': [], 'logreg': [], 'rf': []}
+    oof_predictions = {
+        'lgbm': pd.Series(np.nan, index=X.index),
+        'logreg': pd.Series(np.nan, index=X.index),
+        'rf': pd.Series(np.nan, index=X.index)
+    }
+
+    # Time-series CV
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+
+    for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X)):
+        if verbose:
+            tprint(f"  Fold {fold_idx + 1}/{n_splits}...", "INFO")
+
+        # Purge training indices to avoid lookahead
+        train_idx_purged = purge_training_idxs(
+            train_idx,
+            test_idx[0],
+            test_idx[-1] + 1,
+            horizon=horizon
+        )
+
+        if len(train_idx_purged) == 0:
+            if verbose:
+                tprint(f"    ⚠️ All training samples purged, skipping fold", "WARNING")
+            continue
+
+        # Get train/test splits
+        X_train = X.iloc[train_idx_purged]
+        y_train = y.iloc[train_idx_purged]
+        X_test = X.iloc[test_idx]
+        y_test = y.iloc[test_idx]
+
+        # Filter NaN labels
+        train_mask = ~y_train.isna()
+        test_mask = ~y_test.isna()
+
+        if train_mask.sum() < 10 or test_mask.sum() < 5:
+            if verbose:
+                tprint(f"    ⚠️ Too few samples, skipping fold", "WARNING")
+            continue
+
+        X_train_clean = X_train[train_mask].fillna(0)
+        y_train_clean = y_train[train_mask]
+        X_test_clean = X_test[test_mask].fillna(0)
+        y_test_clean = y_test[test_mask]
+
+        # Train each base model
+        base_models = create_base_models({})
+
+        for model_name, model in base_models.items():
+            try:
+                # Train
+                model.fit(X_train_clean, y_train_clean)
+                trained_models[model_name].append(model)
+
+                # Predict on test fold
+                y_pred_proba = model.predict_proba(X_test_clean)[:, 1]
+
+                # Store OOF predictions
+                test_indices_with_labels = test_idx[test_mask]
+                oof_predictions[model_name].iloc[test_indices_with_labels] = y_pred_proba
+
+                # Metrics
+                try:
+                    auc = roc_auc_score(y_test_clean, y_pred_proba)
+                    if verbose:
+                        tprint(f"    ✓ {model_name}: AUC={auc:.3f}", "INFO")
+                except:
+                    if verbose:
+                        tprint(f"    ⚠️ {model_name}: Could not compute AUC", "WARNING")
+
+            except Exception as e:
+                if verbose:
+                    tprint(f"    ❌ {model_name} failed: {e}", "ERROR")
+
+    # Combine OOF predictions into DataFrame
+    oof_df = pd.DataFrame(oof_predictions, index=X.index)
+
+    return trained_models, oof_df
+
+
+def calibrate_ensemble(
+    oof_predictions: pd.DataFrame,
+    y_true: pd.Series,
+    realized_returns: pd.Series,
+    meta_features: pd.DataFrame,
+    method: str = 'platt_isotonic',
+    include_context: bool = True
+) -> Tuple[Dict[str, Any], IsotonicRegression]:
+    """
+    Calibrate ensemble predictions using Platt scaling + isotonic regression.
+
+    Two-stage calibration:
+    1. Platt scaling per individual model (sigmoid calibration)
+    2. Isotonic regression on final blended output (with optional entropy/volatility)
+
+    Args:
+        oof_predictions: Out-of-fold predictions from each base model (DataFrame)
+        y_true: Binary ground truth labels
+        realized_returns: Realized returns for isotonic mapping
+        meta_features: Meta-features (for optional entropy/volatility context)
+        method: 'platt_isotonic' or 'isotonic_only'
+        include_context: Whether to include entropy/volatility in final calibration
+
+    Returns:
+        Tuple of (platt_calibrators_dict, isotonic_regressor)
+    """
+    platt_calibrators = {}
+
+    # Valid data mask
+    valid_mask = ~y_true.isna()
+    for col in oof_predictions.columns:
+        valid_mask &= ~oof_predictions[col].isna()
+
+    if valid_mask.sum() < 20:
+        tprint("⚠️ Warning: Too few samples for calibration", "WARNING")
+        return {}, None
+
+    y_valid = y_true[valid_mask]
+    returns_valid = realized_returns[valid_mask]
+
+    # STAGE 1: Platt scaling per model
+    calibrated_predictions = pd.DataFrame(index=oof_predictions.index)
+
+    if method == 'platt_isotonic':
+        tprint("  📈 Stage 1: Applying Platt scaling to each base model...", "INFO")
+
+        for model_name in oof_predictions.columns:
+            try:
+                # Get OOF predictions for this model
+                oof_model = oof_predictions[model_name][valid_mask].values.reshape(-1, 1)
+
+                # Fit Platt scaler (logistic regression on top of predictions)
+                platt_scaler = LogisticRegression(max_iter=1000, random_state=42)
+                platt_scaler.fit(oof_model, y_valid)
+                platt_calibrators[model_name] = platt_scaler
+
+                # Apply calibration to full predictions
+                all_preds = oof_predictions[model_name].fillna(0.5).values.reshape(-1, 1)
+                calibrated_predictions[model_name] = platt_scaler.predict_proba(all_preds)[:, 1]
+
+                tprint(f"    ✓ {model_name} calibrated", "INFO")
+
+            except Exception as e:
+                tprint(f"    ⚠️ {model_name} calibration failed: {e}", "WARNING")
+                calibrated_predictions[model_name] = oof_predictions[model_name]
+    else:
+        # Skip Platt, use raw predictions
+        calibrated_predictions = oof_predictions.copy()
+
+    # STAGE 2: Blend models with soft voting
+    tprint("  📊 Stage 2: Blending models with soft voting...", "INFO")
+
+    # Simple average (can be weighted based on validation performance)
+    ensemble_probs = calibrated_predictions.mean(axis=1)
+
+    # STAGE 3: Isotonic regression on ensemble output
+    tprint("  📈 Stage 3: Applying isotonic regression to ensemble...", "INFO")
+
+    ensemble_valid = ensemble_probs[valid_mask].values
+
+    # Optional: Include entropy/volatility as context
+    if include_context and meta_features is not None:
+        try:
+            # Compute prediction entropy (uncertainty)
+            pred_entropy = -ensemble_valid * np.log(ensemble_valid + 1e-8) - \
+                           (1 - ensemble_valid) * np.log(1 - ensemble_valid + 1e-8)
+
+            # Get volatility from meta-features
+            if 'volatility_1h' in meta_features.columns:
+                vol_valid = meta_features['volatility_1h'][valid_mask].fillna(0).values
+            else:
+                vol_valid = np.zeros(len(ensemble_valid))
+
+            # Combine: probability, entropy, volatility
+            # Weight: prob has highest weight, entropy/vol are context
+            calibration_input = (
+                0.7 * ensemble_valid +
+                0.2 * (1 - pred_entropy / pred_entropy.max()) +  # Lower entropy = more confident
+                0.1 * (vol_valid / (vol_valid.max() + 1e-8))     # Volatility normalization
+            )
+
+            tprint(f"    ✓ Including entropy + volatility context", "INFO")
+
+        except Exception as e:
+            tprint(f"    ⚠️ Could not include context, using probabilities only: {e}", "WARNING")
+            calibration_input = ensemble_valid
+    else:
+        calibration_input = ensemble_valid
+
+    # Fit isotonic regression: calibrated_prob -> expected_return
+    try:
+        iso_regressor = IsotonicRegression(out_of_bounds='clip')
+        iso_regressor.fit(calibration_input, returns_valid.values)
+
+        tprint(f"    ✓ Isotonic regression fitted on {len(calibration_input)} samples", "SUCCESS")
+
+    except Exception as e:
+        tprint(f"    ❌ Isotonic regression failed: {e}", "ERROR")
+        iso_regressor = None
+
+    return platt_calibrators, iso_regressor
+
+
+def add_signal_disagreement(
+    oof_predictions: pd.DataFrame,
+    meta_features: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Add signal disagreement feature (std dev across ensemble predictions).
+
+    This is one of the strongest predictors of signal failure.
+    High disagreement = models don't agree = lower confidence.
+
+    Args:
+        oof_predictions: Out-of-fold predictions from each base model
+        meta_features: Existing meta-features
+
+    Returns:
+        Updated meta-features with disagreement column
+    """
+    # Compute std dev across model predictions
+    disagreement = oof_predictions.std(axis=1, skipna=True)
+
+    # Add to meta-features
+    meta_features_updated = meta_features.copy()
+    meta_features_updated['signal_disagreement'] = disagreement
+
+    # Also add mean and max disagreement as features
+    meta_features_updated['signal_disagreement_ema'] = disagreement.ewm(span=10).mean()
+
+    tprint(f"  ✓ Added signal disagreement (mean={disagreement.mean():.3f}, std={disagreement.std():.3f})", "INFO")
+
+    return meta_features_updated
+
+
+def select_top_k_signals(
+    signals: pd.DataFrame,
+    probabilities: np.ndarray,
+    volatility: pd.Series,
+    k_per_day: float = 5.0,
+    min_probability: float = 0.6
+) -> pd.Series:
+    """
+    Select top-K signals per day based on calibrated probability.
+
+    Implements volatility-normalized ranking to ensure quality selection.
+
+    Args:
+        signals: Signal DataFrame with 'consensus' column
+        probabilities: Calibrated probabilities from ensemble
+        volatility: Volatility series for normalization
+        k_per_day: Target number of trades per day (on average)
+        min_probability: Minimum probability threshold
+
+    Returns:
+        Boolean mask of selected signals
+    """
+    n_samples = len(signals)
+    selected_mask = pd.Series(False, index=signals.index)
+
+    # Only consider signals with non-zero consensus
+    signal_mask = (signals['consensus'] != 0) & (probabilities >= min_probability)
+
+    if signal_mask.sum() == 0:
+        tprint("  ⚠️ No signals meet minimum probability threshold", "WARNING")
+        return selected_mask
+
+    # Compute volatility-adjusted score
+    # Higher probability + lower volatility = better signal
+    vol_normalized = volatility / (volatility.mean() + 1e-8)
+    vol_normalized = vol_normalized.clip(0.5, 2.0)  # Prevent extreme values
+
+    # Score = probability / volatility_factor
+    # This favors high-probability signals in low-volatility environments
+    scores = probabilities / (vol_normalized + 0.5)
+    scores[~signal_mask] = -np.inf  # Exclude non-signals
+
+    # Determine how many signals to select
+    # Assume ~96 bars per day (15min timeframe)
+    bars_per_day = 96
+    n_days = n_samples / bars_per_day
+    total_k = int(k_per_day * n_days)
+
+    # Select top-K by score
+    if total_k > 0:
+        threshold_idx = min(total_k, signal_mask.sum())
+        score_threshold = np.partition(scores, -threshold_idx)[-threshold_idx]
+        selected_mask = scores >= score_threshold
+
+        n_selected = selected_mask.sum()
+        actual_per_day = n_selected / n_days if n_days > 0 else 0
+
+        tprint(f"  ✓ Selected {n_selected} signals ({actual_per_day:.1f} per day)", "SUCCESS")
+    else:
+        tprint(f"  ⚠️ No signals selected (total_k={total_k})", "WARNING")
+
+    return selected_mask
+
+
 class FeatureGenerationMetaLabelingStep(BaseStep):
     """
     Feature Generation Meta-Labeling Step (Enhanced).
@@ -1315,125 +1700,108 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 use_kalman=True  # Enable Kalman filtering
             )
 
-            # STEP 6: Train meta-model with time-series CV
-            # Get out-of-fold probabilities for isotonic regression
-            tprint("🎓 Training meta-model with purged time-series CV...", "INFO")
+            # STEP 6: Train ensemble meta-models with K-fold cross-fitting
+            tprint("🎓 Training ensemble meta-models (LGBM + LogReg + RF) with purged K-fold CV...", "INFO")
 
-            outer_cv = TimeSeriesSplit(n_splits=5)
-            cv_results = []
+            # Train ensemble and get OOF predictions
+            trained_models, oof_predictions_df = train_ensemble_with_kfold(
+                X=meta_features,
+                y=binary_labels,
+                horizon=horizon,
+                n_splits=5,
+                verbose=True
+            )
 
-            # Store out-of-fold predictions
-            oof_probabilities = pd.Series(np.nan, index=market_data.index)
+            # STEP 7: Add signal disagreement feature
+            tprint("🔧 Adding signal disagreement feature...", "INFO")
+            meta_features_enhanced = add_signal_disagreement(
+                oof_predictions=oof_predictions_df,
+                meta_features=meta_features
+            )
 
-            for fold_idx, (train_idx, test_idx) in enumerate(outer_cv.split(market_data)):
-                # Purge training set
-                train_idx_purged = purge_training_idxs(
-                    train_idx,
-                    test_idx[0],
-                    test_idx[-1] + 1,
-                    horizon=horizon
-                )
+            # STEP 8: Calibrate ensemble with Platt + isotonic regression
+            tprint("📈 Calibrating ensemble (Platt per model + isotonic on blend with entropy/volatility)...", "INFO")
 
-                if len(train_idx_purged) == 0:
-                    tprint(f"⚠️ Fold {fold_idx}: All training samples purged, skipping", "WARNING")
-                    continue
+            platt_calibrators, iso_regressor = calibrate_ensemble(
+                oof_predictions=oof_predictions_df,
+                y_true=binary_labels,
+                realized_returns=realized_returns,
+                meta_features=meta_features_enhanced,
+                method='platt_isotonic',
+                include_context=True  # Include entropy/volatility
+            )
 
-                # Get training and test data
-                X_train = meta_features.iloc[train_idx_purged]
-                y_train = binary_labels.iloc[train_idx_purged]
-                X_test = meta_features.iloc[test_idx]
-                y_test = binary_labels.iloc[test_idx]
+            # STEP 9: Generate final ensemble predictions
+            tprint("🎯 Generating final ensemble predictions...", "INFO")
 
-                # Filter out NaN labels
-                train_mask = ~y_train.isna()
-                test_mask = ~y_test.isna()
+            # Average OOF predictions after Platt calibration (for final probabilities)
+            if platt_calibrators:
+                # Apply Platt calibration to OOF predictions
+                calibrated_oof = pd.DataFrame(index=oof_predictions_df.index)
+                for model_name in oof_predictions_df.columns:
+                    if model_name in platt_calibrators:
+                        try:
+                            oof_vals = oof_predictions_df[model_name].fillna(0.5).values.reshape(-1, 1)
+                            calibrated_oof[model_name] = platt_calibrators[model_name].predict_proba(oof_vals)[:, 1]
+                        except:
+                            calibrated_oof[model_name] = oof_predictions_df[model_name]
+                    else:
+                        calibrated_oof[model_name] = oof_predictions_df[model_name]
 
-                if train_mask.sum() < 10 or test_mask.sum() < 5:
-                    tprint(f"⚠️ Fold {fold_idx}: Too few samples, skipping", "WARNING")
-                    continue
-
-                X_train_clean = X_train[train_mask].fillna(0)
-                y_train_clean = y_train[train_mask]
-                X_test_clean = X_test[test_mask].fillna(0)
-                y_test_clean = y_test[test_mask]
-
-                # Train model
-                model = RandomForestClassifier(
-                    n_estimators=100,
-                    max_depth=8,
-                    min_samples_leaf=20,  # Prevent overfitting
-                    random_state=42,
-                    n_jobs=-1
-                )
-                model.fit(X_train_clean, y_train_clean)
-
-                # Get probabilities
-                y_pred_proba = model.predict_proba(X_test_clean)[:, 1]
-
-                # Store out-of-fold probabilities
-                test_indices_with_labels = test_idx[test_mask]
-                oof_probabilities.iloc[test_indices_with_labels] = y_pred_proba
-
-                # Evaluate with proper metrics
-                try:
-                    auc = roc_auc_score(y_test_clean, y_pred_proba)
-                except:
-                    auc = 0.5
-
-                y_pred = (y_pred_proba >= 0.5).astype(int)
-                precision = precision_score(y_test_clean, y_pred, zero_division=0)
-                recall = recall_score(y_test_clean, y_pred, zero_division=0)
-                f1 = f1_score(y_test_clean, y_pred, zero_division=0)
-
-                cv_results.append({
-                    'fold': fold_idx,
-                    'auc': auc,
-                    'precision': precision,
-                    'recall': recall,
-                    'f1': f1,
-                    'n_train': len(y_train_clean),
-                    'n_test': len(y_test_clean)
-                })
-
-                tprint(f"✅ Fold {fold_idx}: AUC={auc:.3f}, Prec={precision:.3f}, Rec={recall:.3f}, F1={f1:.3f}", "INFO")
-
-            # STEP 7: Fit isotonic regression using OOF probabilities
-            tprint("📈 Fitting probability → expected return mapping (isotonic regression)...", "INFO")
-
-            oof_mask = ~oof_probabilities.isna() & ~realized_returns.isna()
-
-            if oof_mask.sum() < 20:
-                tprint("⚠️ Warning: Too few samples for isotonic regression, using simple threshold", "WARNING")
-                iso_regressor = None
+                ensemble_probs = calibrated_oof.mean(axis=1).values
             else:
-                iso_regressor = fit_probability_to_return_mapping(
-                    oof_probabilities[oof_mask].values,
-                    realized_returns[oof_mask].values,
-                    method='isotonic'
-                )
-                tprint(f"✅ Fitted mapping using {oof_mask.sum()} out-of-fold samples", "SUCCESS")
+                ensemble_probs = oof_predictions_df.mean(axis=1).values
 
-            # STEP 8: Train final model on all data
-            tprint("🎓 Training final meta-model on full dataset...", "INFO")
+            probabilities = ensemble_probs
+
+            # Compute CV metrics for reporting
+            cv_results = []
+            oof_mask = ~binary_labels.isna()
+            for col in oof_predictions_df.columns:
+                oof_mask &= ~oof_predictions_df[col].isna()
+
+            if oof_mask.sum() > 0:
+                y_oof = binary_labels[oof_mask]
+                for model_name in oof_predictions_df.columns:
+                    try:
+                        y_pred_proba = oof_predictions_df[model_name][oof_mask]
+                        auc = roc_auc_score(y_oof, y_pred_proba)
+                        y_pred = (y_pred_proba >= 0.5).astype(int)
+                        precision = precision_score(y_oof, y_pred, zero_division=0)
+                        recall = recall_score(y_oof, y_pred, zero_division=0)
+                        f1 = f1_score(y_oof, y_pred, zero_division=0)
+
+                        cv_results.append({
+                            'model': model_name,
+                            'auc': auc,
+                            'precision': precision,
+                            'recall': recall,
+                            'f1': f1
+                        })
+
+                        tprint(f"  📊 {model_name}: AUC={auc:.3f}, Prec={precision:.3f}, Rec={recall:.3f}, F1={f1:.3f}", "INFO")
+                    except Exception as e:
+                        tprint(f"  ⚠️ Could not compute metrics for {model_name}: {e}", "WARNING")
+
+            # STEP 10: Train final models on full dataset (for deployment)
+            tprint("🎓 Training final ensemble models on full dataset...", "INFO")
 
             full_mask = ~binary_labels.isna()
-            X_full = meta_features[full_mask].fillna(0)
+            X_full = meta_features_enhanced[full_mask].fillna(0)
             y_full = binary_labels[full_mask]
 
-            final_model = RandomForestClassifier(
-                n_estimators=100,
-                max_depth=8,
-                min_samples_leaf=20,
-                random_state=42,
-                n_jobs=-1
-            )
-            final_model.fit(X_full, y_full)
+            final_models = create_base_models({})
+            for model_name, model in final_models.items():
+                try:
+                    model.fit(X_full, y_full)
+                    tprint(f"  ✓ Trained final {model_name}", "INFO")
+                except Exception as e:
+                    tprint(f"  ❌ Failed to train final {model_name}: {e}", "ERROR")
 
-            # Generate predictions for all data
-            X_all = meta_features.fillna(0)
-            probabilities = final_model.predict_proba(X_all)[:, 1]
+            # Use first final model for feature importance reporting (RF preferred)
+            final_model = final_models.get('rf', list(final_models.values())[0])
 
-            # STEP 9: Translate to targets using isotonic regression
+            # STEP 11: Translate to targets using isotonic regression
             tprint("🔄 Translating probabilities to economic targets...", "INFO")
 
             if iso_regressor is not None:
@@ -1457,7 +1825,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         elif primary_signals['consensus'].iloc[i] < 0:
                             target_short.iloc[i] = probabilities[i] - threshold
 
-            # STEP 10: Create output DataFrame with enhanced features
+            # STEP 12: Create output DataFrame with enhanced features
             tprint("📦 Creating output DataFrame...", "INFO")
             labeled_data = market_data.copy()
 
@@ -1507,7 +1875,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 }
             )
 
-            # STEP 11: Generate comprehensive diagnostics report
+            # STEP 13: Generate comprehensive diagnostics report
             tprint("📊 Generating diagnostics report...", "INFO")
 
             # Create outcomes directory if it doesn't exist
@@ -1517,7 +1885,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             try:
                 diagnostics_path = generate_diagnostics_report(
                     labeled_data=labeled_data,
-                    meta_features=meta_features,
+                    meta_features=meta_features_enhanced,  # Use enhanced features with disagreement
                     binary_labels=binary_labels,
                     realized_returns=realized_returns,
                     smoothed_labels=smoothed_labels,
@@ -1535,13 +1903,17 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             avg_auc = np.mean([r['auc'] for r in cv_results]) if cv_results else 0.5
             avg_precision = np.mean([r['precision'] for r in cv_results]) if cv_results else 0.0
 
-            # Feature importances
-            feature_importances = dict(zip(meta_features.columns, final_model.feature_importances_))
-            top_features = sorted(feature_importances.items(), key=lambda x: x[1], reverse=True)[:10]
+            # Feature importances (use enhanced features)
+            try:
+                feature_importances = dict(zip(meta_features_enhanced.columns, final_model.feature_importances_))
+                top_features = sorted(feature_importances.items(), key=lambda x: x[1], reverse=True)[:10]
 
-            tprint("🎯 Top 10 features:", "INFO")
-            for feat, imp in top_features:
-                tprint(f"  {feat}: {imp:.4f}", "INFO")
+                tprint("🎯 Top 10 features:", "INFO")
+                for feat, imp in top_features:
+                    tprint(f"  {feat}: {imp:.4f}", "INFO")
+            except Exception as e:
+                tprint(f"⚠️ Could not compute feature importances: {e}", "WARNING")
+                top_features = []
 
             elapsed_time = (datetime.now() - start_time).total_seconds()
 
@@ -1571,13 +1943,23 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         'min_event_spacing': min_event_spacing,
                         'use_kalman_filtering': True,
                         'use_adaptive_thresholds': True,
-                        'use_kalman_label_smoothing': True
+                        'use_kalman_label_smoothing': True,
+                        'use_ensemble': True,
+                        'ensemble_models': ['lgbm', 'logreg', 'rf'],
+                        'use_platt_calibration': True,
+                        'use_isotonic_calibration': True,
+                        'include_signal_disagreement': True
                     },
                     'enhancements': {
                         'kalman_filtering': True,
                         'adaptive_thresholds': True,
                         'volatility_regimes': True,
-                        'smoothed_labels': True
+                        'smoothed_labels': True,
+                        'ensemble_models': True,
+                        'platt_calibration': True,
+                        'isotonic_calibration': True,
+                        'signal_disagreement': True,
+                        'kfold_cross_fitting': True
                     }
                 },
                 'cv_results': cv_results

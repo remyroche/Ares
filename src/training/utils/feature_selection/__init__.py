@@ -49,6 +49,11 @@ from .partial_information_decompositor import (
     PIDConfig,
     PIDResult
 )
+from .label_guided_interaction_discovery import (
+    LabelGuidedInteractionDiscovery,
+    LabelGuidedInteractionConfig,
+    InteractionCandidate
+)
 
 __all__ = [
     'FeatureSelectionFramework',
@@ -69,7 +74,10 @@ __all__ = [
     'CausalAnalyzer',
     'PartialInformationDecompositor',
     'PIDConfig',
-    'PIDResult'
+    'PIDResult',
+    'LabelGuidedInteractionDiscovery',
+    'LabelGuidedInteractionConfig',
+    'InteractionCandidate'
 ]
 
 __version__ = "2.0.0"

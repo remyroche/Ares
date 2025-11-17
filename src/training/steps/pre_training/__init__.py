@@ -37,7 +37,8 @@ except ImportError as e:
 # Import missing feature generation steps
 from .feature_generation_data_validation_step import FeatureGenerationDataValidationStep
 from .feature_generation_labeling_integration_step import FeatureGenerationLabelingIntegrationStep
-from .feature_generation_meta_labeling_step import FeatureGenerationMetaLabelingStep
+# NOTE: FeatureGenerationMetaLabelingStep moved to src/training/steps/market_analysis/
+# It is now registered in market_analysis/__init__.py
 from .feature_generation_feature_generation_step import FeatureGenerationFeatureGenerationStep
 from .feature_generation_period_lookback_optimization_step import FeatureGenerationPeriodLookbackOptimizationStep
 from .feature_generation_feature_selection_step import FeatureGenerationFeatureSelectionStep
@@ -47,7 +48,7 @@ from .regime_aware_feature_interaction_generation_step import RegimeAwareFeature
 # Register available steps with the global registry
 step_registry.register('feature_generation_data_validation_step', FeatureGenerationDataValidationStep)
 step_registry.register('feature_generation_labeling_integration_step', FeatureGenerationLabelingIntegrationStep)
-step_registry.register('feature_generation_meta_labeling_step', FeatureGenerationMetaLabelingStep)
+# feature_generation_meta_labeling_step now registered in market_analysis module
 step_registry.register('feature_generation_feature_generation_step', FeatureGenerationFeatureGenerationStep)
 step_registry.register('feature_generation_period_lookback_optimization_step', FeatureGenerationPeriodLookbackOptimizationStep)
 step_registry.register('feature_generation_feature_selection_step', FeatureGenerationFeatureSelectionStep)

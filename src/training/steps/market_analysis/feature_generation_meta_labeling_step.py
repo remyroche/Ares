@@ -246,49 +246,119 @@ def compute_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
     return rsi
 
 
+def compute_macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    """
+    Compute MACD (Moving Average Convergence Divergence).
+
+    Returns:
+        Tuple of (macd_line, signal_line, histogram)
+    """
+    ema_fast = close.ewm(span=fast, adjust=False).mean()
+    ema_slow = close.ewm(span=slow, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    histogram = macd_line - signal_line
+    return macd_line, signal_line, histogram
+
+
 def generate_primary_signals(
     df: pd.DataFrame,
     rsi_period: int = 14,
+    rsi_period_long: int = 56,  # 4x longer for multi-timeframe
     sma_fast: int = 10,
     sma_slow: int = 30,
     momentum_period: int = 10,
-    rsi_oversold: float = 30,
-    rsi_overbought: float = 70,
+    rsi_oversold: float = 25.0,  # LOOSER (was 30)
+    rsi_overbought: float = 75.0,  # LOOSER (was 70)
+    macd_fast: int = 12,
+    macd_slow: int = 26,
+    macd_signal: int = 9,
+    macd_fast_long: int = 48,  # 4x longer
+    macd_slow_long: int = 104,  # 4x longer
+    macd_signal_long: int = 36,  # 4x longer
+    macd_threshold: float = 0.02,  # LOOSER difference threshold
     momentum_threshold: float = 0.005
 ) -> pd.DataFrame:
     """
-    Generate primary trading signals from technical indicators.
+    Generate primary trading signals from technical indicators with LOOSER thresholds.
+
+    ENHANCED: Uses looser thresholds to generate more candidate signals for meta-model filtering.
+    Includes long-term indicators (4x periods) for multi-timeframe analysis.
 
     CRITICAL: These signals are FIXED and must never be re-optimized during CV.
     They define the "primary model" whose signals we will meta-label.
 
     Returns:
-        DataFrame with signal columns (rsi, ma, mom, consensus)
+        DataFrame with signal columns including raw indicator values for meta-features
     """
     signals = pd.DataFrame(index=df.index)
     df_local = df.copy()
 
-    # RSI signals
+    # ===== RSI SIGNALS (short + long term) =====
     df_local['rsi'] = compute_rsi(df_local['close'], period=rsi_period)
+    df_local['rsi_long'] = compute_rsi(df_local['close'], period=rsi_period_long)
+
+    # Short-term RSI signals (LOOSER thresholds: 25/75)
     signals['rsi'] = 0
     signals.loc[df_local['rsi'] < rsi_oversold, 'rsi'] = 1
     signals.loc[df_local['rsi'] > rsi_overbought, 'rsi'] = -1
 
-    # Moving average crossover signals
+    # Long-term RSI signals (for trend confirmation)
+    signals['rsi_long'] = 0
+    signals.loc[df_local['rsi_long'] < rsi_oversold, 'rsi_long'] = 1
+    signals.loc[df_local['rsi_long'] > rsi_overbought, 'rsi_long'] = -1
+
+    # ===== MACD SIGNALS (short + long term) =====
+    macd, macd_signal_line, macd_hist = compute_macd(
+        df_local['close'], macd_fast, macd_slow, macd_signal
+    )
+    macd_long, macd_signal_long_line, macd_hist_long = compute_macd(
+        df_local['close'], macd_fast_long, macd_slow_long, macd_signal_long
+    )
+
+    df_local['macd'] = macd
+    df_local['macd_signal'] = macd_signal_line
+    df_local['macd_hist'] = macd_hist
+    df_local['macd_hist_long'] = macd_hist_long
+
+    # MACD signals (based on histogram and threshold)
+    signals['macd'] = 0
+    # Bullish: histogram positive AND difference > threshold
+    signals.loc[(macd_hist > 0) & (macd_hist > macd_threshold), 'macd'] = 1
+    # Bearish: histogram negative AND difference < -threshold
+    signals.loc[(macd_hist < 0) & (macd_hist < -macd_threshold), 'macd'] = -1
+
+    # Long-term MACD (for trend confirmation)
+    signals['macd_long'] = 0
+    signals.loc[(macd_hist_long > 0) & (macd_hist_long > macd_threshold), 'macd_long'] = 1
+    signals.loc[(macd_hist_long < 0) & (macd_hist_long < -macd_threshold), 'macd_long'] = -1
+
+    # ===== MOVING AVERAGE CROSSOVER =====
     df_local['sma_fast'] = df_local['close'].rolling(sma_fast).mean()
     df_local['sma_slow'] = df_local['close'].rolling(sma_slow).mean()
     signals['ma'] = 0
     signals.loc[df_local['sma_fast'] > df_local['sma_slow'], 'ma'] = 1
     signals.loc[df_local['sma_fast'] < df_local['sma_slow'], 'ma'] = -1
 
-    # Momentum signals
+    # ===== MOMENTUM SIGNALS =====
     df_local['momentum'] = df_local['close'].pct_change(momentum_period)
     signals['mom'] = 0
     signals.loc[df_local['momentum'] > momentum_threshold, 'mom'] = 1
     signals.loc[df_local['momentum'] < -momentum_threshold, 'mom'] = -1
 
-    # Consensus signal: majority vote
-    signals['consensus'] = signals[['rsi', 'ma', 'mom']].sum(axis=1).apply(np.sign)
+    # ===== CONSENSUS SIGNAL =====
+    # Use all signals for consensus (including long-term for multi-timeframe agreement)
+    signal_cols = ['rsi', 'rsi_long', 'macd', 'macd_long', 'ma', 'mom']
+    signals['consensus'] = signals[signal_cols].sum(axis=1).apply(np.sign)
+
+    # Store raw indicator values for meta-features (signal disagreement, magnitude, etc.)
+    signals['rsi_value'] = df_local['rsi']
+    signals['rsi_long_value'] = df_local['rsi_long']
+    signals['macd_hist_value'] = df_local['macd_hist']
+    signals['macd_hist_long_value'] = df_local['macd_hist_long']
+    signals['sma_fast_value'] = df_local['sma_fast']
+    signals['sma_slow_value'] = df_local['sma_slow']
+    signals['momentum_value'] = df_local['momentum']
 
     return signals
 

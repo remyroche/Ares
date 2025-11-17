@@ -1,14 +1,23 @@
 """
-Feature Generation Meta-Labeling Step (Production Version).
+Feature Generation Meta-Labeling Step (Production Version - Enhanced).
 
 Major enhancements:
 1. Ensemble models (LGBM + LogisticRegression + RF) with soft voting
-2. K-fold cross-fitting to prevent leakage
+2. K-fold cross-fitting to prevent leakage (purged time-series CV)
 3. Volatility-adaptive labeling with Kalman filtering
 4. Robust feature engineering with RobustScaler
 5. Vectorized operations for performance
-6. Comprehensive diagnostics and calibration
+6. Comprehensive diagnostics and calibration (Platt + Isotonic)
 7. Production TPSL parameters (1% profit, 0.5% stop, 0.15% fee)
+
+NEW FEATURES (v2):
+8. Enhanced volatility-normalized features (MACD/ATR, slope/delta normalized by vol)
+9. Short-term autocorrelation and momentum metrics (3-bar autocorrelation, 2-4 bar momentum)
+10. Signal uncertainty features (model agreement count, probability range, entropy)
+11. Feature interactions (RSI slope × MACD, price distance × volatility-adjusted RSI)
+12. Signal persistence features aligned to 2-4 bars (direction persistence)
+13. Feature selection (low variance removal <1e-5, correlation pruning >0.98)
+14. Enhanced metrics tracking (Precision@K, Brier score, ECE, hit rates)
 
 Based on guidance from "Advances in Financial Machine Learning" by Marcos López de Prado.
 """
@@ -259,6 +268,24 @@ def compute_macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int =
     signal_line = macd_line.ewm(span=signal, adjust=False).mean()
     histogram = macd_line - signal_line
     return macd_line, signal_line, histogram
+
+
+def compute_autocorrelation(series: pd.Series, lag: int = 1) -> pd.Series:
+    """
+    Compute rolling autocorrelation at specified lag.
+
+    Args:
+        series: Time series data
+        lag: Lag for autocorrelation
+
+    Returns:
+        Rolling autocorrelation series
+    """
+    # Use rolling correlation with shifted version of itself
+    return series.rolling(window=20).apply(
+        lambda x: x[:-lag].corr(x[lag:]) if len(x) > lag else np.nan,
+        raw=False
+    )
 
 
 def generate_primary_signals(
@@ -608,7 +635,7 @@ def create_meta_features(
         features['ma_distance'] = df_local['sma_fast'] - df_local['sma_slow']
         features['momentum'] = df_local['momentum']
 
-    # ===== VOLATILITY-NORMALIZED FEATURES =====
+    # ===== VOLATILITY-NORMALIZED FEATURES (ENHANCED) =====
 
     # Normalize momentum and MA distance by current volatility
     vol_1h = features['volatility_1h'].replace(0, np.nan)  # Avoid division by zero
@@ -619,6 +646,25 @@ def create_meta_features(
     else:
         features['momentum_per_vol'] = features['momentum'] / (vol_1h + 1e-8)
         features['ma_distance_per_vol'] = features['ma_distance'] / (df['close'] * vol_1h + 1e-8)
+
+    # NEW: MACD histogram normalized by ATR
+    macd_line, macd_signal_line, macd_hist = compute_macd(df['close'])
+    features['macd_hist_raw'] = macd_hist
+    features['macd_hist_per_atr'] = macd_hist / (features['atr_14'] + 1e-8)
+
+    # NEW: RSI slope normalized by short-term volatility
+    rsi_slope = df_local['rsi'].diff()
+    features['rsi_slope'] = rsi_slope
+    features['rsi_slope_per_vol'] = rsi_slope / (vol_1h + 1e-8)
+
+    # NEW: Price change normalized by ATR (volatility-adjusted momentum)
+    price_change = df['close'].diff()
+    features['price_change_per_atr'] = price_change / (features['atr_14'] + 1e-8)
+
+    # NEW: MACD delta (change in histogram) normalized by volatility
+    macd_delta = macd_hist.diff()
+    features['macd_delta'] = macd_delta
+    features['macd_delta_per_vol'] = macd_delta / (vol_1h + 1e-8)
 
     # ===== TRADITIONAL VOLATILITY FEATURES (BACKWARD COMPATIBLE) =====
 
@@ -690,6 +736,70 @@ def create_meta_features(
     # Price entropy using returns distribution
     returns_abs = returns.abs().rolling(20).mean()
     features['returns_entropy'] = -returns_abs * np.log(returns_abs + 1e-8)
+
+    # ===== SHORT-TERM AUTOCORRELATION / MOMENTUM METRICS (NEW) =====
+
+    # 3-bar autocorrelation for price, RSI, MACD histogram
+    features['price_autocorr_3'] = compute_autocorrelation(df['close'].pct_change(), lag=3)
+    features['rsi_autocorr_3'] = compute_autocorrelation(df_local['rsi'], lag=3)
+    features['macd_hist_autocorr_3'] = compute_autocorrelation(macd_hist, lag=3)
+
+    # Short-term momentum over last 2-4 bars
+    # RSI delta sum (momentum in RSI)
+    features['rsi_delta_2bar'] = df_local['rsi'].diff().rolling(2).sum()
+    features['rsi_delta_3bar'] = df_local['rsi'].diff().rolling(3).sum()
+    features['rsi_delta_4bar'] = df_local['rsi'].diff().rolling(4).sum()
+
+    # MACD histogram delta sum (momentum in MACD)
+    features['macd_delta_2bar'] = macd_hist.diff().rolling(2).sum()
+    features['macd_delta_3bar'] = macd_hist.diff().rolling(3).sum()
+    features['macd_delta_4bar'] = macd_hist.diff().rolling(4).sum()
+
+    # Price momentum over 2-4 bars
+    features['price_momentum_2bar'] = df['close'].pct_change(2)
+    features['price_momentum_3bar'] = df['close'].pct_change(3)
+    features['price_momentum_4bar'] = df['close'].pct_change(4)
+
+    # Persistence: How many consecutive bars has signal been positive/negative?
+    price_change_sign = np.sign(df['close'].diff())
+    features['price_direction_persistence'] = price_change_sign.rolling(4).apply(
+        lambda x: (x == x.iloc[-1]).sum() if len(x) > 0 else 0,
+        raw=False
+    )
+
+    # RSI direction persistence (useful for mean reversion)
+    rsi_change_sign = np.sign(df_local['rsi'].diff())
+    features['rsi_direction_persistence'] = rsi_change_sign.rolling(4).apply(
+        lambda x: (x == x.iloc[-1]).sum() if len(x) > 0 else 0,
+        raw=False
+    )
+
+    # MACD histogram persistence
+    macd_hist_sign = np.sign(macd_hist)
+    features['macd_hist_persistence'] = macd_hist_sign.rolling(4).apply(
+        lambda x: (x == x.iloc[-1]).sum() if len(x) > 0 else 0,
+        raw=False
+    )
+
+    # ===== FEATURE INTERACTIONS (NEW) =====
+
+    # RSI slope × MACD histogram magnitude (strong combo indicator)
+    features['rsi_slope_x_macd_mag'] = features['rsi_slope'] * macd_hist.abs()
+
+    # Price distance from EMA × volatility-adjusted RSI change
+    ema_20 = df['close'].ewm(span=20).mean()
+    price_distance_from_ema = (df['close'] - ema_20) / (ema_20 + 1e-8)
+    rsi_change_vol_adj = features['rsi_slope_per_vol']
+    features['price_dist_x_rsi_change'] = price_distance_from_ema * rsi_change_vol_adj
+
+    # Volatility × momentum (high vol + strong momentum = potential breakout)
+    features['vol_x_momentum'] = features['volatility_1h'] * features['momentum_10'].abs()
+
+    # ATR ratio × MACD histogram (volatility context for MACD)
+    features['atr_ratio_x_macd'] = features['atr_ratio'] * macd_hist.abs()
+
+    # Volume ratio × momentum (volume confirmation)
+    features['volume_x_momentum'] = features['volume_ratio'] * features['momentum_5'].abs()
 
     # ===== TIME-BASED FEATURES =====
 
@@ -1457,17 +1567,24 @@ def add_signal_disagreement(
     meta_features: pd.DataFrame
 ) -> pd.DataFrame:
     """
-    Add signal disagreement feature (std dev across ensemble predictions).
+    Add signal uncertainty / model disagreement features (ENHANCED).
 
-    This is one of the strongest predictors of signal failure.
-    High disagreement = models don't agree = lower confidence.
+    This captures model consensus and uncertainty, which are strong predictors of signal quality.
+    High disagreement = models don't agree = lower confidence = worse signal quality.
+
+    NEW FEATURES:
+    - signal_disagreement: Std dev across ensemble predictions
+    - signal_disagreement_ema: Smoothed disagreement
+    - n_models_agreeing: Number of models with similar predictions (within 0.1)
+    - model_prob_range: Range between min and max model probabilities
+    - model_entropy: Entropy of model predictions (measure of uncertainty)
 
     Args:
         oof_predictions: Out-of-fold predictions from each base model
         meta_features: Existing meta-features
 
     Returns:
-        Updated meta-features with disagreement column
+        Updated meta-features with disagreement columns
     """
     # Compute std dev across model predictions
     disagreement = oof_predictions.std(axis=1, skipna=True)
@@ -1476,12 +1593,321 @@ def add_signal_disagreement(
     meta_features_updated = meta_features.copy()
     meta_features_updated['signal_disagreement'] = disagreement
 
-    # Also add mean and max disagreement as features
+    # Smoothed disagreement
     meta_features_updated['signal_disagreement_ema'] = disagreement.ewm(span=10).mean()
 
-    tprint(f"  ✓ Added signal disagreement (mean={disagreement.mean():.3f}, std={disagreement.std():.3f})", "INFO")
+    # NEW: Count how many models agree (within 0.1 threshold of mean)
+    mean_pred = oof_predictions.mean(axis=1)
+    n_agreeing = []
+    for idx in range(len(oof_predictions)):
+        row = oof_predictions.iloc[idx]
+        mean_val = mean_pred.iloc[idx]
+        if pd.isna(mean_val):
+            n_agreeing.append(np.nan)
+        else:
+            # Count models within 0.1 of mean
+            count = ((row - mean_val).abs() <= 0.1).sum()
+            n_agreeing.append(count)
+
+    meta_features_updated['n_models_agreeing'] = n_agreeing
+
+    # NEW: Range of model predictions (max - min)
+    model_prob_range = oof_predictions.max(axis=1) - oof_predictions.min(axis=1)
+    meta_features_updated['model_prob_range'] = model_prob_range
+
+    # NEW: Entropy of model predictions (measure of uncertainty)
+    # Normalize predictions to sum to 1, then compute entropy
+    model_entropy = []
+    for idx in range(len(oof_predictions)):
+        row = oof_predictions.iloc[idx].dropna()
+        if len(row) > 0:
+            # Normalize
+            row_norm = row / (row.sum() + 1e-8)
+            # Compute entropy
+            entropy = -(row_norm * np.log(row_norm + 1e-8)).sum()
+            model_entropy.append(entropy)
+        else:
+            model_entropy.append(np.nan)
+
+    meta_features_updated['model_entropy'] = model_entropy
+
+    tprint(f"  ✓ Added signal uncertainty features:", "INFO")
+    tprint(f"    - Disagreement (std): mean={disagreement.mean():.3f}, std={disagreement.std():.3f}", "INFO")
+    tprint(f"    - Model agreement count: mean={np.nanmean(n_agreeing):.1f}", "INFO")
+    tprint(f"    - Probability range: mean={model_prob_range.mean():.3f}", "INFO")
+    tprint(f"    - Model entropy: mean={np.nanmean(model_entropy):.3f}", "INFO")
 
     return meta_features_updated
+
+
+def compute_precision_at_k(
+    y_true: np.ndarray,
+    y_pred_proba: np.ndarray,
+    k_values: List[int] = [10, 20, 50, 100]
+) -> Dict[str, float]:
+    """
+    Compute Precision@K - precision for top-K predicted positives.
+
+    This measures how many of the top-K highest probability predictions are actually positive.
+    Critical metric for trading: we only want to trade the highest confidence signals.
+
+    Args:
+        y_true: Binary ground truth labels
+        y_pred_proba: Predicted probabilities
+        k_values: List of K values to evaluate
+
+    Returns:
+        Dictionary mapping k to precision@k
+    """
+    results = {}
+
+    # Sort by probability (descending)
+    sorted_indices = np.argsort(-y_pred_proba)
+
+    for k in k_values:
+        if k > len(y_true):
+            k = len(y_true)
+
+        # Get top-K predictions
+        top_k_indices = sorted_indices[:k]
+        top_k_labels = y_true[top_k_indices]
+
+        # Precision = fraction of top-K that are positive
+        precision_k = top_k_labels.sum() / k if k > 0 else 0.0
+        results[f'precision@{k}'] = precision_k
+
+    return results
+
+
+def compute_brier_score(y_true: np.ndarray, y_pred_proba: np.ndarray) -> float:
+    """
+    Compute Brier score - mean squared error between predicted probabilities and outcomes.
+
+    Lower is better (0 = perfect, 1 = worst possible).
+    Measures both calibration and refinement (discrimination).
+
+    Args:
+        y_true: Binary ground truth labels
+        y_pred_proba: Predicted probabilities
+
+    Returns:
+        Brier score
+    """
+    return np.mean((y_pred_proba - y_true) ** 2)
+
+
+def compute_expected_calibration_error(
+    y_true: np.ndarray,
+    y_pred_proba: np.ndarray,
+    n_bins: int = 10
+) -> float:
+    """
+    Compute Expected Calibration Error (ECE).
+
+    ECE measures calibration: do predicted probabilities match actual frequencies?
+    - ECE = 0: Perfect calibration
+    - ECE > 0.1: Poor calibration
+
+    Args:
+        y_true: Binary ground truth labels
+        y_pred_proba: Predicted probabilities
+        n_bins: Number of bins for calibration curve
+
+    Returns:
+        Expected calibration error
+    """
+    # Bin predictions
+    bin_edges = np.linspace(0, 1, n_bins + 1)
+    bin_indices = np.digitize(y_pred_proba, bin_edges[:-1]) - 1
+    bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+    ece = 0.0
+    total_samples = len(y_true)
+
+    for bin_idx in range(n_bins):
+        # Find samples in this bin
+        in_bin = (bin_indices == bin_idx)
+        n_in_bin = in_bin.sum()
+
+        if n_in_bin == 0:
+            continue
+
+        # Mean predicted probability in this bin
+        mean_pred_prob = y_pred_proba[in_bin].mean()
+
+        # Actual frequency of positives in this bin
+        actual_freq = y_true[in_bin].mean()
+
+        # Weighted absolute difference
+        ece += (n_in_bin / total_samples) * abs(mean_pred_prob - actual_freq)
+
+    return ece
+
+
+def compute_hit_rate(
+    y_true: np.ndarray,
+    y_pred_proba: np.ndarray,
+    threshold: float = 0.5
+) -> float:
+    """
+    Compute hit rate (accuracy) above threshold.
+
+    Args:
+        y_true: Binary ground truth labels
+        y_pred_proba: Predicted probabilities
+        threshold: Probability threshold
+
+    Returns:
+        Hit rate (accuracy)
+    """
+    y_pred = (y_pred_proba >= threshold).astype(int)
+    return (y_pred == y_true).mean()
+
+
+def compute_all_metrics(
+    y_true: pd.Series,
+    y_pred_proba: np.ndarray,
+    probabilities_valid: np.ndarray,
+    k_values: List[int] = [10, 20, 50, 100]
+) -> Dict[str, float]:
+    """
+    Compute all enhanced metrics for model evaluation.
+
+    Args:
+        y_true: Binary ground truth labels
+        y_pred_proba: Predicted probabilities (full)
+        probabilities_valid: Probabilities for valid samples only
+        k_values: K values for Precision@K
+
+    Returns:
+        Dictionary of all metrics
+    """
+    metrics = {}
+
+    # Filter to valid samples
+    valid_mask = ~y_true.isna()
+    y_true_clean = y_true[valid_mask].values
+    y_pred_clean = probabilities_valid
+
+    if len(y_true_clean) < 10:
+        return metrics
+
+    try:
+        # Precision@K
+        precision_k_results = compute_precision_at_k(y_true_clean, y_pred_clean, k_values)
+        metrics.update(precision_k_results)
+
+        # Brier score
+        metrics['brier_score'] = compute_brier_score(y_true_clean, y_pred_clean)
+
+        # Expected Calibration Error
+        metrics['ece'] = compute_expected_calibration_error(y_true_clean, y_pred_clean, n_bins=10)
+
+        # Hit rate at different thresholds
+        metrics['hit_rate_0.5'] = compute_hit_rate(y_true_clean, y_pred_clean, threshold=0.5)
+        metrics['hit_rate_0.6'] = compute_hit_rate(y_true_clean, y_pred_clean, threshold=0.6)
+        metrics['hit_rate_0.7'] = compute_hit_rate(y_true_clean, y_pred_clean, threshold=0.7)
+
+        # Standard metrics
+        metrics['auc'] = roc_auc_score(y_true_clean, y_pred_clean)
+
+        y_pred_binary = (y_pred_clean >= 0.5).astype(int)
+        metrics['precision'] = precision_score(y_true_clean, y_pred_binary, zero_division=0)
+        metrics['recall'] = recall_score(y_true_clean, y_pred_binary, zero_division=0)
+        metrics['f1'] = f1_score(y_true_clean, y_pred_binary, zero_division=0)
+
+    except Exception as e:
+        tprint(f"⚠️ Warning: Could not compute some metrics: {e}", "WARNING")
+
+    return metrics
+
+
+def apply_feature_selection(
+    X: pd.DataFrame,
+    y: pd.Series,
+    variance_threshold: float = 1e-5,
+    correlation_threshold: float = 0.98,
+    verbose: bool = True
+) -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Apply feature selection to remove low-variance and highly correlated features.
+
+    Two-stage feature selection:
+    1. Remove features with very low variance (< variance_threshold on normalized scale)
+    2. Remove highly correlated features (correlation > correlation_threshold)
+
+    Args:
+        X: Feature matrix
+        y: Target labels
+        variance_threshold: Minimum variance threshold (normalized scale)
+        correlation_threshold: Maximum correlation threshold (0.98 for tree models, 0.95 for linear)
+        verbose: Print selection statistics
+
+    Returns:
+        Tuple of (filtered_features, removed_feature_names)
+    """
+    if verbose:
+        tprint(f"🔍 Feature selection: Starting with {len(X.columns)} features", "INFO")
+
+    removed_features = []
+    X_filtered = X.copy()
+
+    # STAGE 1: Remove low-variance features
+    if verbose:
+        tprint(f"  Stage 1: Removing features with variance < {variance_threshold}", "INFO")
+
+    # Normalize features first (to put them on same scale)
+    X_normalized = (X_filtered - X_filtered.mean()) / (X_filtered.std() + 1e-8)
+
+    # Compute variance on normalized features
+    feature_variances = X_normalized.var()
+
+    # Find low-variance features
+    low_var_features = feature_variances[feature_variances < variance_threshold].index.tolist()
+
+    if low_var_features:
+        if verbose:
+            tprint(f"    Removing {len(low_var_features)} low-variance features", "INFO")
+        X_filtered = X_filtered.drop(columns=low_var_features)
+        removed_features.extend(low_var_features)
+
+    # STAGE 2: Remove highly correlated features
+    if verbose:
+        tprint(f"  Stage 2: Removing features with correlation > {correlation_threshold}", "INFO")
+
+    # Compute correlation matrix
+    corr_matrix = X_filtered.corr().abs()
+
+    # Find pairs of highly correlated features
+    highly_correlated = []
+    for i in range(len(corr_matrix.columns)):
+        for j in range(i + 1, len(corr_matrix.columns)):
+            if corr_matrix.iloc[i, j] > correlation_threshold:
+                # Keep the feature with higher variance (more informative)
+                col_i = corr_matrix.columns[i]
+                col_j = corr_matrix.columns[j]
+
+                var_i = X_filtered[col_i].var()
+                var_j = X_filtered[col_j].var()
+
+                # Remove the one with lower variance
+                to_remove = col_j if var_i > var_j else col_i
+                highly_correlated.append(to_remove)
+
+    # Remove duplicates
+    highly_correlated = list(set(highly_correlated))
+
+    if highly_correlated:
+        if verbose:
+            tprint(f"    Removing {len(highly_correlated)} highly correlated features", "INFO")
+        X_filtered = X_filtered.drop(columns=highly_correlated, errors='ignore')
+        removed_features.extend(highly_correlated)
+
+    if verbose:
+        tprint(f"✅ Feature selection complete: {len(X_filtered.columns)} features remaining", "SUCCESS")
+        tprint(f"   Removed {len(removed_features)} features total", "INFO")
+
+    return X_filtered, removed_features
 
 
 def select_top_k_signals(
@@ -1700,23 +2126,38 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 use_kalman=True  # Enable Kalman filtering
             )
 
+            # STEP 5.5: Apply feature selection to remove low-variance and highly correlated features
+            tprint("🔍 Applying feature selection (variance + correlation pruning)...", "INFO")
+
+            # Use correlation threshold of 0.98 for tree models (LGBM, RF)
+            # For pure linear models, you might use 0.95
+            meta_features_selected, removed_features = apply_feature_selection(
+                X=meta_features,
+                y=binary_labels,
+                variance_threshold=1e-5,
+                correlation_threshold=0.98,
+                verbose=True
+            )
+
+            tprint(f"✅ Feature selection complete: {len(meta_features_selected.columns)} features selected", "SUCCESS")
+
             # STEP 6: Train ensemble meta-models with K-fold cross-fitting
             tprint("🎓 Training ensemble meta-models (LGBM + LogReg + RF) with purged K-fold CV...", "INFO")
 
-            # Train ensemble and get OOF predictions
+            # Train ensemble and get OOF predictions using SELECTED features
             trained_models, oof_predictions_df = train_ensemble_with_kfold(
-                X=meta_features,
+                X=meta_features_selected,
                 y=binary_labels,
                 horizon=horizon,
                 n_splits=5,
                 verbose=True
             )
 
-            # STEP 7: Add signal disagreement feature
-            tprint("🔧 Adding signal disagreement feature...", "INFO")
+            # STEP 7: Add signal disagreement / uncertainty features
+            tprint("🔧 Adding signal uncertainty features (disagreement, agreement count, entropy)...", "INFO")
             meta_features_enhanced = add_signal_disagreement(
                 oof_predictions=oof_predictions_df,
-                meta_features=meta_features
+                meta_features=meta_features_selected  # Use selected features
             )
 
             # STEP 8: Calibrate ensemble with Platt + isotonic regression
@@ -1754,7 +2195,9 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
 
             probabilities = ensemble_probs
 
-            # Compute CV metrics for reporting
+            # Compute CV metrics for reporting (ENHANCED with Precision@K, Brier, ECE)
+            tprint("📊 Computing enhanced metrics (Precision@K, Brier score, ECE)...", "INFO")
+
             cv_results = []
             oof_mask = ~binary_labels.isna()
             for col in oof_predictions_df.columns:
@@ -1764,24 +2207,52 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 y_oof = binary_labels[oof_mask]
                 for model_name in oof_predictions_df.columns:
                     try:
-                        y_pred_proba = oof_predictions_df[model_name][oof_mask]
-                        auc = roc_auc_score(y_oof, y_pred_proba)
-                        y_pred = (y_pred_proba >= 0.5).astype(int)
-                        precision = precision_score(y_oof, y_pred, zero_division=0)
-                        recall = recall_score(y_oof, y_pred, zero_division=0)
-                        f1 = f1_score(y_oof, y_pred, zero_division=0)
+                        y_pred_proba = oof_predictions_df[model_name][oof_mask].values
 
-                        cv_results.append({
-                            'model': model_name,
-                            'auc': auc,
-                            'precision': precision,
-                            'recall': recall,
-                            'f1': f1
-                        })
+                        # Compute all enhanced metrics
+                        model_metrics = compute_all_metrics(
+                            y_true=binary_labels,
+                            y_pred_proba=oof_predictions_df[model_name].values,
+                            probabilities_valid=y_pred_proba,
+                            k_values=[10, 20, 50, 100]
+                        )
 
-                        tprint(f"  📊 {model_name}: AUC={auc:.3f}, Prec={precision:.3f}, Rec={recall:.3f}, F1={f1:.3f}", "INFO")
+                        model_metrics['model'] = model_name
+
+                        cv_results.append(model_metrics)
+
+                        # Print summary
+                        tprint(f"  📊 {model_name}:", "INFO")
+                        tprint(f"      AUC={model_metrics.get('auc', 0):.3f}, "
+                               f"Brier={model_metrics.get('brier_score', 0):.3f}, "
+                               f"ECE={model_metrics.get('ece', 0):.3f}", "INFO")
+                        tprint(f"      Precision@10={model_metrics.get('precision@10', 0):.3f}, "
+                               f"Precision@50={model_metrics.get('precision@50', 0):.3f}", "INFO")
+
                     except Exception as e:
                         tprint(f"  ⚠️ Could not compute metrics for {model_name}: {e}", "WARNING")
+
+                # Compute ensemble metrics
+                try:
+                    ensemble_probs_oof = oof_predictions_df[oof_mask].mean(axis=1).values
+                    ensemble_metrics = compute_all_metrics(
+                        y_true=binary_labels,
+                        y_pred_proba=ensemble_probs,
+                        probabilities_valid=ensemble_probs_oof,
+                        k_values=[10, 20, 50, 100]
+                    )
+                    ensemble_metrics['model'] = 'ensemble'
+                    cv_results.append(ensemble_metrics)
+
+                    tprint(f"  📊 ENSEMBLE:", "INFO")
+                    tprint(f"      AUC={ensemble_metrics.get('auc', 0):.3f}, "
+                           f"Brier={ensemble_metrics.get('brier_score', 0):.3f}, "
+                           f"ECE={ensemble_metrics.get('ece', 0):.3f}", "INFO")
+                    tprint(f"      Precision@10={ensemble_metrics.get('precision@10', 0):.3f}, "
+                           f"Precision@50={ensemble_metrics.get('precision@50', 0):.3f}", "INFO")
+
+                except Exception as e:
+                    tprint(f"  ⚠️ Could not compute ensemble metrics: {e}", "WARNING")
 
             # STEP 10: Train final models on full dataset (for deployment)
             tprint("🎓 Training final ensemble models on full dataset...", "INFO")
@@ -1899,9 +2370,13 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 tprint(f"⚠️ Warning: Could not generate diagnostics report: {e}", "WARNING")
                 diagnostics_path = None
 
-            # Calculate metrics
-            avg_auc = np.mean([r['auc'] for r in cv_results]) if cv_results else 0.5
-            avg_precision = np.mean([r['precision'] for r in cv_results]) if cv_results else 0.0
+            # Calculate aggregate metrics from CV results (ENHANCED)
+            avg_auc = np.mean([r.get('auc', 0.5) for r in cv_results if 'auc' in r]) if cv_results else 0.5
+            avg_precision = np.mean([r.get('precision', 0) for r in cv_results if 'precision' in r]) if cv_results else 0.0
+            avg_brier = np.mean([r.get('brier_score', 0) for r in cv_results if 'brier_score' in r]) if cv_results else 0.0
+            avg_ece = np.mean([r.get('ece', 0) for r in cv_results if 'ece' in r]) if cv_results else 0.0
+            avg_precision_at_10 = np.mean([r.get('precision@10', 0) for r in cv_results if 'precision@10' in r]) if cv_results else 0.0
+            avg_precision_at_50 = np.mean([r.get('precision@50', 0) for r in cv_results if 'precision@50' in r]) if cv_results else 0.0
 
             # Feature importances (use enhanced features)
             try:
@@ -1932,8 +2407,15 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     'median_return': float(median_return),
                     'cv_mean_auc': float(avg_auc),
                     'cv_mean_precision': float(avg_precision),
+                    'cv_mean_brier_score': float(avg_brier),
+                    'cv_mean_ece': float(avg_ece),
+                    'cv_mean_precision@10': float(avg_precision_at_10),
+                    'cv_mean_precision@50': float(avg_precision_at_50),
                     'n_cv_folds': len(cv_results),
                     'elapsed_seconds': elapsed_time,
+                    'n_features_before_selection': len(meta_features.columns),
+                    'n_features_after_selection': len(meta_features_selected.columns),
+                    'n_features_removed': len(removed_features),
                     'top_features': dict(top_features),
                     'config': {
                         'profit_threshold': profit_threshold,
@@ -1959,14 +2441,25 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         'platt_calibration': True,
                         'isotonic_calibration': True,
                         'signal_disagreement': True,
-                        'kfold_cross_fitting': True
+                        'kfold_cross_fitting': True,
+                        'volatility_normalized_features': True,
+                        'short_term_autocorrelation': True,
+                        'signal_uncertainty_features': True,
+                        'feature_interactions': True,
+                        'signal_persistence': True,
+                        'feature_selection': True,
+                        'enhanced_metrics': ['precision@k', 'brier_score', 'ece', 'hit_rate']
                     }
                 },
                 'cv_results': cv_results
             }
 
             tprint(f"✅ Enhanced meta-labeling completed in {elapsed_time:.1f}s", "SUCCESS")
-            tprint(f"📊 Performance: AUC={avg_auc:.3f}, Win Rate={win_rate:.1%}, Mean Return={mean_return:.2%}", "SUCCESS")
+            tprint(f"📊 Performance:", "SUCCESS")
+            tprint(f"   - AUC={avg_auc:.3f}, Brier={avg_brier:.3f}, ECE={avg_ece:.3f}", "SUCCESS")
+            tprint(f"   - Precision@10={avg_precision_at_10:.3f}, Precision@50={avg_precision_at_50:.3f}", "SUCCESS")
+            tprint(f"   - Win Rate={win_rate:.1%}, Mean Return={mean_return:.2%}", "SUCCESS")
+            tprint(f"   - Features: {len(meta_features_selected.columns)} selected (removed {len(removed_features)})", "SUCCESS")
 
             return result
 

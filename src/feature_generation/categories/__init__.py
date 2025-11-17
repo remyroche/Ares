@@ -214,6 +214,14 @@ from .ensemble_disagreement import (
     get_core_feature_names
 )
 
+# Labeling features for meta-labeling (signal quality assessment)
+from .labeling import (
+    LabelingFeatureGenerator,
+    MarketFeaturesGenerator,
+    SignalFeaturesGenerator,
+    LabelingFeatureConfig
+)
+
 from .microstructure_features import create_default_microstructure_generators
 from .autoencoder import create_default_autoencoder_generators
 from .representation_learning import (
@@ -435,4 +443,9 @@ __all__ = [
     "MultiTimeframeEWMAVolatilityGenerator",
     "MultiTimeframeEWMATrendGenerator",
     "MultiTimeframeEWMAVolumeGenerator",
+    # Labeling features for meta-labeling
+    "LabelingFeatureGenerator",
+    "MarketFeaturesGenerator",
+    "SignalFeaturesGenerator",
+    "LabelingFeatureConfig",
 ]

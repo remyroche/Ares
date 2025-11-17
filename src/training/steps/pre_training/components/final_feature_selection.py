@@ -58,11 +58,14 @@ class FinalFeatureSelectionConfig:
         mi_proxy_folds: int = 5,
         mi_proxy_min_quantile: float = 0.3,
         pre_lgbm_min_stability: float = 0.2,
-        pre_lgbm_correlation_threshold: float = 0.8
+        pre_lgbm_correlation_threshold: float = 0.8,
+        min_selection_frequency: float = 0.3,
+        enable_cv_frequency_filter: bool = True,
+        cv_frequency_folds: int = 5
     ):
         """
         Initialize final feature selection configuration.
-        
+
         Args:
             max_features: Maximum number of features to select
             min_features: Minimum number of features to select
@@ -71,6 +74,9 @@ class FinalFeatureSelectionConfig:
             use_tree_based: Whether to use tree-based feature importance
             use_permutation_importance: Whether to use permutation importance (captures interactions) vs standard Gini importance
             stability_weight: Weight for stability in ranking (0-1). 0=pure importance, 0.3=30% stability, 1=pure stability
+            min_selection_frequency: Minimum frequency (0-1) for a feature to be selected across CV folds (default: 0.3 = 30%)
+            enable_cv_frequency_filter: Whether to enable CV-based frequency filtering
+            cv_frequency_folds: Number of CV folds for frequency-based filtering
         """
         self.max_features = max_features
         self.min_features = min_features
@@ -84,6 +90,9 @@ class FinalFeatureSelectionConfig:
         self.mi_proxy_min_quantile = mi_proxy_min_quantile
         self.pre_lgbm_min_stability = pre_lgbm_min_stability
         self.pre_lgbm_correlation_threshold = pre_lgbm_correlation_threshold
+        self.min_selection_frequency = min_selection_frequency
+        self.enable_cv_frequency_filter = enable_cv_frequency_filter
+        self.cv_frequency_folds = cv_frequency_folds
 
 
 class FinalFeatureSelectionComponent:
@@ -116,6 +125,29 @@ class FinalFeatureSelectionComponent:
         self.baseline_comparison: Optional[Dict[str, Any]] = None
         self.method_results: Optional[Dict[str, Any]] = None
         
+    def _filter_target_columns(self, feature_names: List[str], X: pd.DataFrame) -> tuple[List[str], pd.DataFrame]:
+        """
+        Filter out target columns from feature names and DataFrame.
+
+        Args:
+            feature_names: List of feature names
+            X: Feature matrix
+
+        Returns:
+            Tuple of (filtered_feature_names, filtered_X)
+        """
+        # Exclude any column whose name starts with 'target_'
+        target_columns = [col for col in feature_names if col.startswith('target_')]
+
+        if target_columns:
+            self.logger.warning(f"🚨 TARGET LEAKAGE DETECTED: Excluding {len(target_columns)} target columns from features: {target_columns}")
+            filtered_features = [col for col in feature_names if not col.startswith('target_')]
+            # Also filter from X if it's a DataFrame with those columns
+            X_filtered = X[[col for col in X.columns if not col.startswith('target_')]]
+            return filtered_features, X_filtered
+
+        return feature_names, X
+
     def select_features(
         self,
         X: pd.DataFrame,
@@ -124,12 +156,12 @@ class FinalFeatureSelectionComponent:
     ) -> List[str]:
         """
         Select final features based on the configuration.
-        
+
         Args:
             X: Feature matrix
             y: Target variable
             feature_names: Optional list of feature names
-            
+
         Returns:
             List of selected feature names
         """
@@ -139,7 +171,14 @@ class FinalFeatureSelectionComponent:
             else:
                 feature_names_list = list(feature_names)
             feature_names = feature_names_list
-            
+
+            # CRITICAL: Filter out target columns to prevent target leakage
+            self.logger.info("🔍 Checking for target column leakage...")
+            feature_names, X = self._filter_target_columns(feature_names, X)
+            if len(feature_names) == 0:
+                self.logger.error("❌ No features left after filtering target columns!")
+                return []
+
             # CRITICAL: Validate input data for NaN values
             y_nan_count = y.isna().sum()
             if y_nan_count > 0:
@@ -157,7 +196,14 @@ class FinalFeatureSelectionComponent:
             self.logger.info("Applying feature combination with duplicate detection...")
             X = self._combine_features(X)
             feature_names = list(X.columns)
-            
+
+            # CRITICAL: Re-check for target columns after feature combination
+            self.logger.info("🔍 Re-checking for target column leakage after feature combination...")
+            feature_names, X = self._filter_target_columns(feature_names, X)
+            if len(feature_names) == 0:
+                self.logger.error("❌ No features left after filtering target columns post-combination!")
+                return []
+
             # CRITICAL FIX: Remove constant/low-variance features BEFORE correlation
             self.logger.info("🔍 Filtering low-variance features...")
             variance_threshold = 0.01
@@ -350,10 +396,33 @@ class FinalFeatureSelectionComponent:
             except Exception as e:
                 self.logger.warning(f"⚠️ Stability gating failed, continuing without hard filter: {e}")
 
+            # Step 3.9: Apply CV-based selection frequency filtering if enabled
+            enable_cv_filter = getattr(self.config, 'enable_cv_frequency_filter', True)
+            min_freq = getattr(self.config, 'min_selection_frequency', 0.3)
+            cv_folds = getattr(self.config, 'cv_frequency_folds', 5)
+
+            if enable_cv_filter and len(ranked_features) > 0:
+                self.logger.info(
+                    f"📊 Step 3.9: Applying CV-based selection frequency filter "
+                    f"(min_frequency={min_freq}, cv_folds={cv_folds})"
+                )
+                ranked_features = self._filter_by_cv_selection_frequency(
+                    X_prefiltered, y, ranked_features, min_frequency=min_freq, cv_folds=cv_folds
+                )
+
+                if len(ranked_features) == 0:
+                    self.logger.error("❌ No features left after CV frequency filtering!")
+                    return []
+
+                self.logger.info(f"✅ After CV frequency filter: {len(ranked_features)} features remaining")
+            else:
+                if not enable_cv_filter:
+                    self.logger.info("⏭️ CV frequency filtering is disabled")
+
             # Step 4: Select top N features by SHAP importance (or stability-weighted score)
             expected_count = min(max_features, len(ranked_features))
             selected_features = ranked_features[:expected_count]
-            
+
             self.logger.info(f"📊 Step 4: Selected top {len(selected_features)} features by SHAP importance")
             
             self.selected_features = selected_features
@@ -1374,7 +1443,123 @@ class FinalFeatureSelectionComponent:
         except Exception as e:
             self.logger.error(f"Error in cross-validation analysis: {e}")
             return {"error": str(e)}
-    
+
+    def _filter_by_cv_selection_frequency(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        ranked_features: List[str],
+        min_frequency: float = 0.3,
+        cv_folds: int = 5
+    ) -> List[str]:
+        """
+        Filter features based on their selection frequency across CV folds.
+
+        This method runs feature selection across multiple CV folds and keeps only
+        features that are selected in at least min_frequency proportion of folds.
+        This improves robustness by filtering out features with unstable importance.
+
+        Args:
+            X: Feature matrix
+            y: Target variable
+            ranked_features: List of features ranked by importance
+            min_frequency: Minimum selection frequency (0-1) required (default: 0.3 = 30%)
+            cv_folds: Number of CV folds (default: 5)
+
+        Returns:
+            List of features that meet the minimum selection frequency threshold
+        """
+        try:
+            self.logger.info(f"📊 Applying CV-based selection frequency filter (min_frequency={min_frequency}, cv_folds={cv_folds})")
+
+            if not ranked_features or len(ranked_features) == 0:
+                self.logger.warning("⚠️ No features to filter")
+                return ranked_features
+
+            # Use TimeSeriesSplit for time series data
+            from sklearn.model_selection import TimeSeriesSplit
+            tscv = TimeSeriesSplit(n_splits=cv_folds)
+
+            # Track how many times each feature is selected across folds
+            feature_selection_count: Dict[str, int] = {feat: 0 for feat in ranked_features}
+
+            # Limit the candidate pool to the ranked features
+            X_subset = X[ranked_features]
+
+            fold_idx = 0
+            for train_idx, test_idx in tscv.split(X_subset):
+                X_train = X_subset.iloc[train_idx]
+                y_train = y.iloc[train_idx]
+
+                # Select features for this fold using the same method as main selection
+                try:
+                    fold_features = self._select_features_for_window(X_train, y_train)
+
+                    # Count selections
+                    for feat in fold_features:
+                        if feat in feature_selection_count:
+                            feature_selection_count[feat] += 1
+
+                    self.logger.debug(f"Fold {fold_idx}: Selected {len(fold_features)} features")
+                    fold_idx += 1
+
+                except Exception as fold_error:
+                    self.logger.warning(f"⚠️ Error in fold {fold_idx}: {fold_error}. Skipping fold.")
+                    continue
+
+            # Calculate selection frequency for each feature
+            feature_frequencies = {
+                feat: count / cv_folds
+                for feat, count in feature_selection_count.items()
+            }
+
+            # Filter features that meet the minimum frequency threshold
+            frequent_features = [
+                feat for feat in ranked_features
+                if feature_frequencies.get(feat, 0) >= min_frequency
+            ]
+
+            # Log results
+            removed_count = len(ranked_features) - len(frequent_features)
+            self.logger.info(
+                f"📊 CV frequency filter: Kept {len(frequent_features)}/{len(ranked_features)} features "
+                f"(removed {removed_count} features with selection frequency < {min_frequency})"
+            )
+
+            # Log some examples of removed features
+            if removed_count > 0:
+                removed_features = [
+                    (feat, feature_frequencies.get(feat, 0))
+                    for feat in ranked_features
+                    if feat not in frequent_features
+                ]
+                # Sort by frequency (lowest first)
+                removed_features.sort(key=lambda x: x[1])
+                examples = removed_features[:5]  # Show up to 5 examples
+                self.logger.info(f"📊 Examples of removed features (lowest frequency):")
+                for feat, freq in examples:
+                    self.logger.info(f"  - {feat}: {freq:.2%} selection frequency")
+
+            # Log some examples of kept features
+            if len(frequent_features) > 0:
+                kept_features_with_freq = [
+                    (feat, feature_frequencies.get(feat, 0))
+                    for feat in frequent_features
+                ]
+                # Sort by frequency (highest first)
+                kept_features_with_freq.sort(key=lambda x: x[1], reverse=True)
+                examples = kept_features_with_freq[:5]  # Show top 5
+                self.logger.info(f"📊 Top features by selection frequency:")
+                for feat, freq in examples:
+                    self.logger.info(f"  - {feat}: {freq:.2%} selection frequency")
+
+            return frequent_features
+
+        except Exception as e:
+            self.logger.error(f"❌ Error in CV frequency filtering: {e}")
+            self.logger.warning(f"⚠️ Falling back to original ranked features")
+            return ranked_features
+
     def compare_with_baseline(self, X: pd.DataFrame, y: pd.Series, selected_features: List[str]) -> Dict[str, Any]:
         """
         Compare selected features with baseline using same importance metric.

@@ -21,11 +21,16 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import gc
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy import stats
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score
 from sklearn.isotonic import IsotonicRegression
+from sklearn.calibration import calibration_curve
+import shap
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
@@ -69,6 +74,150 @@ def purge_training_idxs(
         filtered.append(i)
 
     return np.array(filtered, dtype=int)
+
+
+class KalmanFilter1D:
+    """
+    Simple 1D Kalman filter for signal smoothing.
+
+    State-space model:
+        x_t = x_{t-1} + mu + w_t    (state evolution)
+        y_t = x_t + v_t              (observation)
+
+    Where w_t ~ N(0, Q) and v_t ~ N(0, R)
+    """
+
+    def __init__(self, Q: float = 1e-5, R: float = 0.01, initial_value: float = 0.0):
+        """
+        Args:
+            Q: Process variance (smaller = smoother evolution)
+            R: Observation variance (larger = more smoothing)
+            initial_value: Initial state estimate
+        """
+        self.Q = Q  # Process variance
+        self.R = R  # Observation variance
+        self.x = initial_value  # State estimate
+        self.P = 1.0  # State variance
+
+    def update(self, measurement: float) -> Tuple[float, float]:
+        """
+        Update filter with new measurement.
+
+        Returns:
+            Tuple of (filtered_value, state_variance)
+        """
+        # Predict
+        x_prior = self.x
+        P_prior = self.P + self.Q
+
+        # Update
+        K = P_prior / (P_prior + self.R)  # Kalman gain
+        self.x = x_prior + K * (measurement - x_prior)
+        self.P = (1 - K) * P_prior
+
+        return self.x, self.P
+
+    def filter_series(self, series: pd.Series) -> Tuple[pd.Series, pd.Series]:
+        """
+        Filter entire time series.
+
+        Returns:
+            Tuple of (filtered_series, variance_series)
+        """
+        filtered = []
+        variances = []
+
+        for val in series:
+            if pd.isna(val):
+                filtered.append(np.nan)
+                variances.append(np.nan)
+            else:
+                x_filt, P_filt = self.update(val)
+                filtered.append(x_filt)
+                variances.append(P_filt)
+
+        return (
+            pd.Series(filtered, index=series.index),
+            pd.Series(variances, index=series.index)
+        )
+
+
+def kalman_smooth_trend(prices: pd.Series, Q: float = 1e-5, R: float = 0.01) -> Tuple[pd.Series, pd.Series]:
+    """
+    Extract smoothed trend from prices using Kalman filter.
+
+    Args:
+        prices: Price series
+        Q: Process variance (smaller = smoother)
+        R: Observation variance (larger = more smoothing)
+
+    Returns:
+        Tuple of (trend, uncertainty)
+    """
+    kf = KalmanFilter1D(Q=Q, R=R, initial_value=prices.iloc[0] if len(prices) > 0 else 0.0)
+    return kf.filter_series(prices)
+
+
+def kalman_smooth_labels(
+    binary_labels: pd.Series,
+    Q: float = 1e-4,
+    R: float = 0.01,
+    volatility: Optional[pd.Series] = None
+) -> Tuple[pd.Series, pd.Series]:
+    """
+    Smooth binary meta-labels using Kalman filter to get continuous probability.
+
+    This treats observed 0/1 outcomes as noisy observations of latent signal quality.
+
+    Args:
+        binary_labels: Raw binary labels (0/1)
+        Q: Process variance (how fast quality can change)
+        R: Observation variance (noise in labels)
+        volatility: Optional volatility series for adaptive Q
+
+    Returns:
+        Tuple of (smoothed_labels, state_variance)
+    """
+    n = len(binary_labels)
+    smoothed = np.full(n, np.nan)
+    variances = np.full(n, np.nan)
+
+    # Initialize
+    x = 0.5  # Start at neutral
+    P = 1.0
+
+    for i in range(n):
+        if pd.isna(binary_labels.iloc[i]):
+            # No observation, just predict forward
+            x = x  # State stays same
+            P = P + Q
+            smoothed[i] = x
+            variances[i] = P
+        else:
+            # Adaptive process noise based on volatility
+            Q_adaptive = Q
+            if volatility is not None and not pd.isna(volatility.iloc[i]):
+                # Increase Q in high volatility (labels adapt faster)
+                vol_factor = volatility.iloc[i] / (volatility.mean() + 1e-8)
+                Q_adaptive = Q * (1 + vol_factor)
+
+            # Predict
+            x_prior = x
+            P_prior = P + Q_adaptive
+
+            # Update
+            y = binary_labels.iloc[i]
+            K = P_prior / (P_prior + R)
+            x = x_prior + K * (y - x_prior)
+            P = (1 - K) * P_prior
+
+            smoothed[i] = x
+            variances[i] = P
+
+    return (
+        pd.Series(smoothed, index=binary_labels.index),
+        pd.Series(variances, index=binary_labels.index)
+    )
 
 
 def compute_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
@@ -131,8 +280,8 @@ def generate_primary_signals(
 def compute_realized_returns(
     df: pd.DataFrame,
     signals: pd.DataFrame,
-    profit_threshold: float = 0.015,
-    stop_threshold: float = 0.010,
+    profit_threshold: Union[float, pd.Series] = 0.015,
+    stop_threshold: Union[float, pd.Series] = 0.010,
     horizon: int = 16,
     transaction_cost: float = 0.0005,
     min_event_spacing: int = 4
@@ -143,11 +292,13 @@ def compute_realized_returns(
     IMPROVED: Returns continuous values (realized return) instead of binary labels.
     This allows isotonic regression to map probabilities to expected returns.
 
+    ENHANCED: Supports adaptive thresholds based on volatility.
+
     Args:
         df: DataFrame with price data
         signals: DataFrame with signal columns
-        profit_threshold: Profit target as fraction
-        stop_threshold: Stop loss as fraction
+        profit_threshold: Profit target as fraction (float or Series for adaptive)
+        stop_threshold: Stop loss as fraction (float or Series for adaptive)
         horizon: Maximum bars to look ahead
         transaction_cost: Transaction cost per trade (round trip)
         min_event_spacing: Minimum bars between signals (prevents overlapping events)
@@ -165,6 +316,17 @@ def compute_realized_returns(
 
     close_prices = df['close'].values
     consensus_signals = signals['consensus'].values
+
+    # Convert thresholds to arrays for adaptive support
+    if isinstance(profit_threshold, (int, float)):
+        profit_thresholds = np.full(len(df), profit_threshold)
+    else:
+        profit_thresholds = profit_threshold.values
+
+    if isinstance(stop_threshold, (int, float)):
+        stop_thresholds = np.full(len(df), stop_threshold)
+    else:
+        stop_thresholds = stop_threshold.values
 
     last_event_idx = -min_event_spacing  # Track last signal to avoid overlaps
 
@@ -188,6 +350,10 @@ def compute_realized_returns(
         exit_price = None
         exit_reason = None
 
+        # Get adaptive thresholds for this event
+        profit_thr = profit_thresholds[i]
+        stop_thr = stop_thresholds[i]
+
         # Look ahead up to horizon bars
         for j in range(1, horizon + 1):
             if i + j >= len(df):
@@ -199,12 +365,12 @@ def compute_realized_returns(
                 pnl = (future_price - entry_price) / entry_price
 
                 # Hit profit target
-                if pnl >= profit_threshold:
+                if pnl >= profit_thr:
                     exit_price = future_price
                     exit_reason = 'profit'
                     break
                 # Hit stop loss
-                elif pnl <= -stop_threshold:
+                elif pnl <= -stop_thr:
                     exit_price = future_price
                     exit_reason = 'stop'
                     break
@@ -213,12 +379,12 @@ def compute_realized_returns(
                 pnl = (entry_price - future_price) / entry_price
 
                 # Hit profit target
-                if pnl >= profit_threshold:
+                if pnl >= profit_thr:
                     exit_price = future_price
                     exit_reason = 'profit'
                     break
                 # Hit stop loss
-                elif pnl <= -stop_threshold:
+                elif pnl <= -stop_thr:
                     exit_price = future_price
                     exit_reason = 'stop'
                     break
@@ -249,7 +415,8 @@ def create_meta_features(
     df: pd.DataFrame,
     signals: pd.DataFrame,
     volume_available: bool = True,
-    include_raw_signals: bool = False
+    include_raw_signals: bool = False,
+    use_kalman: bool = True
 ) -> pd.DataFrame:
     """
     Create features for the meta-model.
@@ -257,20 +424,118 @@ def create_meta_features(
     CRITICAL: By default, does NOT include raw signal values to avoid circular behavior.
     Features capture market context, not the signals themselves.
 
+    ENHANCED: Includes Kalman-filtered versions of technical indicators and
+    volatility-based regime features.
+
     Args:
         df: DataFrame with OHLCV data
         signals: DataFrame with primary signals (used only for context)
         volume_available: Whether volume data is available
         include_raw_signals: WARNING: Set True only for ablation tests
+        use_kalman: Whether to use Kalman filtering for indicators
 
     Returns:
         DataFrame of features for meta-model
     """
     features = pd.DataFrame(index=df.index)
 
-    # Market context features (NOT the signals themselves)
+    # ===== VOLATILITY FEATURES (ENHANCED) =====
 
-    # Volatility regime
+    # Log returns (more stable)
+    log_ret = np.log(df['close']).diff()
+    features['log_ret'] = log_ret
+
+    # Multiple volatility windows
+    features['volatility_1h'] = log_ret.rolling(window=4).std()  # 4 x 15min bars
+    features['volatility_4h'] = log_ret.rolling(window=16).std()
+    features['volatility_1d'] = log_ret.rolling(window=96).std()  # daily
+
+    # Volatility of volatility (regime instability)
+    features['vol_of_vol'] = features['volatility_1h'].rolling(window=20).std()
+
+    # Volatility ratio (current vs baseline)
+    vol_baseline = features['volatility_1d'].rolling(96).mean()
+    features['vol_ratio'] = features['volatility_1d'] / (vol_baseline + 1e-8)
+
+    # ===== VOLATILITY REGIME LABELING =====
+
+    # Compute rolling volatility for regime detection
+    vol_for_regime = log_ret.rolling(96).std()
+
+    # Create regime labels using quantiles
+    try:
+        regime_labels = pd.qcut(
+            vol_for_regime.dropna(),
+            q=3,
+            labels=['low', 'medium', 'high'],
+            duplicates='drop'
+        )
+        # Reindex to match original data
+        features['volatility_regime'] = regime_labels.reindex(df.index)
+
+        # One-hot encode (drop first to avoid multicollinearity)
+        regime_dummies = pd.get_dummies(features['volatility_regime'], prefix='vol_regime', drop_first=True)
+        features = features.join(regime_dummies)
+    except Exception as e:
+        tprint(f"⚠️ Warning: Could not create volatility regimes: {e}", "WARNING")
+        features['vol_regime_medium'] = 0
+        features['vol_regime_high'] = 0
+
+    # ===== KALMAN-FILTERED TECHNICAL INDICATORS =====
+
+    # Compute raw indicators
+    df_local = df.copy()
+    df_local['rsi'] = compute_rsi(df_local['close'], period=14)
+    df_local['sma_fast'] = df_local['close'].rolling(10).mean()
+    df_local['sma_slow'] = df_local['close'].rolling(30).mean()
+    df_local['momentum'] = df_local['close'].pct_change(10)
+
+    if use_kalman:
+        # Kalman-filtered trend
+        kalman_trend, kalman_uncertainty = kalman_smooth_trend(df['close'], Q=1e-5, R=0.01)
+        features['kalman_trend'] = kalman_trend
+        features['kalman_uncertainty'] = kalman_uncertainty
+
+        # Kalman-filtered RSI
+        kf_rsi = KalmanFilter1D(Q=1e-4, R=0.1, initial_value=50.0)
+        kalman_rsi, _ = kf_rsi.filter_series(df_local['rsi'])
+        features['rsi_kalman'] = kalman_rsi
+
+        # Kalman-filtered MA distance
+        ma_distance = df_local['sma_fast'] - df_local['sma_slow']
+        kf_ma = KalmanFilter1D(Q=1e-5, R=0.01, initial_value=0.0)
+        kalman_ma_distance, _ = kf_ma.filter_series(ma_distance)
+        features['ma_distance_kalman'] = kalman_ma_distance
+
+        # Kalman-filtered momentum
+        kf_mom = KalmanFilter1D(Q=1e-4, R=0.01, initial_value=0.0)
+        kalman_momentum, _ = kf_mom.filter_series(df_local['momentum'])
+        features['momentum_kalman'] = kalman_momentum
+
+        # Keep raw for reference (diagnostic purposes)
+        features['rsi_raw'] = df_local['rsi']
+        features['ma_distance_raw'] = ma_distance
+        features['momentum_raw'] = df_local['momentum']
+    else:
+        # Use raw indicators
+        features['rsi'] = df_local['rsi']
+        features['ma_distance'] = df_local['sma_fast'] - df_local['sma_slow']
+        features['momentum'] = df_local['momentum']
+
+    # ===== VOLATILITY-NORMALIZED FEATURES =====
+
+    # Normalize momentum and MA distance by current volatility
+    vol_1h = features['volatility_1h'].replace(0, np.nan)  # Avoid division by zero
+
+    if use_kalman:
+        features['momentum_per_vol'] = features['momentum_kalman'] / (vol_1h + 1e-8)
+        features['ma_distance_per_vol'] = features['ma_distance_kalman'] / (df['close'] * vol_1h + 1e-8)
+    else:
+        features['momentum_per_vol'] = features['momentum'] / (vol_1h + 1e-8)
+        features['ma_distance_per_vol'] = features['ma_distance'] / (df['close'] * vol_1h + 1e-8)
+
+    # ===== TRADITIONAL VOLATILITY FEATURES (BACKWARD COMPATIBLE) =====
+
     returns = df['close'].pct_change()
     features['volatility_5'] = returns.rolling(5).std()
     features['volatility_20'] = returns.rolling(20).std()
@@ -285,7 +550,8 @@ def create_meta_features(
         )
     features['volatility_ema'] = np.sqrt(features['volatility_ema'])
 
-    # Trend strength
+    # ===== TREND STRENGTH =====
+
     features['sma_slope'] = df['close'].rolling(10).mean().pct_change(5)
     features['price_vs_sma20'] = (
         (df['close'] - df['close'].rolling(20).mean()) /
@@ -297,7 +563,8 @@ def create_meta_features(
     features['atr_14'] = high_low.rolling(14).mean()
     features['atr_ratio'] = features['atr_14'] / (df['close'] + 1e-8)
 
-    # Volume context (if available)
+    # ===== VOLUME CONTEXT =====
+
     if volume_available and 'volume' in df.columns:
         vol_sma = df['volume'].rolling(20).mean()
         features['volume_ratio'] = df['volume'] / (vol_sma + 1e-8)
@@ -308,12 +575,19 @@ def create_meta_features(
         features['vol_price_corr'] = returns.rolling(20).corr(
             df['volume'].pct_change()
         )
+
+        # Volume z-score (regime measure)
+        vol_mean = df['volume'].rolling(96).mean()
+        vol_std = df['volume'].rolling(96).std()
+        features['volume_zscore'] = (df['volume'] - vol_mean) / (vol_std + 1e-8)
     else:
         features['volume_ratio'] = 1.0
         features['volume_trend'] = 1.0
         features['vol_price_corr'] = 0.0
+        features['volume_zscore'] = 0.0
 
-    # Momentum (NOT the momentum signal, but market momentum)
+    # ===== MARKET MOMENTUM =====
+
     features['momentum_5'] = df['close'].pct_change(5)
     features['momentum_10'] = df['close'].pct_change(10)
     features['momentum_20'] = df['close'].pct_change(20)
@@ -321,14 +595,22 @@ def create_meta_features(
     # Smoothed momentum using EMA
     features['momentum_ema'] = features['momentum_10'].ewm(span=5).mean()
 
-    # Position in recent range
+    # ===== RANGE POSITION =====
+
     recent_high = df['high'].rolling(20).max()
     recent_low = df['low'].rolling(20).min()
     features['range_position'] = (
         (df['close'] - recent_low) / (recent_high - recent_low + 1e-8)
     )
 
-    # Time-based features (can help with regime changes)
+    # ===== ENTROPY (SIMPLE MEASURE) =====
+
+    # Price entropy using returns distribution
+    returns_abs = returns.abs().rolling(20).mean()
+    features['returns_entropy'] = -returns_abs * np.log(returns_abs + 1e-8)
+
+    # ===== TIME-BASED FEATURES =====
+
     if isinstance(df.index, pd.DatetimeIndex):
         features['hour'] = df.index.hour
         features['day_of_week'] = df.index.dayofweek
@@ -336,7 +618,8 @@ def create_meta_features(
         features['hour'] = 0
         features['day_of_week'] = 0
 
-    # WARNING: Including raw signals can cause circular behavior
+    # ===== RAW SIGNALS (OPTIONAL, FOR DIAGNOSTICS) =====
+
     if include_raw_signals:
         tprint("⚠️ WARNING: Including raw signal features - may cause circular behavior", "WARNING")
         features['signal_strength'] = signals[['rsi', 'ma', 'mom']].abs().sum(axis=1)
@@ -434,6 +717,376 @@ def translate_to_targets_with_isotonic(
     return target_long, target_short
 
 
+def generate_diagnostics_report(
+    labeled_data: pd.DataFrame,
+    meta_features: pd.DataFrame,
+    binary_labels: pd.Series,
+    realized_returns: pd.Series,
+    smoothed_labels: pd.Series,
+    probabilities: np.ndarray,
+    final_model: RandomForestClassifier,
+    config: Dict[str, Any],
+    output_dir: Path
+) -> str:
+    """
+    Generate comprehensive diagnostics report for meta-labeling.
+
+    This creates a markdown document with:
+    1. Label distribution analysis
+    2. Signal coverage/sparsity
+    3. Feature correlation analysis
+    4. P&L distribution per label
+    5. Time-series stability and regime analysis
+    6. Out-of-fold probability diagnostics
+    7. SHAP/feature importance
+
+    Args:
+        labeled_data: Full labeled dataset
+        meta_features: Meta-features used for training
+        binary_labels: Binary 0/1 labels
+        realized_returns: Realized returns for each event
+        smoothed_labels: Kalman-smoothed continuous labels
+        probabilities: Model predicted probabilities
+        final_model: Trained meta-model
+        config: Configuration dictionary
+        output_dir: Directory to save report
+
+    Returns:
+        Path to saved report
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_path = output_dir / f"meta_labeling_diagnostics_{timestamp}.md"
+
+    # Prepare data
+    labeled_mask = ~binary_labels.isna()
+    n_labeled = labeled_mask.sum()
+
+    report_lines = []
+    report_lines.append("# Meta-Labeling Diagnostics Report")
+    report_lines.append(f"\n**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    report_lines.append(f"\n**Symbol:** {config.get('symbol', 'N/A')}")
+    report_lines.append(f"**Timeframe:** {config.get('timeframe', 'N/A')}")
+    report_lines.append(f"**Horizon:** {config.get('horizon', 'N/A')} bars")
+    report_lines.append("\n---\n")
+
+    # ===== 1. LABEL DISTRIBUTION =====
+    report_lines.append("\n## 1. Label Distribution Analysis\n")
+
+    n_positive = (binary_labels == 1.0).sum()
+    n_negative = (binary_labels == 0.0).sum()
+    positive_rate = n_positive / n_labeled if n_labeled > 0 else 0
+
+    report_lines.append(f"- **Total labeled events:** {n_labeled}")
+    report_lines.append(f"- **Positive labels (profitable):** {n_positive} ({positive_rate:.1%})")
+    report_lines.append(f"- **Negative labels (unprofitable):** {n_negative} ({(1-positive_rate):.1%})")
+
+    # Check for balance
+    if positive_rate < 0.3:
+        report_lines.append(f"\n⚠️ **Warning:** Low positive label rate ({positive_rate:.1%}) - most signals are unprofitable")
+    elif positive_rate > 0.7:
+        report_lines.append(f"\n⚠️ **Warning:** High positive label rate ({positive_rate:.1%}) - may indicate overfitting or leakage")
+    else:
+        report_lines.append(f"\n✅ **OK:** Reasonable label balance ({positive_rate:.1%})")
+
+    # Time series of labels
+    report_lines.append("\n### Label Distribution Over Time\n")
+
+    # Resample labels by day to see trends
+    if isinstance(labeled_data.index, pd.DatetimeIndex):
+        try:
+            daily_positive_rate = binary_labels.resample('1D').apply(
+                lambda x: x.sum() / len(x) if len(x) > 0 else np.nan
+            ).dropna()
+
+            report_lines.append(f"- **Daily positive rate - Mean:** {daily_positive_rate.mean():.1%}")
+            report_lines.append(f"- **Daily positive rate - Std:** {daily_positive_rate.std():.1%}")
+            report_lines.append(f"- **Daily positive rate - Min:** {daily_positive_rate.min():.1%}")
+            report_lines.append(f"- **Daily positive rate - Max:** {daily_positive_rate.max():.1%}")
+
+            # Check for periods with extreme values
+            extreme_low = (daily_positive_rate < 0.1).sum()
+            extreme_high = (daily_positive_rate > 0.9).sum()
+
+            if extreme_low > 0:
+                report_lines.append(f"\n⚠️ **Warning:** {extreme_low} days with <10% positive labels")
+            if extreme_high > 0:
+                report_lines.append(f"\n⚠️ **Warning:** {extreme_high} days with >90% positive labels")
+        except Exception as e:
+            report_lines.append(f"\n⚠️ Could not compute daily statistics: {e}")
+    else:
+        report_lines.append("\n⚠️ Index is not datetime, skipping time-series analysis")
+
+    # ===== 2. SIGNAL COVERAGE / SPARSITY =====
+    report_lines.append("\n## 2. Signal Coverage and Sparsity\n")
+
+    n_samples = len(labeled_data)
+    coverage = n_labeled / n_samples if n_samples > 0 else 0
+
+    report_lines.append(f"- **Total samples:** {n_samples}")
+    report_lines.append(f"- **Labeled samples:** {n_labeled}")
+    report_lines.append(f"- **Coverage:** {coverage:.1%}")
+
+    if coverage < 0.05:
+        report_lines.append(f"\n⚠️ **Warning:** Very sparse signals ({coverage:.1%}) - consider lowering signal thresholds")
+    elif coverage > 0.5:
+        report_lines.append(f"\n⚠️ **Warning:** Very dense signals ({coverage:.1%}) - may lead to overlapping events")
+    else:
+        report_lines.append(f"\n✅ **OK:** Reasonable signal coverage ({coverage:.1%})")
+
+    # ===== 3. CORRELATION ANALYSIS =====
+    report_lines.append("\n## 3. Feature-Label Correlation Analysis\n")
+
+    # Compute correlations
+    features_clean = meta_features[labeled_mask].fillna(0)
+    labels_clean = binary_labels[labeled_mask]
+
+    try:
+        correlations = {}
+        for col in features_clean.columns:
+            corr = features_clean[col].corr(labels_clean)
+            if not pd.isna(corr):
+                correlations[col] = corr
+
+        # Sort by absolute correlation
+        sorted_corr = sorted(correlations.items(), key=lambda x: abs(x[1]), reverse=True)
+
+        report_lines.append("\n### Top 10 Most Correlated Features:\n")
+        for feat, corr in sorted_corr[:10]:
+            report_lines.append(f"- **{feat}:** {corr:.4f}")
+
+        # Check for concerning correlations
+        report_lines.append("\n### Correlation Health Check:\n")
+
+        very_high = [(f, c) for f, c in sorted_corr if abs(c) > 0.8]
+        very_low = [(f, c) for f, c in sorted_corr if abs(c) < 0.01]
+
+        if very_high:
+            report_lines.append(f"\n⚠️ **Warning:** {len(very_high)} features with |corr| > 0.8 (possible leakage):")
+            for feat, corr in very_high[:5]:
+                report_lines.append(f"  - {feat}: {corr:.4f}")
+
+        if len(very_low) > len(sorted_corr) * 0.8:
+            report_lines.append(f"\n⚠️ **Warning:** {len(very_low)} features with |corr| < 0.01 (mostly uninformative)")
+
+    except Exception as e:
+        report_lines.append(f"\n⚠️ Could not compute correlations: {e}")
+
+    # ===== 4. P&L DISTRIBUTION PER LABEL =====
+    report_lines.append("\n## 4. P&L Distribution Per Label\n")
+
+    returns_labeled = realized_returns[labeled_mask]
+    labels_clean = binary_labels[labeled_mask]
+
+    returns_positive = returns_labeled[labels_clean == 1]
+    returns_negative = returns_labeled[labels_clean == 0]
+
+    report_lines.append("### Label = 1 (Profitable Signals):\n")
+    report_lines.append(f"- **Count:** {len(returns_positive)}")
+    report_lines.append(f"- **Mean return:** {returns_positive.mean():.2%}")
+    report_lines.append(f"- **Median return:** {returns_positive.median():.2%}")
+    report_lines.append(f"- **Std return:** {returns_positive.std():.2%}")
+    report_lines.append(f"- **% Actually positive:** {(returns_positive > 0).sum() / len(returns_positive):.1%}")
+
+    report_lines.append("\n### Label = 0 (Unprofitable Signals):\n")
+    report_lines.append(f"- **Count:** {len(returns_negative)}")
+    report_lines.append(f"- **Mean return:** {returns_negative.mean():.2%}")
+    report_lines.append(f"- **Median return:** {returns_negative.median():.2%}")
+    report_lines.append(f"- **Std return:** {returns_negative.std():.2%}")
+    report_lines.append(f"- **% Actually positive:** {(returns_negative > 0).sum() / len(returns_negative):.1%}")
+
+    # Overlap check
+    overlap_pos_in_neg = (returns_positive < 0).sum()
+    overlap_neg_in_pos = (returns_negative > 0).sum()
+
+    report_lines.append("\n### Labeling Quality:\n")
+    if len(returns_positive) > 0 and len(returns_negative) > 0:
+        pct_overlap = (overlap_pos_in_neg + overlap_neg_in_pos) / (len(returns_positive) + len(returns_negative))
+        report_lines.append(f"- **Label overlap:** {pct_overlap:.1%}")
+
+        if pct_overlap > 0.4:
+            report_lines.append(f"\n⚠️ **Warning:** High label overlap ({pct_overlap:.1%}) - labels may be too noisy or horizon too short")
+        else:
+            report_lines.append(f"\n✅ **OK:** Acceptable label overlap ({pct_overlap:.1%})")
+
+    # ===== 5. TIME-SERIES STABILITY / REGIME CHECK =====
+    report_lines.append("\n## 5. Time-Series Stability and Regime Analysis\n")
+
+    if isinstance(labeled_data.index, pd.DatetimeIndex):
+        try:
+            # Compute daily metrics
+            daily_win_rate = binary_labels.resample('1D').mean()
+            daily_mean_return = realized_returns.resample('1D').mean()
+
+            # Volatility
+            log_ret = labeled_data['log_ret'] if 'log_ret' in labeled_data.columns else np.log(labeled_data['close']).diff()
+            daily_volatility = log_ret.resample('1D').std()
+
+            # Volume z-score
+            if 'volume' in labeled_data.columns:
+                vol_mean = labeled_data['volume'].rolling(96).mean()
+                vol_std = labeled_data['volume'].rolling(96).std()
+                volume_zscore = (labeled_data['volume'] - vol_mean) / (vol_std + 1e-8)
+                daily_volume_z = volume_zscore.resample('1D').mean()
+            else:
+                daily_volume_z = pd.Series(0, index=daily_volatility.index)
+
+            # Correlation with volatility
+            corr_winrate_vol = daily_win_rate.corr(daily_volatility)
+            corr_return_vol = daily_mean_return.corr(daily_volatility)
+
+            report_lines.append(f"- **Win rate vs Volatility correlation:** {corr_winrate_vol:.4f}")
+            report_lines.append(f"- **Mean return vs Volatility correlation:** {corr_return_vol:.4f}")
+
+            if abs(corr_winrate_vol) > 0.5:
+                report_lines.append(f"\n⚠️ **Warning:** Strong correlation between win rate and volatility - performance is regime-dependent")
+            else:
+                report_lines.append(f"\n✅ **OK:** Win rate not strongly correlated with volatility")
+
+            # Detect regime shifts
+            report_lines.append("\n### Regime Shift Detection:\n")
+
+            # Rolling correlation
+            rolling_corr = daily_win_rate.rolling(30).corr(daily_volatility)
+            report_lines.append(f"- **30-day rolling correlation (win rate vs vol) - Mean:** {rolling_corr.mean():.4f}")
+            report_lines.append(f"- **30-day rolling correlation (win rate vs vol) - Std:** {rolling_corr.std():.4f}")
+
+        except Exception as e:
+            report_lines.append(f"\n⚠️ Could not compute regime analysis: {e}")
+    else:
+        report_lines.append("\n⚠️ Index is not datetime, skipping time-series analysis")
+
+    # ===== 6. OUT-OF-FOLD PROBABILITY DIAGNOSTICS =====
+    report_lines.append("\n## 6. Model Probability Diagnostics\n")
+
+    try:
+        # Calibration analysis
+        prob_clean = probabilities[labeled_mask]
+        labels_clean_array = binary_labels[labeled_mask].values
+
+        # Bin probabilities
+        prob_bins = pd.cut(prob_clean, bins=10, labels=False)
+        calibration_data = []
+
+        for bin_idx in range(10):
+            mask = (prob_bins == bin_idx)
+            if mask.sum() > 0:
+                mean_prob = prob_clean[mask].mean()
+                mean_label = labels_clean_array[mask].mean()
+                count = mask.sum()
+                calibration_data.append((mean_prob, mean_label, count))
+
+        report_lines.append("\n### Calibration (Predicted Probability vs Actual Success Rate):\n")
+        report_lines.append("\n| Predicted Prob | Actual Success Rate | Count |")
+        report_lines.append("|---------------|---------------------|-------|")
+
+        for mean_prob, mean_label, count in calibration_data:
+            report_lines.append(f"| {mean_prob:.3f} | {mean_label:.3f} | {count} |")
+
+        # Calculate calibration error
+        calibration_error = np.mean([abs(p - l) for p, l, c in calibration_data])
+        report_lines.append(f"\n- **Mean calibration error:** {calibration_error:.3f}")
+
+        if calibration_error > 0.15:
+            report_lines.append(f"\n⚠️ **Warning:** High calibration error - model probabilities may not be well-calibrated")
+        else:
+            report_lines.append(f"\n✅ **OK:** Reasonable calibration")
+
+    except Exception as e:
+        report_lines.append(f"\n⚠️ Could not compute calibration: {e}")
+
+    # Probability distribution
+    report_lines.append("\n### Probability Distribution:\n")
+    report_lines.append(f"- **Mean probability:** {probabilities.mean():.3f}")
+    report_lines.append(f"- **Median probability:** {np.median(probabilities):.3f}")
+    report_lines.append(f"- **Std probability:** {probabilities.std():.3f}")
+
+    # Check for collapsed predictions
+    if probabilities.std() < 0.05:
+        report_lines.append(f"\n⚠️ **Warning:** Very low probability variance - model may not be learning useful patterns")
+
+    # ===== 7. SHAP / FEATURE IMPORTANCE =====
+    report_lines.append("\n## 7. Feature Importance Analysis\n")
+
+    try:
+        # Get feature importances from model
+        feature_importances = dict(zip(meta_features.columns, final_model.feature_importances_))
+        sorted_importances = sorted(feature_importances.items(), key=lambda x: x[1], reverse=True)
+
+        report_lines.append("\n### Top 20 Features by Importance:\n")
+        for i, (feat, imp) in enumerate(sorted_importances[:20], 1):
+            report_lines.append(f"{i}. **{feat}:** {imp:.4f}")
+
+        # Check for suspicious features
+        report_lines.append("\n### Feature Importance Health Check:\n")
+
+        # Check if any single feature dominates
+        top_importance = sorted_importances[0][1] if sorted_importances else 0
+        if top_importance > 0.5:
+            report_lines.append(f"\n⚠️ **Warning:** Single feature dominates ({sorted_importances[0][0]}: {top_importance:.2%}) - possible leakage")
+        else:
+            report_lines.append(f"\n✅ **OK:** No single feature dominates")
+
+        # Check if Kalman features are used
+        kalman_features = [f for f, _ in sorted_importances if 'kalman' in f.lower()]
+        if kalman_features:
+            report_lines.append(f"\n✅ Kalman-filtered features are being used ({len(kalman_features)} features)")
+
+        # Check if volatility features are used
+        vol_features = [f for f, _ in sorted_importances[:10] if 'vol' in f.lower()]
+        if vol_features:
+            report_lines.append(f"\n✅ Volatility-based features in top 10: {', '.join(vol_features)}")
+
+    except Exception as e:
+        report_lines.append(f"\n⚠️ Could not compute feature importance: {e}")
+
+    # ===== 8. KALMAN SMOOTHED LABELS =====
+    report_lines.append("\n## 8. Kalman Smoothed Labels Analysis\n")
+
+    if smoothed_labels is not None and not smoothed_labels.isna().all():
+        smoothed_labeled = smoothed_labels[labeled_mask]
+
+        report_lines.append(f"- **Mean smoothed label:** {smoothed_labeled.mean():.3f}")
+        report_lines.append(f"- **Median smoothed label:** {smoothed_labeled.median():.3f}")
+        report_lines.append(f"- **Std smoothed label:** {smoothed_labeled.std():.3f}")
+
+        # Correlation with binary labels
+        corr_smoothed_binary = smoothed_labeled.corr(binary_labels[labeled_mask])
+        report_lines.append(f"- **Correlation with binary labels:** {corr_smoothed_binary:.3f}")
+
+        # Correlation with realized returns
+        corr_smoothed_returns = smoothed_labeled.corr(realized_returns[labeled_mask])
+        report_lines.append(f"- **Correlation with realized returns:** {corr_smoothed_returns:.3f}")
+
+        if corr_smoothed_binary < 0.5:
+            report_lines.append(f"\n⚠️ **Warning:** Low correlation between smoothed and binary labels - Kalman filter may be over-smoothing")
+        else:
+            report_lines.append(f"\n✅ **OK:** Good correlation between smoothed and binary labels")
+
+    else:
+        report_lines.append("\n⚠️ Smoothed labels not available")
+
+    # ===== SUMMARY =====
+    report_lines.append("\n---\n")
+    report_lines.append("\n## Summary and Recommendations\n")
+
+    report_lines.append("\n### Key Findings:\n")
+    report_lines.append(f"1. Label balance: {positive_rate:.1%} positive")
+    report_lines.append(f"2. Signal coverage: {coverage:.1%}")
+    report_lines.append(f"3. Mean return (label=1): {returns_positive.mean():.2%}")
+    report_lines.append(f"4. Mean return (label=0): {returns_negative.mean():.2%}")
+    report_lines.append(f"5. Calibration error: {calibration_error:.3f}")
+
+    # Write report
+    report_content = "\n".join(report_lines)
+
+    with open(report_path, 'w') as f:
+        f.write(report_content)
+
+    tprint(f"📊 Diagnostics report saved to {report_path}", "SUCCESS")
+
+    return str(report_path)
+
+
 class FeatureGenerationMetaLabelingStep(BaseStep):
     """
     Feature Generation Meta-Labeling Step (Enhanced).
@@ -511,13 +1164,37 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             n_short_signals = (primary_signals['consensus'] < 0).sum()
             tprint(f"📊 Primary signals: {n_long_signals} long, {n_short_signals} short", "INFO")
 
-            # STEP 2: Compute realized returns (continuous) and binary labels
-            tprint("💰 Computing realized returns with transaction costs...", "INFO")
+            # STEP 2: Compute volatility for adaptive thresholds
+            tprint("📊 Computing volatility for adaptive thresholds...", "INFO")
+            log_ret = np.log(market_data['close']).diff()
+            volatility_1d = log_ret.rolling(96).std()  # Daily volatility
+            vol_baseline = volatility_1d.rolling(96).mean()
+            vol_factor = volatility_1d / (vol_baseline + 1e-8)
+
+            # Adaptive thresholds based on volatility
+            adaptive_profit_threshold = profit_threshold * vol_factor
+            adaptive_stop_threshold = stop_threshold * vol_factor
+
+            # Clip to reasonable bounds (e.g., 0.5x to 2x base threshold)
+            adaptive_profit_threshold = adaptive_profit_threshold.clip(
+                lower=profit_threshold * 0.5,
+                upper=profit_threshold * 2.0
+            )
+            adaptive_stop_threshold = adaptive_stop_threshold.clip(
+                lower=stop_threshold * 0.5,
+                upper=stop_threshold * 2.0
+            )
+
+            tprint(f"📊 Adaptive thresholds: Profit {adaptive_profit_threshold.mean():.2%} ± {adaptive_profit_threshold.std():.2%}", "INFO")
+            tprint(f"📊 Adaptive thresholds: Stop {adaptive_stop_threshold.mean():.2%} ± {adaptive_stop_threshold.std():.2%}", "INFO")
+
+            # STEP 3: Compute realized returns (continuous) and binary labels with adaptive thresholds
+            tprint("💰 Computing realized returns with adaptive thresholds and transaction costs...", "INFO")
             realized_returns, binary_labels = compute_realized_returns(
                 market_data,
                 primary_signals,
-                profit_threshold=profit_threshold,
-                stop_threshold=stop_threshold,
+                profit_threshold=adaptive_profit_threshold,
+                stop_threshold=adaptive_stop_threshold,
                 horizon=horizon,
                 transaction_cost=transaction_cost,
                 min_event_spacing=min_event_spacing
@@ -542,16 +1219,27 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 median_return = 0.0
                 win_rate = 0.0
 
-            # STEP 3: Create meta-features (WITHOUT raw signals to avoid circular behavior)
-            tprint("🔧 Creating meta-features (excluding raw signals)...", "INFO")
+            # STEP 4: Apply Kalman smoothing to binary labels
+            tprint("📈 Applying Kalman smoothing to binary labels...", "INFO")
+            smoothed_labels, label_uncertainty = kalman_smooth_labels(
+                binary_labels,
+                Q=1e-4,
+                R=0.01,
+                volatility=volatility_1d
+            )
+            tprint(f"📊 Smoothed labels: Mean={smoothed_labels[labeled_mask].mean():.3f}, Std={smoothed_labels[labeled_mask].std():.3f}", "INFO")
+
+            # STEP 5: Create meta-features with Kalman filtering
+            tprint("🔧 Creating meta-features with Kalman filtering...", "INFO")
             meta_features = create_meta_features(
                 market_data,
                 primary_signals,
                 volume_available,
-                include_raw_signals=False  # CRITICAL: avoid circular behavior
+                include_raw_signals=False,  # CRITICAL: avoid circular behavior
+                use_kalman=True  # Enable Kalman filtering
             )
 
-            # STEP 4: Train meta-model with time-series CV
+            # STEP 6: Train meta-model with time-series CV
             # Get out-of-fold probabilities for isotonic regression
             tprint("🎓 Training meta-model with purged time-series CV...", "INFO")
 
@@ -633,7 +1321,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
 
                 tprint(f"✅ Fold {fold_idx}: AUC={auc:.3f}, Prec={precision:.3f}, Rec={recall:.3f}, F1={f1:.3f}", "INFO")
 
-            # STEP 5: Fit isotonic regression using OOF probabilities
+            # STEP 7: Fit isotonic regression using OOF probabilities
             tprint("📈 Fitting probability → expected return mapping (isotonic regression)...", "INFO")
 
             oof_mask = ~oof_probabilities.isna() & ~realized_returns.isna()
@@ -649,7 +1337,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 )
                 tprint(f"✅ Fitted mapping using {oof_mask.sum()} out-of-fold samples", "SUCCESS")
 
-            # STEP 6: Train final model on all data
+            # STEP 8: Train final model on all data
             tprint("🎓 Training final meta-model on full dataset...", "INFO")
 
             full_mask = ~binary_labels.isna()
@@ -669,7 +1357,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             X_all = meta_features.fillna(0)
             probabilities = final_model.predict_proba(X_all)[:, 1]
 
-            # STEP 7: Translate to targets using isotonic regression
+            # STEP 9: Translate to targets using isotonic regression
             tprint("🔄 Translating probabilities to economic targets...", "INFO")
 
             if iso_regressor is not None:
@@ -693,14 +1381,31 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         elif primary_signals['consensus'].iloc[i] < 0:
                             target_short.iloc[i] = probabilities[i] - threshold
 
-            # Create output DataFrame
+            # STEP 10: Create output DataFrame with enhanced features
+            tprint("📦 Creating output DataFrame...", "INFO")
             labeled_data = market_data.copy()
+
+            # Add log returns and volatility (for diagnostics)
+            labeled_data['log_ret'] = log_ret
+            labeled_data['volatility_1d'] = volatility_1d
+
+            # Add labeling results
             labeled_data['realized_return'] = realized_returns
             labeled_data['binary_label'] = binary_labels
+            labeled_data['smoothed_label'] = smoothed_labels
+            labeled_data['label_uncertainty'] = label_uncertainty
             labeled_data['meta_probability'] = probabilities
-            labeled_data['target_long'] = target_long
-            labeled_data['target_short'] = target_short
+
+            # Rename targets to "fused" for backward compatibility with subsequent steps
+            labeled_data['fused_target_long'] = target_long
+            labeled_data['fused_target_short'] = target_short
+
+            # Add primary signal for reference
             labeled_data['primary_signal'] = primary_signals['consensus']
+
+            # Add adaptive thresholds for transparency
+            labeled_data['adaptive_profit_threshold'] = adaptive_profit_threshold
+            labeled_data['adaptive_stop_threshold'] = adaptive_stop_threshold
 
             # Save labeled data
             tprint("💾 Saving labeled data...", "INFO")
@@ -726,6 +1431,30 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 }
             )
 
+            # STEP 11: Generate comprehensive diagnostics report
+            tprint("📊 Generating diagnostics report...", "INFO")
+
+            # Create outcomes directory if it doesn't exist
+            outcomes_dir = Path("outcomes")
+            outcomes_dir.mkdir(exist_ok=True)
+
+            try:
+                diagnostics_path = generate_diagnostics_report(
+                    labeled_data=labeled_data,
+                    meta_features=meta_features,
+                    binary_labels=binary_labels,
+                    realized_returns=realized_returns,
+                    smoothed_labels=smoothed_labels,
+                    probabilities=probabilities,
+                    final_model=final_model,
+                    config=config,
+                    output_dir=outcomes_dir
+                )
+                tprint(f"✅ Diagnostics report saved: {diagnostics_path}", "SUCCESS")
+            except Exception as e:
+                tprint(f"⚠️ Warning: Could not generate diagnostics report: {e}", "WARNING")
+                diagnostics_path = None
+
             # Calculate metrics
             avg_auc = np.mean([r['auc'] for r in cv_results]) if cv_results else 0.5
             avg_precision = np.mean([r['precision'] for r in cv_results]) if cv_results else 0.0
@@ -743,7 +1472,8 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             result = {
                 'success': True,
                 'artifacts': {
-                    'labeled_data_path': labeled_data_path
+                    'labeled_data_path': labeled_data_path,
+                    'diagnostics_report_path': diagnostics_path
                 },
                 'metrics': {
                     'n_samples': len(labeled_data),
@@ -762,7 +1492,16 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         'stop_threshold': stop_threshold,
                         'horizon': horizon,
                         'transaction_cost': transaction_cost,
-                        'min_event_spacing': min_event_spacing
+                        'min_event_spacing': min_event_spacing,
+                        'use_kalman_filtering': True,
+                        'use_adaptive_thresholds': True,
+                        'use_kalman_label_smoothing': True
+                    },
+                    'enhancements': {
+                        'kalman_filtering': True,
+                        'adaptive_thresholds': True,
+                        'volatility_regimes': True,
+                        'smoothed_labels': True
                     }
                 },
                 'cv_results': cv_results

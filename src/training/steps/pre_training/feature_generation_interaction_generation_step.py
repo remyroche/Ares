@@ -142,9 +142,16 @@ try:
     from src.training.utils.feature_selection.variant_generator import OptimizedVariantGenerator, generate_all_variants_optimized
     from src.training.utils.feature_selection.cheap_pruning import OptimizedCheapPruningPipeline, apply_optimized_cheap_pruning, OptimizedPruningConfig
     from src.training.steps.pre_training.includes.interaction_generation_fallbacks import attach_interaction_generation_fallbacks
+    from src.training.utils.feature_selection.label_guided_interaction_discovery import (
+        LabelGuidedInteractionDiscovery,
+        LabelGuidedInteractionConfig,
+        InteractionCandidate
+    )
     UTILITIES_AVAILABLE = True
+    LABEL_GUIDED_AVAILABLE = True
 except ImportError as e:
     UTILITIES_AVAILABLE = False
+    LABEL_GUIDED_AVAILABLE = False
     tprint_warning(f"⚠️ Feature selection utilities not available: {e}")
 
 # Import overfitting prevention utilities
@@ -2475,7 +2482,8 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             for feature_name in top_80_features.columns:
                 feature_categories[feature_name] = self._infer_feature_category(feature_name)
         
-        interactions, shap_metadata = await self._phase3_3_interaction_discovery(
+        # Use label-guided interaction discovery (falls back to legacy if not available)
+        interactions, shap_metadata = await self._phase3_3_label_guided_interaction_discovery(
             top_80_features, targets, config, feature_categories
         )
         
@@ -2821,10 +2829,10 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         top_features = feature_importance.head(n_select).index.tolist()
         
         tprint_success(f"  ✅ Selected {len(top_features)} features (top {n_select}) using fast proxy")
-        
+
         return features[top_features]
 
-    async def _phase3_3_interaction_discovery(
+    async def _phase3_3_label_guided_interaction_discovery(
         self,
         features: pd.DataFrame,
         targets: pd.DataFrame,
@@ -2832,8 +2840,170 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         feature_categories: Dict[str, str] = None
     ) -> Tuple[pd.DataFrame, Dict]:
         """
-        Phase 3.3: Deep interaction discovery with corrected SHAP approach.
-        
+        Phase 3.3: Label-guided interaction discovery using MI/SHAP and regularized selection.
+
+        This method implements label-guided interaction discovery that:
+        1. Restricts interactions to pairs showing MI or SHAP interaction strength vs target
+        2. Uses regularized models (L1, group LASSO) to pick meaningful interactions
+        3. Ensures interactions provide meaningful R²/MI lift over base features
+        4. Applies category-aware limits to prevent over-representation (e.g., trend)
+        """
+        if not LABEL_GUIDED_AVAILABLE:
+            tprint_warning("  ⚠️ Label-guided interaction discovery not available, using legacy approach")
+            return await self._phase3_3_interaction_discovery_legacy(features, targets, config, feature_categories)
+
+        self._ensure_runtime_integrity("_phase3_3_label_guided_interaction_discovery")
+        tprint_info("  🌳 Starting label-guided interaction discovery...")
+
+        # Extract cross-timeframe interaction features (legacy compatibility)
+        tprint_info("  🔄 Extracting cross-timeframe interactions...")
+        cross_timeframe_interactions = await self._extract_cross_timeframe_interactions(features)
+        if len(cross_timeframe_interactions.columns) > 0:
+            tprint_success(f"  ✅ Found {len(cross_timeframe_interactions.columns)} cross-timeframe interaction features")
+            # Merge cross-timeframe interactions into features
+            features = pd.concat([features, cross_timeframe_interactions], axis=1)
+        else:
+            tprint_info("  ℹ️ No cross-timeframe interactions detected")
+
+        # Infer categories if not provided
+        if feature_categories is None:
+            feature_categories = {}
+            for feature_name in features.columns:
+                feature_categories[feature_name] = self._infer_feature_category(feature_name)
+
+        # Configure label-guided interaction discovery
+        lgid_config = LabelGuidedInteractionConfig(
+            # MI/SHAP scoring
+            use_mi_scoring=True,
+            use_shap_scoring=SHAP_AVAILABLE,
+            mi_weight=0.6,
+            shap_weight=0.4,
+
+            # Lift requirements - CRITICAL for ensuring interactions beat base features
+            min_r2_lift=float(config.get('min_interaction_r2_lift', 0.01)),  # 1% R² improvement
+            min_mi_lift=float(config.get('min_interaction_mi_lift', 0.05)),  # 5% MI improvement
+            require_r2_lift=False,  # Don't require R² lift (too expensive to compute)
+            require_mi_lift=True,   # Require MI lift (fast to compute)
+
+            # Regularization - use LASSO for sparse selection
+            use_lasso=True,
+            lasso_alpha=None,  # Use CV to find optimal alpha
+            lasso_cv_folds=3,  # Reduced for speed
+            lasso_max_iter=500,
+
+            # Interaction generation limits
+            max_pairs_to_test=int(config.get('max_interaction_pairs', 100)),
+            operations=['multiply', 'divide', 'subtract', 'log_ratio'],  # Exclude 'add' (often redundant)
+
+            # Category controls - CRITICAL for preventing trend over-representation
+            max_interactions_per_category_pair=int(config.get('max_interactions_per_category_pair', 3)),
+            banned_category_pairs=set(),  # Could ban (trend, trend) to prevent trend×trend
+
+            # Performance
+            n_jobs=-1,
+            random_state=42
+        )
+
+        # Create discovery instance
+        discoverer = LabelGuidedInteractionDiscovery(lgid_config)
+
+        # Extract feature pairs from tree analysis (for guidance)
+        feature_pairs = None
+        if config.get('use_tree_guided_pairs', True):
+            try:
+                tprint_info("  🌳 Training LGBM for tree-guided feature pair extraction...")
+                # Sample for speed
+                features_sample, targets_sample = self._get_consistent_sample(features, targets, max_samples=10000)
+
+                # Train LGBM
+                lgbm_params = {
+                    'max_depth': 3,
+                    'num_leaves': 10,
+                    'n_estimators': 50,
+                    'learning_rate': 0.1,
+                    'reg_alpha': 0.2,
+                    'reg_lambda': 0.2,
+                    'random_state': 42,
+                    'verbose': -1
+                }
+                model = lgb.LGBMRegressor(**lgbm_params)
+                model.fit(features_sample, targets_sample.iloc[:, 0])
+
+                # Extract pairs
+                tree_pairs = self._extract_tree_splitting_pairs(model)
+                if len(tree_pairs) > 0:
+                    feature_pairs = [(f1, f2) for f1, f2, _ in tree_pairs[:lgid_config.max_pairs_to_test]]
+                    tprint_success(f"  ✅ Extracted {len(feature_pairs)} tree-guided feature pairs")
+                else:
+                    tprint_warning("  ⚠️ No tree pairs found, will generate pairs automatically")
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Tree-guided pair extraction failed: {e}, will generate pairs automatically")
+
+        # Discover interactions
+        try:
+            interaction_df, metadata = discoverer.discover_interactions(
+                features=features,
+                target=targets.iloc[:, 0],  # Use first target column
+                feature_categories=feature_categories,
+                feature_pairs=feature_pairs
+            )
+
+            # Apply causality shift
+            if len(interaction_df.columns) > 0:
+                interaction_df = interaction_df.shift(1)
+
+                # Apply RobustScaler
+                from sklearn.preprocessing import RobustScaler
+                scaler = RobustScaler()
+                interaction_df = pd.DataFrame(
+                    scaler.fit_transform(interaction_df),
+                    columns=interaction_df.columns,
+                    index=interaction_df.index
+                )
+
+            # Build SHAP metadata for compatibility
+            shap_metadata = {
+                'feature_categories': feature_categories,
+                'interaction_discovery': {
+                    'method': 'label_guided',
+                    'total_candidates': metadata['total_candidates'],
+                    'selected_interactions': metadata['selected_interactions'],
+                    'category_pair_distribution': metadata['category_pair_distribution'],
+                    'config': metadata['config'],
+                    'interaction_details': metadata['selected_interaction_details'],
+                },
+                'model_performance': {
+                    'lgbm_training_successful': True,
+                    'interaction_generation_successful': len(interaction_df.columns) > 0,
+                }
+            }
+
+            tprint_success(f"  ✅ Label-guided discovery selected {len(interaction_df.columns)} interactions")
+
+            # Log category distribution to help diagnose over-representation
+            tprint_info("  📊 Interaction category distribution:")
+            for cat_pair, count in metadata['category_pair_distribution'].items():
+                tprint_info(f"    - {cat_pair}: {count} interactions")
+
+            return interaction_df, shap_metadata
+
+        except Exception as e:
+            tprint_error(f"  ❌ Label-guided interaction discovery failed: {e}")
+            import traceback
+            tprint_error(f"  🔍 Traceback: {traceback.format_exc()}")
+            tprint_warning("  ⚠️ Falling back to legacy interaction discovery")
+            return await self._phase3_3_interaction_discovery_legacy(features, targets, config, feature_categories)
+
+    async def _phase3_3_interaction_discovery_legacy(
+        self,
+        features: pd.DataFrame,
+        targets: pd.DataFrame,
+        config: Dict[str, Any],
+        feature_categories: Dict[str, str] = None
+    ) -> Tuple[pd.DataFrame, Dict]:
+        """
+        Phase 3.3: Deep interaction discovery with corrected SHAP approach (LEGACY).
+
         Uses tree-based interaction guidance and corrected SHAP analysis:
         1. Train deep LGBM to extract feature pairs
         2. Generate 3 operations per top 10 pairs (30 candidates)

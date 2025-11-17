@@ -547,6 +547,14 @@ class UnifiedHardwareManager:
             self.logger.info("🛑 Unified Hardware Manager shutdown complete")
         except Exception as e:
             self.logger.error(f"Error during shutdown: {e}")
+ 
+    def cleanup(self):
+        """Lightweight cleanup hook used by higher-level memory managers."""
+        try:
+            if hasattr(self, 'memory_optimizer') and self.memory_optimizer is not None:
+                self.memory_optimizer.optimize_memory_usage(aggressive=False)
+        except Exception as e:
+            self.logger.debug(f"Cleanup warning: {e}")
 
     def optimize_for_workload(self, workload_type: WorkloadType,
                             optimization_level: OptimizationLevel = OptimizationLevel.BALANCED) -> bool:
@@ -678,6 +686,27 @@ class UnifiedHardwareManager:
             # Fallback to basic CPU count
             import multiprocessing
             return max(1, multiprocessing.cpu_count() // 2)
+ 
+    def get_cpu_usage(self) -> float:
+        """Get current system-wide CPU usage percentage."""
+        try:
+            if PSUTIL_AVAILABLE and psutil is not None:
+                return float(psutil.cpu_percent())
+            return 0.0
+        except Exception:
+            return 0.0
+
+    def get_memory_pressure(self) -> float:
+        """Get current memory pressure as a float in [0, 1]."""
+        try:
+            if hasattr(self, 'memory_optimizer') and self.memory_optimizer is not None:
+                return float(getattr(self.memory_optimizer, 'memory_pressure', 0.0))
+            if PSUTIL_AVAILABLE and psutil is not None:
+                memory = psutil.virtual_memory()
+                return float(memory.percent) / 100.0
+            return 0.0
+        except Exception:
+            return 0.0
 
     def _get_cpu_settings(self) -> Dict[str, Any]:
         """Get current CPU settings."""

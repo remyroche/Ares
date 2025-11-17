@@ -11,6 +11,16 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 
+# Import des assertions standardisées
+from tests.utils.assertions import (
+    assert_true,
+    assert_equals,
+    assert_less_than,
+    assert_is_instance,
+    assert_in,
+    assert_greater_than_or_equal
+)
+
 # Import du module à tester
 try:
     from exchanges.order_router import OrderRouter, RoutedOrder, OrderStatus
@@ -201,13 +211,13 @@ class TestOrderRouter:
         if hasattr(self.order_router, '_running'):
             # Vérifier la valeur réelle, pas le mock
             if hasattr(self.order_router._running, 'return_value'):
-                assert self.order_router._running.return_value is True
+                assert_true(self.order_router._running.return_value, "Le routeur doit être en cours d'exécution", "Test d'initialisation nominale")
             else:
-                assert self.order_router._running is True
+                assert_true(self.order_router._running, "Le routeur doit être en cours d'exécution", "Test d'initialisation nominale")
         if hasattr(self.order_router, 'routed_orders'):
-            assert len(self.order_router.routed_orders) == 0
+            assert_equals(len(self.order_router.routed_orders), 0, "Aucun ordre routé initialement", "Test d'initialisation nominale")
         if hasattr(self.order_router, 'active_orders'):
-            assert len(self.order_router.active_orders) == 0
+            assert_equals(len(self.order_router.active_orders), 0, "Aucun ordre actif initialement", "Test d'initialisation nominale")
 
     async def test_start_already_running(self):
         """Test de démarrage déjà en cours."""
@@ -223,9 +233,9 @@ class TestOrderRouter:
         # Should not start again but should not raise error
         if hasattr(self.order_router, '_running'):
             if hasattr(self.order_router._running, 'return_value'):
-                assert self.order_router._running.return_value is True
+                assert_true(self.order_router._running.return_value, "Le routeur doit rester en cours d'exécution", "Test de démarrage déjà en cours")
             else:
-                assert self.order_router._running is True
+                assert_true(self.order_router._running, "Le routeur doit rester en cours d'exécution", "Test de démarrage déjà en cours")
 
     async def test_stop_nominal(self):
         """Test d'arrêt nominale."""
@@ -264,7 +274,7 @@ class TestOrderRouter:
             result = await self.order_router.stop()
         
         # Then
-        assert result is False
+        assert_true(not result, "L'arrêt d'un routeur non démarré doit retourner False", "Test d'arrêt non démarré")
 
     async def test_route_order_nominal(self, mock_order_data):
         """Test de routage d'ordre nominale."""
@@ -291,11 +301,11 @@ class TestOrderRouter:
         )
         
         # Then
-        assert result['success'] is True
-        assert 'order_id' in result
-        assert 'exchange' in result
-        assert 'status' in result
-        assert result['status'] == OrderStatus.SUBMITTED
+        assert_true(result['success'], "Le routage doit réussir", "Test de routage d'ordre nominale")
+        assert_in('order_id', result, "Le résultat doit contenir un order_id", "Test de routage d'ordre nominale")
+        assert_in('exchange', result, "Le résultat doit contenir un exchange", "Test de routage d'ordre nominale")
+        assert_in('status', result, "Le résultat doit contenir un statut", "Test de routage d'ordre nominale")
+        assert_equals(result['status'], OrderStatus.SUBMITTED, "Le statut doit être SUBMITTED", "Test de routage d'ordre nominale")
 
     async def test_route_order_invalid_exchange(self, mock_order_data):
         """Test de routage d'ordre avec exchange invalide."""
@@ -320,9 +330,10 @@ class TestOrderRouter:
         )
         
         # Then
-        assert result['success'] is False
-        assert 'error' in result
-        assert 'not found' in result['error'].lower() or 'exchange' in result['error'].lower()
+        assert_true(not result['success'], "Le routage doit échouer", "Test de routage d'ordre avec exchange invalide")
+        assert_in('error', result, "Le résultat doit contenir une erreur", "Test de routage d'ordre avec exchange invalide")
+        error_lower = result['error'].lower()
+        assert_true('not found' in error_lower or 'exchange' in error_lower, "L'erreur doit mentionner l'exchange", "Test de routage d'ordre avec exchange invalide")
 
     async def test_route_order_invalid_quantity(self, mock_order_data):
         """Test de routage d'ordre avec quantité invalide."""
@@ -344,9 +355,10 @@ class TestOrderRouter:
         )
         
         # Then
-        assert result['success'] is False
-        assert 'error' in result
-        assert 'invalid' in result['error'].lower() or 'quantity' in result['error'].lower()
+        assert_true(not result['success'], "Le routage doit échouer", "Test de routage d'ordre avec quantité invalide")
+        assert_in('error', result, "Le résultat doit contenir une erreur", "Test de routage d'ordre avec quantité invalide")
+        error_lower = result['error'].lower()
+        assert_true('invalid' in error_lower or 'quantity' in error_lower, "L'erreur doit mentionner la quantité", "Test de routage d'ordre avec quantité invalide")
 
     async def test_cancel_order_nominal(self, mock_order_data):
         """Test d'annulation d'ordre nominale."""
@@ -369,9 +381,9 @@ class TestOrderRouter:
         result = await self.order_router.cancel_order(order_id)
         
         # Then
-        assert result['success'] is True
-        assert result['order_id'] == order_id
-        assert result['status'] == OrderStatus.CANCELLED
+        assert_true(result['success'], "L'annulation doit réussir", "Test d'annulation d'ordre nominale")
+        assert_equals(result['order_id'], order_id, "L'ID d'ordre doit correspondre", "Test d'annulation d'ordre nominale")
+        assert_equals(result['status'], OrderStatus.CANCELLED, "Le statut doit être CANCELLED", "Test d'annulation d'ordre nominale")
 
     async def test_cancel_order_nonexistent(self):
         """Test d'annulation d'ordre inexistant."""
@@ -385,9 +397,10 @@ class TestOrderRouter:
         result = await self.order_router.cancel_order(nonexistent_order_id)
         
         # Then
-        assert result['success'] is False
-        assert 'error' in result
-        assert 'not found' in result['error'].lower() or 'exist' in result['error'].lower()
+        assert_true(not result['success'], "L'annulation doit échouer", "Test d'annulation d'ordre inexistant")
+        assert_in('error', result, "Le résultat doit contenir une erreur", "Test d'annulation d'ordre inexistant")
+        error_lower = result['error'].lower()
+        assert_true('not found' in error_lower or 'exist' in error_lower, "L'erreur doit mentionner l'ordre", "Test d'annulation d'ordre inexistant")
 
     async def test_get_order_status_nominal(self, mock_order_data):
         """Test de récupération du statut d'ordre nominale."""
@@ -410,11 +423,11 @@ class TestOrderRouter:
         result = await self.order_router.get_order_status(order_id)
         
         # Then
-        assert result['success'] is True
-        assert result['order_id'] == order_id
-        assert 'status' in result
-        assert 'filled_quantity' in result
-        assert 'average_price' in result
+        assert_true(result['success'], "La récupération doit réussir", "Test de récupération du statut d'ordre nominale")
+        assert_equals(result['order_id'], order_id, "L'ID d'ordre doit correspondre", "Test de récupération du statut d'ordre nominale")
+        assert_in('status', result, "Le résultat doit contenir un statut", "Test de récupération du statut d'ordre nominale")
+        assert_in('filled_quantity', result, "Le résultat doit contenir une quantité remplie", "Test de récupération du statut d'ordre nominale")
+        assert_in('average_price', result, "Le résultat doit contenir un prix moyen", "Test de récupération du statut d'ordre nominale")
 
     async def test_get_order_status_nonexistent(self):
         """Test de récupération du statut d'ordre inexistant."""
@@ -428,9 +441,10 @@ class TestOrderRouter:
         result = await self.order_router.get_order_status(nonexistent_order_id)
         
         # Then
-        assert result['success'] is False
-        assert 'error' in result
-        assert 'not found' in result['error'].lower() or 'exist' in result['error'].lower()
+        assert_true(not result['success'], "La récupération doit échouer", "Test de récupération du statut d'ordre inexistant")
+        assert_in('error', result, "Le résultat doit contenir une erreur", "Test de récupération du statut d'ordre inexistant")
+        error_lower = result['error'].lower()
+        assert_true('not found' in error_lower or 'exist' in error_lower, "L'erreur doit mentionner l'ordre", "Test de récupération du statut d'ordre inexistant")
 
     async def test_get_active_orders_nominal(self, mock_order_data):
         """Test de récupération des ordres actifs nominale."""
@@ -457,9 +471,9 @@ class TestOrderRouter:
         result = await self.order_router.get_active_orders()
         
         # Then
-        assert result['success'] is True
-        assert isinstance(result['orders'], list)
-        assert len(result['orders']) == 3
+        assert_true(result['success'], "La récupération doit réussir", "Test de récupération des ordres actifs nominale")
+        assert_is_instance(result['orders'], list, "Les ordres doivent être une liste", "Test de récupération des ordres actifs nominale")
+        assert_equals(len(result['orders']), 3, "Il doit y avoir 3 ordres", "Test de récupération des ordres actifs nominale")
 
     async def test_get_active_orders_filtered(self, mock_order_data):
         """Test de récupération des ordres actifs avec filtres."""
@@ -474,22 +488,22 @@ class TestOrderRouter:
         # When
         # Filtrer par exchange
         result_binance = await self.order_router.get_active_orders(exchange='binance')
-        assert result_binance['success'] is True
-        assert len(result_binance['orders']) == 1
-        assert result_binance['orders'][0]['exchange'] == 'binance'
+        assert_true(result_binance['success'], "La récupération par exchange doit réussir", "Test de récupération des ordres actifs avec filtres")
+        assert_equals(len(result_binance['orders']), 1, "Il doit y avoir 1 ordre pour Binance", "Test de récupération des ordres actifs avec filtres")
+        assert_equals(result_binance['orders'][0]['exchange'], 'binance', "L'exchange doit être Binance", "Test de récupération des ordres actifs avec filtres")
         
         # Filtrer par symbole
         result_eth = await self.order_router.get_active_orders(symbol='ETHUSDT')
-        assert result_eth['success'] is True
-        assert len(result_eth['orders']) == 1
-        assert result_eth['orders'][0]['symbol'] == 'ETHUSDT'
+        assert_true(result_eth['success'], "La récupération par symbole doit réussir", "Test de récupération des ordres actifs avec filtres")
+        assert_equals(len(result_eth['orders']), 1, "Il doit y avoir 1 ordre pour ETHUSDT", "Test de récupération des ordres actifs avec filtres")
+        assert_equals(result_eth['orders'][0]['symbol'], 'ETHUSDT', "Le symbole doit être ETHUSDT", "Test de récupération des ordres actifs avec filtres")
         
         # Filtrer par exchange et symbole
         result_both = await self.order_router.get_active_orders(exchange='binance', symbol='ETHUSDT')
-        assert result_both['success'] is True
-        assert len(result_both['orders']) == 1
-        assert result_both['orders'][0]['exchange'] == 'binance'
-        assert result_both['orders'][0]['symbol'] == 'ETHUSDT'
+        assert_true(result_both['success'], "La récupération combinée doit réussir", "Test de récupération des ordres actifs avec filtres")
+        assert_equals(len(result_both['orders']), 1, "Il doit y avoir 1 ordre pour les filtres combinés", "Test de récupération des ordres actifs avec filtres")
+        assert_equals(result_both['orders'][0]['exchange'], 'binance', "L'exchange doit être Binance", "Test de récupération des ordres actifs avec filtres")
+        assert_equals(result_both['orders'][0]['symbol'], 'ETHUSDT', "Le symbole doit être ETHUSDT", "Test de récupération des ordres actifs avec filtres")
 
     async def test_get_order_history_nominal(self, mock_order_data):
         """Test de récupération de l'historique des ordres nominale."""
@@ -514,9 +528,9 @@ class TestOrderRouter:
         result = await self.order_router.get_order_history()
         
         # Then
-        assert result['success'] is True
-        assert isinstance(result['orders'], list)
-        assert len(result['orders']) >= 3
+        assert_true(result['success'], "La récupération doit réussir", "Test de récupération de l'historique des ordres nominale")
+        assert_is_instance(result['orders'], list, "Les ordres doivent être une liste", "Test de récupération de l'historique des ordres nominale")
+        assert_greater_than_or_equal(len(result['orders']), 3, "Il doit y avoir au moins 3 ordres", "Test de récupération de l'historique des ordres nominale")
 
     async def test_get_order_history_filtered(self, mock_order_data):
         """Test de récupération de l'historique avec filtres."""
@@ -531,22 +545,22 @@ class TestOrderRouter:
         # When
         # Filtrer par exchange
         result_binance = await self.order_router.get_order_history(exchange='binance')
-        assert result_binance['success'] is True
-        assert len(result_binance['orders']) == 1
-        assert result_binance['orders'][0]['exchange'] == 'binance'
+        assert_true(result_binance['success'], "La récupération par exchange doit réussir", "Test de récupération de l'historique avec filtres")
+        assert_equals(len(result_binance['orders']), 1, "Il doit y avoir 1 ordre pour Binance", "Test de récupération de l'historique avec filtres")
+        assert_equals(result_binance['orders'][0]['exchange'], 'binance', "L'exchange doit être Binance", "Test de récupération de l'historique avec filtres")
         
         # Filtrer par symbole
         result_eth = await self.order_router.get_order_history(symbol='ETHUSDT')
-        assert result_eth['success'] is True
-        assert len(result_eth['orders']) == 1
-        assert result_eth['orders'][0]['symbol'] == 'ETHUSDT'
+        assert_true(result_eth['success'], "La récupération par symbole doit réussir", "Test de récupération de l'historique avec filtres")
+        assert_equals(len(result_eth['orders']), 1, "Il doit y avoir 1 ordre pour ETHUSDT", "Test de récupération de l'historique avec filtres")
+        assert_equals(result_eth['orders'][0]['symbol'], 'ETHUSDT', "Le symbole doit être ETHUSDT", "Test de récupération de l'historique avec filtres")
         
         # Filtrer par exchange et symbole
         result_both = await self.order_router.get_order_history(exchange='binance', symbol='ETHUSDT')
-        assert result_both['success'] is True
-        assert len(result_both['orders']) == 1
-        assert result_both['orders'][0]['exchange'] == 'binance'
-        assert result_both['orders'][0]['symbol'] == 'ETHUSDT'
+        assert_true(result_both['success'], "La récupération combinée doit réussir", "Test de récupération de l'historique avec filtres")
+        assert_equals(len(result_both['orders']), 1, "Il doit y avoir 1 ordre pour les filtres combinés", "Test de récupération de l'historique avec filtres")
+        assert_equals(result_both['orders'][0]['exchange'], 'binance', "L'exchange doit être Binance", "Test de récupération de l'historique avec filtres")
+        assert_equals(result_both['orders'][0]['symbol'], 'ETHUSDT', "Le symbole doit être ETHUSDT", "Test de récupération de l'historique avec filtres")
 
     async def test_get_statistics_nominal(self):
         """Test de récupération des statistiques nominale."""
@@ -562,14 +576,14 @@ class TestOrderRouter:
         result = await self.order_router.get_statistics()
         
         # Then
-        assert result['success'] is True
-        assert 'statistics' in result
-        assert 'total_routed' in result['statistics']
-        assert 'successful_orders' in result['statistics']
-        assert 'failed_orders' in result['statistics']
-        assert 'by_exchange' in result['statistics']
-        assert 'by_symbol' in result['statistics']
-        assert 'by_status' in result['statistics']
+        assert_true(result['success'], "La récupération doit réussir", "Test de récupération des statistiques nominale")
+        assert_in('statistics', result, "Le résultat doit contenir des statistiques", "Test de récupération des statistiques nominale")
+        assert_in('total_routed', result['statistics'], "Les statistiques doivent contenir le total routé", "Test de récupération des statistiques nominale")
+        assert_in('successful_orders', result['statistics'], "Les statistiques doivent contenir les ordres réussis", "Test de récupération des statistiques nominale")
+        assert_in('failed_orders', result['statistics'], "Les statistiques doivent contenir les ordres échoués", "Test de récupération des statistiques nominale")
+        assert_in('by_exchange', result['statistics'], "Les statistiques doivent contenir le décompte par exchange", "Test de récupération des statistiques nominale")
+        assert_in('by_symbol', result['statistics'], "Les statistiques doivent contenir le décompte par symbole", "Test de récupération des statistiques nominale")
+        assert_in('by_status', result['statistics'], "Les statistiques doivent contenir le décompte par statut", "Test de récupération des statistiques nominale")
 
     async def test_concurrent_operations(self, mock_order_data):
         """Test des opérations concurrentes."""
@@ -598,9 +612,9 @@ class TestOrderRouter:
         
         # Then
         successful_orders = [r for r in results if r and r.get('success')]
-        assert len(successful_orders) == 5  # Tous devraient réussir
+        assert_equals(len(successful_orders), 5, "Tous les ordres devraient réussir", "Test des opérations concurrentes")
         order_ids = [r['order_id'] for r in successful_orders]
-        assert len(set(order_ids)) == 5  # Tous les IDs devraient être uniques
+        assert_equals(len(set(order_ids)), 5, "Tous les IDs d'ordre doivent être uniques", "Test des opérations concurrentes")
 
     async def test_order_status_updates(self, mock_order_data):
         """Test des mises à jour de statut d'ordre."""
@@ -632,8 +646,8 @@ class TestOrderRouter:
         result = await self.order_router.get_order_status(order_id)
         
         # Vérifier que le statut a été mis à jour
-        assert result['success'] is True
-        assert result['status'] == OrderStatus.FILLED
+        assert_true(result['success'], "La récupération doit réussir", "Test des mises à jour de statut d'ordre")
+        assert_equals(result['status'], OrderStatus.FILLED, "Le statut doit être FILLED", "Test des mises à jour de statut d'ordre")
 
     async def test_error_handling_invalid_inputs(self):
         """Test de gestion des erreurs avec entrées invalides."""
@@ -727,7 +741,7 @@ class TestOrderRouter:
         
         # Then
         execution_time = (end_time - start_time).total_seconds()
-        assert execution_time < 5.0  # Devrait s'exécuter rapidement même avec beaucoup d'ordres
+        assert_less_than(execution_time, 5.0, "L'exécution doit être rapide (< 5s)", "Test de performance avec grand carnet d'ordres")
 
     async def test_memory_usage_with_many_orders(self, mock_order_data):
         """Test de l'utilisation mémoire avec beaucoup d'ordres."""
@@ -753,7 +767,7 @@ class TestOrderRouter:
         
         # When/Then
         # Vérifier que le système peut gérer la charge
-        assert len(self.order_router.routed_orders) == 10000
+        assert_equals(len(self.order_router.routed_orders), 10000, "Le système doit gérer 10000 ordres", "Test de l'utilisation mémoire avec beaucoup d'ordres")
         
         # Then
         # Le système devrait pouvoir gérer cette charge sans erreur de mémoire
@@ -769,8 +783,8 @@ class TestOrderRouter:
         # Vérifier que la tâche de monitoring est en cours
         if hasattr(self.order_router, '_monitoring_task'):
             monitoring_task = self.order_router._monitoring_task
-            assert monitoring_task is not None
-            assert not monitoring_task.done()
+            assert_is_not_none(monitoring_task, "La tâche de monitoring ne doit pas être None", "Test de la tâche de monitoring")
+            assert_true(not monitoring_task.done(), "La tâche de monitoring doit être en cours", "Test de la tâche de monitoring")
         
         # Attendre un peu
         await asyncio.sleep(0.1)
@@ -778,7 +792,7 @@ class TestOrderRouter:
         # Then
         # La tâche devrait toujours être en cours
         if hasattr(self.order_router, '_monitoring_task'):
-            assert not self.order_router._monitoring_task.done()
+            assert_true(not self.order_router._monitoring_task.done(), "La tâche de monitoring doit toujours être en cours", "Test de la tâche de monitoring")
 
     async def test_order_lifecycle(self, mock_order_data):
         """Test du cycle de vie complet d'un ordre."""
@@ -808,7 +822,7 @@ class TestOrderRouter:
         final_status = await self.order_router.get_order_status(order_id)
         
         # Then
-        assert route_result['status'] == OrderStatus.SUBMITTED
-        assert status_result['status'] == OrderStatus.FILLED
-        assert cancel_result['status'] == OrderStatus.CANCELLED
-        assert final_status['status'] == OrderStatus.CANCELLED
+        assert_equals(route_result['status'], OrderStatus.SUBMITTED, "Le statut initial doit être SUBMITTED", "Test du cycle de vie complet d'un ordre")
+        assert_equals(status_result['status'], OrderStatus.FILLED, "Le statut doit être FILLED", "Test du cycle de vie complet d'un ordre")
+        assert_equals(cancel_result['status'], OrderStatus.CANCELLED, "L'annulation doit être CANCELLED", "Test du cycle de vie complet d'un ordre")
+        assert_equals(final_status['status'], OrderStatus.CANCELLED, "Le statut final doit être CANCELLED", "Test du cycle de vie complet d'un ordre")

@@ -12,6 +12,13 @@ from datetime import datetime
 # Ajouter le chemin du projet au PYTHONPATH
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '.'))
 
+# Import des assertions standardisées
+from tests.utils.assertions import (
+    assert_float_equals,
+    assert_dict_structure,
+    assert_list_structure
+)
+
 def test_advanced_metrics():
     """Test the implementation of advanced metrics."""
     try:
@@ -47,20 +54,42 @@ def test_advanced_metrics():
         # Afficher les métriques principales
         if 'confusion_matrix' in advanced_metrics:
             print("  - Matrice de confusion (absolue et normalisée)")
+            assert_dict_structure(
+                advanced_metrics['confusion_matrix'],
+                ['absolute', 'normalized'],
+                message="La matrice de confusion doit contenir les clés 'absolute' et 'normalized'"
+            )
         
         if 'per_class_metrics' in advanced_metrics:
             print("  - Métriques par classe (macro et weighted)")
+            assert_dict_structure(
+                advanced_metrics['per_class_metrics'],
+                ['macro', 'weighted'],
+                message="Les métriques par classe doivent contenir 'macro' et 'weighted'"
+            )
         
         if 'macro_f1' in advanced_metrics:
-            print(f"  - Macro F1: {advanced_metrics['macro_f1']:.4f}")
+            macro_f1 = advanced_metrics['macro_f1']
+            assert isinstance(macro_f1, (int, float)), "Macro F1 doit être numérique"
+            assert 0 <= macro_f1 <= 1, f"Macro F1 doit être entre 0 et 1, valeur: {macro_f1}"
+            print(f"  - Macro F1: {macro_f1:.4f}")
         
         if 'balanced_accuracy' in advanced_metrics:
-            print(f"  - Balanced Accuracy: {advanced_metrics['balanced_accuracy']:.4f}")
+            balanced_acc = advanced_metrics['balanced_accuracy']
+            assert isinstance(balanced_acc, (int, float)), "Balanced Accuracy doit être numérique"
+            assert 0 <= balanced_acc <= 1, f"Balanced Accuracy doit être entre 0 et 1, valeur: {balanced_acc}"
+            print(f"  - Balanced Accuracy: {balanced_acc:.4f}")
         
         if 'cohens_kappa' in advanced_metrics:
-            kappa_score = advanced_metrics['cohens_kappa']['score']
-            kappa_interp = advanced_metrics['cohens_kappa']['interpretation']
-            print(f"  - Cohen's Kappa: {kappa_score:.4f} ({kappa_interp})")
+            kappa_data = advanced_metrics['cohens_kappa']
+            assert_dict_structure(
+                kappa_data,
+                ['score', 'interpretation'],
+                message="Cohen's Kappa doit contenir 'score' et 'interpretation'"
+            )
+            kappa_score = kappa_data['score']
+            assert isinstance(kappa_score, (int, float)), "Cohen's Kappa score doit être numérique"
+            print(f"  - Cohen's Kappa: {kappa_score:.4f} ({kappa_data['interpretation']})")
         
         if 'roc_auc_scores' in advanced_metrics:
             print(f"  - ROC-AUC Scores: {len(advanced_metrics['roc_auc_scores'])} classes")

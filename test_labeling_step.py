@@ -33,13 +33,15 @@ async def test_labeling_step():
         print("✅ Labeling integration step completed successfully")
         
         # Check if target columns were saved
-        store_path = 'versioned_artifacts/UNKNOWN_binance_15m_long_analyst'
+        # Labeled data is now persisted to the ETHUSDT-specific store
+        store_path = 'versioned_artifacts/ETHUSDT_binance_15m_long_analyst'
         store = VersionedArtifactStore(store_path)
         
-        # Get latest version
+        # Get latest labeled_data_ETHUSDT_15m version in this store
         versions = store.list_versions()
         if versions:
-            latest_version = sorted(versions)[-1]
+            labeled_versions = [v for v in versions if 'labeled_data_ETHUSDT_15m' in v]
+            latest_version = sorted(labeled_versions)[-1] if labeled_versions else sorted(versions)[-1]
             print(f"📋 Latest version: {latest_version}")
             
             # Get version info

@@ -77,7 +77,16 @@ class DataLoadingCommandHandler(BaseCommandHandler):
     def execute(self, symbol: str, exchange: str,
                 lookback_days: int = 1460, blank_mode: bool = False) -> bool:
         """Execute data loading and consolidation."""
-        actual_lookback = 30 if blank_mode else lookback_days
+        if blank_mode:
+            try:
+                from src.launcher.ares_launcher import get_mode_lookback_days
+
+                actual_lookback = get_mode_lookback_days("blank")
+            except Exception:
+                # Fallback to existing behavior if launcher config is unavailable
+                actual_lookback = lookback_days
+        else:
+            actual_lookback = lookback_days
         return self.launcher.run_data_loading(
             symbol = symbol,
             exchange = exchange,

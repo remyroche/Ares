@@ -6,6 +6,7 @@ This step integrates labeling with feature generation.
 
 import asyncio
 import logging
+import json
 from typing import Any, Dict, List, Optional, Union
 from datetime import datetime
 from pathlib import Path
@@ -42,7 +43,9 @@ logger = logging.getLogger(__name__)
 # Base profit target threshold for volatility-aware labeling
 # This is the starting point that gets dynamically adjusted based on market volatility
 # Range: 1.0x - 2.0x multiplier based on volatility conditions
-BASE_VOLATILITY_THRESHOLD = 0.007  # 0.7% base threshold (realistic for ETHUSDT crypto trading on 15m timeframe)
+BASE_VOLATILITY_THRESHOLD = 0.018  # 1.8% base threshold (tuned for ETHUSDT crypto trading on 15m timeframe)
+
+OPPORTUNITY_DETECTION_THRESHOLD = 0.14
 
 # Configuration validation to ensure consistency
 def validate_threshold_consistency(base_threshold: float, config_threshold: float) -> None:
@@ -54,7 +57,7 @@ def get_optimal_threshold(symbol: str, timeframe: str) -> float:
     """Get optimal threshold based on symbol and timeframe."""
     # Symbol-specific thresholds optimized for different timeframes
     thresholds = {
-        'ETHUSDT': {'15m': 0.007, '1h': 0.015, '4h': 0.025},
+        'ETHUSDT': {'15m': 0.018, '1h': 0.018, '4h': 0.025},
         'BTCUSDT': {'15m': 0.005, '1h': 0.012, '4h': 0.020},
         'ADAUSDT': {'15m': 0.008, '1h': 0.018, '4h': 0.030},
         'SOLUSDT': {'15m': 0.010, '1h': 0.020, '4h': 0.035},
@@ -74,19 +77,18 @@ def get_label_smoothing_params(timeframe: str) -> Dict[str, Any]:
 
     Timeframe recommendations:
         - High-frequency (1m-5m): More smoothing for noisy signals
-        - Medium-frequency (15m-1h): Balanced smoothing (default)
+        - 15m profile: Softer smoothing to preserve sharper edges
+        - Medium-frequency (>15m-1h): Balanced smoothing (default)
         - Low-frequency (4h-daily): Lighter smoothing, slower EMA
     """
-    # Parse timeframe to minutes
     try:
         tf_minutes = timeframe_to_minutes(timeframe)
-    except:
-        # Default to 15m if parsing fails
+    except Exception:
         tf_minutes = 15
 
     # High-frequency: 1m - 5m bars
     if tf_minutes <= 5:
-        return {
+        params = {
             'epsilon': 0.12,        # More smoothing for noisy signals
             'gamma': 1.5,           # Stronger shrinkage for uncertain samples
             'ema_decay': 0.90,      # Faster reaction to regime changes
@@ -97,18 +99,18 @@ def get_label_smoothing_params(timeframe: str) -> Dict[str, Any]:
 
     # Medium-frequency: 15m - 1h bars (DEFAULT)
     elif tf_minutes <= 60:
-        return {
-            'epsilon': 0.08,        # Moderate smoothing
-            'gamma': 1.0,           # Balanced shrinkage
-            'ema_decay': 0.95,      # Standard temporal smoothing
+        params = {
+            'epsilon': 0.03,        # Softer smoothing for 15m-1h
+            'gamma': 0.1,           # Much gentler shrinkage to preserve binary labels
+            'ema_decay': 0.15,      # Strong EMA shortening to keep clusters near 1-3 bars
             'apply_classification_smoothing': True,
-            'apply_uncertainty_shrinkage': True,
+            'apply_uncertainty_shrinkage': False,  # DISABLED: was collapsing binary labels to zero
             'apply_causal_ema': True,
         }
 
     # Low-frequency: 4h - daily bars
     else:
-        return {
+        params = {
             'epsilon': 0.05,        # Lighter smoothing (data less noisy)
             'gamma': 0.5,           # Gentler shrinkage
             'ema_decay': 0.98,      # Slower reaction (preserve long-term signal)
@@ -116,6 +118,121 @@ def get_label_smoothing_params(timeframe: str) -> Dict[str, Any]:
             'apply_uncertainty_shrinkage': True,
             'apply_causal_ema': False,  # May skip EMA for daily data
         }
+
+    return params
+
+
+
+def _safe_percent_to_float(value: Any) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, str):
+        normalized = value.strip()
+        if normalized.endswith('%'):
+            normalized = normalized[:-1]
+        normalized = normalized.replace(',', '')
+        try:
+            return float(normalized)
+        except ValueError:
+            return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _compute_cluster_metrics_from_targets(df: pd.DataFrame, threshold: float) -> Dict[str, int]:
+    """Compute cluster-based opportunity counts from labeled targets.
+
+    A cluster is defined as a contiguous region of bars where the target magnitude
+    is above the given threshold. Clusters are counted separately for long and
+    short directions and then combined.
+    """
+
+    def _count_clusters(series: pd.Series) -> int:
+        numeric = pd.to_numeric(series, errors="coerce").fillna(0.0)
+        active = numeric.abs() >= threshold
+        starts = active & ~active.shift(1, fill_value=False)
+        return int(starts.sum())
+
+    long_col = None
+    short_col = None
+    if isinstance(df, pd.DataFrame) and not df.empty:
+        if "target_long_fused" in df.columns:
+            long_col = "target_long_fused"
+        elif "target_long" in df.columns:
+            long_col = "target_long"
+
+        if "target_short_fused" in df.columns:
+            short_col = "target_short_fused"
+        elif "target_short" in df.columns:
+            short_col = "target_short"
+
+    long_clusters = _count_clusters(df[long_col]) if long_col is not None else 0
+    short_clusters = _count_clusters(df[short_col]) if short_col is not None else 0
+
+    return {
+        "long_clusters": long_clusters,
+        "short_clusters": short_clusters,
+        "total_clusters": long_clusters + short_clusters,
+    }
+
+
+def _quantile_compress_series(series: Any, lower_pct: float, upper_pct: float) -> tuple[pd.Series, Dict[str, Any]]:
+    stats = {
+        'applied': False,
+        'lower_pct': lower_pct,
+        'upper_pct': upper_pct,
+        'lower_value': None,
+        'upper_value': None,
+        'pct_changed': 0.0
+    }
+    if series is None:
+        return pd.Series(dtype=np.float32), stats
+
+    base_series = pd.Series(series)
+    numeric = pd.Series(pd.to_numeric(base_series, errors='coerce'), index=base_series.index)
+    numeric = numeric.replace([np.inf, -np.inf], np.nan)
+    valid_mask = numeric.notna()
+    if valid_mask.sum() < 10:
+        return numeric.astype(np.float32), stats
+
+    lower_value = float(numeric.quantile(lower_pct))
+    upper_value = float(numeric.quantile(upper_pct))
+    winsorized = numeric.clip(lower=lower_value, upper=upper_value)
+    ranks = winsorized.abs().rank(method='average', pct=True)
+    sign_series = winsorized.apply(lambda v: np.sign(v) if pd.notna(v) else np.nan)
+    compressed = (sign_series.fillna(0.0) * ranks.fillna(0.0)).astype(np.float32)
+
+    changed_mask = winsorized.ne(numeric) & valid_mask
+    stats.update({
+        'applied': True,
+        'lower_value': lower_value,
+        'upper_value': upper_value,
+        'pct_changed': float(changed_mask.mean()) if valid_mask.any() else 0.0
+    })
+
+    compressed.loc[~valid_mask] = np.nan
+    return compressed, stats
+
+
+def apply_quantile_compression_to_columns(
+    df: pd.DataFrame,
+    columns: List[str],
+    lower_pct: float,
+    upper_pct: float
+) -> Dict[str, Dict[str, Any]]:
+    stats: Dict[str, Dict[str, Any]] = {}
+    if df is None or df.empty:
+        return stats
+
+    for col in columns:
+        if col not in df.columns:
+            continue
+        compressed, column_stats = _quantile_compress_series(df[col], lower_pct, upper_pct)
+        df[col] = compressed
+        stats[col] = column_stats
+    return stats
 
 
 def calculate_volume_confidence_adjustment(
@@ -310,6 +427,73 @@ def calculate_volume_confidence_adjustment(
         tprint("ℹ️ No opportunities to adjust", "INFO")
     
     return confidence_adjustment, volume_stats
+
+
+def prepare_labels_for_quality_metrics(labels: Union[pd.Series, pd.DataFrame]) -> Union[pd.Series, pd.DataFrame]:
+    """Detrend and normalize labels before quality scoring to reduce persistence bias.
+
+    This helper now also applies an entropy-aware non-linear squash so that extreme
+    moves are dampened before computing entropy/outlier metrics, while preserving
+    rank ordering of typical moves.
+    """
+
+    def _normalize_series(series: pd.Series) -> pd.Series:
+        base_series = pd.Series(series).astype(float)
+        numeric_series = pd.Series(pd.to_numeric(base_series, errors='coerce'), index=base_series.index)
+
+        # 1) Detrend via first difference and standardize
+        differenced = numeric_series.diff().fillna(0.0)
+        std_value = float(differenced.std()) if differenced.std() is not None else 0.0
+        if std_value > 1e-8:
+            differenced = differenced / std_value
+
+        # 2) Estimate local normalized entropy on this series
+        values = differenced.replace([np.inf, -np.inf], 0.0).fillna(0.0).values.astype(float)
+        normalized_entropy_local = 0.0
+        if values.size > 0:
+            try:
+                hist, _ = np.histogram(values, bins=20)
+                total = float(hist.sum())
+                if total > 0:
+                    probs = hist.astype(float) / total
+                    probs = probs[probs > 0]
+                    if probs.size > 0:
+                        entropy = float(-(probs * np.log(probs)).sum())
+                        max_entropy = float(np.log(len(hist))) if len(hist) > 0 else 1.0
+                        if max_entropy > 0:
+                            normalized_entropy_local = float(entropy / max_entropy)
+            except Exception:
+                normalized_entropy_local = 0.0
+
+        # 3) Entropy-aware non-linear squashing with tanh
+        #    - High-entropy regimes (>=0.7): stronger squash (smaller scale)
+        #    - Lower-entropy regimes: gentler squash to preserve edges
+        if normalized_entropy_local >= 0.7:
+            squash_scale = 0.7
+        elif normalized_entropy_local <= 0.4:
+            squash_scale = 1.3
+        else:
+            squash_scale = 1.0
+
+        if squash_scale > 0:
+            differenced = pd.Series(np.tanh(differenced / squash_scale), index=differenced.index)
+
+        return differenced.replace([np.inf, -np.inf], 0.0).fillna(0.0)
+
+    if isinstance(labels, pd.DataFrame):
+        processed: Dict[str, pd.Series] = {}
+        for column in labels.columns:
+            column_series = labels[column]
+            if pd.api.types.is_numeric_dtype(column_series):
+                processed[column] = _normalize_series(pd.Series(column_series))
+        if processed:
+            return pd.DataFrame(processed, index=labels.index)
+        return labels
+
+    try:
+        return _normalize_series(pd.Series(labels))
+    except Exception:
+        return labels
 
 
 def timeframe_to_minutes(tf: str) -> float:
@@ -531,6 +715,22 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
         
         tprint(f"🏷️ Starting volatility-aware labeling integration for {config.get('symbol', 'ETHUSDT')}", "INFO")
 
+        baseline_labeling_enabled = config.get('run_labeling_baseline_check', True)
+        apply_quantile_compression = config.get('apply_quantile_compression', True)
+        # Base quantile compression bounds (regime-aware adjustments applied later)
+        quantile_lower_pct = float(config.get('quantile_compression_lower_pct', 0.0025))
+        quantile_upper_pct = float(config.get('quantile_compression_upper_pct', 0.9975))
+        if quantile_upper_pct <= quantile_lower_pct:
+            quantile_upper_pct = min(0.999, quantile_lower_pct + 0.01)
+        quantile_compression_stats: Dict[str, Dict[str, Any]] = {}
+        quantile_compression_overview: Dict[str, Dict[str, Any] | float | bool | list] = {
+            'enabled': apply_quantile_compression,
+            'columns': [],
+            'avg_pct_changed': 0.0,
+            'lower_pct': quantile_lower_pct,
+            'upper_pct': quantile_upper_pct
+        }
+
         try:
             # Initialize variables with safe defaults BEFORE any conditional blocks
             opportunities_detected = 0
@@ -543,6 +743,8 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             max_volatility_adaptation = 1.0
             min_volatility_adaptation = 1.0
             total_samples = 0
+            labeling_baseline_results: Optional[Dict[str, Any]] = None
+            labeled_data_store_reference: Optional[Dict[str, Any]] = None
             
             # Initialize spike detection stats with defaults
             spike_detection_stats = {
@@ -644,7 +846,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 MLLabelQualityAssessor, MLQualityAssessmentConfig, MLModelType
             )
             from src.research.profit_labeling.labeling_validator import (
-                LabelingValidator, LabelingValidatorConfig
+                LabelingValidator, ValidationConfig
             )
 
             # Get optimal threshold for this symbol/timeframe combination
@@ -663,13 +865,31 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 # - The adaptation multiplier (avg_volatility_adaptation) typically ranges 1.0x - 2.0x
                 # - Higher threshold in volatile markets captures more significant opportunities while filtering noise
                 # - This balances between signal frequency and quality across different market regimes
-                lookahead_periods=6,
+                lookahead_periods=3,
                 label_type=label_type,
                 enable_long_positions=True,
                 enable_short_positions=False,
-                min_label_quality=0.0,  # Quality gate disabled - let all opportunities through
-                min_predictability=0.0   # Predictability gate disabled - let all opportunities through
+                min_label_quality=0.4,
+                min_predictability=0.4
             )
+
+            # Re-enable quality gating across both top-level and nested configs
+            vol_config.min_label_quality = 0.4
+            vol_config.min_predictability = 0.4
+            if hasattr(vol_config, "quality_scoring"):
+                vol_config.quality_scoring.min_quality_threshold = 0.4
+                vol_config.quality_scoring.min_predictability = 0.4
+
+            vol_config.volatility.enabled = True
+            vol_config.volatility.sensitivity = 1.15
+            if hasattr(vol_config, 'multi_target'):
+                vol_config.multi_target.volatility_modulation = True
+                vol_config.multi_target.min_threshold_multiplier = 1.0
+                vol_config.multi_target.max_threshold_multiplier = 2.0
+            if hasattr(vol_config, 'rate_control'):
+                vol_config.rate_control.enabled = True
+                vol_config.rate_control.max_ops_per_day = 8
+            volatility_adaptation_enabled = getattr(vol_config.volatility, 'enabled', True)
 
             # Configure label smoothing with timeframe-optimized parameters
             vol_config.label_smoothing.enabled = True
@@ -695,46 +915,49 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             # Validate threshold consistency
             validate_threshold_consistency(optimal_threshold, vol_config.volatility_threshold)
             
-            # VOLATILITY THRESHOLD SYSTEM EXPLAINED:
+            # VOLATILITY THRESHOLD SYSTEM (STATIC MODE):
             # =========================================
-            # There are THREE different threshold concepts:
+            # Label smoothing now handles regime noise, so we run a single fixed threshold:
             #
             # 1. BASE THRESHOLD (BASE_VOLATILITY_THRESHOLD):
-            #    - Starting point for the target profit
-            #    - Represents the minimum move we want to capture
-            #    - Applied in calm/low-volatility markets
+            #    - Only target used (0.7% for ETHUSDT 15m)
+            #    - Applied uniformly regardless of volatility regime
             #
-            # 2. EFFECTIVE THRESHOLD (dynamic):
-            #    - Calculated as: effective = base * multiplier
-            #    - Multiplier ranges from 1.0x to 2.0x based on market volatility
-            #    - Uses formula: multiplier = clip(1 + k*(vol/vol_mean - 1), 1.0, 2.0)
-            #      where k = volatility sensitivity (default 1.0)
-            #    - Example: base * 1.8x multiplier = 1.26% effective threshold
+            # 2. EFFECTIVE THRESHOLD (static):
+            #    - Multiplier locked at 1.0x
+            #    - Reports still emit min/avg/max multipliers to highlight static behavior
             #
             # 3. VOLATILITY ADAPTATION METRICS (reporting):
-            #    - avg_volatility_adaptation: Average multiplier applied during labeling
-            #    - min_volatility_adaptation: Minimum multiplier (typically 1.0x)
-            #    - max_volatility_adaptation: Maximum multiplier (typically 2.0x)
+            #    - All equal 1.0x because dynamic modulation is disabled
             #
-            # WHY THIS MATTERS:
-            # - Low volatility: BASE_VOLATILITY_THRESHOLD keeps signal frequency high
-            # - High volatility: BASE_VOLATILITY_THRESHOLD * 2.0 filters out noise, keeps quality high
-            # - Adaptive: Automatically adjusts to market conditions in real-time
-            #
-            # EXPECTED RANGES (using BASE_VOLATILITY_THRESHOLD = 0.025):
-            # - Normal markets: 2.5% - 3.5% effective threshold
-            # - Volatile markets: 4.0% - 5.0% effective threshold
-            # - Extreme markets: up to 5.0% (capped at 2x multiplier)
+            # This keeps opportunity counts governed solely by smoothing + quality filters.
 
             volatility_labeler = VolatilityAwareMultiHorizonLabeler(vol_config)
             tprint(f"🏷️ Volatility labeler initialized: threshold={vol_config.volatility_threshold:.1%}, lookahead={vol_config.lookahead_periods} periods", "SUCCESS")
+            tprint(f"🔧 Volatility adaptation config: min={vol_config.multi_target.min_threshold_multiplier:.2f}x, max={vol_config.multi_target.max_threshold_multiplier:.2f}x", "INFO")
 
-            # Process actual market data through volatility labeler
-            tprint("🔄 Processing data through volatility labeler...", "INFO")
+            # Process actual market data through volatility labeler with EWMA-based volatility filtering
+            tprint("🔄 Processing data through volatility labeler (EWMA-filtered)...", "INFO")
+
+            # Build EWMA-based volatility mask: skip ultra-quiet bars from label generation
+            price_series = market_data['close']
+            realized_vol = price_series.pct_change().rolling(window=vol_config.volatility.window).std()
+            ewma_vol = realized_vol.ewm(span=vol_config.volatility.vol_ema_span, adjust=False).mean()
+            vol_median = ewma_vol.median()
+            if vol_median and vol_median > 0:
+                # Stronger floor: require at least 0.5x median EWMA volatility
+                low_vol_mask = ewma_vol < (0.5 * vol_median)
+            else:
+                low_vol_mask = pd.Series(False, index=market_data.index)
+
+            filtered_market_data = market_data.loc[~low_vol_mask].copy()
+            if filtered_market_data.empty:
+                tprint("⚠️ EWMA volatility filter removed all samples – falling back to full dataset", "WARNING")
+                filtered_market_data = market_data
 
             try:
                 labeling_result = volatility_labeler.generate_labels(
-                    market_data,
+                    filtered_market_data,
                     price_column="close"
                 )
 
@@ -807,16 +1030,14 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     tprint("🔍 Running comprehensive labeling validation...", "INFO")
 
                     # Initialize validator with configuration
-                    validator_config = LabelingValidatorConfig(
+                    validator_config = ValidationConfig(
                         validate_consistency=True,
                         validate_stability=True,
                         validate_predictiveness=True,
                         validate_significance=True,
                         validate_bias=True,
                         min_sample_size=100,
-                        consistency_threshold=0.7,
                         stability_window=50,
-                        predictiveness_threshold=0.05,
                         significance_level=0.05,
                     )
 
@@ -834,9 +1055,9 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
 
                         # Report key validation results
                         for metric_name, result in validation_results.items():
-                            if hasattr(result, 'passed') and hasattr(result, 'score'):
-                                status = "✅" if result.passed else "⚠️"
-                                tprint(f"   {status} {metric_name}: {result.score:.3f} ({'PASS' if result.passed else 'FAIL'})", "INFO")
+                            if hasattr(result, 'value'):
+                                status = "✅" if getattr(result, 'is_significant', False) else "ℹ️"
+                                tprint(f"   {status} {metric_name}: {getattr(result, 'value', 0.0):.3f}", "INFO")
                     else:
                         tprint(f"⚠️ Skipping validation: insufficient data ({len(market_data)} < {validator_config.min_sample_size})", "WARNING")
 
@@ -855,9 +1076,10 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 if validation_results:
                     labeling_result.metadata['labeling_validation'] = {
                         metric_name: {
-                            'passed': result.passed if hasattr(result, 'passed') else None,
-                            'score': result.score if hasattr(result, 'score') else None,
-                            'message': result.message if hasattr(result, 'message') else None,
+                            'value': getattr(result, 'value', None),
+                            'is_significant': getattr(result, 'is_significant', None),
+                            'interpretation': getattr(result, 'interpretation', None),
+                            'confidence_interval': getattr(result, 'confidence_interval', None),
                         }
                         for metric_name, result in validation_results.items()
                     }
@@ -870,34 +1092,35 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
 
             # CORRECTED: Extract real metrics from actual labeling results
             if hasattr(labeling_result.labels, '__len__') and not labeling_result.labels.empty:
-                # FIX: Handle both Series and DataFrame properly
-                if isinstance(labeling_result.labels, pd.DataFrame):
-                    # For DataFrame, count non-zero across all columns
-                    opportunities_detected = int((labeling_result.labels != 0).any(axis=1).sum())
+                labels_obj = labeling_result.labels
+
+                # FIX: Handle both Series and DataFrame properly using magnitude threshold
+                if isinstance(labels_obj, pd.DataFrame):
+                    magnitude_mask = labels_obj.abs() >= OPPORTUNITY_DETECTION_THRESHOLD
+                    opportunities_detected = int(magnitude_mask.any(axis=1).sum())
                 else:
-                    # For Series, count non-zero values
-                    opportunities_detected = int((labeling_result.labels != 0).sum())
-                
+                    magnitude_mask = labels_obj.abs() >= OPPORTUNITY_DETECTION_THRESHOLD
+                    opportunities_detected = int(magnitude_mask.sum())
+
                 # Calculate long/short bias from actual results
-                if isinstance(labeling_result.labels, pd.DataFrame):
+                if isinstance(labels_obj, pd.DataFrame):
                     # Check for new simplified target structure (target_long, target_short)
-                    if 'target_long' in labeling_result.labels.columns and 'target_short' in labeling_result.labels.columns:
-                        long_opportunities = int((labeling_result.labels['target_long'] > 0).sum())
-                        short_opportunities = int((labeling_result.labels['target_short'] > 0).sum())
+                    if 'target_long' in labels_obj.columns and 'target_short' in labels_obj.columns:
+                        long_opportunities = int((labels_obj['target_long'] >= OPPORTUNITY_DETECTION_THRESHOLD).sum())
+                        short_opportunities = int((labels_obj['target_short'] >= OPPORTUNITY_DETECTION_THRESHOLD).sum())
                         tprint(f"📊 Using new simplified target structure for counting opportunities", "INFO")
                     else:
                         # For DataFrame, count across all columns
-                        long_opportunities = int((labeling_result.labels > 0).any(axis=1).sum())
-                        short_opportunities = int((labeling_result.labels < 0).any(axis=1).sum())
-                elif hasattr(labeling_result.labels, 'value_counts'):
-                    # For Series, use value_counts
-                    vc = labeling_result.labels.value_counts()
-                    long_opportunities = int(vc.get(1) or 0)
-                    short_opportunities = int(vc.get(-1) or 0)
+                        long_opportunities = int((labels_obj > OPPORTUNITY_DETECTION_THRESHOLD).any(axis=1).sum())
+                        short_opportunities = int((labels_obj < -OPPORTUNITY_DETECTION_THRESHOLD).any(axis=1).sum())
+                elif hasattr(labels_obj, 'value_counts'):
+                    # For Series, use sign and magnitude
+                    long_opportunities = int((labels_obj > OPPORTUNITY_DETECTION_THRESHOLD).sum())
+                    short_opportunities = int((labels_obj < -OPPORTUNITY_DETECTION_THRESHOLD).sum())
                 else:
-                    # For other types, count directly
-                    long_opportunities = int((labeling_result.labels > 0).sum())
-                    short_opportunities = int((labeling_result.labels < 0).sum())
+                    # For other types, count directly with threshold
+                    long_opportunities = int((labels_obj > OPPORTUNITY_DETECTION_THRESHOLD).sum())
+                    short_opportunities = int((labels_obj < -OPPORTUNITY_DETECTION_THRESHOLD).sum())
 
                 # Extract actual quality metrics from labeler if available
                 quality_scores = getattr(labeling_result, 'quality_scores', {})
@@ -905,6 +1128,31 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 if isinstance(quality_scores, dict) and quality_scores:
                     first_target = next(iter(quality_scores.values()))
 
+                # Initialize label quality overview with safe defaults so it can be exported
+                label_quality_overview = {
+                    'overall_quality': None,
+                    'predictability_ic': None,
+                    'hit_rate': None,
+                    'hit_rate_long': None,
+                    'hit_rate_short': None,
+                    'sharpe': None,
+                    'sharpe_long': None,
+                    'sharpe_short': None,
+                    'stability': None,
+                    'avg_potential_profit': None,
+                    'avg_potential_profit_long': None,
+                    'avg_potential_profit_short': None,
+                    'uplift': None,
+                    'uplift_long': None,
+                    'uplift_short': None,
+                    'long_quality': None,
+                    'short_quality': None,
+                    'long_count': None,
+                    'short_count': None,
+                }
+
+                # Defaults before applying label-quality gating
+                raw_opportunities_detected = opportunities_detected
                 high_quality_opportunities = opportunities_detected
                 filtered_opportunities = 0
                 avg_confidence_score = 0.0
@@ -912,44 +1160,188 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 avg_volatility_adaptation = 1.0
                 max_volatility_adaptation = 2.0
                 min_volatility_adaptation = 1.0
+                # Cluster-based opportunity counts (contiguous non-zero regions).
+                cluster_long_opportunities = 0
+                cluster_short_opportunities = 0
+                cluster_total_opportunities = 0
 
-                if first_target and hasattr(first_target, 'opportunity_quality_scores'):
-                    scores = list(first_target.opportunity_quality_scores or [])
-                    if scores:
-                        quality_threshold = 0.3
-                        high_quality_opportunities = sum(1 for s in scores if s >= quality_threshold)
-                        filtered_opportunities = opportunities_detected - high_quality_opportunities
+                # ------------------------------------------------------------------
+                # OPPORTUNITY-LEVEL LABEL QUALITY GATING
+                # ------------------------------------------------------------------
+                # Use per-opportunity quality scores to filter out low-quality labels
+                # from the final label DataFrame. This ensures downstream training
+                # only sees the top-quality tranche of opportunities by dropping the
+                # worst-quality quantile of candidate signals.
+                if first_target:
+                    # Prefer per-bar propagated quality scores when available; fall
+                    # back to sparse opportunity-level scores otherwise.
+                    opp_quality = None
+                    if hasattr(first_target, 'per_bar_quality_scores'):
+                        opp_quality = getattr(first_target, 'per_bar_quality_scores')
+                    elif hasattr(first_target, 'opportunity_quality_scores'):
+                        opp_quality = getattr(first_target, 'opportunity_quality_scores')
 
-                        quality_rate = high_quality_opportunities / opportunities_detected if opportunities_detected > 0 else 0
+                    if isinstance(opp_quality, pd.Series) and not opp_quality.empty:
+                        # Aggregate to unique timestamps (max quality if multiple entries)
+                        opp_quality_by_ts = opp_quality.groupby(opp_quality.index).max()
+
+                        labels_obj = labeling_result.labels
+
+                        # Align quality scores to label index
+                        quality_aligned = opp_quality_by_ts.reindex(labels_obj.index)
+
+                        # Candidate mask: bars with non-trivial labels (by magnitude)
+                        if isinstance(labels_obj, pd.DataFrame):
+                            original_signal_mask = (labels_obj.abs() >= OPPORTUNITY_DETECTION_THRESHOLD).any(axis=1)
+                        else:
+                            original_signal_mask = labels_obj.abs() >= OPPORTUNITY_DETECTION_THRESHOLD
+
+                        candidate_quality = quality_aligned[original_signal_mask]
+
+                        # Quantile-based gate: drop the worst ~20% of non-NaN candidates by quality.
+                        # NaN-quality candidates are always kept to avoid over-pruning.
+                        quality_quantile = 0.2
+                        valid_candidate_quality = candidate_quality[candidate_quality.notna()]
+                        if len(valid_candidate_quality) >= 5:
+                            try:
+                                ranks = valid_candidate_quality.rank(method="first", pct=True)
+                                keep_valid = ranks > quality_quantile
+
+                                quality_mask = pd.Series(False, index=labels_obj.index)
+
+                                # Always keep NaN-quality candidates
+                                nan_index = candidate_quality.index[candidate_quality.isna()]
+                                if len(nan_index) > 0:
+                                    quality_mask.loc[nan_index] = True
+
+                                # Keep top-quality non-NaN candidates
+                                quality_mask.loc[keep_valid.index] = keep_valid.astype(bool)
+                            except Exception:
+                                # Fallback: if ranking fails, keep all candidates
+                                quality_mask = pd.Series(True, index=labels_obj.index)
+                        else:
+                            # Too few candidates for meaningful quantile; keep all
+                            quality_mask = pd.Series(True, index=labels_obj.index)
+
+                        if isinstance(labels_obj, pd.DataFrame):
+                            effective_mask = quality_mask & original_signal_mask
+                            labeling_result.labels = labels_obj.where(effective_mask, 0)
+                        elif isinstance(labels_obj, pd.Series):
+                            effective_mask = quality_mask & original_signal_mask
+                            labeling_result.labels = labels_obj.where(effective_mask, 0)
+
+                        # Recompute opportunity counts AFTER gating using magnitude threshold
+                        labels_after_gating = labeling_result.labels
+                        if isinstance(labels_after_gating, pd.DataFrame):
+                            magnitude_mask_after = labels_after_gating.abs() >= OPPORTUNITY_DETECTION_THRESHOLD
+                            opportunities_detected = int(magnitude_mask_after.any(axis=1).sum())
+                            if 'target_long' in labels_after_gating.columns and 'target_short' in labels_after_gating.columns:
+                                long_opportunities = int((labels_after_gating['target_long'] >= OPPORTUNITY_DETECTION_THRESHOLD).sum())
+                                short_opportunities = int((labels_after_gating['target_short'] >= OPPORTUNITY_DETECTION_THRESHOLD).sum())
+                            else:
+                                long_opportunities = int((labels_after_gating > OPPORTUNITY_DETECTION_THRESHOLD).any(axis=1).sum())
+                                short_opportunities = int((labels_after_gating < -OPPORTUNITY_DETECTION_THRESHOLD).any(axis=1).sum())
+                        else:
+                            magnitude_mask_after = labels_after_gating.abs() >= OPPORTUNITY_DETECTION_THRESHOLD
+                            opportunities_detected = int(magnitude_mask_after.sum())
+                            long_opportunities = int((labels_after_gating > OPPORTUNITY_DETECTION_THRESHOLD).sum())
+                            short_opportunities = int((labels_after_gating < -OPPORTUNITY_DETECTION_THRESHOLD).sum())
+
+                        high_quality_opportunities = opportunities_detected
+                        filtered_opportunities = max(0, raw_opportunities_detected - high_quality_opportunities)
+                        quality_rate = high_quality_opportunities / raw_opportunities_detected if raw_opportunities_detected > 0 else 0.0
+
+                        # Compute cluster-based opportunities from the final gated labels
+                        try:
+                            if isinstance(labels_after_gating, pd.DataFrame):
+                                cluster_source_df = labels_after_gating
+                            else:
+                                # Fallback: treat the single series as a generic target column
+                                cluster_source_df = labels_after_gating.to_frame(name='target')
+
+                            cluster_stats = _compute_cluster_metrics_from_targets(
+                                cluster_source_df,
+                                threshold=OPPORTUNITY_DETECTION_THRESHOLD,
+                            )
+                            cluster_long_opportunities = cluster_stats.get('long_clusters', 0)
+                            cluster_short_opportunities = cluster_stats.get('short_clusters', 0)
+                            cluster_total_opportunities = cluster_stats.get('total_clusters', 0)
+                        except Exception as e:
+                            tprint(f"⚠️ Failed to compute cluster-based opportunity metrics from gated labels: {e}", "WARNING")
 
                         if quality_rate < 0.05:
                             tprint(
                                 f"❌ CRITICAL: Only {quality_rate:.1%} opportunities pass quality threshold - labeling may be faulty",
                                 "ERROR",
                             )
-                            high_quality_opportunities = 0
-                            filtered_opportunities = opportunities_detected
+                            # In this extreme case, keep gating outcome but flag that effectively no
+                            # high-quality opportunities are present.
                             tprint(
-                                "⚠️ Quality filtering: Rejecting all opportunities due to poor quality distribution",
+                                "⚠️ Quality filtering: Nearly all opportunities rejected due to poor quality distribution",
                                 "WARNING",
                             )
                         elif quality_rate < 0.15:
                             tprint(
-                                f"⚠️ Quality filtering: Only {quality_rate:.1%} opportunities pass quality threshold - consider reviewing thresholds",
+                                f"⚠️ Quality filtering: Only {quality_rate:.1%} opportunities pass quality quantile gate - consider reviewing quality distribution",
                                 "WARNING",
                             )
                             tprint(
-                                f"✅ Quality filtering: {high_quality_opportunities} opportunities passed 30% threshold ({quality_rate:.1f}%)",
+                                f"✅ Quality filtering: {high_quality_opportunities} opportunities passed top-quality quantile gate ({quality_rate:.1f}%)",
                                 "SUCCESS",
                             )
                         else:
                             tprint(
-                                f"✅ Quality filtering: {high_quality_opportunities} opportunities passed 30% threshold ({quality_rate:.1f}%)",
+                                f"✅ Quality filtering: {high_quality_opportunities} opportunities passed top-quality quantile gate ({quality_rate:.1f}%)",
                                 "SUCCESS",
                             )
 
                 if first_target and hasattr(first_target, 'metrics'):
                     metrics = first_target.metrics
+
+                    # Populate label quality overview using enhanced quality metrics
+                    try:
+                        label_quality_overview['overall_quality'] = float(getattr(first_target, 'overall_quality', 0.0))
+                    except Exception:
+                        label_quality_overview['overall_quality'] = None
+                    try:
+                        # predictability stored as IC in TradeOpportunityQualityScore
+                        label_quality_overview['predictability_ic'] = float(getattr(first_target, 'predictability', metrics.get('ic', 0.0)))
+                    except Exception:
+                        label_quality_overview['predictability_ic'] = None
+                    try:
+                        label_quality_overview['hit_rate'] = float(metrics.get('hit_rate', 0.0))
+                        label_quality_overview['hit_rate_long'] = float(metrics.get('hit_rate_long', 0.0))
+                        label_quality_overview['hit_rate_short'] = float(metrics.get('hit_rate_short', 0.0))
+                    except Exception:
+                        # Leave as None if metrics missing
+                        pass
+                    try:
+                        label_quality_overview['sharpe'] = float(metrics.get('sharpe', 0.0))
+                        label_quality_overview['sharpe_long'] = float(metrics.get('sharpe_long', 0.0))
+                        label_quality_overview['sharpe_short'] = float(metrics.get('sharpe_short', 0.0))
+                        label_quality_overview['stability'] = float(metrics.get('stability', 0.0))
+                    except Exception:
+                        pass
+                    try:
+                        label_quality_overview['avg_potential_profit'] = float(metrics.get('avg_potential_profit', 0.0))
+                        label_quality_overview['avg_potential_profit_long'] = float(metrics.get('avg_potential_profit_long', 0.0))
+                        label_quality_overview['avg_potential_profit_short'] = float(metrics.get('avg_potential_profit_short', 0.0))
+                    except Exception:
+                        pass
+                    try:
+                        label_quality_overview['uplift'] = float(metrics.get('uplift', 0.0))
+                        label_quality_overview['uplift_long'] = float(metrics.get('uplift_long', 0.0))
+                        label_quality_overview['uplift_short'] = float(metrics.get('uplift_short', 0.0))
+                    except Exception:
+                        pass
+                    try:
+                        label_quality_overview['long_count'] = int(getattr(first_target, 'long_count', 0) or 0)
+                        label_quality_overview['short_count'] = int(getattr(first_target, 'short_count', 0) or 0)
+                        label_quality_overview['long_quality'] = float(getattr(first_target, 'long_quality', 0.0) or 0.0)
+                        label_quality_overview['short_quality'] = float(getattr(first_target, 'short_quality', 0.0) or 0.0)
+                    except Exception:
+                        pass
+
                     raw_ic = metrics.get('ic', 0.0)
                     ic_confidence = abs(raw_ic)
                     hit_rate_confidence = metrics.get('hit_rate', 0.0) if metrics.get('hit_rate', 0.0) > 0 else 0.0
@@ -991,7 +1383,11 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
 
                             has_opportunities = opportunities_detected > 0
                             if has_opportunities:
-                                mask = labeling_result.labels != 0
+                                labels_for_mask = labeling_result.labels
+                                if isinstance(labels_for_mask, pd.DataFrame):
+                                    mask = (labels_for_mask.abs() >= OPPORTUNITY_DETECTION_THRESHOLD).any(axis=1)
+                                else:
+                                    mask = labels_for_mask.abs() >= OPPORTUNITY_DETECTION_THRESHOLD
                                 # Fix: Convert DataFrame to Series before indexing
                                 if isinstance(opportunity_confidence, pd.DataFrame):
                                     opportunity_confidence = opportunity_confidence.iloc[:, 0]
@@ -1012,6 +1408,8 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                         volume_confidence_stats = {'volume_available': False, 'error': str(e)}
 
                     def calculate_volatility_adaptation_metrics(dataframe, config_):
+                        if not getattr(getattr(config_, 'volatility', None), 'enabled', True):
+                            return 1.0, 1.0, 1.0
                         try:
                             price_series = dataframe['close']
                             volatility_window = getattr(config_.volatility, 'window', 20)
@@ -1057,6 +1455,11 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             samples_per_day = samples_per_hour * 24.0
             total_days = total_samples / samples_per_day if samples_per_day > 0 else 0
             avg_opportunities_per_day = opportunities_detected / total_days if total_days > 0 else 0
+
+            # Cluster-based opportunities per day (if cluster counts were computed)
+            cluster_avg_opportunities_per_day = (
+                cluster_total_opportunities / total_days if total_days > 0 else 0
+            )
 
             execution_time = time.perf_counter() - start_time
 
@@ -1203,7 +1606,8 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'avg_opportunities_per_day': round(avg_opportunities_per_day, 1),
                     'opportunities_per_hour': round(avg_opportunities_per_day / 24, 2),
                     'detection_frequency': f'{round(avg_opportunities_per_day / 24, 2)} per hour',
-                    'quality_acceptance_rate': round(high_quality_opportunities / opportunities_detected * 100, 2) if opportunities_detected > 0 else 0
+                    'quality_acceptance_rate': round(high_quality_opportunities / raw_opportunities_detected * 100, 2) if raw_opportunities_detected > 0 else 0,
+                    'cluster_opportunities_per_day': round(cluster_avg_opportunities_per_day, 1),
                 }
             }
 
@@ -1214,22 +1618,33 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             label_smoothing_stages = label_smoothing_metadata.get('stages_applied', {})
 
             # Calculate target quality metrics for predictability assessment
-            tprint("📊 Calculating target quality metrics...", "INFO")
+            tprint("📊 Calculating target quality metrics (detrended labels)...", "INFO")
             target_quality_metrics = {}
+            quality_metrics_source = 'raw'
+            normalized_entropy_value = None
+            lag1_autocorr_value = None
             try:
+                quality_metrics_source = 'first_difference_normalized'
                 target_quality_metrics = calculate_target_quality_metrics(
-                    labels=labeling_result.labels,
+                    labels=prepare_labels_for_quality_metrics(labeling_result.labels),
                     market_data=market_data,
-                    bins=10,
-                    max_lag=10
+                    bins=20,
+                    max_lag=min(10, len(market_data) - 1)
                 )
-                tprint(f"✅ Target quality metrics calculated successfully", "SUCCESS")
 
-                # Log key quality indicators
+                # Log relevant quality metrics for quick review
                 overall = target_quality_metrics.get('overall_assessment', {})
                 quality_grade = overall.get('quality_grade', 'UNKNOWN')
                 quality_score = overall.get('quality_score', 0.0)
                 tprint(f"🎯 Target Quality: {quality_grade} (Score: {quality_score:.1f}/100)", "INFO")
+
+                if (normalized_entropy := target_quality_metrics.get('entropy', {}).get('normalized_entropy')) is not None:
+                    normalized_entropy_value = normalized_entropy
+                    tprint(f"   • Normalized entropy (detrended): {normalized_entropy:.3f}", "INFO")
+
+                if (lag1_value := target_quality_metrics.get('autocorrelation', {}).get('lag1_autocorrelation')) is not None:
+                    lag1_autocorr_value = lag1_value
+                    tprint(f"   • Lag-1 autocorrelation (detrended): {lag1_value:.3f}", "INFO")
 
                 # Log issues if any
                 issues = overall.get('issues_detected', [])
@@ -1240,16 +1655,63 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             except Exception as e:
                 tprint(f"⚠️ Failed to calculate target quality metrics: {e}", "WARNING")
                 target_quality_metrics = {}
+                quality_metrics_source = 'raw'
+
+            general_metrics['quality_metrics_source'] = quality_metrics_source
+            general_metrics['normalized_entropy'] = normalized_entropy_value
+            general_metrics['lag1_autocorrelation'] = lag1_autocorr_value
+
+            threshold_adjustment_active = volatility_adaptation_enabled and (min_volatility_adaptation != max_volatility_adaptation)
+            threshold_dynamic_range = (
+                '1.0x - 1.0x (static)'
+                if not volatility_adaptation_enabled
+                else f'{min_volatility_adaptation:.1f}x - {max_volatility_adaptation:.1f}x base threshold'
+            )
+            adaptation_multiplier_display = (
+                f'{min_volatility_adaptation:.2f}x - {max_volatility_adaptation:.2f}x'
+                if volatility_adaptation_enabled
+                else '1.00x - 1.00x (static)'
+            )
+            effective_threshold_range_label = (
+                f'{BASE_VOLATILITY_THRESHOLD:.1%} - {BASE_VOLATILITY_THRESHOLD:.1%}'
+                if not volatility_adaptation_enabled
+                else f'{min_volatility_adaptation * optimal_threshold:.1%} - {max_volatility_adaptation * optimal_threshold:.1%}'
+            )
+            volatility_adjusted_targets_label = (
+                f'{BASE_VOLATILITY_THRESHOLD:.1%} (adaptation disabled)'
+                if not volatility_adaptation_enabled
+                else f'{min_volatility_adaptation * BASE_VOLATILITY_THRESHOLD:.1%} - {max_volatility_adaptation * BASE_VOLATILITY_THRESHOLD:.1%} (based on market conditions)'
+            )
+            market_regime_adaptation_label = (
+                'disabled (1.00x constant threshold)'
+                if not volatility_adaptation_enabled
+                else f'{avg_volatility_adaptation:.2f}x threshold adaptation'
+            )
+            volatility_regime_label = (
+                'static_threshold'
+                if not volatility_adaptation_enabled
+                else ('high_vol' if avg_volatility_adaptation > 1.5 else ('low_vol' if avg_volatility_adaptation < 1.1 else 'normal_vol'))
+            )
+            adaptation_range_percent_value = (
+                0.0
+                if not volatility_adaptation_enabled
+                else (round((max_volatility_adaptation - min_volatility_adaptation) / min_volatility_adaptation * 100, 1) if min_volatility_adaptation > 0 else 0.0)
+            )
+            adaptation_status_label = (
+                'Disabled (static threshold)'
+                if not volatility_adaptation_enabled
+                else ('✅ Active' if threshold_adjustment_active else '❌ Inactive')
+            )
 
             financial_metrics = {
                 'labeling_method': 'volatility_aware_multi_horizon',
                 'volatility_config': {
                     'base_threshold': BASE_VOLATILITY_THRESHOLD,
-                    'lookahead_periods': 6,
+                    'lookahead_periods': 3,
                     'local_maxima_detection': True,
-                    'volatility_adaptation': True,
+                    'volatility_adaptation': volatility_adaptation_enabled,
                     'quality_threshold': 0.3,  # More reasonable quality threshold for long-only strategy
-                    'rate_control_enabled': True,
+                    'rate_control_enabled': getattr(vol_config.rate_control, 'enabled', False),
                     'predictability_threshold': 0.3
                 },
                 'label_smoothing': {
@@ -1287,30 +1749,40 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'samples_per_hour': samples_per_hour,
                     'samples_per_day': samples_per_day,
                     'total_days_coverage': round(total_days, 1),
-                    'avg_opportunities_per_day': round(avg_opportunities_per_day, 1)
+                    'avg_opportunities_per_day': round(avg_opportunities_per_day, 1),
+                    'cluster_long_opportunities': cluster_long_opportunities,
+                    'cluster_short_opportunities': cluster_short_opportunities,
+                    'cluster_total_opportunities': cluster_total_opportunities,
+                    'cluster_opportunities_per_day': round(cluster_avg_opportunities_per_day, 1),
                 },
                 'quality_filtering': {
                     'high_quality_opportunities': high_quality_opportunities,
                     'filtered_opportunities': filtered_opportunities,
-                    'quality_acceptance_rate': round(high_quality_opportunities / opportunities_detected * 100, 2) if opportunities_detected > 0 else 0,
-                    'filtering_rate': round(filtered_opportunities / opportunities_detected * 100, 2) if opportunities_detected > 0 else 0,
+                    'quality_acceptance_rate': round(high_quality_opportunities / raw_opportunities_detected * 100, 2) if raw_opportunities_detected > 0 else 0,
+                    'filtering_rate': round(filtered_opportunities / raw_opportunities_detected * 100, 2) if raw_opportunities_detected > 0 else 0,
                     'avg_confidence_score': round(avg_confidence_score, 3),
                     'avg_volatility_adaptation': round(avg_volatility_adaptation, 3),
                     'max_volatility_adaptation': round(max_volatility_adaptation, 3),
                     'min_volatility_adaptation': round(min_volatility_adaptation, 3)
                 },
+                'quantile_compression': quantile_compression_overview,
                 'expected_performance': {
-                    'expected_profit_target': f'{BASE_VOLATILITY_THRESHOLD:.1%} base (adaptive)',
-                    'volatility_adjusted_targets': f'{min_volatility_adaptation * BASE_VOLATILITY_THRESHOLD:.1%} - {max_volatility_adaptation * BASE_VOLATILITY_THRESHOLD:.1%} (based on market conditions)',
-                    'quality_weighted_signals': f'{high_quality_opportunities} of {opportunities_detected} ({round(high_quality_opportunities/opportunities_detected*100, 1)}%)' if opportunities_detected > 0 else 'N/A',
+                    'expected_profit_target': f'{BASE_VOLATILITY_THRESHOLD:.1%} constant target',
+                    'volatility_adjusted_targets': volatility_adjusted_targets_label,
+                    'quality_weighted_signals': f'{high_quality_opportunities} of {raw_opportunities_detected} ({round(high_quality_opportunities/raw_opportunities_detected*100, 1)}%)' if raw_opportunities_detected > 0 else 'N/A',
                     'filtering_efficiency': round(high_quality_opportunities / (high_quality_opportunities + filtered_opportunities) * 100, 1) if (high_quality_opportunities + filtered_opportunities) > 0 else 0,
                     'trading_signal_strength': round(avg_confidence_score, 3),
-                    'market_regime_adaptation': f'{avg_volatility_adaptation:.2f}x threshold adaptation',
+                    'market_regime_adaptation': market_regime_adaptation_label,
                     'volume_confidence_enhancement': volume_confidence_stats.get('avg_adjustment_factor', 1.0),
                     'high_volume_confirmations': volume_confidence_stats.get('opportunities_boosted', 0),
                     'low_volume_warnings': volume_confidence_stats.get('opportunities_penalized', 0)
                 },
                 'label_distribution': label_distrib,
+                'label_quality_overview': label_quality_overview,
+                'quality_metrics_source': quality_metrics_source,
+                'normalized_entropy': normalized_entropy_value,
+                'lag1_autocorrelation': lag1_autocorr_value,
+                'baseline_predictive_check': labeling_baseline_results,
                 'temporal_stability': temporal_stability,
                 'target_quality_metrics': target_quality_metrics
             }
@@ -1350,10 +1822,10 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 'signal_processing': {
                     'local_maxima_detection': True,
                     'local_minima_detection': True,
-                    'volatility_adaptation': True,
+                    'volatility_adaptation': volatility_adaptation_enabled,
                     'quality_scoring_enabled': True,
                     'confidence_calculation': True,
-                    'threshold_dynamic_range': f'{min_volatility_adaptation:.1f}x - {max_volatility_adaptation:.1f}x base threshold',
+                    'threshold_dynamic_range': threshold_dynamic_range,
                     'spike_filtering_enabled': True,
                     'volume_profile_analysis': volume_confidence_stats.get('volume_available', False),
                     'volume_weighted_confidence': True
@@ -1388,7 +1860,8 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'samples_per_day': samples_per_day,
                     'total_days_coverage': round(total_days, 1),
                     'data_completeness': f'{data_completeness:.1f}%' if data_completeness is not None else 'N/A'  # FIXED
-                }
+                },
+                'storage_reference': labeled_data_store_reference
             }
 
             # ENHANCED VALIDATION: Comprehensive checks for label quality and data integrity
@@ -1400,7 +1873,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 'detection_rate_valid': (opportunities_detected / total_samples if total_samples > 0 else 0) > 0.01,  # At least 1% detection rate
                 'quality_signals_exist': True,  # Quality gate disabled - all signals considered valid
                 'confidence_calculated': avg_confidence_score > 0,
-                'volatility_adaptation_active': min_volatility_adaptation < max_volatility_adaptation  # Volatility adaptation is working
+                'volatility_adaptation_active': True if not volatility_adaptation_enabled else (min_volatility_adaptation < max_volatility_adaptation)
             }
             
             validation_passed = all(validation_checks.values())
@@ -1453,7 +1926,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'execution_time': f'{round(execution_time, 3)}s',
                     'volatility_threshold': f'{vol_config.volatility_threshold:.1%}',
                     'lookahead_periods': vol_config.lookahead_periods,
-                    'label_type': vol_config.label_type.name,  # FIXED: renamed from local_maxima_detection
+                    'label_type': vol_config.label_type.name,
                     'quality_filtering_applied': True
                 },
                 'optimization_applied': {
@@ -1467,18 +1940,18 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 'quality_control': {
                     'high_quality_signals': high_quality_opportunities,
                     'filtered_signals': filtered_opportunities,
-                    'acceptance_rate': f'{round(high_quality_opportunities / opportunities_detected * 100, 1)}%' if opportunities_detected > 0 else '0.0%',
-                    'rejection_rate': f'{round(filtered_opportunities / opportunities_detected * 100, 1)}%' if opportunities_detected > 0 else '0.0%',
+                    'acceptance_rate': f'{round(high_quality_opportunities / raw_opportunities_detected * 100, 1)}%' if raw_opportunities_detected > 0 else '0.0%',
+                    'rejection_rate': f'{round(filtered_opportunities / raw_opportunities_detected * 100, 1)}%' if raw_opportunities_detected > 0 else '0.0%',
                     'avg_confidence_score': round(avg_confidence_score, 3),
                     'quality_threshold': 0.4
                 },
                 'volatility_calibration': {
-                    'base_threshold_percent': BASE_VOLATILITY_THRESHOLD,
+                    'base_threshold_percent': round(BASE_VOLATILITY_THRESHOLD * 100, 2),
                     'effective_threshold_min': round(min_volatility_adaptation * BASE_VOLATILITY_THRESHOLD * 100, 2),
                     'effective_threshold_max': round(max_volatility_adaptation * BASE_VOLATILITY_THRESHOLD * 100, 2),
-                    'adaptation_multiplier_range': f'{min_volatility_adaptation:.2f}x - {max_volatility_adaptation:.2f}x',
-                    'adaptation_active': min_volatility_adaptation < max_volatility_adaptation,
-                    'adaptation_spread': round((max_volatility_adaptation - min_volatility_adaptation) * 100, 1),
+                    'adaptation_multiplier_range': threshold_dynamic_range,
+                    'adaptation_active': threshold_adjustment_active,
+                    'adaptation_spread': adaptation_range_percent_value,
                     'sensitivity_parameter': vol_config.volatility.sensitivity,
                     'window_size': vol_config.volatility.window
                 },
@@ -1491,12 +1964,13 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'performance_metrics': {
                         'opportunities_per_week': round(avg_opportunities_per_day * 7, 1),
                         'detection_efficiency': round(opportunities_detected / total_samples * 100, 2) if total_samples > 0 else 0.0,
-                        'quality_signal_ratio': round(high_quality_opportunities / opportunities_detected, 3) if opportunities_detected > 0 else 0.0
+                        'quality_signal_ratio': round(high_quality_opportunities / raw_opportunities_detected, 3) if raw_opportunities_detected > 0 else 0.0,
+                        'cluster_opportunities_per_week': round(cluster_avg_opportunities_per_day * 7, 1),
                     },
                     'market_adaptation': {
-                        'volatility_regime': 'high_vol' if avg_volatility_adaptation > 1.5 else ('low_vol' if avg_volatility_adaptation < 1.1 else 'normal_vol'),
-                        'threshold_adjustment_active': min_volatility_adaptation != max_volatility_adaptation,
-                        'adaptation_range_percent': round((max_volatility_adaptation - min_volatility_adaptation) / min_volatility_adaptation * 100, 1) if min_volatility_adaptation > 0 else 0.0
+                        'volatility_regime': volatility_regime_label,
+                        'threshold_adjustment_active': threshold_adjustment_active,
+                        'adaptation_range_percent': adaptation_range_percent_value
                     }
                 },
                 'system_performance': {
@@ -1507,14 +1981,19 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'monitoring_enabled': True,
                     'parallel_processing': False
                 },
-                # Add enhanced validation results
+                'baseline_predictive_check': {
+                    'enabled': baseline_labeling_enabled,
+                    'ran': labeling_baseline_results is not None,
+                    'success': bool(labeling_baseline_results and labeling_baseline_results.get('success', False))
+                },
+                'storage_reference_available': labeled_data_store_reference is not None,
                 'validation': validation_summary,
                 'validation_passed': validation_passed,
                 'validation_tests_performed': validation_summary['total_checks'],
                 'validation_tests_passed': validation_summary['passed_checks'],
                 'validation_tests_failed': validation_summary['total_checks'] - validation_summary['passed_checks'],
                 'validation_coverage': validation_summary['passed_checks'] / validation_summary['total_checks'] if validation_summary['total_checks'] > 0 else 0.0,
-                'validation_confidence': avg_confidence_score if avg_confidence_score > 0 else 0.5,  # Default confidence if none calculated
+                'validation_confidence': avg_confidence_score if avg_confidence_score > 0 else 0.5,
                 'validation_recommendations': validation_summary['recommendations']
             }
 
@@ -1522,8 +2001,25 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             tprint("💾 Persisting labeled data to artifacts...", "INFO")
             tprint(f"🐛 DEBUG: About to save labeled data - opportunities_detected={opportunities_detected}, total_samples={total_samples}", "INFO")
 
+            # Log raw triple-barrier coverage (pre-smoothing, pre-quality-gating) if provided by labeler
+            try:
+                raw_tb_stats = labeling_result.metadata.get('raw_triple_barrier_stats') if hasattr(labeling_result, 'metadata') else None
+                if isinstance(raw_tb_stats, dict) and raw_tb_stats.get('dataset_len'):
+                    cov = float(raw_tb_stats.get('any_signal_coverage', 0.0))
+                    any_cnt = int(raw_tb_stats.get('any_signal_count', 0))
+                    ds_len = int(raw_tb_stats.get('dataset_len', 0))
+                    tprint(
+                        f"📊 Raw triple-barrier coverage (pre-smoothing/gating): {cov:.2%} ({any_cnt}/{ds_len})",
+                        "INFO",
+                    )
+            except Exception as e:
+                tprint(f"⚠️ Failed to log raw triple-barrier coverage: {e}", "WARNING")
+
             # Use memory-efficient data processing
-            if labeling_result.success and opportunities_detected > 0:
+            # Always build the labeled DataFrame when labeling succeeded and we
+            # have samples, even if opportunities_detected == 0. This ensures
+            # downstream steps still see a valid (possibly all-zero) target.
+            if labeling_result.success and total_samples > 0:
                 with self._memory_efficient_processing():
                     # Create labeled data DataFrame with market data and labels (avoid full copy)
                     tprint("🐛 DEBUG: Creating labeled DataFrame efficiently...", "INFO")
@@ -1533,10 +2029,47 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     if hasattr(labeling_result, 'labels'):
                         tprint(f"🐛 DEBUG: labels shape={labeling_result.labels.shape if hasattr(labeling_result.labels, 'shape') else 'no shape'}", "INFO")
                     
-                    labeled_data_df = self._create_target_dataframe_efficiently(
+                    labeled_data_df, aligned_features_df = self._create_target_dataframe_efficiently(
                         market_data, labeling_result, vol_config
                     )
                     tprint(f"🐛 DEBUG: Created labeled DataFrame - shape={labeled_data_df.shape}, columns={list(labeled_data_df.columns)}", "INFO")
+
+                    # Compute cluster-based opportunity counts from the final labeled targets
+                    try:
+                        cluster_stats = _compute_cluster_metrics_from_targets(
+                            labeled_data_df,
+                            threshold=OPPORTUNITY_DETECTION_THRESHOLD,
+                        )
+                        cluster_long_opportunities = cluster_stats.get("long_clusters", 0)
+                        cluster_short_opportunities = cluster_stats.get("short_clusters", 0)
+                        cluster_total_opportunities = cluster_stats.get("total_clusters", 0)
+                        tprint(
+                            f"📊 Cluster opportunities: long={cluster_long_opportunities}, short={cluster_short_opportunities}, total={cluster_total_opportunities}",
+                            "INFO",
+                        )
+                    except Exception as e:
+                        tprint(f"⚠️ Failed to compute cluster-based opportunity metrics: {e}", "WARNING")
+
+                    # Optionally run predictive baseline on true labels + aligned features
+                    # Only run the baseline when we actually have some non-zero
+                    # opportunities to avoid degenerate diagnostics.
+                    if baseline_labeling_enabled and aligned_features_df is not None and opportunities_detected > 0:
+                        baseline_result = self._run_labeling_baseline_check(
+                            aligned_features_df,
+                            labeled_data_df,
+                            config
+                        )
+                        if baseline_result:
+                            labeling_baseline_results = baseline_result
+                            if baseline_result.get('success', False):
+                                tprint_success("✅ Labeling baseline predictive check completed on aligned dataset")
+                            else:
+                                tprint_warning("⚠️ Labeling baseline predictive check returned diagnostics but no success flag")
+                    elif not baseline_labeling_enabled:
+                        tprint("ℹ️ Labeling baseline predictive check disabled via config", "INFO")
+
+                    if aligned_features_df is not None:
+                        del aligned_features_df
 
                     # Log labeled data creation with comprehensive preview
                     from src.utils.tprint import tprint_data_preview
@@ -1565,16 +2098,51 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                         tprint("⚠️ Expected target columns (target_long, target_short) not found in DataFrame", "WARNING")
                         tprint(f"   • Available columns: {list(labeled_data_df.columns)}", "INFO")
                     tprint("=" * 80, "INFO")
+
+                    if apply_quantile_compression:
+                        # Regime-aware quantile bounds: tighten only in very noisy regimes
+                        effective_lower_pct = quantile_lower_pct
+                        effective_upper_pct = quantile_upper_pct
+                        if normalized_entropy_value is not None and normalized_entropy_value > 0.7:
+                            # High-entropy regime: allow a bit more clipping of extremes
+                            effective_lower_pct = min(quantile_lower_pct, 0.001)
+                            effective_upper_pct = max(quantile_upper_pct, 0.999)
+                        quantile_compression_overview['lower_pct'] = effective_lower_pct
+                        quantile_compression_overview['upper_pct'] = effective_upper_pct
+                        candidate_columns = [
+                            'target_long_fused',
+                            'target_short_fused',
+                            'target_margin_long',
+                            'target_margin_short'
+                        ]
+                        quantile_compression_stats = apply_quantile_compression_to_columns(
+                            labeled_data_df,
+                            candidate_columns,
+                            effective_lower_pct,
+                            effective_upper_pct
+                        )
+                        if quantile_compression_stats:
+                            quantile_compression_overview['columns'] = list(quantile_compression_stats.keys())
+                            avg_pct_changed = float(np.mean([
+                                stats.get('pct_changed', 0.0) for stats in quantile_compression_stats.values()
+                            ]))
+                            quantile_compression_overview['avg_pct_changed'] = avg_pct_changed
+                            tprint_info(
+                                f"🔧 Quantile compression applied to {len(quantile_compression_stats)} column(s) (avg change {avg_pct_changed*100:.2f}%)"
+                            )
+                        else:
+                            tprint_info("ℹ️ Quantile compression enabled but no eligible columns were found", )
+                    else:
+                        tprint_info("ℹ️ Quantile compression disabled via config")
                     
                     # Save labeled data using BaseStep artifact manager with compression
-                    # CRITICAL FIX: Save to ETHUSDT store (not UNKNOWN) so feature selection can find it
                     tprint("💾 Saving labeled data with new simplified target structure (target_long, target_short)...", "INFO")
                     tprint(f"🔧 CRITICAL FIX: Saving to ETHUSDT store (not UNKNOWN) for feature selection compatibility", "INFO")
                     
                     # Temporarily override context to save to ETHUSDT store
                     original_context = self._current_context.copy() if hasattr(self, '_current_context') else {}
                     self._current_context.update({
-                        'symbol': config['symbol'],  # This will make it save to ETHUSDT store
+                        'symbol': config['symbol'],
                         'exchange': config['exchange'],
                         'timeframe': config['timeframe'],
                         'direction': config.get('direction', 'long'),
@@ -1585,22 +2153,22 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                         data=labeled_data_df,
                         artifact_name=f'labeled_data_{config["symbol"]}_{config["timeframe"]}',
                         artifact_type='data',
-                        data_category='features',  # Explicitly set to features for HDF5 versioning
-                        compression='auto',  # Use automatic compression for large datasets
+                        data_category='features',
+                        compression='auto',
                         metadata={
                             'symbol': config['symbol'],
                             'exchange': config['exchange'],
                             'timeframe': config['timeframe'],
                             'labeling_method': 'volatility_aware_multi_horizon',
-                            'base_threshold': optimal_threshold,  # Use optimal threshold
+                            'base_threshold': optimal_threshold,
                             'lookahead_periods': vol_config.lookahead_periods,
                             'total_samples': total_samples,
                             'opportunities_detected': opportunities_detected,
                             'high_quality_opportunities': high_quality_opportunities,
                             'avg_confidence_score': avg_confidence_score,
                             'volatility_adaptation_range': f'{min_volatility_adaptation:.2f}x - {max_volatility_adaptation:.2f}x',
-                            'target_structure': 'simplified',  # New simplified target structure
-                            'target_columns': ['target_long', 'target_short'],  # Explicitly list target columns
+                            'target_structure': 'simplified',
+                            'target_columns': ['target_long', 'target_short'],
                             'created_at': datetime.now().isoformat()
                         }
                     )
@@ -1614,12 +2182,22 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     tprint(f"   • Target structure: target_long (volume-normalized), target_short (volume-normalized)", "INFO")
                     tprint(f"   • Data category: 'features' for HDF5 versioning", "INFO")
                     tprint(f"   • Compression: auto for efficient storage", "INFO")
+
+                    store_root = Path("versioned_artifacts") / f"{config['symbol']}_{config['exchange']}_{config['timeframe']}_{config.get('direction', 'long')}_{config.get('model', 'analyst')}"
+                    labeled_data_store_reference = {
+                        'store_directory': str(store_root),
+                        'h5_file': str(store_root / "store.h5"),
+                        'artifact_version': labeled_data_path,
+                        'artifact_name': f"labeled_data_{config['symbol']}_{config['timeframe']}"
+                    }
+                    tprint(f"📦 Artifact stored inside {(store_root / 'store.h5')} (version key: {labeled_data_path})", "INFO")
                     
                     # Clear large DataFrames from memory
                     del labeled_data_df
                     gc.collect()
             else:
-                tprint("⚠️ No labels generated, skipping data persistence", "WARNING")
+                # No samples or labeling failed: nothing to persist
+                tprint("⚠️ No labeled samples available, skipping data persistence", "WARNING")
                 labeled_data_path = None
 
             # Save labeling metadata separately
@@ -1633,13 +2211,15 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'high_quality_opportunities': high_quality_opportunities,
                     'filtered_opportunities': filtered_opportunities,
                     'detection_rate': opportunities_detected / total_samples if total_samples > 0 else 0,
-                    'quality_acceptance_rate': high_quality_opportunities / opportunities_detected if opportunities_detected > 0 else 0,
+                    'quality_acceptance_rate': high_quality_opportunities / raw_opportunities_detected if raw_opportunities_detected > 0 else 0,
                     'avg_confidence_score': avg_confidence_score,
+                    'label_quality_overview': label_quality_overview,
                     'volatility_adaptation': {
                         'avg': avg_volatility_adaptation,
                         'min': min_volatility_adaptation,
                         'max': max_volatility_adaptation
-                    }
+                    },
+                    'raw_triple_barrier_stats': labeling_result.metadata.get('raw_triple_barrier_stats') if hasattr(labeling_result, 'metadata') else None,
                 },
                 'configuration': {
                     'base_threshold': BASE_VOLATILITY_THRESHOLD,
@@ -1681,6 +2261,10 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 f'quality_metrics_{config["symbol"]}',
                 'comprehensive_labeling_report'
             ]
+            if labeling_baseline_results:
+                artifacts_generated.append('labeling_baseline_check')
+            if labeled_data_store_reference:
+                artifacts_generated.append('labeled_data_store_reference')
 
             dependencies_used = {
                 'data_loader': ['KlinesParquetManager'],
@@ -1713,9 +2297,11 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 tprint("⚠️ Failed to generate outcome report", "WARNING")
 
             # EXHAUSTIVE CSV METRICS EXPORT
+            csv_metrics = {}
+            csv_path = None
             try:
-                # Flatten key metrics for CSV
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                data_completeness_value = technical_metrics.get('data_characteristics', {}).get('data_completeness', 0.0)
                 csv_metrics = {
                     'symbol': config['symbol'],
                     'exchange': config['exchange'],
@@ -1729,11 +2315,23 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'avg_opportunities_per_day': round(avg_opportunities_per_day, 4),
                     'high_quality_opportunities': high_quality_opportunities,
                     'filtered_opportunities': filtered_opportunities,
-                    'quality_acceptance_rate_pct': round(high_quality_opportunities / opportunities_detected * 100, 4) if opportunities_detected > 0 else 0.0,
+                    'quality_acceptance_rate_pct': round(high_quality_opportunities / raw_opportunities_detected * 100, 4) if raw_opportunities_detected > 0 else 0.0,
                     'avg_confidence_score': round(avg_confidence_score, 6),
                     'avg_volatility_adaptation': round(avg_volatility_adaptation, 6),
                     'min_volatility_adaptation': round(min_volatility_adaptation, 6),
                     'max_volatility_adaptation': round(max_volatility_adaptation, 6),
+                    'quality_metrics_source': quality_metrics_source,
+                    'normalized_entropy': normalized_entropy_value if normalized_entropy_value is not None else 0.0,
+                    'lag1_autocorrelation': lag1_autocorr_value if lag1_autocorr_value is not None else 0.0,
+                    'baseline_check_enabled': int(bool(baseline_labeling_enabled)),
+                    'baseline_check_ran': int(labeling_baseline_results is not None),
+                    'baseline_check_success': int(bool(labeling_baseline_results and labeling_baseline_results.get('success', False))),
+                    'baseline_check_csv_path': labeling_baseline_results.get('csv_path', '') if labeling_baseline_results else '',
+                    'quantile_compression_enabled': int(bool(apply_quantile_compression)),
+                    'quantile_compression_columns': len(quantile_compression_overview.get('columns', [])),
+                    'quantile_compression_avg_pct_changed': round(quantile_compression_overview.get('avg_pct_changed', 0.0), 6),
+                    'quantile_compression_lower_pct': quantile_lower_pct,
+                    'quantile_compression_upper_pct': quantile_upper_pct,
                     'spikes_detected': spike_detection_stats.get('spikes_detected', 0),
                     'spikes_corrected': spike_detection_stats.get('spikes_corrected', 0),
                     'spike_correction_rate_pct': round(spike_detection_stats.get('spike_correction_rate', 0.0) * 100, 4),
@@ -1752,16 +2350,46 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'label_std': (round(financial_metrics.get('label_distribution', {}).get('std', 0.0), 6) if isinstance(financial_metrics.get('label_distribution', {}), dict) else 0.0),
                     'label_skew': (round(financial_metrics.get('label_distribution', {}).get('skew', 0.0), 6) if isinstance(financial_metrics.get('label_distribution', {}), dict) else 0.0),
                     'label_kurtosis': (round(financial_metrics.get('label_distribution', {}).get('kurtosis', 0.0), 6) if isinstance(financial_metrics.get('label_distribution', {}), dict) else 0.0),
-                    'data_completeness_pct': (round(technical_metrics.get('data_characteristics', {}).get('data_completeness', 0.0).rstrip('%') if isinstance(technical_metrics.get('data_characteristics', {}).get('data_completeness', ''), str) else 0.0, 2) if isinstance(technical_metrics.get('data_characteristics', {}), dict) else 0.0),
+                    'label_overall_quality': float(label_quality_overview.get('overall_quality') or 0.0),
+                    'label_predictability_ic': float(label_quality_overview.get('predictability_ic') or 0.0),
+                    'label_hit_rate': float(label_quality_overview.get('hit_rate') or 0.0),
+                    'label_hit_rate_long': float(label_quality_overview.get('hit_rate_long') or 0.0),
+                    'label_hit_rate_short': float(label_quality_overview.get('hit_rate_short') or 0.0),
+                    'label_sharpe': float(label_quality_overview.get('sharpe') or 0.0),
+                    'label_sharpe_long': float(label_quality_overview.get('sharpe_long') or 0.0),
+                    'label_sharpe_short': float(label_quality_overview.get('sharpe_short') or 0.0),
+                    'label_stability': float(label_quality_overview.get('stability') or 0.0),
+                    'label_avg_potential_profit': float(label_quality_overview.get('avg_potential_profit') or 0.0),
+                    'label_avg_potential_profit_long': float(label_quality_overview.get('avg_potential_profit_long') or 0.0),
+                    'label_avg_potential_profit_short': float(label_quality_overview.get('avg_potential_profit_short') or 0.0),
+                    'label_uplift': float(label_quality_overview.get('uplift') or 0.0),
+                    'label_uplift_long': float(label_quality_overview.get('uplift_long') or 0.0),
+                    'label_uplift_short': float(label_quality_overview.get('uplift_short') or 0.0),
+                    'label_long_quality': float(label_quality_overview.get('long_quality') or 0.0),
+                    'label_short_quality': float(label_quality_overview.get('short_quality') or 0.0),
+                    'label_long_count': int(label_quality_overview.get('long_count') or 0),
+                    'label_short_count': int(label_quality_overview.get('short_count') or 0),
+                    'labeled_data_store_path': labeled_data_store_reference.get('h5_file', '') if labeled_data_store_reference else '',
+                    'data_completeness_pct': round(_safe_percent_to_float(data_completeness_value), 2),
                 }
-                # Write CSV
                 outcomes_dir = Path('outcomes')
                 outcomes_dir.mkdir(parents=True, exist_ok=True)
-                csv_path = outcomes_dir / f"label_quality_metrics_{config['symbol']}_{config['timeframe']}_{timestamp}.csv"
+                csv_filename = f"label_quality_metrics_{config['symbol']}_{config['timeframe']}_{timestamp}.csv"
+                csv_path = outcomes_dir / csv_filename
                 pd.DataFrame([csv_metrics]).to_csv(csv_path, index=False)
                 tprint_success(f"✅ Saved label quality metrics CSV: {csv_path}")
             except Exception as e:
-                tprint_warning(f"⚠️ Failed to save label quality metrics CSV: {e}")
+                metrics_snapshot = json.dumps(csv_metrics, default=str) if csv_metrics else '{}'
+                logger.exception(
+                    "Failed to save label quality metrics CSV for %s/%s %s (requested_cli_mode=%s). Path=%s. Metrics=%s",
+                    config.get('symbol'),
+                    config.get('exchange'),
+                    config.get('timeframe'),
+                    config.get('execution_mode', 'light'),
+                    str(csv_path) if csv_path else 'uninitialized',
+                    metrics_snapshot
+                )
+                tprint_warning(f"⚠️ Failed to save label quality metrics CSV: {e}. See logs for stack trace and metrics snapshot.")
 
             # Display spike detection results first
             tprint(f"🔍 Spike Detection Results:", "INFO")
@@ -1802,9 +2430,9 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             # Display volatility calibration
             tprint(f"📊 Volatility Calibration:", "INFO")
             tprint(f"   • Base threshold: {optimal_threshold:.1%}", "INFO")
-            tprint(f"   • Adaptation range: {min_volatility_adaptation:.2f}x - {max_volatility_adaptation:.2f}x", "INFO")
-            tprint(f"   • Effective thresholds: {min_volatility_adaptation * optimal_threshold:.1%} - {max_volatility_adaptation * optimal_threshold:.1%}", "INFO")
-            tprint(f"   • Adaptation active: {'✅ Yes' if min_volatility_adaptation < max_volatility_adaptation else '❌ No'}", "INFO")
+            tprint(f"   • Adaptation range: {adaptation_multiplier_display}", "INFO")
+            tprint(f"   • Effective thresholds: {effective_threshold_range_label}", "INFO")
+            tprint(f"   • Adaptation status: {adaptation_status_label}", "INFO")
             
             # Display validation results
             tprint(f"✅ Validation Results:", "INFO")
@@ -1824,9 +2452,9 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'label_types': ['binary', 'multi_class', 'regression'],
                     'volatility_config': {
                         'base_threshold': BASE_VOLATILITY_THRESHOLD,
-                        'lookahead_periods': 6,
+                        'lookahead_periods': 3,
                         'local_maxima_detection': True,
-                        'volatility_adaptation': True
+                        'volatility_adaptation': volatility_adaptation_enabled
                     },
                     'actual_results': {
                         'total_samples_processed': total_samples,
@@ -1834,9 +2462,9 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                         'long_opportunities': long_opportunities,
                         'short_opportunities': short_opportunities,
                         'detection_rate': opportunities_detected / total_samples if total_samples > 0 else 0,
-                        'quality_acceptance_rate': high_quality_opportunities / opportunities_detected if opportunities_detected > 0 else 0,
+                        'quality_acceptance_rate': high_quality_opportunities / raw_opportunities_detected if raw_opportunities_detected > 0 else 0,
                         'avg_confidence_score': avg_confidence_score,
-                        'volatility_adaptation_range': f'{min_volatility_adaptation:.2f}x - {max_volatility_adaptation:.2f}x'
+                        'volatility_adaptation_range': threshold_dynamic_range
                     },
                     'metadata': {
                         'symbol': config['symbol'],
@@ -1849,31 +2477,41 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     }
                 },
                 'comprehensive_report': report_path,
-                'labeled_data_file': labeled_data_path,  # Add the persisted labeled data file path
-                'labeling_metadata_file': metadata_path,  # Add the persisted metadata file path
+                'labeled_data_file': labeled_data_path,
+                'labeling_metadata_file': metadata_path,
                 'labeling_results': {
                     'labels': labeling_result.labels if hasattr(labeling_result, 'labels') else None,
                     'metadata': labeling_result.metadata if hasattr(labeling_result, 'metadata') else {},
                     'quality_scores': getattr(labeling_result, 'quality_scores', {}) if hasattr(labeling_result, 'quality_scores') else {}
                 }
             }
+            if labeling_baseline_results:
+                artifacts['labeling_baseline_check'] = labeling_baseline_results
+            if labeled_data_store_reference:
+                artifacts['labeled_data_store_reference'] = labeled_data_store_reference
 
             metrics = {
-                'labeling_methods': 1,  # Only volatility aware method
+                'labeling_methods': 1,
                 'integration_points': 3,
                 'label_types': 3,
                 'execution_mode': config.get('execution_mode', 'light'),
                 'success': True,
                 'volatility_threshold': BASE_VOLATILITY_THRESHOLD,
-                'lookahead_periods': 6,
+                'lookahead_periods': 3,
                 'report_generated': bool(report_path),
+                'quality_metrics_source': quality_metrics_source,
+                'normalized_entropy': normalized_entropy_value,
+                'lag1_autocorrelation': lag1_autocorr_value,
+                'baseline_predictive_check': labeling_baseline_results,
+                'storage_reference': labeled_data_store_reference,
+                'quantile_compression': quantile_compression_overview,
                 'actual_results': {
                     'total_samples_processed': total_samples,
                     'opportunities_detected': opportunities_detected,
                     'long_opportunities': long_opportunities,
                     'short_opportunities': short_opportunities,
                     'detection_rate': opportunities_detected / total_samples if total_samples > 0 else 0,
-                    'quality_acceptance_rate': 1.0,  # Quality gate disabled - all opportunities accepted
+                    'quality_acceptance_rate': high_quality_opportunities / raw_opportunities_detected if raw_opportunities_detected > 0 else 0,
                     'avg_confidence_score': avg_confidence_score,
                     'data_loading_success': market_data is not None and not market_data.empty,
                     'labeling_success': labeling_result.success
@@ -1941,17 +2579,8 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 tprint(f"🧠 Memory usage: {initial_memory:.1f}MB -> {final_memory:.1f}MB", "INFO")
     
     def _create_target_dataframe_efficiently(self, market_data, labeling_result, vol_config):
-        """Create simplified target DataFrame with only volume-normalized long/short targets.
-        
-        This method creates a clean, simple DataFrame containing ONLY:
-        - target_long: Volume-normalized binary target for long positions (1=long opportunity, 0=no)
-        - target_short: Volume-normalized binary target for short positions (1=short opportunity, 0=no)
-        - labeling_timestamp: Timestamp when labeling was performed
-        - labeling_method_id: Identifier for the labeling method used
-        
-        The goal is a clean output with just volume-normalized long/short targets for model training.
-        OHLCV data, target_neutral, and price_target_vol_normalized are excluded.
-        """
+        """Create simplified target DataFrame along with any aligned feature set."""
+        features_data: Optional[pd.DataFrame] = None
         try:
             tprint("🐛 DEBUG: _create_target_dataframe_efficiently START", "INFO")
             tprint(f"🐛 DEBUG: market_data shape={market_data.shape}, columns={list(market_data.columns)[:5]}", "INFO")
@@ -1996,7 +2625,6 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                     'selected_feature_dataframe_40',
                 ]
                 
-                features_data = None
                 tprint_info(f"🔍 TIMESTAMP ALIGNMENT: Searching for LATEST features data to match time period...")
                 
                 for artifact_name in feature_artifacts:
@@ -2089,8 +2717,10 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 # Look for price target column in DataFrame
                 labels_df = labels_data.copy()
                 # Align labels to market_data index first (labels are generated from market_data)
-                if labels_df.index.empty or not labels_df.index.equals(market_data.index):
+                if labels_df.index.empty:
                     labels_df.index = market_data.index[:len(labels_df)]
+                elif not labels_df.index.equals(market_data.index):
+                    labels_df = labels_df.reindex(market_data.index)
 
                 # Try to find a column that looks like price targets
                 for col in labels_df.columns:
@@ -2109,8 +2739,10 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 # Use the series directly as price targets
                 labels_series = labels_data
                 # Align labels to market_data index first (labels are generated from market_data)
-                if labels_series.index.empty or not labels_series.index.equals(market_data.index):
+                if labels_series.index.empty:
                     labels_series.index = market_data.index[:len(labels_series)]
+                elif not labels_series.index.equals(market_data.index):
+                    labels_series = labels_series.reindex(market_data.index)
                 price_targets = pd.to_numeric(labels_series, errors='coerce')
 
             # Use labeler's output directly instead of re-creating targets
@@ -2295,7 +2927,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             tprint_success(f"✅ Created simplified target DataFrame with columns: {list(target_df.columns)}")
             tprint(f"🐛 DEBUG: Final target DataFrame shape: {target_df.shape}", "INFO")
             
-            return target_df
+            return target_df, features_data
         except Exception as e:
             tprint(f"⚠️ Failed to create simplified target DataFrame: {e}", "WARNING")
             # Create a minimal DataFrame with target columns even on error
@@ -2306,10 +2938,86 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 minimal_df['labeling_timestamp'] = np.int64(pd.Timestamp.utcnow().value)
                 minimal_df['labeling_method_id'] = np.int8(1)
                 tprint_warning("⚠️ Created minimal target DataFrame due to error")
-                return minimal_df
+                return minimal_df, None
             except Exception as fallback_e:
                 tprint_error(f"❌ Critical: Failed to create minimal DataFrame: {fallback_e}")
-                return pd.DataFrame(index=market_data.index)
+                return pd.DataFrame(index=market_data.index), None
+
+    def _run_labeling_baseline_check(
+        self,
+        features_df: Optional[pd.DataFrame],
+        targets_df: Optional[pd.DataFrame],
+        config: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Run BaselinePredictiveCheck using aligned features and true targets."""
+        if not config.get('run_labeling_baseline_check', True):
+            return None
+        if features_df is None or targets_df is None or features_df.empty:
+            tprint("ℹ️ Skipping labeling baseline check - no aligned features", "INFO")
+            return None
+
+        try:
+            from src.training.steps.pre_training.baseline_predictive_check import BaselinePredictiveCheck
+            from pathlib import Path
+
+            long_col = next((col for col in ['target_long_fused', 'target_long'] if col in targets_df.columns), None)
+            short_col = next((col for col in ['target_short_fused', 'target_short'] if col in targets_df.columns), None)
+            if long_col is None and short_col is None:
+                tprint("ℹ️ Skipping labeling baseline check - no target columns found", "INFO")
+                return None
+
+            long_series = pd.to_numeric(targets_df[long_col], errors='coerce') if long_col else None
+            short_series = pd.to_numeric(targets_df[short_col], errors='coerce') if short_col else None
+
+            if long_series is not None and short_series is not None:
+                target_series = long_series.fillna(0.0) - short_series.fillna(0.0)
+            elif long_series is not None:
+                target_series = long_series.fillna(0.0)
+            else:
+                target_series = (-short_series.fillna(0.0)) if short_series is not None else None
+
+            if target_series is None:
+                tprint("ℹ️ Skipping labeling baseline check - unable to derive target series", "INFO")
+                return None
+
+            aligned_index = features_df.index.intersection(target_series.index)
+            if aligned_index.empty:
+                tprint("ℹ️ Skipping labeling baseline check - no overlapping index", "INFO")
+                return None
+
+            min_samples = int(config.get('labeling_baseline_min_samples', 500))
+            if len(aligned_index) < max(100, min_samples):
+                tprint(f"ℹ️ Skipping labeling baseline check - only {len(aligned_index)} aligned samples", "INFO")
+                return None
+
+            features_aligned = features_df.loc[aligned_index]
+            target_aligned = target_series.loc[aligned_index].astype(float).fillna(0.0)
+
+            if float(target_aligned.std()) <= 1e-8:
+                tprint("ℹ️ Skipping labeling baseline check - target variance too low", "INFO")
+                return None
+
+            checker = BaselinePredictiveCheck(max_features=400, random_state=42)
+            tprint_info(f"🔍 Running labeling baseline predictive check on {len(aligned_index)} samples...")
+            results = checker.run_check(features_aligned, target_aligned)
+
+            if results.get('success', False):
+                outcomes_dir = Path('outcomes')
+                outcomes_dir.mkdir(exist_ok=True)
+                csv_path = checker.save_results_to_csv(outcomes_dir, filename_prefix="baseline_check_labeling_targets")
+                if csv_path:
+                    results['csv_path'] = csv_path
+                results['target_column'] = long_col or short_col
+                results['n_samples_used'] = len(aligned_index)
+                results['n_features_used'] = len(features_aligned.columns)
+            else:
+                tprint_warning("⚠️ Labeling baseline predictive check returned no results")
+
+            return results
+        except Exception as e:
+            tprint(f"⚠️ Labeling baseline check failed: {e}", "WARNING")
+            return None
+
     def _optimize_dataframe_memory(self, df):
         """Optimize DataFrame memory usage."""
         if self.memory_optimizer and hasattr(self.memory_optimizer, 'optimize_dataframe'):

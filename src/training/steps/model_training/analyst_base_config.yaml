@@ -10,19 +10,19 @@ analyst_config:
       model_type: LGBMRegressor
       params:
         n_estimators: 200
-        learning_rate: 0.058670691149840734
-        max_depth: 3
-        num_leaves: 6
-        subsample: 0.6
-        colsample_bytree: 0.6
+        learning_rate: 0.2536999076681772
+        max_depth: 5
+        num_leaves: 32
+        subsample: 0.9802857225639665
+        colsample_bytree: 0.9802857225639665
         random_state: 42
         verbosity: -1
         n_jobs: -1
-        reg_lambda: 2.75
-        sampling_rate: 0.6
-        min_child_samples: 53
-        objective: 'regression'  # Explicit regression objective
-        metric: 'rmse'  # Root Mean Squared Error
+        reg_lambda: 1.8727005942368125
+        sampling_rate: 0.9802857225639665
+        min_child_samples: 76
+        objective: regression
+        metric: rmse
       hpo:
         enabled: false
         n_rounds: 2
@@ -66,21 +66,13 @@ analyst_config:
             type: float
             low: 0.1
             high: 1.0
-        optimal_params:
-          max_depth: 3
-          learning_rate: 0.058670691149840734
-          reg_lambda: 2.75
-          sampling_rate: 0.6
-          min_child_samples: 53
-          num_leaves: 6
-          subsample: 0.6
-          colsample_bytree: 0.6
+        optimal_params: {}
         last_optimization:
-          timestamp: '2025-11-12T19:36:02.222271'
-          best_score: 0.782520355557602
-          total_trials: 340
-          total_time_seconds: 380.45713567733765
-          n_rounds: 2
+          timestamp: '2025-11-16T22:49:17.028926'
+          best_score: -.inf
+          total_trials: 0
+          total_time_seconds: 0.0002300739288330078
+          n_rounds: 0
     depthwise_cnn:
       model_type: DepthwiseSeparableCNNRegressor
       params:
@@ -95,7 +87,7 @@ analyst_config:
         reduce_lr_patience: 7
         verbose: 0
         use_batch_norm: true
-        loss_function: 'mse'  # Explicit regression loss (MSE, MAE, Huber also supported)
+        loss_function: mse
       hpo:
         enabled: true
         n_rounds: 3
@@ -149,21 +141,20 @@ analyst_config:
     catboost:
       model_type: CatBoostRegressor
       params:
-        iterations: 608
-        learning_rate: 0.010635565227349214
-        depth: 4
-        l2_leaf_reg: 5.5
-        subsample: 1.0
-        colsample_bylevel: 1.0
+        iterations: 400
+        learning_rate: 0.05
+        depth: 5
+        l2_leaf_reg: 8.0
+        subsample: 0.8
+        colsample_bylevel: 0.8
         border_count: 128
         max_ctr_complexity: 2
         random_seed: 42
         verbose: false
         early_stopping_rounds: 50
-        sampling_rate: 0.6
         bootstrap_type: Bernoulli
-        loss_function: 'RMSE'  # Explicit regression loss (RMSE, MAE, Quantile also supported)
-        eval_metric: 'RMSE'
+        loss_function: RMSE
+        eval_metric: RMSE
       hpo:
         enabled: false
         n_rounds: 2
@@ -203,20 +194,13 @@ analyst_config:
             type: int
             low: 1
             high: 4
-        optimal_params:
-          depth: 4
-          learning_rate: 0.010635565227349214
-          iterations: 608
-          l2_leaf_reg: 5.5
-          bootstrap_type: Bernoulli
-          subsample: 1.0
-          colsample_bylevel: 1.0
+        optimal_params: {}
         last_optimization:
-          timestamp: '2025-11-12T20:18:29.282490'
-          best_score: 0.7801980109440216
-          total_trials: 300
-          total_time_seconds: 2546.1753358840942
-          n_rounds: 2
+          timestamp: '2025-11-16T22:49:17.318875'
+          best_score: -.inf
+          total_trials: 0
+          total_time_seconds: 0.0002129077911376953
+          n_rounds: 0
   training:
     training_samples: 50000
     validation_samples: 15000
@@ -270,7 +254,7 @@ feature_engineering:
     source: feature_generation_final_feature_selection_step
     artifact_name: analyst_features
     initial_count: 300
-    target_count: 100
+    target_count: 60
   cross_timeframe:
     enable: true
     base_timeframe: 5m
@@ -330,13 +314,18 @@ evaluation:
     - precision
     - recall
     - f1
+    trading:
+    - sharpe_ratio
+    - max_drawdown
+    - calmar_ratio
+    - sortino_ratio
   cross_validation:
     method: time_series_split
     n_splits: 5
     test_size: 0.2
   comparison:
     enable_model_ranking: true
-    ranking_metric: r2
+    ranking_metric: custom_balanced_score
     enable_feature_importance: true
 hardware:
   enable_gpu_acceleration: false

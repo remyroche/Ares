@@ -170,15 +170,24 @@ class HPODiagnostics:
             # Fit model to get feature importances
             rf_baseline.fit(X, y)
             feature_importances = rf_baseline.feature_importances_
-            diagnostics["stats"]["max_feature_importance"] = float(np.max(feature_importances))
-            diagnostics["stats"]["mean_feature_importance"] = float(np.mean(feature_importances))
-            diagnostics["stats"]["nonzero_importance_features"] = int(np.sum(feature_importances > 0.01))
 
-            # Check if features have signal
-            if np.max(feature_importances) < 0.05:
+            max_importance = float(np.max(feature_importances)) if feature_importances.size else 0.0
+            mean_importance = float(np.mean(feature_importances)) if feature_importances.size else 0.0
+            nonzero_importance = int(np.sum(feature_importances > 0.01)) if feature_importances.size else 0
+
+            diagnostics["stats"]["max_feature_importance"] = max_importance
+            diagnostics["stats"]["mean_feature_importance"] = mean_importance
+            diagnostics["stats"]["nonzero_importance_features"] = nonzero_importance
+
+            n_features_for_threshold = int(diagnostics["stats"].get("n_features", max(1, feature_importances.shape[0])))
+            importance_threshold = max(0.05, 5.0 / max(1, n_features_for_threshold))
+            diagnostics["stats"]["importance_warning_threshold"] = importance_threshold
+
+            # Check if features have signal (dynamic threshold)
+            if max_importance < importance_threshold:
                 diagnostics["warnings"].append(
-                    f"⚠️ ALL features have very low importance (<0.05)!\n"
-                    f"   Max importance: {np.max(feature_importances):.4f}\n"
+                    f"⚠️ ALL features have very low importance (<{importance_threshold:.4f})!\n"
+                    f"   Max importance: {max_importance:.4f}\n"
                     f"   This suggests features have NO predictive signal!"
                 )
 
@@ -351,9 +360,10 @@ class HPODiagnostics:
             print(f"  • Max feature importance: {stats['max_feature_importance']:.4f}")
             print(f"  • Mean feature importance: {stats['mean_feature_importance']:.4f}")
             print(f"  • Features with >1% importance: {stats['nonzero_importance_features']}/{stats['n_features']}")
+            threshold = stats.get('importance_warning_threshold', 0.05)
 
-            if stats['max_feature_importance'] < 0.05:
-                print(f"  ⚠️  ALL features have very low importance - NO SIGNAL!")
+            if stats['max_feature_importance'] < threshold:
+                print(f"  ⚠️  ALL features have very low importance (<{threshold:.4f}) - NO SIGNAL!")
 
         # Print issues
         if diagnostics["issues"]:

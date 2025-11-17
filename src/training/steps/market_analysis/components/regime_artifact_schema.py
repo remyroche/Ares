@@ -11,6 +11,13 @@ from typing import Any, Dict, List, Optional, Union
 from datetime import datetime
 from dataclasses import dataclass, field, asdict
 from src.utils.tprint import tprint
+from tests.utils.assertions import (
+    assert_true, assert_equals, assert_not_equals, assert_greater_than,
+    assert_less_than, assert_greater_than_or_equal, assert_less_than_or_equal,
+    assert_array_shape, assert_array_not_empty, assert_array_no_nan,
+    assert_array_no_inf, assert_dtype, assert_in_range, assert_is_none,
+    assert_is_not_none, assert_contains, assert_not_contains
+)
 
 # Import standardized regime extractor for consistent extraction logic
 from src.utils.ml_common.data.standardized_regime_extractor import (
@@ -69,14 +76,14 @@ class RegimeLabelsArtifact:
     def validate(self) -> bool:
         """Validate the artifact structure."""
         try:
-            assert isinstance(self.cluster_assignments, np.ndarray), "cluster_assignments must be numpy array"
-            assert len(self.cluster_assignments) > 0, "cluster_assignments cannot be empty"
-            assert self.n_regimes > 0, "n_regimes must be positive"
-            assert self.n_regimes == len(np.unique(self.cluster_assignments)), "n_regimes mismatch with unique assignments"
+            assert_true(isinstance(self.cluster_assignments, np.ndarray), "cluster_assignments must be numpy array", "Validation de l'artefact RegimeLabelsArtifact")
+            assert_greater_than(len(self.cluster_assignments), 0, "cluster_assignments cannot be empty", "Validation de l'artefact RegimeLabelsArtifact")
+            assert_greater_than(self.n_regimes, 0, "n_regimes must be positive", "Validation de l'artefact RegimeLabelsArtifact")
+            assert_equals(self.n_regimes, len(np.unique(self.cluster_assignments)), "n_regimes mismatch with unique assignments", "Validation de l'artefact RegimeLabelsArtifact")
             
             # Validate regime distribution
             for regime_id, count in self.regime_distribution.items():
-                assert count > 0, f"Regime {regime_id} has invalid count: {count}"
+                assert_greater_than(count, 0, f"Regime {regime_id} has invalid count: {count}", "Validation de la distribution des régimes")
             
             tprint(f"✅ [ARTIFACT_SCHEMA] RegimeLabelsArtifact validation passed", color="green")
             return True
@@ -343,14 +350,14 @@ class RegimeEnsembleArtifact:
     def validate(self) -> bool:
         """Validate the ensemble artifact."""
         try:
-            assert self.ensemble_model is not None, "Ensemble model is None"
-            assert hasattr(self.ensemble_model, 'predict'), "Ensemble model missing predict method"
-            assert hasattr(self.ensemble_model, 'predict_proba'), "Ensemble model missing predict_proba method"
-            assert len(self.base_model_contracts) > 0, "No base model contracts defined"
-            assert len(self.feature_names) > 0, "No feature names defined"
+            assert_is_not_none(self.ensemble_model, "Ensemble model is None", "Validation de l'artefact d'ensemble")
+            assert_true(hasattr(self.ensemble_model, 'predict'), "Ensemble model missing predict method", "Validation de l'artefact d'ensemble")
+            assert_true(hasattr(self.ensemble_model, 'predict_proba'), "Ensemble model missing predict_proba method", "Validation de l'artefact d'ensemble")
+            assert_greater_than(len(self.base_model_contracts), 0, "No base model contracts defined", "Validation de l'artefact d'ensemble")
+            assert_greater_than(len(self.feature_names), 0, "No feature names defined", "Validation de l'artefact d'ensemble")
             
             # Validate ensemble contract
-            assert self.ensemble_contract.is_ensemble_model(), "Ensemble contract not marked as ensemble"
+            assert_true(self.ensemble_contract.is_ensemble_model(), "Ensemble contract not marked as ensemble", "Validation du contrat d'ensemble")
             
             tprint("✅ [ENSEMBLE_ARTIFACT] Validation passed", color="green")
             return True

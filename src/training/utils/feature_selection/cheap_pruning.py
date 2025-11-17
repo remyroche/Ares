@@ -1287,7 +1287,12 @@ class OptimizedCheapPruningPipeline:
             tprint_info("="*80)
             tprint_info(f"  ✅ Selected top {len(features_to_keep)} features by composite score")
             tprint_info(f"  📊 Cross-timeframe features in final selection: {len(final_cross_timeframe)}")
-            tprint_info(f"  📊 Cross-timeframe survival rate: {len(final_cross_timeframe)/len(ct_before_final):.1%}")
+            # Guard against division by zero when there are no cross-timeframe features before final selection
+            if len(ct_before_final) > 0:
+                survival_rate = len(final_cross_timeframe) / len(ct_before_final)
+                tprint_info(f"  📊 Cross-timeframe survival rate: {survival_rate:.1%}")
+            else:
+                tprint_warning("  ⚠️ No cross-timeframe features before final selection; survival rate undefined (treated as 0.0%)")
             
             if final_cross_timeframe:
                 tprint_success(f"  ✅ Cross-timeframe features kept:")

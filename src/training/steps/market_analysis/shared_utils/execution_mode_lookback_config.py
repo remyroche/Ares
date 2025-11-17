@@ -126,23 +126,23 @@ class ExecutionModeLookbackConfig:
                 data_loading_days=get_mode_lookback_days("blank"),
 
                 # Feature lookback optimization - Minimal intensity
-                optimization_window_days=180,  # 180 days for validation
+                optimization_window_days=get_mode_lookback_days("blank"),  # 180 days for validation
                 optimization_sample_size=500,  # Minimal sample size
                 optimization_max_features=80,  # Keep all features
 
                 # PID-based feature generation - Minimal complexity
-                pid_generation_window_days=180,  # 180 days
+                pid_generation_window_days=get_mode_lookback_days("blank"),  # 180 days
                 pid_interaction_features=100,  # Keep all interaction features
                 pid_polynomial_features=50,  # Keep all polynomial features
                 pid_cross_timeframe_features=50,  # Keep all cross-timeframe features
 
                 # Multi-horizon profit labeling - Minimal analysis
-                labeling_window_days=180,  # 180 days for validation
+                labeling_window_days=get_mode_lookback_days("blank"),  # 180 days for validation
                 labeling_horizons_count=3,  # Minimal horizons
                 labeling_sample_size=500,  # Minimal sample size
 
                 # Final feature selection - Minimal pipeline
-                selection_window_days=180,  # 180 days for validation
+                selection_window_days=get_mode_lookback_days("blank"),  # 180 days for validation
                 selection_stage_targets=(120, 100, 80, 60),  # Keep consistent stage targets
 
                 # General parameters

@@ -24,6 +24,13 @@ from training.steps.pre_training.components.final_feature_selection import (
     FinalFeatureSelectionConfig
 )
 
+# Import des assertions standardisées
+from tests.utils.assertions import (
+    assert_float_equals,
+    assert_dict_structure,
+    assert_list_structure
+)
+
 
 class TestFinalFeatureSelection(unittest.TestCase):
     """Test cases for FinalFeatureSelectionComponent"""

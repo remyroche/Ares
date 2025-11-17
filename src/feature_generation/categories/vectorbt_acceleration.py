@@ -74,19 +74,17 @@ def _sanitize_series_output(values: Any,
                             index: pd.Index,
                             name: str,
                             fill_value: float = 0.0) -> pd.Series:
-    """
-    Convert arbitrary outputs into a numeric pandas Series suitable for downstream validation.
-    """
+    """Convert arbitrary outputs into a numeric pandas Series suitable for downstream validation."""
     try:
         if isinstance(values, pd.Series):
             series = values.copy()
         elif isinstance(values, pd.DataFrame):
-            series = values.iloc[:, 0].copy() if not values.empty else pd.Series(dtype=float, index=index)
+            series = values.iloc[:, 0].copy() if not values.empty else pd.Series(dtype=float)
         elif isinstance(values, dict):
             # Prefer common keys
             for key in ['result', 'trend_strength', 'momentum', 'data']:
                 if key in values:
-                    return _sanitize_series_output(values[key], index, name, fill_value)
+                    return _finalize_series_output(values[key], index, name, fill_value)
             # Fallback: attempt to build Series from dict values
             series = pd.Series(values)
         elif isinstance(values, (np.ndarray, list, tuple)):
@@ -94,20 +92,38 @@ def _sanitize_series_output(values: Any,
         elif hasattr(values, '__iter__') and not np.isscalar(values):
             series = pd.Series(list(values))
         else:
-            series = pd.Series([values] * len(index), index=index)
+            series = pd.Series([values], dtype=float)
 
-        if len(series) != len(index):
-            series = series.reindex(index, fill_value=fill_value)
-        else:
-            series.index = index
         series = pd.to_numeric(series, errors='coerce')
         series = series.replace([np.inf, -np.inf], np.nan)
+
+        if len(series) == len(index):
+            series.index = index
+        else:
+            series = series.reset_index(drop=True)
+            series = series.reindex(range(len(index)), fill_value=fill_value)
+            series.index = index
+
         series = series.fillna(fill_value)
         series.name = name
         return series
     except Exception as e:
         logger.warning(f"Failed to sanitize series output for {name}: {e}")
         return pd.Series(fill_value, index=index, name=name)
+
+
+def _finalize_series_output(values: Any,
+                           index: pd.Index,
+                           name: str,
+                           fill_value: float = 0.0) -> pd.Series:
+    """Sanitize feature output and enforce finite-only values."""
+    series = _sanitize_series_output(values, index, name, fill_value)
+    try:
+        validate_finite(series.values, name)
+    except ValueError as err:
+        logger.warning("%s validation failed (%s); substituting fill value", name, err)
+        series = pd.Series(fill_value, index=index, name=name)
+    return series
 
 class AccelerationFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for acceleration-based features with full VectorBT optimization."""
@@ -334,13 +350,17 @@ class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
                 )
                 momentum = result.result
 
-                # Validate finite values
+                # Validate finite values (ignore warmup window where NaNs are expected)
                 try:
-                    validate_finite(momentum.values, f"VectorBT_Momentum_{self.period}_{self.base_calculation.value}")
+                    if len(momentum) > self.period:
+                        validate_finite(
+                            momentum.values[self.period:],
+                            f"VectorBT_Momentum_{self.period}_{self.base_calculation.value}",
+                        )
                 except ValueError as e:
                     logger.warning(f"⚠️ {e}")
 
-                return _sanitize_series_output(
+                return _finalize_series_output(
                     momentum, data.index,
                     f'vectorbt_momentum_{self.period}_{self.base_calculation.value}'
                 )
@@ -363,13 +383,17 @@ class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
                     base_values, momentum_func, window=self.period + 1
                 )
 
-                # Validate finite values
+                # Validate finite values (ignore warmup window where NaNs are expected)
                 try:
-                    validate_finite(momentum.values, f"VectorBT_Momentum_{self.period}_{self.base_calculation.value}")
+                    if len(momentum) > self.period:
+                        validate_finite(
+                            momentum.values[self.period:],
+                            f"VectorBT_Momentum_{self.period}_{self.base_calculation.value}",
+                        )
                 except ValueError as e:
                     logger.warning(f"⚠️ {e}")
 
-                return _sanitize_series_output(
+                return _finalize_series_output(
                     momentum, data.index,
                     f'vectorbt_momentum_{self.period}_{self.base_calculation.value}'
                 )
@@ -381,13 +405,17 @@ class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
         shifted_values = base_values.shift(self.period)
         momentum = safe_percentage_change(shifted_values, base_values)
 
-        # Validate finite values
+        # Validate finite values (ignore warmup window where NaNs are expected)
         try:
-            validate_finite(momentum.values, f"VectorBT_Momentum_{self.period}_{self.base_calculation.value}")
+            if len(momentum) > self.period:
+                validate_finite(
+                    momentum.values[self.period:],
+                    f"VectorBT_Momentum_{self.period}_{self.base_calculation.value}",
+                )
         except ValueError as e:
             logger.warning(f"⚠️ {e}")
 
-        return _sanitize_series_output(
+        return _finalize_series_output(
             momentum, data.index,
             f'vectorbt_momentum_{self.period}_{self.base_calculation.value}'
         )
@@ -437,13 +465,18 @@ class VectorBTPriceAccelerationGenerator(VectorBTFeatureGenerator):
         # Calculate acceleration (second derivative) using VectorBT
         acceleration = momentum.diff(self.period)
 
-        # Validate finite values
+        # Validate finite values (ignore warmup window where NaNs are expected)
         try:
-            validate_finite(acceleration.values, f"VectorBT_Acceleration_{self.period}_{self.base_calculation.value}")
+            warmup = 2 * self.period
+            if len(acceleration) > warmup:
+                validate_finite(
+                    acceleration.values[warmup:],
+                    f"VectorBT_Acceleration_{self.period}_{self.base_calculation.value}",
+                )
         except ValueError as e:
             logger.warning(f"⚠️ {e}")
 
-        return _sanitize_series_output(
+        return _finalize_series_output(
             acceleration, data.index,
             f'vectorbt_acceleration_{self.period}_{self.base_calculation.value}'
         )
@@ -496,13 +529,18 @@ class VectorBTPriceJerkGenerator(VectorBTFeatureGenerator):
         # Calculate jerk (third derivative) using VectorBT
         jerk = acceleration.diff(self.period)
 
-        # Validate finite values
+        # Validate finite values (ignore warmup window where NaNs are expected)
         try:
-            validate_finite(jerk.values, f"VectorBT_Jerk_{self.period}_{self.base_calculation.value}")
+            warmup = 3 * self.period
+            if len(jerk) > warmup:
+                validate_finite(
+                    jerk.values[warmup:],
+                    f"VectorBT_Jerk_{self.period}_{self.base_calculation.value}",
+                )
         except ValueError as e:
             logger.warning(f"⚠️ {e}")
 
-        return _sanitize_series_output(
+        return _finalize_series_output(
             jerk, data.index,
             f'vectorbt_jerk_{self.period}_{self.base_calculation.value}'
         )
@@ -572,18 +610,18 @@ class VectorBTTrendStrengthGenerator(VectorBTFeatureGenerator):
                     # Extract the main result from the dict
                     trend_strength = result.result.get('trend_strength', result.result.get('result', result.result))
                     if isinstance(trend_strength, pd.Series):
-                        return _sanitize_series_output(
+                        return _finalize_series_output(
                             trend_strength, data.index,
                             f'vectorbt_trend_strength_{self.window}_{self.base_calculation.value}'
                         )
                     else:
                         # Convert to Series if needed
-                        return _sanitize_series_output(
+                        return _finalize_series_output(
                             trend_strength, data.index,
                             f'vectorbt_trend_strength_{self.window}_{self.base_calculation.value}'
                         )
                 else:
-                    return _sanitize_series_output(
+                    return _finalize_series_output(
                         result.result, data.index,
                         f'vectorbt_trend_strength_{self.window}_{self.base_calculation.value}'
                     )
@@ -624,7 +662,7 @@ class VectorBTTrendStrengthGenerator(VectorBTFeatureGenerator):
                 trend_strength = self.vectorbt_rolling_optimizer.rolling_apply(
                     base_values, calculate_trend_strength, window=self.window, min_periods=min_periods
                 )
-                return _sanitize_series_output(
+                return _finalize_series_output(
                     trend_strength, data.index,
                     f'vectorbt_trend_strength_{self.window}_{self.base_calculation.value}'
                 )
@@ -662,7 +700,7 @@ class VectorBTTrendStrengthGenerator(VectorBTFeatureGenerator):
             trend_strength = base_values.rolling(window=self.window, min_periods=min_periods).apply(
                 calculate_trend_strength_fallback, raw=False
             )
-            return _sanitize_series_output(
+            return _finalize_series_output(
                 trend_strength, data.index,
                 f'vectorbt_trend_strength_{self.window}_{self.base_calculation.value}'
             )
@@ -709,7 +747,7 @@ class VectorBTTrendConsistencyGenerator(VectorBTFeatureGenerator):
         volatility = self._vectorbt_rolling_operation(base_values, 'std', window=self.window)
         consistency = 1.0 / (volatility + 1e-8)  # Add small epsilon to avoid division by zero
 
-        return _sanitize_series_output(
+        return _finalize_series_output(
             consistency, data.index,
             f'vectorbt_trend_consistency_{self.window}_{self.base_calculation.value}',
             fill_value=0.0

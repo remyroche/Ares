@@ -13,9 +13,9 @@ The pipeline:
 5. Assesses cluster quality
 6. Generates cluster artifacts for downstream steps
 
-Supports execution modes:
-- blank: Minimal data (20 days) for testing
-- light: Reduced data (180 days) for faster execution
+Supports execution modes with centrally configured lookback windows:
+- blank: Uses centralized blank-mode lookback days from ares_launcher
+- light: Uses centralized light-mode lookback days from ares_launcher
 - full: Complete data as defined by ares_launcher
 
 Author: Claude Code
@@ -77,6 +77,9 @@ from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 from src.training.steps.market_analysis.statsmodel_clustering.feature_engineering.rank_normalization import (
     RankNormalizer,
+)
+from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import (
+    get_execution_mode_config,
 )
 from src.features_common.transforms import (
     zscore_normalize,
@@ -359,8 +362,7 @@ class StatsmodelClusteringPipelineStep(BaseStep):
         execution_mode: str,
         timeframe: str
     ) -> pd.DataFrame:
-        """
-        Apply execution mode filtering to data.
+        """Apply execution mode filtering to data using centralized lookback days.
 
         Args:
             data: Market data DataFrame
@@ -373,11 +375,14 @@ class StatsmodelClusteringPipelineStep(BaseStep):
         if execution_mode == 'full':
             return data
 
-        # Get days limit from config
-        if execution_mode == 'blank':
-            days_limit = int(self.feature_config.get('execution_modes', 'blank_days', fallback='20'))
-        else:  # light
-            days_limit = int(self.feature_config.get('execution_modes', 'light_days', fallback='180'))
+        # Resolve days limit from centralized execution mode configuration
+        mode = (execution_mode or 'light').lower()
+        exec_config = get_execution_mode_config()
+        days_limit = exec_config.get_data_loading_days(mode)
+
+        # Fallback: if config returns None (e.g., full mode), do not filter
+        if days_limit is None:
+            return data
 
         # Calculate samples based on timeframe
         samples_per_day_map = {

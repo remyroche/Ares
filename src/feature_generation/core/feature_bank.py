@@ -484,9 +484,8 @@ class FeatureBank:
                         if isinstance(values, pd.Series):
                             series = values.copy()
                         elif isinstance(values, pd.DataFrame):
-                            series = values.iloc[:, 0].copy() if not values.empty else pd.Series(dtype=float, index=index)
+                            series = values.iloc[:, 0].copy() if not values.empty else pd.Series(dtype=float)
                         elif isinstance(values, dict):
-                            # Try common result keys; fall back to constructing Series from values
                             for key in ('result', 'data', 'series'):
                                 if key in values:
                                     return CustomAutoOptimizedFeatureGenerator._ensure_series(values[key], index, feature_name)
@@ -494,10 +493,17 @@ class FeatureBank:
                         elif hasattr(values, '__iter__') and not np.isscalar(values):
                             series = pd.Series(list(values))
                         else:
-                            series = pd.Series([values] * len(index), dtype=float)
+                            series = pd.Series([values], dtype=float)
 
-                        series = series.reindex(index, fill_value=np.nan)
                         series = pd.to_numeric(series, errors='coerce').replace([np.inf, -np.inf], np.nan)
+
+                        if len(series) == len(index):
+                            series.index = index
+                        else:
+                            series = series.reset_index(drop=True)
+                            series = series.reindex(range(len(index)), fill_value=np.nan)
+                            series.index = index
+
                         series = series.fillna(0.0)
                         series.name = feature_name
                         return series
@@ -534,7 +540,7 @@ class FeatureBank:
                             else:
                                 # Try to convert other types to Series
                                 try:
-                                    feature_series = pd.Series(feature_series, index=data.index)
+                                    feature_series = pd.Series(feature_series)
                                 except Exception:
                                     # If conversion fails, create a Series of NaN
                                     feature_series = pd.Series([np.nan] * len(data), index=data.index)
@@ -1846,6 +1852,73 @@ class FeatureBank:
 
         return optimized_generators
 
+    def _prepare_generator_kwargs_with_lookback(self,
+                                               generator: FeatureGenerator,
+                                               base_kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """Prepare per-generator kwargs, applying per-feature lookback overrides when available.
+
+        This uses the per_feature_lookbacks mapping (final feature name -> [lb1, lb2, ...])
+        to override the generator's default lookback and to pass explicit lookback-related
+        parameters down to the generator in a generic way.
+        """
+        if not base_kwargs:
+            return {}
+
+        kwargs = dict(base_kwargs)
+        per_feature_lookbacks = kwargs.get('per_feature_lookbacks')
+        if not isinstance(per_feature_lookbacks, dict):
+            return kwargs
+
+        name = getattr(getattr(generator, 'config', None), 'name', None)
+        if not name or name not in per_feature_lookbacks:
+            return kwargs
+
+        lookbacks = per_feature_lookbacks.get(name)
+        if not isinstance(lookbacks, (list, tuple)) or not lookbacks:
+            return kwargs
+
+        try:
+            optimal_lookback = int(lookbacks[0])
+        except Exception:
+            return kwargs
+
+        # Update generator config bounds defensively so generators that rely on
+        # default_lookback / min_lookback / max_lookback can pick up the override.
+        try:
+            if hasattr(generator, 'config'):
+                if hasattr(generator.config, 'default_lookback'):
+                    generator.config.default_lookback = optimal_lookback
+                if hasattr(generator.config, 'min_lookback'):
+                    try:
+                        current_min = int(getattr(generator.config, 'min_lookback', optimal_lookback))
+                    except Exception:
+                        current_min = optimal_lookback
+                    generator.config.min_lookback = min(current_min, optimal_lookback)
+                if hasattr(generator.config, 'max_lookback'):
+                    try:
+                        current_max = int(getattr(generator.config, 'max_lookback', optimal_lookback))
+                    except Exception:
+                        current_max = optimal_lookback
+                    generator.config.max_lookback = max(current_max, optimal_lookback)
+        except Exception:
+            # Config updates are best-effort; generators that cannot be updated
+            # will simply ignore the override and rely on kwargs instead.
+            pass
+
+        # Expose lookback parameters to generators that want to consume them explicitly
+        kwargs.setdefault('lookback', optimal_lookback)
+        kwargs.setdefault('lookback_period', optimal_lookback)
+        kwargs.setdefault('lookback_periods', lookbacks)
+
+        # Keep a per-feature mapping available for any downstream components that
+        # want the full triple per feature.
+        optimized_map = kwargs.get('optimized_lookbacks_per_feature') or {}
+        optimized_map = dict(optimized_map)
+        optimized_map[name] = list(lookbacks)
+        kwargs['optimized_lookbacks_per_feature'] = optimized_map
+
+        return kwargs
+
     def _generate_features_parallel(self,
                                    generators: List[FeatureGenerator],
                                    data: pd.DataFrame,
@@ -1895,8 +1968,15 @@ class FeatureBank:
                 self.logger.info(f"🔄 Processing generator {processed_generators}/{total_generators} ({progress_pct:.1f}%): {generator.config.name}")
             
             try:
-                # Check cache first
-                cache_key = self._get_cache_key(generator, data, **kwargs)
+                # Prepare per-generator kwargs with any per-feature lookback overrides
+                generator_kwargs = self._prepare_generator_kwargs_with_lookback(generator, kwargs)
+
+                # Check cache first (exclude unhashable entries like mapping dicts)
+                cache_key_kwargs = {
+                    k: v for k, v in generator_kwargs.items()
+                    if k not in ('per_feature_lookbacks', 'optimized_lookbacks_per_feature')
+                }
+                cache_key = self._get_cache_key(generator, data, **cache_key_kwargs)
                 if self.feature_cache and cache_key in self.feature_cache:
                     self.logger.debug(f"Using cached result for {generator.config.name}")
                     cached_result = self.feature_cache[cache_key]
@@ -1910,7 +1990,7 @@ class FeatureBank:
                     generator.load_state(state_payload)
 
                 # Generate feature
-                result = generator.generate(data, **kwargs)
+                result = generator.generate(data, **generator_kwargs)
                 results.append(result)
 
                 # Cache result with size management
@@ -2005,8 +2085,15 @@ class FeatureBank:
             Feature result
         """
         try:
-            # Check cache first
-            cache_key = self._get_cache_key(generator, data, **kwargs)
+            # Prepare per-generator kwargs with any per-feature lookback overrides
+            generator_kwargs = self._prepare_generator_kwargs_with_lookback(generator, kwargs)
+
+            # Check cache first (exclude unhashable entries like mapping dicts)
+            cache_key_kwargs = {
+                k: v for k, v in generator_kwargs.items()
+                if k not in ('per_feature_lookbacks', 'optimized_lookbacks_per_feature')
+            }
+            cache_key = self._get_cache_key(generator, data, **cache_key_kwargs)
             if self.feature_cache and cache_key in self.feature_cache:
                 cached_result = self.feature_cache[cache_key]
                 if self.persist_generator_state:
@@ -2018,7 +2105,7 @@ class FeatureBank:
                 generator.load_state(state_payload)
 
             # Generate feature
-            result = generator.generate(data, **kwargs)
+            result = generator.generate(data, **generator_kwargs)
 
             # Cache result with size management
             if self.feature_cache:
@@ -2379,10 +2466,26 @@ class FeatureBank:
         Returns:
             Cache key string
         """
-        # Fast, in-process cache key based on generator name, data id, and parameters
+        # Fast, in-process cache key based on generator name, data id, and hashable parameters
         # Using id(data) avoids expensive per-call tuple materialization and is stable within a run
         data_hash = hash((data.shape, id(data)))
-        params_hash = hash(tuple(sorted(kwargs.items())))
+
+        # Only include hashable (key, value) pairs to avoid TypeError when values are
+        # complex objects like dicts or lists (e.g. optimized lookback mappings).
+        safe_items = []
+        for item in sorted(kwargs.items()):
+            try:
+                hash(item)
+            except TypeError:
+                continue
+            else:
+                safe_items.append(item)
+
+        try:
+            params_hash = hash(tuple(safe_items))
+        except Exception:
+            params_hash = 0
+
         return f"{generator.config.name}_{data_hash}_{params_hash}"
 
     def _update_performance_stats(self,

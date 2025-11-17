@@ -410,7 +410,7 @@ class RollingHMMFeatureEngineer:
 
         vol_cols = [col for col in adjusted.columns if 'volatility' in col or 'return' in col]
         if vol_cols:
-            adjusted.loc[:, vol_cols] = np.tanh(adjusted[vol_cols])
+            adjusted.loc[:, vol_cols] = adjusted[vol_cols].clip(-5.0, 5.0)
 
         ratio_cols = [col for col in adjusted.columns if 'ratio' in col or 'skew' in col]
         if ratio_cols:
@@ -1171,7 +1171,7 @@ class RollingHMMFeatureEngineer:
 
         economic_features = {}
 
-        # 1. Returns features
+        # 1. Returns features (DIRECTIONAL - HIGH PRIORITY)
         if f'ewma_returns_{ewma_config.short_window}' in features.columns:
             economic_features['mean_return_short'] = features[f'ewma_returns_{ewma_config.short_window}']
         if f'ewma_returns_{ewma_config.long_window}' in features.columns:
@@ -1179,13 +1179,13 @@ class RollingHMMFeatureEngineer:
         if f'ewma_returns_diff_{ewma_config.name}' in features.columns:
             economic_features['return_momentum'] = features[f'ewma_returns_diff_{ewma_config.name}']
 
-        # 2. Volatility features
+        if 'log_returns' in features.columns:
+            economic_features['return_1h'] = features['log_returns']
+
+        # 2. Volatility features (REDUCED - only keep 2 most important)
         if f'volatility_{ewma_config.short_window}' in features.columns:
             economic_features['volatility_short'] = features[f'volatility_{ewma_config.short_window}']
-        if f'volatility_{ewma_config.long_window}' in features.columns:
-            economic_features['volatility_long'] = features[f'volatility_{ewma_config.long_window}']
-        if f'volatility_ratio_{ewma_config.name}' in features.columns:
-            economic_features['volatility_regime'] = features[f'volatility_ratio_{ewma_config.name}']
+        # Removed: volatility_long and volatility_regime to reduce vol emphasis
 
         # 3. Volume features (if available)
         volume_cols = [col for col in features.columns if 'volume' in col.lower()]
@@ -1201,7 +1201,7 @@ class RollingHMMFeatureEngineer:
             # Already have this from ewma_returns_diff
             economic_features['trend_strength'] = economic_features['return_momentum']
 
-        # 5. RSI-like feature (use normalized returns as proxy)
+        # 5. RSI-like feature (DIRECTIONAL - use normalized returns as proxy)
         if 'log_returns' in features.columns:
             # Calculate RSI from returns
             returns = features['log_returns']
@@ -1215,12 +1215,30 @@ class RollingHMMFeatureEngineer:
             # Normalize RSI to [-1, 1] range
             economic_features['rsi'] = (rsi - 50) / 50
 
-        # 6. ATR (Average True Range) - use realized_range as proxy
+        # 6. ATR (Average True Range) - KEEP for risk measurement
         if 'realized_range' in features.columns:
             economic_features['atr'] = features['realized_range']
         elif f'volatility_{ewma_config.short_window}' in features.columns:
             # Use short-term volatility as ATR proxy
             economic_features['atr'] = features[f'volatility_{ewma_config.short_window}']
+        if 'realized_range' in features.columns:
+            economic_features['hl_range'] = features['realized_range']
+        
+        # 8. NEW: Volatility regime change indicator (Fix #3)
+        if ('volatility_short' in economic_features and 
+            f'volatility_{ewma_config.long_window}' in features.columns):
+            vol_long = features[f'volatility_{ewma_config.long_window}']
+            economic_features['vol_regime_change'] = (
+                economic_features['volatility_short'] > vol_long
+            ).astype(int)
+        
+        # 9. NEW: Trend reversal signal (Fix #3)
+        if 'rsi' in economic_features:
+            # Denormalize RSI back to 0-100 for threshold check
+            rsi_raw = (economic_features['rsi'] * 50) + 50
+            economic_features['trend_reversal_signal'] = (
+                (rsi_raw > 70) | (rsi_raw < 30)
+            ).astype(int)
 
         # 7. Sharpe ratio (rolling)
         if ('mean_return_short' in economic_features and
@@ -1232,6 +1250,33 @@ class RollingHMMFeatureEngineer:
 
         # Create DataFrame
         economic_df = pd.DataFrame(economic_features, index=features.index)
+
+        # Gently up-weight directional / momentum features relative to pure volatility
+        directional_cols = [
+            'mean_return_short',
+            'mean_return_long',
+            'return_momentum',
+            'trend_strength',
+            'rsi',
+            'return_1h',
+        ]
+        for col in directional_cols:
+            if col in economic_df.columns:
+                economic_df[col] = economic_df[col] * 1.5
+
+        # Restrict to a compact set of core economic axes for HMM emissions
+        core_cols = [
+            'return_1h',
+            'mean_return_short',
+            'volatility_short',
+            'hl_range',
+            'volume_ratio',
+            'sharpe',
+            'return_momentum',
+        ]
+        selected_cols = [col for col in core_cols if col in economic_df.columns]
+        if selected_cols:
+            economic_df = economic_df[selected_cols]
 
         # Fill any remaining NaNs
         nan_mask = economic_df.isna().any(axis=1)
@@ -1250,7 +1295,7 @@ class RollingHMMFeatureEngineer:
 
 # Default EWMA configurations
 DEFAULT_EWMA_CONFIGS = [
-    EWMAConfig(short_window=4, long_window=20, name="4+20"),
-    EWMAConfig(short_window=6, long_window=20, name="6+20"),
-    EWMAConfig(short_window=8, long_window=20, name="8+20"),
+    EWMAConfig(short_window=3, long_window=6, name="3+6"),
+    EWMAConfig(short_window=4, long_window=8, name="4+8"),
+    EWMAConfig(short_window=6, long_window=12, name="6+12"),
 ]

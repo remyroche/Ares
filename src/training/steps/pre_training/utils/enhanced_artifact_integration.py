@@ -126,7 +126,19 @@ def create_enhanced_step_wrapper(step_class):
                 context = get_step_context_from_config(self.config)
                 self._setup_artifact_manager(**context)
             return self._artifact_manager
-    
+
+    try:
+        phase_methods = [
+            "_phase3_1_shallow_sweep",
+            "_phase3_2_deeper_refinement",
+            "_phase3_3_interaction_discovery",
+        ]
+        for method_name in phase_methods:
+            if hasattr(step_class, method_name) and not hasattr(EnhancedStepWrapper, method_name):
+                setattr(EnhancedStepWrapper, method_name, getattr(step_class, method_name))
+    except Exception:
+        pass
+
     return EnhancedStepWrapper
 
 # Pre-configured step contexts for different model types

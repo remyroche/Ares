@@ -1,0 +1,83 @@
+{
+  "report_version": "3.0",
+  "metadata": {
+    "training_type": "analyst_ensemble",
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "execution_mode": "light",
+    "timestamp": "20251114_195126",
+    "generated_at": "2025-11-14T19:51:27.000072",
+    "report_type": "comprehensive_training_metrics"
+  },
+  "configuration": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "execution_mode": "light",
+    "enable_hpo": true,
+    "train_percentage": 0.7,
+    "validation_percentage": 0.15,
+    "test_percentage": 0.15,
+    "walkforward_config": "WalkForwardSplitConfig(folds=[WalkForwardFold(fold_num=1, training=TemporalPeriod(start=datetime.datetime(2025, 8, 24, 10, 45), end=datetime.datetime(2025, 9, 3, 10, 45), embargo_days=1, name='training_fold_1'), validation=TemporalPeriod(start=datetime.datetime(2025, 9, 4, 10, 45), end=datetime.datetime(2025, 9, 5, 10, 45), embargo_days=1, name='validation_fold_1')), WalkForwardFold(fold_num=2, training=TemporalPeriod(start=datetime.datetime(2025, 8, 24, 10, 45), end=datetime.datetime(2025, 9, 5, 10, 45), embargo_days=1, name='training_fold_2'), validation=TemporalPeriod(start=datetime.datetime(2025, 9, 6, 10, 45), end=datetime.datetime(2025, 9, 7, 10, 45), embargo_days=1, name='validation_fold_2')), WalkForwardFold(fold_num=3, training=TemporalPeriod(start=datetime.datetime(2025, 8, 24, 10, 45), end=datetime.datetime(2025, 9, 7, 10, 45), embargo_days=1, name='training_fold_3'), validation=TemporalPeriod(start=datetime.datetime(2025, 9, 8, 10, 45), end=datetime.datetime(2025, 9, 9, 10, 45), embargo_days=1, name='validation_fold_3'))], test=TemporalPeriod(start=datetime.datetime(2025, 9, 10, 10, 45), end=datetime.datetime(2025, 9, 13, 10, 30), embargo_days=0, name='test'), strategy='expanding')"
+  },
+  "execution_summary": {
+    "success": true,
+    "execution_time_seconds": 0.0,
+    "training_type": "analyst_ensemble",
+    "models_trained_count": 0,
+    "model_names": [],
+    "error": null,
+    "warnings": []
+  },
+  "overall_performance": {},
+  "per_model_metrics": {},
+  "training_metrics": {},
+  "validation_metrics": {},
+  "test_metrics": {},
+  "hpo_results": {},
+  "walkforward_results": {
+    "n_folds": 3,
+    "strategy": "expanding",
+    "embargo_days": 0,
+    "per_fold_metrics": {}
+  },
+  "feature_importance": {},
+  "data_quality": {},
+  "model_complexity": {},
+  "prediction_statistics": {},
+  "error_analysis": {},
+  "data_drift_checks": {},
+  "uncertainty_calibration": {},
+  "shap_explanations": {},
+  "threshold_optimization": {},
+  "ensemble_specific": {},
+  "raw_metrics": {
+    "meta_mse": 0.0046038711351295974,
+    "meta_mae": 0.0202706725194046,
+    "meta_r2": 0.8194107111950383,
+    "meta_rmse": 0.06785183221645233,
+    "base_avg_r2": 0.5054204365234973,
+    "base_avg_mse": 0.012608613674610731,
+    "improvement_over_avg": 0.31399027467154095,
+    "avg_correlation": 0.5603826295116419,
+    "min_correlation": 0.5603826295116419,
+    "max_correlation": 0.5603826295116419,
+    "correlation_std": 0.0
+  },
+  "artifacts": {
+    "analyst_ensemble_model": "artifacts/analyst_ensemble_model.pkl",
+    "analyst_ensemble_metrics": "artifacts/analyst_ensemble_metrics.pkl",
+    "analyst_ensemble_metrics_report": "outcomes/analyst_ensemble_ETHUSDT_15m_long_report_20251114_195126.md",
+    "analyst_ensemble_config": "artifacts/analyst_ensemble_config.json",
+    "training_report_markdown": "outcomes/analyst_ensemble_ETHUSDT_15m_long_report_20251114_195126.md",
+    "training_report_json": "outcomes/analyst_ensemble_ETHUSDT_15m_long_metrics_20251114_195126.json"
+  },
+  "models": {
+    "count": 0,
+    "names": [],
+    "details": {}
+  }
+}

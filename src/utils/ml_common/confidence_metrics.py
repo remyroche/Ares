@@ -3,6 +3,7 @@ from src.utils.tprint import tprint
 """Prediction confidence and calibration metrics for ML models."""
 
 import numpy as np
+import pandas as pd
 from typing import Dict, Any, Optional, Tuple, List, Union
 from sklearn.calibration import calibration_curve, CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
@@ -531,6 +532,67 @@ def calculate_prediction_distribution(y_pred_proba: np.ndarray) -> Dict[str, Any
             'high_entropy_pct': None,
             'low_entropy_pct': None
         }
+
+
+def apply_risk_adjusted_confidence(
+    confidence: pd.Series,
+    close: pd.Series,
+    volume: Optional[pd.Series] = None,
+    vol_lookback: int = 20,
+    vol_alpha: float = 0.7,
+    volume_strength: float = 0.5,
+    volume_min: float = 0.5,
+    volume_max: float = 1.33,
+) -> pd.Series:
+    """Apply volatility- and volume-aware adjustments to a confidence series.
+
+    The volatility penalty is strictly past-only (uses return volatility up to
+    t-1). Volume adjustment mirrors the linear scaling used in the labeling
+    integration step, with configurable strength and caps.
+    """
+
+    try:
+        conf = confidence.astype(float).copy()
+        idx = conf.index
+
+        # Volatility-aware penalty: downweight confidence in high-vol regimes.
+        try:
+            close_series = close.reindex(idx).astype(float)
+            returns = close_series.pct_change().fillna(0.0)
+            window = max(5, vol_lookback)
+            min_periods = max(5, window // 2)
+            sigma = returns.rolling(window=window, min_periods=min_periods).std().shift(1)
+            sigma_median = float(sigma.median()) if len(sigma) > 0 else 0.0
+
+            if sigma_median > 0.0:
+                vol_ratio = (sigma / sigma_median).reindex(idx)
+                vol_ratio = vol_ratio.fillna(1.0).astype(float)
+                excess = np.maximum(vol_ratio - 1.0, 0.0)
+                vol_penalty = np.exp(-vol_alpha * excess)
+                conf = (conf * vol_penalty).astype(float)
+        except Exception:
+            # If volatility data is not usable, skip the penalty gracefully.
+            pass
+
+        # Volume-based adjustment: reward healthy volume, penalize very low.
+        if volume is not None:
+            try:
+                vol_series = volume.reindex(idx).astype(float)
+                window = max(5, vol_lookback)
+                min_periods = max(5, window // 2)
+                volume_ma = vol_series.rolling(window=window, min_periods=min_periods).mean()
+                vol_ratio = (vol_series / volume_ma).replace([np.inf, -np.inf], np.nan)
+                vol_ratio = vol_ratio.fillna(1.0).astype(float)
+                base_adjustment = 1.0 + volume_strength * (vol_ratio - 1.0)
+                base_adjustment = base_adjustment.clip(lower=volume_min, upper=volume_max)
+                conf = (conf * base_adjustment).astype(float)
+            except Exception:
+                pass
+
+        return conf.clip(0.0, 1.0)
+    except Exception:
+        # In case of any unexpected failure, return the original confidence.
+        return confidence.astype(float).clip(0.0, 1.0)
 
 def _assess_calibration_quality(brier_score: Optional[float], ece: Optional[float]) -> str:
     """

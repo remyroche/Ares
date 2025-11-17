@@ -6,13 +6,14 @@ This step generates features from market data.
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
 import pandas as pd
 import numpy as np
 
 from src.training.steps.base_step import BaseStep
+from src.training.steps.pre_training.includes import BasicFeatureAnalysisInclude
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 
@@ -30,6 +31,7 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
         """Initialize the feature generation step."""
         super().__init__(step_name)
         self.logger = system_logger.getChild('FeatureGeneration')
+        self.basic_feature_analysis_include = BasicFeatureAnalysisInclude()
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -178,6 +180,40 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
                 elif not remove_constants:
                     tprint("ℹ️  Keeping constant features (remove_constant_features=False)")
 
+            features, filter_stats = self._apply_conservative_feature_filters(features, config)
+            if filter_stats['total_removed'] > 0:
+                tprint(
+                    f"🧹 Conservative filtering removed {filter_stats['total_removed']} features "
+                    f"(low variance: {len(filter_stats['low_variance_removed'])}, "
+                    f"high correlation: {len(filter_stats['high_correlation_removed'])})."
+                )
+                metrics['n_features_generated'] = len(features.columns)
+                metrics['filtering'] = filter_stats
+                tprint("💾 Re-saving artifact after conservative filtering...")
+                features_artifact_path = self._save_artifact(
+                    data=features,
+                    artifact_name=artifact_name,
+                    artifact_type='data',
+                    metadata={
+                        'symbol': config['symbol'],
+                        'exchange': config['exchange'],
+                        'timeframe': timeframe,
+                        'execution_mode': config.get('execution_mode', 'light'),
+                        'created_at': datetime.now().isoformat(),
+                        'n_features': len(features.columns),
+                        'low_variance_removed': len(filter_stats['low_variance_removed']),
+                        'high_correlation_removed': len(filter_stats['high_correlation_removed'])
+                    }
+                )
+                artifacts['generated_features'] = features_artifact_path
+
+            analysis_include_results = self.basic_feature_analysis_include.run(features, config)
+            if analysis_include_results:
+                metrics['basic_feature_analysis'] = analysis_include_results.get('metrics', {})
+                include_report = analysis_include_results.get('report_path')
+                if include_report:
+                    artifacts['basic_feature_analysis_report'] = include_report
+
             # Run baseline predictive check if enabled
             baseline_check_enabled = config.get('run_baseline_check', True)  # Default: enabled
             baseline_check_results = None
@@ -287,15 +323,7 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             return None
 
     def _load_optimized_lookbacks(self, config: Dict[str, Any]) -> Optional[Dict[str, int]]:
-        """
-        Load optimized lookback periods from the lookback optimization step.
-
-        Args:
-            config: Configuration dictionary
-
-        Returns:
-            Dictionary mapping category names to optimal lookback periods, or None if not available
-        """
+        """Load category-level optimized lookbacks from the lookback optimization step."""
         try:
             # Set context to the optimization step to load its artifacts
             symbol = config.get('symbol')
@@ -304,10 +332,8 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             direction = config.get('direction')
             model = config.get('model')
 
-            # Load the lookback optimization artifact
             from src.utils.artifact_manager import ArtifactManager
 
-            # Create a temporary artifact manager with the optimization step context
             temp_artifact_manager = ArtifactManager(config={})
             temp_artifact_manager.set_context(
                 step_name='feature_generation_period_lookback_optimization_step',
@@ -315,43 +341,195 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
                 exchange=exchange,
                 timeframe=timeframe,
                 direction=direction,
-                model=model
+                model=model,
             )
 
-            # Try to get the lookback optimization artifact
-            lookback_artifact = temp_artifact_manager.get_artifact(
+            # Load the lookback optimization artifact; this is typically a Parquet DataFrame
+            # created from a nested dict containing 'optimized_lookbacks'.
+            lookback_result = temp_artifact_manager.get_artifact(
                 artifact_name='lookback_optimization',
-                artifact_type='data'
+                artifact_type='data',
+                return_path=True,
             )
 
-            if lookback_artifact is not None and isinstance(lookback_artifact, dict):
-                optimized_lookbacks = lookback_artifact.get('optimized_lookbacks', {})
-
-                if optimized_lookbacks:
-                    tprint(f"✅ Loaded optimized lookback periods from optimization step:")
-                    for category, lookback in optimized_lookbacks.items():
-                        tprint(f"   • {category}: {lookback}")
-
-                    # Map category names from optimization format to FeatureBank format
-                    # Optimization uses: 'momentum_features', 'trend_features', etc.
-                    # FeatureBank uses: 'momentum', 'trend', etc.
-                    mapped_lookbacks = {}
-                    for category, lookback in optimized_lookbacks.items():
-                        # Remove '_features' suffix if present
-                        clean_category = category.replace('_features', '')
-                        mapped_lookbacks[clean_category] = lookback
-
-                    return mapped_lookbacks
-                else:
-                    tprint("ℹ️ No optimized lookback periods found in artifact")
-                    return None
+            lookback_artifact: Any
+            lookback_path: Optional[str]
+            if isinstance(lookback_result, tuple):
+                lookback_artifact, lookback_path = lookback_result
             else:
-                tprint("ℹ️ No lookback optimization artifact found - will use default lookback periods")
-                return None
+                lookback_artifact, lookback_path = lookback_result, None
+
+            optimized_lookbacks: Dict[str, int] = {}
+
+            # Case 1: Legacy dict/json artifact
+            if isinstance(lookback_artifact, dict):
+                data_block = lookback_artifact.get('data', lookback_artifact)
+                if not isinstance(data_block, dict):
+                    data_block = lookback_artifact
+
+                raw_optimized = data_block.get('optimized_lookbacks', {})
+                if isinstance(raw_optimized, dict):
+                    for category, value in raw_optimized.items():
+                        try:
+                            optimized_lookbacks[str(category)] = int(value)
+                        except (TypeError, ValueError):
+                            continue
+
+            # Case 2: Parquet DataFrame produced from nested dict via json_normalize
+            elif isinstance(lookback_artifact, pd.DataFrame):
+                df = lookback_artifact
+                if not df.empty:
+                    row = df.iloc[0]
+                    for col in df.columns:
+                        if not isinstance(col, str):
+                            continue
+                        if not col.startswith('optimized_lookbacks.'):
+                            continue
+
+                        category_key = col.split('optimized_lookbacks.', 1)[1]
+                        value = row[col]
+                        # Skip NaNs or missing values
+                        if pd.isna(value):
+                            continue
+                        try:
+                            optimized_lookbacks[str(category_key)] = int(value)
+                        except (TypeError, ValueError):
+                            continue
+
+            if optimized_lookbacks:
+                if lookback_path:
+                    self.logger.info(f"lookback_optimization data artifact path: {lookback_path}")
+
+                tprint("✅ Loaded optimized lookback periods from optimization step:")
+                for category, lookback in optimized_lookbacks.items():
+                    tprint(f"   • {category}: {lookback}")
+
+                # Map category names from optimization format to FeatureBank format
+                # Optimization uses: 'momentum_features', 'trend_features', etc.
+                # FeatureBank uses: 'momentum', 'trend', etc.
+                mapped_lookbacks: Dict[str, int] = {}
+                for category, lookback in optimized_lookbacks.items():
+                    clean_category = category.replace('_features', '')
+                    mapped_lookbacks[clean_category] = int(lookback)
+
+                return mapped_lookbacks
+
+            if lookback_path:
+                self.logger.info(f"lookback_optimization data artifact search path: {lookback_path}")
+            tprint("ℹ️ No optimized lookback periods found in artifact - will use default lookback periods")
+            return None
 
         except Exception as e:
             self.logger.debug(f"Could not load optimized lookbacks: {e}")
-            tprint(f"ℹ️ Could not load optimized lookbacks - will use default lookback periods")
+            tprint("ℹ️ Could not load optimized lookbacks - will use default lookback periods")
+            return None
+
+    def _load_per_feature_lookbacks(self, config: Dict[str, Any]) -> Optional[Dict[str, List[int]]]:
+        """Load per-feature optimized lookbacks (final feature names → [lb1, lb2, lb3])."""
+        try:
+            symbol = config.get('symbol')
+            exchange = config.get('exchange')
+            timeframe = config.get('timeframe')
+            direction = config.get('direction')
+            model = config.get('model')
+
+            from src.utils.artifact_manager import ArtifactManager
+
+            temp_artifact_manager = ArtifactManager(config={})
+            temp_artifact_manager.set_context(
+                step_name='feature_generation_period_lookback_optimization_step',
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                direction=direction,
+                model=model,
+            )
+
+            # Preferred path: dedicated metadata artifact with the per-feature mapping
+            metadata_mapping = None
+            metadata_path: Optional[str] = None
+            try:
+                metadata_result = temp_artifact_manager.get_artifact(
+                    artifact_name='per_feature_lookbacks',
+                    artifact_type='metadata',
+                    return_path=True,
+                )
+                if isinstance(metadata_result, tuple):
+                    metadata_mapping, metadata_path = metadata_result
+                else:
+                    metadata_mapping = metadata_result
+            except Exception as inner_exc:
+                self.logger.debug(f"Could not load per-feature lookbacks metadata: {inner_exc}")
+                metadata_mapping = None
+
+            if isinstance(metadata_mapping, dict) and metadata_mapping:
+                tprint(
+                    f"✅ Loaded per-feature lookbacks from metadata for {len(metadata_mapping)} features"
+                )
+                if metadata_path:
+                    self.logger.info(f"per_feature_lookbacks metadata path: {metadata_path}")
+                return {
+                    str(name): [int(lb) for lb in lbs]
+                    for name, lbs in metadata_mapping.items()
+                    if isinstance(lbs, (list, tuple)) and lbs
+                }
+            else:
+                if metadata_mapping is None:
+                    tprint("ℹ️ per_feature_lookbacks metadata artifact not found or could not be loaded")
+                elif not isinstance(metadata_mapping, dict):
+                    tprint(
+                        f"ℹ️ per_feature_lookbacks metadata artifact loaded but is not a dict "
+                        f"(type={type(metadata_mapping).__name__})"
+                    )
+                elif not metadata_mapping:
+                    tprint("ℹ️ per_feature_lookbacks metadata artifact is an empty dict")
+                if metadata_path:
+                    self.logger.info(f"per_feature_lookbacks metadata search path: {metadata_path}")
+
+            # Backwards-compatible path: embedded mapping inside the lookback_optimization data artifact
+            lookback_result = temp_artifact_manager.get_artifact(
+                artifact_name='lookback_optimization',
+                artifact_type='data',
+                return_path=True,
+            )
+
+            lookback_artifact: Any
+            lookback_path: Optional[str]
+            if isinstance(lookback_result, tuple):
+                lookback_artifact, lookback_path = lookback_result
+            else:
+                lookback_artifact, lookback_path = lookback_result, None
+
+            if lookback_artifact is not None and isinstance(lookback_artifact, dict):
+                data_block = lookback_artifact.get('data', lookback_artifact)
+                if not isinstance(data_block, dict):
+                    data_block = lookback_artifact
+
+                per_feature_lookbacks = data_block.get('per_feature_lookbacks', {})
+                if per_feature_lookbacks:
+                    tprint(
+                        f"✅ Loaded per-feature lookbacks for {len(per_feature_lookbacks)} features "
+                        f"from optimization step data artifact"
+                    )
+                    if lookback_path:
+                        self.logger.info(f"lookback_optimization data artifact path: {lookback_path}")
+                    return {
+                        str(name): [int(lb) for lb in lbs]
+                        for name, lbs in per_feature_lookbacks.items()
+                        if isinstance(lbs, (list, tuple)) and lbs
+                    }
+
+                tprint("ℹ️ No per-feature lookbacks found in lookback_optimization artifact")
+                return None
+
+            if lookback_path:
+                self.logger.info(f"lookback_optimization data artifact search path: {lookback_path}")
+            tprint("ℹ️ No lookback optimization artifacts found for per-feature lookbacks")
+            return None
+
+        except Exception as e:
+            self.logger.debug(f"Could not load per-feature lookbacks: {e}")
+            tprint("ℹ️ Could not load per-feature lookbacks - will fall back to category/default lookbacks")
             return None
 
     async def _generate_features(self, market_data: Any, config: Dict[str, Any]) -> Any:
@@ -365,6 +543,7 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
 
         # Load optimized lookback periods if available
         optimized_lookbacks = self._load_optimized_lookbacks(config)
+        per_feature_lookbacks = self._load_per_feature_lookbacks(config)
 
         # Use the unified feature generation system
         feature_bank = FeatureBank()
@@ -398,16 +577,22 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             # Priority: 1) Optimized lookbacks, 2) Data-based adjustment, 3) Default
             if optimized_lookbacks:
                 # Use optimized lookback periods from the optimization step
-                tprint(f"✅ Using optimized lookback periods for feature generation")
+                tprint("✅ Using optimized lookback periods for feature generation")
 
-                # Create kwargs with category-specific lookback periods
-                # We'll pass these to the generators via kwargs
-                generation_kwargs = {
+                # Create kwargs with category-specific and per-feature lookback periods
+                generation_kwargs: Dict[str, Any] = {
                     'optimized_lookbacks': optimized_lookbacks,
                     'use_optimized_pipeline': False,
                     'progressive_loading': True,
-                    'auto_normalize': False
+                    'auto_normalize': False,
                 }
+
+                if per_feature_lookbacks:
+                    generation_kwargs['per_feature_lookbacks'] = per_feature_lookbacks
+                    tprint(
+                        f"   • Applying per-feature lookbacks for {len(per_feature_lookbacks)} features "
+                        f"(keys treated as final feature names)"
+                    )
 
                 # For each category, pass the specific lookback period
                 for category in feature_categories:
@@ -418,7 +603,7 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
                 generated_features = feature_bank.generate_features(
                     data=market_data,
                     categories=feature_categories,
-                    **generation_kwargs
+                    **generation_kwargs,
                 )
             elif data_length < 100:
                 # Adjust lookback periods based on available data to prevent all-NaN columns
@@ -486,30 +671,65 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             from src.training.steps.pre_training.baseline_predictive_check import BaselinePredictiveCheck
             from pathlib import Path
 
-            # Need a target variable - try to load it or create a simple one
-            # For feature generation step, we may not have targets yet, so create a simple target
-            # based on returns if available, or skip the check
+            # Need a target variable - prefer fused/simplified targets from features if available,
+            # otherwise create a simple return-based target.
 
-            if 'close' in features.columns:
-                # Create a simple target: next period return
-                target = features['close'].pct_change().shift(-1)
-                target = target.dropna()
-            elif 'returns_features_returns' in features.columns:
-                # Use returns feature as target
-                target = features['returns_features_returns'].shift(-1)
-                target = target.dropna()
-            else:
-                # Try to find any column with 'return' in name
-                return_cols = [col for col in features.columns if 'return' in col.lower()]
-                if return_cols:
-                    target = features[return_cols[0]].shift(-1)
-                    target = target.dropna()
+            target = None
+            direction = str(config.get('direction', 'long')).lower()
+
+            # 1) Prefer fused targets if present
+            if 'target_long_fused' in features.columns or 'target_short_fused' in features.columns:
+                if 'short' in direction and 'target_short_fused' in features.columns:
+                    target = features['target_short_fused']
+                elif 'long' in direction and 'target_long_fused' in features.columns:
+                    target = features['target_long_fused']
+                elif 'target_long_fused' in features.columns:
+                    target = features['target_long_fused']
+                elif 'target_short_fused' in features.columns:
+                    target = features['target_short_fused']
+
+            # 2) Fall back to simplified long/short targets
+            if target is None and ('target_long' in features.columns or 'target_short' in features.columns):
+                if 'short' in direction and 'target_short' in features.columns:
+                    target = features['target_short']
+                elif 'long' in direction and 'target_long' in features.columns:
+                    target = features['target_long']
+                elif 'target_long' in features.columns:
+                    target = features['target_long']
+                elif 'target_short' in features.columns:
+                    target = features['target_short']
+
+            # 3) If no explicit targets exist, create a simple return-based target
+            if target is None:
+                if 'close' in features.columns:
+                    # Create a simple target: next period return
+                    target = features['close'].pct_change().shift(-1)
+                elif 'returns_features_returns' in features.columns:
+                    # Use returns feature as target
+                    target = features['returns_features_returns'].shift(-1)
                 else:
-                    tprint("⚠️ No suitable target found for baseline check, skipping")
-                    return None
+                    # Try to find any column with 'return' in name
+                    return_cols = [col for col in features.columns if 'return' in col.lower()]
+                    if return_cols:
+                        target = features[return_cols[0]].shift(-1)
+                    else:
+                        tprint("⚠️ No suitable target found for baseline check, skipping")
+                        return None
 
-            # Remove target column from features if it exists
-            feature_cols = [col for col in features.columns if col not in ['close', 'returns_features_returns']]
+            # Drop NaNs from target
+            target = target.dropna()
+            if target.empty:
+                tprint("⚠️ Target series is empty after NaN removal, skipping baseline check")
+                return None
+
+            # Remove target-like columns from features
+            target_like_cols = [
+                'target_long_fused', 'target_short_fused',
+                'target_long', 'target_short',
+                'target', 'label',
+                'close', 'returns_features_returns',
+            ]
+            feature_cols = [col for col in features.columns if col not in target_like_cols]
             X = features[feature_cols]
 
             # Run the check with max 400 features
@@ -517,14 +737,23 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             checker = BaselinePredictiveCheck(max_features=400, random_state=42)
             results = checker.run_check(X, target)
 
-            # Save CSV to outcomes directory
+            # Save CSVs to outcomes directory (univariate + small multivariate baseline)
             if results.get('success', False):
                 outcomes_dir = Path('outcomes')
                 outcomes_dir.mkdir(exist_ok=True)
+
                 csv_path = checker.save_results_to_csv(outcomes_dir, filename_prefix="baseline_check_feature_generation")
                 if csv_path:
                     tprint(f"📊 Baseline check CSV saved: {csv_path}")
                     results['csv_path'] = csv_path
+
+                multivariate_csv_path = checker.save_multivariate_results_to_csv(
+                    outcomes_dir,
+                    filename_prefix="multivariate_baseline_feature_generation",
+                )
+                if multivariate_csv_path:
+                    tprint(f"📊 Multivariate baseline CSV saved: {multivariate_csv_path}")
+                    results['multivariate_csv_path'] = multivariate_csv_path
 
             return results
 
@@ -653,6 +882,79 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
         
         tprint(f"✅ Added {len(features.columns)} basic features as fallback")
         return features
+
+    def _apply_conservative_feature_filters(
+        self,
+        features: pd.DataFrame,
+        config: Dict[str, Any]
+    ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """Drop low-variance and near-duplicate features in a conservative manner."""
+        stats = {
+            'low_variance_removed': [],
+            'high_correlation_removed': [],
+            'high_correlation_pairs': [],
+            'total_removed': 0
+        }
+
+        if features is None or features.empty:
+            return features, stats
+
+        numeric_features = features.select_dtypes(include=[np.number])
+        if numeric_features.empty:
+            return features, stats
+
+        low_variance_threshold = float(config.get('low_variance_threshold', 1e-4))
+        high_corr_threshold = float(config.get('high_correlation_threshold', 0.999))
+        correlation_analysis_max_features = int(config.get('correlation_analysis_max_features', 400))
+        protected_features = set(config.get('protected_features', []))
+
+        drop_columns = set()
+
+        # Low-variance filtering
+        try:
+            variances = numeric_features.var()
+            low_variance_cols = variances[variances <= low_variance_threshold].index.tolist()
+            stats['low_variance_removed'] = low_variance_cols
+            drop_columns.update(low_variance_cols)
+        except Exception as exc:
+            self.logger.debug(f"Low variance filtering skipped: {exc}")
+
+        # High-correlation filtering (conservative)
+        try:
+            candidates = [col for col in numeric_features.columns if col not in protected_features]
+            if len(candidates) > correlation_analysis_max_features:
+                candidates = candidates[:correlation_analysis_max_features]
+
+            sample = numeric_features[candidates].copy()
+            sample = sample.dropna(axis=0, how='any')
+
+            if len(sample.columns) > 1 and not sample.empty:
+                corr_matrix = sample.corr().abs()
+                cols = list(corr_matrix.columns)
+                for idx, col in enumerate(cols):
+                    if col in drop_columns:
+                        continue
+                    for jdx in range(idx + 1, len(cols)):
+                        other = cols[jdx]
+                        if other in drop_columns:
+                            continue
+                        corr_value = corr_matrix.iat[idx, jdx]
+                        if corr_value >= high_corr_threshold:
+                            drop_columns.add(other)
+                            stats['high_correlation_removed'].append(other)
+                            stats['high_correlation_pairs'].append((col, other, float(corr_value)))
+            # Limit stored pairs to keep report compact
+            stats['high_correlation_pairs'] = stats['high_correlation_pairs'][:20]
+        except Exception as exc:
+            self.logger.debug(f"High correlation filtering skipped: {exc}")
+
+        if not drop_columns:
+            return features, stats
+
+        retained_columns = [col for col in features.columns if col not in drop_columns]
+        filtered_features = features[retained_columns]
+        stats['total_removed'] = len(drop_columns)
+        return filtered_features, stats
 
     def _generate_outcome_report(self, metrics: Dict[str, Any], artifacts: Dict[str, Any], config: Dict[str, Any], baseline_check_results: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Generate comprehensive outcome report in markdown format."""

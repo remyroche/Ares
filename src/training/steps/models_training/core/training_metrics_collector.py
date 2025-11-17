@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import KFold
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import (
     accuracy_score,
     f1_score,
@@ -32,7 +32,7 @@ from sklearn.metrics import (
 )
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint_info, tprint_success
+from src.utils.tprint import tprint_info, tprint_success, tprint_warning
 
 
 MIN_RISK_METRIC_STD = 1e-2
@@ -211,12 +211,12 @@ class TrainingMetricsCollector:
             # Use KFold for regression (no stratification needed)
             # For classification with few classes, skip stratification to avoid sklearn issues
             # Always use KFold to avoid "Unknown label type: continuous" error
-            kf = KFold(n_splits=n_folds, shuffle=True, random_state=42)
+            tscv = TimeSeriesSplit(n_splits=n_folds)
             
             all_train_scores = []
             all_val_scores = []
             
-            for fold, (train_idx, val_idx) in enumerate(kf.split(X), 1):
+            for fold, (train_idx, val_idx) in enumerate(tscv.split(X), 1):
                 fold_start = time.time()
                 
                 X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
@@ -267,12 +267,6 @@ class TrainingMetricsCollector:
                 model_metrics.pre_hpo_metrics = self._aggregate_fold_metrics(fold_metrics_list)
                 model_metrics.pre_hpo_fold_stability = self._calculate_fold_stability(fold_metrics_list)
             
-            # Calculate Risk-Reward metrics if possible
-            if len(all_val_scores) > 0:
-                model_metrics.risk_reward_ratio = self._calculate_risk_reward(all_val_scores)
-                model_metrics.sharpe_ratio = self._calculate_sharpe_ratio(all_val_scores)
-                model_metrics.sortino_ratio = self._calculate_sortino_ratio(all_val_scores)
-            
             total_time = time.time() - start_time
             self.logger.info(f"✅ Pre-HPO metrics collected for {model_name} in {total_time:.2f}s")
             
@@ -312,7 +306,7 @@ class TrainingMetricsCollector:
         try:
             tprint_info(f"📈 Collecting post-HPO metrics for {model_metrics.model_name}...")
             start_time = time.time()
-            
+
             # Store HPO information
             model_metrics.hpo_best_params = best_params
             model_metrics.hpo_n_trials = hpo_n_trials
@@ -329,18 +323,18 @@ class TrainingMetricsCollector:
                 self.logger.warning(f"⚠️ n_folds={n_folds} is too small, using n_folds=2")
                 n_folds = 2
             
-            # Always use KFold to avoid "Unknown label type: continuous" error
-            kf = KFold(n_splits=n_folds, shuffle=True, random_state=42)
-            
+            # Use temporal cross-validation
+            tscv = TimeSeriesSplit(n_splits=n_folds)
+
             all_train_scores = []
             all_val_scores = []
-            
-            for fold, (train_idx, val_idx) in enumerate(kf.split(X), 1):
+
+            for fold, (train_idx, val_idx) in enumerate(tscv.split(X), 1):
                 fold_start = time.time()
 
                 X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
                 y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
-
+                
                 tprint_info(
                     f"🔍 Post-HPO fold {fold}: X_train shape={X_train.shape}, X_val shape={X_val.shape}, "
                     f"features={len(X.columns)}"
@@ -378,38 +372,32 @@ class TrainingMetricsCollector:
                 except Exception as e:
                     self.logger.warning(f"⚠️ Fold {fold} failed: {e}")
                     continue
-            
+
             # Calculate aggregated metrics
             if fold_metrics_list:
                 model_metrics.post_hpo_fold_metrics = fold_metrics_list
                 model_metrics.post_hpo_metrics = self._aggregate_fold_metrics(fold_metrics_list)
                 model_metrics.post_hpo_fold_stability = self._calculate_fold_stability(fold_metrics_list)
-            
+
             # Calculate improvement
             model_metrics.metrics_improvement = self._calculate_improvement(
                 model_metrics.pre_hpo_metrics,
                 model_metrics.post_hpo_metrics
             )
-            
-            # Update Risk-Reward metrics
-            if len(all_val_scores) > 0:
-                model_metrics.risk_reward_ratio = self._calculate_risk_reward(all_val_scores)
-                model_metrics.sharpe_ratio = self._calculate_sharpe_ratio(all_val_scores)
-                model_metrics.sortino_ratio = self._calculate_sortino_ratio(all_val_scores)
-            
+
             # Extract feature importance if available
             if hasattr(model, 'feature_importance_'):
                 model_metrics.feature_importance = dict(zip(X.columns, model.feature_importance_))
             elif hasattr(model, 'get_feature_importance'):
                 model_metrics.feature_importance = dict(zip(X.columns, model.get_feature_importance()))
-            
+
             total_time = time.time() - start_time
             model_metrics.total_training_time = total_time + hpo_time
-            
+
             self.logger.info(f"✅ Post-HPO metrics collected for {model_metrics.model_name} in {total_time:.2f}s")
-            
+
             return model_metrics
-            
+
         except Exception as e:
             self.logger.error(f"Post-HPO metrics collection failed: {e}")
             return model_metrics
@@ -520,12 +508,6 @@ class TrainingMetricsCollector:
                 report.append(f"\n**Improvement:**")
                 for metric, value in model.metrics_improvement.items():
                     report.append(f"- {metric}: {value:+.4f}")
-            
-            # Risk-Reward metrics
-            report.append(f"\n#### Risk-Reward Metrics")
-            report.append(f"- **Risk-Reward Ratio:** {model.risk_reward_ratio:.4f}")
-            report.append(f"- **Sharpe Ratio:** {model.sharpe_ratio:.4f}")
-            report.append(f"- **Sortino Ratio:** {model.sortino_ratio:.4f}")
             
             # Feature importance (top 10)
             if model.feature_importance:

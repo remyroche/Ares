@@ -65,6 +65,19 @@ def _lazy_import_vectorbt_batcher():
     from .vectorbt_operation_batcher import VectorBTOperationBatcher
     return VectorBTOperationBatcher
 
+
+def _lazy_import_execution_mode_config():
+    """Lazy import to access centralized execution mode lookback configuration.
+
+    This uses the same execution-mode configuration that integrates with ares_launcher
+    so that light/blank restrictions stay aligned with launcher settings.
+    """
+    from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import (
+        get_execution_mode_config,
+    )
+
+    return get_execution_mode_config
+
 logger = logging.getLogger(__name__)
 
 class IntelligentFeatureCache:
@@ -3333,12 +3346,14 @@ class OptimizedFeaturePipeline:
 
     def _apply_light_mode_restriction(self, data: pd.DataFrame, **kwargs) -> pd.DataFrame:
         """
-        Apply mode-based data restriction:
-        - Light mode: 20 days
-        - Blank mode (default): 180 days  
-        - Full mode: Full lookback period as defined in ares_launcher
-        
-        This ensures consistent behavior between FeatureBank and optimized pipeline.
+        Apply mode-based data restriction using centralized lookback configuration.
+
+        - Light mode: uses centralized light-mode lookback days
+        - Blank mode (default): uses centralized blank-mode lookback days
+        - Full mode: full lookback period as defined in ares_launcher
+
+        This ensures consistent behavior between FeatureBank, optimized pipeline,
+        and the global execution-mode configuration.
         """
         import os
         import pandas as pd
@@ -3399,14 +3414,23 @@ class OptimizedFeaturePipeline:
             # Full mode: no restriction, use all data
             self.logger.info("📅 [Pipeline] FULL mode: using complete dataset (no restrictions)")
             return data
-        elif light_mode or exec_mode_str == 'light':
-            # Light mode: 20 days
-            restriction_days = 20
-            mode_name = "LIGHT"
         else:
-            # Blank mode (default): 180 days
-            restriction_days = 180
-            mode_name = "BLANK"
+            # Resolve days from centralized execution mode configuration
+            get_exec_config = _lazy_import_execution_mode_config()
+            exec_config = get_exec_config()
+
+            # Default to light if nothing explicit is set
+            resolved_mode = exec_mode_str or ('light' if light_mode else 'blank')
+            restriction_days = exec_config.get_data_loading_days(resolved_mode)
+
+            # If configuration does not provide a restriction (e.g., None), skip filtering
+            if restriction_days is None:
+                self.logger.info(
+                    f"📅 [Pipeline] Mode '{resolved_mode}' has no explicit day restriction; using complete dataset"
+                )
+                return data
+
+            mode_name = resolved_mode.upper()
             
         # Extract timestamp series (same logic as FeatureBank)
         ts_series = None

@@ -142,7 +142,7 @@ feature_engineering:
     source: feature_generation_final_feature_selection_step
     artifact_name: analyst_features
     initial_count: 300
-    target_count: 100
+    target_count: 60
   cross_timeframe:
     enable: true
     base_timeframe: 5m
@@ -209,13 +209,18 @@ evaluation:
     - precision
     - recall
     - f1
+    trading:
+    - sharpe_ratio
+    - max_drawdown
+    - calmar_ratio
+    - sortino_ratio
   cross_validation:
     method: time_series_split
     n_splits: 5
     test_size: 0.2
   comparison:
     enable_model_ranking: true
-    ranking_metric: r2
+    ranking_metric: custom_balanced_score
     enable_feature_importance: true
     enable_model_explanations: true
 hardware:

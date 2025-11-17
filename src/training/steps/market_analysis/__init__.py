@@ -34,6 +34,9 @@ from .sticky_finite_hmm_clustering.sticky_finite_hmm_regime_discovery_step impor
 # Import Rolling HMM regime discovery step
 from .rolling_hmm_clustering.rolling_hmm_regime_discovery_step import RollingHMMRegimeDiscoveryStep
 
+# Import HMM ML alpha step (derives alpha labels and regimes from 1h HMM outputs)
+from .hmm_ml_alpha_step import HMMMLAlphaStep
+
 # Note: EconomicRegimeFeatureSelector removed - it had circular dependency issues
 # and lacked unsupervised mode. Use EnhancedRegimeFeatureSelector instead.
 
@@ -51,3 +54,4 @@ step_registry.register("regime_feature_selection", EnhancedRegimeFeatureSelector
 # step_registry.register("statsmodel_clustering_pipeline", StatsmodelClusteringPipelineStep)  # Module has missing dependencies
 step_registry.register("sticky_finite_hmm_regime_discovery", StickyFiniteHMMRegimeDiscoveryStep)
 step_registry.register("rolling_hmm_regime_discovery", RollingHMMRegimeDiscoveryStep)
+step_registry.register("hmm_ml_alpha_step", HMMMLAlphaStep)

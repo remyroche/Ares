@@ -792,7 +792,6 @@ class ParetoFront:
         matrix = self._solutions_to_matrix(pareto_solutions, objectives)
         matrix = self._preprocess_objective_matrix(matrix)
 
-        # Recompute Pareto front to ensure correctness
         pareto_indices = self._standard_pareto_indices(matrix, objectives)
 
         return [pareto_solutions[i] for i in pareto_indices]
@@ -827,9 +826,9 @@ class ParetoFront:
         return dominance_matrix
 
 DEFAULT_FINANCIAL_WEIGHTS: Dict[str, float] = {
-    'pnl': 0.50,
-    'win_rate': 0.25,
-    'sharpe': 0.25,
+    'pnl': 2.0,
+    'win_rate': 0.0,
+    'sharpe': 1.0,
 }
 
 def filter_by_constraints(

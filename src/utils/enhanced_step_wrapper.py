@@ -151,6 +151,19 @@ class EnhancedStepWrapper:
                 execution_result['enhancement_metadata'] = enhancement_metadata
                 execution_result['step_name'] = self.enhanced_step_name
                 return execution_result
+
+        try:
+            phase_methods = [
+                "_phase3_1_shallow_sweep",
+                "_phase3_2_deeper_refinement",
+                "_phase3_3_interaction_discovery",
+            ]
+            for method_name in phase_methods:
+                if hasattr(self.step_class, method_name) and not hasattr(EnhancedStep, method_name):
+                    setattr(EnhancedStep, method_name, getattr(self.step_class, method_name))
+        except Exception:
+            pass
+
         return EnhancedStep
 
     def get_performance_metrics(self) -> Dict[str, Any]:

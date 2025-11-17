@@ -453,136 +453,14 @@ class ModelTrainer(BaseTrainer):
         data: pd.DataFrame,
         targets: pd.Series
     ) -> Tuple[Any, Dict[str, Any]]:
-        """
-        Optimize hyperparameters using Bayesian TPE optimization.
-
-        Args:
-            model: Base model to optimize
-            model_type: Type of model
-            data: Training data
-            targets: Training targets
-
-        Returns:
-            Tuple of (optimized_model, best_params)
-        """
+        """Disable legacy per-model HPO in favour of external hierarchical PnL-first HPO."""
         try:
-            # Get HPO config
-            n_trials = self.config.custom_params.get('hpo_n_trials', 50)
-
-            # Define search spaces based on model type
-            if model_type == ModelType.LIGHTGBM:
-                search_space = {
-                    'num_leaves': ('int', 20, 100),
-                    'learning_rate': ('float', 0.01, 0.1),
-                    'feature_fraction': ('float', 0.6, 0.8),   # enforce min regularization via lower cap
-                    'bagging_fraction': ('float', 0.6, 0.9),   # enforce min regularization via lower cap
-                    'min_child_samples': ('int', 64, 256),     # stronger min leaf
-                    'reg_alpha': ('float', 0.3, 2.0),          # lambda_l1
-                    'reg_lambda': ('float', 0.8, 3.0)          # lambda_l2
-                }
-            elif model_type == ModelType.CATBOOST:
-                search_space = {
-                    'depth': ('int', 4, 6),
-                    'learning_rate': ('float', 0.01, 0.1),
-                    'l2_leaf_reg': ('float', 10.0, 20.0),
-                    'colsample_bylevel': ('float', 0.6, 0.8),
-                    'subsample': ('float', 0.6, 0.8),
-                    'border_count': ('int', 32, 255)
-                }
-            elif model_type == ModelType.DEPTHWISE_CNN:
-                # CNN HPO is handled inline during training due to model architecture
-                # Return None to signal that HPO will happen during training
-                tprint_info(f"ℹ️  HPO for {model_type.value} will be handled during model training (inline)")
-                return model, {}
-            else:
-                # Return model as-is for types without HPO
-                tprint_info(f"ℹ️  HPO not configured for {model_type.value}, using default parameters")
-                return model, {}
-            
-            # Use BayesianTPEOptimizer
-            optimizer = BayesianTPEOptimizer()
-            
-            # Validate dataset size for cross-validation
-            min_samples_required = 10  # Minimum samples needed for meaningful CV
-            if len(data) < min_samples_required:
-                self.logger.warning(f"⚠️ Dataset too small for HPO ({len(data)} samples < {min_samples_required}), skipping optimization")
-                return model, {}
-            
-            # Adjust CV folds based on dataset size
-            cv_folds = min(3, max(2, len(data) // 5))  # At least 5 samples per fold
-            
-            # Define objective function
-            def objective(params):
-                try:
-                    # Create model with params
-                    if model_type == ModelType.LIGHTGBM:
-                        import lightgbm as lgb
-                        test_model = lgb.LGBMRegressor(**params, verbose=-1)
-                    elif model_type == ModelType.CATBOOST:
-                        from catboost import CatBoostRegressor
-                        test_model = CatBoostRegressor(**params, verbose=False)
-                    
-                    # Cross-validate with adjusted folds
-                    from sklearn.model_selection import cross_val_score, KFold
-                    
-                    # Use KFold with shuffle to avoid empty folds
-                    kfold = KFold(n_splits=cv_folds, shuffle=True, random_state=42)
-                    
-                    scores = cross_val_score(
-                        test_model, data, targets, 
-                        cv=kfold, scoring='r2', n_jobs=-1
-                    )
-                    
-                    # Filter out any invalid scores
-                    valid_scores = [s for s in scores if not np.isnan(s) and not np.isinf(s)]
-                    if not valid_scores:
-                        return -999999  # No valid scores
-                    
-                    return np.mean(valid_scores)
-                except Exception as e:
-                    # Log specific error types for debugging
-                    if "0 sample" in str(e) or "empty" in str(e).lower():
-                        self.logger.warning(f"⚠️ HPO trial failed due to empty fold: {e}")
-                    else:
-                        self.logger.warning(f"⚠️ HPO trial failed: {e}")
-                    return -999999  # Very bad score
-            
-            # Run optimization
-            best_params = {}
-            best_score = -float('inf')
-            
-            for trial in range(n_trials):
-                # Sample parameters
-                trial_params = {}
-                for param_name, param_spec in search_space.items():
-                    if param_spec[0] == 'int':
-                        trial_params[param_name] = np.random.randint(param_spec[1], param_spec[2] + 1)
-                    elif param_spec[0] == 'float':
-                        trial_params[param_name] = np.random.uniform(param_spec[1], param_spec[2])
-                
-                # Evaluate
-                score = objective(trial_params)
-                
-                # Update best
-                if score > best_score:
-                    best_score = score
-                    best_params = trial_params.copy()
-            
-            # Create optimized model
-            if model_type == ModelType.LIGHTGBM:
-                import lightgbm as lgb
-                optimized_model = lgb.LGBMRegressor(**best_params, verbose=-1)
-            elif model_type == ModelType.CATBOOST:
-                from catboost import CatBoostRegressor
-                optimized_model = CatBoostRegressor(**best_params, verbose=False)
-            else:
-                optimized_model = model
-            
-            self.logger.info(f"✅ HPO completed: best score = {best_score:.4f}")
-            return optimized_model, best_params
-            
+            self.logger.info(
+                "Per-model R²-based HPO is disabled; using hierarchical PnL-first HPO pipeline instead."
+            )
+            return model, {}
         except Exception as e:
-            self.logger.error(f"HPO failed: {e}, using default model")
+            self.logger.error(f"HPO stub failed: {e}")
             return model, {}
     
     def _engineer_analyst_features(self, data: pd.DataFrame, targets: pd.Series, **kwargs) -> pd.DataFrame:
@@ -823,17 +701,14 @@ class ModelTrainer(BaseTrainer):
                 'train_mae': mean_absolute_error(y_train, train_pred),
                 'train_r2': r2_score(y_train, train_pred),
                 'train_rmse': np.sqrt(mean_squared_error(y_train, train_pred)),
-                'train_accuracy': calculate_accuracy(y_train, train_pred),
                 'val_mse': mean_squared_error(y_val, val_pred),
                 'val_mae': mean_absolute_error(y_val, val_pred),
                 'val_r2': r2_score(y_val, val_pred),
                 'val_rmse': np.sqrt(mean_squared_error(y_val, val_pred)),
-                'val_accuracy': calculate_accuracy(y_val, val_pred),
                 'test_mse': mean_squared_error(y_test, test_pred),
                 'test_mae': mean_absolute_error(y_test, test_pred),
                 'test_r2': r2_score(y_test, test_pred),
                 'test_rmse': np.sqrt(mean_squared_error(y_test, test_pred)),
-                'test_accuracy': calculate_accuracy(y_test, test_pred),
                 'train_test_r2_gap': r2_score(y_train, train_pred) - r2_score(y_test, test_pred),
                 'overfitting_ratio': (r2_score(y_train, train_pred) - r2_score(y_test, test_pred)) / max(r2_score(y_train, train_pred), 0.01),
                 'generalization_score': r2_score(y_test, test_pred) / max(r2_score(y_train, train_pred), 0.01),
@@ -862,9 +737,9 @@ class ModelTrainer(BaseTrainer):
                 tprint_warning(f"⚠️ Potential leakage features among top importance: {leakage_flags}")
             
             tprint_success(f"✅ LightGBM trained: {best_iter} iterations (best)")
-            tprint_info(f"   📊 Train R²: {metrics['train_r2']:.4f}, RMSE: {metrics['train_rmse']:.4f}, Accuracy: {metrics['train_accuracy']:.2%}")
-            tprint_info(f"   📊 Val R²: {metrics['val_r2']:.4f}, RMSE: {metrics['val_rmse']:.4f}, Accuracy: {metrics['val_accuracy']:.2%}")
-            tprint_info(f"   📊 Test R²: {metrics['test_r2']:.4f}, RMSE: {metrics['test_rmse']:.4f}, Accuracy: {metrics['test_accuracy']:.2%}")
+            tprint_info(f"   📊 Train R²: {metrics['train_r2']:.4f}, RMSE: {metrics['train_rmse']:.4f}")
+            tprint_info(f"   📊 Val R²: {metrics['val_r2']:.4f}, RMSE: {metrics['val_rmse']:.4f}")
+            tprint_info(f"   📊 Test R²: {metrics['test_r2']:.4f}, RMSE: {metrics['test_rmse']:.4f}")
             tprint_info(f"   ⚠️  Train-Test Gap: {metrics['train_test_r2_gap']:.4f} ({metrics['overfitting_ratio']*100:.1f}%)")
             
             if metrics['overfitting_ratio'] > 0.2:
@@ -1104,28 +979,25 @@ class ModelTrainer(BaseTrainer):
                 within_threshold = errors <= threshold
                 return np.mean(within_threshold)
             
-            # Metrics for each split
+            # Metrics for each split (regression-only: R^2/RMSE/MAE/MSE)
             metrics = {
                 # Training set metrics
                 'train_mse': mean_squared_error(y_train, train_pred),
                 'train_mae': mean_absolute_error(y_train, train_pred),
                 'train_r2': r2_score(y_train, train_pred),
                 'train_rmse': np.sqrt(mean_squared_error(y_train, train_pred)),
-                'train_accuracy': calculate_accuracy(y_train, train_pred),
                 
                 # Validation set metrics
                 'val_mse': mean_squared_error(y_val, val_pred),
                 'val_mae': mean_absolute_error(y_val, val_pred),
                 'val_r2': r2_score(y_val, val_pred),
                 'val_rmse': np.sqrt(mean_squared_error(y_val, val_pred)),
-                'val_accuracy': calculate_accuracy(y_val, val_pred),
                 
                 # Test set metrics (CRITICAL - unseen data)
                 'test_mse': mean_squared_error(y_test, test_pred),
                 'test_mae': mean_absolute_error(y_test, test_pred),
                 'test_r2': r2_score(y_test, test_pred),
                 'test_rmse': np.sqrt(mean_squared_error(y_test, test_pred)),
-                'test_accuracy': calculate_accuracy(y_test, test_pred),
                 
                 # Overfitting analysis
                 'train_test_r2_gap': r2_score(y_train, train_pred) - r2_score(y_test, test_pred),
@@ -1146,11 +1018,11 @@ class ModelTrainer(BaseTrainer):
             # Get feature importance
             feature_importance = dict(zip(data.columns, model.get_feature_importance()))
             
-            # Log comprehensive results
+            # Log comprehensive results (regression metrics only)
             tprint_success(f"✅ CatBoost trained: {metrics['iterations_used']} iterations")
-            tprint_info(f"   📊 Train R²: {metrics['train_r2']:.4f}, RMSE: {metrics['train_rmse']:.4f}, Accuracy: {metrics['train_accuracy']:.2%}")
-            tprint_info(f"   📊 Val R²: {metrics['val_r2']:.4f}, RMSE: {metrics['val_rmse']:.4f}, Accuracy: {metrics['val_accuracy']:.2%}")
-            tprint_info(f"   📊 Test R²: {metrics['test_r2']:.4f}, RMSE: {metrics['test_rmse']:.4f}, Accuracy: {metrics['test_accuracy']:.2%}")
+            tprint_info(f"   📊 Train R²: {metrics['train_r2']:.4f}, RMSE: {metrics['train_rmse']:.4f}")
+            tprint_info(f"   📊 Val R²: {metrics['val_r2']:.4f}, RMSE: {metrics['val_rmse']:.4f}")
+            tprint_info(f"   📊 Test R²: {metrics['test_r2']:.4f}, RMSE: {metrics['test_rmse']:.4f}")
             tprint_info(f"   ⚠️  Train-Test Gap: {metrics['train_test_r2_gap']:.4f} ({metrics['overfitting_ratio']*100:.1f}%)")
             
             # Overfitting warning

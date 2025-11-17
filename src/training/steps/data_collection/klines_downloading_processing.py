@@ -295,13 +295,23 @@ class KlinesDataProcessingPipeline(BaseStep):
             if 'years' in config:
                 years = config['years']
             else:
-                # Default years based on execution_mode
-                if execution_mode == 'light':
-                    years = 20/365.25  # ~20 days for light mode
-                elif execution_mode == 'blank':
-                    years = 180/365.25  # ~180 days for blank mode
-                else:  # full mode
-                    years = 3  # Full historical data
+                # Default years based on execution_mode using centralized launcher config
+                try:
+                    from src.launcher.ares_launcher import get_mode_lookback_days
+
+                    days = get_mode_lookback_days(execution_mode)
+                    if days is not None:
+                        years = days / 365.25
+                    else:
+                        years = 3  # Fallback for modes without explicit day mapping
+                except Exception:
+                    # Fallback to legacy defaults if launcher config is unavailable
+                    if execution_mode == 'light':
+                        years = 20 / 365.25
+                    elif execution_mode == 'blank':
+                        years = 180 / 365.25
+                    else:
+                        years = 3
             
             if not symbol:
                 raise ValueError("Symbol is required for data download")
@@ -309,12 +319,17 @@ class KlinesDataProcessingPipeline(BaseStep):
             self.logger.info(f"Downloading data for {symbol} from {exchange}")
             self.logger.info(f"Timeframes: {timeframes}")
             self.logger.info(f"Execution mode: {execution_mode}")
-            if execution_mode == 'light':
-                self.logger.info(f"Years of data: {years:.4f} (~20 days for {execution_mode} mode)")
-            elif execution_mode == 'blank':
-                self.logger.info(f"Years of data: {years:.4f} (~180 days for {execution_mode} mode)")
+            try:
+                from src.launcher.ares_launcher import get_mode_lookback_days
+
+                mode_days = get_mode_lookback_days(execution_mode)
+            except Exception:
+                mode_days = None
+
+            if mode_days is not None:
+                self.logger.info(f"Years of data: {years:.4f} (~{mode_days} days for {execution_mode} mode)")
             else:
-                self.logger.info(f"Years of data: {years} (full historical for {execution_mode} mode)")
+                self.logger.info(f"Years of data: {years} (no explicit centralized day mapping for {execution_mode} mode)")
             
             # Initialize artifacts list
             artifacts = []

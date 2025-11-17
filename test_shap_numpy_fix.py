@@ -10,18 +10,27 @@ from sklearn.datasets import make_classification
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import des assertions standardisées
+from tests.utils.assertions import (
+    assert_dict_structure,
+    assert_float_equals
+)
+
 # Patch temporaire pour np.bool déprécié
 def apply_numpy_shap_fix():
     """Applique un patch temporaire pour corriger l'incompatibilité SHAP-NumPy"""
     try:
-        # Vérifier si np.bool existe déjà
-        if not hasattr(np, 'bool'):
+        # Vérifier si np.bool existe déjà avec assertion standardisée
+        has_bool_before = hasattr(np, 'bool')
+        if not has_bool_before:
             # Créer un alias vers bool pour compatibilité avec SHAP
             np.bool = bool
             print("✅ [PATCH] np.bool alias créé pour compatibilité SHAP")
+            assert hasattr(np, 'bool'), "L'alias np.bool devrait être créé"
             return True
         else:
             print("ℹ️ [PATCH] np.bool existe déjà")
+            assert hasattr(np, 'bool'), "np.bool devrait exister déjà"
             return True
     except Exception as e:
         print(f"❌ [PATCH] Erreur lors de l'application du patch: {e}")

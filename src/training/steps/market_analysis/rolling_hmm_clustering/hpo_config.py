@@ -17,6 +17,9 @@ import pandas as pd
 from typing import Dict, Any, List, Optional, Tuple, Set
 import logging
 from dataclasses import dataclass
+from sklearn.metrics import f1_score
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier
 
 from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
     HierarchicalParameterOptimizer,
@@ -150,8 +153,8 @@ class HPOConfig:
 
     # Objective function weights
     weight_between_within_cv: float = 0.40
-    weight_temporal: float = 0.20
-    weight_economic: float = 0.40
+    weight_temporal: float = 0.10
+    weight_economic: float = 0.50
 
     # Optimization settings
     direction: str = 'maximize'
@@ -231,18 +234,18 @@ class RollingHMMOptimizer:
         groups = []
 
         # Group 1: Feature Engineering (highest priority)
-        # EWMA periods: 4+20, 6+20, 8+20
+        # EWMA periods: index into DEFAULT_EWMA_CONFIGS
         groups.append(
             ParameterGroup(
                 name="feature_engineering",
                 params={
                     "ewma_config_idx": {
                         "type": "categorical",
-                        "choices": [0, 1, 2]  # Index into DEFAULT_EWMA_CONFIGS (4+20, 6+20, 8+20)
+                        "choices": [0, 1, 2]
                     }
                 },
                 priority=1,
-                description="EWMA period selection (4+20, 6+20, 8+20)"
+                description="EWMA period selection via DEFAULT_EWMA_CONFIGS"
             )
         )
 
@@ -254,13 +257,13 @@ class RollingHMMOptimizer:
                     "n_components": {
                         "type": "int",
                         "low": 4,
-                        "high": 6,
+                        "high": 5,
                         "step": 1
                     }
                 },
                 priority=2,
                 depends_on=["feature_engineering"],
-                description="HMM states (no PCA - using economic features)"
+                description="HMM states: 4-5"
             )
         )
 
@@ -278,7 +281,7 @@ class RollingHMMOptimizer:
                     "kappa": {
                         "type": "float",
                         "low": 0.5,
-                        "high": 4.0,
+                        "high": 20.0,
                         "log": False
                     }
                 },
@@ -602,14 +605,64 @@ class RollingHMMOptimizer:
                     temporal_smoothness * 0.5 + temporal_score * 0.5
                 ) * self.config.weight_temporal
 
-                economic_components: List[float] = []
+                cv_component: Optional[float] = None
+                other_economic_components: List[float] = []
+
+                # Cheap predictability proxy: how learnable are regimes from economic features?
+                learnability_score = 0.0
+                try:
+                    X_learn = features_economic.to_numpy(dtype=float, copy=False)
+                    y_learn = np.asarray(regime_labels, dtype=int)
+                    min_len_ls = min(len(X_learn), len(y_learn))
+                    if min_len_ls >= 200:
+                        X_learn = X_learn[:min_len_ls]
+                        y_learn = y_learn[:min_len_ls]
+
+                        # Filter out noise label -1 if present
+                        valid_mask = y_learn >= 0
+                        X_learn = X_learn[valid_mask]
+                        y_learn = y_learn[valid_mask]
+
+                        unique_labels = np.unique(y_learn)
+                        if unique_labels.size >= 2 and X_learn.shape[0] >= 200:
+                            max_samples = 1500
+                            if X_learn.shape[0] > max_samples:
+                                rng = np.random.default_rng(42)
+                                idx = rng.choice(X_learn.shape[0], max_samples, replace=False)
+                                X_learn = X_learn[idx]
+                                y_learn = y_learn[idx]
+
+                            stratify = y_learn if np.unique(y_learn).size > 1 else None
+                            X_tr, X_te, y_tr, y_te = train_test_split(
+                                X_learn,
+                                y_learn,
+                                test_size=0.3,
+                                random_state=42,
+                                stratify=stratify,
+                            )
+
+                            clf = DecisionTreeClassifier(
+                                max_depth=3,
+                                min_samples_leaf=50,
+                                random_state=42,
+                            )
+                            clf.fit(X_tr, y_tr)
+                            y_pred = clf.predict(X_te)
+                            learnability_raw = f1_score(y_te, y_pred, average="macro")
+                            learnability_score = float(np.clip(learnability_raw, 0.0, 1.0))
+                except Exception:
+                    learnability_score = 0.0
 
                 economic_cv_ratio = 0.0
                 if hasattr(metrics, 'economic_cv_metrics') and metrics.economic_cv_metrics:
                     economic_cv_ratio = metrics.economic_cv_metrics.get('economic_cv_ratio_mean_return', 0.0) or 0.0
                     if economic_cv_ratio > 0.0:
-                        economic_components.append(
-                            float(np.clip(economic_cv_ratio / (economic_cv_ratio + 1.0), 0.0, 1.0))
+                        cv_component = float(
+                            np.clip(
+                                economic_cv_ratio / (economic_cv_ratio + 1.0),
+                                0.0,
+                                1.0,
+                            )
                         )
 
                 if hasattr(metrics, 'economic_validation') and metrics.economic_validation:
@@ -631,17 +684,15 @@ class RollingHMMOptimizer:
                         avg_vol = float(np.mean(volatilities))
                         if avg_vol > SHARPE_EPS:
                             normalized_sharpe = float(np.clip((avg_mean / avg_vol + 2.0) / 6.0, 0.0, 1.0))
-                            economic_components.append(normalized_sharpe)
+                            other_economic_components.append(normalized_sharpe)
 
                 extended_cv_scores: List[float] = []
-                horizon_configs = [2]
+                horizon_configs = [1, 2]
 
                 close_series = pd.Series(market_data['close'], copy=False)
-                volume_series = pd.Series(market_data['volume'], copy=False)
 
                 base_series: Dict[str, pd.Series] = {
                     'close_price': close_series,
-                    'volume_level': volume_series,
                 }
                 if {'high', 'low', 'close'}.issubset(market_data.columns):
                     range_ratio = (market_data['high'] - market_data['low']).divide(
@@ -668,29 +719,40 @@ class RollingHMMOptimizer:
                                 ] = normalized_ratio
 
                 if extended_cv_scores:
-                    economic_components.append(float(np.mean(extended_cv_scores)))
+                    other_economic_components.append(float(np.mean(extended_cv_scores)))
+
+                # Treat learnability as an additional economic signal component
+                if learnability_score > 0.0:
+                    other_economic_components.append(learnability_score)
 
                 # Downside-tail metrics (5th percentile 2-bar return) to reward tail separation
                 tail_components: List[float] = []
                 tail_horizon = 2
-                for series_name, series in base_series.items():
-                    if series is None:
-                        continue
-                    series_forward = series.pct_change(tail_horizon).shift(-tail_horizon)
+                if 'low' in market_data.columns:
+                    low_series = pd.Series(market_data['low'], copy=False)
+                    series_forward = low_series.pct_change(tail_horizon).shift(-tail_horizon)
                     series_forward = series_forward.loc[features_economic.index]
                     tail_ratio = _compute_tail_separation_score(series_forward, regime_labels)
                     if tail_ratio is not None and tail_ratio > 0:
                         tail_components.append(tail_ratio)
                         if hasattr(metrics, 'economic_cv_metrics') and isinstance(metrics.economic_cv_metrics, dict):
                             metrics.economic_cv_metrics[
-                                f'{series_name}_tail_separation_h{tail_horizon}'
+                                f'low_price_tail_separation_h{tail_horizon}'
                             ] = tail_ratio
 
                 if tail_components:
-                    economic_components.append(float(np.mean(tail_components)))
+                    other_economic_components.append(float(np.mean(tail_components)))
 
-                if economic_components:
-                    economic_signal = float(np.mean(economic_components))
+                if cv_component is not None and other_economic_components:
+                    others_mean = float(np.mean(other_economic_components))
+                    # Emphasize economic_cv_ratio_mean_return by giving it higher weight
+                    economic_signal = float(
+                        np.clip((2.0 * cv_component + 1.0 * others_mean) / 3.0, 0.0, 1.0)
+                    )
+                elif cv_component is not None:
+                    economic_signal = float(np.clip(cv_component, 0.0, 1.0))
+                elif other_economic_components:
+                    economic_signal = float(np.mean(other_economic_components))
                 else:
                     economic_signal = 0.0
 
@@ -699,11 +761,11 @@ class RollingHMMOptimizer:
                 persistence_penalty = 0.0
                 if transition_matrix is not None:
                     diag_mean = float(np.mean(np.diag(transition_matrix)))
-                    persistence_penalty += max(0.0, diag_mean - 0.8) * 2.0
+                    persistence_penalty += max(0.0, diag_mean - 0.75) * 2.0
                     diag_variance = float(np.var(np.diag(transition_matrix)))
                     persistence_penalty += diag_variance * 0.5
                 if metrics.regime_persistence is not None:
-                    normalized_persistence = min(1.0, metrics.regime_persistence / 30.0)
+                    normalized_persistence = min(1.0, metrics.regime_persistence / 12.0)
                     persistence_penalty += normalized_persistence * 0.2
 
                 # Economic constraint penalties (linear, not threshold-based)
@@ -738,6 +800,37 @@ class RollingHMMOptimizer:
                         normalized_range = min(1.0, return_range / 0.02)
                         economic_penalty += (1.0 - normalized_range) * 2.0  # Linear penalty from 0-2
 
+                # 4. Penalize high within-regime forward-return variance (2-bar horizon)
+                try:
+                    returns_arr = forward_returns.to_numpy(dtype=float, copy=False)
+                    labels_arr = np.asarray(regime_labels)
+                    mask = ~np.isnan(returns_arr)
+                    returns_arr = returns_arr[mask]
+                    labels_arr = labels_arr[mask]
+
+                    if returns_arr.size >= 10:
+                        unique_lbls = np.unique(labels_arr)
+                        unique_lbls = unique_lbls[unique_lbls >= 0]
+
+                        regime_vars: List[float] = []
+                        for lbl in unique_lbls:
+                            subset = returns_arr[labels_arr == lbl]
+                            if subset.size >= 3:
+                                regime_vars.append(float(np.var(subset)))
+
+                        if regime_vars:
+                            avg_regime_var = float(np.mean(regime_vars))
+                            global_var = float(np.var(returns_arr)) + 1e-12
+                            if global_var > 0.0:
+                                var_ratio = avg_regime_var / global_var
+                                # Only penalize when within-regime variance exceeds global variance
+                                var_penalty = max(0.0, var_ratio - 1.0)
+                                var_penalty = float(np.clip(var_penalty, 0.0, 2.0))
+                                economic_penalty += var_penalty
+                except Exception:
+                    # Forward-return variance penalty is best-effort; ignore failures
+                    pass
+
                 # 3. Reward economic diversity (linear)
                 if hasattr(metrics, 'economic_validation') and metrics.economic_validation:
                     sharpe_proxies = []
@@ -754,6 +847,22 @@ class RollingHMMOptimizer:
                         # Target std: 1.0, penalty scales inversely
                         normalized_diversity = min(1.0, sharpe_std / 1.0)
                         economic_penalty += (1.0 - normalized_diversity) * 1.5  # Linear penalty from 0-1.5
+
+                if hasattr(metrics, 'economic_validation') and metrics.economic_validation:
+                    drawdowns = [
+                        regime_data.get('max_drawdown')
+                        for regime_data in metrics.economic_validation.values()
+                        if isinstance(regime_data, dict) and regime_data.get('max_drawdown') is not None
+                    ]
+                    if drawdowns:
+                        worst_dd = float(min(drawdowns))
+                        worst_dd_abs = abs(worst_dd)
+                        moderate_dd = 0.4
+                        extreme_dd = 0.8
+                        if worst_dd_abs > moderate_dd:
+                            excess = min(extreme_dd, worst_dd_abs) - moderate_dd
+                            dd_penalty = excess / (extreme_dd - moderate_dd + 1e-8)
+                            economic_penalty += float(np.clip(dd_penalty * 1.5, 0.0, 1.5))
 
                 objective_score = (
                     score_statistical
@@ -890,10 +999,10 @@ class RollingHMMOptimizer:
         tprint_info("Running custom hierarchical optimization with successive halving")
 
         coarse_grid = {
-            'ewma_config_idx': [2],  # Only 8+20
-            'n_components': [4],  # Fixed to 4 regimes
-            'min_covar': [1e-3, 5e-3, 1e-2],  # Min covariance: 0.001, 0.005, 0.01
-            'kappa': [0.5, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 10.0]  # Extended kappa values
+            'ewma_config_idx': [0, 1, 2],
+            'n_components': [4, 5],  # Restrict regimes to 4–5 states
+            'min_covar': [1e-3, 5e-3, 1e-2],
+            'kappa': [0.5, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0, 20.0]  # Cap kappa at 20
         }
 
         best_score = -np.inf
@@ -1597,9 +1706,9 @@ DEFAULT_HPO_CONFIG = HPOConfig(
     enable_final_refinement=True,
     final_refinement_trials=50,
     cv_folds=5,
-    weight_between_within_cv=0.30,  # Reduced statistical weight
-    weight_temporal=0.25,            # Increased temporal (persistence)
-    weight_economic=0.45,            # Increased economic (profitability)
+    weight_between_within_cv=0.40,
+    weight_temporal=0.10,
+    weight_economic=0.50,
     direction='maximize',
     use_custom_balanced_score=True,
     verbose=True

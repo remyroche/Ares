@@ -21,7 +21,13 @@ from tests.utils.assertions import (
     assert_list_structure,
     assert_performance_metrics,
     assert_execution_time,
-    assert_order_status
+    assert_order_status,
+    assert_is_not_none,
+    assert_equals,
+    assert_in,
+    assert_is_instance,
+    assert_greater_than_or_equal,
+    assert_true
 )
 
 # Import des mocks
@@ -117,7 +123,7 @@ class TestPaperTradingSimulator:
         """Test d'initialisation nominale."""
         # Given/When/Then
         # Vérifier que le simulateur est correctement initialisé
-        assert self.simulator is not None, "Le simulateur ne doit pas être None"
+        assert_is_not_none(self.simulator, "Le simulateur ne doit pas être None", "Test d'initialisation nominale")
         
         print(f"DEBUG: Type du simulateur: {type(self.simulator)}")
         print(f"DEBUG: Attributs du simulateur: {dir(self.simulator)}")
@@ -140,8 +146,8 @@ class TestPaperTradingSimulator:
                     self.initial_balance,
                     message="Le solde actuel doit être égal au solde initial"
                 )
-                assert "binance" == "binance", "L'exchange doit être 'binance'"
-                assert "both" == "both", "La contrainte de direction doit être 'both'"
+                assert_equals("binance", "binance", "L'exchange doit être 'binance'", "Test d'initialisation nominale")
+                assert_equals("both", "both", "La contrainte de direction doit être 'both'", "Test d'initialisation nominale")
             else:
                 # Pour une vraie instance, vérifier les attributs normalement
                 assert_float_equals(
@@ -154,11 +160,11 @@ class TestPaperTradingSimulator:
                     self.initial_balance,
                     message="Le solde actuel doit être égal au solde initial"
                 )
-                assert self.simulator.exchange == "binance", "L'exchange doit être 'binance'"
-                assert self.simulator.direction_constraint == "both", "La contrainte de direction doit être 'both'"
+                assert_equals(self.simulator.exchange, "binance", "L'exchange doit être 'binance'", "Test d'initialisation nominale")
+                assert_equals(self.simulator.direction_constraint, "both", "La contrainte de direction doit être 'both'", "Test d'initialisation nominale")
         else:
             # Pour le mock, on vérifie juste qu'il existe
-            assert True, "Le mock doit exister"
+            assert_true(True, "Le mock doit exister", "Test d'initialisation nominale")
 
     async def test_simulate_order_buy_nominal(self):
         """Test de simulation d'ordre au marché en achat nominale."""
@@ -195,8 +201,8 @@ class TestPaperTradingSimulator:
             MockOrderStatus.FILLED,
             message="L'ordre d'achat doit être exécuté (FILLED)"
         )
-        assert actual_result.get('symbol') == symbol, "Le symbole de l'ordre doit correspondre"
-        assert actual_result.get('side') == side.upper(), "Le côté de l'ordre doit être en majuscules"
+        assert_equals(actual_result.get('symbol'), symbol, "Le symbole de l'ordre doit correspondre", "Test de simulation d'ordre au marché en achat nominale")
+        assert_equals(actual_result.get('side'), side.upper(), "Le côté de l'ordre doit être en majuscules", "Test de simulation d'ordre au marché en achat nominale")
         
         # Gérer le cas où la quantité peut être None
         result_quantity = actual_result.get('quantity')
@@ -243,8 +249,8 @@ class TestPaperTradingSimulator:
             MockOrderStatus.FILLED,
             message="L'ordre de vente doit être exécuté (FILLED)"
         )
-        assert result['symbol'] == symbol, "Le symbole de l'ordre doit correspondre"
-        assert result['side'] == side.upper(), "Le côté de l'ordre doit être en majuscules"
+        assert_equals(result['symbol'], symbol, "Le symbole de l'ordre doit correspondre", "Test de simulation d'ordre au marché en vente nominale")
+        assert_equals(result['side'], side.upper(), "Le côté de l'ordre doit être en majuscules", "Test de simulation d'ordre au marché en vente nominale")
         assert_float_equals(
             result['quantity'],
             quantity,
@@ -275,8 +281,8 @@ class TestPaperTradingSimulator:
             MockOrderStatus.FILLED,
             message="L'ordre limite doit être exécuté (FILLED)"
         )
-        assert result['symbol'] == symbol, "Le symbole de l'ordre doit correspondre"
-        assert result['side'] == side.upper(), "Le côté de l'ordre doit être en majuscules"
+        assert_equals(result['symbol'], symbol, "Le symbole de l'ordre doit correspondre", "Test de simulation d'ordre limite nominale")
+        assert_equals(result['side'], side.upper(), "Le côté de l'ordre doit être en majuscules", "Test de simulation d'ordre limite nominale")
         assert_float_equals(
             result['quantity'],
             quantity,
@@ -318,8 +324,8 @@ class TestPaperTradingSimulator:
             message="La réponse doit contenir une raison de rejet"
         )
         rejected_reason = result['rejectedReason'].lower()
-        assert ('balance' in rejected_reason or 'insufficient' in rejected_reason), \
-            f"La raison de rejet doit mentionner le solde: {result['rejectedReason']}"
+        assert_in('balance', rejected_reason, "La raison de rejet doit mentionner le solde (balance)", "Test de solde insuffisant")
+        assert_in('insufficient', rejected_reason, "La raison de rejet doit mentionner le solde (insufficient)", "Test de solde insuffisant")
 
     async def test_get_positions_nominal(self):
         """Test de récupération des positions nominale."""
@@ -332,7 +338,7 @@ class TestPaperTradingSimulator:
             message="Les positions doivent être retournées sous forme de liste"
         )
         # Initialement, aucune position
-        assert len(positions) == 0, "Initialement, il ne doit y avoir aucune position"
+        assert_equals(len(positions), 0, "Initialement, il ne doit y avoir aucune position", "Test de récupération des positions nominale")
 
     async def test_get_trade_history_nominal(self):
         """Test de récupération de l'historique des trades nominale."""
@@ -345,7 +351,7 @@ class TestPaperTradingSimulator:
             message="L'historique des trades doit être retourné sous forme de liste"
         )
         # Initialement, aucun trade
-        assert len(trades) == 0, "Initialement, il ne doit y avoir aucun trade"
+        assert_equals(len(trades), 0, "Initialement, il ne doit y avoir aucun trade", "Test de récupération de l'historique des trades nominale")
 
     async def test_get_performance_metrics_nominal(self):
         """Test de récupération des métriques de performance nominale."""
@@ -364,7 +370,7 @@ class TestPaperTradingSimulator:
         )
         
         # Initialement, aucun trade
-        assert metrics['total_trades'] == 0, "Initialement, le nombre total de trades doit être 0"
+        assert_equals(metrics['total_trades'], 0, "Initialement, le nombre total de trades doit être 0", "Test de récupération des métriques de performance nominale")
         assert_float_equals(
             metrics['total_pnl'],
             0.0,
@@ -390,7 +396,7 @@ class TestPaperTradingSimulator:
         result = await self.simulator.generate_daily_report(symbol)
         
         # Then
-        assert isinstance(result, bool), "La génération de rapport doit retourner un booléen"
+        assert_is_instance(result, bool, "La génération de rapport doit retourner un booléen", "Test de génération de rapport quotidien nominale")
         # Le résultat dépend de l'implémentation, mais ne devrait pas lever d'exception
 
     async def test_multiple_orders_concurrent(self):
@@ -414,11 +420,11 @@ class TestPaperTradingSimulator:
         # Then
         # Vérifier que tous les ordres ont été traités
         successful_orders = [r for r in results if isinstance(r, dict) and r.get('status') in ["FILLED", "REJECTED"]]
-        assert len(successful_orders) == 3, "Tous les ordres concurrents doivent être traités"
+        assert_equals(len(successful_orders), 3, "Tous les ordres concurrents doivent être traités", "Test d'ordres multiples concurrents")
         
         # Vérifier que les ordres ont des IDs uniques
         order_ids = [r['orderId'] for r in successful_orders if 'orderId' in r]
-        assert len(set(order_ids)) == 3, "Chaque ordre doit avoir un ID unique"
+        assert_equals(len(set(order_ids)), 3, "Chaque ordre doit avoir un ID unique", "Test d'ordres multiples concurrents")
 
     async def test_order_validation_invalid_inputs(self):
         """Test de validation d'ordres avec entrées invalides."""
@@ -508,7 +514,7 @@ class TestPaperTradingSimulator:
             positions,
             message="Les positions doivent être retournées sous forme de liste"
         )
-        assert len(positions) >= 0, "Le système doit pouvoir gérer la charge sans erreur"
+        assert_greater_than_or_equal(len(positions), 0, "Le système doit pouvoir gérer la charge sans erreur", "Test de l'utilisation mémoire avec beaucoup de positions")
         
         # Le système devrait pouvoir gérer cette charge sans erreur de mémoire
         # (En pratique, on pourrait vouloir ajouter des limites)

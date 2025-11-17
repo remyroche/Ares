@@ -1,74 +1,38 @@
 {
   "data": {
-    "initial_features": 1019,
-    "final_features": 152,
-    "total_reduction": 0.8508341511285574,
+    "initial_features": 1006,
+    "final_features": 150,
+    "total_reduction": 0.8508946322067594,
     "stage_results": {
       "correlation_clustering": {
-        "features_removed": 22,
-        "features_remaining": 152,
+        "features_removed": 4,
+        "features_remaining": 150,
         "removed_features": [
-          "volume_ema_20_base_3x_ratio",
-          "order_flow_imbalance_20_base_3x_ratio",
-          "order_flow_imbalance_20_vwap_9x_ratio",
-          "volume_ema_5_base_3x_ratio",
-          "analyst_volume_trend_trend_adj_6x_ratio",
-          "fibonacci_0.618_20_price_returns_vwap_3x_ratio",
-          "fibonacci_0.5_20_price_returns_trend_adj_6x_ratio",
-          "fibonacci_0.5_20_price_returns_vwap_9x_ratio",
-          "rsi_21_returns_vwap_vwap_3x_ratio",
-          "rsi_30_returns_vwap_trend_adj_27x_ratio",
-          "fibonacci_0.5_10_price_returns_trend_adj_27x_ratio",
-          "advanced_cumulative_returns_20_trend_adj_3x_ratio",
-          "analyst_momentum_5m_base_27x_ratio",
-          "ljung_box_pvalue_20_10_trend_adj_9x_ratio",
-          "enhanced_volatility_30_vwap_9x_ratio",
-          "vectorbt_parkinson_volatility_50_vwap_9x_ratio",
-          "vectorbt_rogers_satchell_volatility_30_trend_adj_6x_ratio",
-          "vectorbt_bbands_10_2.0_vwap_3x_ratio",
-          "volume_vwap_20_trend_adj_9x_ratio",
-          "fractal_dimension_trend_adj_9x_ratio",
-          "wavelet_energy_trend_adj_9x_ratio",
-          "wavelet_energy_trend_adj_27x_ratio"
+          "vectorbt_smoothed_obv_10_base",
+          "volume_vwap_20_vwap",
+          "volume_price_trend_base_6x_ratio",
+          "volume_ma_ratios_20_10_base_9x_ratio"
         ],
         "protected_features": [],
-        "clusters_found": 22,
-        "retention_ratio": 0.1491658488714426
+        "clusters_found": 4,
+        "retention_ratio": 0.14910536779324055
       }
     },
     "category_distributions": {},
     "protected_features": [],
     "removed_features": [
-      "volume_ema_20_base_3x_ratio",
-      "order_flow_imbalance_20_base_3x_ratio",
-      "order_flow_imbalance_20_vwap_9x_ratio",
-      "volume_ema_5_base_3x_ratio",
-      "analyst_volume_trend_trend_adj_6x_ratio",
-      "fibonacci_0.618_20_price_returns_vwap_3x_ratio",
-      "fibonacci_0.5_20_price_returns_trend_adj_6x_ratio",
-      "fibonacci_0.5_20_price_returns_vwap_9x_ratio",
-      "rsi_21_returns_vwap_vwap_3x_ratio",
-      "rsi_30_returns_vwap_trend_adj_27x_ratio",
-      "fibonacci_0.5_10_price_returns_trend_adj_27x_ratio",
-      "advanced_cumulative_returns_20_trend_adj_3x_ratio",
-      "analyst_momentum_5m_base_27x_ratio",
-      "ljung_box_pvalue_20_10_trend_adj_9x_ratio",
-      "enhanced_volatility_30_vwap_9x_ratio",
-      "vectorbt_parkinson_volatility_50_vwap_9x_ratio",
-      "vectorbt_rogers_satchell_volatility_30_trend_adj_6x_ratio",
-      "vectorbt_bbands_10_2.0_vwap_3x_ratio",
-      "volume_vwap_20_trend_adj_9x_ratio",
-      "fractal_dimension_trend_adj_9x_ratio",
-      "wavelet_energy_trend_adj_9x_ratio",
-      "wavelet_energy_trend_adj_27x_ratio"
+      "vectorbt_smoothed_obv_10_base",
+      "volume_vwap_20_vwap",
+      "volume_price_trend_base_6x_ratio",
+      "volume_ma_ratios_20_10_base_9x_ratio"
     ],
     "performance_metrics": {},
     "cache_hits": 0,
     "cache_misses": 0
   },
   "metadata": {
-    "created_at": "2025-11-12T23:31:27.137494",
+    "created_at": "2025-11-13T23:14:06.443965",
     "timeframe": "15m"
   },
-  "saved_at": "2025-11-12T23:31:27.138089"
+  "saved_at": "2025-11-13T23:14:06.444407"
 }

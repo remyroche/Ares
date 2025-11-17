@@ -20,7 +20,10 @@ from tests.utils.assertions import (
     assert_dict_structure,
     assert_list_structure,
     assert_execution_time,
-    assert_timestamp_format
+    assert_timestamp_format,
+    assert_true, assert_equals, assert_not_equals, assert_greater_than,
+    assert_less_than, assert_greater_than_or_equal, assert_less_than_or_equal,
+    assert_is_instance, assert_is_not_none, assert_in, assert_not_in
 )
 
 
@@ -29,20 +32,20 @@ class TestSlippageModel:
     
     def test_slippage_model_values(self):
         """Test SlippageModel enum values."""
-        assert SlippageModel.ORDERBOOK.value == "orderbook"
-        assert SlippageModel.PERCENTAGE.value == "percentage"
+        assert_equals(SlippageModel.ORDERBOOK.value, "orderbook", "La valeur ORDERBOOK doit être 'orderbook'", "Test SlippageModel enum values")
+        assert_equals(SlippageModel.PERCENTAGE.value, "percentage", "La valeur PERCENTAGE doit être 'percentage'", "Test SlippageModel enum values")
     
     def test_slippage_model_membership(self):
         """Test SlippageModel membership testing."""
-        assert "orderbook" in [model.value for model in SlippageModel]
-        assert "percentage" in [model.value for model in SlippageModel]
+        assert_true("orderbook" in [model.value for model in SlippageModel], "orderbook doit être présent dans les valeurs du modèle", "Test SlippageModel membership testing")
+        assert_true("percentage" in [model.value for model in SlippageModel], "percentage doit être présent dans les valeurs du modèle", "Test SlippageModel membership testing")
     
     def test_slippage_model_iteration(self):
         """Test SlippageModel enum iteration."""
         models = list(SlippageModel)
-        assert len(models) == 2
-        assert SlippageModel.ORDERBOOK in models
-        assert SlippageModel.PERCENTAGE in models
+        assert_equals(len(models), 2, "Le nombre de modèles doit être 2", "Test SlippageModel enum iteration")
+        assert_true(SlippageModel.ORDERBOOK in models, "ORDERBOOK doit être dans la liste des modèles", "Test SlippageModel enum iteration")
+        assert_true(SlippageModel.PERCENTAGE in models, "PERCENTAGE doit être dans la liste des modèles", "Test SlippageModel enum iteration")
 
 
 class TestSimulatorConfig:
@@ -74,8 +77,8 @@ class TestSimulatorConfig:
     
     def test_default_config_creation(self, default_config: SimulatorConfig):
         """Test default SimulatorConfig creation."""
-        assert isinstance(default_config, SimulatorConfig)
-        assert default_config.use_maker_taker_distinction is True
+        assert_is_instance(default_config, SimulatorConfig, "La configuration par défaut doit être une instance de SimulatorConfig", "Test default SimulatorConfig creation")
+        assert_true(default_config.use_maker_taker_distinction is True, "La distinction maker/taker doit être activée par défaut", "Test default SimulatorConfig creation")
         assert_float_equals(default_config.default_maker_fee, 0.0006, message="Le maker fee par défaut doit être 0.0006")
         assert_float_equals(default_config.default_taker_fee, 0.0008, message="Le taker fee par défaut doit être 0.0008")
         assert_float_equals(default_config.base_spread_bps, 2.0, message="Le spread de base par défaut doit être 2.0 bps")
@@ -87,7 +90,7 @@ class TestSimulatorConfig:
     @tprint_logged(LogLevel.DEBUG, include_args=True)
     def test_custom_config_creation(self, custom_config: SimulatorConfig):
         """Test custom SimulatorConfig creation with tprint tracing."""
-        assert custom_config.use_maker_taker_distinction is False
+        assert_true(custom_config.use_maker_taker_distinction is False, "La distinction maker/taker doit être désactivée pour la config personnalisée", "Test custom SimulatorConfig creation with tprint tracing")
         assert_float_equals(custom_config.default_maker_fee, 0.0004, message="Le maker fee personnalisé doit être 0.0004")
         assert_float_equals(custom_config.default_taker_fee, 0.0006, message="Le taker fee personnalisé doit être 0.0006")
         assert_float_equals(custom_config.base_spread_bps, 3.0, message="Le spread de base personnalisé doit être 3.0 bps")
@@ -100,35 +103,35 @@ class TestSimulatorConfig:
     def test_fee_structure_defaults(self, default_config: SimulatorConfig):
         """Test default fee structure."""
         expected_exchanges = ["binance", "okx", "gateio", "mexc", "phemex"]
-        assert set(default_config.fee_structure.keys()) == set(expected_exchanges)
+        assert_equals(set(default_config.fee_structure.keys()), set(expected_exchanges), "Les exchanges par défaut doivent correspondre à la liste attendue", "Test default fee structure")
         
         # Test binance fees
         binance_fees = default_config.fee_structure["binance"]
-        assert binance_fees["maker"] == 0.0006
-        assert binance_fees["taker"] == 0.001
+        assert_equals(binance_fees["maker"], 0.0006, "Le maker fee de Binance doit être 0.0006", "Test default fee structure")
+        assert_equals(binance_fees["taker"], 0.001, "Le taker fee de Binance doit être 0.001", "Test default fee structure")
     
     def test_get_fee_rates_known_exchange(self, default_config: SimulatorConfig):
         """Test get_fee_rates for known exchanges."""
         # Test binance
         maker, taker = default_config.get_fee_rates("binance")
-        assert math.isclose(maker, 0.0006, rel_tol=1e-9)
-        assert math.isclose(taker, 0.001, rel_tol=1e-9)
+        assert_float_equals(maker, 0.0006, tolerance=1e-9, message="Le maker fee de Binance doit être 0.0006")
+        assert_float_equals(taker, 0.001, tolerance=1e-9, message="Le taker fee de Binance doit être 0.001")
         
         # Test okx
         maker, taker = default_config.get_fee_rates("okx")
-        assert math.isclose(maker, 0.0008, rel_tol=1e-9)
-        assert math.isclose(taker, 0.001, rel_tol=1e-9)
+        assert_float_equals(maker, 0.0008, tolerance=1e-9, message="Le maker fee d'OKX doit être 0.0008")
+        assert_float_equals(taker, 0.001, tolerance=1e-9, message="Le taker fee d'OKX doit être 0.001")
         
         # Test case insensitive
         maker, taker = default_config.get_fee_rates("BINANCE")
-        assert math.isclose(maker, 0.0006, rel_tol=1e-9)
-        assert math.isclose(taker, 0.001, rel_tol=1e-9)
+        assert_float_equals(maker, 0.0006, tolerance=1e-9, message="Le maker fee doit être insensible à la casse")
+        assert_float_equals(taker, 0.001, tolerance=1e-9, message="Le taker fee doit être insensible à la casse")
     
     def test_get_fee_rates_unknown_exchange(self, default_config: SimulatorConfig):
         """Test get_fee_rates for unknown exchanges (should use defaults)."""
         maker, taker = default_config.get_fee_rates("unknown_exchange")
-        assert maker == default_config.default_maker_fee
-        assert taker == default_config.default_taker_fee
+        assert_equals(maker, default_config.default_maker_fee, "Le maker fee pour exchange inconnu doit être celui par défaut", "Test get_fee_rates for unknown exchanges")
+        assert_equals(taker, default_config.default_taker_fee, "Le taker fee pour exchange inconnu doit être celui par défaut", "Test get_fee_rates for unknown exchanges")
     
     def test_get_fee_rates_custom_defaults(self, custom_config: SimulatorConfig):
         """Test get_fee_rates with custom default fees."""
@@ -153,26 +156,26 @@ class TestSimulatorConfig:
     ):
         """Test get_fee_rates with various exchanges."""
         maker, taker = default_config.get_fee_rates(exchange)
-        assert math.isclose(maker, expected_maker, rel_tol=1e-9)
-        assert math.isclose(taker, expected_taker, rel_tol=1e-9)
+        assert_float_equals(maker, expected_maker, tolerance=1e-9, message=f"Le maker fee pour {exchange} doit être {expected_maker}")
+        assert_float_equals(taker, expected_taker, tolerance=1e-9, message=f"Le taker fee pour {exchange} doit être {expected_taker}")
     
     def test_get_spread_pct_known_exchange(self, default_config: SimulatorConfig):
         """Test get_spread_pct for known exchanges."""
         # Test binance (multiplier 1.0)
         spread = default_config.get_spread_pct("binance")
         expected = (2.0 * 1.0) / 10000.0  # 2.0 bps * 1.0 / 10000
-        assert math.isclose(spread, expected, rel_tol=1e-9)
+        assert_float_equals(spread, expected, tolerance=1e-9, message="Le spread pour Binance doit être calculé correctement", "Test get_spread_pct for known exchanges")
         
         # Test okx (multiplier 1.2)
         spread = default_config.get_spread_pct("okx")
         expected = (2.0 * 1.2) / 10000.0  # 2.0 bps * 1.2 / 10000
-        assert math.isclose(spread, expected, rel_tol=1e-9)
+        assert_float_equals(spread, expected, tolerance=1e-9, message="Le spread pour OKX doit être calculé correctement avec le multiplicateur")
     
     def test_get_spread_pct_unknown_exchange(self, default_config: SimulatorConfig):
         """Test get_spread_pct for unknown exchanges (should use multiplier 1.0)."""
         spread = default_config.get_spread_pct("unknown_exchange")
         expected = (2.0 * 1.0) / 10000.0  # 2.0 bps * 1.0 / 10000
-        assert math.isclose(spread, expected, rel_tol=1e-9)
+        assert_float_equals(spread, expected, tolerance=1e-9, message="Le spread pour exchange inconnu doit utiliser le multiplicateur par défaut")
     
     def test_get_spread_pct_custom_base_spread(self, custom_config: SimulatorConfig):
         """Test get_spread_pct with custom base spread."""
@@ -196,12 +199,12 @@ class TestSimulatorConfig:
     ):
         """Test get_spread_pct with various exchanges."""
         spread = default_config.get_spread_pct(exchange)
-        assert math.isclose(spread, expected_spread, rel_tol=1e-9)
+        assert_float_equals(spread, expected_spread, tolerance=1e-9, message=f"Le spread pour {exchange} doit être {expected_spread}")
     
     def test_validate_success(self, default_config: SimulatorConfig):
         """Test successful validation."""
         result = default_config.validate()
-        assert result is True, "La validation par défaut doit réussir"
+        assert_true(result is True, "La validation par défaut doit réussir", "Test successful validation")
     
     def test_validate_negative_fees(self, default_config: SimulatorConfig):
         """Test validation with negative fees."""
@@ -285,8 +288,8 @@ class TestSimulatorConfig:
     def test_to_dict_with_tprint_tracing(self, default_config: SimulatorConfig):
         """Test to_dict conversion with tprint tracing."""
         result = default_config.to_dict()
-        assert isinstance(result, dict)
-        assert "fee_structure" in result
+        assert_is_instance(result, dict, "Le résultat doit être un dictionnaire", "Test to_dict conversion with tprint tracing")
+        assert_true("fee_structure" in result, "Le dictionnaire doit contenir la clé fee_structure", "Test to_dict conversion with tprint tracing")
         return result
     
     def test_config_immutability_of_defaults(self):
@@ -331,8 +334,8 @@ class TestSimulatorConfig:
         
         # Test that new exchange fees are used
         maker, taker = default_config.get_fee_rates("new_exchange")
-        assert maker == 0.0015
-        assert taker == 0.002
+        assert_equals(maker, 0.0015, "Le maker fee pour le nouvel exchange doit être 0.0015", "Test modifying fee structure")
+        assert_equals(taker, 0.002, "Le taker fee pour le nouvel exchange doit être 0.002", "Test modifying fee structure")
     
     def test_config_validation_edge_cases(self, default_config: SimulatorConfig):
         """Test validation edge cases."""
@@ -368,21 +371,21 @@ class TestSimulatorConfig:
         ]
         
         for field in expected_fields:
-            assert field in field_names
+            assert_true(field in field_names, f"Le champ {field} doit être présent dans les champs du dataclass", "Test config dataclass fields")
     
     @pytest.mark.skipif(not TPRINT_AVAILABLE, reason="tprint not available")
     def test_tprint_integration(self, default_config: SimulatorConfig):
         """Test that tprint is properly integrated and working."""
         # This test ensures tprint calls don't fail
         maker, taker = default_config.get_fee_rates("binance")
-        assert maker == 0.0006
-        assert taker == 0.001
+        assert_equals(maker, 0.0006, "Le maker fee de Binance doit être 0.0006", "Test tprint integration")
+        assert_equals(taker, 0.001, "Le taker fee de Binance doit être 0.001", "Test tprint integration")
         
         spread = default_config.get_spread_pct("binance")
-        assert spread > 0
+        assert_greater_than(spread, 0, "Le spread doit être positif", "Test tprint integration")
         
         result = default_config.validate()
-        assert result is True
+        assert_true(result is True, "La validation doit réussir", "Test tprint integration")
     
     def test_config_serialization_compatibility(self, default_config: SimulatorConfig):
         """Test that config can be serialized and deserialized."""
@@ -396,11 +399,11 @@ class TestSimulatorConfig:
         loaded_dict = json.loads(json_str)
         
         # Verify key values are preserved
-        assert loaded_dict["default_maker_fee"] == default_config.default_maker_fee
-        assert loaded_dict["default_taker_fee"] == default_config.default_taker_fee
-        assert loaded_dict["use_maker_taker_distinction"] == default_config.use_maker_taker_distinction
-        assert loaded_dict["max_slippage_pct"] == default_config.max_slippage_pct
-        assert loaded_dict["fee_structure"] == default_config.fee_structure
+        assert_equals(loaded_dict["default_maker_fee"], default_config.default_maker_fee, "Le maker fee doit être préservé après sérialisation", "Test config serialization compatibility")
+        assert_equals(loaded_dict["default_taker_fee"], default_config.default_taker_fee, "Le taker fee doit être préservé après sérialisation", "Test config serialization compatibility")
+        assert_equals(loaded_dict["use_maker_taker_distinction"], default_config.use_maker_taker_distinction, "La distinction maker/taker doit être préservée après sérialisation", "Test config serialization compatibility")
+        assert_equals(loaded_dict["max_slippage_pct"], default_config.max_slippage_pct, "Le slippage max doit être préservé après sérialisation", "Test config serialization compatibility")
+        assert_equals(loaded_dict["fee_structure"], default_config.fee_structure, "La structure de frais doit être préservée après sérialisation", "Test config serialization compatibility")
     
     def test_config_with_custom_fee_structure(self):
         """Test creating config with completely custom fee structure."""

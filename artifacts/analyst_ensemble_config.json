@@ -5,18 +5,18 @@
     "timeframe": "15m",
     "direction": "long",
     "execution_mode": "blank",
-    "blank_mode_days": 180,
-    "light_mode_days": 20,
+    "lookback_days": 360,
     "execution_context": "analyst",
     "training_type": "analyst_ensemble",
-    "ensemble_features": "                     price_target_vol_normalized  ... disagreement_cv\ntimestamp                                         ...                \n2022-09-14 17:45:00                            0  ...             0.0\n2022-09-14 18:00:00                            0  ...             0.0\n2022-09-14 18:15:00                            0  ...             0.0\n2022-09-14 18:30:00                            0  ...             0.0\n2022-09-14 18:45:00                            0  ...             0.0\n...                                          ...  ...             ...\n2025-09-13 09:30:00                            0  ...             0.0\n2025-09-13 09:45:00                            0  ...             0.0\n2025-09-13 10:00:00                            0  ...             0.0\n2025-09-13 10:15:00                            0  ...             0.0\n2025-09-13 10:30:00                            0  ...             0.0\n\n[105092 rows x 9 columns]",
+    "ensemble_features": "Empty DataFrame\nColumns: [catboost, lightgbm, disagreement_variance, disagreement_std, disagreement_range, disagreement_mad, disagreement_cv]\nIndex: []",
     "target_data": "                           close  ...  lookahead_periods\ntimestamp                         ...                   \n2022-09-14 17:45:00  1589.300049  ...                  6\n2022-09-14 18:00:00  1573.849976  ...                  6\n2022-09-14 18:15:00  1583.540039  ...                  6\n2022-09-14 18:30:00  1580.890015  ...                  6\n2022-09-14 18:45:00  1579.060059  ...                  6\n...                          ...  ...                ...\n2025-09-13 09:30:00  4725.859863  ...                  6\n2025-09-13 09:45:00  4732.520020  ...                  6\n2025-09-13 10:00:00  4735.229980  ...                  6\n2025-09-13 10:15:00  4720.729980  ...                  6\n2025-09-13 10:30:00  4716.100098  ...                  6\n\n[105092 rows x 11 columns]",
+    "walkforward_config": "WalkForwardSplitConfig(folds=[WalkForwardFold(fold_num=1, training=TemporalPeriod(start=datetime.datetime(2025, 8, 24, 10, 45), end=datetime.datetime(2025, 9, 3, 10, 45), embargo_days=1, name='training_fold_1'), validation=TemporalPeriod(start=datetime.datetime(2025, 9, 4, 10, 45), end=datetime.datetime(2025, 9, 5, 10, 45), embargo_days=1, name='validation_fold_1')), WalkForwardFold(fold_num=2, training=TemporalPeriod(start=datetime.datetime(2025, 8, 24, 10, 45), end=datetime.datetime(2025, 9, 5, 10, 45), embargo_days=1, name='training_fold_2'), validation=TemporalPeriod(start=datetime.datetime(2025, 9, 6, 10, 45), end=datetime.datetime(2025, 9, 7, 10, 45), embargo_days=1, name='validation_fold_2')), WalkForwardFold(fold_num=3, training=TemporalPeriod(start=datetime.datetime(2025, 8, 24, 10, 45), end=datetime.datetime(2025, 9, 7, 10, 45), embargo_days=1, name='training_fold_3'), validation=TemporalPeriod(start=datetime.datetime(2025, 9, 8, 10, 45), end=datetime.datetime(2025, 9, 9, 10, 45), embargo_days=1, name='validation_fold_3'))], test=TemporalPeriod(start=datetime.datetime(2025, 9, 10, 10, 45), end=datetime.datetime(2025, 9, 13, 10, 30), embargo_days=0, name='test'), strategy='expanding')",
     "temporal_config": "TemporalSplitConfig(training=TemporalPeriod(start=datetime.datetime(2025, 5, 4, 23, 30), end=datetime.datetime(2025, 8, 20, 23, 30), embargo_days=1, name='training'), validation=TemporalPeriod(start=datetime.datetime(2025, 8, 21, 23, 30), end=datetime.datetime(2025, 9, 26, 23, 30), embargo_days=1, name='validation'), test=TemporalPeriod(start=datetime.datetime(2025, 9, 27, 23, 30), end=datetime.datetime(2025, 10, 31, 23, 30), embargo_days=0, name='test'))"
   },
   "metadata": {
     "training_type": "analyst_ensemble",
-    "created_at": "2025-11-12T00:28:49.087475",
+    "created_at": "2025-11-16T20:48:21.492280",
     "timeframe": "15m"
   },
-  "saved_at": "2025-11-12T00:28:49.088849"
+  "saved_at": "2025-11-16T20:48:21.492831"
 }

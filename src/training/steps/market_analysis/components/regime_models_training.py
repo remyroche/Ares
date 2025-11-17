@@ -198,6 +198,14 @@ except ImportError:
     ParetoOptimizer = None
     Solution = None
     ObjectiveDirection = None
+
+try:
+    from src.utils.ml_common.optimization.hpo_diagnostics_and_fixes import HPODiagnostics
+    HPODIAG_AVAILABLE = True
+except Exception as e:
+    HPODIAG_AVAILABLE = False
+    HPODiagnostics = None  # type: ignore
+    tprint(f"⚠️ [REGIME_MODELS] HPODiagnostics unavailable: {e}", color="yellow")
 from src.utils.ml_common.validation.universal_temporal_validation import (
     UniversalTemporalValidator, TemporalValidationConfig
 )
@@ -497,11 +505,16 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
         # Initialize model training parameters
         tprint("🔧 [REGIME_MODELS] Configuring model training parameters", color="cyan")
+        # Use unified hardware manager to cap parallelism instead of n_jobs=-1 (all cores)
+        try:
+            optimal_workers = int(self.hardware_manager.get_optimal_cpu_count()) if hasattr(self, 'hardware_manager') else -1
+        except Exception:
+            optimal_workers = -1
         self.model_config = {
             'random_state': 42,
             'test_size': 0.2,
             'cv_folds': 5,
-            'n_jobs': -1
+            'n_jobs': optimal_workers
         }
 
         # Regime-specific model configurations
@@ -523,7 +536,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'reg_alpha': 0.1,
                     'reg_lambda': 0.1,
                     'random_state': 42,
-                    'n_jobs': -1,
+                    'n_jobs': optimal_workers,
                     'verbosity': 0
                 },
                 'Random Forest': {
@@ -534,7 +547,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'max_features': 'sqrt',
                     'bootstrap': True,
                     'random_state': 42,
-                    'n_jobs': -1
+                    'n_jobs': optimal_workers
                 },
                 'Greedy Rule Lists': {
                     'max_depth': 20,  # Increased for better complexity handling
@@ -548,7 +561,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'min_samples_leaf': 5,    # Increased for stability (was 1)
                     'max_features': 'sqrt',
                     'random_state': 42,
-                    'n_jobs': -1
+                    'n_jobs': optimal_workers
                 }
             },
             'meta_learner': {
@@ -1439,9 +1452,47 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         except Exception as _:
                             pass
 
-            # Extract regime labels with standardized extractor (fast fail behavior)
-            tprint("📊 [REGIME_MODELS] Extracting regime labels with standardized extractor", color="cyan")
-            
+            # Load Rolling HMM economic features so supervised models can reuse the
+            # exact economic feature space used for HMM emissions.
+            try:
+                tprint("📥 [REGIME_MODELS] Loading rolling_hmm_economic_features artifact", color="cyan")
+                hmm_econ = base_step_inst._get_artifact(
+                    'rolling_hmm_economic_features',
+                    artifact_type='data'
+                )
+
+                if hmm_econ is not None:
+                    tprint(f"✅ [REGIME_MODELS] Loaded Rolling HMM economic features: {hmm_econ.shape}", color="green")
+                    tprint(f"📊 [REGIME_MODELS] Economic feature columns: {list(hmm_econ.columns)}", color="blue")
+
+                    # Ensure timestamp is the index and properly typed for alignment
+                    if 'timestamp' in hmm_econ.columns:
+                        hmm_econ = hmm_econ.copy()
+                        hmm_econ['timestamp'] = pd.to_datetime(hmm_econ['timestamp'])
+                        hmm_econ.set_index('timestamp', inplace=True)
+                        hmm_econ.sort_index(inplace=True)
+
+                    if not isinstance(hmm_econ.index, pd.DatetimeIndex):
+                        hmm_econ.index = pd.to_datetime(hmm_econ.index)
+
+                    # Cache in pipeline_state so _prepare_training_data_improved can
+                    # integrate these economic axes into the supervised feature matrix.
+                    try:
+                        if not hasattr(self, 'pipeline_state') or self.pipeline_state is None:
+                            self.pipeline_state = {}
+                        self.pipeline_state['rolling_hmm_economic_features'] = hmm_econ
+                        if isinstance(pipeline_state, dict):
+                            pipeline_state['rolling_hmm_economic_features'] = hmm_econ
+                    except Exception:
+                        pass
+                else:
+                    tprint("⚠️ [REGIME_MODELS] No rolling_hmm_economic_features artifact found", color="yellow")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Failed to load Rolling HMM economic features: {e}", color="yellow")
+
+            # Extract regime labels (Rolling HMM is the single source of truth by default)
+            tprint("📊 [REGIME_MODELS] Extracting regime labels from Rolling HMM artifacts", color="cyan")
+
             # First try to load rolling_hmm regime labels directly
             try:
                 regime_labels = await self._load_rolling_hmm_regime_labels(base_step_inst)
@@ -1505,8 +1556,19 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     raise ValueError("Rolling HMM labels not available")
             except Exception as e:
                 tprint(f"⚠️ [REGIME_MODELS] Direct rolling HMM label loading failed: {e}", color="yellow")
-                
-                # Fall back to standardized extractor
+
+                # Optional fallback to legacy standardized extractor is controlled by config.
+                # By default allow_legacy_regime_extractor=False, enforcing Rolling HMM
+                # as the single source of truth for regime labels.
+                use_legacy_fallback = bool((((self.validated_config or {}).get('regime_extraction', {}) or {}).get('allow_legacy_regime_extractor', False)))
+                if not use_legacy_fallback:
+                    raise ValueError(
+                        "Rolling HMM regime labels not available and legacy extractors are disabled.\n"
+                        "Run rolling_hmm_regime_discovery first with matching symbol/exchange/timeframe:\n"
+                        f"python3 src/launcher/ares_launcher.py rolling_hmm_regime_discovery --symbol {symbol} --timeframe {timeframe} --execution-mode blank"
+                    )
+
+                # Fall back to standardized extractor (legacy/transition mode)
                 try:
                     regime_labels = extract_regime_labels_standardized(pipeline_state, min_samples=10, min_regimes=2)
                     tprint(f"✅ [REGIME_MODELS] Regime labels extracted via standardized extractor: {len(regime_labels)} samples", color="green")
@@ -1561,6 +1623,77 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
             tprint(f"📊 [REGIME_MODELS] Training data prepared - X: {X.shape}, y: {y.shape}", color="green")
 
+            # Optional: create soft-label sample weights from Rolling HMM probabilities
+            sample_weights_all: Optional[np.ndarray] = None
+            if getattr(self, "enable_soft_labels", False) and 'regime_probs' in locals() and regime_probs is not None:
+                try:
+                    prob_cols = [
+                        c for c in regime_probs.columns
+                        if isinstance(c, str) and str(c).startswith('regime_') and str(c).endswith('_prob')
+                    ]
+                    if prob_cols and X_index is not None:
+                        try:
+                            prob_cols_sorted = sorted(
+                                prob_cols,
+                                key=lambda c: int(str(c).split('_')[1])
+                            )
+                        except Exception:
+                            prob_cols_sorted = prob_cols
+
+                        probs_for_X = regime_probs[prob_cols_sorted].reindex(X_index)
+                        tprint(
+                            f"🔍 [REGIME_MODELS] Aligning HMM probabilities with training index: prob_shape={probs_for_X.shape}, X_len={len(X_index)}",
+                            color="cyan",
+                        )
+
+                        probs_values = probs_for_X.to_numpy(dtype=float, copy=False)
+
+                        if probs_values.shape[0] == len(y):
+                            if not np.isfinite(probs_values).all():
+                                probs_values = np.where(np.isfinite(probs_values), probs_values, 0.0)
+
+                            row_sums = probs_values.sum(axis=1, keepdims=True)
+                            n_classes = probs_values.shape[1]
+                            zero_rows = row_sums[:, 0] <= 0
+                            if np.any(zero_rows):
+                                probs_values[zero_rows] = 1.0 / float(max(1, n_classes))
+                                row_sums = probs_values.sum(axis=1, keepdims=True)
+
+                            probs_values = probs_values / np.maximum(row_sums, 1e-12)
+
+                            y_int = np.asarray(y, dtype=int)
+                            sample_weights_all = np.ones(len(y_int), dtype=float)
+                            valid_mask = (y_int >= 0) & (y_int < n_classes)
+                            if np.any(valid_mask):
+                                idx = np.arange(len(y_int))[valid_mask]
+                                base_weights = probs_values[idx, y_int[valid_mask]]
+                                power_alpha = 2.0
+                                weight_floor = 0.05
+                                shaped_weights = np.power(base_weights, power_alpha)
+                                if weight_floor > 0.0:
+                                    shaped_weights = np.maximum(shaped_weights, weight_floor)
+                                mean_weight = float(np.mean(shaped_weights)) if shaped_weights.size > 0 else 1.0
+                                if mean_weight > 0.0:
+                                    shaped_weights = shaped_weights / mean_weight
+                                sample_weights_all[valid_mask] = shaped_weights
+
+                            tprint(
+                                f"✅ [REGIME_MODELS] Created shaped soft-label sample weights from HMM probabilities (mean={float(np.mean(sample_weights_all)):.3f})",
+                                color="blue",
+                            )
+                        else:
+                            tprint(
+                                f"⚠️ [REGIME_MODELS] Regime probabilities length mismatch with training data (probs_rows={probs_values.shape[0]}, y_len={len(y)}); skipping soft sample weights",
+                                color="yellow",
+                            )
+                    else:
+                        tprint(
+                            "⚠️ [REGIME_MODELS] No regime_*_prob columns found in regime probabilities artifact or X_index is None - skipping soft sample weights",
+                            color="yellow",
+                        )
+                except Exception as e:
+                    tprint(f"⚠️ [REGIME_MODELS] Failed to create soft sample weights from HMM probabilities: {e}", color="yellow")
+
             # Audit log of feature categories
             try:
                 fnames = list(feature_names or [])
@@ -1599,6 +1732,25 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     pass
                 X_train, X_val, X_test, y_train, y_val, y_test = self.temporal_splitter.split_regime_aware(X, y)
                 tprint(f"✅ [REGIME_MODELS] Data split: Train={len(X_train)}, Val={len(X_val)}, Test={len(X_test)}", color="green")
+
+                # Align soft sample weights with temporal split (training portion only)
+                sample_weight_train: Optional[np.ndarray] = None
+                if sample_weights_all is not None:
+                    try:
+                        if len(sample_weights_all) != len(y):
+                            tprint(
+                                f"⚠️ [REGIME_MODELS] Soft sample weights length mismatch (weights={len(sample_weights_all)}, y={len(y)}) - disabling weights",
+                                color="yellow",
+                            )
+                        else:
+                            n_train = len(X_train)
+                            sample_weight_train = sample_weights_all[:n_train]
+                            tprint(
+                                f"✅ [REGIME_MODELS] Aligned soft sample weights for training set (n={len(sample_weight_train)}, mean={float(np.mean(sample_weight_train)):.3f})",
+                                color="blue",
+                            )
+                    except Exception as e:
+                        tprint(f"⚠️ [REGIME_MODELS] Failed to align soft sample weights with temporal split: {e}", color="yellow")
 
                 try:
                     from sklearn.impute import SimpleImputer
@@ -1664,8 +1816,8 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 # Monitor memory before training
                 memory_mgr.monitor_memory("Before Training")
                 
-                # Train models
-                trained_models = await self._train_models_with_hpo(X_train, y_train, X_test, y_test)
+                # Train models (optionally using soft sample weights)
+                trained_models = await self._train_models_with_hpo(X_train, y_train, X_test, y_test, sample_weight_train)
                 
                 # Monitor memory after training
                 memory_mgr.monitor_memory("After Training")
@@ -1918,20 +2070,47 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                                 tprint(error_msg, color="red")
                                 raise ValueError(error_msg)
 
-                            # Create columns for each regime
+                            # Log NaN statistics (OOF may have some NaN for earliest fold)
+                            nan_count = int(np.isnan(pred_probs).sum())
+                            nan_pct = (nan_count / pred_probs.size) * 100 if pred_probs.size > 0 else 0.0
+                            if nan_count > 0:
+                                tprint(f"   📊 [{model_name}] NaN values: {nan_count}/{pred_probs.size} ({nan_pct:.1f}%)", color="yellow")
+                                tprint(f"      Note: Some NaN expected from OOF earliest fold (no past data to train on)", color="yellow")
+                                tprint(f"      Applying conservative NaN imputation to avoid hard failure while keeping temporal structure", color="yellow")
+
+                                # Identify rows with any NaN values
+                                nan_rows = np.isnan(pred_probs).any(axis=1)
+                                if nan_rows.any():
+                                    # Fully NaN rows: fall back to uniform probabilities across regimes
+                                    fully_nan_rows = np.isnan(pred_probs).all(axis=1)
+                                    if fully_nan_rows.any():
+                                        pred_probs[fully_nan_rows, :] = 1.0 / float(pred_probs.shape[1])
+
+                                    # Partially NaN rows: replace NaNs with 0 and renormalize
+                                    row_sums = np.nansum(pred_probs, axis=1, keepdims=True)
+                                    pred_probs = np.where(np.isnan(pred_probs), 0.0, pred_probs)
+
+                                    # Avoid division by zero: if a row sums to 0 after cleaning, make it uniform
+                                    zero_sum_rows = (row_sums == 0.0).flatten()
+                                    if zero_sum_rows.any():
+                                        pred_probs[zero_sum_rows, :] = 1.0 / float(pred_probs.shape[1])
+                                        row_sums[zero_sum_rows, :] = 1.0
+
+                                    pred_probs = pred_probs / row_sums
+
+                                nan_count_after = int(np.isnan(pred_probs).sum())
+                                if nan_count_after == 0:
+                                    tprint(f"   ✅ [{model_name}] NaN imputation successful - all predictions finite", color="green")
+                                else:
+                                    tprint(f"   ⚠️ [{model_name}] NaN imputation incomplete: {nan_count_after} NaNs remain even after cleaning", color="red")
+                            else:
+                                tprint(f"   ✅ [{model_name}] No NaN values - 100% coverage achieved!", color="green")
+
+                            # Create columns for each regime AFTER NaN handling so stored predictions are finite
                             for regime_idx in range(pred_probs.shape[1]):
                                 col_name = f'{model_name}_regime_{regime_idx}_prob'
                                 model_predictions[col_name] = pred_probs[:, regime_idx]
 
-                            # Log NaN statistics (OOF may have some NaN for earliest fold)
-                            nan_count = np.isnan(pred_probs).sum()
-                            nan_pct = (nan_count / pred_probs.size) * 100
-                            if nan_count > 0:
-                                tprint(f"   📊 [{model_name}] NaN values: {nan_count}/{pred_probs.size} ({nan_pct:.1f}%)", color="yellow")
-                                tprint(f"      Note: Some NaN expected from OOF earliest fold (no past data to train on)", color="yellow")
-                                raise ValueError(f"CRITICAL: NaNs detected in concatenated predictions for {model_name} after OOF assembly. Consider increasing folds/embargo or imputing a safe value explicitly.")
-                            else:
-                                tprint(f"   ✅ [{model_name}] No NaN values - 100% coverage achieved!", color="green")
                             tprint(f"   ✅ [{model_name}] Predictions generated successfully ({pred_probs.shape[0]} samples, {n_predicted_classes} classes)", color="green")
 
                             # ========================================================================
@@ -2764,11 +2943,21 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             'model_name': model_name
         }
 
-    async def _train_models_with_hpo(self, X_train: np.ndarray, y_train: np.ndarray, X_test: np.ndarray, y_test: np.ndarray) -> Dict[str, Any]:
+    async def _train_models_with_hpo(
+        self,
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        X_test: np.ndarray,
+        y_test: np.ndarray,
+        sample_weight_train: Optional[np.ndarray] = None,
+    ) -> Dict[str, Any]:
         """Train models with HPO optimization."""
         tprint("🔍 [REGIME_MODELS] Training models with HPO optimization", color="cyan")
 
         trained_models = {}
+
+        enable_random_forest = False
+        enable_extratrees = False
 
         # Create validation split for early stopping (15% of training data)
         # Temporal validation split within training block (no random shuffling)
@@ -2777,6 +2966,9 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         split_idx = n_train - val_size
         X_train_fit, X_val = X_train[:split_idx], X_train[split_idx:]
         y_train_fit, y_val = y_train[:split_idx], y_train[split_idx:]
+        sample_weight_fit: Optional[np.ndarray] = None
+        if sample_weight_train is not None and len(sample_weight_train) == n_train:
+            sample_weight_fit = sample_weight_train[:split_idx]
         tprint(f"📊 [REGIME_MODELS] Created temporal validation split: Train={len(X_train_fit)}, Val={len(X_val)}, Test={len(X_test)}", color="cyan")
 
         # Get transition-aware scorer for all models
@@ -2890,12 +3082,14 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     best_params = hpo_result.get('best_params', {})
                     best_score = hpo_result.get('best_score')
                     tuned_model = create_catboost_model(**best_params)
-                    # Train with early stopping on validation set
+                    # Train with early stopping on validation set (use soft sample weights if available)
                     tuned_model.fit(
-                        X_train_fit, y_train_fit,
+                        X_train_fit,
+                        y_train_fit,
+                        sample_weight=sample_weight_fit,
                         eval_set=(X_val, y_val),
                         early_stopping_rounds=50,
-                        verbose=False
+                        verbose=False,
                     )
                     trained_models['catboost'] = tuned_model
                     score_msg = f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
@@ -2905,15 +3099,20 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     if hpo_result and hpo_result.get('error'):
                         tprint(f"⚠️ [REGIME_MODELS] CatBoost HPO returned error: {hpo_result.get('error')}", color="yellow")
                     catboost_model = cb.CatBoostClassifier(
-                        iterations=100, depth=6, learning_rate=0.1,
-                        random_seed=42, verbose=False
+                        iterations=100,
+                        depth=6,
+                        learning_rate=0.1,
+                        random_seed=42,
+                        verbose=False,
                     )
-                    # Train with early stopping
+                    # Train with early stopping (use soft sample weights if available)
                     catboost_model.fit(
-                        X_train_fit, y_train_fit,
+                        X_train_fit,
+                        y_train_fit,
+                        sample_weight=sample_weight_fit,
                         eval_set=(X_val, y_val),
                         early_stopping_rounds=50,
-                        verbose=False
+                        verbose=False,
                     )
                     trained_models['catboost'] = catboost_model
                     tprint("⚠️ [REGIME_MODELS] CatBoost HPO unavailable, using default parameters", color="yellow")
@@ -3002,13 +3201,18 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 tuned_model = create_lightgbm_model(**best_params)
                 # 🔍 AMÉLIORATION: Early stopping plus agressif pour petits datasets
                 early_stopping_rounds = 20 if is_small_dataset else 50
-                tprint(f"🔍 [LIGHTGBM] Early stopping rounds: {early_stopping_rounds} (adapté pour {'petit' if is_small_dataset else 'grand'} dataset)", color="cyan")
-                
-                # Train with early stopping on validation set
+                tprint(
+                    f"🔍 [LIGHTGBM] Early stopping rounds: {early_stopping_rounds} (adapté pour {'petit' if is_small_dataset else 'grand'} dataset)",
+                    color="cyan",
+                )
+
+                # Train with early stopping on validation set (use soft sample weights if available)
                 tuned_model.fit(
-                    X_train_fit, y_train_fit,
+                    X_train_fit,
+                    y_train_fit,
+                    sample_weight=sample_weight_fit,
                     eval_set=[(X_val, y_val)],
-                    callbacks=[early_stopping(early_stopping_rounds), log_evaluation(0)]
+                    callbacks=[early_stopping(early_stopping_rounds), log_evaluation(0)],
                 )
                 trained_models['lightgbm'] = tuned_model
                 score_msg = f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
@@ -3033,19 +3237,26 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 
                 lgbm_model = lgb.LGBMClassifier(
                     class_weight=adaptive_weights,  # Apply adaptive class weights
-                    random_state=42, verbose=-1, force_col_wise=True,
-                    **default_params
+                    random_state=42,
+                    verbose=-1,
+                    force_col_wise=True,
+                    **default_params,
                 )
-                
+
                 # 🔍 AMÉLIORATION: Early stopping plus agressif pour petits datasets
                 early_stopping_rounds = 20 if is_small_dataset else 50
-                tprint(f"🔍 [LIGHTGBM] Early stopping rounds par défaut: {early_stopping_rounds} (adapté pour {'petit' if is_small_dataset else 'grand'} dataset)", color="cyan")
-                
-                # Train with early stopping
+                tprint(
+                    f"🔍 [LIGHTGBM] Early stopping rounds par défaut: {early_stopping_rounds} (adapté pour {'petit' if is_small_dataset else 'grand'} dataset)",
+                    color="cyan",
+                )
+
+                # Train with early stopping (use soft sample weights if available)
                 lgbm_model.fit(
-                    X_train_fit, y_train_fit,
+                    X_train_fit,
+                    y_train_fit,
+                    sample_weight=sample_weight_fit,
                     eval_set=[(X_val, y_val)],
-                    callbacks=[early_stopping(early_stopping_rounds), log_evaluation(0)]
+                    callbacks=[early_stopping(early_stopping_rounds), log_evaluation(0)],
                 )
                 trained_models['lightgbm'] = lgbm_model
                 tprint("⚠️ [REGIME_MODELS] LightGBM HPO unavailable, using optimized default parameters", color="yellow")
@@ -3132,13 +3343,18 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 tuned_model = create_xgboost_model(**best_params)
                 # 🔍 AMÉLIORATION: Early stopping plus agressif pour petits datasets
                 early_stopping_rounds = 20 if is_small_dataset else 50
-                tprint(f"🔍 [XGBOOST] Early stopping rounds: {early_stopping_rounds} (adapté pour {'petit' if is_small_dataset else 'grand'} dataset)", color="cyan")
-                
-                # Train with early stopping on validation set
+                tprint(
+                    f"🔍 [XGBOOST] Early stopping rounds: {early_stopping_rounds} (adapté pour {'petit' if is_small_dataset else 'grand'} dataset)",
+                    color="cyan",
+                )
+
+                # Train with early stopping on validation set (use soft sample weights if available)
                 tuned_model.fit(
-                    X_train_fit, y_train_fit,
+                    X_train_fit,
+                    y_train_fit,
+                    sample_weight=sample_weight_fit,
                     eval_set=[(X_val, y_val)],
-                    verbose=False
+                    verbose=False,
                 )
                 trained_models['xgboost'] = tuned_model
                 score_msg = f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
@@ -3162,159 +3378,80 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 }
                 
                 xgb_model = xgb.XGBClassifier(
-                    random_state=42, n_jobs=-1, verbosity=0,
-                    **default_params
+                    random_state=42,
+                    n_jobs=-1,
+                    verbosity=0,
+                    **default_params,
                 )
-                
+
                 # 🔍 AMÉLIORATION: Early stopping plus agressif pour petits datasets
                 early_stopping_rounds = 20 if is_small_dataset else 50
-                tprint(f"🔍 [XGBOOST] Early stopping rounds par défaut: {early_stopping_rounds} (adapté pour {'petit' if is_small_dataset else 'grand'} dataset)", color="cyan")
-                
-                # Train with early stopping
+                tprint(
+                    f"🔍 [XGBOOST] Early stopping rounds par défaut: {early_stopping_rounds} (adapté pour {'petit' if is_small_dataset else 'grand'} dataset)",
+                    color="cyan",
+                )
+
+                # Train with early stopping (use soft sample weights if available)
                 xgb_model.fit(
-                    X_train_fit, y_train_fit,
+                    X_train_fit,
+                    y_train_fit,
+                    sample_weight=sample_weight_fit,
                     eval_set=[(X_val, y_val)],
-                    verbose=False
+                    verbose=False,
                 )
                 trained_models['xgboost'] = xgb_model
                 tprint("⚠️ [REGIME_MODELS] XGBoost HPO unavailable, using optimized default parameters", color="yellow")
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] XGBoost training failed: {e}", color="red")
 
-        # 4. Train RandomForest with HPO
-        try:
-            tprint("🌲 [REGIME_MODELS] Training RandomForest with HPO", color="blue")
+        # 4. Train RandomForest (no HPO for now to keep pipeline stable)
+        if enable_random_forest:
+            try:
+                tprint("🌲 [REGIME_MODELS] Training RandomForest (default config)", color="blue")
 
-            def create_rf_model(**params):
-                return RandomForestClassifier(
-                    n_estimators=params.get('n_estimators', 100),
-                    max_depth=params.get('max_depth', None),
-                    min_samples_split=params.get('min_samples_split', 2),
-                    min_samples_leaf=params.get('min_samples_leaf', 1),
-                    max_features=params.get('max_features', 'sqrt'),
-                    class_weight=adaptive_weights,  # Apply adaptive class weights
+                rf_model = RandomForestClassifier(
+                    n_estimators=100,
+                    max_depth=None,
+                    min_samples_split=2,
+                    min_samples_leaf=1,
+                    max_features='sqrt',
+                    class_weight=adaptive_weights,
                     bootstrap=True,
                     random_state=42,
-                    n_jobs=-1
+                    n_jobs=-1,
                 )
 
-            search_space = self.hpo_optimizer._get_default_search_space('random_forest')
-            # Purged CV with embargo from temporal config
-            embargo_bars = int(((self.validated_config or {}).get('temporal_validation', {}) or {}).get('gap_size', 0))
-            class _PurgedCV:
-                def __init__(self, n_splits: int, embargo: int):
-                    self.kf = PurgedKFoldTime(n_splits=n_splits, purge=embargo, embargo=embargo)
-                    self.n_splits = n_splits
-                def split(self, X, y=None, groups=None):
-                    n = len(X)
-                    yield from self.kf.split_positions(n)
-                def get_n_splits(self, X=None, y=None, groups=None):
-                    return self.n_splits
-            cv_strategy = _PurgedCV(n_splits=5, embargo=embargo_bars)
-            hpo_result = self.hpo_optimizer.bayesian_optimization(
-                model_factory=create_rf_model,
-                X=X_train,
-                y=y_train,
-                search_space=search_space,
-                cv=cv_strategy,
-                scoring=scoring,
-                n_trials=150,
-                early_stopping_patience=15,
-                early_stopping_threshold=0.001,
-                enable_pruner=True,
-                pruner_type='hyperband'
-            )
-
-            if hpo_result and not hpo_result.get('error'):
-                best_params = hpo_result.get('best_params', {})
-                best_score = hpo_result.get('best_score')
-                tuned_model = create_rf_model(**best_params)
-                # RandomForest doesn't support early stopping, use full training data
-                tuned_model.fit(X_train, y_train)
-                trained_models['random_forest'] = tuned_model
-                score_msg = f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
-                tprint(f"✅ [REGIME_MODELS] RandomForest HPO completed - Best score: {score_msg}", color="green")
-                self.training_history.append({'model': 'random_forest', 'best_params': best_params, 'best_score': best_score, 'n_trials': hpo_result.get('n_trials')})
-            else:
-                if hpo_result and hpo_result.get('error'):
-                    tprint(f"⚠️ [REGIME_MODELS] RandomForest HPO returned error: {hpo_result.get('error')}", color="yellow")
-                rf_model = RandomForestClassifier(
-                    n_estimators=100, max_features='sqrt',
-                    class_weight=adaptive_weights,  # Apply adaptive class weights
-                    random_state=42, n_jobs=-1
-                )
-                rf_model.fit(X_train, y_train)
+                rf_model.fit(X_train, y_train, sample_weight=sample_weight_train)
                 trained_models['random_forest'] = rf_model
-                tprint("⚠️ [REGIME_MODELS] RandomForest HPO unavailable, using default parameters", color="yellow")
-        except Exception as e:
-            tprint(f"❌ [REGIME_MODELS] RandomForest training failed: {e}", color="red")
+                tprint("⚠️ [REGIME_MODELS] RandomForest HPO disabled - using default parameters", color="yellow")
+            except Exception as e:
+                tprint(f"❌ [REGIME_MODELS] RandomForest training failed: {e}", color="red")
+        else:
+            tprint("ℹ️ [REGIME_MODELS] RandomForest training disabled (enable_random_forest=False)", color="cyan")
 
-        # 5. Train ExtraTrees with HPO
-        try:
-            tprint("🌳 [REGIME_MODELS] Training ExtraTrees with HPO", color="blue")
+        # 5. Train ExtraTrees (no HPO for now to keep pipeline stable)
+        if enable_extratrees:
+            try:
+                tprint("🌳 [REGIME_MODELS] Training ExtraTrees (default config)", color="blue")
 
-            def create_et_model(**params):
-                return ExtraTreesClassifier(
-                    n_estimators=params.get('n_estimators', 100),
-                    max_depth=params.get('max_depth', None),
-                    min_samples_split=params.get('min_samples_split', 5),
-                    min_samples_leaf=params.get('min_samples_leaf', 5),
-                    max_features=params.get('max_features', 'sqrt'),
-                    class_weight=adaptive_weights,  # Apply adaptive class weights
-                    random_state=42,
-                    n_jobs=-1
-                )
-
-            search_space = self.hpo_optimizer._get_default_search_space('extra_trees')
-            # Purged CV with embargo from temporal config
-            embargo_bars = int(((self.validated_config or {}).get('temporal_validation', {}) or {}).get('gap_size', 0))
-            class _PurgedCV:
-                def __init__(self, n_splits: int, embargo: int):
-                    self.kf = PurgedKFoldTime(n_splits=n_splits, purge=embargo, embargo=embargo)
-                    self.n_splits = n_splits
-                def split(self, X, y=None, groups=None):
-                    n = len(X)
-                    yield from self.kf.split_positions(n)
-                def get_n_splits(self, X=None, y=None, groups=None):
-                    return self.n_splits
-            cv_strategy = _PurgedCV(n_splits=5, embargo=embargo_bars)
-            hpo_result = self.hpo_optimizer.bayesian_optimization(
-                model_factory=create_et_model,
-                X=X_train,
-                y=y_train,
-                search_space=search_space,
-                cv=cv_strategy,
-                scoring=scoring,
-                n_trials=150,
-                early_stopping_patience=15,
-                early_stopping_threshold=0.001,
-                enable_pruner=True,
-                pruner_type='hyperband'
-            )
-
-            if hpo_result and not hpo_result.get('error'):
-                best_params = hpo_result.get('best_params', {})
-                best_score = hpo_result.get('best_score')
-                tuned_model = create_et_model(**best_params)
-                # ExtraTrees doesn't support early stopping, use full training data
-                tuned_model.fit(X_train, y_train)
-                trained_models['extratrees'] = tuned_model
-                score_msg = f"{best_score:.4f}" if isinstance(best_score, (int, float, np.floating)) else str(best_score)
-                tprint(f"✅ [REGIME_MODELS] ExtraTrees HPO completed - Best score: {score_msg}", color="green")
-                self.training_history.append({'model': 'extratrees', 'best_params': best_params, 'best_score': best_score, 'n_trials': hpo_result.get('n_trials')})
-            else:
-                if hpo_result and hpo_result.get('error'):
-                    tprint(f"⚠️ [REGIME_MODELS] ExtraTrees HPO returned error: {hpo_result.get('error')}", color="yellow")
                 et_model = ExtraTreesClassifier(
-                    n_estimators=100, max_features='sqrt',
-                    class_weight=adaptive_weights,  # Apply adaptive class weights
-                    random_state=42, n_jobs=-1
+                    n_estimators=100,
+                    max_depth=None,
+                    min_samples_split=5,
+                    min_samples_leaf=5,
+                    max_features='sqrt',
+                    class_weight=adaptive_weights,
+                    random_state=42,
+                    n_jobs=-1,
                 )
-                et_model.fit(X_train, y_train)
+
+                et_model.fit(X_train, y_train, sample_weight=sample_weight_train)
                 trained_models['extratrees'] = et_model
-                tprint("⚠️ [REGIME_MODELS] ExtraTrees HPO unavailable, using default parameters", color="yellow")
-        except Exception as e:
-            tprint(f"❌ [REGIME_MODELS] ExtraTrees training failed: {e}", color="red")
+                tprint("⚠️ [REGIME_MODELS] ExtraTrees HPO disabled - using default parameters", color="yellow")
+            except Exception as e:
+                tprint(f"❌ [REGIME_MODELS] ExtraTrees training failed: {e}", color="red")
+        else:
+            tprint("ℹ️ [REGIME_MODELS] ExtraTrees training disabled (enable_extratrees=False)", color="cyan")
 
         tprint(f"✅ [REGIME_MODELS] Model training completed - {len(trained_models)} models trained", color="green")
 
@@ -3421,6 +3558,60 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             else:
                 tprint("⚠️ [REGIME_MODELS] WARNING: X_index is None - predictions may be misaligned!", color="yellow")
 
+            # Integrate Rolling HMM economic features into the supervised feature space
+            # so models see the same economic axes used for HMM emissions.
+            try:
+                hmm_econ_df = None
+                if pipeline_state is not None and isinstance(pipeline_state, dict):
+                    hmm_econ_df = pipeline_state.get('rolling_hmm_economic_features')
+                if hmm_econ_df is None and hasattr(self, 'pipeline_state') and isinstance(self.pipeline_state, dict):
+                    hmm_econ_df = self.pipeline_state.get('rolling_hmm_economic_features')
+
+                if isinstance(hmm_econ_df, pd.DataFrame) and not hmm_econ_df.empty and X_index is not None:
+                    tprint("🔧 [REGIME_MODELS] Integrating Rolling HMM economic features into training matrix", color="cyan")
+
+                    econ_df = hmm_econ_df.copy()
+                    if 'timestamp' in econ_df.columns:
+                        econ_df['timestamp'] = pd.to_datetime(econ_df['timestamp'])
+                        econ_df.set_index('timestamp', inplace=True)
+                        econ_df.sort_index(inplace=True)
+
+                    if not isinstance(econ_df.index, pd.DatetimeIndex):
+                        econ_df.index = pd.to_datetime(econ_df.index)
+
+                    econ_aligned = econ_df.reindex(X_index)
+                    missing_rows = int(econ_aligned.isna().any(axis=1).sum())
+                    if missing_rows > 0:
+                        tprint(
+                            f"⚠️ [REGIME_MODELS] {missing_rows} rows have NaNs in economic features after alignment; filling with 0.0",
+                            color="yellow",
+                        )
+                        econ_aligned = econ_aligned.fillna(0.0)
+
+                    econ_values = econ_aligned.to_numpy(dtype=float, copy=False)
+                    if econ_values.shape[0] == X.shape[0]:
+                        prev_n_features = X.shape[1]
+                        X = np.concatenate([X, econ_values], axis=1)
+                        econ_feature_names = [f"HMM_ECON_{str(c)}" for c in econ_aligned.columns]
+                        feature_names = (feature_names or []) + econ_feature_names
+                        tprint(
+                            f"✅ [REGIME_MODELS] Added {econ_values.shape[1]} HMM economic features (total features: {X.shape[1]}),",
+                            color="green",
+                        )
+                        tprint(
+                            f"   • Original features: {prev_n_features}, HMM economic features: {econ_values.shape[1]}",
+                            color="blue",
+                        )
+                    else:
+                        tprint(
+                            f"⚠️ [REGIME_MODELS] Economic features row mismatch (econ_rows={econ_values.shape[0]}, X_rows={X.shape[0]}); skipping integration",
+                            color="yellow",
+                        )
+                else:
+                    tprint("ℹ️ [REGIME_MODELS] No Rolling HMM economic features available in pipeline_state", color="blue")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Failed to integrate Rolling HMM economic features: {e}", color="yellow")
+
             # Handle NaN values in features
             tprint("🔧 [REGIME_MODELS] Handling NaN values in features", color="cyan")
 
@@ -3507,6 +3698,49 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
             data_validation_cfg = (self.validated_config or {}).get('data_validation', {})
             min_samples_required = data_validation_cfg.get('min_samples', 10)
+
+            # Filter out tiny regimes (< 2% of samples) to stabilize supervised training.
+            try:
+                unique_regimes, regime_counts = np.unique(y, return_counts=True)
+                total_samples = int(regime_counts.sum())
+                if total_samples > 0 and len(unique_regimes) > 1:
+                    regime_fractions = regime_counts / float(total_samples)
+                    tiny_threshold = 0.02
+                    tiny_mask = regime_fractions < tiny_threshold
+                    tiny_regimes = unique_regimes[tiny_mask]
+
+                    # Only filter if at least two regimes remain after dropping tiny ones
+                    remaining_regimes = unique_regimes[~tiny_mask]
+                    if tiny_regimes.size > 0 and remaining_regimes.size >= 2:
+                        keep_mask = ~np.isin(y, tiny_regimes)
+                        kept = int(np.count_nonzero(keep_mask))
+                        dropped = int(len(y) - kept)
+                        tprint(
+                            f"⚠️ [REGIME_MODELS] Dropping {dropped} samples from tiny regimes (<{tiny_threshold:.0%} of data): {tiny_regimes.tolist()}",
+                            color="yellow",
+                        )
+                        tprint(
+                            f"   • Remaining samples after tiny-regime filter: {kept} (from {len(y)})",
+                            color="yellow",
+                        )
+
+                        X = X[keep_mask]
+                        y = y[keep_mask]
+                        if X_index is not None:
+                            X_index = X_index[keep_mask]
+
+                        # Log new regime distribution
+                        new_unique, new_counts = np.unique(y, return_counts=True)
+                        new_total = int(new_counts.sum())
+                        tprint("📊 [REGIME_MODELS] Regime distribution after tiny-regime filter:", color="blue")
+                        for u, c in zip(new_unique, new_counts):
+                            tprint(f"   • Regime {int(u)}: {int(c)} ({c/max(1, new_total):.2%})", color="blue")
+                    else:
+                        tprint("ℹ️ [REGIME_MODELS] Tiny-regime filter skipped (no tiny regimes or would leave <2 regimes)", color="blue")
+                else:
+                    tprint("ℹ️ [REGIME_MODELS] Tiny-regime filter skipped (insufficient regimes)", color="blue")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Tiny-regime filtering failed (continuing without filter): {e}", color="yellow")
 
             # Validate data
             if len(X) < min_samples_required:
@@ -3962,6 +4196,8 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             
             if 'between_within_ratio' in regime_cv_scores:
                 tprint(f"   • Between/Within CV ratio: {regime_cv_scores['between_within_ratio']:.4f}", color="blue")
+
+            self._run_post_selection_diagnostics(X_selected, y, selected_feature_names)
             
             return X_selected, selected_feature_names
             
@@ -3975,6 +4211,51 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             # Fallback to original features if enhanced selection fails
             tprint("⚠️ [REGIME_MODELS] Falling back to original features", color="yellow")
             return X, feature_names
+
+    def _run_post_selection_diagnostics(self, X_selected: np.ndarray, y: np.ndarray,
+                                        feature_names: List[str]) -> None:
+        """Run HPODiagnostics on the post-selection matrix to log accurate stats."""
+        if not HPODIAG_AVAILABLE or HPODiagnostics is None:
+            tprint("⚠️ [REGIME_MODELS] HPODiagnostics unavailable - skipping post-selection diagnostics", color="yellow")
+            return
+
+        try:
+            tprint("🧪 [REGIME_MODELS] Running post-selection HPODiagnostics", color="cyan")
+            diagnostics = HPODiagnostics.check_data_variance(X_selected, y, name="Post-selection feature matrix")
+            stats = diagnostics.get("stats", {})
+            warnings_list = diagnostics.get("warnings", [])
+
+            n_samples = stats.get("n_samples")
+            n_features = stats.get("n_features")
+            zero_var = stats.get("zero_variance_features")
+            max_importance = stats.get("max_feature_importance")
+            importance_threshold = stats.get("importance_warning_threshold")
+
+            tprint(
+                f"📊 [REGIME_MODELS] Post-selection stats: samples={n_samples}, features={n_features}, zero_var={zero_var}",
+                color="blue"
+            )
+            if max_importance is not None and importance_threshold is not None:
+                tprint(
+                    f"   • Max feature importance {max_importance:.4f} (threshold {importance_threshold:.4f})",
+                    color="blue"
+                )
+
+            if warnings_list:
+                tprint("⚠️ [REGIME_MODELS] Post-selection warnings:", color="yellow")
+                for warning in warnings_list[:5]:
+                    tprint(f"   • {warning}", color="yellow")
+                if len(warnings_list) > 5:
+                    tprint(f"   • {len(warnings_list) - 5} additional warning(s) truncated", color="yellow")
+            else:
+                tprint("✅ [REGIME_MODELS] No post-selection warnings detected", color="green")
+
+            if feature_names:
+                sample = feature_names[:5]
+                suffix = "..." if len(feature_names) > 5 else ""
+                tprint(f"   • Sample selected features: {sample}{suffix}", color="blue")
+        except Exception as e:
+            tprint(f"⚠️ [REGIME_MODELS] Post-selection diagnostics failed: {e}", color="yellow")
 
     def _generate_features_with_bank(self, data: pd.DataFrame) -> Tuple[Optional[np.ndarray], Optional[List[str]], Optional[pd.DatetimeIndex]]:
         """Generate comprehensive features using the existing feature bank."""
@@ -4297,24 +4578,36 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             n_regimes = regime_probabilities.shape[1]
             n_samples = len(regime_probabilities)
 
+            # Determine class labels corresponding to probability columns
+            if hasattr(model, 'classes_'):
+                class_labels = np.asarray(model.classes_)
+                if len(class_labels) != n_regimes:
+                    tprint(
+                        f"⚠️ [REGIME_MODELS] classes_ length ({len(class_labels)}) "
+                        f"does not match probability columns ({n_regimes}); falling back to index labels",
+                        color="yellow",
+                    )
+                    class_labels = np.arange(n_regimes)
+            else:
+                class_labels = np.arange(n_regimes)
+
             # Get ground truth regime labels from training results
             y_train_full = training_results.get('y_train_full', None)
             if y_train_full is None:
                 tprint("⚠️ [REGIME_MODELS] No y_train_full in training results, using model predictions for regime stats", color="yellow")
-                ground_truth_labels = regime_predictions
+                ground_truth_labels = np.asarray(regime_predictions)
             else:
-                ground_truth_labels = y_train_full
+                ground_truth_labels = np.asarray(y_train_full)
                 tprint(f"✅ [REGIME_MODELS] Using ground truth labels for regime statistics: {len(ground_truth_labels)} samples", color="green")
 
-            # Calculate regime statistics based on ground truth labels
+            # Calculate regime statistics based on ground truth labels and class mapping
             regime_stats = {}
-            for i in range(n_regimes):
-                regime_probs = regime_probabilities[:, i]
-                # Count samples where ground truth label is i
-                regime_count = np.sum(ground_truth_labels == i)
+            for col_idx, class_label in enumerate(class_labels):
+                regime_probs = regime_probabilities[:, col_idx]
+                # Count samples where ground truth label matches this class label
+                regime_mask = (ground_truth_labels == class_label)
+                regime_count = int(regime_mask.sum())
 
-                # For samples assigned to this regime, get their prediction confidences
-                regime_mask = ground_truth_labels == i
                 if regime_count > 0:
                     regime_max_probs = np.max(regime_probabilities[regime_mask], axis=1)
                     mean_prob = float(np.mean(regime_max_probs))
@@ -4329,8 +4622,9 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     med_conf = 0
                     low_conf = 0
 
-                regime_stats[f'regime_{i}'] = {
-                    'sample_count': int(regime_count),
+                regime_key = f"regime_{int(class_label)}"
+                regime_stats[regime_key] = {
+                    'sample_count': regime_count,
                     'percentage': float(regime_count / n_samples * 100) if n_samples > 0 else 0.0,
                     'mean_probability': mean_prob,
                     'std_probability': std_prob,
@@ -4346,10 +4640,13 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             # Calculate overall statistics
             overall_stats = {
                 'total_samples': n_samples,
-                'n_regimes': n_regimes,
+                'n_regimes': int(len(class_labels)),
                 'mean_max_probability': float(np.mean(np.max(regime_probabilities, axis=1))),
                 'std_max_probability': float(np.std(np.max(regime_probabilities, axis=1))),
-                'regime_balance': float(np.std([regime_stats[f'regime_{i}']['percentage'] for i in range(n_regimes)])),
+                'regime_balance': float(np.std([
+                    regime_stats[f'regime_{int(lbl)}']['percentage']
+                    for lbl in class_labels
+                ])) if len(class_labels) > 0 else 0.0,
                 'prediction_confidence': float(np.mean(np.max(regime_probabilities, axis=1))),
                 'uncertainty_entropy': float(np.mean([-np.sum(p * np.log(p + 1e-10)) for p in regime_probabilities]))
             }
@@ -4405,7 +4702,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         shap_importance = np.mean([np.abs(sv).mean(axis=0) for sv in shap_values], axis=0)
                     else:
                         # Binary case
-                        shAP_importance = np.abs(shap_values).mean(axis=0)
+                        shap_importance = np.abs(shap_values).mean(axis=0)
                     
                     # Create SHAP importance dataframe
                     shap_importance_df = pd.DataFrame({

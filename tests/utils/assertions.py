@@ -452,3 +452,162 @@ def assert_dataframe_structure(df: pd.DataFrame, expected_columns: Optional[List
 def assert_percentage_equals(actual: float, expected: float, tolerance: Optional[float] = None, message: Optional[str] = None) -> None:
     """Wrapper global pour AssertionHelpers.assert_percentage_equals."""
     return AssertionHelpers.assert_percentage_equals(actual, expected, tolerance, message)
+
+
+def assert_true(condition: bool, message: Optional[str] = None) -> None:
+    """Vérifie qu'une condition est vraie."""
+    assert bool(condition), message or "Expected condition to be True"
+
+
+def assert_false(condition: bool, message: Optional[str] = None) -> None:
+    """Vérifie qu'une condition est fausse."""
+    assert not bool(condition), message or "Expected condition to be False"
+
+
+def assert_equals(actual: Any, expected: Any, message: Optional[str] = None) -> None:
+    """Vérifie l'égalité simple entre deux valeurs."""
+    assert actual == expected, message or f"Expected {expected!r}, got {actual!r}"
+
+
+def assert_not_equals(actual: Any, expected: Any, message: Optional[str] = None) -> None:
+    """Vérifie que deux valeurs sont différentes."""
+    assert actual != expected, message or f"Did not expect {expected!r}, but got the same value"
+
+
+def assert_greater_than(actual: float, threshold: float, message: Optional[str] = None) -> None:
+    """Vérifie que actual > threshold."""
+    assert actual > threshold, message or f"Expected {actual} > {threshold}"
+
+
+def assert_less_than(actual: float, threshold: float, message: Optional[str] = None) -> None:
+    """Vérifie que actual < threshold."""
+    assert actual < threshold, message or f"Expected {actual} < {threshold}"
+
+
+def assert_greater_than_or_equal(actual: float, threshold: float, message: Optional[str] = None) -> None:
+    """Vérifie que actual >= threshold."""
+    assert actual >= threshold, message or f"Expected {actual} >= {threshold}"
+
+
+def assert_less_than_or_equal(actual: float, threshold: float, message: Optional[str] = None) -> None:
+    """Vérifie que actual <= threshold."""
+    assert actual <= threshold, message or f"Expected {actual} <= {threshold}"
+
+
+def assert_array_shape(arr: np.ndarray, expected_shape: Any, message: Optional[str] = None) -> None:
+    """Vérifie la forme d'un tableau numpy."""
+    assert isinstance(arr, np.ndarray), message or f"Expected numpy array, got {type(arr)}"
+    assert tuple(arr.shape) == tuple(expected_shape), message or f"Expected shape {expected_shape}, got {arr.shape}"
+
+
+def assert_array_not_empty(arr: np.ndarray, message: Optional[str] = None) -> None:
+    """Vérifie qu'un tableau numpy n'est pas vide."""
+    assert isinstance(arr, np.ndarray), message or f"Expected numpy array, got {type(arr)}"
+    assert arr.size > 0, message or "Expected non-empty array"
+
+
+def assert_array_no_nan(arr: np.ndarray, message: Optional[str] = None) -> None:
+    """Vérifie qu'un tableau numpy ne contient pas de NaN."""
+    assert isinstance(arr, np.ndarray), message or f"Expected numpy array, got {type(arr)}"
+    assert not np.isnan(arr).any(), message or "Array contains NaN values"
+
+
+def assert_array_no_inf(arr: np.ndarray, message: Optional[str] = None) -> None:
+    """Vérifie qu'un tableau numpy ne contient pas d'infinis."""
+    assert isinstance(arr, np.ndarray), message or f"Expected numpy array, got {type(arr)}"
+    assert not np.isinf(arr).any(), message or "Array contains inf/-inf values"
+
+
+def assert_dtype(arr: np.ndarray, expected_dtype: Any, message: Optional[str] = None) -> None:
+    """Vérifie le dtype d'un tableau numpy."""
+    assert isinstance(arr, np.ndarray), message or f"Expected numpy array, got {type(arr)}"
+    assert arr.dtype == expected_dtype, message or f"Expected dtype {expected_dtype}, got {arr.dtype}"
+
+
+def assert_in_range(value: float, min_value: float, max_value: float, message: Optional[str] = None) -> None:
+    """Vérifie qu'une valeur est dans [min_value, max_value]."""
+    assert min_value <= value <= max_value, message or f"Expected {value} in range [{min_value}, {max_value}]"
+
+
+def assert_is_none(value: Any, message: Optional[str] = None) -> None:
+    """Vérifie qu'une valeur est None."""
+    assert value is None, message or f"Expected value to be None, got {value!r}"
+
+
+def assert_is_not_none(value: Any, message: Optional[str] = None) -> None:
+    """Vérifie qu'une valeur n'est pas None."""
+    assert value is not None, message or "Expected value to be not None"
+
+
+def assert_contains(container: Any, item: Any, message: Optional[str] = None) -> None:
+    """Vérifie qu'un élément est contenu dans un conteneur."""
+    assert item in container, message or f"Expected {item!r} to be in {container!r}"
+
+
+def assert_not_contains(container: Any, item: Any, message: Optional[str] = None) -> None:
+    """Vérifie qu'un élément n'est pas contenu dans un conteneur."""
+    assert item not in container, message or f"Did not expect {item!r} to be in {container!r}"
+
+
+def assert_in(container: Any, item: Any, message: Optional[str] = None) -> None:
+    """Alias pratique pour assert_contains."""
+    assert_contains(container, item, message)
+
+
+def assert_not_in(container: Any, item: Any, message: Optional[str] = None) -> None:
+    """Alias pratique pour assert_not_contains."""
+    assert_not_contains(container, item, message)
+
+
+def assert_is_instance(value: Any, expected_type: type, message: Optional[str] = None) -> None:
+    """Vérifie qu'une valeur est instance d'un type donné."""
+    assert isinstance(value, expected_type), message or f"Expected {value!r} to be instance of {expected_type.__name__}"
+
+
+def assert_is_not_instance(value: Any, unexpected_type: type, message: Optional[str] = None) -> None:
+    """Vérifie qu'une valeur n'est pas instance d'un type donné."""
+    assert not isinstance(value, unexpected_type), message or f"Did not expect {value!r} to be instance of {unexpected_type.__name__}"
+
+
+def assert_array_dtype(arr: np.ndarray, expected_dtype: Any, message: Optional[str] = None) -> None:
+    """Vérifie le dtype d'un tableau numpy (alias pour assert_dtype)."""
+    assert_dtype(arr, expected_dtype, message)
+
+
+def assert_array_range(arr: np.ndarray, min_value: float, max_value: float, message: Optional[str] = None) -> None:
+    """Vérifie que toutes les valeurs du tableau sont dans [min_value, max_value]."""
+    assert isinstance(arr, np.ndarray), message or f"Expected numpy array, got {type(arr)}"
+    within_bounds = (arr >= min_value) & (arr <= max_value)
+    assert bool(within_bounds.all()), message or f"Array values not all in range [{min_value}, {max_value}]"
+
+
+def assert_string_contains(text: str, substring: str, message: Optional[str] = None) -> None:
+    """Vérifie qu'une sous-chaîne est présente dans une chaîne."""
+    assert substring in text, message or f"Expected '{substring}' to be in '{text}'"
+
+
+def assert_string_not_contains(text: str, substring: str, message: Optional[str] = None) -> None:
+    """Vérifie qu'une sous-chaîne n'est pas présente dans une chaîne."""
+    assert substring not in text, message or f"Did not expect '{substring}' to be in '{text}'"
+
+
+def assert_file_exists(path: str, message: Optional[str] = None) -> None:
+    """Vérifie qu'un fichier existe."""
+    import os
+    assert os.path.isfile(path), message or f"Expected file to exist: {path}"
+
+
+def assert_directory_exists(path: str, message: Optional[str] = None) -> None:
+    """Vérifie qu'un répertoire existe."""
+    import os
+    assert os.path.isdir(path), message or f"Expected directory to exist: {path}"
+
+
+def assert_key_exists(mapping: Dict[Any, Any], key: Any, message: Optional[str] = None) -> None:
+    """Vérifie qu'une clé existe dans un dictionnaire."""
+    assert key in mapping, message or f"Expected key {key!r} to exist in mapping"
+
+
+def assert_key_not_exists(mapping: Dict[Any, Any], key: Any, message: Optional[str] = None) -> None:
+    """Vérifie qu'une clé n'existe pas dans un dictionnaire."""
+    assert key not in mapping, message or f"Did not expect key {key!r} to exist in mapping"

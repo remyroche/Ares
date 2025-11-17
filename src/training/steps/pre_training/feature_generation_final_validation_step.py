@@ -75,6 +75,16 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             Dict containing execution results and artifacts
         """
         try:
+            self.config = config
+
+            self.set_context(
+                symbol=config.get('symbol', 'UNKNOWN'),
+                exchange=config.get('exchange', 'binance'),
+                timeframe=config.get('timeframe', '15m'),
+                direction=config.get('direction', 'long'),
+                model=config.get('execution_mode', 'analyst')
+            )
+
             # Determine analysis mode for logging
             execution_mode = self._determine_execution_mode()
             analysis_mode = 'tactician' if execution_mode == 'analyst' else 'analyst'
@@ -201,24 +211,62 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             if dataset is None:
                 tprint_warning(f"⚠️ Could not retrieve final dataset for {size} features in {analysis_mode} mode")
 
-        # Also try to get labeled dataframe for target relationships with analysis mode-specific naming
+        # Also try to get labeled dataframe for target relationships. We rely on
+        # generic names and a small set of mode-specific fallbacks, but avoid
+        # probing for analyst/tactician-specific labeled artifacts that are not
+        # produced by the current pipeline to reduce noisy warnings.
         labeled_df = None
-        artifact_names_to_try = [
-            'labeled_dataframe', 'labeled_data', 'labeled_dataset', 'target_dataframe',  # Generic fallbacks
-            f'{analysis_mode}_labeled_dataframe', f'{analysis_mode}_labeled_data',  # Analysis mode-specific
-            f'{analysis_mode}_target_dataframe', f'{analysis_mode}_dataset'  # Alternative naming
-        ]
-        
-        for artifact_name in artifact_names_to_try:
+
+        symbol = None
+        config = getattr(self, "config", None)
+        if isinstance(config, dict):
+            symbol = config.get("symbol")
+            exchange = config.get("exchange", "binance")
+            timeframe = config.get("timeframe", "15m")
+            direction = config.get("direction", "long")
+        else:
+            symbol = self._current_context.get("symbol")
+            exchange = self._current_context.get("exchange", "binance")
+            timeframe = self._current_context.get("timeframe", "15m")
+            direction = self._current_context.get("direction", "long")
+
+        if symbol:
+            canonical_name = f"labeled_data_{symbol}_{timeframe}"
             try:
-                labeled_df = self._get_artifact(artifact_name)
-                if labeled_df is not None:
-                    tprint_info(f"📊 Retrieved {analysis_mode} labeled data from '{artifact_name}' with {len(labeled_df.columns)} columns")
-                    break
-            except Exception as e:
-                continue
+                try:
+                    analyst_context = {
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "timeframe": timeframe,
+                        "direction": direction,
+                        "model": "analyst"
+                    }
+                    self.artifact_router._get_versioned_store(analyst_context)
+                except Exception:
+                    pass
+
+                labeled_df = self._get_artifact(canonical_name, artifact_type="data")
+                if labeled_df is not None and isinstance(labeled_df, pd.DataFrame):
+                    tprint_info(f"📊 Retrieved labeled data from '{canonical_name}' with {len(labeled_df.columns)} columns")
+            except Exception:
+                labeled_df = None
+
+        if labeled_df is None:
+            artifact_names_to_try = [
+                'labeled_dataframe', 'labeled_data', 'labeled_dataset', 'target_dataframe',
+                f'{analysis_mode}_target_dataframe', f'{analysis_mode}_dataset'
+            ]
+            
+            for artifact_name in artifact_names_to_try:
+                try:
+                    labeled_df = self._get_artifact(artifact_name)
+                    if labeled_df is not None and isinstance(labeled_df, pd.DataFrame):
+                        tprint_info(f"📊 Retrieved {analysis_mode} labeled data from '{artifact_name}' with {len(labeled_df.columns)} columns")
+                        break
+                except Exception:
+                    continue
         
-        if labeled_df is not None:
+        if labeled_df is not None and isinstance(labeled_df, pd.DataFrame):
             final_datasets['labeled_dataframe'] = labeled_df
         else:
             tprint_warning(f"⚠️ Could not retrieve labeled data from any known artifact names for {analysis_mode} mode")
@@ -243,17 +291,18 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         
         # Fallback: check for mode-specific artifacts to infer the mode
         try:
-            # Check if tactician-specific artifacts exist
+            # Check if tactician-specific artifacts exist. We intentionally
+            # avoid probing for *_labeled_dataframe artifacts here, since they
+            # are not produced by the current pipeline and only generate
+            # noisy missing-artifact warnings during mode detection.
             tactician_artifacts = [
                 'tactician_interaction_features',
                 'tactician_selected_feature_dataframe_60',
-                'tactician_labeled_dataframe'
             ]
-            
+
             analyst_artifacts = [
                 'analyst_interaction_features', 
                 'analyst_selected_feature_dataframe_60',
-                'analyst_labeled_dataframe'
             ]
             
             # Count available artifacts for each mode
@@ -447,27 +496,48 @@ class FeatureGenerationFinalValidationStep(BaseStep):
 
         return distributions
 
-    def _validate_target_relationships(self, dataset: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate relationships between features and targets."""
-        relationships = {}
+    def _identify_target_columns(self, dataset: pd.DataFrame) -> List[str]:
+        priority_targets = [
+            'target_long_fused',
+            'target_short_fused',
+            'target_long',
+            'target_short'
+        ]
+        available = [col for col in priority_targets if col in dataset.columns]
+        if available:
+            return available
 
-        # Identify target and feature columns
-        # Look for common target column patterns in financial data
-        target_patterns = ['target', 'label', 'return', 'quality_scores', 'price_target', 'volatility_target', 'direction']
-        target_cols = []
-        
+        target_patterns = [
+            'target',
+            'label',
+            'return',
+            'price_target',
+            'volatility_target',
+            'direction'
+        ]
+        target_cols: List[str] = []
         for col in dataset.columns:
             col_lower = col.lower()
             if any(pattern in col_lower for pattern in target_patterns):
+                if 'quality_scores' in col_lower:
+                    continue
                 target_cols.append(col)
-        
-        # If no obvious targets found, look for columns that might be targets based on naming
+
         if not target_cols:
             for col in dataset.columns:
                 col_lower = col.lower()
                 if any(suffix in col_lower for suffix in ['_target', '_label', '_score', '_signal', '_direction']):
+                    if 'quality_scores' in col_lower:
+                        continue
                     target_cols.append(col)
-        
+
+        return target_cols
+
+    def _validate_target_relationships(self, dataset: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate relationships between features and targets."""
+        relationships = {}
+
+        target_cols = self._identify_target_columns(dataset)
         feature_cols = [col for col in dataset.columns
                        if col not in target_cols + ['timestamp', 'open_time', 'close_time']]
 
@@ -521,9 +591,9 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         cv_readiness = {}
 
         # Identify target and feature columns
-        target_cols = [col for col in ['target', 'label', 'return'] if col in dataset.columns]
+        target_cols = self._identify_target_columns(dataset)
         feature_cols = [col for col in dataset.columns
-                       if col not in target_cols + ['timestamp']]
+                       if col not in target_cols + ['timestamp', 'open_time', 'close_time']]
 
         if not target_cols or not feature_cols:
             return {'error': 'No target or feature columns found'}
@@ -742,20 +812,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             from pathlib import Path
 
             # Identify target and feature columns
-            target_patterns = ['target', 'label', 'return', 'quality_scores', 'price_target', 'volatility_target', 'direction']
-            target_cols = []
-
-            for col in dataset.columns:
-                col_lower = col.lower()
-                if any(pattern in col_lower for pattern in target_patterns):
-                    target_cols.append(col)
-
-            # If no obvious targets found, look for columns with target-like suffixes
-            if not target_cols:
-                for col in dataset.columns:
-                    col_lower = col.lower()
-                    if any(suffix in col_lower for suffix in ['_target', '_label', '_score', '_signal', '_direction']):
-                        target_cols.append(col)
+            target_cols = self._identify_target_columns(dataset)
 
             if not target_cols:
                 return {

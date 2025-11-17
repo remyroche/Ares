@@ -25,6 +25,7 @@ from dataclasses import dataclass, field, fields
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
+from itertools import combinations
 
 # Import fast temporal metrics if available
 try:
@@ -55,6 +56,15 @@ try:
 except ImportError:
     COMPREHENSIVE_TEMPORAL_AVAILABLE = False
     logging.warning("Comprehensive temporal score functions not available")
+
+# Optional scientific statistics utilities
+try:
+    from scipy import stats  # type: ignore
+    SCIPY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    stats = None
+    SCIPY_AVAILABLE = False
+    logging.warning("SciPy not available - disabling t-tests/ANOVA in economic gap analysis")
 
 # Import tprint utilities
 try:
@@ -258,6 +268,8 @@ class ClusterQualityMetrics:
     
     # Economic interpretation (data-driven insights)
     economic_interpretation: Dict[str, Any] = field(default_factory=dict)
+    economic_gap_analysis: Dict[str, Any] = field(default_factory=dict)
+    transition_insights: Dict[str, Any] = field(default_factory=dict)
     
     # Predictive power
     predictive_power: Optional[float] = None
@@ -430,6 +442,8 @@ class ClusterQualityMetrics:
             'regime_type_per_cluster': self.regime_type_per_cluster,
             'economic_validation': self.economic_validation,
             'economic_interpretation': self.economic_interpretation,
+            'economic_gap_analysis': self.economic_gap_analysis,
+            'transition_insights': self.transition_insights,
             
             # Aggregate scores
             'predictive_power': self.predictive_power,
@@ -842,6 +856,15 @@ class ClusterQualityAssessor:
             }
         except Exception as e:
             tprint_error(f"❌ Per-regime metrics failed: {e}")
+
+        if metrics.per_regime_metrics:
+            metrics.economic_gap_analysis = self._compute_economic_gap_analysis(
+                metrics.per_regime_metrics,
+                forward_returns=forward_returns,
+                regime_labels=regime_labels
+            )
+        else:
+            metrics.economic_gap_analysis = {}
 
         # 7b. Economic CV metrics
         if forward_returns is not None:
@@ -1560,70 +1583,42 @@ class ClusterQualityAssessor:
                                      per_regime_metrics: Dict[int, Dict[str, Any]],
                                      forward_returns: pd.Series,
                                      regime_labels: np.ndarray) -> Dict[str, Any]:
-        """
-        Calculates CV metrics for the economic relevance results.
-        
-        This calculates:
-        1.  Within-Regime CV: Avg. CV of 1h forward returns *within* each regime.
-        2.  Between-Regime CV: CV of the *mean* economic metrics (mean_return, sharpe, etc.)
-            *across* regimes.
-        3.  Ratio: Between-CV / Within-CV.
-
-        Args:
-            per_regime_metrics (Dict): Output from _calculate_per_regime_metrics.
-            forward_returns (pd.Series): The raw forward returns timeseries.
-            regime_labels (np.ndarray): The raw regime labels timeseries.
-
-        Returns:
-            dict: CV metrics for economic results.
-        """
-        
+        """Calculate CV metrics for economic relevance outputs."""
         if not per_regime_metrics:
             return {}
 
-        metrics_data = {}
-        
-        # --- 1. Within-Regime CV (based on timeseries data) ---
-        # We only calculate this for the raw forward returns, as it measures
-        # the compactness of the return distribution within each regime.
-        within_cvs = []
+        metrics_data: Dict[str, Any] = {}
+
+        within_cvs: List[float] = []
         non_noise_labels = [l for l in np.unique(regime_labels) if l != -1]
-        
+
         for label in non_noise_labels:
             regime_mask = (regime_labels == label)
-            
-            # Ensure indices match between cluster_labels and forward_returns
             if len(regime_mask) != len(forward_returns):
-                # Align the lengths by taking the minimum length
                 min_length = min(len(regime_mask), len(forward_returns))
                 regime_mask_aligned = regime_mask[:min_length]
                 forward_returns_aligned = forward_returns[:min_length]
                 regime_returns_ts = forward_returns_aligned[regime_mask_aligned].values
             else:
                 regime_returns_ts = forward_returns[regime_mask].values
-            
-            # Only calculate CV if we have enough data points
+
             if len(regime_returns_ts) > 1:
                 within_cvs.append(self._calculate_cv(regime_returns_ts))
-        
+
         avg_within_cv_fwd_return = np.nanmean(within_cvs) if within_cvs else np.nan
         metrics_data['economic_avg_within_cv_fwd_return'] = avg_within_cv_fwd_return
 
-        # --- 2. Between-Regime CV (based on per-regime aggregate metrics) ---
-        # This measures the separation of the *average* economic outcomes
-        # between regimes.
         try:
             metrics_df = pd.DataFrame.from_dict(per_regime_metrics, orient='index')
         except Exception:
             self.logger.warning("Could not create DataFrame for economic CV metrics.")
             return metrics_data
-            
-        # Define which economic metrics to compare across regimes
+
         metrics_to_compare = [
-            'mean_return', 'volatility', 'sharpe', 
+            'mean_return', 'volatility', 'sharpe',
             'pct_above_target', 'pct_below_neg_target', 'pct_target_hits'
         ]
-        
+
         for col in metrics_to_compare:
             if col in metrics_df.columns:
                 metric_values = metrics_df[col].dropna().values
@@ -1633,27 +1628,247 @@ class ClusterQualityAssessor:
                 else:
                     metrics_data[f'economic_between_cv_{col}'] = np.nan
             else:
-                 metrics_data[f'economic_between_cv_{col}'] = np.nan
-        
-        # --- 3. Ratio ---
-        # We can create a ratio for mean_return
+                metrics_data[f'economic_between_cv_{col}'] = np.nan
+
         between_mean_return_cv = metrics_data.get('economic_between_cv_mean_return', np.nan)
-        
         if not np.isnan(avg_within_cv_fwd_return) and avg_within_cv_fwd_return > QualityThresholds.DBI_EPSILON:
             ratio = between_mean_return_cv / avg_within_cv_fwd_return
             metrics_data['economic_cv_ratio_mean_return'] = ratio
         else:
             metrics_data['economic_cv_ratio_mean_return'] = np.nan
-            
+
         return metrics_data
 
+    def _compute_economic_gap_analysis(
+        self,
+        per_regime_metrics: Dict[int, Dict[str, Any]],
+        forward_returns: Optional[pd.Series] = None,
+        regime_labels: Optional[np.ndarray] = None
+    ) -> Dict[str, Any]:
+        """Compute pairwise economic gaps and statistical tests between regimes."""
+        if not per_regime_metrics:
+            return {}
 
-    def _calculate_temporal_smoothness(self,
-                                         regime_labels: np.ndarray,
-                                         timestamps: Optional[pd.DatetimeIndex] = None,
-                                         flip_flop_weight: float = 1.0,
-                                         penalty_mode: str = "effective_transitions",
-                                         sensitivity_mode: str = "standard") -> Tuple[float, float, float]:
+        try:
+            summary: Dict[int, Dict[str, float]] = {}
+            for regime_id, data in per_regime_metrics.items():
+                if not isinstance(data, dict):
+                    continue
+                rid = int(regime_id)
+                summary[rid] = {
+                    'regime_type': data.get('regime_type', 'unknown'),
+                    'mean_return': float(data.get('mean_return', 0.0) or 0.0),
+                    'sharpe': float(data.get('sharpe', 0.0) or 0.0),
+                    'volatility': float(data.get('volatility', 0.0) or 0.0),
+                    'max_drawdown': float(data.get('max_drawdown', 0.0) or 0.0),
+                    'win_rate': float(data.get('win_rate', 0.0) or 0.0),
+                    'pct_target_hits': float(data.get('pct_target_hits', 0.0) or 0.0)
+                }
+
+            if not summary:
+                return {}
+
+            gap_result: Dict[str, Any] = {'per_regime_summary': summary}
+
+            pairwise_diffs: List[Dict[str, float]] = []
+            for regime_a, regime_b in combinations(sorted(summary.keys()), 2):
+                a = summary[regime_a]
+                b = summary[regime_b]
+                pairwise_diffs.append({
+                    'regime_a': regime_a,
+                    'regime_b': regime_b,
+                    'mean_return_spread': a['mean_return'] - b['mean_return'],
+                    'sharpe_spread': a['sharpe'] - b['sharpe'],
+                    'volatility_ratio': self._safe_divide(a['volatility'], b['volatility']),
+                    'max_drawdown_spread': a['max_drawdown'] - b['max_drawdown']
+                })
+
+            if pairwise_diffs:
+                gap_result['pairwise_differences'] = pairwise_diffs
+
+            stats_result = self._run_economic_gap_tests(forward_returns, regime_labels)
+            if stats_result:
+                gap_result['statistical_tests'] = stats_result
+
+            return gap_result
+        except Exception as exc:
+            tprint_warning(f"Failed to compute economic gap analysis: {exc}")
+            return {}
+
+    def _run_economic_gap_tests(
+        self,
+        forward_returns: Optional[pd.Series],
+        regime_labels: Optional[np.ndarray]
+    ) -> Dict[str, Any]:
+        """Run ANOVA and pairwise t-tests when SciPy and inputs are available."""
+        if not SCIPY_AVAILABLE or stats is None or forward_returns is None or regime_labels is None:
+            return {}
+
+        returns_map = self._build_regime_returns_map(forward_returns, regime_labels)
+        if len(returns_map) < 2:
+            return {}
+
+        results: Dict[str, Any] = {}
+        samples = [sample for sample in returns_map.values() if sample.size >= 3]
+
+        if len(samples) >= 2:
+            try:
+                f_stat, p_val = stats.f_oneway(*samples)
+                results['anova'] = {
+                    'statistic': float(f_stat),
+                    'p_value': float(p_val),
+                    'significant': bool(p_val < 0.05)
+                }
+            except Exception as exc:
+                tprint_warning(f"ANOVA computation failed: {exc}")
+
+        t_tests: List[Dict[str, Any]] = []
+        for (regime_a, sample_a), (regime_b, sample_b) in combinations(returns_map.items(), 2):
+            if sample_a.size < 3 or sample_b.size < 3:
+                continue
+            try:
+                t_stat, p_val = stats.ttest_ind(sample_a, sample_b, equal_var=False)
+                t_tests.append({
+                    'regime_a': regime_a,
+                    'regime_b': regime_b,
+                    'statistic': float(t_stat),
+                    'p_value': float(p_val),
+                    'cohens_d': self._calculate_cohens_d(sample_a, sample_b),
+                    'significant': bool(p_val < 0.05)
+                })
+            except Exception as exc:
+                tprint_warning(f"t-test failed for regimes {regime_a}-{regime_b}: {exc}")
+
+        if t_tests:
+            results['t_tests'] = t_tests
+
+        return results
+
+    def _build_regime_returns_map(
+        self,
+        forward_returns: pd.Series,
+        regime_labels: np.ndarray
+    ) -> Dict[int, np.ndarray]:
+        """Align forward returns with regime labels and group them per regime."""
+        returns_map: Dict[int, np.ndarray] = {}
+        try:
+            returns_array = forward_returns.values if hasattr(forward_returns, 'values') else np.asarray(forward_returns)
+        except Exception:
+            returns_array = np.asarray(forward_returns)
+
+        labels_array = np.asarray(regime_labels)
+        if returns_array.ndim > 1:
+            returns_array = returns_array.reshape(-1)
+
+        if returns_array.size == 0 or labels_array.size == 0:
+            return returns_map
+
+        min_len = min(len(returns_array), len(labels_array))
+        if min_len == 0:
+            return returns_map
+
+        returns_array = returns_array[:min_len]
+        labels_array = labels_array[:min_len]
+
+        valid_mask = np.isfinite(returns_array)
+        returns_array = returns_array[valid_mask]
+        labels_array = labels_array[valid_mask]
+
+        for regime in np.unique(labels_array):
+            if regime == -1:
+                continue
+            samples = returns_array[labels_array == regime]
+            if samples.size > 0:
+                returns_map[int(regime)] = samples.astype(np.float64)
+
+        return returns_map
+
+    @staticmethod
+    def _calculate_cohens_d(sample_a: np.ndarray, sample_b: np.ndarray) -> float:
+        """Compute Cohen's d effect size between two samples."""
+        if sample_a.size == 0 or sample_b.size == 0:
+            return 0.0
+        mean_diff = float(np.mean(sample_a) - np.mean(sample_b))
+        var_a = np.var(sample_a, ddof=1)
+        var_b = np.var(sample_b, ddof=1)
+        pooled_std = np.sqrt(((sample_a.size - 1) * var_a + (sample_b.size - 1) * var_b) / max(sample_a.size + sample_b.size - 2, 1))
+        if pooled_std == 0:
+            return 0.0
+        return float(mean_diff / pooled_std)
+
+    @staticmethod
+    def _safe_divide(numerator: float, denominator: float) -> float:
+        """Safely divide two floats."""
+        denominator = float(denominator)
+        if abs(denominator) < QualityThresholds.DBI_EPSILON:
+            return 0.0
+        return float(numerator) / denominator
+
+    def _summarize_transition_insights(
+        self,
+        transition_data: Optional[Dict[str, Any]],
+        duration_distribution: Optional[Dict[str, Any]],
+        flip_flop_ratio: Optional[float],
+        regime_persistence: Optional[float],
+        regime_labels: np.ndarray
+    ) -> Dict[str, Any]:
+        """Create a digestible summary of transition dynamics."""
+        if not transition_data or 'transition_matrix' not in transition_data:
+            return {}
+
+        try:
+            matrix = transition_data.get('transition_matrix')
+            if matrix is None:
+                return {}
+            matrix = np.asarray(matrix, dtype=float)
+            n_regimes = matrix.shape[0]
+            unique_ids = [int(r) for r in sorted(np.unique(regime_labels)) if r != -1]
+            if len(unique_ids) != n_regimes:
+                unique_ids = list(range(n_regimes))
+
+            diag_info = []
+            for idx, regime_id in enumerate(unique_ids):
+                diag_prob = float(matrix[idx, idx]) if idx < matrix.shape[0] else 0.0
+                diag_info.append({'regime_id': regime_id, 'self_prob': diag_prob})
+
+            hotspots = []
+            for i, regime_from in enumerate(unique_ids):
+                for j, regime_to in enumerate(unique_ids):
+                    if i == j:
+                        continue
+                    prob = float(matrix[i, j])
+                    if prob >= 0.1:
+                        hotspots.append({
+                            'from': regime_from,
+                            'to': regime_to,
+                            'probability': prob,
+                            'interpretation': 'High-frequency transition'
+                        })
+            hotspots = sorted(hotspots, key=lambda x: x['probability'], reverse=True)[:5]
+
+            persistence_summary = {
+                'average_duration': float((duration_distribution or {}).get('mean_duration', 0.0)),
+                'max_duration': float((duration_distribution or {}).get('max_duration', 0.0)),
+                'min_duration': float((duration_distribution or {}).get('min_duration', 0.0)),
+                'high_persistence_regimes': [info for info in diag_info if info['self_prob'] >= 0.65]
+            }
+
+            insights = {
+                'persistence_summary': persistence_summary,
+                'flip_flop_ratio': float(flip_flop_ratio or 0.0),
+                'average_regime_persistence': float(regime_persistence or 0.0),
+                'transition_entropy': float((transition_data or {}).get('transition_entropy', 0.0) or 0.0),
+                'regime_stickiness': float((transition_data or {}).get('regime_stickiness', 0.0) or 0.0),
+                'transition_stability_score': float((transition_data or {}).get('transition_stability_score', 0.0) or 0.0),
+                'transition_hotspots': hotspots
+            }
+
+            return insights
+        except Exception as exc:
+            tprint_warning(f"Failed to summarize transition insights: {exc}")
+            return {}
+
+    def _calculate_temporal_smoothness(self, regime_labels: np.ndarray, timestamps: Optional[pd.DatetimeIndex] = None, flip_flop_weight: float = 1.0, penalty_mode: str = "effective_transitions", sensitivity_mode: str = "standard") -> Tuple[float, float, float]:
         """
         Calculate temporal smoothness score with flip-flop penalty.
 
@@ -1806,13 +2021,13 @@ class ClusterQualityAssessor:
         if len(transitions) == 0:
             return np.array([0.0])
 
-        weights = []
+        weights: list[float] = []
         for i, trans_idx in enumerate(transitions):
             # Weight based on duration of the regime being left
             if i == 0:
                 regime_duration = trans_idx + 1
             else:
-                regime_duration = trans_idx - transitions[i-1]
+                regime_duration = trans_idx - transitions[i - 1]
 
             # Shorter regimes get higher transition weights (more disruptive)
             weight = 1.0 / max(1.0, regime_duration / 10.0)
@@ -1825,7 +2040,7 @@ class ClusterQualityAssessor:
         if len(regime_labels) < 1:
             return np.array([])
 
-        durations = []
+        durations: list[int] = []
         current_regime = regime_labels[0]
         current_length = 1
 
@@ -3676,20 +3891,19 @@ class ClusterQualityAssessor:
         """Build the markdown content for the report."""
         # *** NEW: Get target return for report ***
         target_pct = QualityThresholds.ECONOMIC_TARGET_RETURN * 100
-        
-        md = """# Cluster Quality Assessment Report
 
-**Symbol:** """ + str(symbol) + """  
-**Generated:** """ + str(metrics.timestamp) + """
-**Data Points:** """ + str(getattr(metrics, 'n_samples', 'N/A')) + """
-**Number of Regimes:** """ + str(metrics.n_regimes) + """
-**Report Version:** 1.3 (Enhanced with Financial Analysis)
+        md = (
+            "# Cluster Quality Assessment Report\n\n"
+            f"**Symbol:** {symbol}  \n"
+            f"**Generated:** {metrics.timestamp}\n"
+            f"**Data Points:** {getattr(metrics, 'n_samples', 'N/A')}\n"
+            f"**Number of Regimes:** {metrics.n_regimes}\n"
+            "**Report Version:** 1.3 (Enhanced with Financial Analysis)\n\n"
+            f"This report provides a comprehensive assessment of cluster quality for {symbol}.\n\n"
+            "### Key Metrics\n\n"
+        )
 
-This report provides a comprehensive assessment of cluster quality for """ + str(symbol) + """.
-
-### Key Metrics
-
-# --- 5. START: NEW MODULAR SECTION ---
+        # --- 5. START: NEW MODULAR SECTION ---
         # Dynamically add the method-specific configuration table if provided
         if method_specific_config:
             md += "\n---\n\n## Clustering Method Configuration\n\n"
@@ -3705,11 +3919,8 @@ This report provides a comprehensive assessment of cluster quality for """ + str
             md += "\n"
         # --- END: NEW MODULAR SECTION ---
 
-        md += """
+        md += "\n## PCA Feature Analysis\n\n"
 
-## PCA Feature Analysis
-
-        
         # Add PCA feature information if available from method-specific config
         if method_specific_config and 'pca_components' in method_specific_config:
             pca_components = method_specific_config['pca_components']
@@ -3951,6 +4162,70 @@ This report provides a comprehensive assessment of cluster quality for """ + str
                     md += "| {} | {:.4f} |\n".format(metric_name, val)
             md += "\n"
 
+        # *** NEW: Economic Gap Analysis (pairwise spreads and tests) ***
+        if metrics.economic_gap_analysis:
+            gap = metrics.economic_gap_analysis
+            md += """
+---
+
+## Economic Gap Analysis
+
+"""
+            summary = gap.get('per_regime_summary') or {}
+            if summary:
+                md += "### Per-Regime Snapshot\n\n"
+                md += "| Regime | Type | Mean Return | Volatility | Sharpe | Max DD | Pct Target Hits |\n"
+                md += "|--------|------|-------------|------------|--------|--------|-----------------|\n"
+                for regime_id, row in sorted(summary.items()):
+                    md += (
+                        f"| {regime_id} | {row.get('regime_type', 'unknown')} | "
+                        f"{row.get('mean_return', 0.0):.6f} | {row.get('volatility', 0.0):.6f} | "
+                        f"{row.get('sharpe', 0.0):.4f} | {row.get('max_drawdown', 0.0):.2%} | "
+                        f"{row.get('pct_target_hits', 0.0):.2%} |\n"
+                    )
+                md += "\n"
+
+            pairwise = gap.get('pairwise_differences') or []
+            if pairwise:
+                md += "### Pairwise Economic Spreads\n\n"
+                md += (
+                    "| Regime A | Regime B | Mean Return Spread | Sharpe Spread | "
+                    "Volatility Ratio | Max DD Spread |\n"
+                )
+                md += "|----------|----------|--------------------|---------------|------------------|---------------|\n"
+                for row in pairwise:
+                    md += (
+                        f"| {row.get('regime_a')} | {row.get('regime_b')} | "
+                        f"{row.get('mean_return_spread', 0.0):.6f} | {row.get('sharpe_spread', 0.0):.4f} | "
+                        f"{row.get('volatility_ratio', 0.0):.3f} | {row.get('max_drawdown_spread', 0.0):.2%} |\n"
+                    )
+                md += "\n"
+
+            stats_tests = gap.get('statistical_tests') or {}
+            if stats_tests:
+                md += "### Statistical Tests (ANOVA / t-tests)\n\n"
+                anova = stats_tests.get('anova')
+                if anova:
+                    md += (
+                        f"- **ANOVA F-statistic:** {anova.get('statistic', 0.0):.4f}, "
+                        f"p-value={anova.get('p_value', 1.0):.4f} "
+                        f"({'significant' if anova.get('significant') else 'ns'})\n"
+                    )
+
+                t_tests = stats_tests.get('t_tests') or []
+                if t_tests:
+                    md += "\n**Pairwise t-tests:**\n\n"
+                    md += "| Regime A | Regime B | t-stat | p-value | Cohen's d | Significant |\n"
+                    md += "|----------|----------|--------|---------|-----------|-------------|\n"
+                    for row in t_tests:
+                        md += (
+                            f"| {row.get('regime_a')} | {row.get('regime_b')} | "
+                            f"{row.get('statistic', 0.0):.4f} | {row.get('p_value', 1.0):.4f} | "
+                            f"{row.get('cohens_d', 0.0):.3f} | "
+                            f"{'Yes' if row.get('significant') else 'No'} |\n"
+                        )
+                    md += "\n"
+
         # *** NEW: Section for Per-Category CV ***
         if metrics.feature_category_cv_metrics:
             md += """
@@ -4008,6 +4283,44 @@ This report provides a comprehensive assessment of cluster quality for """ + str
             if metrics.regime_persistence is not None:
                 md += f"- **Regime Persistence:** {metrics.regime_persistence:.2f} bars (average duration)\n"
             md += "\n"
+
+            # *** NEW: Transition & Persistence Insights (summary) ***
+            if metrics.transition_insights:
+                ti = metrics.transition_insights
+                md += "### Transition & Persistence Insights\n\n"
+
+                persistence = ti.get('persistence_summary') or {}
+                if persistence:
+                    md += (
+                        f"- **Average Duration:** {persistence.get('average_duration', 0.0):.2f} bars\n"
+                        f"- **Max Duration:** {persistence.get('max_duration', 0.0):.2f} bars\n"
+                        f"- **Min Duration:** {persistence.get('min_duration', 0.0):.2f} bars\n"
+                    )
+                    high_pers = persistence.get('high_persistence_regimes') or []
+                    if high_pers:
+                        md += "- **High-persistence regimes:** "
+                        md += ", ".join(
+                            f"Regime {r.get('regime_id')} (p_self={r.get('self_prob', 0.0):.2f})"
+                            for r in high_pers
+                        )
+                        md += "\n"
+
+                md += f"- **Flip-flop ratio:** {ti.get('flip_flop_ratio', 0.0):.4f}\n"
+                md += f"- **Average regime persistence:** {ti.get('average_regime_persistence', 0.0):.2f} bars\n"
+                md += f"- **Transition entropy:** {ti.get('transition_entropy', 0.0):.4f}\n"
+                md += f"- **Regime stickiness:** {ti.get('regime_stickiness', 0.0):.4f}\n"
+                md += f"- **Transition stability score:** {ti.get('transition_stability_score', 0.0):.4f}\n\n"
+
+                hotspots = ti.get('transition_hotspots') or []
+                if hotspots:
+                    md += "**Dominant transition hotspots:**\n\n"
+                    md += "| From | To | Probability |\n|------|----|-------------|\n"
+                    for h in hotspots:
+                        md += (
+                            f"| {h.get('from')} | {h.get('to')} | "
+                            f"{h.get('probability', 0.0):.3f} |\n"
+                        )
+                    md += "\n"
         
         # Transition Matrix Analysis
         if hasattr(metrics, 'transition_probability_matrix') and metrics.transition_probability_matrix:

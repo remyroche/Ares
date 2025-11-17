@@ -14,13 +14,19 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
-# Import du module de détection de fuite
+# Import du module de détection de fuite et des assertions standardisées
 try:
     from src.utils.ml_common.validation.data_leakage_prevention import (
-        DataLeakagePrevention, 
+        DataLeakagePrevention,
         DataLeakageConfig
     )
+    from tests.utils.assertions import (
+        assert_float_equals,
+        assert_dict_structure,
+        assert_list_structure
+    )
     logger.info("✅ Import réussi du module data_leakage_prevention")
+    logger.info("✅ Import réussi des assertions standardisées")
 except ImportError as e:
     logger.error(f"❌ Erreur d'import: {e}")
     sys.exit(1)
@@ -32,15 +38,27 @@ def test_threshold_values():
     config = DataLeakageConfig()
     
     # Vérification des seuils critiques
-    assert config.critical_leakage_threshold == 0.05, f"Seuil critique incorrect: {config.critical_leakage_threshold} (attendu: 0.05)"
+    assert_float_equals(
+        config.critical_leakage_threshold,
+        0.05,
+        message=f"Seuil critique incorrect: {config.critical_leakage_threshold} (attendu: 0.05)"
+    )
     logger.info(f"✅ Seuil critique correct: {config.critical_leakage_threshold:.1%}")
     
     # Vérification des seuils d'avertissement
-    assert config.warning_leakage_threshold == 0.02, f"Seuil d'avertissement incorrect: {config.warning_leakage_threshold} (attendu: 0.02)"
+    assert_float_equals(
+        config.warning_leakage_threshold,
+        0.02,
+        message=f"Seuil d'avertissement incorrect: {config.warning_leakage_threshold} (attendu: 0.02)"
+    )
     logger.info(f"✅ Seuil d'avertissement correct: {config.warning_leakage_threshold:.1%}")
     
     # Vérification du multiplicateur pour petits datasets
-    assert config.small_dataset_leakage_multiplier == 1.0, f"Multiplicateur incorrect: {config.small_dataset_leakage_multiplier} (attendu: 1.0)"
+    assert_float_equals(
+        config.small_dataset_leakage_multiplier,
+        1.0,
+        message=f"Multiplicateur incorrect: {config.small_dataset_leakage_multiplier} (attendu: 1.0)"
+    )
     logger.info(f"✅ Multiplicateur pour petits datasets correct: {config.small_dataset_leakage_multiplier}")
     
     logger.info("✅ Test réussi: Tous les seuils sont correctement définis")
@@ -53,9 +71,21 @@ def test_initialization_logs():
     prevention = DataLeakagePrevention()
     
     # Vérification que l'instance a les bons seuils
-    assert prevention.config.critical_leakage_threshold == 0.05
-    assert prevention.config.warning_leakage_threshold == 0.02
-    assert prevention.config.small_dataset_leakage_multiplier == 1.0
+    assert_float_equals(
+        prevention.config.critical_leakage_threshold,
+        0.05,
+        message="L'instance doit avoir le seuil critique correct"
+    )
+    assert_float_equals(
+        prevention.config.warning_leakage_threshold,
+        0.02,
+        message="L'instance doit avoir le seuil d'avertissement correct"
+    )
+    assert_float_equals(
+        prevention.config.small_dataset_leakage_multiplier,
+        1.0,
+        message="L'instance doit avoir le multiplicateur correct"
+    )
     
     logger.info("✅ Test réussi: L'instance a les bons seuils configurés")
 

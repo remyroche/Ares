@@ -16,7 +16,7 @@ Inherits from BaseStep for standardized artifact management and execution.
 
 import logging
 import time
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 from pathlib import Path
 
 import numpy as np
@@ -205,6 +205,15 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             tprint(f"🐛 DEBUG: [STEP 1] market_data after _load_market_data: {market_data.shape}", "INFO")
             tprint(f"🐛 DEBUG: [STEP 1] Index range: {market_data.index.min()} to {market_data.index.max()}", "INFO")
             tprint(f"✅ Loaded {len(market_data)} samples of market data", "SUCCESS")
+
+            try:
+                if self.hardware_manager is not None and hasattr(self.hardware_manager, 'memory_optimizer'):
+                    optimizer = self.hardware_manager.memory_optimizer
+                    if hasattr(optimizer, 'optimize_dataframe_memory'):
+                        market_data = optimizer.optimize_dataframe_memory(market_data)
+                        tprint_debug("🧠 Applied M1 memory optimization to market_data")
+            except Exception as e:
+                tprint_debug(f"⚠️ M1 memory optimization skipped due to error: {e}")
 
             # Check execution mode and if HPO is enabled
             execution_mode = config.get('execution_mode', 'full')
@@ -543,7 +552,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             use_trend_features=feature_config.get('use_trend_features', True),
             use_volume_features=feature_config.get('use_volume_features', True),
             pca_components=feature_config.get('pca_components', 4),
-            normalize_method=feature_config.get('normalize_method', 'zscore'),
+            normalize_method=feature_config.get('normalize_method', 'robust'),
             rolling_normalize_window=feature_config.get('rolling_normalize_window', 100),
             enable_vectorbt_optimization=feature_config.get('enable_vectorbt_optimization', True),
             enable_hardware_optimization=feature_config.get('enable_hardware_optimization', True),
@@ -560,6 +569,18 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
         hpo_config = config.get('hpo_config', {})
         execution_mode = config.get('execution_mode', 'full')
 
+        resource_constrained = False
+        try:
+            hw = getattr(self, 'hardware_manager', None)
+            if hw is not None:
+                cpu_usage = hw.get_cpu_usage()
+                memory_pressure = hw.get_memory_pressure()
+                if cpu_usage is not None and memory_pressure is not None:
+                    if cpu_usage > 85.0 or memory_pressure > 0.80:
+                        resource_constrained = True
+        except Exception:
+            resource_constrained = False
+
         # Adjust HPO config based on execution mode
         if execution_mode == 'light':
             hpo_config['final_refinement_trials'] = hpo_config.get('final_refinement_trials', 20)
@@ -568,18 +589,26 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             hpo_config['final_refinement_trials'] = hpo_config.get('final_refinement_trials', 5)
             hpo_config['cv_folds'] = hpo_config.get('cv_folds', 2)
         else:  # full
-            hpo_config['final_refinement_trials'] = hpo_config.get('final_refinement_trials', 50)
+            if resource_constrained:
+                default_trials = 25
+            else:
+                default_trials = 50
+            hpo_config['final_refinement_trials'] = hpo_config.get('final_refinement_trials', default_trials)
             hpo_config['cv_folds'] = hpo_config.get('cv_folds', 5)
+
+        default_n_rounds = DEFAULT_HPO_CONFIG.n_rounds
+        if execution_mode == 'full' and resource_constrained and 'n_rounds' not in hpo_config:
+            default_n_rounds = 1
 
         return HPOConfig(
             stages=hpo_config.get('stages', DEFAULT_HPO_CONFIG.stages),
-            n_rounds=hpo_config.get('n_rounds', DEFAULT_HPO_CONFIG.n_rounds),
+            n_rounds=hpo_config.get('n_rounds', default_n_rounds),
             enable_final_refinement=hpo_config.get('enable_final_refinement', True),
             final_refinement_trials=hpo_config['final_refinement_trials'],
             cv_folds=hpo_config['cv_folds'],
             weight_between_within_cv=hpo_config.get('weight_between_within_cv', 0.40),
-            weight_temporal=hpo_config.get('weight_temporal', 0.20),
-            weight_economic=hpo_config.get('weight_economic', 0.40),
+            weight_temporal=hpo_config.get('weight_temporal', 0.10),
+            weight_economic=hpo_config.get('weight_economic', 0.50),
             direction=hpo_config.get('direction', 'maximize'),
             use_custom_balanced_score=hpo_config.get('use_custom_balanced_score', True),
             verbose=hpo_config.get('verbose', True)
@@ -599,12 +628,29 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             # Get HPO config
             hpo_config = self._get_hpo_config(config)
 
+            hpo_market_data = market_data
+            try:
+                rolling_params = config.get('rolling_hmm_params', {}) or {}
+                max_samples = rolling_params.get('max_samples_for_hpo')
+                sample_fraction = rolling_params.get('hpo_sample_fraction')
+                total_samples = len(market_data)
+                cap = total_samples
+                if isinstance(max_samples, int) and max_samples > 0:
+                    cap = min(cap, max_samples)
+                if isinstance(sample_fraction, (float, int)) and 0 < float(sample_fraction) < 1.0:
+                    cap = min(cap, int(total_samples * float(sample_fraction)))
+                if cap < total_samples and cap > 0:
+                    hpo_market_data = market_data.tail(cap)
+                    tprint_info(f"🔧 HPO using subsample of {len(hpo_market_data)} rows out of {total_samples} (rolling_hmm_params cap)")
+            except Exception as e:
+                tprint_debug(f"⚠️ HPO subsampling disabled due to error: {e}")
+
             # Create optimizer
             optimizer = RollingHMMOptimizer(hpo_config)
 
             # Run optimization
             result = optimizer.optimize(
-                market_data,
+                hpo_market_data,
                 feature_engineer,
                 StickyHMMModel,
                 self.quality_assessor
@@ -672,6 +718,14 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             tprint(f"🐛 DEBUG: [STEP 5] features_economic index range: {features_economic.index.min()} to {features_economic.index.max()}", "INFO")
             tprint(f"🐛 DEBUG: [STEP 5] Economic features: {list(features_economic.columns)}", "INFO")
 
+            # Apply PCA on compact economic feature set for HMM emissions
+            features_pca, pca_model, pca_explained = feature_engineer.apply_pca(
+                features_economic,
+                use_cache=True,
+                cache_key=f"economic_{ewma_config.name}",
+            )
+            tprint_info(f"  → PCA explained variance (economic features): {pca_explained:.2%}")
+
             # Create HMM config
             n_components = params.get('n_components', 5)
             min_covar = params.get('min_covar', 1e-3)
@@ -692,13 +746,17 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
 
             tprint_info(f"  → HMM config: n_components={n_components}, kappa={kappa}, min_covar={min_covar}")
 
-            # Fit HMM model using economic features
+            # Fit HMM model using PCA-transformed economic features
             hmm_model = StickyHMMModel(hmm_config)
-            hmm_model.fit(features_economic.values)
+            hmm_model.fit(
+                features_pca.values,
+                ewma_config_name=ewma_config.name,
+                pca_components=features_pca.shape[1],
+            )
 
             # Predict regime labels
-            regime_labels = hmm_model.predict(features_economic.values)
-            regime_probs = hmm_model.predict_proba(features_economic.values)
+            regime_labels = hmm_model.predict(features_pca.values)
+            regime_probs = hmm_model.predict_proba(features_pca.values)
             tprint(f"🐛 DEBUG: [STEP 6] regime_labels after HMM predict: shape={regime_labels.shape}, unique={np.unique(regime_labels)}", "INFO")
             tprint(f"🐛 DEBUG: [STEP 6] regime_probs after HMM predict: {regime_probs.shape}", "INFO")
 
@@ -735,6 +793,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 'regime_labels': regime_labels,
                 'regime_probs': regime_probs,
                 'features': features_economic,
+                'features_pca': features_pca,
                 'original_features': features,
                 'economic_feature_names': list(features_economic.columns),  # Store economic feature names
                 'hmm_model': hmm_model,
@@ -745,6 +804,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 'quality_metrics': metrics.to_dict() if hasattr(metrics, 'to_dict') else metrics,
                 'n_regimes': n_components,
                 'timestamps': features_economic.index,
+                'pca_explained_variance': pca_explained,
                 'hpo_results': hpo_results,  # Include HPO results in the output
                 'best_params': best_params   # Include best params for reference
             }
@@ -771,12 +831,42 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             tprint(f"🐛 DEBUG: [STEP 7] result['regime_labels'] length: {len(result['regime_labels'])}", "INFO")
             tprint(f"🐛 DEBUG: [STEP 7] result['regime_probs'] shape: {result['regime_probs'].shape}", "INFO")
 
-            # Create labels DataFrame
+            # Create labels DataFrame (raw Viterbi regimes)
             labels_df = pd.DataFrame({
                 'timestamp': result['timestamps'],
-                'regime_label': result['regime_labels']
+                'regime_label': result['regime_labels'],
             })
             labels_df.set_index('timestamp', inplace=True)
+
+            # Build ML-friendly labels: posterior-filtered + min run-length smoothing
+            try:
+                probs_array = np.asarray(result['regime_probs'], dtype=float)
+                viterbi_labels = np.asarray(result['regime_labels'], dtype=int)
+                top_prob = probs_array.max(axis=1)
+                ml_labels = viterbi_labels.copy()
+
+                # 1) Posterior confidence filter
+                low_conf_mask = top_prob < 0.55
+                ml_labels[low_conf_mask] = -1
+
+                # 2) Enforce minimum run length for non-noise regimes
+                min_run = 2
+                n = ml_labels.shape[0]
+                start = 0
+                while start < n:
+                    label = ml_labels[start]
+                    end = start + 1
+                    while end < n and ml_labels[end] == label:
+                        end += 1
+                    run_len = end - start
+                    if label != -1 and run_len < min_run:
+                        ml_labels[start:end] = -1
+                    start = end
+
+                labels_df['regime_label_ml'] = ml_labels
+            except Exception:
+                # Fall back gracefully if anything goes wrong
+                labels_df['regime_label_ml'] = labels_df['regime_label']
             tprint(f"🐛 DEBUG: [STEP 8] labels_df shape after creation: {labels_df.shape}", "INFO")
             tprint(f"🐛 DEBUG: [STEP 8] labels_df index range: {labels_df.index.min()} to {labels_df.index.max()}", "INFO")
 
@@ -804,6 +894,60 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             tprint_info(f"  → probs_df shape: {probs_df.shape}")
             tprint_info(f"  → probs_df index type: {type(probs_df.index)}")
             tprint_info(f"  → probs_df index range: {probs_df.index.min()} to {probs_df.index.max()}")
+
+            try:
+                probs_values = probs_df.to_numpy(copy=False)
+                top_prob = probs_values.max(axis=1)
+                eps = 1e-12
+                p_safe = np.clip(probs_values, eps, 1.0)
+                entropy = -np.sum(p_safe * np.log(p_safe), axis=1)
+                regime_indices = np.arange(result['n_regimes'], dtype=float)
+                expected_index = probs_values.dot(regime_indices)
+                confidence_df = pd.DataFrame(
+                    {
+                        'timestamp': probs_df.index,
+                        'regime_top_prob': top_prob,
+                        'regime_entropy': entropy,
+                        'regime_expected_index': expected_index,
+                    }
+                )
+                confidence_df_to_save = confidence_df.reset_index(drop=True)
+                self._save_artifact(
+                    data=confidence_df_to_save,
+                    artifact_name='rolling_hmm_regime_confidence_features',
+                    artifact_type='data',
+                    metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
+                )
+            except Exception as _:
+                pass
+
+            # Save economic features used for HMM emissions so supervised models can reuse
+            # the exact same normalized economic feature space.
+            try:
+                features_economic = result.get('features', None)
+                if isinstance(features_economic, pd.DataFrame) and not features_economic.empty:
+                    tprint_info("  [32mSaving economic features used by Rolling HMM[0m")
+
+                    economic_df_to_save = features_economic.reset_index()
+                    economic_df_to_save.rename(columns={'index': 'timestamp'}, inplace=True)
+
+                    self._save_artifact(
+                        data=economic_df_to_save,
+                        artifact_name='rolling_hmm_economic_features',
+                        artifact_type='data',
+                        metadata={
+                            'symbol': symbol,
+                            'exchange': exchange,
+                            'timeframe': timeframe,
+                            'economic_feature_names': list(features_economic.columns),
+                        },
+                    )
+                else:
+                    tprint_info("  [33mNo economic features found in result['features']; skipping economic artifact save[0m")
+            except Exception as _:
+                # Economic features are a convenience artifact; failure to save them
+                # must not break the main HMM regime discovery pipeline.
+                pass
 
             # Save labels
             # CRITICAL: Reset index to ensure it's saved correctly in HDF5 (same as probs_df)
@@ -1053,6 +1197,38 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 # Create regime labels as pandas Series with timestamps
                 regime_labels_series = pd.Series(regime_labels, index=timestamps, name='regime')
 
+                # Extract regime type annotations from quality metrics if available
+                regime_types = None
+                to_dict_method = getattr(metrics, "to_dict", None)
+                metrics_dict = to_dict_method() if callable(to_dict_method) else metrics
+                if isinstance(metrics_dict, dict):
+                    detected_types = metrics_dict.get('regime_type_per_cluster')
+                    if not detected_types and metrics_dict.get('per_regime_metrics'):
+                        detected_types = {
+                            int(regime_id): regime_data.get('regime_type')
+                            for regime_id, regime_data in metrics_dict['per_regime_metrics'].items()
+                            if regime_data.get('regime_type')
+                        }
+                    if detected_types:
+                        regime_types = {
+                            int(regime_id): regime_type
+                            for regime_id, regime_type in detected_types.items()
+                            if regime_type is not None
+                        }
+                    if not regime_types:
+                        fallback_types = self._infer_regime_types_from_metrics(metrics_dict)
+                        if fallback_types:
+                            regime_types = fallback_types
+                            tprint_info(
+                                f"  → Fallback regime classification inferred from returns: {regime_types}"
+                            )
+                        else:
+                            detected_types = None
+                    if regime_types:
+                        tprint_info(
+                            f"  → Using regime type mapping for economic analysis: {regime_types}"
+                        )
+
                 # Initialize economic analyzer
                 economic_analyzer = RegimeEconomicRelevanceAnalyzer(
                     risk_free_rate=0.02,
@@ -1068,62 +1244,116 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 strategies = economic_analyzer.evaluate_strategies(
                     prices=prices,
                     regime_labels=regime_labels_series,
-                    regime_types=None  # Will be auto-detected
+                    regime_types=regime_types,
+                    use_dynamic_mapping=True,
                 )
 
-                # Perform significance tests
-                tprint_info("  → Performing statistical significance tests")
-                significance_results = None
-                if strategies:
-                    try:
-                        significance_results = economic_analyzer.perform_significance_test(
-                            strategies=strategies,
-                            test_type='block_permutation'
-                        )
-                    except Exception as sig_error:
-                        tprint_warning(f"⚠️  Significance testing failed: {sig_error}")
+                # Optionally perform significance tests on strategies
+                economic_analyzer.perform_significance_test(strategies)
 
-                # Generate economic report with datetime-based naming and caller-specific prefix
-                from datetime import datetime
-                timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-                tprint_info("  → Generating economic relevance report")
-                report_path = economic_analyzer.generate_economic_report(
-                    strategies=strategies,
-                    significance_results=significance_results,
-                    output_dir="outcomes",
-                    report_prefix="rolling_hmm_economic_relevance"
-                )
-
-                # Save results JSON
-                tprint_info("  → Saving economic analysis results")
-                json_path = economic_analyzer.save_results(
-                    strategies=strategies,
-                    significance_results=significance_results,
-                    output_dir="outcomes",
-                    json_prefix="rolling_hmm_economic_analysis"
-                )
-
-                tprint("", "SUCCESS")
-                tprint(f"✅ Economic analysis complete", "SUCCESS")
-                tprint(f"   - Report: {report_path}", "SUCCESS")
-                tprint(f"   - Results: {json_path}", "SUCCESS")
-                tprint("=" * 80, "INFO")
-
-            except Exception as econ_error:
-                tprint_warning(f"⚠️  Economic relevance analysis failed: {econ_error}")
-                self.logger.warning(f"Economic relevance analysis failed: {econ_error}", exc_info=True)
+            except Exception as e:
+                tprint_warning(f"⚠️  Economic relevance analysis failed: {e}")
+                self.logger.warning(f"Economic relevance analysis failed: {e}", exc_info=True)
 
         except Exception as e:
             tprint_warning(f"⚠️  Failed to generate reports: {e}")
             self.logger.warning(f"Failed to generate reports: {e}", exc_info=True)
 
-# ... (rest of the code remains the same)
+    def _infer_regime_types_from_metrics(self, metrics_dict: Dict[str, Any]) -> Dict[int, str]:
+        """Infer regime types using per-regime economic metrics."""
+
+        per_regime_metrics = metrics_dict.get("per_regime_metrics")
+        if not per_regime_metrics:
+            return {}
+
+        regime_data_list: List[Dict[str, float]] = []
+        for regime_id, regime_data in per_regime_metrics.items():
+            if not isinstance(regime_data, dict):
+                continue
+            mean_ret = regime_data.get("mean_return")
+            if mean_ret is None:
+                continue
+
+            regime_data_list.append(
+                {
+                    "id": int(regime_id),
+                    "mean_return": float(mean_ret),
+                    "volatility": float(regime_data.get("volatility", 0.0) or 0.0),
+                    "sharpe": float(regime_data.get("sharpe", 0.0) or 0.0),
+                }
+            )
+
+        if not regime_data_list:
+            return {}
+
+        # Percentile thresholds
+        mean_returns = [r["mean_return"] for r in regime_data_list]
+        vols = [r["volatility"] for r in regime_data_list]
+        sharpes = [r["sharpe"] for r in regime_data_list]
+
+        mean_p70 = float(np.percentile(mean_returns, 70))
+        mean_p30 = float(np.percentile(mean_returns, 30))
+        vol_p70 = float(np.percentile(vols, 70))
+        sharpe_p50 = float(np.percentile(sharpes, 50))
+
+        # Absolute guards: avoid degenerate thresholds when dispersion is tiny
+        mean_abs_threshold = max(0.00015, abs(mean_p30))
+        high_vol_threshold = max(vol_p70, 0.007)
+        positive_sharpe_threshold = max(sharpe_p50, 0.05)
+        negative_sharpe_threshold = min(sharpe_p50, -0.02)
+
+        tprint_debug(
+            "  [RegimeType] Thresholds → "
+            f"mean_p70={mean_p70:.6f}, mean_p30={mean_p30:.6f}, "
+            f"vol_p70={vol_p70:.6f}, sharpe_p50={sharpe_p50:.4f}, "
+            f"high_vol_abs={high_vol_threshold:.6f}"
+        )
+
+        inferred: Dict[int, str] = {}
+        for r in regime_data_list:
+            rid = r["id"]
+            mean_ret = r["mean_return"]
+            vol_val = r["volatility"]
+            sharpe_val = r["sharpe"]
+
+            tprint_debug(
+                "  [RegimeType] Regime {} → mean={:.6f}, vol={:.6f}, sharpe={:.4f}".format(
+                    rid, mean_ret, vol_val, sharpe_val
+                )
+            )
+
+            # Risk-off / volatile regimes: poor returns, elevated vol, negative Sharpe
+            if (
+                (mean_ret < mean_p30 or mean_ret < -mean_abs_threshold)
+                and vol_val > high_vol_threshold
+                and sharpe_val <= negative_sharpe_threshold
+            ):
+                inferred[rid] = "volatile"
+
+            # Trending (risk-on): strong returns with healthy Sharpe
+            elif (
+                mean_ret > max(mean_p70, mean_abs_threshold * 1.5)
+                and sharpe_val >= positive_sharpe_threshold
+            ):
+                inferred[rid] = "trending"
+
+            # Stable / low-vol: muted returns and low volatility
+            elif abs(mean_ret) <= mean_abs_threshold and vol_val < high_vol_threshold * 0.85:
+                inferred[rid] = "stable"
+
+            # Fallback classifications
+            elif sharpe_val < 0 and vol_val > vol_p70:
+                inferred[rid] = "volatile"
+            else:
+                inferred[rid] = "neutral"
+
+        return inferred
+
     def _log_best_params(self, best_params: Dict[str, Any]):
         """Log best parameters from HPO."""
         tprint("Best Parameters:", "INFO")
         for key, value in best_params.items():
-            if key == 'ewma_config_idx':
+            if key == "ewma_config_idx":
                 ewma_config = DEFAULT_EWMA_CONFIGS[int(value)]
                 tprint(f"  - EWMA Config: {ewma_config.name} (idx={value})", "INFO")
             else:
@@ -1157,8 +1387,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
         execution_mode: str,
         timeframe: str
     ) -> pd.DataFrame:
-        """
-        Apply execution mode data filtering (matching statsmodel_clustering pattern).
+        """Apply execution mode data filtering using centralized lookback days.
 
         Args:
             data: Market data DataFrame
@@ -1180,16 +1409,35 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             '1d': 1
         }
 
-        # Determine days limit based on execution mode
-        if execution_mode == 'blank':
-            days_limit = 180  # 180 days for blank mode (full training data)
-            tprint_info(f"  → Blank mode: Using {days_limit} days of data (as per BLANK_MODE_CONFIG)")
-        elif execution_mode == 'light':
-            days_limit = 180  # 180 days (6 months) for light mode
-            tprint_info(f"  → Light mode: Using {days_limit} days of data")
-        else:  # 'full'
+        exec_mode = str(execution_mode or 'full').lower()
+
+        # Full mode: no filtering
+        if exec_mode == 'full':
             tprint_info("  → Full mode: Using all available data (no filtering)")
-            return data  # No filtering for full mode
+            return data
+
+        # Determine days limit based on centralized execution mode configuration
+        try:
+            from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import (
+                get_execution_mode_config,
+            )
+
+            exec_config = get_execution_mode_config()
+            days_limit = exec_config.get_data_loading_days(exec_mode)
+        except Exception:
+            # Fallback: no filtering if centralized config is unavailable
+            days_limit = None
+
+        if days_limit is None:
+            tprint_info(f"  → {exec_mode.capitalize()} mode: No explicit day limit configured, using all available data")
+            return data
+
+        if exec_mode == 'blank':
+            tprint_info(f"  → Blank mode: Using {days_limit} days of data (centralized config)")
+        elif exec_mode == 'light':
+            tprint_info(f"  → Light mode: Using {days_limit} days of data (centralized config)")
+        else:
+            tprint_info(f"  → {exec_mode.capitalize()} mode: Using {days_limit} days of data (centralized config)")
 
         # Calculate sample limit
         samples_per_day = samples_per_day_map.get(timeframe, 24)

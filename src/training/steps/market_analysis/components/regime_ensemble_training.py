@@ -20,6 +20,19 @@ from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 
+# Import des assertions standardisées
+from tests.utils.assertions import (
+    assert_true, assert_false, assert_equals, assert_not_equals,
+    assert_greater_than, assert_less_than, assert_greater_than_or_equal,
+    assert_less_than_or_equal, assert_in, assert_not_in,
+    assert_is_none, assert_is_not_none, assert_is_instance,
+    assert_is_not_instance, assert_dict_structure, assert_list_structure,
+    assert_array_shape, assert_array_dtype, assert_array_range,
+    assert_float_equals, assert_string_contains, assert_string_not_contains,
+    assert_file_exists, assert_directory_exists, assert_key_exists,
+    assert_key_not_exists
+)
+
 # Enhanced imports for new functionality
 from src.utils.ml_common.unified_vectorization_manager import (
     UnifiedVectorizationManager, OperationType, OptimizationStrategy
@@ -827,21 +840,50 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             # EXTRACT SOFT LABELS (POSTERIOR PROBABILITIES)
             soft_labels = None
             sample_weights = None
-            if False and self.enable_soft_labels:  # Temporarily disable soft-label weighting to avoid potential leakage until walk-forward soft labels are guaranteed
+            if self.enable_soft_labels:
                 try:
-                    # Try to get HDP-HMM probabilities first
-                    hdp_probs_artifact = self.artifact_extractor.extract_artifact(
-                        pipeline_state, "hdp_hmm_regime_probabilities", "hdp_hmm_regime_discovery"
-                    )
-                    
-                    if hdp_probs_artifact is not None:
-                        soft_labels = hdp_probs_artifact
-                        tprint(f"✅ [REGIME_ENSEMBLE] Extracted HDP-HMM soft labels (probabilities): {soft_labels.shape}", "green")
+                    # Prefer Rolling HMM regime probabilities present in the input data
+                    prob_cols = [
+                        c for c in protected_data.columns
+                        if isinstance(c, str) and c.startswith('regime_') and c.endswith('_prob')
+                    ]
+                    if prob_cols:
+                        # Sort columns by regime index: regime_0_prob, regime_1_prob, ...
+                        try:
+                            prob_cols_sorted = sorted(
+                                prob_cols,
+                                key=lambda c: int(c.split('_')[1])
+                            )
+                        except Exception:
+                            prob_cols_sorted = prob_cols
+
+                        probs_df = protected_data[prob_cols_sorted].copy()
+                        soft_labels = probs_df.to_numpy(dtype=float, copy=False)
+                        tprint(
+                            f"✅ [REGIME_ENSEMBLE] Using Rolling HMM soft labels from data columns: {len(prob_cols_sorted)} regimes",
+                            "green",
+                        )
                     else:
-                        tprint("⚠️ [REGIME_ENSEMBLE] HDP-HMM soft labels not found. Will use hard labels.", "yellow")
-                        
+                        # Fallback: try legacy HDP-HMM artifact if available
+                        try:
+                            hdp_probs_artifact = self.artifact_extractor.extract_artifact(
+                                pipeline_state, "hdp_hmm_regime_probabilities", "hdp_hmm_regime_discovery"
+                            )
+                            if hdp_probs_artifact is not None:
+                                soft_labels = hdp_probs_artifact
+                                tprint(
+                                    f"✅ [REGIME_ENSEMBLE] Extracted HDP-HMM soft labels (probabilities): {soft_labels.shape}",
+                                    "green",
+                                )
+                            else:
+                                tprint(
+                                    "⚠️ [REGIME_ENSEMBLE] No soft label probabilities found (Rolling HMM or HDP-HMM). Using hard labels only.",
+                                    "yellow",
+                                )
+                        except Exception as inner_e:
+                            tprint(f"⚠️ [REGIME_ENSEMBLE] Error extracting legacy soft labels: {inner_e}", "yellow")
                 except Exception as e:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] Error extracting soft labels: {e}", "yellow")
+                    tprint(f"⚠️ [REGIME_ENSEMBLE] Soft label extraction failed: {e}", "yellow")
 
             
             # Extract base models using standardized extractor
@@ -1122,9 +1164,9 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     tprint(f"   ✅ Test predictions: {test_predictions.shape} (clean, no leakage)", color="green")
 
                     # Validate shapes
-                    assert pred_probs.shape[0] == total_samples, f"Shape mismatch: {pred_probs.shape[0]} != {total_samples}"
-                    assert pred_probs.shape[1] == n_regimes, f"Class mismatch: {pred_probs.shape[1]} != {n_regimes}"
-                    assert test_predictions.shape[0] == n_test, f"Test shape mismatch: {test_predictions.shape[0]} != {n_test}"
+                    assert_equals(pred_probs.shape[0], total_samples, f"Incohérence de forme : nombre d'échantillons {pred_probs.shape[0]} != {total_samples}")
+                    assert_equals(pred_probs.shape[1], n_regimes, f"Incohérence de classes : nombre de régimes {pred_probs.shape[1]} != {n_regimes}")
+                    assert_equals(test_predictions.shape[0], n_test, f"Incohérence de forme de test : {test_predictions.shape[0]} != {n_test}")
 
                     # Calculate NaN statistics
                     nan_count = np.isnan(pred_probs).sum()
@@ -1520,7 +1562,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                                         try:
                                             significance_results = economic_analyzer.perform_significance_test(
                                                 strategies=strategies,
-                                                test_type='block_permutation'
+                                                test_method='block_permutation'
                                             )
                                         except Exception as sig_error:
                                             tprint(f"⚠️ [REGIME_ENSEMBLE] Significance testing failed: {sig_error}", color="yellow")

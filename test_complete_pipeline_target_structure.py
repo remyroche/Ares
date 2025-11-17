@@ -37,11 +37,20 @@ def test_target_detection_in_steps():
         from training.steps.pre_training.feature_generation_final_feature_selection_step import TARGET_COLUMN_NAMES
         print(f"✅ feature_generation_final_feature_selection_step TARGET_COLUMN_NAMES: {TARGET_COLUMN_NAMES}")
         
-        # Verify new targets are included
+        # Verify new targets are included with assertions standardisées
         if 'target_long' in TARGET_COLUMN_NAMES and 'target_short' in TARGET_COLUMN_NAMES:
             print("✅ New simplified target structure (target_long, target_short) found in TARGET_COLUMN_NAMES")
+            # Validation avec assertions standardisées
+            assert_dict_structure(
+                TARGET_COLUMN_NAMES,
+                ['target_long', 'target_short'],
+                message="TARGET_COLUMN_NAMES doit contenir target_long et target_short"
+            )
         else:
             print("❌ New simplified target structure not found in TARGET_COLUMN_NAMES")
+            # Vérification que les clés requises sont manquantes
+            assert 'target_long' in TARGET_COLUMN_NAMES, "target_long devrait être dans TARGET_COLUMN_NAMES"
+            assert 'target_short' in TARGET_COLUMN_NAMES, "target_short devrait être dans TARGET_COLUMN_NAMES"
             return False
     except Exception as e:
         print(f"❌ Error importing feature_generation_final_feature_selection_step: {e}")
@@ -78,16 +87,34 @@ def test_target_processing_logic():
     # Test target detection logic
     from training.steps.pre_training.feature_generation_final_feature_selection_step import TARGET_COLUMN_NAMES
     
-    # Check for new simplified target structure first (highest priority)
+    # Check for new simplified target structure first (highest priority) with assertions standardisées
     if 'target_long' in mock_data.columns and 'target_short' in mock_data.columns:
         available_targets = ['target_long', 'target_short']
         print("✅ New simplified target structure detected correctly")
         print(f"📊 Available targets: {available_targets}")
+        # Validation avec assertions standardisées
+        assert_list_structure(
+            available_targets,
+            min_length=2,
+            max_length=2,
+            item_type=str,
+            message="Les targets disponibles devraient être target_long et target_short"
+        )
+        # Vérifier que les colonnes existent dans les données
+        assert 'target_long' in mock_data.columns, "target_long devrait être dans les colonnes"
+        assert 'target_short' in mock_data.columns, "target_short devrait être dans les colonnes"
     else:
         # Fall back to legacy target detection
         available_targets = [col for col in TARGET_COLUMN_NAMES if col in mock_data.columns]
         print("📊 Using legacy target detection")
         print(f"📊 Available targets: {available_targets}")
+        # Validation avec assertions standardisées
+        assert_list_structure(
+            available_targets,
+            min_length=0,
+            item_type=str,
+            message="Les targets legacy devraient être une liste de chaînes"
+        )
     
     # Test target statistics
     long_signals = (mock_data['target_long'] > 0).sum()
@@ -145,11 +172,20 @@ def test_hdf5_compatibility():
         loaded_data = pd.read_hdf(tmp_path, key='data')
         print(f"✅ Data loaded from HDF5 with shape: {loaded_data.shape}")
         
-        # Verify target columns
+        # Verify target columns with assertions standardisées
         if 'target_long' in loaded_data.columns and 'target_short' in loaded_data.columns:
             print("✅ New target structure preserved in HDF5")
+            # Validation avec assertions standardisées
+            assert_dict_structure(
+                loaded_data,
+                ['target_long', 'target_short'],
+                message="Les données chargées doivent contenir target_long et target_short"
+            )
         else:
             print("❌ New target structure not preserved in HDF5")
+            # Vérification que les colonnes requises sont manquantes
+            assert 'target_long' in loaded_data.columns, "target_long devrait être dans les données chargées"
+            assert 'target_short' in loaded_data.columns, "target_short devrait être dans les données chargées"
             return False
         
         # Clean up

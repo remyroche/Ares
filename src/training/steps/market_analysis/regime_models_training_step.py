@@ -101,6 +101,7 @@ class RegimeModelsTrainingStep(BaseStep):
             # For blank mode, prioritize loading fresh data from historical storage
             execution_mode = config.get('execution_mode', 'light')
             symbol = config.get('symbol', 'UNKNOWN')
+            blank_window_days = config.get('blank_mode_days', config.get('lookback_days', 360))
 
             # CRITICAL: Set execution_mode in context so BaseStep uses correct mode
             self.set_context(execution_mode=execution_mode)
@@ -108,8 +109,8 @@ class RegimeModelsTrainingStep(BaseStep):
 
             # Ensure blank_mode_days is in context for BaseStep to use
             if execution_mode == 'blank' and 'blank_mode_days' not in self._current_context:
-                self.set_context(blank_mode_days=config.get('blank_mode_days', 180))
-                tprint(f"🔧 STEP CONTEXT: Set blank_mode_days={config.get('blank_mode_days', 180)} in context", "INFO")
+                self.set_context(blank_mode_days=blank_window_days)
+                tprint(f"🔧 STEP CONTEXT: Set blank_mode_days={blank_window_days} in context", "INFO")
             elif execution_mode == 'light' and 'light_mode_days' not in self._current_context:
                 self.set_context(light_mode_days=config.get('light_mode_days', 20))
                 tprint(f"🔧 STEP CONTEXT: Set light_mode_days={config.get('light_mode_days', 20)} in context", "INFO")
@@ -174,10 +175,10 @@ class RegimeModelsTrainingStep(BaseStep):
             # Check if we have enough data for blank mode (180 days)
             if execution_mode == 'blank' and market_data is not None:
                 expected_samples_per_day = 24 if timeframe == '1h' else (24 * 4 if timeframe == '15m' else 24)
-                expected_samples = 180 * expected_samples_per_day
+                expected_samples = blank_window_days * expected_samples_per_day
                 actual_samples = len(market_data)
                 
-                tprint(f"📊 Data validation: Expected ~{expected_samples:,} samples for 180 days of {timeframe} data", "INFO")
+                tprint(f"📊 Data validation: Expected ~{expected_samples:,} samples for {blank_window_days} days of {timeframe} data", "INFO")
                 tprint(f"📊 Data validation: Actual samples: {actual_samples:,}", "INFO")
                 
                 # If we have significantly less data than expected, warn the user

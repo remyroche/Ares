@@ -300,10 +300,11 @@ class VersionedArtifactStore:
                 elif pd.api.types.is_bool_dtype(series):
                     column_data = series.astype(np.int8).to_numpy()
                 elif pd.api.types.is_categorical_dtype(series):
-                    # Convert categorical to string, handling NaN properly
-                    column_data = series.astype(str).replace('nan', '').astype('S256').to_numpy()
+                    # Convert categorical to string, handling NaN properly, and store as Unicode
+                    column_data = series.astype(str).replace('nan', '').astype('U256').to_numpy()
                 elif pd.api.types.is_string_dtype(series) or column_data.dtype == object:
-                    column_data = series.fillna('').astype('string').astype('S256').to_numpy()
+                    # Use a Unicode dtype to avoid ASCII encoding issues with non-ASCII characters
+                    column_data = series.fillna('').astype(str).astype('U256').to_numpy()
                 elif pd.api.types.is_float_dtype(series):
                     column_data = series.astype(np.float64).to_numpy()
                 elif pd.api.types.is_integer_dtype(series):

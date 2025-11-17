@@ -111,11 +111,13 @@ class ConservativeOptimizationStrategy(OptimizationStrategy):
             return data
     
     def _clean_non_finite_values(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Clean non-finite values from the DataFrame."""
+        """Clean non-finite values from the DataFrame, with special handling for time features."""
         import numpy as np
 
         # Columns to exclude from cleaning (they are generated elsewhere)
         excluded_patterns = ['regime_', '_prob']
+        # Time-based features that can be safely recomputed from the index
+        time_columns = {'hour', 'day_of_week', 'is_weekend'}
 
         # Check for non-finite values in numeric columns
         numeric_columns = data.select_dtypes(include=[np.number]).columns
@@ -125,6 +127,25 @@ class ConservativeOptimizationStrategy(OptimizationStrategy):
             if any(pattern in col for pattern in excluded_patterns):
                 continue
 
+            # Regenerate time features directly from the index when possible, instead of trying
+            # to forward-fill potentially corrupted values.
+            if col in time_columns and isinstance(data.index, (pd.DatetimeIndex, pd.PeriodIndex)):
+                try:
+                    idx = data.index
+                    if col == 'hour':
+                        data[col] = pd.Series(idx.hour, index=idx, dtype=float)
+                    elif col == 'day_of_week':
+                        data[col] = pd.Series(idx.dayofweek, index=idx, dtype=float)
+                    elif col == 'is_weekend':
+                        dow = pd.Series(idx.dayofweek, index=idx)
+                        data[col] = dow.isin([5, 6]).astype(float)
+                    # After regeneration, continue to the next column without generic cleaning
+                    continue
+                except Exception:
+                    # Fall back to generic cleaning logic below if regeneration fails
+                    if hasattr(self, 'logger'):
+                        self.logger.warning(f"Failed to regenerate time feature '{col}' from index; falling back to generic cleaning")
+
             if col in data.columns:
                 # Count non-finite values
                 non_finite_mask = ~np.isfinite(data[col])
@@ -133,7 +154,11 @@ class ConservativeOptimizationStrategy(OptimizationStrategy):
                 if non_finite_count > 0:
                     # Log the issue
                     if hasattr(self, 'logger'):
-                        self.logger.warning(f"⚠️ Found {non_finite_count} non-finite values in column '{col}' after optimization")
+                        self.logger.warning(
+                            "⚠️ Found %d non-finite values in column '%s' after optimization",
+                            int(non_finite_count),
+                            col,
+                        )
 
                     # Replace non-finite values with the last valid value (forward fill)
                     data[col] = data[col].replace([np.inf, -np.inf], np.nan)
@@ -239,13 +264,45 @@ class BalancedOptimizationStrategy(OptimizationStrategy):
                 pass  # tprint statement removed
 
             # Final data cleaning to ensure no non-finite values
-            optimized_data = self._clean_non_finite_values(optimized_data)
+            try:
+                optimized_data = self._clean_non_finite_values(optimized_data)
+            except Exception as e:
+                # Handle known pandas internal issue gracefully to avoid log spam
+                msg = str(e)
+                if "Gaps in blk ref_locs" in msg:
+                    if not hasattr(self.__class__, "_blk_ref_locs_warning_logged"):
+                        if hasattr(self, "logger"):
+                            self.logger.warning(
+                                "⚠️ Skipping final non-finite cleaning in BalancedOptimizationStrategy due to "
+                                "pandas internal 'Gaps in blk ref_locs' error; returning original data for this "
+                                "optimization run"
+                            )
+                        self.__class__._blk_ref_locs_warning_logged = True
+                else:
+                    if hasattr(self, "logger"):
+                        self.logger.warning(
+                            f"Final non-finite cleaning failed in balanced optimization: {e}"
+                        )
+                # On any cleaning error, fall back to original data to ensure safety
+                return data
             
             self.stats['total_time'] += time.time() - start_time
             return optimized_data
 
         except Exception as e:
-            self.logger.error(f"Error in balanced optimization: {e}")
+            msg = str(e)
+            if "Gaps in blk ref_locs" in msg:
+                # Downgrade this known pandas internal issue to a warning and avoid repeated logs
+                if not hasattr(self.__class__, "_blk_ref_locs_error_logged"):
+                    if hasattr(self, "logger"):
+                        self.logger.warning(
+                            "⚠️ BalancedOptimizationStrategy encountered pandas internal 'Gaps in blk ref_locs'; "
+                            "returning original data without optimization"
+                        )
+                    self.__class__._blk_ref_locs_error_logged = True
+            else:
+                if hasattr(self, "logger"):
+                    self.logger.error(f"Error in balanced optimization: {e}")
             # Return original data on error
             return data
 
@@ -262,6 +319,10 @@ class BalancedOptimizationStrategy(OptimizationStrategy):
         # Columns to exclude from cleaning (they are generated elsewhere)
         excluded_patterns = ['regime_', '_prob']
 
+        # Track columns that repeatedly fail cleaning to avoid log spam
+        if not hasattr(self.__class__, '_cleaning_error_columns'):
+            self.__class__._cleaning_error_columns = set()
+
         # Check for non-finite values in numeric columns
         numeric_columns = data.select_dtypes(include=[np.number]).columns
 
@@ -270,22 +331,37 @@ class BalancedOptimizationStrategy(OptimizationStrategy):
             if any(pattern in col for pattern in excluded_patterns):
                 continue
 
+            # Skip columns that previously triggered internal pandas errors during cleaning
+            if col in self.__class__._cleaning_error_columns:
+                continue
+
             if col in data.columns:
-                # Count non-finite values
-                non_finite_mask = ~np.isfinite(data[col])
-                non_finite_count = non_finite_mask.sum()
+                try:
+                    # Count non-finite values
+                    non_finite_mask = ~np.isfinite(data[col])
+                    non_finite_count = non_finite_mask.sum()
 
-                if non_finite_count > 0:
-                    # Log the issue
-                    if hasattr(self, 'logger'):
-                        self.logger.warning(f"⚠️ Found {non_finite_count} non-finite values in column '{col}' after optimization")
+                    if non_finite_count > 0:
+                        # Log the issue
+                        if hasattr(self, 'logger'):
+                            self.logger.warning(
+                                f"⚠️ Found {non_finite_count} non-finite values in column '{col}' after optimization"
+                            )
 
-                    # Replace non-finite values with the last valid value (forward fill)
-                    data[col] = data[col].replace([np.inf, -np.inf], np.nan)
-                    data[col] = data[col].ffill()  # Use modern pandas syntax
+                        # Replace non-finite values with the last valid value (forward fill)
+                        data[col] = data[col].replace([np.inf, -np.inf], np.nan)
+                        data[col] = data[col].ffill()  # Use modern pandas syntax
 
-                    # If there are still NaN values at the beginning, fill with 0
-                    data[col] = data[col].fillna(0)
+                        # If there are still NaN values at the beginning, fill with 0
+                        data[col] = data[col].fillna(0)
+                except Exception as e:
+                    # Guard against internal pandas index errors (e.g. "index 1 is out of bounds...")
+                    # by skipping further cleaning for this column for the rest of the session.
+                    if hasattr(self, 'logger') and col not in self.__class__._cleaning_error_columns:
+                        self.logger.warning(
+                            f"⚠️ Skipping non-finite cleaning for column '{col}' due to internal error: {e}"
+                        )
+                    self.__class__._cleaning_error_columns.add(col)
 
         return data
 

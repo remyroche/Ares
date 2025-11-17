@@ -862,8 +862,8 @@ class UnifiedEvaluator:
         Simplified custom balanced score for ML trading models in HPO.
         
         This is the DEFAULT scoring metric for all ML-related trading models in HPO.
-        Uses pareto.py's scalarize_financial_goals for financial scoring (60%) 
-        combined with statistical metrics (40%).
+        Uses pareto.py's scalarize_financial_goals for financial scoring (70%) 
+        combined with statistical metrics (30%).
         
         Financial scoring leverages:
         - Non-linear scaling (log for PnL, sigmoid for Sharpe, power for win rate)
@@ -878,7 +878,7 @@ class UnifiedEvaluator:
         Args:
           financial_metrics: FinancialMetrics object with:
             - sharpe_ratio: Risk-adjusted returns (used by Pareto scalarization)
-            - profit_factor: Gross profit / gross loss (mapped to Pareto's 'pnl')
+            - total_return: Strategy PnL proxy (mapped to Pareto's 'pnl'; profit_factor used if available)
             - hit_rate: Win percentage (mapped to Pareto's 'win_rate')
             - max_drawdown: Maximum decline (25% weight, separate from Pareto scoring)
             
@@ -899,13 +899,13 @@ class UnifiedEvaluator:
           use_pareto_scalarization: Legacy parameter (always uses Pareto now)
         
         Implementation:
-          **Financial Component (60%) via pareto.py**:
+          **Financial Component (70%) via pareto.py**:
           - Uses scalarize_financial_goals() with non-linear scaling
-          - Maps: profit_factor → 'pnl', hit_rate → 'win_rate', sharpe_ratio → 'sharpe'
-          - Pareto's default weights: pnl=50%, win_rate=25%, sharpe=25%
+          - Maps: total_return (or profit_factor if available) → 'pnl', hit_rate → 'win_rate', sharpe_ratio → 'sharpe'
+          - Pareto's default weights: approx pnl=66%, sharpe=33%, win_rate=0% (win_rate kept for legacy compatibility)
           - Max drawdown handled separately (25% weight as penalty)
           
-          **Statistical Component (40%)**:
+          **Statistical Component (30%)**:
           - F1 score: 50%, Accuracy: 25%, R²: 25%
           - Standard linear combination of normalized metrics
           
@@ -916,7 +916,7 @@ class UnifiedEvaluator:
           - Power scaling for win_rate enhances discrimination
           - Consistent with other Pareto-based code
         """
-        import math
+        import math, os
     
         # ---------- Simplified Financial & Statistical Metrics ----------
         # Economic viability removed per user request
@@ -1050,9 +1050,11 @@ class UnifiedEvaluator:
             if raw.get('sharpe') is not None:
                 pareto_financial_metrics['sharpe'] = raw['sharpe']
             
-            # Map profit_factor to 'pnl' (both measure profitability)
+            # Map PnL proxy to 'pnl': prefer profit_factor if available, otherwise total_return
             if raw.get('profit_factor') is not None:
                 pareto_financial_metrics['pnl'] = raw['profit_factor']
+            elif raw.get('total_return') is not None:
+                pareto_financial_metrics['pnl'] = raw['total_return']
             
             # Use hit_rate if available, otherwise derive from statistical metrics
             if hasattr(financial_metrics, 'hit_rate') and financial_metrics.hit_rate is not None:
@@ -1076,9 +1078,15 @@ class UnifiedEvaluator:
                 use_nonlinear_scaling=True  # Enable log/sigmoid/power scaling
             )
             
-            # Adjust for max drawdown penalty (25% weight in our system)
-            # Scale financial_obj to 75% of its weight, add 25% drawdown component
-            financial_obj = 0.75 * financial_obj + 0.25 * mdd_penalty
+            # Adjust for max drawdown penalty (25% weight in standard mode)
+            # Optional risk-focus mode increases drawdown contribution while keeping PnL dominant.
+            risk_focus_env = os.getenv("ARES_HPO_RISK_FOCUS", "").lower()
+            risk_focus = risk_focus_env in ("1", "true", "yes", "risk", "high")
+            if risk_focus:
+                base_weight, mdd_weight = 0.60, 0.40
+            else:
+                base_weight, mdd_weight = 0.75, 0.25
+            financial_obj = base_weight * financial_obj + mdd_weight * mdd_penalty
             
             # Clamp to [0, 1]
             financial_obj = max(0.0, min(1.0, financial_obj))
@@ -1126,22 +1134,22 @@ class UnifiedEvaluator:
                 economic_obj = sum(econ_weights.get(k, 0.0) * normed.get(k, 0.0) for k in econ_weights.keys())
         
         # ---------- Simplified Composite Score ----------
-        # Clean 60/40 split: Financial vs Statistical
+        # Clean 70/30 split: Financial vs Statistical
         # Financial component uses Pareto.py's scalarize_financial_goals
         # Economic viability removed (redundant with profit_factor)
         # Regime awareness optional (only if explicitly provided)
         composite_weights = {
-            'financial': 0.60,      # Risk-adjusted returns via Pareto, drawdown, profitability
-            'statistical': 0.40,    # Prediction accuracy
+            'financial': 0.70,      # Risk-adjusted returns via Pareto, drawdown, profitability
+            'statistical': 0.30,    # Prediction accuracy
             'regime': 0.0,          # Optional (only if regime_metrics provided)
             'economic': 0.0         # Removed from default
         }
         
         # If regime metrics are explicitly provided, include them
         if regime_obj > 0.0 and regime_metrics is not None:
-            # Reduce financial and statistical proportionally to make room for regime
-            composite_weights['financial'] = 0.45
-            composite_weights['statistical'] = 0.35
+            # Reduce financial and statistical proportionally (keeping ~70/30 ratio) to make room for regime (20%)
+            composite_weights['financial'] = 0.56
+            composite_weights['statistical'] = 0.24
             composite_weights['regime'] = 0.20  # Significant weight if explicitly provided
             composite_weights['economic'] = 0.0
         

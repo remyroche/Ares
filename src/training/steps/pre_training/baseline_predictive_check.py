@@ -1,692 +1,595 @@
 """
 Baseline Predictive Check Module
 
-This module provides baseline predictive checks using Linear Regression and LightGBM
-to assess feature quality and predictive power before model training.
-
-Features:
-- Linear Regression baseline with residual analysis
-- LightGBM with cross-validation and hyperparameter tuning
-- Feature importance analysis
-- Overfitting detection
-- Comprehensive metrics and interpretations
+Evaluate each feature individually via a simple train/test split using a
+univariate linear regression.
 """
 
+from __future__ import annotations
+
 import logging
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+from itertools import combinations
+
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Optional, Tuple, List
-from datetime import datetime
 from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import cross_val_score, train_test_split, KFold
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
-from sklearn.preprocessing import StandardScaler
-import lightgbm as lgb
-from pathlib import Path
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
+
+try:
+    from lightgbm import LGBMRegressor
+    LGBM_AVAILABLE = True
+except Exception:
+    LGBM_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 
 class BaselinePredictiveCheck:
-    """
-    Performs baseline predictive checks using Linear Regression and LightGBM.
-
-    This class provides a standardized way to:
-    1. Train simple Linear Regression model
-    2. Analyze residuals and estimate noise
-    3. Train LightGBM with cross-validation
-    4. Compare models and detect overfitting
-    5. Extract feature importances
-    """
-
     def __init__(
         self,
         max_features: Optional[int] = None,
         random_state: int = 42,
-        n_cv_folds: int = 5,
-        test_size: float = 0.2
-    ):
-        """
-        Initialize the baseline predictive check.
-
-        Args:
-            max_features: Maximum number of features to use (for sampling)
-            random_state: Random state for reproducibility
-            n_cv_folds: Number of cross-validation folds
-            test_size: Test set size for train/test split
-        """
+        test_size: float = 0.25,
+        enable_lgbm: bool = True,
+    ) -> None:
         self.max_features = max_features
         self.random_state = random_state
-        self.n_cv_folds = n_cv_folds
         self.test_size = test_size
-
-        # Models
-        self.lr_model: Optional[LinearRegression] = None
-        self.lgbm_model: Optional[lgb.LGBMRegressor] = None
-        self.scaler: Optional[StandardScaler] = None
-
-        # Results
         self.results: Dict[str, Any] = {}
+        self.enable_lgbm = enable_lgbm and LGBM_AVAILABLE
+        # Cache last split to reuse for multivariate diagnostics
+        self._last_feature_df: Optional[pd.DataFrame] = None
+        self._last_target_series: Optional[pd.Series] = None
+        self._last_train_idx: Optional[np.ndarray] = None
+        self._last_test_idx: Optional[np.ndarray] = None
 
     def run_check(
         self,
         features: pd.DataFrame,
         target: pd.Series,
-        feature_names: Optional[List[str]] = None
+        feature_names: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """
-        Run the complete baseline predictive check.
-
-        Args:
-            features: Feature dataframe
-            target: Target series
-            feature_names: Optional list of feature names (if not in dataframe)
-
-        Returns:
-            Dict containing all results and metrics
-        """
-        try:
-            logger.info(f"Starting baseline predictive check with {len(features.columns)} features")
-
-            # Prepare data
-            X, y, selected_features = self._prepare_data(features, target)
-
-            if X is None or y is None:
-                return {
-                    'success': False,
-                    'error': 'Failed to prepare data',
-                    'timestamp': datetime.now().isoformat()
-                }
-
-            # Split data
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=self.test_size, random_state=self.random_state
-            )
-
-            # Run Linear Regression check
-            logger.info("Running Linear Regression baseline...")
-            lr_results = self._run_linear_regression(X_train, X_test, y_train, y_test, selected_features)
-
-            # Run LightGBM check
-            logger.info("Running LightGBM baseline...")
-            lgbm_results = self._run_lightgbm(X_train, X_test, y_train, y_test, X, y, selected_features)
-
-            # Compare models and generate interpretation
-            logger.info("Comparing models and generating interpretation...")
-            comparison = self._compare_models(lr_results, lgbm_results)
-            interpretation = self._generate_interpretation(lr_results, lgbm_results, comparison)
-
-            # Compile results
-            self.results = {
-                'success': True,
-                'timestamp': datetime.now().isoformat(),
-                'data_info': {
-                    'n_samples': len(X),
-                    'n_features': X.shape[1],
-                    'train_size': len(X_train),
-                    'test_size': len(X_test),
-                    'selected_features': selected_features,
-                    'target_stats': {
-                        'mean': float(y.mean()),
-                        'std': float(y.std()),
-                        'min': float(y.min()),
-                        'max': float(y.max())
-                    }
-                },
-                'linear_regression': lr_results,
-                'lightgbm': lgbm_results,
-                'comparison': comparison,
-                'interpretation': interpretation
-            }
-
-            logger.info("Baseline predictive check completed successfully")
-            return self.results
-
-        except Exception as e:
-            logger.error(f"Baseline predictive check failed: {e}", exc_info=True)
+        feature_df, target_series, selected_features = self._prepare_data(features, target, feature_names)
+        if feature_df is None or target_series is None or feature_df.empty:
             return {
                 'success': False,
-                'error': str(e),
-                'timestamp': datetime.now().isoformat()
+                'error': 'Failed to prepare data',
+                'timestamp': datetime.now().isoformat(),
             }
+
+        per_feature_metrics = self._evaluate_single_features(feature_df, target_series)
+        if not per_feature_metrics:
+            return {
+                'success': False,
+                'error': 'No valid numeric features to evaluate',
+                'timestamp': datetime.now().isoformat(),
+            }
+
+        summary = self._summarize_feature_metrics(per_feature_metrics)
+        interpretation = self._build_interpretation(summary)
+
+        # Evaluate small multivariate (2-3 feature) LGBM models using the same split
+        multivariate_metrics = self._evaluate_multivariate_combinations(per_feature_metrics)
+        multivariate_summary = self._summarize_multivariate_metrics(multivariate_metrics)
+
+        self.results = {
+            'success': True,
+            'timestamp': datetime.now().isoformat(),
+            'data_info': {
+                'n_samples': len(feature_df),
+                'n_features': len(selected_features),
+                'selected_features': selected_features,
+                'target_stats': {
+                    'mean': float(target_series.mean()),
+                    'std': float(target_series.std()),
+                    'min': float(target_series.min()),
+                    'max': float(target_series.max()),
+                },
+            },
+            'per_feature_metrics': per_feature_metrics,
+            'summary': summary,
+            'interpretation': interpretation,
+            'multivariate_lgbm_metrics': multivariate_metrics,
+            'multivariate_summary': multivariate_summary,
+        }
+        return self.results
 
     def _prepare_data(
         self,
         features: pd.DataFrame,
-        target: pd.Series
+        target: pd.Series,
+        feature_names: Optional[List[str]] = None,
     ) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series], List[str]]:
-        """Prepare data for modeling."""
-        try:
-            # Align features and target
-            common_idx = features.index.intersection(target.index)
-
-            if len(common_idx) == 0:
-                logger.error("No common index between features and target")
-                return None, None, []
-
-            X = features.loc[common_idx]
-            y = target.loc[common_idx]
-
-            # Remove rows with NaN in target
-            valid_mask = y.notna()
-            X = X[valid_mask]
-            y = y[valid_mask]
-
-            # Select numeric features only
-            numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
-            X = X[numeric_cols]
-
-            # Remove features with too many NaNs (>50%)
-            nan_threshold = 0.5
-            good_features = X.columns[X.isnull().mean() < nan_threshold].tolist()
-            X = X[good_features]
-
-            # Fill remaining NaNs with column means
-            X = X.fillna(X.mean())
-
-            # Remove constant features
-            non_constant = X.std() > 1e-10
-            X = X.loc[:, non_constant]
-
-            # Sample features if needed
-            selected_features = X.columns.tolist()
-            if self.max_features and len(selected_features) > self.max_features:
-                np.random.seed(self.random_state)
-                selected_features = np.random.choice(
-                    selected_features,
-                    size=self.max_features,
-                    replace=False
-                ).tolist()
-                X = X[selected_features]
-
-            logger.info(f"Data prepared: {len(X)} samples, {len(selected_features)} features")
-            return X, y, selected_features
-
-        except Exception as e:
-            logger.error(f"Failed to prepare data: {e}")
+        common_idx = features.index.intersection(target.index)
+        if common_idx.empty:
+            logger.warning("No overlapping indices between features and target")
             return None, None, []
 
-    def _run_linear_regression(
+        feature_df = features.loc[common_idx].copy()
+        target_series = target.loc[common_idx].copy()
+
+        valid_mask = target_series.notna()
+        feature_df = feature_df.loc[valid_mask]
+        target_series = target_series.loc[valid_mask]
+
+        numeric_cols = feature_df.select_dtypes(include=[np.number]).columns.tolist()
+        feature_df = feature_df[numeric_cols]
+        if feature_df.empty:
+            return None, None, []
+
+        if feature_names:
+            missing = [col for col in feature_names if col not in feature_df.columns]
+            if missing:
+                logger.warning("Requested baseline features missing: %s", missing)
+            available = [col for col in feature_names if col in feature_df.columns]
+            if not available:
+                return None, None, []
+            feature_df = feature_df[available]
+
+        min_non_na = max(int(len(feature_df) * 0.5), 1)
+        feature_df = feature_df.dropna(axis=1, thresh=min_non_na)
+        if feature_df.empty:
+            return None, None, []
+
+        feature_df = feature_df.fillna(feature_df.mean())
+
+        varying_mask = feature_df.std() > 1e-10
+        feature_df = feature_df.loc[:, varying_mask]
+        if feature_df.empty:
+            return None, None, []
+
+        feature_list = feature_df.columns.tolist()
+        if self.max_features and len(feature_list) > self.max_features:
+            rng = np.random.default_rng(self.random_state)
+            feature_list = rng.choice(feature_list, size=self.max_features, replace=False).tolist()
+            feature_df = feature_df[feature_list]
+
+        return feature_df, target_series, feature_list
+
+    def _evaluate_single_features(
         self,
-        X_train: pd.DataFrame,
-        X_test: pd.DataFrame,
-        y_train: pd.Series,
-        y_test: pd.Series,
-        feature_names: List[str]
-    ) -> Dict[str, Any]:
-        """Run Linear Regression analysis."""
-        try:
-            # Scale features
-            self.scaler = StandardScaler()
-            X_train_scaled = self.scaler.fit_transform(X_train)
-            X_test_scaled = self.scaler.transform(X_test)
+        feature_df: pd.DataFrame,
+        target_series: pd.Series,
+    ) -> List[Dict[str, Any]]:
+        metrics: List[Dict[str, Any]] = []
+        if feature_df.empty:
+            return metrics
 
-            # Train model
-            self.lr_model = LinearRegression()
-            self.lr_model.fit(X_train_scaled, y_train)
+        indices = np.arange(len(feature_df))
+        train_idx, test_idx = train_test_split(
+            indices,
+            test_size=self.test_size,
+            random_state=self.random_state,
+        )
+        y_train = target_series.iloc[train_idx]
+        y_test = target_series.iloc[test_idx]
 
-            # Predictions
-            y_train_pred = self.lr_model.predict(X_train_scaled)
-            y_test_pred = self.lr_model.predict(X_test_scaled)
+        # Cache split and data for multivariate diagnostics
+        self._last_feature_df = feature_df
+        self._last_target_series = target_series
+        self._last_train_idx = train_idx
+        self._last_test_idx = test_idx
 
-            # Metrics
+        for column in feature_df.columns:
+            series = feature_df[column]
+            std = float(series.std())
+            if std <= 1e-10:
+                continue
+
+            model = LinearRegression()
+            X_train = series.iloc[train_idx].values.reshape(-1, 1)
+            X_test = series.iloc[test_idx].values.reshape(-1, 1)
+            model.fit(X_train, y_train)
+
+            y_train_pred = model.predict(X_train)
+            y_test_pred = model.predict(X_test)
+
             train_r2 = r2_score(y_train, y_train_pred)
             test_r2 = r2_score(y_test, y_test_pred)
+            # Older scikit-learn versions do not support the `squared` keyword, so compute
+            # RMSE manually as the square root of MSE for compatibility.
             train_mse = mean_squared_error(y_train, y_train_pred)
             test_mse = mean_squared_error(y_test, y_test_pred)
+            train_rmse = float(np.sqrt(train_mse))
+            test_rmse = float(np.sqrt(test_mse))
             train_mae = mean_absolute_error(y_train, y_train_pred)
             test_mae = mean_absolute_error(y_test, y_test_pred)
 
-            # Residual analysis
-            train_residuals = y_train - y_train_pred
-            test_residuals = y_test - y_test_pred
+            lgbm_train_r2 = None
+            lgbm_test_r2 = None
+            lgbm_train_rmse = None
+            lgbm_test_rmse = None
+            lgbm_train_mae = None
+            lgbm_test_mae = None
+            if self.enable_lgbm:
+                try:
+                    lgbm_model = LGBMRegressor(
+                        n_estimators=100,
+                        learning_rate=0.05,
+                        max_depth=3,
+                        num_leaves=15,
+                        subsample=0.8,
+                        colsample_bytree=1.0,
+                        min_child_samples=max(10, int(len(X_train) * 0.05)),
+                        random_state=self.random_state,
+                        n_jobs=1,
+                    )
+                    lgbm_model.fit(X_train, y_train)
+                    y_train_pred_lgbm = lgbm_model.predict(X_train)
+                    y_test_pred_lgbm = lgbm_model.predict(X_test)
+                    lgbm_train_r2 = float(r2_score(y_train, y_train_pred_lgbm))
+                    lgbm_test_r2 = float(r2_score(y_test, y_test_pred_lgbm))
+                    lgbm_train_mse = mean_squared_error(y_train, y_train_pred_lgbm)
+                    lgbm_test_mse = mean_squared_error(y_test, y_test_pred_lgbm)
+                    lgbm_train_rmse = float(np.sqrt(lgbm_train_mse))
+                    lgbm_test_rmse = float(np.sqrt(lgbm_test_mse))
+                    lgbm_train_mae = float(mean_absolute_error(y_train, y_train_pred_lgbm))
+                    lgbm_test_mae = float(mean_absolute_error(y_test, y_test_pred_lgbm))
+                except Exception as exc:
+                    logger.warning("LGBM evaluation failed for feature %s: %s", column, exc)
 
-            residual_stats = {
-                'train_mean': float(train_residuals.mean()),
-                'train_std': float(train_residuals.std()),
-                'test_mean': float(test_residuals.mean()),
-                'test_std': float(test_residuals.std()),
-                'train_noise_estimate': float(train_residuals.std()),
-                'test_noise_estimate': float(test_residuals.std())
-            }
+            pearson_corr = float(series.corr(target_series))
+            spearman_corr = float(series.rank().corr(target_series.rank()))
 
-            # Feature coefficients analysis
-            coefficients = pd.Series(
-                self.lr_model.coef_,
-                index=feature_names
-            ).sort_values(key=abs, ascending=False)
+            quality_score = max(test_r2, 0.0) * 0.6 + abs(pearson_corr) * 0.4
 
-            top_coefficients = {
-                str(k): float(v)
-                for k, v in coefficients.head(10).items()
-            }
-
-            # Signal detection
-            significant_features = sum(abs(coefficients) > 0.1)
-            signal_strength = float(abs(coefficients).mean())
-
-            return {
-                'train_r2': float(train_r2),
-                'test_r2': float(test_r2),
-                'train_mse': float(train_mse),
-                'test_mse': float(test_mse),
-                'train_mae': float(train_mae),
-                'test_mae': float(test_mae),
-                'train_rmse': float(np.sqrt(train_mse)),
-                'test_rmse': float(np.sqrt(test_mse)),
-                'residual_analysis': residual_stats,
-                'top_coefficients': top_coefficients,
-                'significant_features': int(significant_features),
-                'signal_strength': signal_strength,
-                'overfitting_gap': float(train_r2 - test_r2)
-            }
-
-        except Exception as e:
-            logger.error(f"Linear Regression failed: {e}")
-            return {'error': str(e)}
-
-    def _run_lightgbm(
-        self,
-        X_train: pd.DataFrame,
-        X_test: pd.DataFrame,
-        y_train: pd.Series,
-        y_test: pd.Series,
-        X_full: pd.DataFrame,
-        y_full: pd.Series,
-        feature_names: List[str]
-    ) -> Dict[str, Any]:
-        """Run LightGBM analysis with cross-validation."""
-        try:
-            # Create LightGBM datasets
-            train_data = lgb.Dataset(X_train, label=y_train)
-
-            # Define parameters for tuning
-            params = {
-                'objective': 'regression',
-                'metric': 'rmse',
-                'boosting_type': 'gbdt',
-                'num_leaves': 31,
-                'learning_rate': 0.05,
-                'feature_fraction': 0.8,
-                'bagging_fraction': 0.8,
-                'bagging_freq': 5,
-                'verbose': -1,
-                'random_state': self.random_state
-            }
-
-            # Cross-validation
-            cv_results = lgb.cv(
-                params,
-                train_data,
-                num_boost_round=100,
-                nfold=self.n_cv_folds,
-                stratified=False,
-                shuffle=False,
-                metrics=['rmse', 'l2'],
-                return_cvbooster=True
+            metrics.append(
+                {
+                    'feature': column,
+                    'train_r2': float(train_r2),
+                    'test_r2': float(test_r2),
+                    'train_rmse': float(train_rmse),
+                    'test_rmse': float(test_rmse),
+                    'train_mae': float(train_mae),
+                    'test_mae': float(test_mae),
+                    'lgbm_train_r2': lgbm_train_r2,
+                    'lgbm_test_r2': lgbm_test_r2,
+                    'lgbm_train_rmse': lgbm_train_rmse,
+                    'lgbm_test_rmse': lgbm_test_rmse,
+                    'lgbm_train_mae': lgbm_train_mae,
+                    'lgbm_test_mae': lgbm_test_mae,
+                    'pearson_corr': pearson_corr,
+                    'spearman_corr': spearman_corr,
+                    'quality_score': float(quality_score),
+                }
             )
 
-            # Train final model
-            self.lgbm_model = lgb.train(
-                params,
-                train_data,
-                num_boost_round=len(cv_results['valid rmse-mean'])
-            )
+        metrics.sort(key=lambda item: item['quality_score'], reverse=True)
+        return metrics
 
-            # Predictions
-            y_train_pred = self.lgbm_model.predict(X_train)
-            y_test_pred = self.lgbm_model.predict(X_test)
-
-            # Metrics
-            train_r2 = r2_score(y_train, y_train_pred)
-            test_r2 = r2_score(y_test, y_test_pred)
-            train_mse = mean_squared_error(y_train, y_train_pred)
-            test_mse = mean_squared_error(y_test, y_test_pred)
-            train_mae = mean_absolute_error(y_train, y_train_pred)
-            test_mae = mean_absolute_error(y_test, y_test_pred)
-
-            # Feature importance
-            importance = pd.Series(
-                self.lgbm_model.feature_importance(importance_type='gain'),
-                index=feature_names
-            ).sort_values(ascending=False)
-
-            top_importance = {
-                str(k): float(v)
-                for k, v in importance.head(10).items()
-            }
-
-            # CV statistics
-            cv_mean = float(cv_results['valid rmse-mean'][-1])
-            cv_std = float(cv_results['valid rmse-stdv'][-1])
-
-            return {
-                'train_r2': float(train_r2),
-                'test_r2': float(test_r2),
-                'train_mse': float(train_mse),
-                'test_mse': float(test_mse),
-                'train_mae': float(train_mae),
-                'test_mae': float(test_mae),
-                'train_rmse': float(np.sqrt(train_mse)),
-                'test_rmse': float(np.sqrt(test_mse)),
-                'cv_rmse_mean': cv_mean,
-                'cv_rmse_std': cv_std,
-                'top_feature_importance': top_importance,
-                'overfitting_gap': float(train_r2 - test_r2),
-                'n_trees': len(cv_results['valid rmse-mean'])
-            }
-
-        except Exception as e:
-            logger.error(f"LightGBM failed: {e}")
-            return {'error': str(e)}
-
-    def _compare_models(
+    def _evaluate_multivariate_combinations(
         self,
-        lr_results: Dict[str, Any],
-        lgbm_results: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Compare Linear Regression and LightGBM results."""
-        try:
-            if 'error' in lr_results or 'error' in lgbm_results:
-                return {'error': 'One or both models failed'}
+        per_feature_metrics: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Evaluate small multivariate (2-3 feature) LGBM models.
 
-            lr_test_r2 = lr_results['test_r2']
-            lgbm_test_r2 = lgbm_results['test_r2']
+        Uses the same cached train/test split as the univariate baseline to
+        assess the combined predictive power of top-ranked features.
+        """
+        if not (self.enable_lgbm and LGBM_AVAILABLE):
+            return []
 
-            improvement = lgbm_test_r2 - lr_test_r2
-            improvement_pct = (improvement / max(abs(lr_test_r2), 1e-10)) * 100
+        if (
+            self._last_feature_df is None
+            or self._last_target_series is None
+            or self._last_train_idx is None
+            or self._last_test_idx is None
+        ):
+            return []
 
-            lr_mse = lr_results['test_mse']
-            lgbm_mse = lgbm_results['test_mse']
-            mse_improvement = ((lr_mse - lgbm_mse) / max(lr_mse, 1e-10)) * 100
+        feature_df = self._last_feature_df
+        target_series = self._last_target_series
+        train_idx = self._last_train_idx
+        test_idx = self._last_test_idx
 
-            return {
-                'lr_test_r2': float(lr_test_r2),
-                'lgbm_test_r2': float(lgbm_test_r2),
-                'r2_improvement': float(improvement),
-                'r2_improvement_pct': float(improvement_pct),
-                'lr_test_mse': float(lr_mse),
-                'lgbm_test_mse': float(lgbm_mse),
-                'mse_improvement_pct': float(mse_improvement),
-                'lgbm_better': lgbm_test_r2 > lr_test_r2,
-                'both_poor': lr_test_r2 < 0.1 and lgbm_test_r2 < 0.1
-            }
+        # Defensive: ensure indices are numpy arrays for iloc
+        train_idx = np.asarray(train_idx)
+        test_idx = np.asarray(test_idx)
 
-        except Exception as e:
-            logger.error(f"Model comparison failed: {e}")
-            return {'error': str(e)}
+        y_train = target_series.iloc[train_idx]
+        y_test = target_series.iloc[test_idx]
 
-    def _generate_interpretation(
-        self,
-        lr_results: Dict[str, Any],
-        lgbm_results: Dict[str, Any],
-        comparison: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Generate human-readable interpretation of results."""
-        try:
-            if 'error' in comparison:
-                return {'interpretation': 'Analysis failed', 'recommendation': 'Check model errors'}
+        # Use the top-K single features by quality score as candidates
+        if not per_feature_metrics:
+            return []
 
-            interpretations = []
-            recommendations = []
-            quality_score = 0.0
+        top_k = min(8, len(per_feature_metrics))
+        candidate_features = [m['feature'] for m in per_feature_metrics[:top_k]]
 
-            # Interpret Linear Regression performance
-            lr_r2 = lr_results['test_r2']
-            if lr_r2 > 0.5:
-                interpretations.append("Linear Regression shows strong performance, indicating linear relationships in data")
-                quality_score += 2
-            elif lr_r2 > 0.2:
-                interpretations.append("Linear Regression shows moderate performance, some linear signal present")
-                quality_score += 1
-            else:
-                interpretations.append("Linear Regression shows poor performance, limited linear relationships")
+        results: List[Dict[str, Any]] = []
+        for size in (2, 3):
+            if len(candidate_features) < size:
+                continue
+            for combo in combinations(candidate_features, size):
+                cols = list(combo)
+                try:
+                    X_train = feature_df.iloc[train_idx][cols].values
+                    X_test = feature_df.iloc[test_idx][cols].values
 
-            # Interpret LightGBM performance
-            lgbm_r2 = lgbm_results['test_r2']
-            if lgbm_r2 > 0.5:
-                interpretations.append("LightGBM shows strong performance")
-                quality_score += 2
-            elif lgbm_r2 > 0.2:
-                interpretations.append("LightGBM shows moderate performance")
-                quality_score += 1
-            else:
-                interpretations.append("LightGBM shows poor performance")
+                    model = LGBMRegressor(
+                        n_estimators=150,
+                        learning_rate=0.05,
+                        max_depth=3,
+                        num_leaves=15,
+                        subsample=0.8,
+                        colsample_bytree=1.0,
+                        min_child_samples=max(10, int(len(X_train) * 0.05)),
+                        random_state=self.random_state,
+                        n_jobs=1,
+                    )
+                    model.fit(X_train, y_train)
 
-            # Interpret comparison
-            if comparison['lgbm_better'] and comparison['r2_improvement'] > 0.1:
-                interpretations.append("LightGBM significantly outperforms Linear Regression → nonlinear relationships and feature interactions exist")
-                recommendations.append("Consider using tree-based models or neural networks")
-                quality_score += 1
-            elif comparison['lgbm_better']:
-                interpretations.append("LightGBM slightly outperforms Linear Regression → some nonlinearity present")
-            else:
-                interpretations.append("Linear Regression matches or exceeds LightGBM → relationships are primarily linear")
-                recommendations.append("Linear models may be sufficient")
+                    y_train_pred = model.predict(X_train)
+                    y_test_pred = model.predict(X_test)
 
-            # Check for overfitting
-            lr_overfit = lr_results.get('overfitting_gap', 0)
-            lgbm_overfit = lgbm_results.get('overfitting_gap', 0)
+                    train_r2 = float(r2_score(y_train, y_train_pred))
+                    test_r2 = float(r2_score(y_test, y_test_pred))
+                    train_mse = mean_squared_error(y_train, y_train_pred)
+                    test_mse = mean_squared_error(y_test, y_test_pred)
+                    train_rmse = float(np.sqrt(train_mse))
+                    test_rmse = float(np.sqrt(test_mse))
+                    train_mae = float(mean_absolute_error(y_train, y_train_pred))
+                    test_mae = float(mean_absolute_error(y_test, y_test_pred))
 
-            if lgbm_overfit > 0.2:
-                interpretations.append("LightGBM shows signs of overfitting (train-test gap > 0.2)")
-                recommendations.append("Consider regularization or feature selection")
+                    results.append(
+                        {
+                            'features': cols,
+                            'size': size,
+                            'train_r2': train_r2,
+                            'test_r2': test_r2,
+                            'train_rmse': train_rmse,
+                            'test_rmse': test_rmse,
+                            'train_mae': train_mae,
+                            'test_mae': test_mae,
+                        }
+                    )
+                except Exception as exc:
+                    logger.warning("Multivariate LGBM evaluation failed for %s: %s", combo, exc)
+                    continue
 
-            # Overall assessment
-            if comparison['both_poor']:
-                interpretations.append("⚠️ Both models perform poorly → features or target are weak/noisy")
-                recommendations.append("Consider going back to data diagnostics (target/features)")
-                recommendations.append("Examine target variable definition and feature engineering")
+        results.sort(key=lambda m: m['test_r2'], reverse=True)
+        return results
 
-            # Noise analysis
-            noise_estimate = lr_results.get('residual_analysis', {}).get('test_noise_estimate', 0)
-            target_std = abs(lr_results.get('test_mse', 1)) ** 0.5
-            if noise_estimate > target_std * 0.8:
-                interpretations.append(f"High noise level detected (noise ≈ {noise_estimate:.3f})")
-                recommendations.append("Consider noise reduction or robust modeling techniques")
+    @staticmethod
+    def _summarize_feature_metrics(metrics: List[Dict[str, Any]]) -> Dict[str, Any]:
+        best = metrics[0]
+        positive = [m for m in metrics if m['test_r2'] > 0]
+        avg_test_r2 = float(np.mean([m['test_r2'] for m in metrics])) if metrics else 0.0
+        median_test_r2 = float(np.median([m['test_r2'] for m in metrics])) if metrics else 0.0
 
-            # Normalize quality score to 0-1 range
-            quality_score = min(quality_score / 5.0, 1.0)
+        lgbm_best_feature = None
+        lgbm_best_test_r2 = None
+        lgbm_metrics = [m for m in metrics if m.get('lgbm_test_r2') is not None]
+        if lgbm_metrics:
+            best_lgbm = max(lgbm_metrics, key=lambda m: m['lgbm_test_r2'])
+            lgbm_best_feature = best_lgbm['feature']
+            lgbm_best_test_r2 = best_lgbm['lgbm_test_r2']
 
-            return {
-                'interpretations': interpretations,
-                'recommendations': recommendations,
-                'quality_score': float(quality_score),
-                'summary': self._generate_summary(comparison, quality_score)
-            }
+        summary: Dict[str, Any] = {
+            'best_feature': best['feature'],
+            'best_test_r2': best['test_r2'],
+            'best_quality_score': best['quality_score'],
+            'positive_features': len(positive),
+            'positive_ratio': len(positive) / max(len(metrics), 1),
+            'avg_test_r2': avg_test_r2,
+            'median_test_r2': median_test_r2,
+            'top_features': metrics[: min(10, len(metrics))],
+        }
+        if lgbm_best_feature is not None and lgbm_best_test_r2 is not None:
+            summary['lgbm_best_feature'] = lgbm_best_feature
+            summary['lgbm_best_test_r2'] = float(lgbm_best_test_r2)
+        return summary
 
-        except Exception as e:
-            logger.error(f"Interpretation generation failed: {e}")
-            return {
-                'interpretations': ['Error generating interpretation'],
-                'recommendations': ['Check logs for details'],
-                'quality_score': 0.0,
-                'summary': 'Analysis incomplete'
-            }
+    @staticmethod
+    def _summarize_multivariate_metrics(metrics: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Summarize multivariate LGBM diagnostics.
 
-    def _generate_summary(self, comparison: Dict[str, Any], quality_score: float) -> str:
-        """Generate a one-line summary of the analysis."""
-        if comparison.get('both_poor', False):
-            return "⚠️ Poor predictive power - revisit features and target"
-        elif comparison.get('lgbm_better', False) and comparison.get('r2_improvement', 0) > 0.1:
-            return "✓ Strong nonlinear relationships detected - use advanced models"
-        elif quality_score > 0.6:
-            return "✓ Good predictive potential - proceed with confidence"
+        Returns best pair and best triplet (by Test R²) if available.
+        """
+        summary: Dict[str, Any] = {}
+        if not metrics:
+            return summary
+
+        pairs = [m for m in metrics if m.get('size') == 2]
+        triplets = [m for m in metrics if m.get('size') == 3]
+
+        def _best(items: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+            return max(items, key=lambda m: m['test_r2']) if items else None
+
+        best_pair = _best(pairs)
+        best_triplet = _best(triplets)
+
+        if best_pair:
+            summary['best_pair_features'] = best_pair['features']
+            summary['best_pair_test_r2'] = float(best_pair['test_r2'])
+
+        if best_triplet:
+            summary['best_triplet_features'] = best_triplet['features']
+            summary['best_triplet_test_r2'] = float(best_triplet['test_r2'])
+
+        summary['num_pairs_evaluated'] = len(pairs)
+        summary['num_triplets_evaluated'] = len(triplets)
+        return summary
+
+    @staticmethod
+    def _build_interpretation(summary: Dict[str, Any]) -> Dict[str, Any]:
+        quality_score = summary['best_quality_score']
+        positive_ratio = summary['positive_ratio']
+
+        if quality_score > 0.5:
+            summary_text = "✅ Strong individual signals detected"
+        elif positive_ratio > 0.25:
+            summary_text = "⚠️ Moderate predictive signals detected"
         else:
-            return "⚠️ Moderate predictive power - consider feature engineering"
+            summary_text = "⚠️ Weak predictive signals"
+
+        insights = [
+            f"Best feature `{summary['best_feature']}` achieved Test R² = {summary['best_test_r2']:.3f}",
+            f"Positive Test R² features: {summary['positive_features']} ({positive_ratio:.1%})",
+            f"Median Test R² across evaluated features: {summary['median_test_r2']:.3f}",
+        ]
+        if 'lgbm_best_feature' in summary and 'lgbm_best_test_r2' in summary:
+            insights.append(
+                f"LGBM best feature `{summary['lgbm_best_feature']}` achieved Test R² = {summary['lgbm_best_test_r2']:.3f}"
+            )
+
+        recommendations: List[str] = []
+        if positive_ratio < 0.2:
+            recommendations.append("Consider revisiting labeling/target definitions; very few features carry signal")
+        if summary['best_test_r2'] < 0:
+            recommendations.append("Even the best single feature underperforms; investigate data leakage or excessive noise")
+        if not recommendations:
+            recommendations.append("Focus downstream modeling on the top-ranked features")
+
+        return {
+            'quality_score': float(min(max(quality_score, 0.0), 1.0)),
+            'summary': summary_text,
+            'interpretations': insights,
+            'recommendations': recommendations,
+        }
 
     def save_results_to_csv(self, output_dir: Path, filename_prefix: str = "baseline_check") -> str:
-        """
-        Save detailed results to CSV file.
-
-        Args:
-            output_dir: Output directory path
-            filename_prefix: Prefix for the filename
-
-        Returns:
-            Path to saved CSV file
-        """
-        try:
-            if not self.results or not self.results.get('success', False):
-                logger.error("No valid results to save")
-                return ""
-
-            # Create output directory
-            output_dir = Path(output_dir)
-            output_dir.mkdir(parents=True, exist_ok=True)
-
-            # Generate filename with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{filename_prefix}_{timestamp}.csv"
-            filepath = output_dir / filename
-
-            # Flatten results for CSV
-            rows = []
-
-            # Data info
-            data_info = self.results.get('data_info', {})
-            rows.append({
-                'metric_category': 'data_info',
-                'metric_name': 'n_samples',
-                'value': data_info.get('n_samples', 0)
-            })
-            rows.append({
-                'metric_category': 'data_info',
-                'metric_name': 'n_features',
-                'value': data_info.get('n_features', 0)
-            })
-
-            # Linear Regression metrics
-            lr_results = self.results.get('linear_regression', {})
-            for key, value in lr_results.items():
-                if isinstance(value, (int, float)):
-                    rows.append({
-                        'metric_category': 'linear_regression',
-                        'metric_name': key,
-                        'value': value
-                    })
-
-            # LightGBM metrics
-            lgbm_results = self.results.get('lightgbm', {})
-            for key, value in lgbm_results.items():
-                if isinstance(value, (int, float)):
-                    rows.append({
-                        'metric_category': 'lightgbm',
-                        'metric_name': key,
-                        'value': value
-                    })
-
-            # Comparison metrics
-            comparison = self.results.get('comparison', {})
-            for key, value in comparison.items():
-                if isinstance(value, (int, float, bool)):
-                    rows.append({
-                        'metric_category': 'comparison',
-                        'metric_name': key,
-                        'value': value
-                    })
-
-            # Interpretation
-            interpretation = self.results.get('interpretation', {})
-            rows.append({
-                'metric_category': 'interpretation',
-                'metric_name': 'quality_score',
-                'value': interpretation.get('quality_score', 0)
-            })
-            rows.append({
-                'metric_category': 'interpretation',
-                'metric_name': 'summary',
-                'value': interpretation.get('summary', '')
-            })
-
-            # Create DataFrame and save
-            df = pd.DataFrame(rows)
-            df['timestamp'] = self.results.get('timestamp', datetime.now().isoformat())
-            df.to_csv(filepath, index=False)
-
-            logger.info(f"Results saved to {filepath}")
-            return str(filepath)
-
-        except Exception as e:
-            logger.error(f"Failed to save results to CSV: {e}")
+        if not self.results or not self.results.get('success', False):
+            logger.error("No baseline results available to export")
             return ""
 
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        filepath = output_dir / f"{filename_prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+        rows = []
+        data_info = self.results.get('data_info', {})
+        rows.append({'metric_category': 'data_info', 'metric_name': 'n_samples', 'value': data_info.get('n_samples', 0)})
+        rows.append({'metric_category': 'data_info', 'metric_name': 'n_features', 'value': data_info.get('n_features', 0)})
+
+        per_feature_metrics = self.results.get('per_feature_metrics', [])
+        for metric in per_feature_metrics:
+            rows.append({
+                'metric_category': 'per_feature',
+                'metric_name': metric['feature'],
+                'value': metric['test_r2'],
+            })
+
+        for metric in per_feature_metrics:
+            lgbm_test_r2 = metric.get('lgbm_test_r2')
+            if lgbm_test_r2 is not None:
+                rows.append({
+                    'metric_category': 'per_feature_lgbm',
+                    'metric_name': metric['feature'],
+                    'value': lgbm_test_r2,
+                })
+
+        summary = self.results.get('summary', {})
+        rows.append({'metric_category': 'summary', 'metric_name': 'best_feature', 'value': summary.get('best_feature', '')})
+        rows.append({'metric_category': 'summary', 'metric_name': 'best_test_r2', 'value': summary.get('best_test_r2', 0)})
+        if 'lgbm_best_feature' in summary:
+            rows.append({'metric_category': 'summary', 'metric_name': 'lgbm_best_feature', 'value': summary.get('lgbm_best_feature', '')})
+        if 'lgbm_best_test_r2' in summary:
+            rows.append({'metric_category': 'summary', 'metric_name': 'lgbm_best_test_r2', 'value': summary.get('lgbm_best_test_r2', 0)})
+
+        interpretation = self.results.get('interpretation', {})
+        rows.append({'metric_category': 'interpretation', 'metric_name': 'quality_score', 'value': interpretation.get('quality_score', 0)})
+        rows.append({'metric_category': 'interpretation', 'metric_name': 'summary', 'value': interpretation.get('summary', '')})
+
+        df = pd.DataFrame(rows)
+        df['timestamp'] = self.results.get('timestamp', datetime.now().isoformat())
+        df.to_csv(filepath, index=False)
+        return str(filepath)
+
+    def save_multivariate_results_to_csv(self, output_dir: Path, filename_prefix: str = "multivariate_baseline") -> str:
+        """Save small multivariate LGBM diagnostics to a dedicated CSV file."""
+        if not self.results or not self.results.get('success', False):
+            logger.error("No baseline results available to export (multivariate)")
+            return ""
+
+        metrics = self.results.get('multivariate_lgbm_metrics', [])
+        if not metrics:
+            return ""
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        filepath = output_dir / f"{filename_prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+        rows = []
+        for item in metrics:
+            rows.append(
+                {
+                    'model_size': item.get('size', 0),
+                    'features': ",".join(item.get('features', [])),
+                    'train_r2': item.get('train_r2', 0.0),
+                    'test_r2': item.get('test_r2', 0.0),
+                    'train_rmse': item.get('train_rmse', 0.0),
+                    'test_rmse': item.get('test_rmse', 0.0),
+                    'train_mae': item.get('train_mae', 0.0),
+                    'test_mae': item.get('test_mae', 0.0),
+                }
+            )
+
+        df = pd.DataFrame(rows)
+        df['timestamp'] = self.results.get('timestamp', datetime.now().isoformat())
+        df.to_csv(filepath, index=False)
+        return str(filepath)
+
     def format_for_markdown(self) -> str:
-        """
-        Format results for markdown report.
+        if not self.results or not self.results.get('success', False):
+            return "## Baseline Predictive Check\n\n❌ Check failed or not run\n"
 
-        Returns:
-            Markdown-formatted string
-        """
-        try:
-            if not self.results or not self.results.get('success', False):
-                return "## Baseline Predictive Check\n\n❌ Check failed or not run\n"
+        md = "## Baseline Predictive Check\n\n"
+        data_info = self.results.get('data_info', {})
+        md += f"**Dataset:** {data_info.get('n_samples', 0)} samples, {data_info.get('n_features', 0)} features\n\n"
 
-            md = "## Baseline Predictive Check\n\n"
+        md += "### Top Single-Feature Signals\n\n"
+        md += "| Rank | Feature | Test R² | Pearson | Quality Score |\n"
+        md += "|------|---------|---------|---------|---------------|\n"
+        top_features = self.results.get('summary', {}).get('top_features', [])
+        for idx, metric in enumerate(top_features[:5], 1):
+            md += (
+                f"| {idx} | `{metric['feature']}` | {metric['test_r2']:.3f} | "
+                f"{metric['pearson_corr']:.3f} | {metric['quality_score']:.3f} |\n"
+            )
+        md += "\n"
 
-            # Overview
-            data_info = self.results.get('data_info', {})
-            md += f"**Dataset**: {data_info.get('n_samples', 0)} samples, {data_info.get('n_features', 0)} features\n\n"
+        # Small multivariate LGBM baseline (2-3 feature combinations)
+        multivariate_summary = self.results.get('multivariate_summary', {})
+        multivariate_metrics = self.results.get('multivariate_lgbm_metrics', [])
+        if multivariate_metrics:
+            md += "### Small Multivariate LGBM Baseline\n\n"
+            md += "| Type | Features | Test R² |\n"
+            md += "|------|----------|---------|\n"
 
-            # Linear Regression section
-            lr_results = self.results.get('linear_regression', {})
-            if 'error' not in lr_results:
-                md += "### Linear Regression Baseline\n\n"
-                md += f"- **Test R²**: {lr_results.get('test_r2', 0):.4f}\n"
-                md += f"- **Test RMSE**: {lr_results.get('test_rmse', 0):.4f}\n"
-                md += f"- **Noise Estimate**: {lr_results.get('residual_analysis', {}).get('test_noise_estimate', 0):.4f}\n"
-                md += f"- **Significant Features**: {lr_results.get('significant_features', 0)}\n"
-                md += f"- **Signal Strength**: {lr_results.get('signal_strength', 0):.4f}\n\n"
+            best_pair_features = multivariate_summary.get('best_pair_features')
+            if best_pair_features:
+                pair_r2 = multivariate_summary.get('best_pair_test_r2', 0.0)
+                features_str = ", ".join(f"`{f}`" for f in best_pair_features)
+                md += f"| Pair | {features_str} | {pair_r2:.3f} |\n"
 
-                md += "**Top Coefficients**:\n"
-                for feat, coef in list(lr_results.get('top_coefficients', {}).items())[:5]:
-                    md += f"- {feat}: {coef:.4f}\n"
-                md += "\n"
+            best_triplet_features = multivariate_summary.get('best_triplet_features')
+            if best_triplet_features:
+                triplet_r2 = multivariate_summary.get('best_triplet_test_r2', 0.0)
+                features_str = ", ".join(f"`{f}`" for f in best_triplet_features)
+                md += f"| Triplet | {features_str} | {triplet_r2:.3f} |\n"
 
-            # LightGBM section
-            lgbm_results = self.results.get('lightgbm', {})
-            if 'error' not in lgbm_results:
-                md += "### LightGBM Baseline\n\n"
-                md += f"- **Test R²**: {lgbm_results.get('test_r2', 0):.4f}\n"
-                md += f"- **Test RMSE**: {lgbm_results.get('test_rmse', 0):.4f}\n"
-                md += f"- **CV RMSE**: {lgbm_results.get('cv_rmse_mean', 0):.4f} ± {lgbm_results.get('cv_rmse_std', 0):.4f}\n"
-                md += f"- **Overfitting Gap**: {lgbm_results.get('overfitting_gap', 0):.4f}\n\n"
-
-                md += "**Top Feature Importance**:\n"
-                for feat, imp in list(lgbm_results.get('top_feature_importance', {}).items())[:5]:
-                    md += f"- {feat}: {imp:.1f}\n"
-                md += "\n"
-
-            # Comparison section
-            comparison = self.results.get('comparison', {})
-            if 'error' not in comparison:
-                md += "### Model Comparison\n\n"
-                md += f"- **LR Test R²**: {comparison.get('lr_test_r2', 0):.4f}\n"
-                md += f"- **LGBM Test R²**: {comparison.get('lgbm_test_r2', 0):.4f}\n"
-                md += f"- **Improvement**: {comparison.get('r2_improvement', 0):.4f} ({comparison.get('r2_improvement_pct', 0):.1f}%)\n\n"
-
-            # Interpretation section
-            interpretation = self.results.get('interpretation', {})
-            md += "### Interpretation\n\n"
-            md += f"**Quality Score**: {interpretation.get('quality_score', 0):.2f}/1.0\n\n"
-            md += f"**Summary**: {interpretation.get('summary', 'N/A')}\n\n"
-
-            md += "**Key Findings**:\n"
-            for interp in interpretation.get('interpretations', [])[:5]:
-                md += f"- {interp}\n"
             md += "\n"
 
-            if interpretation.get('recommendations'):
-                md += "**Recommendations**:\n"
-                for rec in interpretation.get('recommendations', []):
-                    md += f"- {rec}\n"
-                md += "\n"
-
-            return md
-
-        except Exception as e:
-            logger.error(f"Failed to format markdown: {e}")
-            return "## Baseline Predictive Check\n\n❌ Error formatting results\n"
+        interpretation = self.results.get('interpretation', {})
+        md += "### Interpretation\n\n"
+        md += f"**Quality Score:** {interpretation.get('quality_score', 0):.2f}/1.0\n\n"
+        md += f"**Summary:** {interpretation.get('summary', 'N/A')}\n\n"
+        if interpretation.get('interpretations'):
+            md += "**Insights:**\n"
+            for insight in interpretation['interpretations']:
+                md += f"- {insight}\n"
+            md += "\n"
+        if interpretation.get('recommendations'):
+            md += "**Recommendations:**\n"
+            for rec in interpretation['recommendations']:
+                md += f"- {rec}\n"
+            md += "\n"
+        return md
 
 
 def run_baseline_check(
@@ -694,21 +597,8 @@ def run_baseline_check(
     target: pd.Series,
     max_features: Optional[int] = None,
     output_dir: Optional[Path] = None,
-    save_csv: bool = True
+    save_csv: bool = True,
 ) -> Dict[str, Any]:
-    """
-    Convenience function to run baseline predictive check.
-
-    Args:
-        features: Feature dataframe
-        target: Target series
-        max_features: Maximum number of features to sample
-        output_dir: Output directory for CSV (if save_csv=True)
-        save_csv: Whether to save detailed results to CSV
-
-    Returns:
-        Dict containing all results
-    """
     checker = BaselinePredictiveCheck(max_features=max_features)
     results = checker.run_check(features, target)
 

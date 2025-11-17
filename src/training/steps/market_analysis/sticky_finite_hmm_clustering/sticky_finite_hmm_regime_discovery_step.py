@@ -45,6 +45,10 @@ from src.training.steps.market_analysis.clusters.cluster_quality_assessor import
     ClusterQualityMetrics
 )
 
+from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import (
+    get_execution_mode_config,
+)
+
 from src.training.steps.market_analysis.clusters.clustering_optimization_goals import (
     DEFAULT_CLUSTERING_GOALS,
     DEFAULT_OPTIMIZATION_TARGETS
@@ -303,8 +307,7 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
         config: Dict[str, Any],
         timeframe: str = "15m"
     ) -> Any:
-        """
-        Apply execution mode filtering to data (light=20 days, blank=180 days, full=no filter).
+        """Apply execution mode filtering to data using centralized lookback days.
 
         Args:
             data: Data to filter (should have a tail() method like pandas DataFrame/Series)
@@ -315,10 +318,10 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
             Filtered data based on execution mode
         """
         try:
-            execution_mode = config.get('execution_mode', 'full')
+            execution_mode = str(config.get('execution_mode', 'full')).lower()
 
             # Full mode - no filtering
-            if execution_mode.lower() == 'full':
+            if execution_mode == 'full':
                 return data
 
             # Calculate samples per day for different timeframes
@@ -335,14 +338,13 @@ class StickyFiniteHMMRegimeDiscoveryStep(BaseStep):
 
             samples_per_day = samples_per_day_map.get(timeframe, 96)  # Default to 15m
 
-            # Determine days limit based on mode
-            if execution_mode.lower() == 'light':
-                days_limit = 20
-            elif execution_mode.lower() == 'blank':
-                days_limit = 180
-            else:
-                # Unknown mode, default to full
-                self.logger.warning(f"Unknown execution mode '{execution_mode}', using full mode")
+            # Resolve days limit from centralized execution mode configuration
+            exec_config = get_execution_mode_config()
+            days_limit = exec_config.get_data_loading_days(execution_mode)
+
+            # If configuration returns None (e.g., unknown mode), do not filter
+            if days_limit is None:
+                self.logger.warning(f"Unknown or unconfigured execution mode '{execution_mode}', skipping mode-based filtering")
                 return data
 
             mode_limit = days_limit * samples_per_day

@@ -159,27 +159,18 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
     
     def _generate_intelligent_lookback_ranges(self) -> List[int]:
         """Generate intelligent lookback ranges for optimization."""
-        lookbacks = []
-        
-        # Range 1: 1-10 (every integer)
-        lookbacks.extend(range(1, 11))
-        
-        # Range 2: 12-20 (every 2)
-        lookbacks.extend(range(12, 21, 2))
-        
-        # Range 3: 23-35 (every 3)
-        lookbacks.extend(range(23, 36, 3))
-        
-        # Range 4: 39-51 (every 4)
-        lookbacks.extend(range(39, 52, 4))
-        
-        # Range 5: 56-101 (every 5)
-        lookbacks.extend(range(56, 102, 5))
-        
-        # Sort and remove duplicates
-        lookbacks = sorted(list(set(lookbacks)))
-        
-        self.logger.info(f"🎯 Generated {len(lookbacks)} intelligent lookback ranges: {lookbacks[:10]}...{lookbacks[-5:]}")
+        # For the current 3-bar target horizon, emphasize short-to-medium
+        # windows that are most relevant for micro-structure behavior, while
+        # still providing a few broader context windows. This keeps the
+        # search focused and avoids very long lookbacks that are unlikely to
+        # be appropriate for a 3-bar profit target.
+        lookbacks = [
+            3, 5, 8, 10, 15, 20,
+            25, 30, 35, 40, 45, 50,
+        ]
+        self.logger.info(
+            f"🎯 Generated {len(lookbacks)} intelligent lookback ranges for 3-bar target horizon: {lookbacks}"
+        )
         return lookbacks
     
     def _optimize_with_intelligent_ranges(self, data: pd.DataFrame, feature_name: str, target_column: str, optimizer) -> Dict:
@@ -233,9 +224,27 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     'error': 'No valid lookback scores'
                 }
             
-            # Find best lookback period
-            best_lookback = max(lookback_scores, key=lookback_scores.get)
-            best_score = lookback_scores[best_lookback]
+            # Find best lookback period. Prefer the shortest lookback within a
+            # small tolerance of the best score to avoid a systematic drift
+            # toward the longest windows when the score curve is flat.
+            best_score = max(lookback_scores.values())
+            if best_score > 0.0:
+                tolerance = 0.02  # 2% relative tolerance
+                candidate_lookbacks = [
+                    lb
+                    for lb, score in lookback_scores.items()
+                    if score >= (1.0 - tolerance) * best_score
+                ]
+                if candidate_lookbacks:
+                    best_lookback = int(min(candidate_lookbacks))
+                else:
+                    best_lookback = int(
+                        max(lookback_scores.items(), key=lambda kv: kv[1])[0]
+                    )
+            else:
+                best_lookback = int(
+                    max(lookback_scores.items(), key=lambda kv: kv[1])[0]
+                )
             
             # Calculate performance and stability scores
             performance_score = self._calculate_performance_score(data, feature_name, target_column, best_lookback)
@@ -376,6 +385,18 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         rolling_std_target = rolling_std(target_series, window=lookback)
                         rolling_var_feature = rolling_var(feature_series, window=lookback)
                         rolling_var_target = rolling_var(target_series, window=lookback)
+                        # Also pre-compute rolling correlation so downstream
+                        # scorers don't need to re-run this expensive
+                        # operation per lookback.
+                        rolling_corr_vals = None
+                        try:
+                            if rolling_corr is not None:
+                                rc = rolling_corr(feature_series, target_series, window=lookback)
+                                rolling_corr_vals = rc.values
+                        except Exception:
+                            # If VectorBT correlation fails, leave as None and
+                            # fall back to explicit computation later.
+                            rolling_corr_vals = None
                         
                         stats_cache[lookback] = {
                             'feature_mean': rolling_mean_feature.values,
@@ -384,7 +405,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                             'target_std': rolling_std_target.values,
                             'feature_var': rolling_var_feature.values,
                             'target_var': rolling_var_target.values,
-                            'window_size': lookback
+                            'window_size': lookback,
+                            'rolling_corr': rolling_corr_vals,
                         }
                     else:
                         # Fallback to NumPy implementation
@@ -422,18 +444,38 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             target_std = np.full(result_size, np.nan)
             feature_var = np.full(result_size, np.nan)
             target_var = np.full(result_size, np.nan)
+            rolling_corr_vals = np.full(result_size, np.nan)
             
             # Compute rolling statistics
             for i in range(result_size):
                 feature_win = feature_data[i:i + lookback]
                 target_win = target_data[i:i + lookback]
                 
-                feature_mean[i] = np.mean(feature_win)
-                target_mean[i] = np.mean(target_win)
-                feature_std[i] = np.std(feature_win)
-                target_std[i] = np.std(target_win)
-                feature_var[i] = np.var(feature_win)
-                target_var[i] = np.var(target_win)
+                f_mean = np.mean(feature_win)
+                t_mean = np.mean(target_win)
+                feature_mean[i] = f_mean
+                target_mean[i] = t_mean
+                f_std = np.std(feature_win)
+                t_std = np.std(target_win)
+                feature_std[i] = f_std
+                target_std[i] = t_std
+                f_var = np.var(feature_win)
+                t_var = np.var(target_win)
+                feature_var[i] = f_var
+                target_var[i] = t_var
+
+                # Compute rolling correlation using the same window data
+                # without an extra pass.
+                if f_var > 1e-10 and t_var > 1e-10:
+                    # Centered covariance
+                    cov = np.sum((feature_win - f_mean) * (target_win - t_mean))
+                    denom = np.sqrt(f_var * t_var) * len(feature_win)
+                    if denom > 1e-10:
+                        rolling_corr_vals[i] = cov / denom
+                    else:
+                        rolling_corr_vals[i] = 0.0
+                else:
+                    rolling_corr_vals[i] = 0.0
             
             return {
                 'feature_mean': feature_mean,
@@ -442,7 +484,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 'target_std': target_std,
                 'feature_var': feature_var,
                 'target_var': target_var,
-                'window_size': lookback
+                'window_size': lookback,
+                'rolling_corr': rolling_corr_vals,
             }
             
         except Exception as e:
@@ -464,6 +507,13 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             unique_targets = np.unique(target_data)
             is_binary_target = len(unique_targets) == 2
             
+            # Define event strength and mask once from the raw target series.
+            # For fused targets, 0 typically means "no opportunity" and non-zero
+            # values represent long/short signals with magnitude capturing
+            # confidence/intensity.
+            target_abs = np.abs(target_data.astype(float))
+            event_mask_raw = target_abs > 0.0
+
             results = {}
             
             # Evaluate each lookback period using pre-computed statistics
@@ -475,39 +525,148 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 try:
                     stats = stats_cache[lookback]
                     
-                    # Use pre-computed rolling correlation with VectorBT
-                    if VECTORBT_AVAILABLE:
-                        rolling_corr = self._vectorbt_rolling_correlation(feature_data, target_data, lookback)
+                    # Prefer pre-computed rolling correlation from stats
+                    # cache to avoid recomputing this expensive operation.
+                    rolling_corr = None
+                    precomputed_corr = stats.get('rolling_corr')
+                    if precomputed_corr is not None:
+                        rolling_corr = np.asarray(precomputed_corr, dtype=float)
                     else:
-                        rolling_corr = self._numpy_rolling_correlation(feature_data, target_data, lookback)
+                        # Fallback: compute rolling correlation on the fly
+                        if VECTORBT_AVAILABLE:
+                            rolling_corr = self._vectorbt_rolling_correlation(feature_data, target_data, lookback)
+                        else:
+                            rolling_corr = self._numpy_rolling_correlation(feature_data, target_data, lookback)
                     
                     if rolling_corr is None or rolling_corr.size == 0:
                         results[lookback] = 0.0
                         continue
-                    
-                    # Get mean correlation
-                    abs_correlation = np.nanmean(np.abs(rolling_corr))
-                    
+                    # Align event information to the rolling correlation windows.
+                    # For a window [i, i+lookback), rolling_corr[i] corresponds to
+                    # the window ending at index i+lookback-1 in the original
+                    # series. We treat the target at the window end as
+                    # representing the event state/intensity for that window.
+                    n = len(target_abs)
+                    result_size = n - lookback + 1
+                    if result_size != rolling_corr.size or result_size <= 0:
+                        results[lookback] = 0.0
+                        continue
+
+                    # Window-level event strength and mask
+                    window_event_strength = target_abs[lookback - 1 : lookback - 1 + result_size]
+                    window_event_mask = event_mask_raw[lookback - 1 : lookback - 1 + result_size]
+
+                    # Compute event-weighted mean |corr|. If we have at least one
+                    # event window, we restrict to those windows and weight by
+                    # event strength. Otherwise we fall back to the global
+                    # mean-|corr| behaviour.
+                    abs_corr = np.abs(rolling_corr.astype(float))
+                    event_weights = window_event_strength * window_event_mask.astype(float)
+                    event_weight_sum = float(np.nansum(event_weights))
+
+                    if event_weight_sum > 0.0 and np.any(np.isfinite(abs_corr)):
+                        event_idx = event_weights > 0.0
+                        abs_corr_events = abs_corr[event_idx]
+                        weights_events = event_weights[event_idx]
+                        # Guard against numerical issues
+                        weight_sum_events = float(np.nansum(weights_events))
+                        if weight_sum_events > 0.0:
+                            abs_correlation = float(
+                                np.nansum(abs_corr_events * weights_events) / weight_sum_events
+                            )
+                        else:
+                            abs_correlation = float(np.nanmean(abs_corr))
+                    else:
+                        # No event windows or no usable correlations: use
+                        # legacy global mean-|corr| as a fallback.
+                        abs_correlation = float(np.nanmean(abs_corr))
+
                     if not np.isfinite(abs_correlation) or abs_correlation == 0.0:
                         results[lookback] = 0.0
                         continue
-                    
-                    # Apply target-type adaptive scoring
+
+                    # Apply target-type adaptive scoring on the
+                    # event-weighted correlation.
                     if is_binary_target:
                         # For binary targets: log scaling
-                        mi_proxy = np.log1p(abs_correlation * 10) / np.log1p(10)
+                        mi_proxy = np.log1p(abs_correlation * 10.0) / np.log1p(10.0)
                     else:
                         # For continuous targets: add variance weighting
-                        feature_var = np.var(feature_data)
-                        target_var = np.var(target_data)
+                        feature_var = float(np.var(feature_data))
+                        target_var = float(np.var(target_data))
                         
                         if feature_var > 1e-10 and target_var > 1e-10:
                             variance_ratio = min(feature_var / target_var, target_var / feature_var)
                             mi_proxy = abs_correlation * (0.5 + 0.5 * variance_ratio)
                         else:
                             mi_proxy = abs_correlation
-                    
-                    results[lookback] = min(max(mi_proxy, 0.0), 1.0)
+
+                    # Per-lookback false-alarm penalty: down-weight lookbacks
+                    # where the feature is frequently "active" in non-event
+                    # windows compared to event windows. We use the
+                    # pre-computed rolling feature mean as a simple proxy for
+                    # activation magnitude.
+                    penalty = 1.0
+                    try:
+                        feature_mean = np.asarray(stats.get('feature_mean'))
+                        if feature_mean.size == result_size:
+                            feat_mag = np.abs(feature_mean.astype(float))
+                            valid_feat = np.isfinite(feat_mag)
+                            if np.any(valid_feat):
+                                # Self-normalized activation threshold per feature/lookback
+                                try:
+                                    thr = float(
+                                        np.nanquantile(feat_mag[valid_feat], 0.8)
+                                    )
+                                except Exception:
+                                    thr = float(np.nanmean(feat_mag[valid_feat]))
+
+                                if np.isfinite(thr) and thr > 0.0:
+                                    active_mask = (feat_mag >= thr) & valid_feat
+                                    event_windows = window_event_mask & valid_feat
+                                    non_event_windows = (~window_event_mask) & valid_feat
+
+                                    event_count = int(event_windows.sum())
+                                    non_event_count = int(non_event_windows.sum())
+
+                                    if event_count > 0:
+                                        event_active_rate = (
+                                            (active_mask & event_windows).sum()
+                                            / float(event_count)
+                                        )
+                                        non_event_active_rate = (
+                                            (active_mask & non_event_windows).sum()
+                                            / float(max(non_event_count, 1))
+                                        )
+
+                                        if event_active_rate > 0.0:
+                                            false_alarm_ratio = (
+                                                non_event_active_rate
+                                                / max(event_active_rate, 1e-4)
+                                            )
+                                            # Smooth penalty: 1.0 when
+                                            # false_alarm_ratio <= 1, decaying
+                                            # towards 0.5 as false alarms
+                                            # dominate.
+                                            if false_alarm_ratio <= 1.0:
+                                                penalty = 1.0
+                                            else:
+                                                beta = 0.2
+                                                penalty = 1.0 / (
+                                                    1.0
+                                                    + beta * (false_alarm_ratio - 1.0)
+                                                )
+                                            penalty = float(
+                                                np.clip(penalty, 0.5, 1.0)
+                                            )
+                    except Exception:
+                        # If anything goes wrong in penalty computation,
+                        # default to no penalty rather than failing the
+                        # lookback evaluation.
+                        penalty = 1.0
+
+                    scored_mi = mi_proxy * penalty
+                    results[lookback] = min(max(float(scored_mi), 0.0), 1.0)
                     
                 except Exception as e:
                     self.logger.debug(f"Batch evaluation failed for lookback {lookback}: {e}")
@@ -563,39 +722,15 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
     
     def _process_features_individually(self, features: List[str], data: pd.DataFrame, 
                                      target_column: str) -> List[Dict]:
-        """Process features individually as fallback when batch processing is not available."""
-        results = []
-        
-        for feature_name in features:
-            try:
-                # Process individual feature
-                start_time = time.time()
-                
-                # Get feature-specific lookback ranges
-                lookback_ranges = self._get_feature_specific_lookbacks(feature_name)
-                
-                # Optimize lookback for this feature
-                optimal_result = self._optimize_single_feature_lookback(
-                    feature_name, data, target_column, lookback_ranges
-                )
-                
-                optimal_result['optimization_time'] = time.time() - start_time
-                results.append(optimal_result)
-                
-            except Exception as e:
-                self.logger.warning(f"Individual processing failed for {feature_name}: {e}")
-                results.append({
-                    'feature_name': feature_name,
-                    'optimal_lookback': 5,
-                    'performance_score': 0.0,
-                    'stability_score': 0.0,
-                    'cached': False,
-                    'optimization_time': time.time() - start_time if 'start_time' in locals() else 0.001,
-                    'error': str(e)
-                })
-        
-        return results
-    
+        """Process features using the memory-efficient chunk pipeline as fallback.
+
+        Instead of a pure per-feature loop, delegate to the existing
+        _memory_efficient_chunk_processing, which batches features into
+        chunks and applies the best available optimization path (vectorized
+        batch, proxy optimization, parallel fallback) per chunk.
+        """
+        return self._memory_efficient_chunk_processing(features, data, target_column)
+
     def _compute_feature_importance_from_data(self, merged_data: pd.DataFrame) -> Dict[str, Dict]:
         """Compute feature importance from merged features and targets to create individual_results structure.
         
@@ -618,10 +753,26 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 tprint("⚠️ No fused/binary target columns found in merged data")
                 return {}
             
-            # Use first available preferred target
-            target_col = available[0]
+            # Choose target based on requested direction when possible
+            direction = getattr(self, '_target_direction', None)
+            target_col = None
+            if isinstance(direction, str):
+                dir_lower = direction.lower()
+                if 'short' in dir_lower and 'target_short_fused' in available:
+                    target_col = 'target_short_fused'
+                elif 'long' in dir_lower and 'target_long_fused' in available:
+                    target_col = 'target_long_fused'
+                elif 'short' in dir_lower and 'target_short' in available:
+                    target_col = 'target_short'
+                elif 'long' in dir_lower and 'target_long' in available:
+                    target_col = 'target_long'
+
+            if target_col is None:
+                # Fallback: use first available preferred target
+                target_col = available[0]
+
             if target_col in ('target_long', 'target_short'):
-                tprint("⚠️ Fused targets not found; falling back to binary targets for importance")
+                tprint("⚠️ Fused targets not found for requested direction; falling back to binary targets for importance")
             
             # Exclude all target-like columns from features
             exclude_cols = set([c for c in merged_data.columns if 'target' in c.lower()] + ['timestamp', 'labeling_method_id', 'labeling_timestamp'])
@@ -633,7 +784,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             tprint(f"📊 Using {len(feature_cols)} features and target '{target_col}'")
             
-            # Prepare data
+            # Prepare data for RandomForest-based importance (opportunity windows only)
             X = merged_data[feature_cols].fillna(0)
             y = merged_data[target_col].fillna(0)
             
@@ -642,7 +793,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             if 'target_sample_weight' in merged_data.columns:
                 sample_weight = merged_data['target_sample_weight'].reindex(X.index).fillna(1.0).values
             
-            # Remove rows with all-zero targets (no opportunities)
+            # Remove rows with all-zero targets (no opportunities) for RF importance
             valid_mask = y != 0
             if valid_mask.sum() < 50:
                 tprint(f"⚠️ Only {valid_mask.sum()} samples with non-zero targets - too few for reliable importance")
@@ -653,17 +804,105 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             tprint(f"📊 Training on {len(y_valid)} samples with non-zero targets")
             
-            # Train a simple Random Forest to get feature importances
+            # Train a simple Random Forest to get feature importances on opportunity windows
             rf = RandomForestRegressor(n_estimators=50, max_depth=10, random_state=42, n_jobs=-1)
             rf.fit(X_valid, y_valid)
             
             # Get feature importances
             importances = rf.feature_importances_
             
+            # For MI / lookback curves use the full aligned target series (including zeros)
+            full_target = merged_data[target_col].astype(float).values
+            
             # Organize by category (simplified categorization)
             individual_results = {}
             for idx, feature_name in enumerate(feature_cols):
                 importance = float(importances[idx])
+                # Use full, direction-aware target series for MI curves to avoid degenerate behaviour
+                feature_series = merged_data[feature_name].astype(float).values
+                target_series = full_target
+
+                # Jointly drop NaN/inf from feature and target
+                finite_mask = np.isfinite(feature_series) & np.isfinite(target_series)
+                if finite_mask.sum() < 60:
+                    # Not enough valid samples for a meaningful curve
+                    continue
+                feature_series = feature_series[finite_mask]
+                target_series = target_series[finite_mask]
+
+                # Restrict MI/proxy search to short range around the 3-bar target horizon
+                lookback_candidates = [lb for lb in self.intelligent_lookbacks if 3 <= lb <= 20]
+                optimal_lookback = 3
+                mi_score = 0.0
+                stability_mi = 0.0
+
+                scores_full: Dict[int, float] = {}
+                if lookback_candidates and len(feature_series) >= min(lookback_candidates) + 5:
+                    try:
+                        scores_full = self._batch_evaluate_lookback_periods(
+                            feature_series,
+                            target_series,
+                            lookback_candidates,
+                        )
+                    except Exception:
+                        scores_full = {}
+
+                if scores_full:
+                    # Prefer the shortest lookback within a small tolerance of
+                    # the best score so that we don't systematically drift
+                    # toward longer windows when the MI curve is nearly flat.
+                    best_score = max(scores_full.values())
+                    if best_score > 0.0:
+                        tolerance = 0.02  # 2% relative tolerance
+                        candidate_lookbacks = [
+                            lb
+                            for lb, score in scores_full.items()
+                            if score >= (1.0 - tolerance) * best_score
+                        ]
+                        if candidate_lookbacks:
+                            optimal_lookback = int(min(candidate_lookbacks))
+                        else:
+                            optimal_lookback = int(
+                                max(scores_full.items(), key=lambda kv: kv[1])[0]
+                            )
+                    else:
+                        optimal_lookback = int(
+                            max(scores_full.items(), key=lambda kv: kv[1])[0]
+                        )
+
+                    mi_score = float(scores_full.get(optimal_lookback, 0.0))
+
+                    has_positive_mi = any(v > 0.0 for v in scores_full.values())
+
+                    if has_positive_mi:
+                        # Stability: compare MI proxy in early vs late halves
+                        mid = len(feature_series) // 2
+                        if (
+                            mid > optimal_lookback + 5
+                            and len(feature_series) - mid > optimal_lookback + 5
+                        ):
+                            try:
+                                early_scores = self._batch_evaluate_lookback_periods(
+                                    feature_series[:mid],
+                                    target_series[:mid],
+                                    [optimal_lookback],
+                                )
+                                late_scores = self._batch_evaluate_lookback_periods(
+                                    feature_series[mid:],
+                                    target_series[mid:],
+                                    [optimal_lookback],
+                                )
+                                early = float(early_scores.get(optimal_lookback, 0.0))
+                                late = float(late_scores.get(optimal_lookback, 0.0))
+                                stability_mi = max(0.0, 1.0 - abs(early - late))
+                            except Exception:
+                                stability_mi = 0.5
+                    else:
+                        # Flat MI curve: no evidence for or against stability → treat as neutral
+                        stability_mi = 0.5
+                else:
+                    # No MI scores at all → neutral stability
+                    stability_mi = 0.5
                 
                 # Simple category detection based on feature name
                 category = 'other'
@@ -678,15 +917,44 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 
                 if category not in individual_results:
                     individual_results[category] = {}
-                
+
                 # Create result structure compatible with _optimize_lookback_periods_by_category
-                individual_results[category][feature_name] = {
-                    'optimal_lookback': 20,  # Default lookback
+                # Include per-lookback MI proxy scores when available so we can derive
+                # feature-specific alternative lookbacks later.
+                # Compute a physical rolling-std-based stability score for the
+                # chosen lookback so downstream leak filters can rely on a
+                # time-series based notion of smoothness rather than the
+                # MI-curve stability proxy.
+                try:
+                    stability_phys = float(
+                        self._calculate_stability_score(merged_data, feature_name, int(optimal_lookback))
+                    )
+                except Exception:
+                    stability_phys = float(stability_mi)
+
+                result_entry: Dict[str, Any] = {
+                    'optimal_lookback': int(optimal_lookback),
                     'performance_score': importance,
-                    'stability_score': importance * 0.8,  # Approximate stability
+                    # Keep MI-based stability for curve weighting
+                    'stability_score': float(stability_mi),
+                    # Expose physical rolling-std stability separately for
+                    # leak detection and reporting.
+                    'stability_phys_score': stability_phys,
                     'feature_name': feature_name,
-                    'category': category
+                    'category': category,
+                    'success': True,
                 }
+
+                # Persist full MI proxy curve when available (scores_full is a dict[int,float])
+                try:
+                    if scores_full:
+                        # Cast keys to int explicitly to avoid JSON / serialization issues
+                        result_entry['lookback_scores'] = {int(k): float(v) for k, v in scores_full.items()}
+                except Exception:
+                    # Non-fatal: if we cannot store scores, continue with base metrics only
+                    pass
+
+                individual_results[category][feature_name] = result_entry
             
             tprint(f"✅ Computed importance for {len(feature_cols)} features across {len(individual_results)} categories")
             return individual_results
@@ -698,167 +966,161 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return {}
     
     def _optimize_lookback_periods_by_category(self, individual_results: Dict[str, Dict], max_lookbacks_per_feature: int = 3) -> Dict[str, Any]:
-        """Optimize each feature's lookbacks (best + informative alternatives)."""
-        # Uses VectorBT when available to rank one optimal and two supportive lookbacks per feature.
+        """Optimize each feature's lookbacks (best + informative alternatives) using per-feature MI/stability curves."""
         try:
-            # Initialize VectorBT components if available
+            # Initialize VectorBT components if available (kept for future use)
             vectorbt_optimizer = getattr(self, 'vectorbt_optimizer', None)
             vectorization_manager = getattr(self, 'vectorization_manager', None)
-            
-            category_optimizations = {}
+
+            category_optimizations: Dict[str, Dict[str, Any]] = {}
             total_features_optimized = 0
-            
+
             # Debug: Log individual_results structure
             self.logger.info(f"🔍 Individual results has {len(individual_results)} categories")
             if individual_results:
-                # Log first category's structure
                 first_category = list(individual_results.keys())[0]
                 first_features = individual_results[first_category]
                 if isinstance(first_features, dict) and first_features:
                     first_feature_name = list(first_features.keys())[0]
                     first_feature_data = first_features[first_feature_name]
-                    self.logger.info(f"🔍 First feature data keys: {list(first_feature_data.keys()) if isinstance(first_feature_data, dict) else 'Not a dict'}")
-            
+                    self.logger.info(
+                        f"🔍 First feature data keys: {list(first_feature_data.keys()) if isinstance(first_feature_data, dict) else 'Not a dict'}"
+                    )
+
             for category, features in individual_results.items():
                 if not isinstance(features, dict) or not features:
                     continue
-                
+
                 self.logger.info(f"🔍 Category {category} has {len(features)} features")
-                
-                # Optimize lookback periods for each feature in this category
-                category_optimized_features = {}
-                
+
+                category_optimized_features: Dict[str, Any] = {}
+
                 for feature_name, feature_data in features.items():
-                    if isinstance(feature_data, dict) and feature_data.get('success', False):
-                        # Debug: Check feature_data structure
-                        self.logger.info(f"🔍 Feature data keys for {feature_name}: {list(feature_data.keys())}")
-                        
-                        # Get the current optimal lookback
-                        current_lookback = feature_data.get('optimal_lookback', 5)
-                        performance = feature_data.get('performance_score', 0.0)
-                        stability = feature_data.get('stability_score', 0.0)
-                        
-                        # Warning: Check for suspicious identical scores (potential data contamination)
-                        if performance == 0.390 and stability == 0.979 and category == 'spectral_wavelet_features':
-                            self.logger.warning(f"⚠️ Suspicious identical scores for {feature_name} in {category}: perf={performance}, stab={stability}")
-                            tprint(f"⚠️ ALERT: Suspicious identical scores for {feature_name} in {category}: perf={performance}, stab={stability}")
-                        
-                        # Use existing optimization results instead of re-evaluating
-                        # Generate alternative lookbacks that are DISTINCT from optimal and from each other
-                        alternatives = []
-                        
-                        # Strategy: Pick alternatives that are significantly different from optimal
-                        # This ensures we test different lookback windows for robustness
-                        optimal_idx = self.intelligent_lookbacks.index(current_lookback) if current_lookback in self.intelligent_lookbacks else 0
-                        
-                        # Strategy 1: Try to get lookbacks from different range tiers
-                        # Calculate how many ranges away to get meaningful alternatives
-                        tier_separation = max(5, len(self.intelligent_lookbacks) // 10)  # At least 5 indices apart
-                        
-                        # Try getting lookbacks from higher ranges (longer lookbacks)
-                        for offset in [tier_separation, tier_separation * 2]:
-                            alt_idx = optimal_idx + offset
-                            if alt_idx < len(self.intelligent_lookbacks):
-                                alt_lookback = self.intelligent_lookbacks[alt_idx]
-                                if alt_lookback != current_lookback and alt_lookback not in alternatives:
-                                    alternatives.append(alt_lookback)
-                                    if len(alternatives) >= 2:
-                                        break
-                        
-                        # Strategy 2: If still need alternatives, try specific offsets
-                        if len(alternatives) < 2:
-                            for offset_multiplier in [1, 2, 3, 4]:
-                                alt_idx = optimal_idx + offset_multiplier * 3
-                                if alt_idx < len(self.intelligent_lookbacks):
-                                    alt_lookback = self.intelligent_lookbacks[alt_idx]
-                                    if alt_lookback != current_lookback and alt_lookback not in alternatives:
-                                        alternatives.append(alt_lookback)
-                                        if len(alternatives) >= 2:
-                                            break
-                        
-                        # Strategy 3: If still need alternatives, use small offsets
-                        if len(alternatives) < 2:
-                            for offset in [2, 3, 5, 8]:
-                                if optimal_idx + offset < len(self.intelligent_lookbacks):
-                                    alt_lookback = self.intelligent_lookbacks[optimal_idx + offset]
-                                    if alt_lookback not in alternatives and alt_lookback != current_lookback:
-                                        alternatives.append(alt_lookback)
-                                        if len(alternatives) >= 2:
-                                            break
-                        
-                        # Strategy 4: Fallback - ensure we have at least 2 alternatives
-                        while len(alternatives) < 2 and len(alternatives) < len(self.intelligent_lookbacks) - 1:
-                            # Add the next lookback in sequence that's not already included
-                            for lb in self.intelligent_lookbacks:
-                                if lb != current_lookback and lb not in alternatives:
-                                    alternatives.append(lb)
-                                    if len(alternatives) >= 2:
-                                        break
-                            if len(alternatives) >= 2:
-                                break
-                        
-                        # Sort alternatives to ensure ascending order (prevents anomalies like [56, 81, 71])
-                        alternatives.sort()
-                        alternatives = alternatives[:2]  # Keep only first 2 after sorting
-                        
-                        # Create lookback analysis using existing results
-                        lookback_analysis = {
-                            'optimal_lookback': current_lookback,
-                            'alternative_lookbacks': alternatives[:2],
-                            'lookback_scores': [(current_lookback, performance)] + 
-                                             [(alt, performance * 0.8) for alt in alternatives[:2]]
-                        }
-                        
-                        category_optimized_features[feature_name] = {
-                            'feature_name': feature_name,
-                            'category': category,
-                            'current_optimal_lookback': current_lookback,
-                            'performance_score': performance,
-                            'stability_score': stability,
-                            'optimal_lookback': lookback_analysis['optimal_lookback'],
-                            'alternative_lookbacks': lookback_analysis['alternative_lookbacks'],
-                            'all_optimized_lookbacks': [lookback_analysis['optimal_lookback']] + lookback_analysis['alternative_lookbacks'],
-                            'lookback_scores': lookback_analysis['lookback_scores'],
-                            'optimization_method': 'existing_results_enhanced',
-                            'feature_data': feature_data
-                        }
-                        total_features_optimized += 1
-                
+                    if not (isinstance(feature_data, dict) and feature_data.get('success', False)):
+                        continue
+
+                    self.logger.info(f"🔍 Feature data keys for {feature_name}: {list(feature_data.keys())}")
+
+                    # Base scores from earlier stages (RandomForest importance + stability proxies)
+                    base_optimal_lookback = int(feature_data.get('optimal_lookback', 5))
+                    base_performance = float(feature_data.get('performance_score', 0.0))
+                    # MI-curve-based stability (stability_mi)
+                    base_stability = float(feature_data.get('stability_score', 0.0))
+                    # Physical rolling-std-based stability (time-series smoothness)
+                    base_stability_phys = float(feature_data.get('stability_phys_score', base_stability))
+
+                    # Optional: per-lookback scores if available (from earlier MI proxy evaluations)
+                    # Expect shape like {lookback: score}
+                    raw_scores = feature_data.get('lookback_scores')
+
+                    # Build a per-lookback curve: score = f(MI_proxy, MI-stability proxy, importance)
+                    scored_lookbacks: List[Tuple[int, float]] = []
+                    if isinstance(raw_scores, dict) and raw_scores:
+                        # Normalize base scores
+                        base_perf = max(base_performance, 0.0)
+                        base_stab = max(base_stability, 0.0)
+                        for lb, mi_score in raw_scores.items():
+                            try:
+                                lb_int = int(lb)
+                                mi_val = float(mi_score)
+                            except Exception:
+                                continue
+
+                            # Composite: MI proxy × (0.6 + 0.4 * stability) × (0.8 + 0.2 * normalized_importance)
+                            # This favors MI but still respects stability / RF-importance.
+                            stability_weight = 0.6 + 0.4 * min(base_stab, 1.0)
+                            importance_weight = 0.8 + 0.2 * min(base_perf, 1.0)
+                            composite = max(mi_val, 0.0) * stability_weight * importance_weight
+                            scored_lookbacks.append((lb_int, composite))
+
+                        # Ensure we always at least keep the previously chosen optimal
+                        if base_optimal_lookback not in [lb for lb, _ in scored_lookbacks]:
+                            scored_lookbacks.append((base_optimal_lookback, base_perf or 0.0))
+                    else:
+                        # Fallback: we only know a single optimal lookback; treat alternatives as empty
+                        scored_lookbacks.append((base_optimal_lookback, max(base_performance, 0.0)))
+
+                    # Sort by composite score desc
+                    scored_lookbacks.sort(key=lambda x: x[1], reverse=True)
+
+                    # Derive optimal + alternatives from per-feature curve
+                    optimal_lookback = scored_lookbacks[0][0]
+
+                    # Use the same non-redundant selection heuristic but driven by the scored_lookbacks list
+                    # (exclude first entry which is optimal)
+                    alternative_candidates = scored_lookbacks[1:]
+                    alternatives = self._find_non_redundant_alternatives(
+                        alternative_candidates, optimal_lookback, num_alternatives=max_lookbacks_per_feature - 1
+                    )
+
+                    # Fallback if we somehow have no alternatives
+                    if not alternatives:
+                        for lb, _ in scored_lookbacks[1:]:
+                            if lb != optimal_lookback:
+                                alternatives.append(lb)
+                                if len(alternatives) >= max_lookbacks_per_feature - 1:
+                                    break
+
+                    # Trim and sort for readability
+                    alternatives = sorted(list(dict.fromkeys(alternatives)))[: max_lookbacks_per_feature - 1]
+
+                    # Build lookback score list for reporting
+                    lookback_scores_list: List[Tuple[int, float]] = scored_lookbacks[:]
+
+                    category_optimized_features[feature_name] = {
+                        'feature_name': feature_name,
+                        'category': category,
+                        'current_optimal_lookback': base_optimal_lookback,
+                        'performance_score': scored_lookbacks[0][1],
+                        # MI-based stability (from early/late MI comparison)
+                        'stability_score': base_stability,
+                        # Physical stability (rolling-std based); used for leak checks
+                        'stability_phys_score': base_stability_phys,
+                        'rf_importance': base_performance,
+                        'optimal_lookback': optimal_lookback,
+                        'alternative_lookbacks': alternatives,
+                        'all_optimized_lookbacks': [optimal_lookback] + alternatives,
+                        'lookback_scores': lookback_scores_list,
+                        'optimization_method': 'per_feature_mi_curve',
+                        'feature_data': feature_data,
+                    }
+                    total_features_optimized += 1
+
                 if category_optimized_features:
                     category_optimizations[category] = category_optimized_features
-                    
-                    # Log category optimization
                     tprint(f"🎯 {category.upper()}: Optimized {len(category_optimized_features)} features")
                     for feature_name, feature_info in category_optimized_features.items():
-                        optimal = feature_info['optimal_lookback']
-                        alternatives = feature_info['alternative_lookbacks']
-                        tprint(f"   {feature_name}: Optimal={optimal}, Alternatives={alternatives}")
-            
-            # Prepare comprehensive results
+                        tprint(
+                            f"   {feature_name}: Optimal={feature_info['optimal_lookback']}, "
+                            f"Alternatives={feature_info['alternative_lookbacks']}"
+                        )
+
             result = {
                 'category_optimizations': category_optimizations,
                 'total_features_optimized': total_features_optimized,
                 'categories_processed': len(category_optimizations),
-                'optimization_method': 'vectorbt_enhanced_comprehensive' if vectorbt_optimizer else 'intelligent_comprehensive',
+                'optimization_method': 'per_feature_mi_curve',
                 'max_lookbacks_per_feature': max_lookbacks_per_feature,
                 'vectorbt_available': vectorbt_optimizer is not None,
-                'vectorization_manager_available': vectorization_manager is not None
+                'vectorization_manager_available': vectorization_manager is not None,
             }
-            
-            # Log overall results
-            tprint(f"🎯 COMPREHENSIVE LOOKBACK OPTIMIZATION: {total_features_optimized} features optimized across {len(category_optimizations)} categories")
+
+            tprint(
+                f"🎯 COMPREHENSIVE LOOKBACK OPTIMIZATION: {total_features_optimized} features "
+                f"optimized across {len(category_optimizations)} categories"
+            )
             for category, features in category_optimizations.items():
                 tprint(f"   {category}: {len(features)} features with optimal + alternative lookbacks")
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.warning(f"Comprehensive lookback optimization failed: {e}")
             return {
                 'category_optimizations': {},
                 'total_features_optimized': 0,
                 'optimization_method': 'error',
-                'error': str(e)
+                'error': str(e),
             }
     
     def _vectorbt_comprehensive_lookback_analysis(self, feature_data: Dict, vectorbt_optimizer) -> Dict[str, Any]:
@@ -985,40 +1247,72 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                        optimal_lookback: int, num_alternatives: int) -> List[int]:
         """Find non-redundant alternative lookback periods."""
         try:
-            alternatives = []
-            
-            for lookback, score in lookback_scores:
-                if len(alternatives) >= num_alternatives:
+            if not lookback_scores or num_alternatives <= 0:
+                return []
+
+            # Defensive copy so we can iterate safely
+            candidates = list(lookback_scores)
+
+            # Basic stats on scores and lookback range
+            scores_only = [s for _, s in candidates]
+            max_score = max(scores_only) if scores_only else 0.0
+
+            if max_score <= 0:
+                # Degenerate case: all scores are zero/negative, just return first N lookbacks
+                return [lb for lb, _ in candidates[:num_alternatives]]
+
+            all_lookbacks = [lb for lb, _ in candidates] + [optimal_lookback]
+            min_lb = min(all_lookbacks)
+            max_lb = max(all_lookbacks)
+            span = max(1, max_lb - min_lb)
+
+            selected: List[int] = []
+
+            # We select alternatives iteratively by maximizing a composite objective
+            # that balances MI score and distance from the optimal / already selected
+            min_score_ratio = 0.3  # Allow reasonably informative but not necessarily top-scoring candidates
+            diversity_weight = 0.75
+
+            for _ in range(num_alternatives):
+                best_lb: Optional[int] = None
+                best_objective: Optional[float] = None
+
+                for lb, score in candidates:
+                    if lb == optimal_lookback or lb in selected:
+                        continue
+
+                    # Hard score floor relative to best candidate
+                    if score < max_score * min_score_ratio:
+                        continue
+
+                    # Distance to closest of {optimal + already selected}
+                    anchors = [optimal_lookback] + selected
+                    min_dist = min(abs(lb - anchor) for anchor in anchors) if anchors else 0
+
+                    # Diversity factor in [1, 1 + diversity_weight]
+                    diversity_factor = 1.0 + diversity_weight * (min_dist / span)
+                    objective = score * diversity_factor
+
+                    if best_objective is None or objective > best_objective:
+                        best_objective = objective
+                        best_lb = lb
+
+                if best_lb is None:
+                    # No suitable candidate found under current thresholds
                     break
-                
-                # Check for redundancy (avoid lookbacks too close to optimal or existing alternatives)
-                is_redundant = False
-                
-                # Check against optimal lookback
-                if abs(lookback - optimal_lookback) < 3:  # Too close to optimal
-                    is_redundant = True
-                
-                # Check against existing alternatives
-                for alt in alternatives:
-                    if abs(lookback - alt) < 3:  # Too close to existing alternative
-                        is_redundant = True
+
+                selected.append(best_lb)
+
+            # Fallback: if we still don't have enough alternatives, fill with remaining best lookbacks
+            if len(selected) < num_alternatives:
+                for lb, _ in candidates:
+                    if lb == optimal_lookback or lb in selected:
+                        continue
+                    selected.append(lb)
+                    if len(selected) >= num_alternatives:
                         break
-                
-                # Check for meaningful difference in score (at least 10% of optimal score)
-                if score < lookback_scores[0][1] * 0.7:  # Too low score
-                    is_redundant = True
-                
-                if not is_redundant:
-                    alternatives.append(lookback)
-            
-            # If we don't have enough alternatives, fill with best remaining
-            while len(alternatives) < num_alternatives and len(alternatives) < len(lookback_scores):
-                for lookback, score in lookback_scores:
-                    if lookback not in alternatives and lookback != optimal_lookback:
-                        alternatives.append(lookback)
-                        break
-            
-            return alternatives[:num_alternatives]
+
+            return selected[:num_alternatives]
             
         except Exception as e:
             self.logger.debug(f"Non-redundant alternative finding failed: {e}")
@@ -1978,15 +2272,74 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return 0.0
 
     def _create_fallback_result(self, feature_name: str, error: str) -> Dict:
-        """Create fallback result for failed features."""
+        """Create curated fallback result for failed features using category-aware lookbacks.
+
+        This avoids degenerate tiny lookbacks (e.g. 3) when optimization fails or
+        performance information is unavailable. Instead we fall back to sensible
+        short-to-medium windows tuned per feature category.
+        """
+        try:
+            name_lower = (feature_name or '').lower()
+            category = 'other'
+            if any(kw in name_lower for kw in ['momentum', 'rsi', 'macd']):
+                category = 'momentum'
+            elif any(kw in name_lower for kw in ['volatility', 'atr', 'std']):
+                category = 'volatility'
+            elif any(kw in name_lower for kw in ['volume', 'obv']):
+                category = 'volume'
+            elif any(kw in name_lower for kw in ['trend', 'ema', 'sma']):
+                category = 'trend'
+
+            curated_defaults: Dict[str, List[int]] = {
+                'momentum': [5, 10, 15],
+                'trend': [10, 20, 30],
+                'volatility': [10, 15, 25],
+                'volume': [10, 20, 30],
+                'other': [5, 10, 20],
+            }
+
+            curated_lookbacks = curated_defaults.get(category, curated_defaults['other'])
+
+            # If intelligent lookbacks are defined, intersect to stay within the global search space
+            try:
+                if hasattr(self, 'intelligent_lookbacks') and self.intelligent_lookbacks:
+                    curated_in_space = [lb for lb in curated_lookbacks if lb in self.intelligent_lookbacks]
+                    if curated_in_space:
+                        curated_lookbacks = curated_in_space
+                    else:
+                        # Fallback: use the first few intelligent lookbacks but drop extremely small ones
+                        curated_lookbacks = [lb for lb in self.intelligent_lookbacks if lb >= 5][:3]
+            except Exception:
+                # If anything goes wrong, keep the original curated list
+                pass
+
+            if not curated_lookbacks:
+                # Absolute last-resort safety net
+                curated_lookbacks = [10, 15, 20]
+
+            # Use the middle element of the curated set as the primary fallback lookback
+            mid_idx = min(len(curated_lookbacks) // 2, len(curated_lookbacks) - 1)
+            optimal_lookback = int(curated_lookbacks[mid_idx])
+
+            tprint(
+                f"⚠️ Fallback lookback for {feature_name} (category={category}): "
+                f"using curated defaults {curated_lookbacks} due to error: {error}"
+            )
+
+        except Exception:
+            # If category detection fails, fall back to a generic but still non-degenerate window
+            category = 'other'
+            curated_lookbacks = [5, 10, 20]
+            optimal_lookback = 10
+
         return {
             'feature_name': feature_name,
-            'optimal_lookback': 10,
+            'optimal_lookback': optimal_lookback,
             'performance_score': 0.0,
             'stability_score': 0.0,
-            'optimization_method': 'fallback',
+            'optimization_method': 'category_fallback',
             'cv_folds': 2,
-            'lookback_range': 'fallback',
+            'lookback_range': f"{category}_curated:{curated_lookbacks}",
             'optimization_time': 0.001,
             'memory_usage': 0.0,
             'success': False,
@@ -2435,7 +2788,18 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     if joint_probs[i, j] > 0 and feature_probs[i] > 0 and target_probs[j] > 0:
                         mi += joint_probs[i, j] * np.log2(joint_probs[i, j] / (feature_probs[i] * target_probs[j]))
             
-            return max(0.0, mi)
+            # Normalize MI to [0, 1] using the theoretical maximum log2(n_bins)
+            mi = max(0.0, mi)
+            if mi <= 0.0:
+                return 0.0
+
+            mi_max = np.log2(max(n_bins, 2))
+            if mi_max <= 0.0:
+                # Fallback: return raw MI if normalization is not well-defined
+                return float(mi)
+
+            mi_normalized = mi / mi_max
+            return float(min(max(mi_normalized, 0.0), 1.0))
             
         except Exception as e:
             self.logger.debug(f"Fast MI approximation failed: {e}")
@@ -2736,9 +3100,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 tprint(f"⚡ Using parallel processing for chunk of {len(features)} features")
                 return self._parallel_process_features(features, data, target_column)
             else:
-                # Fallback to individual processing with optimized methods
-                tprint(f"📊 Using optimized individual processing for chunk of {len(features)} features")
-                return self._process_features_individually(features, data, target_column)
+                # Fallback to chunk-level optimized processing rather than
+                # pure per-feature loops to avoid recursion and still benefit
+                # from shared infrastructure.
+                tprint(f"📊 Using fallback chunk processing for {len(features)} features")
+                return self._process_feature_chunk_fallback(features, data, target_column)
                 
         except Exception as e:
             self.logger.warning(f"Chunk processing failed: {e}")
@@ -2947,14 +3313,21 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     abs_correlation = abs(rolling_corr.mean()) if not rolling_corr.isna().all() else 0.0
                 
                 if is_binary_target:
-                    # Apply log scaling to boost low correlations (typical for binary targets)
-                    # log(x+1) mapping: 0->0, 0.01->0.01, 0.1->0.095, 1->0.69
-                    if abs_correlation > 0:
-                        mi_proxy = np.log1p(abs_correlation * 10) / np.log1p(10)
-                    else:
+                    # For binary (or effectively categorical) targets, prefer the fast MI approximation
+                    try:
+                        if self.fast_mi_estimator:
+                            mi_proxy = self._fast_mutual_information_approximation(
+                                feature.values.astype(float),
+                                target.values.astype(float),
+                            )
+                        else:
+                            mi_proxy = abs_correlation
+                    except Exception as mi_err:
+                        # Log at debug level and fall back to correlation-based proxy
+                        self.logger.debug(f"Fast MI proxy failed in _compute_mutual_information_proxy: {mi_err}")
                         mi_proxy = abs_correlation
-                    
-                    return min(max(mi_proxy, 0.0), 1.0)
+
+                    return float(min(max(mi_proxy, 0.0), 1.0))
                 else:
                     # For continuous targets, add variance weighting
                     try:
@@ -2985,12 +3358,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return 0.0
     
     def _filter_target_regions(self, data: pd.DataFrame, target_column: str) -> pd.DataFrame:
-        """
-        Filter data to only include regions where target is present (non-zero for binary).
-        
-        For binary targets: only keep rows where target = 1
-        For continuous targets: keep all non-NaN rows
-        
+        """Filter data to only include regions where target is present.
+
+        For binary targets: only keep rows where target == 1.
+        For continuous targets: keep all non-NaN rows.
+
         Note: For binary targets with many zeros, this may significantly reduce the dataset.
         Consider using class weighting or upsampling if data loss is significant.
         """
@@ -2998,72 +3370,30 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             target_col = data[target_column]
             target_type = self._detect_target_type(target_col)
             original_size = len(data)
-            
+
             if target_type == 'binary':
                 # Only keep rows where target is present (1)
                 filtered_data = data[target_col == 1].copy()
                 if len(filtered_data) > 0:
-                    # Log data reduction if significant
-                    reduction = (original_size - len(filtered_data)) / original_size
+                    reduction = (original_size - len(filtered_data)) / max(original_size, 1)
                     if reduction > 0.5:
-                        self.logger.warning(f"⚠️ Data reduction: {reduction:.1%} of data filtered for binary target (only keeping target=1)")
+                        self.logger.warning(
+                            f"⚠️ Data reduction: {reduction:.1%} of data filtered for binary target (only keeping target=1)"
+                        )
                     return filtered_data
                 else:
                     # If no positives, return original data
-                    self.logger.warning(f"⚠️ No positive targets found, using all data (may affect optimization quality)")
+                    self.logger.warning(
+                        "⚠️ No positive targets found, using all data (may affect optimization quality)"
+                    )
                     return data
-            else:
-                # For continuous targets, just drop NaN
-                return data.dropna(subset=[target_column])
-                
-        except Exception:
-            return data
-    
-    def _fast_statistical_optimization(self, data: pd.DataFrame, feature_name: str, target_column: str) -> int:
-        """
-        Fast statistical optimization using appropriate metric based on target type.
-        
-        - For binary targets: Uses mutual information proxy
-        - For continuous targets: Uses correlation
-        """
-        try:
-            feature_col = data[feature_name]
-            target_col = data[target_column]
-            
-            # Detect target type
-            target_type = self._detect_target_type(target_col)
-            
-            # Test different lookback periods
-            best_lookback = 10
-            best_score = 0.0
-            
-            # Test lookback periods from 5 to 30 with step size 2
-            for lookback in range(5, 31, 2):
-                try:
-                    if target_type == 'binary':
-                        # Use mutual information proxy for binary targets
-                        score = self._compute_mutual_information_proxy(feature_col, target_col, lookback)
-                    else:
-                        # Use correlation for continuous targets
-                        rolling_corr = feature_col.rolling(window=lookback).corr(target_col)
-                        score = abs(rolling_corr.mean())
-                    
-                    # Ensure score is numeric before comparison
-                    if not isinstance(score, (int, float)) or np.isnan(score):
-                        score = 0.0
-                    
-                    if score > best_score:
-                        best_score = score
-                        best_lookback = lookback
-                        
-                except Exception:
-                    continue
-            
-            return best_lookback
-            
+
+            # Continuous targets: keep all non-NaN rows
+            return data[target_col.notna()].copy()
+
         except Exception as e:
-            self.logger.warning(f"Statistical optimization failed for {feature_name}: {e}")
-            return 10  # Default fallback
+            self.logger.warning(f"Target region filtering failed for column '{target_column}': {e}")
+            return data
     
     def _calculate_performance_score(self, data: pd.DataFrame, feature_name: str, target_column: str, lookback: int) -> float:
         """
@@ -3453,6 +3783,21 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         """
         tprint(f"⏰ Starting lookback optimization for {config.get('symbol', 'UNKNOWN')}")
 
+        # Persist requested trading direction (if any) so that downstream helpers
+        # can prefer the correct fused target (long vs short) when multiple
+        # target columns are present.
+        try:
+            requested_direction = (
+                config.get('direction')
+                or config.get('trade_direction')
+                or config.get('side')
+                or 'long'
+            )
+        except Exception:
+            requested_direction = 'long'
+        self._target_direction = requested_direction
+        tprint(f"🎯 Using target direction for optimization: {self._target_direction}")
+
         try:
             # Load previously generated features
             from pathlib import Path
@@ -3502,6 +3847,15 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     metadata=enhanced_metadata
                 )
                 tprint(f"💾 Saved optimization results: {artifact_path}")
+
+                per_feature_lookbacks = artifacts.get('per_feature_lookbacks')
+                if isinstance(per_feature_lookbacks, dict) and per_feature_lookbacks:
+                    self._save_artifact(
+                        data=per_feature_lookbacks,
+                        artifact_name='per_feature_lookbacks',
+                        artifact_type='metadata',
+                        data_category='config'
+                    )
             
             # Generate outcome report
             # Generate both markdown report and CSV export
@@ -3558,16 +3912,30 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             original_context = self.artifact_manager._current_step_name
             generated_features = None
             labeled_data = None
+
+            # Derive context from config so we resolve the same store that
+            # feature_generation_labeling_integration_step and
+            # feature_generation_feature_generation_step used when saving.
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', 'binance')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+            model = config.get('model', 'analyst')
             
             # Step 1: Load generated features from feature_generation_feature_generation_step
             try:
                 self.artifact_manager.set_context(
                     step_name='feature_generation_feature_generation_step',
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    direction=direction,
+                    model=model,
                     datetime=datetime.now()
                 )
                 
                 generated_features = self.artifact_manager.get_artifact(
-                    artifact_name='generated_features_15m',
+                    artifact_name=f'generated_features_{timeframe}',
                     artifact_type='data'
                 )
                 
@@ -3584,11 +3952,16 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             try:
                 self.artifact_manager.set_context(
                     step_name='feature_generation_labeling_integration_step',
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    direction=direction,
+                    model=model,
                     datetime=datetime.now()
                 )
                 
                 labeled_data = self.artifact_manager.get_artifact(
-                    artifact_name='labeled_data_ETHUSDT_15m',
+                    artifact_name=f'labeled_data_{symbol}_{timeframe}',
                     artifact_type='data'
                 )
                 
@@ -3601,7 +3974,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 self.logger.warning(f"Failed to load labeled data: {e}")
                 labeled_data = None
             
-            # Restore original context
+            # Restore original context (step name); artifact manager will
+            # reset symbol/timeframe back to defaults for this step.
             self.artifact_manager.set_context(
                 step_name=original_context,
                 datetime=datetime.now()
@@ -3858,6 +4232,17 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             if hasattr(features, 'columns'):
                 tprint(f"📊 Found {len(features.columns)} feature columns in {len(features)} rows")
                 feature_columns = features.columns.tolist()
+
+                # Ensure generated_features and feature_categories are always defined
+                # so that downstream metric/metadata code can safely reference them
+                # even when we don't hit the FeatureBank fallback path.
+                generated_features = features.copy()
+                feature_categories = {
+                    'all_features': {
+                        'features': feature_columns,
+                        'lookback_range': (1, 51)
+                    }
+                }
             else:
                 tprint("⚠️ Features not in expected format, using default optimization")
                 return self._create_default_optimization(config)
@@ -4321,29 +4706,29 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     self.logger.warning(f"Failed to optimize category {category}: {e}")
                     self.logger.info(f"Error details: {error_details}")
                     continue
-        
+            
         # Optimize lookback periods for all features (keep all features, optimize their lookbacks)
         lookback_optimization_result: Dict[str, Any] = {'category_optimizations': {}}
         try:
-            # NEW: Compute feature importance from merged data if individual results not available
+            # Prefer pre-computed per-feature results when available
             if artifacts.get('individual_feature_results'):
                 tprint("🎯 Optimizing lookback periods using pre-computed feature results...")
                 optimization_output = self._optimize_lookback_periods_by_category(
-                    artifacts['individual_feature_results'], 
+                    artifacts['individual_feature_results'],
                     max_lookbacks_per_feature=3
                 )
                 if isinstance(optimization_output, dict):
                     lookback_optimization_result = optimization_output
                 elif optimization_output is None:
                     tprint("⚠️ Lookback optimization returned no results; using empty defaults")
+            # Otherwise fall back to computing feature importance directly from the merged data
             elif features is not None and not features.empty:
                 tprint("🎯 Computing feature importance from merged data for lookback optimization...")
-                # Compute feature importance using the merged features and targets
                 individual_results = self._compute_feature_importance_from_data(features)
                 if individual_results:
                     tprint(f"✅ Computed importance for {sum(len(v) for v in individual_results.values())} features")
                     optimization_output = self._optimize_lookback_periods_by_category(
-                        individual_results, 
+                        individual_results,
                         max_lookbacks_per_feature=3
                     )
                     if isinstance(optimization_output, dict):
@@ -4355,8 +4740,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             else:
                 tprint("⚠️ No data available for lookback optimization; skipping")
 
+            # Attach raw lookback optimization result to artifacts for downstream reporting
             artifacts['lookback_optimization'] = lookback_optimization_result
-            
+
             # Log optimized lookbacks by category
             category_optimizations = lookback_optimization_result.get('category_optimizations', {}) if isinstance(lookback_optimization_result, dict) else {}
             if category_optimizations:
@@ -4364,237 +4750,261 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 for category, features in category_optimizations.items():
                     tprint(f"   📊 {category.upper()}:")
                     for feature_name, feature_info in features.items():
-                        # Safely get all lookbacks with multiple fallbacks
-                        lookbacks = feature_info.get('all_optimized_lookbacks',
-                                                     feature_info.get('optimized_lookbacks',
-                                                                      [feature_info.get('optimal_lookback', 'N/A')]))
+                        lookbacks = feature_info.get(
+                            'all_optimized_lookbacks',
+                            feature_info.get('optimized_lookbacks', [feature_info.get('optimal_lookback', 'N/A')])
+                        )
                         tprint(f"      {feature_name}: {lookbacks}")
             else:
                 tprint("⚠️ No lookback optimization performed")
         except Exception as e:
+            # Log but do not wipe artifacts; we still want partial results for reporting
             tprint(f"⚠️ Failed to optimize lookback periods: {e}")
             import traceback
             error_details = traceback.format_exc()
             self.logger.warning(f"Failed to optimize lookback periods: {e}")
             self.logger.info(f"Error details: {error_details}")
             lookback_optimization_result = {'category_optimizations': {}}
+            artifacts['lookback_optimization'] = lookback_optimization_result
 
-            # Cleanup: Stop hardware monitoring
-            try:
-                if hasattr(self.hardware_manager, 'shutdown'):
-                    self.hardware_manager.shutdown()
-            except Exception:
-                pass
-            
-            # Check if we have any successful optimizations from lookback optimization
-            successful_optimizations = []
-            if isinstance(lookback_optimization_result, dict):
-                category_optimizations = lookback_optimization_result.get('category_optimizations', {})
-                for category, features in category_optimizations.items():
-                    if features:
-                        # Check if at least one feature has a valid optimal lookback
-                        for feature_name, feature_info in features.items():
-                            lookback = feature_info.get('optimal_lookback', 0)
-                            if isinstance(lookback, (int, float)) and lookback > 0:
-                                successful_optimizations.append(category)
-                                break
-                        # Break out of outer loop if we found a valid optimization
-                        if category in successful_optimizations:
+        # Check if we have any successful optimizations from lookback optimization
+        successful_optimizations = []
+        if isinstance(lookback_optimization_result, dict):
+            category_optimizations = lookback_optimization_result.get('category_optimizations', {})
+            for category, features in category_optimizations.items():
+                if features:
+                    for feature_name, feature_info in features.items():
+                        lookback = feature_info.get('optimal_lookback', 0)
+                        if isinstance(lookback, (int, float)) and lookback > 0:
+                            successful_optimizations.append(category)
                             break
-            
-            if not successful_optimizations:
-                error_msg = "❌ CRITICAL: No successful optimizations completed!"
-                tprint(error_msg)
-                tprint("   All feature categories failed optimization.")
-                tprint("   This indicates insufficient data or optimization errors.")
-                
-                return {
-                    'success': False,
-                    'artifacts': {},
-                    'metrics': {},
-                    'error': f"{error_msg} No successful optimizations completed."
-                }
-            
-            # Generate per-feature metrics (skip for now to avoid errors)
-            per_feature_metrics = {}
-            
-            # Create artifacts with data-driven results
-            # Extract optimal lookbacks from lookback optimization result
-            optimized_lookbacks = {}
-            avg_performance_list = []
-            avg_stability_list = []
-            
-            if isinstance(lookback_optimization_result, dict):
-                category_optimizations = lookback_optimization_result.get('category_optimizations', {})
-                for category, features in category_optimizations.items():
-                    if features:
-                        # Get the first feature's optimal lookback as representative
-                        first_feature = next(iter(features.values()))
-                        optimal_lookback = first_feature.get('optimal_lookback', 0)
-                        optimized_lookbacks[category] = optimal_lookback
-                        
-                        # Collect performance and stability scores
-                        for feature_info in features.values():
-                            perf = feature_info.get('performance_score', 0)
-                            stab = feature_info.get('stability_score', 0)
-                            if perf > 0:
-                                avg_performance_list.append(perf)
-                            if stab > 0:
-                                avg_stability_list.append(stab)
-            
-            # Calculate overall optimization score
-            avg_performance = np.mean(avg_performance_list) if avg_performance_list else 0
-            avg_stability = np.mean(avg_stability_list) if avg_stability_list else 0
-            overall_score = (avg_performance + avg_stability) / 2 if (avg_performance > 0 or avg_stability > 0) else 0
-            
-            # Create artifacts with data-driven results
-            artifacts = {
-                'optimized_lookbacks': optimized_lookbacks,
-                'optimization_method': 'data_driven_cross_validation',
-                'optimization_results': lookback_optimization_result.get('category_optimizations', {}) if lookback_optimization_result else {},
-                'per_feature_optimization': per_feature_optimization,  # Store per-feature results for reporting
-                'per_feature_metrics': per_feature_metrics,
-                'lookback_optimization': lookback_optimization_result,
-                'metadata': {
-                    'symbol': config['symbol'],
-                    'exchange': config['exchange'],
-                    'timeframe': config['timeframe'],
-                    'execution_mode': config.get('execution_mode', 'light'),
-                    'created_at': datetime.now().isoformat(),
-                    'feature_count': len(generated_features.columns),
-                    'data_rows': len(generated_features),
-                    'generated_features_count': len(generated_features.columns),
-                    'original_features_count': len(feature_columns)
-                }
-            }
-            
-            # Create metrics with corrected mapping
+                if category in successful_optimizations:
+                    break
+
+        if not successful_optimizations:
+            error_msg = "❌ CRITICAL: No successful optimizations completed!"
+            tprint(error_msg)
+            tprint("   All feature categories failed optimization.")
+            tprint("   This indicates insufficient data or optimization errors.")
+
             metrics = {
-                'lookback_periods_tested': sum(len(range(cat['lookback_range'][0], cat['lookback_range'][1] + 1)) 
-                                              for cat in feature_categories.values() if cat['features']),
-                'best_momentum_features': optimized_lookbacks.get('momentum_features', 0),
-                'best_trend_features': optimized_lookbacks.get('trend_features', 0),
-                'best_volatility_features': optimized_lookbacks.get('volatility_features', 0),
-                'best_volume_features': optimized_lookbacks.get('volume_features', 0),
-                'best_oscillator_features': optimized_lookbacks.get('oscillator_features', 0),
-                'optimization_score': overall_score,
-                'performance_score': avg_performance,
-                'stability_score': avg_stability,
+                'lookback_periods_tested': 0,
+                'optimization_score': 0.0,
+                'performance_score': 0.0,
+                'stability_score': 0.0,
                 'execution_mode': config.get('execution_mode', 'light'),
-                'success': True,
+                'success': False,
                 'feature_count': len(generated_features.columns),
                 'data_rows': len(generated_features),
                 'generated_features_count': len(generated_features.columns),
                 'original_features_count': len(feature_columns),
                 'cv_folds': cv_folds,
                 'optimization_method': 'data_driven_cross_validation',
-                'categories_optimized': len(successful_optimizations),
+                'categories_optimized': 0,
                 'total_categories': len(feature_categories)
             }
-            
-            # Stop hardware monitoring and get performance metrics
-            # Note: UnifiedHardwareManager uses internal components for monitoring
-            # We'll use a simple fallback for hardware metrics
-            try:
-                if hasattr(self.hardware_manager, 'shutdown'):
-                    self.hardware_manager.shutdown()
-            except Exception:
-                pass
-            
-            # Get hardware metrics if available, otherwise use defaults
-            try:
-                hardware_metrics = self.hardware_manager.get_performance_metrics() if hasattr(self.hardware_manager, 'get_performance_metrics') else {}
-            except Exception:
-                hardware_metrics = {'memory_usage': 0, 'cpu_usage': 0}
-            
-            # Calculate overall cache statistics
-            total_cache_hits = self._cache_hits
-            total_cache_misses = self._cache_misses
-            overall_cache_hit_rate = total_cache_hits / (total_cache_hits + total_cache_misses) if (total_cache_hits + total_cache_misses) > 0 else 0
-            
-            # Calculate total optimization time
-            total_optimization_time = sum(self._optimization_times.values())
-            avg_optimization_time = total_optimization_time / len(self._optimization_times) if self._optimization_times else 0
-            
-            # Calculate VectorBT usage statistics
-            vectorbt_optimized_count = sum(1 for result in per_feature_optimization.values() 
-                                        for r in result if r.get('method') == 'vectorbt_optimized')
-            total_optimized_count = sum(len(result) for result in per_feature_optimization.values())
-            vectorbt_usage_rate = vectorbt_optimized_count / total_optimized_count if total_optimized_count > 0 else 0
-            
-            tprint(f"🎯 Data-driven optimization completed:")
-            tprint(f"   💾 Cache hit rate: {overall_cache_hit_rate:.1%} ({total_cache_hits}/{total_cache_hits + total_cache_misses})")
-            tprint(f"   ⏱️ Total optimization time: {total_optimization_time:.2f}s")
-            tprint(f"   ⚡ Avg time per feature: {avg_optimization_time:.3f}s")
-            tprint(f"   🧠 Memory usage: {hardware_metrics.get('memory_usage', 0):.1%}")
-            tprint(f"   🚀 VectorBT usage: {vectorbt_usage_rate:.1%} ({vectorbt_optimized_count}/{total_optimized_count} features)")
-            
-            # Log successful optimizations
-            if lookback_optimization_result:
-                category_optimizations = lookback_optimization_result.get('category_optimizations', {})
-                for category in successful_optimizations:
-                    if category in category_optimizations:
-                        features = category_optimizations[category]
-                        if features:
-                            first_feature = next(iter(features.values()))
-                            optimal_lookback = first_feature.get('optimal_lookback', 0)
-                            performance = first_feature.get('performance_score', 0.0)
-                            tprint(f"   {category.replace('_', ' ').title()}: {optimal_lookback} (score: {performance:.3f})")
-            
-            # Add performance metrics to artifacts
-            artifacts['performance_metrics'] = {
-                'cache_hit_rate': overall_cache_hit_rate,
-                'total_cache_hits': total_cache_hits,
-                'total_cache_misses': total_cache_misses,
-                'total_optimization_time': total_optimization_time,
-                'avg_optimization_time': avg_optimization_time,
-                'hardware_metrics': hardware_metrics,
-                'memory_usage': hardware_metrics.get('memory_usage', 0),
-                'cpu_usage': hardware_metrics.get('cpu_usage', 0),
-                'vectorbt_usage_rate': vectorbt_usage_rate,
-                'vectorbt_optimized_count': vectorbt_optimized_count,
-                'total_optimized_count': total_optimized_count,
-                'vectorbt_available': VECTORBT_AVAILABLE,
-                'optimization_method': 'vectorbt_batch' if vectorbt_usage_rate > 0.5 else 'hybrid'
-            }
-            
-            # Run comprehensive validation suite
-            try:
-                tprint("🔍 Running validation suite...")
-                validation_results = self._run_comprehensive_validation(
-                    generated_features,
-                    {feat: generated_features[feat] for feat in generated_features.columns if feat != target_column},
-                    generated_features[target_column],
-                    target_column
-                )
-                artifacts['validation_results'] = validation_results
-                tprint("✅ Validation suite completed and stored in artifacts")
-            except Exception as val_error:
-                self.logger.error(f"Validation suite failed: {val_error}")
-                tprint(f"⚠️ Validation suite failed: {val_error}")
-            
-            # Clean up memory
-            self.memory_optimizer.force_garbage_collection()
-            self._feature_cache.clear()  # Clear cache to free memory
-            
-            return {
-                'success': True,
-                'artifacts': artifacts,
-                'metrics': metrics
-            }
-            
-        except Exception as e:
-            error_msg = f"❌ CRITICAL: Optimization failed: {e}"
-            tprint(error_msg)
-            tprint("   The feature optimization process encountered an error.")
-            tprint("   Please check the logs and ensure all dependencies are met.")
-            
+
             return {
                 'success': False,
-                'artifacts': {},
-                'metrics': {},
-                'error': f"{error_msg} Optimization process failed."
+                'artifacts': artifacts,
+                'metrics': metrics,
+                'error': f"{error_msg} No successful optimizations completed."
             }
+
+        # Generate per-category summary metrics and per-feature lookback map
+        per_feature_metrics = {}
+        optimized_lookbacks: Dict[str, int] = {}
+        per_feature_lookbacks: Dict[str, List[int]] = {}
+        avg_performance_list = []
+        avg_stability_list = []
+
+        if isinstance(lookback_optimization_result, dict):
+            category_optimizations = lookback_optimization_result.get('category_optimizations', {})
+            for category, features in category_optimizations.items():
+                if features:
+                    # Normalize category key to the *_features form expected by reporting
+                    category_key = category if category.endswith('_features') else f"{category}_features"
+
+                    first_feature = next(iter(features.values()))
+                    optimal_lookback = first_feature.get('optimal_lookback', 0)
+                    optimized_lookbacks[category_key] = optimal_lookback
+
+                    # Aggregate per-category performance and stability
+                    perfs: List[float] = []
+                    stabs: List[float] = []
+                    for feature_name, feature_info in features.items():
+                        perf = feature_info.get('performance_score', 0)
+                        stab = feature_info.get('stability_score', 0)
+                        stab_phys = feature_info.get('stability_phys_score', stab)
+                        if perf > 0:
+                            perfs.append(perf)
+                            avg_performance_list.append(perf)
+                        if stab > 0:
+                            stabs.append(stab)
+                            avg_stability_list.append(stab)
+
+                        # Build per-feature lookback mapping using final feature names
+                        all_lookbacks = feature_info.get('all_optimized_lookbacks') or []
+                        if isinstance(all_lookbacks, (list, tuple)) and all_lookbacks:
+                            # Normalize to integers, skipping values that cannot be cast
+                            cleaned_lookbacks: List[int] = []
+                            for lb in all_lookbacks:
+                                try:
+                                    cleaned_lookbacks.append(int(lb))
+                                except Exception:
+                                    continue
+
+                            if cleaned_lookbacks:
+                                final_name = str(feature_info.get('feature_name', feature_name))
+                                per_feature_lookbacks[final_name] = cleaned_lookbacks
+                                per_feature_metrics[final_name] = {
+                                    'category': category_key,
+                                    'optimal_lookback': int(feature_info.get('optimal_lookback', 0)),
+                                    'performance_score': float(perf),
+                                    'stability_score': float(stab),
+                                    # Physical rolling-std stability for leak analysis
+                                    'stability_phys_score': float(stab_phys),
+                                }
+
+                    if perfs or stabs:
+                        category_perf = float(np.mean(perfs)) if perfs else 0.0
+                        category_stab = float(np.mean(stabs)) if stabs else 0.0
+                    else:
+                        category_perf = 0.0
+                        category_stab = 0.0
+
+                    optimization_results[category_key] = {
+                        'optimal_lookback': optimal_lookback,
+                        'num_features_optimized': len(features),
+                        'performance_score': category_perf,
+                        'stability_score': category_stab,
+                    }
+
+        avg_performance = np.mean(avg_performance_list) if avg_performance_list else 0
+        avg_stability = np.mean(avg_stability_list) if avg_stability_list else 0
+        overall_score = (avg_performance + avg_stability) / 2 if (avg_performance > 0 or avg_stability > 0) else 0
+
+        # Update artifacts without discarding existing keys like individual_feature_results
+        artifacts['optimized_lookbacks'] = optimized_lookbacks
+        # New: expose per-feature lookback mapping for downstream consumers
+        artifacts['per_feature_lookbacks'] = per_feature_lookbacks
+        artifacts['optimization_method'] = 'data_driven_cross_validation'
+        artifacts['optimization_results'] = optimization_results
+        artifacts['per_feature_optimization'] = per_feature_optimization
+        artifacts['per_feature_metrics'] = per_feature_metrics
+        if 'metadata' not in artifacts:
+            artifacts['metadata'] = {
+                'symbol': config['symbol'],
+                'exchange': config['exchange'],
+                'timeframe': config['timeframe'],
+                'execution_mode': config.get('execution_mode', 'light'),
+                'created_at': datetime.now().isoformat(),
+                'feature_count': len(generated_features.columns),
+                'data_rows': len(generated_features),
+                'generated_features_count': len(generated_features.columns),
+                'original_features_count': len(feature_columns)
+            }
+
+        # Create metrics with corrected mapping
+        metrics = {
+            'lookback_periods_tested': sum(
+                len(range(cat['lookback_range'][0], cat['lookback_range'][1] + 1))
+                for cat in feature_categories.values() if cat['features']
+            ),
+            'best_momentum_features': optimized_lookbacks.get('momentum_features', 0),
+            'best_trend_features': optimized_lookbacks.get('trend_features', 0),
+            'best_volatility_features': optimized_lookbacks.get('volatility_features', 0),
+            'best_volume_features': optimized_lookbacks.get('volume_features', 0),
+            'best_oscillator_features': optimized_lookbacks.get('oscillator_features', 0),
+            'optimization_score': overall_score,
+            'performance_score': avg_performance,
+            'stability_score': avg_stability,
+            'execution_mode': config.get('execution_mode', 'light'),
+            'success': True,
+            'feature_count': len(generated_features.columns),
+            'data_rows': len(generated_features),
+            'generated_features_count': len(generated_features.columns),
+            'original_features_count': len(feature_columns),
+            'cv_folds': cv_folds,
+            'optimization_method': 'data_driven_cross_validation',
+            'categories_optimized': len(successful_optimizations),
+            'total_categories': len(feature_categories)
+        }
+
+        # Stop hardware monitoring and get performance metrics
+        try:
+            if hasattr(self.hardware_manager, 'shutdown'):
+                self.hardware_manager.shutdown()
+        except Exception:
+            pass
+
+        try:
+            hardware_metrics = self.hardware_manager.get_performance_metrics() if hasattr(self.hardware_manager, 'get_performance_metrics') else {}
+        except Exception:
+            hardware_metrics = {'memory_usage': 0, 'cpu_usage': 0}
+
+        total_cache_hits = self._cache_hits
+        total_cache_misses = self._cache_misses
+        overall_cache_hit_rate = total_cache_hits / (total_cache_hits + total_cache_misses) if (total_cache_hits + total_cache_misses) > 0 else 0
+
+        total_optimization_time = sum(self._optimization_times.values())
+        avg_optimization_time = total_optimization_time / len(self._optimization_times) if self._optimization_times else 0
+
+        vectorbt_optimized_count = sum(
+            1 for result in per_feature_optimization.values()
+            for r in result if r.get('method') == 'vectorbt_optimized'
+        )
+        total_optimized_count = sum(len(result) for result in per_feature_optimization.values())
+        vectorbt_usage_rate = vectorbt_optimized_count / total_optimized_count if total_optimized_count > 0 else 0
+
+        tprint("🎯 Data-driven optimization completed:")
+        tprint(f"   💾 Cache hit rate: {overall_cache_hit_rate:.1%} ({total_cache_hits}/{total_cache_hits + total_cache_misses})")
+        tprint(f"   ⏱️ Total optimization time: {total_optimization_time:.2f}s")
+        tprint(f"   ⚡ Avg time per feature: {avg_optimization_time:.3f}s")
+        tprint(f"   🧠 Memory usage: {hardware_metrics.get('memory_usage', 0):.1%}")
+        tprint(f"   🚀 VectorBT usage: {vectorbt_usage_rate:.1%} ({vectorbt_optimized_count}/{total_optimized_count} features)")
+
+        # Add performance metrics to artifacts
+        artifacts['performance_metrics'] = {
+            'cache_hit_rate': overall_cache_hit_rate,
+            'total_cache_hits': total_cache_hits,
+            'total_cache_misses': total_cache_misses,
+            'total_optimization_time': total_optimization_time,
+            'avg_optimization_time': avg_optimization_time,
+            'hardware_metrics': hardware_metrics,
+            'memory_usage': hardware_metrics.get('memory_usage', 0),
+            'cpu_usage': hardware_metrics.get('cpu_usage', 0),
+            'vectorbt_usage_rate': vectorbt_usage_rate,
+            'vectorbt_optimized_count': vectorbt_optimized_count,
+            'total_optimized_count': total_optimized_count,
+            'vectorbt_available': VECTORBT_AVAILABLE,
+            'optimization_method': 'vectorbt_batch' if vectorbt_usage_rate > 0.5 else 'hybrid'
+        }
+
+        # Run comprehensive validation suite
+        try:
+            tprint("🔍 Running validation suite...")
+            validation_results = self._run_comprehensive_validation(
+                generated_features,
+                {feat: generated_features[feat] for feat in generated_features.columns if feat != target_column},
+                generated_features[target_column],
+                target_column
+            )
+            artifacts['validation_results'] = validation_results
+            tprint("✅ Validation suite completed and stored in artifacts")
+        except Exception as val_error:
+            self.logger.error(f"Validation suite failed: {val_error}")
+            tprint(f"⚠️ Validation suite failed: {val_error}")
+
+        # Clean up memory
+        self.memory_optimizer.force_garbage_collection()
+        self._feature_cache.clear()  # Clear cache to free memory
+
+        return {
+            'success': True,
+            'artifacts': artifacts,
+            'metrics': metrics
+        }
     
     
     def _generate_outcome_report(self, metrics: Dict[str, Any], artifacts: Dict[str, Any], config: Dict[str, Any]) -> Optional[str]:
@@ -5064,6 +5474,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                     'optimal_lookback': feature_data.get('optimal_lookback', 'N/A'),
                                     'performance_score': feature_data.get('performance_score', 0.0),
                                     'stability_score': feature_data.get('stability_score', 0.0),
+                                    'stability_phys_score': feature_data.get('stability_phys_score', feature_data.get('stability_score', 0.0)),
                                     'information_score': feature_data.get('information_score', 0.0),
                                     'optimization_method': feature_data.get('optimization_method', 'cross_validation'),
                                     'cv_folds': feature_data.get('cv_folds', 2),
@@ -5113,6 +5524,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                 'optimal_lookback': feature_data.get('optimal_lookback', 'N/A'),
                                 'performance_score': feature_data.get('performance_score', 0.0),
                                 'stability_score': feature_data.get('stability_score', 0.0),
+                                'stability_phys_score': feature_data.get('stability_phys_score', feature_data.get('stability_score', 0.0)),
                                 'information_score': feature_data.get('information_score', 0.0),
                                 'optimization_method': feature_data.get('optimization_method', 'cross_validation'),
                                 'cv_folds': feature_data.get('cv_folds', 2),
@@ -5132,6 +5544,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                             'optimal_lookback': category_data.get('optimal_lookback', 'N/A'),
                             'performance_score': category_data.get('performance_score', 0.0),
                             'stability_score': category_data.get('stability_score', 0.0),
+                            'stability_phys_score': category_data.get('stability_phys_score', category_data.get('stability_score', 0.0)),
                             'information_score': category_data.get('information_score', 0.0),
                             'optimization_method': 'cross_validation',
                             'cv_folds': 2,
@@ -5156,7 +5569,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         optimal_lookback = feature_info['optimal_lookback']
                         alternative_lookbacks = feature_info['alternative_lookbacks']
                         
-                        # Calculate information_score from performance and stability
+                        # Calculate information_score from performance and MI-based stability
                         perf_score = feature_info['performance_score']
                         stab_score = feature_info['stability_score']
                         information_score = (perf_score + stab_score) / 2.0 if (perf_score > 0 or stab_score > 0) else 0.0
@@ -5174,6 +5587,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                             'all_lookbacks': feature_info.get('all_optimized_lookbacks', []),
                             'performance_score': perf_score,
                             'stability_score': stab_score,
+                            'stability_phys_score': feature_info.get('stability_phys_score', stab_score),
                             'information_score': information_score,
                             'composite_score': composite_score,  # stability × information for feature weighting
                             'optimization_method': feature_info.get('optimization_method', 'intelligent_ranges'),
@@ -5236,64 +5650,114 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         Filters applied:
         1. Lookback range constraints (min: 5, max: 60 for primary)
-        2. Stability validation (flag > 0.95 or < 0.4)
+        2. Stability validation (physical rolling-std stability + MI condition)
         3. Alternative lookback validation (must differ meaningfully from primary)
-        4. Composite score threshold (minimum 0.45)
         """
         filtered_data = []
         flagged_count = 0
+        original_count = len(per_feature_data)
         
         for row in per_feature_data:
             feature_name = row.get('feature_name', 'unknown')
             optimal_lookback = row.get('optimal_lookback')
             alt_1 = row.get('alternative_lookback_1')
             alt_2 = row.get('alternative_lookback_2')
-            stability = row.get('stability_score', 0.0)
+            # MI-based stability (early/late MI curve)
+            stability_mi = row.get('stability_score', 0.0)
+            # Physical rolling-std-based stability for the chosen lookback
+            stability_phys = row.get('stability_phys_score', stability_mi)
+            information = row.get('information_score', 0.0)
             composite = row.get('composite_score', 0.0)
             
             # Filter 1: Lookback range constraints
             if optimal_lookback is not None:
-                if optimal_lookback < 5:
-                    self.logger.warning(f"🚩 Filtered {feature_name}: optimal_lookback={optimal_lookback} < 5 (too short, microstructure risk)")
+                # For micro-horizon targets (e.g. 3-bar), allow very short windows.
+                # Only drop pathological cases where optimal_lookback < 3.
+                if optimal_lookback < 3:
+                    self.logger.warning(
+                        f"🚩 Filtered {feature_name}: optimal_lookback={optimal_lookback} < 3 "
+                        f"(too short even for micro-horizon; likely noise or artifact)"
+                    )
+                    tprint(
+                        f"🚩 [LOOKBACK FILTER] {feature_name}: optimal_lookback={optimal_lookback} < 3 "
+                        f"(too short even for micro-horizon; dropping feature)"
+                    )
                     flagged_count += 1
                     continue
                 elif optimal_lookback > 60:
                     self.logger.warning(f"🚩 Filtered {feature_name}: optimal_lookback={optimal_lookback} > 60 (likely context signal, not trigger)")
+                    tprint(f"🚩 [LOOKBACK FILTER] {feature_name}: optimal_lookback={optimal_lookback} > 60 (likely context signal, not trigger)")
                     flagged_count += 1
                     continue
             
-            # Filter 2: Stability validation
-            if stability > 0.95:
-                self.logger.warning(f"🚩 Filtered {feature_name}: stability={stability:.3f} > 0.95 (artificially high, check for leakage)")
+            # Filter 2: Stability validation (physical stability + MI condition)
+            # Only treat a feature as a leak candidate if it is both very stable in
+            # its raw time-series (rolling-std based) AND has high information/MI.
+            if stability_phys >= 0.95 and information >= 0.6:
+                self.logger.warning(
+                    f"🚩 Filtered {feature_name}: stability_phys={stability_phys:.3f}, information={information:.3f} "
+                    f">= thresholds (0.95, 0.60) – high-information, ultra-stable signal (possible leakage)"
+                )
+                tprint(
+                    f"🚩 [STABILITY LEAK FILTER] {feature_name}: stability_phys={stability_phys:.3f}, information={information:.3f} "
+                    f"(high-information, ultra-stable; dropping feature as potential leakage)"
+                )
                 flagged_count += 1
                 continue
-            elif stability < 0.4:
-                self.logger.warning(f"🚩 Filtered {feature_name}: stability={stability:.3f} < 0.4 (too fragile, unreliable)")
+            elif stability_phys < 0.4:
+                # Low physical stability: warn but keep the feature for downstream diagnostics and weighting
+                self.logger.warning(
+                    f"🚩 Low physical stability for {feature_name}: stability_phys={stability_phys:.3f} < 0.4 "
+                    f"(keeping feature but marking as fragile)"
+                )
+                tprint(
+                    f"🚩 [STABILITY WARNING] {feature_name}: stability_phys={stability_phys:.3f} < 0.4 "
+                    f"(keeping feature but marking as low stability)"
+                )
                 flagged_count += 1
-                continue
             
             # Filter 3: Alternative lookback validation
+            # If the first alternative lookback is too close to the primary one,
+            # drop the alternative but keep the main feature (do NOT reject the row).
             if alt_1 is not None and optimal_lookback is not None:
                 # Ensure alternative differs meaningfully from primary
                 min_diff_ratio = 0.3
                 alt1_diff_ratio = abs(alt_1 - optimal_lookback) / optimal_lookback if optimal_lookback > 0 else 1.0
                 if alt1_diff_ratio < min_diff_ratio:
-                    self.logger.warning(f"🚩 Filtered {feature_name}: alt1={alt_1} too close to optimal={optimal_lookback} (diff ratio: {alt1_diff_ratio:.2f} < {min_diff_ratio})")
-                    flagged_count += 1
-                    continue
-            
-            # Filter 4: Composite score threshold
-            if composite < 0.45:
-                self.logger.warning(f"🚩 Filtered {feature_name}: composite_score={composite:.3f} < 0.45 (too weak)")
-                flagged_count += 1
-                continue
+                    self.logger.warning(
+                        f"🚩 Adjusting {feature_name}: alt1={alt_1} too close to optimal={optimal_lookback} "
+                        f"(diff ratio: {alt1_diff_ratio:.2f} < {min_diff_ratio}); dropping alt1 but keeping feature"
+                    )
+                    tprint(
+                        f"🚩 [ALT LOOKBACK FILTER] {feature_name}: alt1={alt_1} too close to optimal={optimal_lookback} "
+                        f"(diff ratio: {alt1_diff_ratio:.2f} < {min_diff_ratio}); dropping alternative"
+                    )
+                    # Keep the feature but remove the problematic alternative lookback
+                    # Promote alt_2 into the first slot if available, otherwise clear alt_1
+                    if alt_2 is not None:
+                        row['alternative_lookback_1'] = alt_2
+                        row['alternative_lookback_2'] = None
+                    else:
+                        row['alternative_lookback_1'] = None
+                        row['alternative_lookback_2'] = None
             
             # Feature passed all filters
             filtered_data.append(row)
         
         if flagged_count > 0:
             tprint(f"🚩 Quality filters: Flagged {flagged_count} suspicious features out of {len(per_feature_data)}")
-        
+
+        # If all features would be removed by filters, fall back to unfiltered data for diagnostics
+        if filtered_data:
+            return filtered_data
+
+        if original_count > 0:
+            tprint(
+                "⚠️ Quality filters would remove all features; "
+                "returning unfiltered per-feature metrics for diagnostics"
+            )
+            return per_feature_data
+
         return filtered_data
 
     def _run_comprehensive_validation(self, data: pd.DataFrame, features_dict: Dict[str, pd.Series], 
@@ -5590,6 +6054,27 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         try:
             if not hasattr(features, 'columns'):
                 return None
+            
+            fused_targets = [
+                'target_long_fused',
+                'target_short_fused',
+            ]
+            # Prefer direction-specific fused targets when direction is known
+            direction = getattr(self, '_target_direction', None)
+            if isinstance(direction, str):
+                dir_lower = direction.lower()
+                if 'short' in dir_lower and 'target_short_fused' in features.columns:
+                    tprint("🎯 Found fused short target column: target_short_fused")
+                    return 'target_short_fused'
+                if 'long' in dir_lower and 'target_long_fused' in features.columns:
+                    tprint("🎯 Found fused long target column: target_long_fused")
+                    return 'target_long_fused'
+
+            # Fallback: any fused target present
+            for candidate in fused_targets:
+                if candidate in features.columns:
+                    tprint(f"🎯 Found fused target column: {candidate}")
+                    return candidate
             
             # Priority 1: Exact matches for analyst-specific targets
             analyst_targets = [

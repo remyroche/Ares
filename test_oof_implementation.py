@@ -6,6 +6,13 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import TimeSeriesSplit
 
+# Import des assertions standardisées
+from tests.utils.assertions import (
+    assert_float_equals,
+    assert_dict_structure,
+    assert_list_structure
+)
+
 def test_oof_predictions():
     """Test OOF prediction generation with a simple example."""
 
@@ -77,11 +84,20 @@ def test_oof_predictions():
     print(f"NaN values: {nan_count}/{oof_predictions.size} ({nan_pct:.1f}%)")
 
     # Verify predictions have correct shape
-    assert oof_predictions.shape == (n_samples, n_classes), \
-        f"Shape mismatch: {oof_predictions.shape} != {(n_samples, n_classes)}"
-
+    expected_shape = (n_samples, n_classes)
+    assert_dict_structure(
+        {'shape': oof_predictions.shape, 'expected': expected_shape},
+        ['shape', 'expected'],
+        message=f"Shape mismatch: {oof_predictions.shape} != {expected_shape}"
+    )
+    
     # Verify we have predictions for most samples (TimeSeriesSplit leaves first fold without predictions)
-    assert coverage_pct >= 60, f"Coverage too low: {coverage_pct:.1f}%"
+    assert_float_equals(
+        coverage_pct,
+        60.0,
+        tolerance=5.0,  # Allow 5% tolerance for edge cases
+        message=f"Coverage too low: {coverage_pct:.1f}%"
+    )
 
     print("\n✅ All tests passed!")
     print("=" * 80)

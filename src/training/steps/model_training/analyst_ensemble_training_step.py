@@ -107,7 +107,7 @@ class AnalystEnsembleTrainingStep(BaseStep):
             )
 
             regime_probs = self._get_artifact(
-                'regime_ensemble_probabilities',
+                'regime_ensemble_predictions',
                 artifact_type='data',
                 data_category='predictions'
             )
@@ -142,15 +142,14 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 data_category='predictions'
             )
             used_oof = base_predictions is not None
-            if base_predictions is None:
-                base_predictions = self._get_artifact(
-                    'analyst_base_predictions',
-                    artifact_type='data',
-                    data_category='predictions'
-                )
             tprint(f"   Base predictions source: OOF={used_oof}", "INFO")
             if not used_oof:
-                tprint("   ⚠️ Using in-sample base predictions for stacking may inflate performance; prefer OOF artifacts.", "WARNING")
+                error_msg = (
+                    "❌ OOF base predictions not found for analyst ensemble stacking.\n"
+                    "   Please rerun analyst_base_training to generate 'analyst_base_predictions_oof'."
+                )
+                tprint(error_msg, "ERROR")
+                return {'success': False, 'artifacts': {}, 'metrics': {}, 'error': error_msg}
 
             base_confidence = self._get_artifact(
                 'analyst_base_confidence',
@@ -281,10 +280,23 @@ class AnalystEnsembleTrainingStep(BaseStep):
             # Verify model is saved in Pickle format
             tprint("✅ Verifying model saved in Pickle format...", "INFO")
             model_path = ensemble_result.get('model_path')
+
+            # Fallback: derive model path from artifacts if not explicitly provided
+            if not model_path:
+                artifacts = ensemble_result.get('artifacts', {})
+                if isinstance(artifacts, dict):
+                    candidate = artifacts.get('analyst_ensemble_model') or artifacts.get('ensemble_model')
+                    if candidate:
+                        model_path = candidate
+
             if model_path and Path(model_path).exists():
                 tprint(f"✅ Model saved at: {model_path}", "SUCCESS")
             else:
-                tprint("⚠️ Model path not found in result", "WARNING")
+                artifacts = ensemble_result.get('artifacts', {})
+                if isinstance(artifacts, dict) and artifacts:
+                    tprint(f"⚠️ Model path not found; available artifacts: {list(artifacts.keys())}", "WARNING")
+                else:
+                    tprint("⚠️ Model path not found in result", "WARNING")
 
             return {
                 'success': True,

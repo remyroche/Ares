@@ -6,6 +6,13 @@ import numpy as np
 import pandas as pd
 from src.training.steps.pre_training.utils.target_quality_metrics import calculate_target_quality_metrics
 
+# Import des assertions standardisées
+from tests.utils.assertions import (
+    assert_float_equals,
+    assert_dict_structure,
+    assert_list_structure
+)
+
 
 def test_target_quality_metrics():
     """Test target quality metrics with synthetic data."""
@@ -25,11 +32,66 @@ def test_target_quality_metrics():
     metrics1 = calculate_target_quality_metrics(labels_structured)
 
     print("\nResults:")
+    
+    # Validation avec assertions standardisées
+    assert_dict_structure(
+        metrics1,
+        ['overall_assessment', 'variance_distribution', 'autocorrelation', 'entropy', 'baseline_predictors'],
+        message="Les métriques doivent contenir les clés principales"
+    )
+    
+    assert_dict_structure(
+        metrics1['overall_assessment'],
+        ['quality_grade', 'quality_score'],
+        message="L'évaluation globale doit contenir 'quality_grade' et 'quality_score'"
+    )
+    
+    quality_score = metrics1['overall_assessment']['quality_score']
+    assert isinstance(quality_score, (int, float)), "Le quality score doit être numérique"
+    assert 0 <= quality_score <= 100, f"Le quality score doit être entre 0 et 100, valeur: {quality_score}"
     print(f"  Quality Grade: {metrics1['overall_assessment']['quality_grade']}")
-    print(f"  Quality Score: {metrics1['overall_assessment']['quality_score']:.1f}/100")
-    print(f"  Variance: {metrics1['variance_distribution']['variance']:.6f}")
-    print(f"  Lag-1 Autocorrelation: {metrics1['autocorrelation']['lag1_autocorrelation']:.4f}")
-    print(f"  Normalized Entropy: {metrics1['entropy']['normalized_entropy']:.4f}")
+    print(f"  Quality Score: {quality_score:.1f}/100")
+    
+    assert_dict_structure(
+        metrics1['variance_distribution'],
+        ['variance'],
+        message="La distribution de variance doit contenir 'variance'"
+    )
+    variance = metrics1['variance_distribution']['variance']
+    assert isinstance(variance, (int, float)), "La variance doit être numérique"
+    assert variance >= 0, f"La variance doit être non-négative, valeur: {variance}"
+    print(f"  Variance: {variance:.6f}")
+    
+    assert_dict_structure(
+        metrics1['autocorrelation'],
+        ['lag1_autocorrelation'],
+        message="L'autocorrélation doit contenir 'lag1_autocorrelation'"
+    )
+    lag1_autocorr = metrics1['autocorrelation']['lag1_autocorrelation']
+    assert isinstance(lag1_autocorr, (int, float)), "L'autocorrélation lag-1 doit être numérique"
+    assert -1 <= lag1_autocorr <= 1, f"L'autocorrélation lag-1 doit être entre -1 et 1, valeur: {lag1_autocorr}"
+    print(f"  Lag-1 Autocorrelation: {lag1_autocorr:.4f}")
+    
+    assert_dict_structure(
+        metrics1['entropy'],
+        ['normalized_entropy'],
+        message="L'entropie doit contenir 'normalized_entropy'"
+    )
+    entropy = metrics1['entropy']['normalized_entropy']
+    assert isinstance(entropy, (int, float)), "L'entropie normalisée doit être numérique"
+    assert entropy >= 0, f"L'entropie doit être non-négative, valeur: {entropy}"
+    print(f"  Normalized Entropy: {entropy:.4f}")
+    
+    assert_dict_structure(
+        metrics1['baseline_predictors'],
+        ['best_baseline'],
+        message="Les prédicteurs de base doivent contenir 'best_baseline'"
+    )
+    assert_dict_structure(
+        metrics1['baseline_predictors']['best_baseline'],
+        ['name'],
+        message="Le meilleur baseline doit contenir 'name'"
+    )
     print(f"  Best Baseline: {metrics1['baseline_predictors']['best_baseline']['name']}")
 
     # Test Case 2: Noisy target

@@ -545,12 +545,29 @@ class HierarchicalParameterOptimizer:
             HierarchicalOptimizationResult with best parameters and details
         """
         start_time = time.time()
-        
+
         logger.info("🚀 Starting hierarchical parameter optimization")
         logger.info(f"   Training samples: {len(X_train)}")
         logger.info(f"   Features: {X_train.shape[1] if hasattr(X_train, 'shape') else 'N/A'}")
         logger.info(f"   Number of rounds: {self.n_rounds}")
-        
+
+        # Guard against empty training data to avoid noisy CV logs and meaningless HPO
+        if X_train is None or len(X_train) == 0 or y_train is None or len(y_train) == 0:
+            logger.warning(
+                "⚠️ No training samples available for hierarchical optimization "
+                f"(X_train shape={getattr(X_train, 'shape', None)}, y_train shape={getattr(y_train, 'shape', None)}). "
+                "Skipping HPO and returning default result."
+            )
+            default_score = float("-inf") if self.direction == "maximize" else float("inf")
+            return HierarchicalOptimizationResult(
+                best_params={},
+                best_score=default_score,
+                group_results=[],
+                total_time=time.time() - start_time,
+                total_trials=0,
+                final_refinement_result=None,
+            )
+
         # Initialize with any provided initial parameters
         if initial_params:
             self.optimized_params = deepcopy(initial_params)

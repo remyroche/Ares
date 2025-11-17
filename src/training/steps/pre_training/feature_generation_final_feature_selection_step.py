@@ -16,6 +16,7 @@ Features:
 import asyncio
 import logging
 import warnings
+import re
 import pandas as pd
 import numpy as np
 
@@ -43,6 +44,8 @@ from src.training.steps.pre_training.components.final_feature_selection import (
     FinalFeatureSelectionConfig,
     FinalFeatureSelectionComponent
 )
+
+from src.features_common.transforms.scaling_normalization import robust_normalize
 
 # Import VectorBT optimization tools
 from src.feature_generation.utils.vectorbt_rolling_optimizer import (
@@ -137,9 +140,9 @@ logger = logging.getLogger(__name__)
 # Define target column names once to avoid hardcoding throughout the codebase
 # Updated to include fused/simplified target structures
 TARGET_COLUMN_NAMES = [
-    'target', 'label', 'return', 'price_target_vol_normalized',
     'target_long_fused', 'target_short_fused',
     'target_long', 'target_short',
+    'target', 'label', 'return', 'price_target_vol_normalized',
     'target_sample_weight', 'labeling_method_id', 'labeling_timestamp'
 ]
 
@@ -524,6 +527,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_info("⏱️ [3/10] Combining features...")
             combined_features_df = self._combine_features(features_data, labeled_df)
             tprint_info(f"✅ Combined {combined_features_df.shape} in {time.time()-t0:.2f}s")
+            
+            # Blank-mode specific shaping: compress extremes and normalize key feature blocks
+            combined_features_df = self._apply_blank_mode_shaping(combined_features_df, config)
             
             # CRITICAL DEBUGGING: Check if we got the full dataset
             tprint_error(f"🔍 CRITICAL CHECK: Combined features dataset size")
@@ -946,6 +952,97 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             self.hardware_optimization_enabled = False
             tprint_warning("⚠️ Continuing without hardware optimizations")
 
+    def _apply_blank_mode_shaping(self, combined_features_df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """Apply blank-mode specific outlier compression and normalization to key feature blocks.
+
+        This is a light, post-feature-generation shaping pass that:
+        - only runs when execution_mode == 'blank'
+        - targets heavy-tailed blocks (wavelet / volatility / AD-line features)
+        - applies modest quantile winsorization followed by robust normalization
+        """
+        try:
+            execution_mode = config.get("execution_mode", "blank")
+            if execution_mode != "blank":
+                return combined_features_df
+
+            if combined_features_df is None or combined_features_df.empty:
+                return combined_features_df
+
+            df = combined_features_df.copy()
+
+            # Identify numeric feature columns (exclude targets and timestamp)
+            feature_cols: List[str] = [
+                col
+                for col in df.columns
+                if col not in TARGET_COLUMN_NAMES + ["timestamp"]
+                and pd.api.types.is_numeric_dtype(df[col])
+            ]
+
+            if not feature_cols:
+                return df
+
+            # Focus on the heavy-tailed families highlighted in validation reports
+            wavelet_cols = [col for col in feature_cols if "wavelet" in col.lower()]
+            volatility_cols = [
+                col
+                for col in feature_cols
+                if "volatility" in col.lower()
+                or "band_limited_volatility" in col.lower()
+                or "enhanced_volatility" in col.lower()
+            ]
+            ad_line_cols = [
+                col
+                for col in feature_cols
+                if "ad_line" in col.lower()
+                or "accumulation_distribution" in col.lower()
+                or "adline" in col.lower()
+            ]
+
+            blocks: List[Tuple[str, List[str]]] = [
+                ("wavelet", wavelet_cols),
+                ("volatility", volatility_cols),
+                ("ad_line", ad_line_cols),
+            ]
+
+            # Default to conservative tails, but allow config override if needed
+            lower_q = float(config.get("blank_mode_lower_quantile", 0.0025))
+            upper_q = float(config.get("blank_mode_upper_quantile", 0.9975))
+
+            tprint_info(
+                f"🔧 [BLANK_SHAPING] Applying quantile winsorization/robust normalization "
+                f"to key blocks (lower_q={lower_q}, upper_q={upper_q})"
+            )
+
+            for block_name, cols in blocks:
+                if not cols:
+                    continue
+
+                try:
+                    block_df = df[cols]
+
+                    # Quantile-based clipping per column
+                    lower_bounds = block_df.quantile(lower_q)
+                    upper_bounds = block_df.quantile(upper_q)
+                    block_clipped = block_df.clip(lower=lower_bounds, upper=upper_bounds, axis="columns")
+
+                    # Robust normalization (median/IQR-style) on the clipped block
+                    block_normalized = robust_normalize(block_clipped)
+
+                    df[cols] = block_normalized
+                    tprint_info(
+                        f"📊 [BLANK_SHAPING] Block '{block_name}' shaped: {len(cols)} features"
+                    )
+                except Exception as e:
+                    tprint_warning(
+                        f"⚠️ [BLANK_SHAPING] Skipping block '{block_name}' due to error: {e}"
+                    )
+
+            return df
+        except Exception as e:
+            # Fail safe: never break the pipeline because of shaping
+            tprint_warning(f"⚠️ [BLANK_SHAPING] Failed to apply shaping, returning original data: {e}")
+            return combined_features_df
+
     def _combine_features(self, features_data: Dict[str, Any], labeled_df: pd.DataFrame) -> pd.DataFrame:
         """Combine features from different sources into a single DataFrame with VectorBT optimizations."""
         tprint_error("🔄 CRITICAL DEBUG: Starting _combine_features method")
@@ -1344,7 +1441,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         
         # Debug: Check if target column is present with priority for new simplified target structure
         # First check for new simplified target structure (highest priority)
-        if 'target_long' in result_df.columns and 'target_short' in result_df.columns:
+        if 'target_long_fused' in result_df.columns and 'target_short_fused' in result_df.columns:
+            available_targets = ['target_long_fused', 'target_short_fused']
+            tprint_info("📊 Using fused target structure: target_long_fused, target_short_fused")
+            tprint_info(f"📊 Target columns found: target_long_fused ({result_df['target_long_fused'].notna().sum()} non-NaN), target_short_fused ({result_df['target_short_fused'].notna().sum()} non-NaN)")
+        elif 'target_long' in result_df.columns and 'target_short' in result_df.columns:
             available_targets = ['target_long', 'target_short']
             tprint_info("📊 Using new simplified target structure: target_long, target_short")
             tprint_info(f"📊 Target columns found: target_long ({result_df['target_long'].notna().sum()} non-NaN), target_short ({result_df['target_short'].notna().sum()} non-NaN)")
@@ -1513,7 +1614,90 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             use_permutation_importance=config.get('use_permutation_importance', True)
         )
 
-    def _perform_multi_size_selection(self, features_df: pd.DataFrame, targets: pd.Series, config: Dict[str, Any]) -> Dict[str, List[str]]:
+    def _apply_feature_caps(
+        self,
+        ranked_features: List[str],
+        max_interaction_features: int = 10,
+        max_cross_timeframe_per_base: int = 10,
+        max_variant_features: int = 10,
+        min_interaction_features: int = 4,
+        min_cross_timeframe_features: int = 4,
+        min_variant_features: int = 4,
+    ) -> List[str]:
+        interaction_count = 0
+        variant_count = 0
+        cross_timeframe_counts: Dict[str, int] = {}
+        capped_features: List[str] = []
+
+        for feature in ranked_features:
+            name = str(feature)
+            name_lower = name.lower()
+
+            is_interaction = ("interaction" in name_lower) or ("_x_" in name_lower)
+            is_variant = (
+                name_lower.endswith("_volnorm")
+                or name_lower.endswith("_vwap")
+                or name_lower.endswith("_trend_adj")
+            )
+            is_cross_timeframe = (
+                "ctf_" in name_lower
+                or "cross_timeframe" in name_lower
+                or re.search(r"\d+[mhd]", name_lower) is not None
+            )
+
+            if is_interaction and interaction_count >= max_interaction_features:
+                continue
+
+            cross_base: Optional[str] = None
+            if is_cross_timeframe:
+                parts = name.split("_")
+                filtered_parts = []
+                for part in parts:
+                    if re.fullmatch(r"\d+[mhd]", part.lower()):
+                        continue
+                    filtered_parts.append(part)
+                cross_base = "_".join(filtered_parts) if filtered_parts else name
+                if cross_timeframe_counts.get(cross_base, 0) >= max_cross_timeframe_per_base:
+                    continue
+
+            if is_variant and variant_count >= max_variant_features:
+                continue
+
+            capped_features.append(name)
+
+            if is_interaction:
+                interaction_count += 1
+            if is_cross_timeframe and cross_base is not None:
+                cross_timeframe_counts[cross_base] = cross_timeframe_counts.get(cross_base, 0) + 1
+            if is_variant:
+                variant_count += 1
+
+        cross_timeframe_total = sum(cross_timeframe_counts.values())
+
+        if interaction_count < min_interaction_features:
+            tprint_warning(
+                f"⚠️ Soft minimum for interaction features not met: "
+                f"{interaction_count} < {min_interaction_features}"
+            )
+        if cross_timeframe_total < min_cross_timeframe_features:
+            tprint_warning(
+                f"⚠️ Soft minimum for cross-timeframe features not met: "
+                f"{cross_timeframe_total} < {min_cross_timeframe_features}"
+            )
+        if variant_count < min_variant_features:
+            tprint_warning(
+                f"⚠️ Soft minimum for variant features not met: "
+                f"{variant_count} < {min_variant_features}"
+            )
+
+        return capped_features
+
+    def _perform_multi_size_selection(
+        self,
+        features_df,
+        targets,
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
         """Perform feature selection for multiple feature set sizes with CMI-aware Tactician mode support."""
         # Define feature set sizes
         feature_set_sizes = config.get('feature_set_sizes', [60, 50, 40])
@@ -1569,7 +1753,14 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         feature_cols = sophisticated_features + basic_engineered_features
         
         # Check for new simplified target structure first (highest priority)
-        if 'target_long' in features_df.columns and 'target_short' in features_df.columns:
+        if 'target_long_fused' in features_df.columns and 'target_short_fused' in features_df.columns:
+            target_cols = ['target_long_fused', 'target_short_fused']
+            tprint_info("📊 Using fused target structure: target_long_fused, target_short_fused")
+            # Log target statistics for fused structure
+            long_signals = (features_df['target_long_fused'] > 0).sum()
+            short_signals = (features_df['target_short_fused'] > 0).sum()
+            tprint_info(f"📊 Target statistics: Long signals={long_signals}, Short signals={short_signals}")
+        elif 'target_long' in features_df.columns and 'target_short' in features_df.columns:
             target_cols = ['target_long', 'target_short']
             tprint_info("📊 Using new simplified target structure: target_long, target_short")
             # Log target statistics for new simplified structure
@@ -1696,7 +1887,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             scoring_threshold=config.get('scoring_threshold', 0.01),
             use_tree_based=config.get('use_tree_based', True),
             use_permutation_importance=config.get('use_permutation_importance', True),
-            stability_weight=config.get('stability_weight', 0.3)  # Default 0.3 = balanced (30% stability, 70% importance)
+            stability_weight=config.get('stability_weight', 0.2)  # Default 0.3 = balanced (30% stability, 70% importance)
         )
 
         # Perform selection ONCE for the maximum size
@@ -1706,8 +1897,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
         # CRITICAL DEBUG: Check what was selected
         tprint_error(f"🔍 CRITICAL DEBUG for max size {max_size}:")
-        tprint_error(f"   Selected features count: {len(all_selected_features)}")
-        tprint_error(f"   Selected features sample: {all_selected_features[:5] if len(all_selected_features) > 0 else 'EMPTY'}")
+        tprint_error(f"   Selected features count before caps: {len(all_selected_features)}")
+        tprint_error(f"   Selected features sample before caps: {all_selected_features[:5] if len(all_selected_features) > 0 else 'EMPTY'}")
         
         if not all_selected_features:
             tprint_error(f"❌ CRITICAL: No features selected!")
@@ -1715,13 +1906,30 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_error(f"   Input y shape: {y.shape}")
             tprint_error(f"   Input feature_cols count: {len(feature_cols)}")
             return feature_sets
+
+        capped_features = self._apply_feature_caps(
+            all_selected_features,
+            max_interaction_features=10,
+            max_cross_timeframe_per_base=10,
+            max_variant_features=10,
+            min_interaction_features=4,
+            min_cross_timeframe_features=4,
+            min_variant_features=4,
+        )
+
+        if not capped_features:
+            tprint_error("❌ CRITICAL: No features remain after applying interaction/cross-timeframe/variant caps")
+            return feature_sets
+
+        tprint_error(f"   Selected features count after caps: {len(capped_features)}")
+        tprint_error(f"   Selected features sample after caps: {capped_features[:5] if len(capped_features) > 0 else 'EMPTY'}")
         
         # Now create feature sets by slicing the ranked list (no redundant computation!)
         for size in sorted(feature_set_sizes, reverse=True):  # Process from largest to smallest
-            tprint_info(f"📊 Creating feature set for size {size} (slicing from top {max_size})...")
+            tprint_info(f"📊 Creating feature set for size {size} (slicing from capped list of length {len(capped_features)})...")
             
-            # Slice the top N features from the already-ranked list
-            selected_features = all_selected_features[:size]
+            # Slice the top N features from the already-ranked list after applying caps
+            selected_features = capped_features[:size]
             
             tprint_error(f"🔍 DEBUG for size {size}:")
             tprint_error(f"   Selected features count: {len(selected_features)}")
@@ -1851,6 +2059,20 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             # Perform all enhanced analyses
             analysis_results = {}
+
+            # Event-aware feature scoring (reward, penalty, combined score)
+            try:
+                X_sel = X[selected_features]
+                event_scores = temp_component._event_aware_feature_scores(X_sel, y)
+                event_rewards = getattr(temp_component, 'event_reward_scores', {}) or {}
+                event_penalties = getattr(temp_component, 'event_penalty_scores', {}) or {}
+                analysis_results['event_aware_metrics'] = {
+                    'scores': event_scores.to_dict(),
+                    'reward': event_rewards,
+                    'penalty': event_penalties,
+                }
+            except Exception as e:
+                analysis_results['event_aware_metrics'] = {'error': str(e)}
             
             # Get method results if available
             method_results = getattr(temp_component, 'method_results', None)
@@ -2130,7 +2352,10 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         feature_cols = sophisticated_features + basic_engineered_features
         
         # Check for new simplified target structure first (highest priority)
-        if 'target_long' in features_df.columns and 'target_short' in features_df.columns:
+        if 'target_long_fused' in features_df.columns and 'target_short_fused' in features_df.columns:
+            target_cols = ['target_long_fused', 'target_short_fused']
+            tprint_info("📊 Using fused target structure: target_long_fused, target_short_fused")
+        elif 'target_long' in features_df.columns and 'target_short' in features_df.columns:
             target_cols = ['target_long', 'target_short']
             tprint_info("📊 Using new simplified target structure: target_long, target_short")
         else:
@@ -2193,7 +2418,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 warnings.filterwarnings("ignore", message=".*np\.complex.*")
 
             # Get target column with priority for new simplified target structure
-            if 'target_long' in features_df.columns and 'target_short' in features_df.columns:
+            if 'target_long_fused' in features_df.columns and 'target_short_fused' in features_df.columns:
+                target_cols = ['target_long_fused', 'target_short_fused']
+            elif 'target_long' in features_df.columns and 'target_short' in features_df.columns:
                 target_cols = ['target_long', 'target_short']
             else:
                 # Fall back to legacy target detection
@@ -2422,7 +2649,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         from sklearn.inspection import permutation_importance
 
         # Choose target
-        target_cols_pref = ['target_long', 'target_short', 'opportunity']
+        target_cols_pref = ['target_long_fused', 'target_short_fused', 'target_long', 'target_short', 'opportunity']
         target_cols = [c for c in target_cols_pref if c in combined_features_df.columns]
         if not target_cols:
             # fallback to any 'target' column
@@ -2615,6 +2842,106 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 'cv_uplift': cv_uplift
             })
 
+        # Augment rows with enhanced analysis metrics when available
+        enhanced_analysis = feature_sets.get('enhanced_analysis')
+        if enhanced_analysis and isinstance(enhanced_analysis, dict):
+            # Map feature name -> row dict for easy enrichment
+            row_map = {row.get('feature'): row for row in rows if 'feature' in row}
+
+            # 1) Distributional sanity checks (information content)
+            info_content = enhanced_analysis.get('information_content')
+            if info_content and isinstance(info_content, dict):
+                feature_stats = info_content.get('feature_stats', {}) or {}
+                low_var_list = info_content.get('low_variance_features', []) or []
+                quasi_const_list = info_content.get('quasi_constant_features', []) or []
+
+                low_var_set = {name for name, _ in low_var_list}
+                quasi_const_set = {name for name, _ in quasi_const_list}
+
+                for name, stats in feature_stats.items():
+                    row = row_map.get(name)
+                    if row is None or not isinstance(stats, dict):
+                        continue
+                    # Variance
+                    try:
+                        row['dist_variance'] = float(stats.get('variance', np.nan))
+                    except Exception:
+                        row['dist_variance'] = np.nan
+                    # Max value proportion
+                    try:
+                        row['dist_max_value_proportion'] = float(stats.get('max_value_proportion', np.nan))
+                    except Exception:
+                        row['dist_max_value_proportion'] = np.nan
+                    # Number of unique values
+                    try:
+                        n_unique_val = stats.get('n_unique', np.nan)
+                        row['dist_n_unique'] = int(n_unique_val) if not pd.isna(n_unique_val) else np.nan
+                    except Exception:
+                        row['dist_n_unique'] = stats.get('n_unique', np.nan)
+
+                    # Flags
+                    row['dist_is_low_variance'] = name in low_var_set
+                    row['dist_is_quasi_constant'] = name in quasi_const_set
+
+            # 2) Predictive robustness / ablation (walk-forward feature contributions)
+            wf_validation = enhanced_analysis.get('walk_forward_validation')
+            if wf_validation and isinstance(wf_validation, dict):
+                contributions = wf_validation.get('feature_contributions', {}) or {}
+                for name, contrib in contributions.items():
+                    row = row_map.get(name)
+                    if row is None:
+                        continue
+                    try:
+                        row['oos_marginal_r2'] = float(contrib)
+                    except Exception:
+                        row['oos_marginal_r2'] = np.nan
+
+            # 3) Complementarity (redundancy clustering)
+            redundancy_cluster = enhanced_analysis.get('redundancy_clustering')
+            if redundancy_cluster and isinstance(redundancy_cluster, dict):
+                feature_clusters = redundancy_cluster.get('feature_clusters', {}) or {}
+                redundant_features = redundancy_cluster.get('redundant_features', {}) or {}
+                representative_features = set(redundancy_cluster.get('representative_features', []) or [])
+
+                # Build per-feature cluster size map
+                cluster_sizes = {}
+                for _, feats in feature_clusters.items():
+                    try:
+                        size = len(feats)
+                    except Exception:
+                        size = 0
+                    for name in feats:
+                        cluster_sizes[name] = size
+
+                for name, row in row_map.items():
+                    size = cluster_sizes.get(name)
+                    row['complementarity_cluster_size'] = int(size) if isinstance(size, int) and size > 0 else 1
+                    row['complementarity_is_representative'] = name in representative_features
+                    row['complementarity_is_redundant'] = name in redundant_features
+
+            # 4) Event-aware metrics (reward, penalty frequency, combined score)
+            event_metrics = enhanced_analysis.get('event_aware_metrics')
+            if event_metrics and isinstance(event_metrics, dict):
+                scores_map = event_metrics.get('scores', {}) or {}
+                rewards_map = event_metrics.get('reward', {}) or {}
+                penalties_map = event_metrics.get('penalty', {}) or {}
+
+                for name, row in row_map.items():
+                    if name not in scores_map and name not in rewards_map and name not in penalties_map:
+                        continue
+                    try:
+                        row['event_score'] = float(scores_map.get(name, np.nan))
+                    except Exception:
+                        row['event_score'] = np.nan
+                    try:
+                        row['event_reward'] = float(rewards_map.get(name, np.nan))
+                    except Exception:
+                        row['event_reward'] = np.nan
+                    try:
+                        row['event_penalty_freq'] = float(penalties_map.get(name, np.nan))
+                    except Exception:
+                        row['event_penalty_freq'] = np.nan
+
         outcomes_dir = Path('outcomes')
         outcomes_dir.mkdir(exist_ok=True)
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -2719,23 +3046,56 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             from pathlib import Path
 
             # Identify target column
-            if isinstance(targets, pd.Series):
-                target = targets
-            elif isinstance(targets, pd.DataFrame):
-                # Try to find the target column
-                target_col = None
-                for col in ['target', 'price_target_vol_normalized', 'label', 'return']:
-                    if col in targets.columns:
-                        target_col = col
-                        break
-                if target_col:
-                    target = targets[target_col]
+            target = None
+
+            # First try to infer target from feature_dataframe with priority for fused targets
+            direction = str(config.get('direction', 'long')).lower()
+            candidate_cols: List[str] = []
+
+            if 'target_long_fused' in feature_dataframe.columns and 'target_short_fused' in feature_dataframe.columns:
+                if 'short' in direction:
+                    candidate_cols.extend(['target_short_fused', 'target_long_fused'])
                 else:
-                    # Use last column
-                    target = targets.iloc[:, -1]
-            else:
-                tprint_warning("⚠️ Invalid target type, skipping baseline check")
-                return None
+                    candidate_cols.extend(['target_long_fused', 'target_short_fused'])
+            elif 'target_long' in feature_dataframe.columns and 'target_short' in feature_dataframe.columns:
+                if 'short' in direction:
+                    candidate_cols.extend(['target_short', 'target_long'])
+                else:
+                    candidate_cols.extend(['target_long', 'target_short'])
+
+            # If no directional structure detected, fall back to generic target columns in features
+            if not candidate_cols:
+                for col in TARGET_COLUMN_NAMES:
+                    if col in feature_dataframe.columns:
+                        candidate_cols.append(col)
+
+            for col in candidate_cols:
+                if col in feature_dataframe.columns:
+                    tprint_info(f"🎯 Baseline check using target column from features: {col}")
+                    target = feature_dataframe[col]
+                    break
+
+            # Fallback: use targets argument if we still haven't found a target
+            if target is None:
+                if isinstance(targets, pd.Series):
+                    target = targets
+                elif isinstance(targets, pd.DataFrame):
+                    target_col = None
+                    for col in ['target_long_fused', 'target_short_fused',
+                                'target_long', 'target_short',
+                                'target', 'price_target_vol_normalized', 'label', 'return']:
+                        if col in targets.columns:
+                            target_col = col
+                            break
+                    if target_col:
+                        tprint_info(f"🎯 Baseline check using target column from metadata: {target_col}")
+                        target = targets[target_col]
+                    else:
+                        # Use last column
+                        target = targets.iloc[:, -1]
+                else:
+                    tprint_warning("⚠️ Invalid target type, skipping baseline check")
+                    return None
 
             # Get feature columns (exclude target columns)
             target_column_names = TARGET_COLUMN_NAMES
@@ -2989,11 +3349,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 if 'correlation_analysis' in enhanced_analysis and 'error' not in enhanced_analysis['correlation_analysis']:
                     corr_analysis = enhanced_analysis['correlation_analysis']
                     report += f"### Correlation Analysis\n\n"
-                    report += f"- **Average Correlation:** {corr_analysis.get('average_correlation', 'N/A'):.4f}\n"
-                    report += f"- **Max Correlation:** {corr_analysis.get('max_correlation', 'N/A'):.4f}\n"
-                    report += f"- **Min Correlation:** {corr_analysis.get('min_correlation', 'N/A'):.4f}\n"
-                    report += f"- **High Correlation Pairs:** {len(corr_analysis.get('high_correlation_pairs', []))}\n"
-                    report += f"- **Correlation Threshold:** {corr_analysis.get('correlation_threshold', 'N/A')}\n\n"
+                    report += f"- **Average Correlation:** {corr_analysis.get('average_correlation', 'N/A'):.4f}  — average pairwise |ρ| between features; lower is better and values <0.2 indicate low redundancy.\n"
+                    report += f"- **Max Correlation:** {corr_analysis.get('max_correlation', 'N/A'):.4f}  — highest |ρ| observed; very high values may indicate near-duplicate signals.\n"
+                    report += f"- **Min Correlation:** {corr_analysis.get('min_correlation', 'N/A'):.4f}  — lowest |ρ|; values near 0 show some features are nearly independent.\n"
+                    report += f"- **High Correlation Pairs:** {len(corr_analysis.get('high_correlation_pairs', []))}  — number of feature pairs above the threshold; 0 is ideal.\n"
+                    report += f"- **Correlation Threshold:** {corr_analysis.get('correlation_threshold', 'N/A')}  — pairs above this are considered redundant for clustering.\n\n"
                 
                 # Redundancy Analysis
                 if 'redundancy_analysis' in enhanced_analysis and 'error' not in enhanced_analysis['redundancy_analysis']:
@@ -3018,29 +3378,29 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 if 'stability_analysis' in enhanced_analysis and 'error' not in enhanced_analysis['stability_analysis']:
                     stab_analysis = enhanced_analysis['stability_analysis']
                     report += f"### Stability Analysis\n\n"
-                    report += f"- **Average Stability:** {stab_analysis.get('average_stability', 'N/A'):.4f}\n"
-                    report += f"- **Stable Features:** {len(stab_analysis.get('stable_features', []))}\n"
-                    report += f"- **Stability Threshold:** {stab_analysis.get('stability_threshold', 'N/A')}\n"
-                    report += f"- **Time Windows:** {stab_analysis.get('n_windows', 'N/A')}\n\n"
+                    report += f"- **Average Stability:** {stab_analysis.get('average_stability', 'N/A'):.4f}  — 0–1 score of importance consistency across time windows; higher is better and >0.5 is strong.\n"
+                    report += f"- **Stable Features:** {len(stab_analysis.get('stable_features', []))}  — features above the stability threshold; more indicates a more robust set.\n"
+                    report += f"- **Stability Threshold:** {stab_analysis.get('stability_threshold', 'N/A')}  — adaptive cutoff used to classify features as stable.\n"
+                    report += f"- **Time Windows:** {stab_analysis.get('n_windows', 'N/A')}  — number of rolling windows used for stability estimation.\n\n"
                 
                 # Cross-validation Analysis
                 if 'cv_analysis' in enhanced_analysis and 'error' not in enhanced_analysis['cv_analysis']:
                     cv_analysis = enhanced_analysis['cv_analysis']
                     report += f"### Cross-Validation Analysis\n\n"
-                    report += f"- **Average Consistency:** {cv_analysis.get('average_consistency', 'N/A'):.4f}\n"
-                    report += f"- **Consistent Features:** {len(cv_analysis.get('consistent_features', []))}\n"
-                    report += f"- **Consistency Threshold:** {cv_analysis.get('consistency_threshold', 'N/A')}\n"
-                    report += f"- **CV Folds:** {cv_analysis.get('cv_folds', 'N/A')}\n\n"
+                    report += f"- **Average Consistency:** {cv_analysis.get('average_consistency', 'N/A'):.4f}  — average selection frequency across folds (0–1); higher means features reappear more often.\n"
+                    report += f"- **Consistent Features:** {len(cv_analysis.get('consistent_features', []))}  — features with consistency above the threshold; more is better.\n"
+                    report += f"- **Consistency Threshold:** {cv_analysis.get('consistency_threshold', 'N/A')}  — minimum fold frequency to be considered consistent.\n"
+                    report += f"- **CV Folds:** {cv_analysis.get('cv_folds', 'N/A')}  — number of time-series splits used; more folds give a stricter stability test.\n\n"
                 
                 # Baseline Comparison
                 if 'baseline_analysis' in enhanced_analysis and 'error' not in enhanced_analysis['baseline_analysis']:
                     base_analysis = enhanced_analysis['baseline_analysis']
                     report += f"### Baseline Comparison\n\n"
-                    report += f"- **Improvement Ratio:** {base_analysis.get('improvement_ratio', 'N/A'):.2f}x\n"
-                    report += f"- **Selected Features Avg Score:** {base_analysis.get('average_selected_score', 'N/A'):.6f}\n"
-                    report += f"- **Baseline Avg Score:** {base_analysis.get('average_baseline_score', 'N/A'):.6f}\n"
-                    report += f"- **Baseline Trials:** {base_analysis.get('n_baseline_trials', 'N/A')}\n"
-                    report += f"- **Features Compared:** {base_analysis.get('n_features', 'N/A')}\n\n"
+                    report += f"- **Improvement Ratio:** {base_analysis.get('improvement_ratio', 'N/A'):.2f}x  — selected set score / baseline score; values <1.0 mean the selection outperforms baseline.\n"
+                    report += f"- **Selected Features Avg Score:** {base_analysis.get('average_selected_score', 'N/A'):.6f}  — mean importance of selected features; higher is better.\n"
+                    report += f"- **Baseline Avg Score:** {base_analysis.get('average_baseline_score', 'N/A'):.6f}  — mean importance over all features; acts as a reference level.\n"
+                    report += f"- **Baseline Trials:** {base_analysis.get('n_baseline_trials', 'N/A')}  — number of random baseline draws; more gives a more stable baseline estimate.\n"
+                    report += f"- **Features Compared:** {base_analysis.get('n_features', 'N/A')}  — size of the selected feature set used for the comparison.\n\n"
 
                 # NEW: Selection Frequency Distribution
                 if 'frequency_distribution' in enhanced_analysis and enhanced_analysis['frequency_distribution'] and 'error' not in enhanced_analysis['frequency_distribution']:

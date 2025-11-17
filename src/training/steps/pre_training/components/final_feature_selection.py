@@ -6,7 +6,7 @@ Enhanced with comprehensive analysis capabilities including correlation analysis
 redundancy detection, stability analysis, and cross-validation.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 from collections import defaultdict
 import pandas as pd
 import numpy as np
@@ -53,7 +53,12 @@ class FinalFeatureSelectionConfig:
         scoring_threshold: float = 0.01,
         use_tree_based: bool = True,
         use_permutation_importance: bool = True,
-        stability_weight: float = 0.0
+        stability_weight: float = 0.2,
+        pre_lgbm_target_features: int = 120,
+        mi_proxy_folds: int = 5,
+        mi_proxy_min_quantile: float = 0.3,
+        pre_lgbm_min_stability: float = 0.2,
+        pre_lgbm_correlation_threshold: float = 0.8
     ):
         """
         Initialize final feature selection configuration.
@@ -74,6 +79,11 @@ class FinalFeatureSelectionConfig:
         self.use_tree_based = use_tree_based
         self.use_permutation_importance = use_permutation_importance
         self.stability_weight = stability_weight
+        self.pre_lgbm_target_features = pre_lgbm_target_features
+        self.mi_proxy_folds = mi_proxy_folds
+        self.mi_proxy_min_quantile = mi_proxy_min_quantile
+        self.pre_lgbm_min_stability = pre_lgbm_min_stability
+        self.pre_lgbm_correlation_threshold = pre_lgbm_correlation_threshold
 
 
 class FinalFeatureSelectionComponent:
@@ -125,7 +135,10 @@ class FinalFeatureSelectionComponent:
         """
         try:
             if feature_names is None:
-                feature_names = list(X.columns)
+                feature_names_list: List[str] = list(X.columns)
+            else:
+                feature_names_list = list(feature_names)
+            feature_names = feature_names_list
             
             # CRITICAL: Validate input data for NaN values
             y_nan_count = y.isna().sum()
@@ -155,6 +168,17 @@ class FinalFeatureSelectionComponent:
                 self.logger.info(f"📊 Removed {removed_count} low-variance features (variance < {variance_threshold})")
                 X = X[high_variance_features]
                 feature_names = high_variance_features
+            
+            # Pre-LGBM multi-criteria clustering stage (MI proxy + stability + redundancy)
+            pre_lgbm_target = getattr(self.config, "pre_lgbm_target_features", None)
+            if pre_lgbm_target is not None and pre_lgbm_target > 0 and len(feature_names) > pre_lgbm_target:
+                self.logger.info(
+                    f"📊 Pre-LGBM multi-criteria filtering before LGBM/SHAP "
+                    f"({len(feature_names)} -> {pre_lgbm_target})"
+                )
+                X, feature_names = self._pre_lgbm_multi_criteria_filter(
+                    cast(pd.DataFrame, X), y, list(feature_names)
+                )
             
             # Ensure we don't select more features than available
             max_features = min(self.config.max_features, len(feature_names))
@@ -262,6 +286,70 @@ class FinalFeatureSelectionComponent:
                     X_prefiltered, y, ranked_features, stability_weight
                 )
             
+            # Step 3.75: Apply hard stability gating before final top-N selection
+            try:
+                self.logger.info("📊 Step 3.75: Applying hard stability gating before top-N selection")
+
+                # Use temporal stability and MI-stability as pre-filters on the ranked pool
+                stability_analysis = self.analyze_feature_stability(
+                    X_prefiltered, y, ranked_features, n_windows=5
+                )
+                mi_analysis = self.calculate_mi_stability(
+                    X_prefiltered, y, ranked_features, cv_folds=5
+                )
+
+                stable_features = (
+                    stability_analysis.get('stable_features', [])
+                    if isinstance(stability_analysis, dict) else []
+                )
+                mi_stable_features = (
+                    mi_analysis.get('stable_mi_features', [])
+                    if isinstance(mi_analysis, dict) else []
+                )
+                high_mi_features = (
+                    mi_analysis.get('high_mi_features', [])
+                    if isinstance(mi_analysis, dict) else []
+                )
+
+                # Strict intersection: temporally stable, MI-stable, and sufficiently strong MI
+                strict_candidates = [
+                    f for f in ranked_features
+                    if f in stable_features and f in mi_stable_features and f in high_mi_features
+                ]
+
+                # Fallback union: stable by at least one criterion
+                union_candidates = [
+                    f for f in ranked_features
+                    if f in stable_features or f in mi_stable_features
+                ]
+
+                # Require a sufficiently large stable pool so that SHAP/LGBM can still
+                # select down to the requested max_features from a richer candidate set.
+                # For final selection (e.g. 60 features), we want at least 100 stable
+                # candidates before applying any hard gating.
+                min_stable_pool = max(100, max_features)
+
+                # Prefer candidates that can still supply the full stable pool size
+                if strict_candidates and len(strict_candidates) >= min_stable_pool:
+                    self.logger.info(
+                        f"📊 Stability gating: using strict intersection of stability criteria "
+                        f"({len(strict_candidates)} candidates, min_stable_pool={min_stable_pool})"
+                    )
+                    ranked_features = [f for f in ranked_features if f in strict_candidates]
+                elif union_candidates and len(union_candidates) >= min_stable_pool:
+                    self.logger.info(
+                        f"📊 Stability gating: using union of stability criteria "
+                        f"({len(union_candidates)} candidates, min_stable_pool={min_stable_pool})"
+                    )
+                    ranked_features = [f for f in ranked_features if f in union_candidates]
+                else:
+                    self.logger.warning(
+                        "⚠️ Stability gating skipped: not enough stable features to maintain "
+                        f"a pool of at least {min_stable_pool} candidates"
+                    )
+            except Exception as e:
+                self.logger.warning(f"⚠️ Stability gating failed, continuing without hard filter: {e}")
+
             # Step 4: Select top N features by SHAP importance (or stability-weighted score)
             expected_count = min(max_features, len(ranked_features))
             selected_features = ranked_features[:expected_count]
@@ -340,14 +428,14 @@ class FinalFeatureSelectionComponent:
                 self.logger.info("Using LGBM-SHAP importance (captures feature interactions with game-theoretic interpretation)")
                 self.logger.debug("Training LGBM model for SHAP analysis...")
                 
-                # LGBM parameters optimized for feature selection
+                # LGBM parameters (original configuration)
                 lgbm_params = {
                     'objective': 'regression',
                     'metric': 'rmse',
                     'boosting_type': 'gbdt',
                     'num_leaves': 31,
                     'learning_rate': 0.05,
-                    'feature_fraction': 0.9,
+                    'feature_fraction': 0.8,
                     'bagging_fraction': 0.8,
                     'bagging_freq': 5,
                     'verbose': -1,
@@ -573,6 +661,198 @@ class FinalFeatureSelectionComponent:
             self.logger.error(f"Error combining features: {e}")
             return X
     
+    def _event_aware_feature_scores(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        try:
+            if X.empty or y is None or len(y) == 0:
+                return pd.Series(0.0, index=X.columns)
+            y_values = y.to_numpy(dtype=float)
+            y_abs = np.abs(y_values)
+            event_min_amp = float(getattr(self.config, "event_min_amplitude", 0.0) or 0.0)
+            event_mask = y_abs > event_min_amp
+            if not np.any(event_mask):
+                corr = X.corrwith(y).abs().fillna(0.0)
+                return corr
+            non_event_mask = ~event_mask
+            X_np = X.to_numpy(dtype=float)
+            X_events = X_np[event_mask]
+            y_events = y_values[event_mask]
+            weights = np.abs(y_events).astype(float)
+            weights_sum = float(weights.sum())
+            if weights_sum <= 0.0:
+                corr = X.corrwith(y).abs().fillna(0.0)
+                return corr
+            weights = weights / weights_sum
+            mu_y = float(np.sum(weights * y_events))
+            y_centered = y_events - mu_y
+            mu_x = np.sum(weights[:, None] * X_events, axis=0)
+            X_centered = X_events - mu_x[None, :]
+            cov_xy = np.sum(weights[:, None] * X_centered * y_centered[:, None], axis=0)
+            var_x = np.sum(weights[:, None] * (X_centered ** 2), axis=0)
+            var_y = float(np.sum(weights * (y_centered ** 2)))
+            denom = np.sqrt(var_x * var_y) + 1e-12
+            reward = np.zeros_like(cov_xy, dtype=float)
+            valid = denom > 0
+            reward[valid] = np.abs(cov_xy[valid] / denom[valid])
+            X_std = X_np.std(axis=0)
+            X_std = np.where(X_std == 0.0, 1.0, X_std)
+            X_std_all = X_np / X_std
+            if np.any(non_event_mask):
+                X_events_std = X_std_all[event_mask]
+                if X_events_std.shape[0] > 0:
+                    event_scale = np.median(np.abs(X_events_std), axis=0)
+                else:
+                    event_scale = np.ones_like(X_std)
+                base_z = float(getattr(self.config, "false_activation_z_threshold", 1.0) or 0.0)
+                if base_z <= 0.0:
+                    base_z = 1.0
+                event_scale = np.where(event_scale <= 1e-6, 1.0, event_scale)
+                thr = base_z * event_scale
+                X_ne = X_std_all[non_event_mask]
+                freq = np.mean((np.abs(X_ne) > thr).astype(float), axis=0)
+                penalty = freq
+            else:
+                penalty = np.zeros_like(reward)
+            false_penalty = float(getattr(self.config, "false_activation_penalty", 0.3) or 0.0)
+            try:
+                self.event_reward_scores = {col: float(val) for col, val in zip(X.columns, reward)}
+                self.event_penalty_scores = {col: float(val) for col, val in zip(X.columns, penalty)}
+            except Exception:
+                pass
+            scores = reward - false_penalty * penalty
+            scores = np.maximum(scores, 0.0)
+            return pd.Series(scores, index=X.columns)
+        except Exception:
+            corr = X.corrwith(y).abs().fillna(0.0)
+            return corr
+
+    def _pre_lgbm_multi_criteria_filter(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        feature_names: List[str],
+    ) -> Tuple[pd.DataFrame, List[str]]:
+        try:
+            if not feature_names:
+                return X, feature_names
+            feature_names = list(feature_names)
+            n_features = len(feature_names)
+            pre_lgbm_target = int(getattr(self.config, "pre_lgbm_target_features", 0) or 0)
+            if pre_lgbm_target <= 0 or n_features <= pre_lgbm_target:
+                return X, feature_names
+            X_subset = cast(pd.DataFrame, X[feature_names])
+            mi_full_series = self._event_aware_feature_scores(X_subset, y).fillna(0.0)
+            mi_full_arr = mi_full_series.values.astype(float)
+            mi_stability = self.calculate_mi_stability(
+                X_subset,
+                y,
+                feature_names,
+                cv_folds=int(getattr(self.config, "mi_proxy_folds", 5) or 5),
+            )
+            mi_mean_dict = mi_stability.get("mi_mean", {}) if isinstance(mi_stability, dict) else {}
+            mi_cv_dict = mi_stability.get("mi_cv", {}) if isinstance(mi_stability, dict) else {}
+            mi_mean_arr = np.array([float(mi_mean_dict.get(f, 0.0)) for f in feature_names], dtype=float)
+            mi_score = np.where(mi_mean_arr > 0.0, mi_mean_arr, mi_full_arr)
+            positive_mask = mi_score > 0.0
+            if np.any(positive_mask):
+                mi_min = float(mi_score[positive_mask].min())
+                mi_max = float(mi_score[positive_mask].max())
+                if mi_max > mi_min:
+                    mi_norm = (mi_score - mi_min) / (mi_max - mi_min)
+                else:
+                    mi_norm = np.ones_like(mi_score)
+            else:
+                mi_norm = np.zeros_like(mi_score)
+            cv_arr = np.array([float(mi_cv_dict.get(f, np.inf)) for f in feature_names], dtype=float)
+            stability_scores = np.where(np.isfinite(cv_arr), 1.0 / (1.0 + cv_arr), 0.0)
+            stability_weight = float(getattr(self.config, "stability_weight", 0.0) or 0.0)
+            if stability_weight < 0.0:
+                stability_weight = 0.0
+            if stability_weight > 1.0:
+                stability_weight = 1.0
+            importance_weight = 1.0 - stability_weight
+            score_pre = importance_weight * mi_norm + stability_weight * stability_scores
+            mi_positive = mi_norm[mi_norm > 0.0]
+            if mi_positive.size > 0:
+                quantile = float(getattr(self.config, "mi_proxy_min_quantile", 0.25) or 0.25)
+                if quantile < 0.0:
+                    quantile = 0.0
+                if quantile > 1.0:
+                    quantile = 1.0
+                threshold = float(np.quantile(mi_positive, quantile))
+            else:
+                threshold = 0.0
+            keep_mask = mi_norm >= threshold
+            if not np.any(keep_mask):
+                keep_mask = mi_norm > 0.0
+            pool_indices = np.where(keep_mask)[0]
+            pool_features = [feature_names[i] for i in pool_indices]
+            if not pool_features:
+                return X, feature_names[:pre_lgbm_target]
+            pre_pool_factor = 4
+            max_pool_size = pre_pool_factor * pre_lgbm_target
+            if len(pool_features) > max_pool_size:
+                pool_scores = score_pre[pool_indices]
+                order = np.argsort(pool_scores)[::-1]
+                order = order[:max_pool_size]
+                pool_indices = pool_indices[order]
+                pool_features = [feature_names[i] for i in pool_indices]
+            X_pool = X[pool_features]
+            X_np = X_pool.values.astype(np.float32)
+            n_samples = X_np.shape[0]
+            if n_samples == 0:
+                return X, feature_names[:pre_lgbm_target]
+            mean = np.nanmean(X_np, axis=0, keepdims=True)
+            std = np.nanstd(X_np, axis=0, keepdims=True)
+            std = np.where(std == 0.0, 1.0, std)
+            X_norm = (X_np - mean) / std
+            corr_matrix = np.dot(X_norm.T, X_norm) / float(n_samples)
+            corr_matrix = np.clip(np.abs(corr_matrix), 0.0, 1.0)
+            threshold_corr = float(getattr(self.config, "pre_lgbm_correlation_threshold", 0.8) or 0.8)
+            if threshold_corr < 0.0:
+                threshold_corr = 0.0
+            if threshold_corr > 1.0:
+                threshold_corr = 1.0
+            adjacency = corr_matrix >= threshold_corr
+            np.fill_diagonal(adjacency, False)
+            n_pool = adjacency.shape[0]
+            visited = np.zeros(n_pool, dtype=bool)
+            score_map = {f: float(score_pre[i]) for i, f in enumerate(feature_names)}
+            pool_scores = np.array([score_map[f] for f in pool_features], dtype=float)
+            leaders: List[int] = []
+            for start_idx in range(n_pool):
+                if visited[start_idx]:
+                    continue
+                queue = [start_idx]
+                visited[start_idx] = True
+                cluster_indices: List[int] = []
+                while queue:
+                    current = queue.pop()
+                    cluster_indices.append(current)
+                    neighbors = np.where(adjacency[current] & (~visited))[0]
+                    if neighbors.size > 0:
+                        visited[neighbors] = True
+                        queue.extend(neighbors.tolist())
+                if not cluster_indices:
+                    continue
+                cluster_indices_arr = np.array(cluster_indices, dtype=int)
+                cluster_scores = pool_scores[cluster_indices_arr]
+                best_local = int(cluster_indices_arr[int(np.argmax(cluster_scores))])
+                leaders.append(best_local)
+            if not leaders:
+                selected_pool_features = pool_features
+            else:
+                leader_scores = np.array([pool_scores[i] for i in leaders], dtype=float)
+                order = np.argsort(leader_scores)[::-1]
+                selected_indices = [leaders[i] for i in order]
+                selected_pool_features = [pool_features[i] for i in selected_indices]
+            if len(selected_pool_features) > pre_lgbm_target:
+                selected_pool_features = selected_pool_features[:pre_lgbm_target]
+            X_selected = X[selected_pool_features]
+            return X_selected, selected_pool_features
+        except Exception as e:
+            self.logger.error(f"Error in pre-LGBM multi-criteria filter: {e}")
+            return X, feature_names
+    
     def get_feature_scores(self) -> Dict[str, float]:
         """
         Get feature scores from the last selection.
@@ -795,15 +1075,11 @@ class FinalFeatureSelectionComponent:
                 
                 X_window = X.iloc[start_idx:end_idx][ranked_features]
                 y_window = y.iloc[start_idx:end_idx]
-                
-                window_importance = {}
-                for feature in ranked_features:
-                    try:
-                        corr = abs(X_window[feature].corr(y_window))
-                        window_importance[feature] = corr if not np.isnan(corr) else 0.0
-                    except:
-                        window_importance[feature] = 0.0
-                
+                scores_window = self._event_aware_feature_scores(X_window, y_window)
+                window_importance = {
+                    feature: float(scores_window.get(feature, 0.0) or 0.0)
+                    for feature in ranked_features
+                }
                 window_importances.append(window_importance)
             
             # Calculate stability scores
@@ -901,16 +1177,11 @@ class FinalFeatureSelectionComponent:
 
                 X_window = X.iloc[start_idx:end_idx][selected_features]
                 y_window = y.iloc[start_idx:end_idx]
-
-                # Calculate feature importance for this window using correlation (fast)
-                window_importance = {}
-                for feature in selected_features:
-                    try:
-                        corr = abs(X_window[feature].corr(y_window))
-                        window_importance[feature] = corr if not np.isnan(corr) else 0.0
-                    except:
-                        window_importance[feature] = 0.0
-
+                scores_window = self._event_aware_feature_scores(X_window, y_window)
+                window_importance = {
+                    feature: float(scores_window.get(feature, 0.0) or 0.0)
+                    for feature in selected_features
+                }
                 window_importances.append(window_importance)
 
             # Calculate stability as consistency of importance across windows
@@ -982,17 +1253,15 @@ class FinalFeatureSelectionComponent:
             if self.config.use_permutation_importance and LGBM_AVAILABLE and SHAP_AVAILABLE:
                 # Use SHAP importance (same as main selection)
                 self.logger.debug("Using SHAP importance for window selection (consistent with main selection)")
-                # OPTIMIZED: Hyperparameters for stable feature selection (not prediction)
-                # Goal: Stable SHAP values that generalize to LGBM, Neural, RF, CatBoost
                 model = lgb.LGBMRegressor(
                     objective='regression',
-                    n_estimators=100,      # More trees = more stable importance
-                    num_leaves=15,         # Simpler trees = better generalization
-                    max_depth=5,           # Limit depth to avoid overfitting to LGBM quirks
-                    learning_rate=0.05,    # Lower LR = smoother, more stable learning
-                    min_child_samples=20,  # Prevent overfitting to noise
-                    subsample=0.8,         # Bagging for stability
-                    colsample_bytree=0.8,  # Feature sampling for robustness
+                    n_estimators=100,
+                    num_leaves=15,
+                    max_depth=5,
+                    learning_rate=0.05,
+                    min_child_samples=20,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
                     verbose=-1,
                     random_state=42
                 )
@@ -1675,18 +1944,17 @@ class FinalFeatureSelectionComponent:
 
             tscv = TimeSeriesSplit(n_splits=cv_folds)
 
-            # Use correlation as vectorized MI proxy
+            # Use event-aware scores as MI proxy
             mi_proxy_scores = defaultdict(list)
 
             for fold_idx, (train_idx, _) in enumerate(tscv.split(X)):
                 X_fold = X.iloc[train_idx][selected_features]
                 y_fold = y.iloc[train_idx]
 
-                # Vectorized correlation calculation (fast MI proxy)
-                correlations = X_fold.corrwith(y_fold).abs()
+                scores_fold = self._event_aware_feature_scores(X_fold, y_fold)
 
                 for feature in selected_features:
-                    mi_proxy = correlations.get(feature, 0)
+                    mi_proxy = float(scores_fold.get(feature, 0.0) or 0.0)
                     if not np.isnan(mi_proxy):
                         mi_proxy_scores[feature].append(mi_proxy)
 
@@ -2148,14 +2416,14 @@ class FinalFeatureSelectionComponent:
             Tuple of (selected features, SHAP scores)
         """
         try:
-            # Setup LGBM parameters
+            # Setup LGBM parameters (original configuration)
             lgbm_params = {
                 'objective': 'regression',
                 'metric': 'rmse',
                 'boosting_type': 'gbdt',
                 'num_leaves': 31,
                 'learning_rate': 0.05,
-                'feature_fraction': 0.9,
+                'feature_fraction': 0.8,
                 'bagging_fraction': 0.8,
                 'bagging_freq': 5,
                 'verbose': -1,

@@ -201,6 +201,15 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             tprint(f"🐛 DEBUG: [STEP 1] Index range: {market_data.index.min()} to {market_data.index.max()}", "INFO")
             tprint(f"✅ Loaded {len(market_data)} samples of market data", "SUCCESS")
 
+            try:
+                if self.hardware_manager is not None and hasattr(self.hardware_manager, 'memory_optimizer'):
+                    optimizer = self.hardware_manager.memory_optimizer
+                    if hasattr(optimizer, 'optimize_dataframe_memory'):
+                        market_data = optimizer.optimize_dataframe_memory(market_data)
+                        tprint_debug("🧠 Applied M1 memory optimization to market_data")
+            except Exception as e:
+                tprint_debug(f"⚠️ M1 memory optimization skipped due to error: {e}")
+
             # Check execution mode and if HPO is enabled
             execution_mode = config.get('execution_mode', 'full')
             enable_auto_tuning = config.get('enable_auto_tuning', True)  # Default to True
@@ -554,6 +563,17 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
         tprint_debug("Fetching HPO configuration with execution mode adjustments")
         hpo_config = config.get('hpo_config', {})
         execution_mode = config.get('execution_mode', 'full')
+        resource_constrained = False
+        try:
+            hw = getattr(self, 'hardware_manager', None)
+            if hw is not None:
+                cpu_usage = hw.get_cpu_usage()
+                memory_pressure = hw.get_memory_pressure()
+                if cpu_usage is not None and memory_pressure is not None:
+                    if cpu_usage > 85.0 or memory_pressure > 0.80:
+                        resource_constrained = True
+        except Exception:
+            resource_constrained = False
 
         # Adjust HPO config based on execution mode
         if execution_mode == 'light':
@@ -569,14 +589,22 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             # 🔍 LOGGING: Configuration de validation croisée en mode blank
             tprint(f"🔍 [BLANK_MODE] Configuration CV: 3 folds (configuration standard pour ce mode)", color="blue")
         else:  # full
-            hpo_config['final_refinement_trials'] = hpo_config.get('final_refinement_trials', 50)
+            if resource_constrained:
+                default_trials = 25
+            else:
+                default_trials = 50
+            hpo_config['final_refinement_trials'] = hpo_config.get('final_refinement_trials', default_trials)
             hpo_config['cv_folds'] = hpo_config.get('cv_folds', 5)
             # 🔍 LOGGING: Configuration de validation croisée en mode full
             tprint(f"🔍 [FULL_MODE] Configuration CV: 5 folds (configuration standard pour robustesse maximale)", color="blue")
 
+        default_n_rounds = DEFAULT_HPO_CONFIG.n_rounds
+        if execution_mode == 'full' and resource_constrained and 'n_rounds' not in hpo_config:
+            default_n_rounds = 1
+
         return HPOConfig(
             stages=hpo_config.get('stages', DEFAULT_HPO_CONFIG.stages),
-            n_rounds=hpo_config.get('n_rounds', DEFAULT_HPO_CONFIG.n_rounds),
+            n_rounds=hpo_config.get('n_rounds', default_n_rounds),
             enable_final_refinement=hpo_config.get('enable_final_refinement', True),
             final_refinement_trials=hpo_config['final_refinement_trials'],
             cv_folds=hpo_config['cv_folds'],
@@ -602,12 +630,29 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             # Get HPO config
             hpo_config = self._get_hpo_config(config)
 
+            hpo_market_data = market_data
+            try:
+                rolling_params = config.get('rolling_hmm_params', {}) or {}
+                max_samples = rolling_params.get('max_samples_for_hpo')
+                sample_fraction = rolling_params.get('hpo_sample_fraction')
+                total_samples = len(market_data)
+                cap = total_samples
+                if isinstance(max_samples, int) and max_samples > 0:
+                    cap = min(cap, max_samples)
+                if isinstance(sample_fraction, (float, int)) and 0 < float(sample_fraction) < 1.0:
+                    cap = min(cap, int(total_samples * float(sample_fraction)))
+                if cap < total_samples and cap > 0:
+                    hpo_market_data = market_data.tail(cap)
+                    tprint_info(f"🔧 HPO using subsample of {len(hpo_market_data)} rows out of {total_samples} (rolling_hmm_params cap)")
+            except Exception as e:
+                tprint_debug(f"⚠️ HPO subsampling disabled due to error: {e}")
+
             # Create optimizer
             optimizer = RollingHMMOptimizer(hpo_config)
 
             # Run optimization
             result = optimizer.optimize(
-                market_data,
+                hpo_market_data,
                 feature_engineer,
                 StickyHMMModel,
                 self.quality_assessor
@@ -1079,8 +1124,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
         execution_mode: str,
         timeframe: str
     ) -> pd.DataFrame:
-        """
-        Apply execution mode data filtering (matching statsmodel_clustering pattern).
+        """Apply execution mode data filtering using centralized lookback days.
 
         Args:
             data: Market data DataFrame
@@ -1102,16 +1146,35 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             '1d': 1
         }
 
-        # Determine days limit based on execution mode
-        if execution_mode == 'blank':
-            days_limit = 180  # 180 days for blank mode (full training data)
-            tprint_info(f"  → Blank mode: Using {days_limit} days of data (as per BLANK_MODE_CONFIG)")
-        elif execution_mode == 'light':
-            days_limit = 180  # 180 days (6 months) for light mode
-            tprint_info(f"  → Light mode: Using {days_limit} days of data")
-        else:  # 'full'
+        exec_mode = str(execution_mode or 'full').lower()
+
+        # Full mode: no filtering
+        if exec_mode == 'full':
             tprint_info("  → Full mode: Using all available data (no filtering)")
-            return data  # No filtering for full mode
+            return data
+
+        # Determine days limit based on centralized execution mode configuration
+        try:
+            from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import (
+                get_execution_mode_config,
+            )
+
+            exec_config = get_execution_mode_config()
+            days_limit = exec_config.get_data_loading_days(exec_mode)
+        except Exception:
+            # Fallback: no filtering if centralized config is unavailable
+            days_limit = None
+
+        if days_limit is None:
+            tprint_info(f"  → {exec_mode.capitalize()} mode: No explicit day limit configured, using all available data")
+            return data
+
+        if exec_mode == 'blank':
+            tprint_info(f"  → Blank mode: Using {days_limit} days of data (centralized config)")
+        elif exec_mode == 'light':
+            tprint_info(f"  → Light mode: Using {days_limit} days of data (centralized config)")
+        else:
+            tprint_info(f"  → {exec_mode.capitalize()} mode: Using {days_limit} days of data (centralized config)")
 
         # Calculate sample limit
         samples_per_day = samples_per_day_map.get(timeframe, 24)

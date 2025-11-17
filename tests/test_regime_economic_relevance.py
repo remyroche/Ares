@@ -39,7 +39,10 @@ from tests.utils.assertions import (
     assert_dict_structure,
     assert_list_structure,
     assert_dataframe_structure,
-    assert_performance_metrics
+    assert_performance_metrics,
+    assert_true, assert_equals, assert_not_equals, assert_greater_than,
+    assert_less_than, assert_greater_than_or_equal, assert_less_than_or_equal,
+    assert_is_instance, assert_is_not_none, assert_in, assert_not_in
 )
 
 
@@ -183,9 +186,9 @@ class TestRegimeEconomicRelevance:
         """Test la création du ClusterQualityAssessor."""
         assessor = ClusterQualityAssessor()
         
-        assert assessor is not None, "Le ClusterQualityAssessor ne doit pas être None"
-        assert hasattr(assessor, 'assess_quality'), "Le ClusterQualityAssessor doit avoir la méthode assess_quality"
-        assert hasattr(assessor, 'assess_economic_relevance'), "Le ClusterQualityAssessor doit avoir la méthode assess_economic_relevance"
+        assert_is_not_none(assessor, "Le ClusterQualityAssessor ne doit pas être None", "Test la création du ClusterQualityAssessor")
+        assert_true(hasattr(assessor, 'assess_quality'), "Le ClusterQualityAssessor doit avoir la méthode assess_quality", "Test la création du ClusterQualityAssessor")
+        assert_true(hasattr(assessor, 'assess_economic_relevance'), "Le ClusterQualityAssessor doit avoir la méthode assess_economic_relevance", "Test la création du ClusterQualityAssessor")
         
         print("✅ Test création ClusterQualityAssessor réussi")
     
@@ -193,10 +196,10 @@ class TestRegimeEconomicRelevance:
         """Test la création du RegimeEconomicRelevanceAnalyzer."""
         analyzer = RegimeEconomicRelevanceAnalyzer()
         
-        assert analyzer is not None, "Le RegimeEconomicRelevanceAnalyzer ne doit pas être None"
-        assert hasattr(analyzer, 'evaluate_strategies'), "Le RegimeEconomicRelevanceAnalyzer doit avoir la méthode evaluate_strategies"
-        assert hasattr(analyzer, 'perform_significance_test'), "Le RegimeEconomicRelevanceAnalyzer doit avoir la méthode perform_significance_test"
-        assert hasattr(analyzer, 'generate_economic_report'), "Le RegimeEconomicRelevanceAnalyzer doit avoir la méthode generate_economic_report"
+        assert_is_not_none(analyzer, "Le RegimeEconomicRelevanceAnalyzer ne doit pas être None", "Test la création du RegimeEconomicRelevanceAnalyzer")
+        assert_true(hasattr(analyzer, 'evaluate_strategies'), "Le RegimeEconomicRelevanceAnalyzer doit avoir la méthode evaluate_strategies", "Test la création du RegimeEconomicRelevanceAnalyzer")
+        assert_true(hasattr(analyzer, 'perform_significance_test'), "Le RegimeEconomicRelevanceAnalyzer doit avoir la méthode perform_significance_test", "Test la création du RegimeEconomicRelevanceAnalyzer")
+        assert_true(hasattr(analyzer, 'generate_economic_report'), "Le RegimeEconomicRelevanceAnalyzer doit avoir la méthode generate_economic_report", "Test la création du RegimeEconomicRelevanceAnalyzer")
         
         print("✅ Test création RegimeEconomicRelevanceAnalyzer réussi")
     
@@ -211,8 +214,8 @@ class TestRegimeEconomicRelevance:
             message="Les données de caractéristiques doivent être un DataFrame valide"
         )
         
-        assert isinstance(sample_data['forward_returns'], pd.Series), "Les rendements doivent être une Series pandas"
-        assert len(sample_data['forward_returns']) > 0, "Les rendements ne doivent pas être vides"
+        assert_is_instance(sample_data['forward_returns'], pd.Series, "Les rendements doivent être une Series pandas", "Test l'évaluation de la qualité avec analyse économique")
+        assert_greater_than(len(sample_data['forward_returns']), 0, "Les rendements ne doivent pas être vides", "Test l'évaluation de la qualité avec analyse économique")
         
         # Évaluer la qualité avec analyse économique
         metrics = assessor.assess_quality(
@@ -223,13 +226,13 @@ class TestRegimeEconomicRelevance:
         )
         
         # Vérifier que les résultats économiques sont présents
-        assert isinstance(metrics, ClusterQualityMetrics), "Les métriques doivent être de type ClusterQualityMetrics"
-        assert metrics.economic_relevance_analysis is not None, "L'analyse économique ne doit pas être None"
-        assert len(metrics.economic_relevance_analysis) > 0, "L'analyse économique doit contenir des données"
+        assert_is_instance(metrics, ClusterQualityMetrics, "Les métriques doivent être de type ClusterQualityMetrics", "Test l'évaluation de la qualité avec analyse économique")
+        assert_is_not_none(metrics.economic_relevance_analysis, "L'analyse économique ne doit pas être None", "Test l'évaluation de la qualité avec analyse économique")
+        assert_greater_than(len(metrics.economic_relevance_analysis), 0, "L'analyse économique doit contenir des données", "Test l'évaluation de la qualité avec analyse économique")
         
         # Vérifier les métriques de stratégie
-        assert metrics.strategy_performance_metrics is not None, "Les métriques de stratégie ne doivent pas être None"
-        assert len(metrics.strategy_performance_metrics) > 0, "Les métriques de stratégie doivent contenir des données"
+        assert_is_not_none(metrics.strategy_performance_metrics, "Les métriques de stratégie ne doivent pas être None", "Test l'évaluation de la qualité avec analyse économique")
+        assert_greater_than(len(metrics.strategy_performance_metrics), 0, "Les métriques de stratégie doivent contenir des données", "Test l'évaluation de la qualité avec analyse économique")
         
         print("✅ Test évaluation qualité avec analyse économique réussi")
         return metrics
@@ -276,8 +279,8 @@ class TestRegimeEconomicRelevance:
             ]
             
             for metric in expected_metrics:
-                assert metric in metrics_dict, f"La métrique {metric} doit être présente dans {strategy_name}"
-                assert isinstance(metrics_dict[metric], (int, float)), f"La métrique {metric} doit être numérique dans {strategy_name}"
+                assert_in(metric, metrics_dict, f"La métrique {metric} doit être présente dans {strategy_name}", "Test la structure des résultats économiques")
+                assert_is_instance(metrics_dict[metric], (int, float), f"La métrique {metric} doit être numérique dans {strategy_name}", "Test la structure des résultats économiques")
                 
                 # Vérifier les valeurs avec assertions standardisées
                 if metric in ['hit_rate']:
@@ -314,17 +317,17 @@ class TestRegimeEconomicRelevance:
         
         # Vérifier les métriques de performance
         for strategy_name, strategy in strategies.items():
-            assert isinstance(strategy, StrategyResults), f"La stratégie {strategy_name} doit être de type StrategyResults"
-            assert isinstance(strategy.metrics, PerformanceMetrics), f"Les métriques de {strategy_name} doivent être de type PerformanceMetrics"
+            assert_is_instance(strategy, StrategyResults, f"La stratégie {strategy_name} doit être de type StrategyResults", "Test le calcul des métriques de performance")
+            assert_is_instance(strategy.metrics, PerformanceMetrics, f"Les métriques de {strategy_name} doivent être de type PerformanceMetrics", "Test le calcul des métriques de performance")
             
             # Vérifier les métriques clés avec assertions standardisées
             metrics = strategy.metrics
-            assert metrics.cagr is not None, f"Le CAGR de {strategy_name} ne doit pas être None"
-            assert metrics.sharpe_ratio is not None, f"Le Sharpe ratio de {strategy_name} ne doit pas être None"
-            assert metrics.max_drawdown is not None, f"Le max drawdown de {strategy_name} ne doit pas être None"
-            assert metrics.volatility is not None, f"La volatilité de {strategy_name} ne doit pas être None"
-            assert metrics.total_return is not None, f"Le retour total de {strategy_name} ne doit pas être None"
-            assert metrics.hit_rate is not None, f"Le hit rate de {strategy_name} ne doit pas être None"
+            assert_is_not_none(metrics.cagr, f"Le CAGR de {strategy_name} ne doit pas être None", "Test le calcul des métriques de performance")
+            assert_is_not_none(metrics.sharpe_ratio, f"Le Sharpe ratio de {strategy_name} ne doit pas être None", "Test le calcul des métriques de performance")
+            assert_is_not_none(metrics.max_drawdown, f"Le max drawdown de {strategy_name} ne doit pas être None", "Test le calcul des métriques de performance")
+            assert_is_not_none(metrics.volatility, f"La volatilité de {strategy_name} ne doit pas être None", "Test le calcul des métriques de performance")
+            assert_is_not_none(metrics.total_return, f"Le retour total de {strategy_name} ne doit pas être None", "Test le calcul des métriques de performance")
+            assert_is_not_none(metrics.hit_rate, f"Le hit rate de {strategy_name} ne doit pas être None", "Test le calcul des métriques de performance")
             
             # Vérifier les valeurs numériques avec tolérances appropriées
             if metrics.cagr is not None:
@@ -388,7 +391,7 @@ class TestRegimeEconomicRelevance:
         )
         
         # Vérifier la structure des résultats
-        assert significance_results is not None, "Les résultats de signification ne doivent pas être None"
+        assert_is_not_none(significance_results, "Les résultats de signification ne doivent pas être None", "Test les tests de signification économique")
         assert_dict_structure(
             significance_results,
             required_keys=['method', 'n_permutations', 'confidence_intervals'],
@@ -405,7 +408,7 @@ class TestRegimeEconomicRelevance:
             
             # Vérifier les métriques avec intervalles
             for metric in ['mean', 'sharpe', 'total_return']:
-                assert metric in intervals, f"La métrique {metric} doit être présente dans les intervalles de {strategy_name}"
+                assert_in(metric, intervals, f"La métrique {metric} doit être présente dans les intervalles de {strategy_name}", "Test les tests de signification économique")
                 metric_interval = intervals[metric]
                 
                 assert_dict_structure(
@@ -433,7 +436,8 @@ class TestRegimeEconomicRelevance:
                     message=f"p_value doit être un nombre valide pour {metric} dans {strategy_name}"
                 )
                 
-                assert 0 <= metric_interval['p_value'] <= 1, f"p_value doit être entre 0 et 1 pour {metric} dans {strategy_name}"
+                assert_greater_than_or_equal(metric_interval['p_value'], 0, f"p_value doit être >= 0 pour {metric} dans {strategy_name}", "Test les tests de signification économique")
+                assert_less_than_or_equal(metric_interval['p_value'], 1, f"p_value doit être <= 1 pour {metric} dans {strategy_name}", "Test les tests de signification économique")
         
         print("✅ Test des tests de signification réussi")
     
@@ -470,11 +474,11 @@ class TestRegimeEconomicRelevance:
         print(f"DEBUG: Type du rapport: {type(report_path)}")
         
         # Vérifier que le rapport a été créé
-        assert report_path is not None, "Le chemin du rapport ne doit pas être None"
-        assert Path(report_path).exists(), f"Le fichier de rapport n'existe pas: {report_path}"
+        assert_is_not_none(report_path, "Le chemin du rapport ne doit pas être None", "Test la génération des rapports économiques")
+        assert_true(Path(report_path).exists(), f"Le fichier de rapport n'existe pas: {report_path}", "Test la génération des rapports économiques")
         
         # Vérifier que le rapport est dans le bon répertoire
-        assert "outcomes" in report_path, f"Le rapport doit être dans le répertoire outcomes: {report_path}"
+        assert_in("outcomes", report_path, f"Le rapport doit être dans le répertoire outcomes: {report_path}", "Test la génération des rapports économiques")
         
         # Vérifier le contenu du rapport
         with open(report_path, 'r', encoding='utf-8') as f:
@@ -490,11 +494,11 @@ class TestRegimeEconomicRelevance:
                     print(f"  {line}")
             
             # Vérifier les sections attendues
-            assert "# Rapport de Pertinence Économique des Régimes" in content, "Le rapport doit contenir le titre principal"
-            assert "## Résumé Exécutif" in content, "Le rapport doit contenir la section Résumé Exécutif"
-            assert "## Analyse Détaillée des Performances" in content, "Le rapport doit contenir la section Analyse Détaillée des Performances"
-            assert "## Tests de Signification" in content, "Le rapport doit contenir la section Tests de Signification"
-            assert "## Recommandations" in content, "Le rapport doit contenir la section Recommandations"
+            assert_in("# Rapport de Pertinence Économique des Régimes", content, "Le rapport doit contenir le titre principal", "Test la génération des rapports économiques")
+            assert_in("## Résumé Exécutif", content, "Le rapport doit contenir la section Résumé Exécutif", "Test la génération des rapports économiques")
+            assert_in("## Analyse Détaillée des Performances", content, "Le rapport doit contenir la section Analyse Détaillée des Performances", "Test la génération des rapports économiques")
+            assert_in("## Tests de Signification", content, "Le rapport doit contenir la section Tests de Signification", "Test la génération des rapports économiques")
+            assert_in("## Recommandations", content, "Le rapport doit contenir la section Recommandations", "Test la génération des rapports économiques")
         
         print(f"✅ Test génération de rapport réussi: {report_path}")
         return report_path
@@ -512,21 +516,21 @@ class TestRegimeEconomicRelevance:
         )
         
         # Vérifier que tout est intégré
-        assert metrics.economic_relevance_analysis is not None, "L'analyse économique ne doit pas être None"
-        assert metrics.strategy_performance_metrics is not None, "Les métriques de stratégie ne doivent pas être None"
-        assert metrics.economic_significance_test is not None, "Le test de signification ne doit pas être None"
-        assert metrics.economic_report_path is not None, "Le chemin du rapport ne doit pas être None"
+        assert_is_not_none(metrics.economic_relevance_analysis, "L'analyse économique ne doit pas être None", "Test l'intégration complète du système")
+        assert_is_not_none(metrics.strategy_performance_metrics, "Les métriques de stratégie ne doivent pas être None", "Test l'intégration complète du système")
+        assert_is_not_none(metrics.economic_significance_test, "Le test de signification ne doit pas être None", "Test l'intégration complète du système")
+        assert_is_not_none(metrics.economic_report_path, "Le chemin du rapport ne doit pas être None", "Test l'intégration complète du système")
         
         # Vérifier que le rapport économique existe
         if metrics.economic_report_path:
-            assert Path(metrics.economic_report_path).exists(), f"Le fichier de rapport n'existe pas: {metrics.economic_report_path}"
+            assert_true(Path(metrics.economic_report_path).exists(), f"Le fichier de rapport n'existe pas: {metrics.economic_report_path}", "Test l'intégration complète du système")
         
         # Vérifier la cohérence des résultats
         economic_analysis = metrics.economic_relevance_analysis
         strategy_perf = metrics.strategy_performance_metrics
         
         # Le nombre de stratégies doit correspondre
-        assert len(economic_analysis.get('strategy_performance', {})) == len(strategy_perf), "Le nombre de stratégies doit correspondre entre l'analyse et les métriques"
+        assert_equals(len(economic_analysis.get('strategy_performance', {})), len(strategy_perf), "Le nombre de stratégies doit correspondre entre l'analyse et les métriques", "Test l'intégration complète du système")
         
         print("✅ Test d'intégration complète réussi")
     
@@ -541,9 +545,9 @@ class TestRegimeEconomicRelevance:
             forward_returns=pd.Series([])
         )
         
-        assert isinstance(empty_metrics, ClusterQualityMetrics), "Les métriques vides doivent être de type ClusterQualityMetrics"
+        assert_is_instance(empty_metrics, ClusterQualityMetrics, "Les métriques vides doivent être de type ClusterQualityMetrics", "Test la gestion des erreurs")
         # Le quality_score peut être None ou 0.0 pour des données vides
-        assert empty_metrics.quality_score in [0.0, None], "Le quality_score pour données vides doit être 0.0 ou None"
+        assert_in(empty_metrics.quality_score, [0.0, None], "Le quality_score pour données vides doit être 0.0 ou None", "Test la gestion des erreurs")
         
         # Test avec des données incompatibles
         mismatch_metrics = assessor.assess_quality(
@@ -553,7 +557,7 @@ class TestRegimeEconomicRelevance:
         )
         
         # Devrait gérer l'incompatibilité de longueur
-        assert isinstance(mismatch_metrics, ClusterQualityMetrics), "Les métriques incompatibles doivent être de type ClusterQualityMetrics"
+        assert_is_instance(mismatch_metrics, ClusterQualityMetrics, "Les métriques incompatibles doivent être de type ClusterQualityMetrics", "Test la gestion des erreurs")
         
         print("✅ Test gestion des erreurs réussi")
     
@@ -568,11 +572,11 @@ class TestRegimeEconomicRelevance:
         )
         
         # Vérifier les données d'entrée avec assertions standardisées
-        assert isinstance(sample_data['prices'], pd.Series), "Les prix doivent être une Series pandas"
-        assert len(sample_data['prices']) > 0, "Les prix ne doivent pas être vides"
+        assert_is_instance(sample_data['prices'], pd.Series, "Les prix doivent être une Series pandas", "Test l'utilisation directe de RegimeEconomicRelevanceAnalyzer")
+        assert_greater_than(len(sample_data['prices']), 0, "Les prix ne doivent pas être vides", "Test l'utilisation directe de RegimeEconomicRelevanceAnalyzer")
         
-        assert isinstance(sample_data['regime_labels'], np.ndarray), "Les étiquettes de régime doivent être un array numpy"
-        assert len(sample_data['regime_labels']) > 0, "Les étiquettes de régime ne doivent pas être vides"
+        assert_is_instance(sample_data['regime_labels'], np.ndarray, "Les étiquettes de régime doivent être un array numpy", "Test l'utilisation directe de RegimeEconomicRelevanceAnalyzer")
+        assert_greater_than(len(sample_data['regime_labels']), 0, "Les étiquettes de régime ne doivent pas être vides", "Test l'utilisation directe de RegimeEconomicRelevanceAnalyzer")
         
         # Évaluer directement
         strategies = analyzer.evaluate_strategies(
@@ -582,11 +586,11 @@ class TestRegimeEconomicRelevance:
         )
         
         # Vérifier que les stratégies prédites sont incluses
-        assert 'predicted_regime' in strategies, "Les stratégies doivent contenir predicted_regime"
+        assert_in('predicted_regime', strategies, "Les stratégies doivent contenir predicted_regime", "Test l'utilisation directe de RegimeEconomicRelevanceAnalyzer")
         
         # Tests de signification avec assertions standardisées
         significance = analyzer.perform_significance_test(strategies, 'bootstrap')
-        assert significance is not None, "Les résultats de signification ne doivent pas être None"
+        assert_is_not_none(significance, "Les résultats de signification ne doivent pas être None", "Test l'utilisation directe de RegimeEconomicRelevanceAnalyzer")
         
         # Vérifier la structure des résultats de signification
         assert_dict_structure(
@@ -597,11 +601,11 @@ class TestRegimeEconomicRelevance:
         
         # Sauvegarder les résultats
         results_path = analyzer.save_results(strategies, significance, "outcomes")
-        assert results_path is not None, "Le chemin des résultats ne doit pas être None"
-        assert Path(results_path).exists(), f"Le fichier de résultats n'existe pas: {results_path}"
+        assert_is_not_none(results_path, "Le chemin des résultats ne doit pas être None", "Test l'utilisation directe de RegimeEconomicRelevanceAnalyzer")
+        assert_true(Path(results_path).exists(), f"Le fichier de résultats n'existe pas: {results_path}", "Test l'utilisation directe de RegimeEconomicRelevanceAnalyzer")
         
         # Vérifier que le fichier est dans le bon répertoire
-        assert "outcomes" in results_path, f"Les résultats doivent être dans le répertoire outcomes: {results_path}"
+        assert_in("outcomes", results_path, f"Les résultats doivent être dans le répertoire outcomes: {results_path}", "Test l'utilisation directe de RegimeEconomicRelevanceAnalyzer")
         
         print("✅ Test utilisation directe de l'analyseur économique réussi")
 

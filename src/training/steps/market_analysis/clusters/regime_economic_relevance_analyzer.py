@@ -243,6 +243,75 @@ class RegimeEconomicRelevanceAnalyzer:
         # Mapping par ID de régime numérique (si les régimes sont numérotés)
         self.numeric_regime_mapping = {}
         
+    def _build_dynamic_numeric_mapping(
+        self,
+        regime_labels: pd.Series,
+        returns: pd.Series,
+    ) -> Dict[int, float]:
+        df = pd.DataFrame({"regime": regime_labels, "ret": returns}).dropna()
+        if df.empty:
+            return {}
+
+        # Use 1-step forward returns as proxy for short-horizon regime alpha
+        df["ret_fwd"] = df["ret"].shift(-1)
+        df = df.dropna()
+        if df.empty:
+            return {}
+
+        grouped = df.groupby("regime")["ret_fwd"]
+        regime_mean = grouped.mean()
+        if regime_mean.empty:
+            return {}
+
+        regime_std = grouped.std().replace(0.0, np.nan)
+        market_mean = float(df["ret_fwd"].mean())
+
+        # Alpha vs market and per-regime Sharpe (un-annualized, short-horizon)
+        alphas = (regime_mean - market_mean).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        sharpe_raw = (regime_mean / (regime_std + 1e-8)).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+        if alphas.empty:
+            return {}
+
+        max_abs_alpha = float(np.abs(alphas).max())
+        max_abs_sharpe = float(np.abs(sharpe_raw).max())
+
+        if max_abs_alpha == 0.0 and max_abs_sharpe == 0.0:
+            # No discernible signal -> flat everywhere
+            return {int(rid): 0.0 for rid in alphas.index}
+
+        mapping: Dict[int, float] = {}
+        deadzone = 0.15
+
+        for rid in alphas.index:
+            rid_int = int(rid)
+
+            # Noise / unlabeled regime stays flat
+            if rid_int == -1:
+                mapping[rid_int] = 0.0
+                continue
+
+            alpha_val = float(alphas.loc[rid])
+            sharpe_val = float(sharpe_raw.loc[rid])
+
+            score_alpha = alpha_val / max_abs_alpha if max_abs_alpha > 0.0 else 0.0
+            score_sharpe = sharpe_val / max_abs_sharpe if max_abs_sharpe > 0.0 else 0.0
+            raw_score = 0.7 * score_alpha + 0.3 * score_sharpe
+
+            # Continuous, sign-aware weighting with a small deadzone
+            if abs(raw_score) < deadzone:
+                pos = 0.0
+            else:
+                pos = float(np.clip(raw_score, -1.0, 1.0))
+
+            mapping[rid_int] = pos
+
+        tprint_info(
+            f"   • Dynamic regime mapping (sign-aware, weighted) built for {len(mapping)} regimes "
+            f"(deadzone={deadzone:.2f})"
+        )
+        return mapping
+        
     def convert_regimes_to_positions(self, 
                                    regime_labels: Union[pd.Series, np.ndarray],
                                    regime_types: Optional[Dict[int, str]] = None,
@@ -323,7 +392,8 @@ class RegimeEconomicRelevanceAnalyzer:
                           regime_types: Optional[Dict[int, str]] = None,
                           predicted_regimes: Optional[Union[pd.Series, np.ndarray]] = None,
                           custom_mapping: Optional[Dict[Union[int, str], float]] = None,
-                          returns_input: bool = False) -> Dict[str, StrategyResults]:
+                          returns_input: bool = False,
+                          use_dynamic_mapping: bool = False) -> Dict[str, StrategyResults]:
         """
         Évalue les trois stratégies : prédite, réelle, et buy & hold.
         
@@ -345,6 +415,30 @@ class RegimeEconomicRelevanceAnalyzer:
         else:
             returns = prices.pct_change().fillna(0)
         
+        # Aligner les étiquettes de régime avec l'index des prix
+        if isinstance(regime_labels, np.ndarray):
+            regime_labels_series = pd.Series(regime_labels, index=prices.index)
+        elif isinstance(regime_labels, pd.Series):
+            regime_labels_series = regime_labels
+        else:
+            regime_labels_series = pd.Series(regime_labels, index=prices.index)
+        
+        if not regime_labels_series.index.equals(prices.index):
+            regime_labels_series = pd.Series(regime_labels_series.values, index=prices.index)
+        
+        dynamic_regime_types = regime_types
+        dynamic_custom_mapping = custom_mapping
+        
+        if use_dynamic_mapping and custom_mapping is None:
+            try:
+                dynamic_mapping = self._build_dynamic_numeric_mapping(regime_labels_series, returns)
+                if dynamic_mapping:
+                    self.numeric_regime_mapping = dynamic_mapping
+                    dynamic_regime_types = None
+                    dynamic_custom_mapping = None
+            except Exception as e:
+                tprint_warning(f"   • Dynamic regime mapping failed, falling back to default mapping: {e}")
+        
         # Initialiser les résultats
         strategies = {}
         
@@ -364,7 +458,7 @@ class RegimeEconomicRelevanceAnalyzer:
         # 2. Stratégie basée sur les régimes réels
         tprint_info("   • Évaluation de la stratégie basée sur les régimes réels")
         real_positions = self.convert_regimes_to_positions(
-            regime_labels, regime_types, custom_mapping
+            regime_labels_series, dynamic_regime_types, dynamic_custom_mapping
         )
         real_returns = self._calculate_strategy_returns(returns, real_positions)
         real_metrics = self.calculate_performance_metrics(real_returns, real_positions)
@@ -381,7 +475,7 @@ class RegimeEconomicRelevanceAnalyzer:
         if predicted_regimes is not None:
             tprint_info("   • Évaluation de la stratégie basée sur les régimes prédits")
             pred_positions = self.convert_regimes_to_positions(
-                predicted_regimes, regime_types, custom_mapping
+                predicted_regimes, dynamic_regime_types, dynamic_custom_mapping
             )
             pred_returns = self._calculate_strategy_returns(returns, pred_positions)
             pred_metrics = self.calculate_performance_metrics(pred_returns, pred_positions)
@@ -1229,8 +1323,12 @@ class RegimeEconomicRelevanceAnalyzer:
         
         tprint_info("=" * 80)
     
-    def _print_significance_results(self, results: Dict[str, Any]):
+    def _print_significance_results(self, results: Optional[Dict[str, Any]]):
         """Affiche les résultats des tests de signification."""
+        
+        if not results:
+            tprint_info("\n🔬 Aucun résultat de test de signification disponible")
+            return
         
         tprint_info("\n🔬 Résultats des Tests de Signification:")
         tprint_info("=" * 60)

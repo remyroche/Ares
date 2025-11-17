@@ -12,6 +12,12 @@ from sklearn.datasets import make_classification
 # Ajouter le chemin du projet
 sys.path.append('src')
 
+# Import des assertions standardisées
+from tests.utils.assertions import (
+    assert_dict_structure,
+    assert_float_equals
+)
+
 def test_shap_fix():
     """Test la correction SHAP avec CalibratedClassifierCV"""
     print("🧪 TEST DE LA CORRECTION SHAP")
@@ -75,6 +81,10 @@ def test_shap_fix():
     print("📋 RÉSULTAT DU TEST:")
     print(f"   Ancienne méthode fonctionne: {old_method_works}")
     print(f"   Nouvelle méthode fonctionne: {new_method_works}")
+    
+    # Validation avec assertions standardisées
+    assert isinstance(old_method_works, bool), "Le résultat de l'ancienne méthode doit être un booléen"
+    assert isinstance(new_method_works, bool), "Le résultat de la nouvelle méthode doit être un booléen"
     
     if new_method_works and not old_method_works:
         print("✅ SUCCÈS: La correction SHAP fonctionne correctement!")

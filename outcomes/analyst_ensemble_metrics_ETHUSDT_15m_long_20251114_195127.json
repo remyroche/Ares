@@ -1,0 +1,19 @@
+{
+  "symbol": "ETHUSDT",
+  "timeframe": "15m",
+  "direction": "long",
+  "timestamp": "2025-11-14T19:51:27.003688",
+  "metrics": {
+    "meta_mse": 0.0046038711351295974,
+    "meta_mae": 0.0202706725194046,
+    "meta_r2": 0.8194107111950383,
+    "meta_rmse": 0.06785183221645233,
+    "base_avg_r2": 0.5054204365234973,
+    "base_avg_mse": 0.012608613674610731,
+    "improvement_over_avg": 0.31399027467154095,
+    "avg_correlation": 0.5603826295116419,
+    "min_correlation": 0.5603826295116419,
+    "max_correlation": 0.5603826295116419,
+    "correlation_std": 0.0
+  }
+}

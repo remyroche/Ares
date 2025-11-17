@@ -17,6 +17,10 @@ from training.steps.pre_training.components.final_feature_selection import (
     FinalFeatureSelectionComponent,
     FinalFeatureSelectionConfig
 )
+from tests.utils.assertions import (
+    assert_equals, assert_greater_than, assert_less_than_or_equal,
+    assert_is_instance, assert_true, assert_is_not_none
+)
 
 
 def create_test_data():
@@ -89,11 +93,10 @@ def test_exact_feature_count():
         selected_features = component.select_features(X, y)
         
         # Check if we got exact count
-        if len(selected_features) == actual_target:
-            print(f"✅ Target {target_count}: Got exactly {len(selected_features)} features")
-        else:
-            print(f"❌ Target {target_count}: Got {len(selected_features)} features, expected {actual_target}")
-            return False
+        assert_equals(len(selected_features), actual_target,
+                    f"Le nombre de features sélectionnées ({len(selected_features)}) ne correspond pas à la cible ({actual_target})",
+                    f"Test validation du nombre exact de features pour la cible {target_count}")
+        print(f"✅ Target {target_count}: Got exactly {len(selected_features)} features")
     
     return True
 
@@ -120,22 +123,21 @@ def test_redundancy_reduction():
     # Check for redundant fibonacci features
     fib_features = [f for f in selected_features if 'fibonacci' in f]
     
-    if len(fib_features) <= 1:
-        print(f"✅ Redundancy check passed: Only {len(fib_features)} fibonacci feature(s) selected")
-        print(f"   Selected fibonacci features: {fib_features}")
-    else:
-        print(f"❌ Redundancy check failed: {len(fib_features)} fibonacci features selected")
-        print(f"   Selected fibonacci features: {fib_features}")
+    assert_less_than_or_equal(len(fib_features), 1,
+                           f"Trop de features fibonacci sélectionnées ({len(fib_features)}), au maximum 1 attendu",
+                           "Test validation de la réduction de redondance des features fibonacci")
+    print(f"✅ Redundancy check passed: Only {len(fib_features)} fibonacci feature(s) selected")
+    print(f"   Selected fibonacci features: {fib_features}")
+    
+    # Check correlation between them
+    if len(fib_features) > 1:
+        corr_matrix = X[fib_features].corr().abs()
+        max_corr = corr_matrix.values[np.triu_indices_from(corr_matrix.values, k=1)].max()
+        print(f"   Max correlation between fibonacci features: {max_corr:.4f}")
         
-        # Check correlation between them
-        if len(fib_features) > 1:
-            corr_matrix = X[fib_features].corr().abs()
-            max_corr = corr_matrix.values[np.triu_indices_from(corr_matrix.values, k=1)].max()
-            print(f"   Max correlation between fibonacci features: {max_corr:.4f}")
-            
-            if max_corr > 0.85:
-                print(f"   ⚠️ High correlation detected (> 0.85)")
-                return False
+        assert_less_than_or_equal(max_corr, 0.85,
+                               f"Corrélation trop élevée entre features fibonacci ({max_corr:.4f}), maximum 0.85 attendu",
+                               "Test validation de la corrélation des features fibonacci")
     
     # Check overall correlation
     if len(selected_features) > 1:
@@ -149,11 +151,10 @@ def test_redundancy_reduction():
         print(f"   Max correlation: {max_corr:.4f}")
         print(f"   Average correlation: {avg_corr:.4f}")
         
-        if max_corr > 0.85:
-            print(f"   ❌ Max correlation exceeds threshold (0.85)")
-            return False
-        else:
-            print(f"   ✅ Max correlation within threshold")
+        assert_less_than_or_equal(max_corr, 0.85,
+                               f"Corrélation maximale trop élevée ({max_corr:.4f}), maximum 0.85 attendu",
+                               "Test validation de la corrélation maximale globale")
+        print(f"   ✅ Max correlation within threshold")
     
     return True
 
@@ -177,35 +178,32 @@ def test_hierarchical_clustering():
     component = FinalFeatureSelectionComponent(config)
     
     # Check if the new method exists
-    if hasattr(component, '_reduce_redundancy_hierarchical'):
-        print("✅ _reduce_redundancy_hierarchical method exists")
+    assert_true(hasattr(component, '_reduce_redundancy_hierarchical'),
+               "La méthode '_reduce_redundancy_hierarchical' devrait exister",
+               "Test validation de l'existence de la méthode de clustering hiérarchique")
+    print("✅ _reduce_redundancy_hierarchical method exists")
+    
+    # Test the method directly
+    ranked_features = list(X.columns)
+    reduced_features = component._reduce_redundancy_hierarchical(
+        X, ranked_features, target_count=15, correlation_threshold=0.85
+    )
+    
+    assert_equals(len(reduced_features), 15,
+                f"La méthode a retourné {len(reduced_features)} features au lieu de 15",
+                "Test validation du nombre exact de features retournées par la méthode")
+    print(f"✅ Method returned exactly 15 features")
+    
+    # Check diversity
+    if len(reduced_features) > 1:
+        corr_matrix = X[reduced_features].corr().abs()
+        upper_triangle = corr_matrix.values[np.triu_indices_from(corr_matrix.values, k=1)]
+        max_corr = upper_triangle.max()
         
-        # Test the method directly
-        ranked_features = list(X.columns)
-        reduced_features = component._reduce_redundancy_hierarchical(
-            X, ranked_features, target_count=15, correlation_threshold=0.85
-        )
-        
-        if len(reduced_features) == 15:
-            print(f"✅ Method returned exactly 15 features")
-        else:
-            print(f"❌ Method returned {len(reduced_features)} features, expected 15")
-            return False
-        
-        # Check diversity
-        if len(reduced_features) > 1:
-            corr_matrix = X[reduced_features].corr().abs()
-            upper_triangle = corr_matrix.values[np.triu_indices_from(corr_matrix.values, k=1)]
-            max_corr = upper_triangle.max()
-            
-            if max_corr <= 0.85:
-                print(f"✅ Features are diverse (max correlation: {max_corr:.4f})")
-            else:
-                print(f"❌ Features not diverse enough (max correlation: {max_corr:.4f})")
-                return False
-    else:
-        print("❌ _reduce_redundancy_hierarchical method not found")
-        return False
+        assert_less_than_or_equal(max_corr, 0.85,
+                               f"Les features ne sont pas assez diverses (max correlation: {max_corr:.4f})",
+                               "Test validation de la diversité des features")
+        print(f"✅ Features are diverse (max correlation: {max_corr:.4f})")
     
     return True
 
@@ -243,13 +241,27 @@ def test_feature_quality():
     else:
         print(f"⚠️ No base features selected (might be okay if other features are better)")
     
+    # Validate that selected features is not empty
+    assert_greater_than(len(selected_features), 0,
+                      "Aucune feature sélectionnée, au moins une attendue",
+                      "Test validation de la présence de features sélectionnées")
+    
     # Check feature scores
     feature_scores = component.get_feature_scores()
+    assert_is_not_none(feature_scores,
+                     "Les scores de features ne devraient pas être None",
+                     "Test validation de l'existence des scores de features")
+    
     if feature_scores:
         print(f"\n📈 Top 5 features by importance:")
         sorted_scores = sorted(feature_scores.items(), key=lambda x: x[1], reverse=True)[:5]
         for feat, score in sorted_scores:
             print(f"   {feat}: {score:.6f}")
+        
+        # Validate that feature scores is a dictionary
+        assert_is_instance(feature_scores, dict,
+                         "Les scores de features devraient être un dictionnaire",
+                         "Test validation du type des scores de features")
     
     return True
 

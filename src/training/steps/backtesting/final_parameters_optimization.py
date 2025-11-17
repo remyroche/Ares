@@ -398,7 +398,7 @@ class FinalParametersOptimizer(BaseStep):
                 enable_gpu=self.hardware_enabled,
                 enable_parallel=self.enable_parallel,
                 memory_efficient=True,
-                chunk_size=config.get('chunk_size', 1000),
+                chunk_size=self.config.get('chunk_size', 1000),
                 fast_fail=True,
                 enable_logging=True
             )
@@ -413,8 +413,8 @@ class FinalParametersOptimizer(BaseStep):
                 enable_gpu=self.hardware_enabled,
                 enable_parallel=self.enable_parallel,
                 memory_efficient=True,
-                max_memory_gb=config.get('max_memory_gb', 8.0),
-                chunk_size=config.get('chunk_size', 1000),
+                max_memory_gb=self.config.get('max_memory_gb', 8.0),
+                chunk_size=self.config.get('chunk_size', 1000),
                 enable_monitoring=True
             )
             tprint("✅ VectorBT optimization manager initialized", "success")
@@ -622,23 +622,56 @@ class FinalParametersOptimizer(BaseStep):
                                                    timeframe: str, direction: str,
                                                    execution_mode: str,
                                                    config: Dict[str, Any]) -> Dict[str, Any]:
-        """Run either hierarchical or category-based optimization based on configuration."""
+        """Run final parameters optimization and build a unified result structure."""
         try:
             start_time = time.time()
 
-            if self.config.get('use_hierarchical_optimization', True):
-                result = await self._run_hierarchical_pipeline(symbol, exchange, timeframe, direction)
-            else:
-                result = await self._run_category_pipeline(symbol, exchange, timeframe, direction)
+            # Delegate to optimize_all_parameters, which already handles hierarchical
+            # vs. category-by-category optimization and appropriate fallbacks.
+            optimization_results = await self.optimize_all_parameters(
+                self.calibration_results,
+                self.previous_results
+            )
 
-            result['metadata'] = {
-                'symbol': symbol,
-                'exchange': exchange,
-                'timeframe': timeframe,
-                'direction': direction,
-                'execution_mode': execution_mode,
-                'direction_mode': self.direction_mode,
-                'duration_seconds': time.time() - start_time
+            # Count how many parameters were optimized and collect scores
+            parameters_optimized = 0
+            best_scores: List[float] = []
+
+            if isinstance(optimization_results, dict):
+                for category, result in optimization_results.items():
+                    if not isinstance(result, dict):
+                        continue
+
+                    # Count parameters for this category/group
+                    params_dict = result.get('best_params', {})
+                    if isinstance(params_dict, dict):
+                        parameters_optimized += len(params_dict)
+
+                    # Collect best scores
+                    if category == '_hierarchical_metadata':
+                        total_score = result.get('total_score')
+                        if isinstance(total_score, (int, float)):
+                            best_scores.append(float(total_score))
+                    else:
+                        best_value = result.get('best_value')
+                        if isinstance(best_value, (int, float)):
+                            best_scores.append(float(best_value))
+
+            optimization_score = max(best_scores) if best_scores else 0.0
+
+            result = {
+                'parameters_optimized': parameters_optimized,
+                'optimization_score': optimization_score,
+                'optimized_parameters': optimization_results,
+                'metadata': {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'execution_mode': execution_mode,
+                    'direction_mode': self.direction_mode,
+                    'duration_seconds': time.time() - start_time
+                }
             }
             return result
 
@@ -2912,49 +2945,48 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             Evaluation score based on simulated trading
         """
         try:
-            # Ensure arrays are same length
-            min_len = min(len(analyst_conf), len(tactician_conf), len(returns))
-            tactician_conf = ensure_array(tactician_conf)[:min_len]
+            # Ensure arrays are same length and focus on Analyst confidence as primary signal
+            min_len = min(len(analyst_conf), len(returns))
+            analyst_conf = ensure_array(analyst_conf)[:min_len]
             returns = ensure_array(returns)[:min_len]
 
-            # Use only Tactician confidence (no combination with Analyst)
-            tactician_conf = self.calculate_combined_confidence(analyst_conf, tactician_conf, params)
+            # Threshold based on Analyst confidence (fallback to tactician threshold name for compatibility)
+            threshold = validate_probability(
+                params.get('analyst_confidence_threshold', params.get('tactician_confidence_threshold', 0.7))
+            )
 
-            # Generate signals based on Tactician confidence threshold
-            threshold = validate_probability(params.get('tactician_confidence_threshold', 0.7))
-            
             # Use hardware-accelerated comparison if available
-            if self.hardware_enabled and self.matrix_processor:
+            if self.hardware_enabled and self.matrix_processor is not None:
                 try:
-                    # Convert to hardware-optimized format and perform threshold comparison
                     signals = self.matrix_processor.compare_threshold(
-                        tactician_conf, threshold, operation='greater_equal'
+                        analyst_conf, threshold, operation='greater_equal'
                     )
                 except Exception as e:
                     self.logger.warning(f"Hardware acceleration failed, falling back to numpy: {e}")
-                    signals = np.where(tactician_conf >= threshold, 1, 0)
+                    signals = np.where(analyst_conf >= threshold, 1, 0)
             else:
-                signals = np.where(tactician_conf >= threshold, 1, 0)
+                signals = np.where(analyst_conf >= threshold, 1, 0)
 
             # Simulate trading with CV if enabled and sufficient data
             if self.use_cv and len(signals) >= self.cv_folds * 100:
                 # Prepare data for CV
                 data = {
                     'features': pd.DataFrame({
-                        'tactician_conf': tactician_conf
+                        'confidence': analyst_conf
                     }),
                     'targets': pd.Series(returns),
                     'signals': signals,
                     'returns': returns,
-                    'confidences': tactician_conf
+                    'confidences': analyst_conf
                 }
 
                 # Define evaluation function for a single fold
                 def eval_fold(fold_params: Dict[str, Any], fold_data: Dict[str, Any]) -> Tuple[float, Dict[str, Any]]:
                     if 'val' in fold_data:
-                        fold_signals = fold_data['val']['features']['combined_conf'].values >= threshold
+                        fold_conf = fold_data['val']['features']['confidence'].values
+                        fold_signals = fold_conf >= threshold
                         fold_returns = fold_data['val']['targets'].values
-                        fold_confidences = fold_data['val']['features']['combined_conf'].values
+                        fold_confidences = fold_conf
                     else:
                         fold_signals = fold_data['signals']
                         fold_returns = fold_data['returns']
@@ -2966,13 +2998,11 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
 
                 # Evaluate with CV
                 cv_score, cv_results = self.evaluate_with_cv(params, data, eval_fold, 'confidence')
-
                 return cv_score
             else:
                 # Single evaluation without CV
-                metrics = self.simulate_trading(params, signals, returns, combined_conf)
+                metrics = self.simulate_trading(params, signals, returns, analyst_conf)
                 score = metrics.to_score()
-
                 return score
 
         except Exception as e:
@@ -6470,7 +6500,10 @@ async def optimize_final_parameters(calibration_results: Dict[str, Any],
     Returns:
         Optimization results
     """
-    optimizer = FinalParametersOptimizer(config, nonlinear_config)
+    optimizer = FinalParametersOptimizer(
+        config=config,
+        nonlinear_config=nonlinear_config
+    )
 
     # Load previous results for warm start
     previous_results = await optimizer.load_optimization_results(symbol, exchange, data_dir)

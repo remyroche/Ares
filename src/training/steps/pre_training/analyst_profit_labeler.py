@@ -460,13 +460,13 @@ class AnalystProfitLabeler:
                 labeler_config.rate_control.enabled = True
                 labeler_config.rate_control.max_ops_per_day = 8
 
-            # Configure quality scoring - disable for initial labeling to ensure labels are generated
-            # Quality filtering can be applied during feature selection/training
-            tprint_info("🎯 Configuring quality scoring (lenient thresholds)...")
-            labeler_config.enable_quality_scoring = False  # Disable strict quality filtering
-            labeler_config.quality_scoring.min_quality_threshold = 0.1  # Very lenient threshold
-            labeler_config.quality_scoring.min_predictability = 0.1  # Very lenient threshold
-            tprint_info("✅ Quality scoring: disabled strict filtering, thresholds=0.1")
+            # Configure quality scoring - tighten thresholds to prioritize higher-quality labels
+            # Quality filtering is now enabled to avoid extremely noisy opportunities
+            tprint_info("🎯 Configuring quality scoring (tighter thresholds)...")
+            labeler_config.enable_quality_scoring = True
+            labeler_config.quality_scoring.min_quality_threshold = 0.4
+            labeler_config.quality_scoring.min_predictability = 0.4
+            tprint_info("✅ Quality scoring: enabled strict filtering, thresholds=0.4")
 
             # Configure regime adaptation
             tprint_info(f"🔄 Configuring regime adaptation: enabled={self.config.enable_regime_adaptation}")

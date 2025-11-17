@@ -29,8 +29,8 @@ from pathlib import Path
 
 # Centralized lookback configuration for execution modes
 MODE_LOOKBACK_DAYS: Dict[str, int] = {
-    "light": 30,    # 30 days
-    "blank": 180,   # 180 days
+    "light": 30,     # 30 days
+    "blank": 360,    # 1 year
     "full": 365 * 3  # 3 years
 }
 
@@ -45,6 +45,7 @@ FEATURE_GENERATION_STEP_FLAGS = [
     'feature_generation_feature_generation_step',
     'feature_generation_period_lookback_optimization_step',
     'feature_generation_interaction_generation_step',
+    'regime_aware_feature_interaction_generation_step',
     'feature_generation_final_feature_selection_step',
     'feature_generation_final_validation_step',
 ]
@@ -68,6 +69,7 @@ import src.training.steps.data_collection  # Registers DATA_COLLECTION steps
 import src.training.steps.market_analysis  # Registers MARKET_ANALYSIS steps
 import src.training.steps.pre_training  # Registers PRE_TRAINING steps
 import src.training.steps.model_training  # Registers MODEL_TRAINING steps
+import src.training.steps.analyst_base_backtest_step  # Registers ANALYST_BASE_BACKTEST step
 # import src.training.steps.backtesting  # Registers BACKTESTING steps - temporarily disabled due to import issues
 
 
@@ -203,6 +205,7 @@ class SimplifiedAresLauncher:
                 'feature_generation_feature_generation_step',
                 'feature_generation_period_lookback_optimization_step',
                 'feature_generation_interaction_generation_step',
+                'regime_aware_feature_interaction_generation_step',
                 'feature_generation_final_feature_selection_step',
                 'feature_generation_final_validation_step'
             ],
@@ -218,6 +221,7 @@ class SimplifiedAresLauncher:
                 'feature_generation_feature_generation_step',
                 'feature_generation_period_lookback_optimization_step',
                 'feature_generation_interaction_generation_step',
+                'regime_aware_feature_interaction_generation_step',
                 'feature_generation_final_feature_selection_step',
                 'feature_generation_final_validation_step'
             ]
@@ -335,7 +339,8 @@ Examples:
     # Common parameters
     parser.add_argument('--symbol', type=str, help='Trading symbol (e.g., ETHUSDT)')
     parser.add_argument('--exchange', type=str, default='binance', help='Exchange name')
-    parser.add_argument('--timeframe', type=str, default='15m', help='Timeframe for training')
+    parser.add_argument('--timeframe', type=str, default='15m', help='Timeframe for training / base features')
+    parser.add_argument('--regime-timeframe', type=str, default=None, help='Timeframe used for regime detection/ensemble (e.g., 1h)')
     parser.add_argument('--direction', type=str, choices=['long', 'short', 'both'], default='long', help='Trading direction')
     parser.add_argument('--execution-mode', type=str, choices=['full', 'light', 'blank'], default='light', help='Execution mode')
     
@@ -615,10 +620,14 @@ async def main():
             
         elif any([args.train_analyst_base, args.train_analyst_ensemble, args.train_tactician_base, args.train_tactician_ensemble]):
             # Model training execution using specific training steps
+            run_backtest_after_training = False
+
             if args.train_analyst_base:
                 step_name = 'analyst_base_training'
                 training_type = 'analyst_base'
                 config['execution_context'] = 'analyst'
+                # For analyst base, also run simple analyst_base_backtest step afterwards
+                run_backtest_after_training = True
             elif args.train_analyst_ensemble:
                 step_name = 'analyst_ensemble_training'
                 training_type = 'analyst_ensemble'
@@ -631,14 +640,20 @@ async def main():
                 step_name = 'tactician_ensemble_training'
                 training_type = 'tactician_ensemble'
                 config['execution_context'] = 'tactician'
-            
+
             # Add training type to config
             config['training_type'] = training_type
-            
+
             logger.info(f"Running model training: {training_type}")
-            result = await launcher.run_step(step_name, config)
-            print(f"Model training '{training_type}' completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
-            
+            training_result = await launcher.run_step(step_name, config)
+            print(f"Model training '{training_type}' completed: {'✅ Success' if training_result.get('success') else '❌ Failed'}")
+
+            # Optionally run analyst base backtest using OOS predictions
+            if run_backtest_after_training and training_result.get('success'):
+                logger.info("Running analyst base backtest using OOS predictions")
+                backtest_result = await launcher.run_step('analyst_base_backtest', config)
+                print(f"Analyst base backtest completed: {'✅ Success' if backtest_result.get('success') else '❌ Failed'}")
+
         elif args.rolling_hmm_regime_discovery:
             # Rolling HMM regime discovery execution
             logger.info("Running Rolling HMM regime discovery with EWMA features and HPO")

@@ -49,6 +49,9 @@ from src.utils.versioned_artifacts import (
     WalkForwardSplitConfig
 )
 
+# Confidence calibration and risk-aware confidence utilities
+from src.utils.ml_common.confidence_metrics import calibrate_model_confidence, apply_risk_adjusted_confidence
+
 # Try to import unified training pipeline if it exists, otherwise use placeholder
 try:
     from src.training.steps.models_training.unified_training_pipeline import UnifiedTrainingPipeline
@@ -134,6 +137,15 @@ class UnifiedModelsTrainingStep(BaseStep):
             tprint_info("📥 STEP 1: RETRIEVING TRAINING DATA FROM ARTIFACTS")
             tprint_info("=" * 80)
             training_data, analyst_targets, tactician_targets = await self._retrieve_training_data(config, yaml_config)
+
+            # Apply robust, loss-aware preprocessing to targets to reduce the impact
+            # of extreme outliers on regression models and HPO.
+            robust_targets_enabled = bool(config.get('enable_robust_target_processing', True))
+            if robust_targets_enabled:
+                if analyst_targets is not None:
+                    analyst_targets = self._apply_robust_target_transform(analyst_targets, name="analyst_targets")
+                if tactician_targets is not None:
+                    tactician_targets = self._apply_robust_target_transform(tactician_targets, name="tactician_targets")
 
             # Log initial dataset size before any filtering
             if training_data is not None:
@@ -526,12 +538,140 @@ class UnifiedModelsTrainingStep(BaseStep):
                 if training_data is not None:
                     try:
                         model_type = 'analyst' if training_type.startswith('analyst') else 'tactician'
-                        # Prefer explicit OOS keys
+                        # Prefer explicit OOS keys; for ensemble training fall back to 'predictions'
                         oos_key_candidates = ['oof_predictions', 'oos_predictions', 'predictions_oos']
+                        if training_type.endswith('ensemble') and 'predictions' in result:
+                            oos_key_candidates.append('predictions')
+
                         oos_key = next((k for k in oos_key_candidates if k in result), None)
-                        if oos_key and isinstance(result[oos_key], pd.DataFrame):
+                        oos_df = None
+
+                        if oos_key is not None and result[oos_key] is not None:
+                            raw_oos = result[oos_key]
+
+                            if isinstance(raw_oos, pd.DataFrame):
+                                oos_df = raw_oos
+                            else:
+                                # Convert array-like predictions to a DataFrame and align to training_data index
+                                try:
+                                    arr = np.asarray(raw_oos)
+                                    if arr.ndim == 1:
+                                        arr = arr.reshape(-1, 1)
+
+                                    if hasattr(training_data, 'index') and len(training_data.index) == arr.shape[0]:
+                                        idx = training_data.index
+                                    else:
+                                        idx = pd.RangeIndex(arr.shape[0])
+
+                                    cols = [
+                                        f"{training_type}_pred_{i}" for i in range(arr.shape[1])
+                                    ]
+                                    oos_df = pd.DataFrame(arr, index=idx, columns=cols)
+                                except Exception as conv_exc:
+                                    tprint_warning(
+                                        f"⚠️ Failed to convert OOS predictions '{oos_key}' to DataFrame: {conv_exc}"
+                                    )
+                                    oos_df = None
+
+                        if oos_df is not None and not oos_df.empty:
                             tprint_info(f"📊 Saving ML-scored historical data ({model_type}) using OOS predictions: {oos_key}")
-                            ml_scored_data = pd.concat([training_data.loc[result[oos_key].index], result[oos_key]], axis=1)
+
+                            # Align training data to OOS index and combine with predictions
+                            ml_scored_data = training_data.loc[oos_df.index].copy()
+                            ml_scored_data = pd.concat([ml_scored_data, oos_df], axis=1)
+
+                            # Attach an explicit analyst_confidence column so downstream
+                            # backtests can use a well-defined confidence score.
+                            analyst_confidence = None
+                            try:
+                                # Prefer a calibrated probability of a positive analyst outcome
+                                # (e.g. target_long_fused > 0) when analyst targets are available.
+                                if training_type.startswith('analyst') and analyst_targets is not None:
+                                    try:
+                                        # Align analyst targets to the OOS prediction index
+                                        y_for_oos = analyst_targets.reindex(oos_df.index)
+                                    except Exception:
+                                        y_for_oos = None
+
+                                    if y_for_oos is not None:
+                                        # Binary outcome: 1 if target > 0, else 0
+                                        y_binary = (y_for_oos > 0).astype(int)
+                                        # Drop any rows with missing labels
+                                        valid_mask = y_binary.notna()
+                                        if bool(valid_mask.any()):
+                                            y_binary_valid = y_binary[valid_mask].astype(int)
+                                            # Aggregate OOS predictions to a single score per row
+                                            base_scores = oos_df.mean(axis=1)
+                                            base_scores_valid = base_scores[valid_mask]
+
+                                            # Require at least two classes to perform calibration
+                                            if y_binary_valid.nunique() >= 2:
+                                                # Map raw scores to [0, 1] as an initial probability proxy
+                                                s_min = float(base_scores_valid.min())
+                                                s_max = float(base_scores_valid.max())
+                                                if s_max > s_min:
+                                                    scaled = (base_scores_valid - s_min) / (s_max - s_min)
+                                                    proba_input = np.column_stack(
+                                                        [1.0 - scaled.to_numpy(), scaled.to_numpy()]
+                                                    )
+                                                    calib_result = await calibrate_model_confidence(
+                                                        y_true=y_binary_valid.to_numpy(),
+                                                        y_pred_proba=proba_input,
+                                                        method='isotonic_regression',
+                                                        config=None,
+                                                    )
+                                                    if isinstance(calib_result, dict) and 'calibrated_probabilities' in calib_result:
+                                                        calibrated = np.asarray(
+                                                            calib_result['calibrated_probabilities'],
+                                                            dtype=float,
+                                                        )
+                                                        if calibrated.shape[0] == base_scores_valid.shape[0]:
+                                                            analyst_confidence = pd.Series(
+                                                                np.nan,
+                                                                index=oos_df.index,
+                                                                dtype=float,
+                                                            )
+                                                            analyst_confidence.loc[valid_mask] = calibrated
+
+                                # If calibration was not possible, fall back to model-provided confidence
+                                if analyst_confidence is None:
+                                    conf_df = result.get('confidence')
+                                    if (
+                                        conf_df is not None
+                                        and isinstance(conf_df, pd.DataFrame)
+                                        and not conf_df.empty
+                                    ):
+                                        # Align confidence to OOS index
+                                        conf_aligned = conf_df.reindex(oos_df.index)
+                                        # If multiple columns, aggregate to a single scalar per row
+                                        analyst_confidence = conf_aligned.abs().mean(axis=1)
+                                    else:
+                                        # Fallback: derive confidence from the OOS predictions themselves
+                                        analyst_confidence = oos_df.abs().mean(axis=1)
+                            except Exception:
+                                analyst_confidence = None
+
+                            if analyst_confidence is not None:
+                                ml_scored_data['analyst_confidence'] = analyst_confidence.astype(float)
+                                # Optionally store a volatility/volume-adjusted confidence variant
+                                try:
+                                    close_series = None
+                                    volume_series = None
+                                    if 'close' in ml_scored_data.columns:
+                                        close_series = ml_scored_data['close'].astype(float)
+                                    if 'volume' in ml_scored_data.columns:
+                                        volume_series = ml_scored_data['volume'].astype(float)
+                                    if close_series is not None:
+                                        risk_adj = apply_risk_adjusted_confidence(
+                                            confidence=ml_scored_data['analyst_confidence'],
+                                            close=close_series,
+                                            volume=volume_series,
+                                        )
+                                        ml_scored_data['analyst_confidence_risk_adj'] = risk_adj.astype(float)
+                                except Exception:
+                                    # If risk adjustment fails for any reason, continue with raw confidence.
+                                    pass
+
                             artifact_name = f"ml_scored_historical_data_{model_type}_{direction}_oos"
                             self._save_artifact(
                                 ml_scored_data,
@@ -542,7 +682,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                             artifacts['ml_scored_historical_data_oos'] = artifact_name
                             tprint_success(f"✅ ML-scored OOS data saved: {artifact_name}")
                         else:
-                            tprint_warning("⚠️ Skipping ML-scored historical data save: OOS predictions not available")
+                            tprint_info("ℹ️ Skipping ML-scored historical data save: OOS predictions not available for this training run")
                     except Exception as e:
                         tprint_warning(f"⚠️ Failed to save ML-scored data: {e}")
                         self.logger.warning(f"ML-scored data save failed: {e}")
@@ -561,7 +701,8 @@ class UnifiedModelsTrainingStep(BaseStep):
                     'models': result.get('models', {}),
                     'training_type': training_type,
                     'execution_time': result.get('execution_time', 0.0),
-                    'reports': report_paths
+                    'reports': report_paths,
+                    'model_path': result.get('model_path')
                 }
             else:
                 tprint_error(f"❌ Unified {training_type} training failed")
@@ -1411,13 +1552,13 @@ class UnifiedModelsTrainingStep(BaseStep):
             models_to_optimize = []
             
             if training_type.endswith('ensemble'):
-                # Ensemble models: optimize the meta-learner
+                # Ensemble models: optimize the meta-learner as a probabilistic classifier
                 if 'meta_learner' in model_config:
                     models_to_optimize.append({
                         'name': 'meta_learner',
                         'type': model_config['meta_learner'].get('model_type', 'stacker_lgbm_calibrated'),
-                        'class': lgb.LGBMRegressor,
-                        'is_classification': False
+                        'class': lgb.LGBMClassifier,
+                        'is_classification': True
                     })
             else:
                 # Base models: optimize each base model
@@ -1885,7 +2026,64 @@ class UnifiedModelsTrainingStep(BaseStep):
         except Exception as e:
             self.logger.warning(f"Error applying light mode filter: {e}")
             return training_data
-    
+
+    def _apply_robust_target_transform(self, targets: pd.Series, name: str = "targets") -> pd.Series:
+        """Apply a robust, quantile-based clipping to target values.
+
+        This reduces the influence of extreme outliers on regression losses and HPO
+        while preserving the bulk of the label distribution.
+        """
+        try:
+            if targets is None:
+                return targets
+
+            # Ensure Series with index preserved
+            if not isinstance(targets, pd.Series):
+                try:
+                    targets = pd.Series(targets)
+                except Exception:
+                    return targets
+
+            # For strictly binary labels, skip transformation
+            unique_vals = pd.unique(targets.dropna())
+            if len(unique_vals) <= 3 and set(unique_vals).issubset({0, 1, -1}):
+                return targets
+
+            finite_mask = np.isfinite(targets.astype(float))
+            if finite_mask.sum() < 50:
+                # Too few samples for stable quantiles
+                return targets
+
+            values = targets[finite_mask].astype(float)
+
+            # Robust two-sided clipping around the central mass
+            lower_q = 0.005
+            upper_q = 0.995
+            q_low = np.nanquantile(values, lower_q)
+            q_high = np.nanquantile(values, upper_q)
+
+            if not np.isfinite(q_low) or not np.isfinite(q_high) or q_low == q_high:
+                return targets
+
+            pre_min, pre_max = float(np.nanmin(values)), float(np.nanmax(values))
+            clipped = values.clip(q_low, q_high)
+
+            # Log diagnostics for monitoring
+            tprint_info(
+                f"🔧 Robust target transform applied to {name}: "
+                f"q[{lower_q:.3f}]={q_low:.5f}, q[{upper_q:.3f}]={q_high:.5f}, "
+                f"pre-range=({pre_min:.5f},{pre_max:.5f}), "
+                f"post-range=({float(clipped.min()):.5f},{float(clipped.max()):.5f})"
+            )
+
+            result = targets.copy()
+            result.loc[finite_mask] = clipped
+            return result
+
+        except Exception as e:
+            self.logger.warning(f"Robust target transform failed for {name}: {e}")
+            return targets
+
     async def _retrieve_training_data(self, config: Dict[str, Any], yaml_config: Dict[str, Any]) -> tuple:
         """Retrieve training data and targets from artifacts with fast-fail on missing data."""
         try:
@@ -2186,8 +2384,30 @@ class UnifiedModelsTrainingStep(BaseStep):
                             if target_cols:
                                 tprint_info(f"📋 Available target columns: {target_cols}")
 
-                                # Check for new simplified target structure first (highest priority)
-                                if 'target_long' in labeled_data.columns and 'target_short' in labeled_data.columns:
+                                # Prefer fused targets when available, then simplified structure
+                                if 'target_long_fused' in labeled_data.columns and 'target_short_fused' in labeled_data.columns:
+                                    # Fused target structure from labeling integration step
+                                    if direction == 'long':
+                                        target_col = 'target_long_fused'
+                                        tprint_success("✅ Using fused target structure: target_long_fused for long direction")
+                                    elif direction == 'short':
+                                        target_col = 'target_short_fused'
+                                        tprint_success("✅ Using fused target structure: target_short_fused for short direction")
+                                    else:
+                                        # For 'both' direction, use target_long_fused as default for analyst
+                                        target_col = 'target_long_fused'
+                                        tprint_success("✅ Using fused target structure: target_long_fused (default for analyst)")
+
+                                    # Log target statistics for fused structure
+                                    long_signals = (labeled_data['target_long_fused'] > 0).sum()
+                                    short_signals = (labeled_data['target_short_fused'] > 0).sum()
+                                    total_signals = long_signals + short_signals
+                                    tprint_info("📊 Fused target statistics:")
+                                    tprint_info(f"   • Long fused signals: {long_signals} ({long_signals/len(labeled_data)*100:.1f}%)")
+                                    tprint_info(f"   • Short fused signals: {short_signals} ({short_signals/len(labeled_data)*100:.1f}%)")
+                                    tprint_info(f"   • Total fused signals: {total_signals} ({total_signals/len(labeled_data)*100:.1f}%)")
+
+                                elif 'target_long' in labeled_data.columns and 'target_short' in labeled_data.columns:
                                     # New simplified target structure from labeling integration step
                                     # Use direction-specific target based on the training direction
                                     if direction == 'long':
@@ -2239,7 +2459,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                                         if len(common_idx) > 0:
                                             tprint_info(f"✅ Found {len(common_idx)} common samples, aligning by index...")
                                             training_data = training_data.loc[common_idx]
-                                            analyst_targets = labeled_data.loc[common_idx, target_cols[0]]
+                                            analyst_targets = labeled_data.loc[common_idx, target_col]
                                             tprint_success(f"✅ Aligned by index - Features: {training_data.shape}, Targets: {len(analyst_targets)} samples")
                                         else:
                                             # Strict mode: do not align by position, fail fast
@@ -2264,7 +2484,21 @@ class UnifiedModelsTrainingStep(BaseStep):
                     labeled_data = locals()['labeled_data']
                     if isinstance(labeled_data, pd.DataFrame):
                         # For tactician, use the appropriate target based on direction
-                        if 'target_long' in labeled_data.columns and 'target_short' in labeled_data.columns:
+                        if 'target_long_fused' in labeled_data.columns and 'target_short_fused' in labeled_data.columns:
+                            # Fused target structure for tactician exit signals
+                            if direction == 'long':
+                                # For long direction tactician, use short fused target as exit signal
+                                tactician_targets = labeled_data['target_short_fused']
+                                tprint_success(f"✅ Using target_short_fused for tactician {direction} direction (exit signals)")
+                            elif direction == 'short':
+                                # For short direction tactician, use long fused target as exit signal
+                                tactician_targets = labeled_data['target_long_fused']
+                                tprint_success(f"✅ Using target_long_fused for tactician {direction} direction (exit signals)")
+                            else:
+                                # Default: use long fused target for tactician (both directions)
+                                tactician_targets = labeled_data['target_long_fused']
+                                tprint_success("✅ Using target_long_fused for tactician (default for both directions)")
+                        elif 'target_long' in labeled_data.columns and 'target_short' in labeled_data.columns:
                             # New simplified target structure
                             if direction == 'long':
                                 # For long direction tactician, use target_short (exit signals for long positions)
@@ -2923,39 +3157,47 @@ class UnifiedModelsTrainingStep(BaseStep):
 
 
             if training_type == 'analyst_ensemble':
-                # Base models for analyst_ensemble are the analyst_base outputs
-                # Prefer OOF/OOS artifacts to avoid leakage
+                # Base models for analyst_ensemble are the analyst_base outputs.
+                # To avoid leakage, restrict to OUT-OF-FOLD artifacts only.
                 base_candidates = [
                     'analyst_base_outputs_oof',
-                    'analyst_base_predictions_oof',
-                    'analyst_base_outputs_oos',
-                    'analyst_base_outputs'
+                    'analyst_base_predictions_oof'
                 ]
                 base_outputs = None
                 for name in base_candidates:
-                    base_outputs = self._get_artifact(name, 'data')
-                    if base_outputs is not None:
-                        tprint_info(f"   ↪ Using additional features from '{name}' (preferred OOF/OOS)")
+                    candidate = self._get_artifact(name, 'data')
+                    if candidate is not None:
+                        base_outputs = candidate
+                        tprint_info(f"   ↪ Using additional features from '{name}' (OOF-only for stacking)")
                         break
-                if base_outputs is not None:
-                    # Enforce strict temporal alignment
-                    if not hasattr(base_outputs, 'index') or not isinstance(base_outputs.index, type(training_data.index)):
-                        raise ValueError("Analyst base outputs lack proper DatetimeIndex for alignment")
-                    if not base_outputs.index.is_monotonic_increasing:
-                        base_outputs = base_outputs.sort_index()
-                    if not training_data.index.is_monotonic_increasing:
-                        training_data.sort_index(inplace=True)
-                    if not base_outputs.index.equals(training_data.index):
-                        tprint_warning("Aligning 'analyst_base_outputs' to training_data index (ffill)")
-                        base_outputs = base_outputs.reindex(training_data.index, method='ffill')
-                        tprint_info(
-                            f"   ↪ Resampled analyst_base_outputs -> shape={base_outputs.shape}, columns={len(base_outputs.columns)}"
-                        )
-                    additional_features_list.append(base_outputs)
-                    base_outputs_for_stats = base_outputs  # For disagreement features
-                    tprint_info(
-                        f"   ↪ Added analyst_base_outputs features, cumulative={sum(df.shape[1] for df in additional_features_list)} columns"
+
+                if base_outputs is None:
+                    error_msg = (
+                        "❌ OOF analyst base outputs not found for analyst_ensemble training.\n"
+                        "   Expected one of: 'analyst_base_outputs_oof' or 'analyst_base_predictions_oof'.\n"
+                        "   Please rerun analyst_base_training to generate OOF artifacts before training the ensemble."
                     )
+                    tprint_error(error_msg)
+                    raise ValueError(error_msg)
+
+                # Enforce strict temporal alignment
+                if not hasattr(base_outputs, 'index') or not isinstance(base_outputs.index, type(training_data.index)):
+                    raise ValueError("Analyst base outputs lack proper DatetimeIndex for alignment")
+                if not base_outputs.index.is_monotonic_increasing:
+                    base_outputs = base_outputs.sort_index()
+                if not training_data.index.is_monotonic_increasing:
+                    training_data.sort_index(inplace=True)
+                if not base_outputs.index.equals(training_data.index):
+                    tprint_warning("Aligning 'analyst_base_outputs' to training_data index (ffill)")
+                    base_outputs = base_outputs.reindex(training_data.index, method='ffill')
+                    tprint_info(
+                        f"   ↪ Resampled analyst_base_outputs -> shape={base_outputs.shape}, columns={len(base_outputs.columns)}"
+                    )
+                additional_features_list.append(base_outputs)
+                base_outputs_for_stats = base_outputs  # For disagreement features
+                tprint_info(
+                    f"   ↪ Added analyst_base_outputs features, cumulative={sum(df.shape[1] for df in additional_features_list)} columns"
+                )
 
             elif training_type == 'tactician_base':
                 # Base model for tactician_base is the analyst_ensemble output
@@ -3464,9 +3706,131 @@ class UnifiedModelsTrainingStep(BaseStep):
                         except Exception as e:
                             tprint_warning(f"⚠️ Failed to save OOF predictions: {e}")
                     
-                    # Save combined confidence scores
+                    # Save combined confidence scores (with optional calibration)
                     if all_confidence:
                         confidence_df = pd.DataFrame(all_confidence)
+
+                        # ------------------------------------------------------------------
+                        # Optional confidence calibration before persistence
+                        # ------------------------------------------------------------------
+                        try:
+                            enable_calibration = bool(
+                                config.get('enable_confidence_calibration', False)
+                            )
+                            if enable_calibration:
+                                tprint_info("🎯 Applying confidence calibration before saving analyst_base_confidence ...")
+
+                                # Retrieve full analyst targets captured earlier for walk-forward
+                                y_true_series = getattr(self, '_full_analyst_targets', None)
+
+                                if y_true_series is not None and not confidence_df.empty:
+                                    # Align targets to confidence index
+                                    y_true_aligned = y_true_series.reindex(confidence_df.index)
+                                    # Drop samples without targets
+                                    valid_mask = y_true_aligned.notna()
+
+                                    if valid_mask.sum() >= 50:
+                                        # Convert targets to a binary event (positive vs non-positive)
+                                        y_true_values = y_true_aligned[valid_mask].values
+                                        try:
+                                            # If labels already look binary, keep as-is
+                                            unique_vals = pd.unique(y_true_values)
+                                            if set(unique_vals).issubset({0, 1}):
+                                                y_true_binary = y_true_values.astype(int)
+                                            else:
+                                                # Generic mapping: treat "positive" outcome as 1
+                                                y_true_binary = (y_true_values > 0).astype(int)
+                                        except Exception:
+                                            # Fallback: best-effort binary mapping
+                                            y_true_binary = (y_true_values > 0).astype(int)
+
+                                        method = config.get(
+                                            'confidence_calibration_method',
+                                            'isotonic_regression'
+                                        )
+                                        calib_config = config.get(
+                                            'confidence_calibration_config',
+                                            {}
+                                        )
+
+                                        calibrated_cols: Dict[str, Any] = {}
+                                        for col_name in confidence_df.columns:
+                                            try:
+                                                col_values = confidence_df[col_name].astype(float).values
+                                                # Restrict to samples with valid targets
+                                                col_valid = col_values[valid_mask.values]
+
+                                                if len(col_valid) != len(y_true_binary):
+                                                    tprint_warning(
+                                                        f"⚠️ Skipping calibration for column {col_name}: length mismatch"
+                                                    )
+                                                    calibrated_cols[col_name] = col_values
+                                                    continue
+
+                                                # Clip to [0, 1] to behave like probabilities
+                                                col_valid = np.clip(col_valid, 0.0, 1.0)
+
+                                                calib_result = await calibrate_model_confidence(
+                                                    y_true=y_true_binary,
+                                                    y_pred_proba=col_valid,
+                                                    method=method,
+                                                    config=calib_config,
+                                                )
+
+                                                if (
+                                                    isinstance(calib_result, dict)
+                                                    and 'calibrated_probabilities' in calib_result
+                                                ):
+                                                    calibrated_valid = np.asarray(
+                                                        calib_result['calibrated_probabilities'],
+                                                        dtype=float,
+                                                    )
+
+                                                    # Reconstruct full column, keeping original index
+                                                    full_col = col_values.copy()
+                                                    full_col[valid_mask.values] = calibrated_valid
+
+                                                    # Guard against any NaNs introduced by calibration
+                                                    nan_mask = ~np.isfinite(full_col)
+                                                    if nan_mask.any():
+                                                        full_col[nan_mask] = col_values[nan_mask]
+
+                                                    calibrated_cols[col_name] = full_col
+                                                else:
+                                                    tprint_warning(
+                                                        f"⚠️ Calibration result for {col_name} missing 'calibrated_probabilities'; using raw confidence"
+                                                    )
+                                                    calibrated_cols[col_name] = col_values
+                                            except Exception as calib_exc:
+                                                tprint_warning(
+                                                    f"⚠️ Failed to calibrate confidence column {col_name}: {calib_exc}"
+                                                )
+                                                calibrated_cols[col_name] = confidence_df[col_name].values
+
+                                        if calibrated_cols:
+                                            confidence_df = pd.DataFrame(
+                                                calibrated_cols,
+                                                index=confidence_df.index,
+                                            )
+                                            tprint_success(
+                                                f"✅ Confidence calibration applied using method='{method}' "
+                                                f"for {len(calibrated_cols)} models"
+                                            )
+                                    else:
+                                        tprint_warning(
+                                            "⚠️ Not enough samples with valid targets for confidence calibration; "
+                                            "saving raw confidence scores"
+                                        )
+                                else:
+                                    tprint_warning(
+                                        "⚠️ Analyst targets not available or confidence DataFrame empty; "
+                                        "skipping confidence calibration"
+                                    )
+                        except Exception as e:
+                            tprint_warning(
+                                f"⚠️ Confidence calibration failed, falling back to raw scores: {e}"
+                            )
+
                         confidence_path = self._save_artifact(
                             data=confidence_df,
                             artifact_name='analyst_base_confidence',
@@ -3474,7 +3838,24 @@ class UnifiedModelsTrainingStep(BaseStep):
                             data_category='predictions'
                         )
                         artifacts['analyst_base_confidence'] = confidence_path
-                        tprint_success(f"✅ Saved analyst_base_confidence: {confidence_df.shape} ({len(all_confidence)} models)")
+                        tprint_success(
+                            f"✅ Saved analyst_base_confidence: {confidence_df.shape} ({len(all_confidence)} models)"
+                        )
+                        # Log summary statistics so calibration effects can be inspected
+                        try:
+                            flat = confidence_df.to_numpy().ravel()
+                            if flat.size > 0:
+                                mean_val = float(np.nanmean(flat))
+                                std_val = float(np.nanstd(flat))
+                                min_val = float(np.nanmin(flat))
+                                max_val = float(np.nanmax(flat))
+                                tprint_info(
+                                    "📊 analyst_base_confidence summary: "
+                                    f"mean={mean_val:.4f}, std={std_val:.4f}, "
+                                    f"min={min_val:.4f}, max={max_val:.4f}"
+                                )
+                        except Exception as stats_exc:
+                            self.logger.debug(f"Failed to log analyst_base_confidence summary: {stats_exc}")
                         
                 except Exception as e:
                     tprint_warning(f"⚠️ Failed to save predictions/confidence: {e}")
@@ -3484,14 +3865,176 @@ class UnifiedModelsTrainingStep(BaseStep):
             # Save predictions for tactician training (analyst_ensemble only)
             if training_type == 'analyst_ensemble' and 'predictions' in result and result['predictions'] is not None:
                 try:
+                    predictions_df = result['predictions']
+                    if not isinstance(predictions_df, pd.DataFrame):
+                        predictions_df = pd.DataFrame(predictions_df)
+
+                    # Optional ensemble confidence calibration before persistence
+                    try:
+                        enable_ensemble_calibration = bool(
+                            config.get(
+                                'enable_ensemble_confidence_calibration',
+                                config.get('enable_confidence_calibration', False),
+                            )
+                        )
+                        if enable_ensemble_calibration:
+                            tprint_info("🎯 Applying confidence calibration to analyst_ensemble_outputs ...")
+
+                            y_true_series = getattr(self, '_full_analyst_targets', None)
+                            if y_true_series is not None and not predictions_df.empty:
+                                # Identify confidence-like columns to calibrate
+                                primary_conf_cols = [
+                                    c for c in predictions_df.columns
+                                    if 'confidence' in c.lower()
+                                ]
+                                secondary_conf_cols = [
+                                    c for c in predictions_df.columns
+                                    if (
+                                        ('prob' in c.lower() or 'probability' in c.lower())
+                                        and c not in primary_conf_cols
+                                    )
+                                ]
+                                confidence_cols = primary_conf_cols + secondary_conf_cols
+
+                                if confidence_cols:
+                                    # Align targets to ensemble output index
+                                    y_true_aligned = y_true_series.reindex(predictions_df.index)
+                                    valid_mask = y_true_aligned.notna()
+
+                                    if valid_mask.sum() >= 50:
+                                        y_true_values = y_true_aligned[valid_mask].values
+                                        try:
+                                            unique_vals = pd.unique(y_true_values)
+                                            if set(unique_vals).issubset({0, 1}):
+                                                y_true_binary = y_true_values.astype(int)
+                                            else:
+                                                y_true_binary = (y_true_values > 0).astype(int)
+                                        except Exception:
+                                            y_true_binary = (y_true_values > 0).astype(int)
+
+                                        method = config.get(
+                                            'ensemble_confidence_calibration_method',
+                                            config.get('confidence_calibration_method', 'isotonic_regression'),
+                                        )
+                                        calib_config = config.get(
+                                            'ensemble_confidence_calibration_config',
+                                            config.get('confidence_calibration_config', {}),
+                                        )
+
+                                        calibrated_count = 0
+                                        for col_name in confidence_cols:
+                                            try:
+                                                col_values = predictions_df[col_name].astype(float).values
+                                                col_valid = col_values[valid_mask.values]
+
+                                                if len(col_valid) != len(y_true_binary):
+                                                    tprint_warning(
+                                                        f"⚠️ Skipping ensemble calibration for column {col_name}: length mismatch"
+                                                    )
+                                                    continue
+
+                                                col_valid = np.clip(col_valid, 0.0, 1.0)
+
+                                                calib_result = await calibrate_model_confidence(
+                                                    y_true=y_true_binary,
+                                                    y_pred_proba=col_valid,
+                                                    method=method,
+                                                    config=calib_config,
+                                                )
+
+                                                if (
+                                                    isinstance(calib_result, dict)
+                                                    and 'calibrated_probabilities' in calib_result
+                                                ):
+                                                    calibrated_valid = np.asarray(
+                                                        calib_result['calibrated_probabilities'],
+                                                        dtype=float,
+                                                    )
+
+                                                    full_col = col_values.copy()
+                                                    full_col[valid_mask.values] = calibrated_valid
+
+                                                    nan_mask = ~np.isfinite(full_col)
+                                                    if nan_mask.any():
+                                                        full_col[nan_mask] = col_values[nan_mask]
+
+                                                    predictions_df[col_name] = full_col
+                                                    calibrated_count += 1
+                                                else:
+                                                    tprint_warning(
+                                                        f"⚠️ Ensemble calibration result for {col_name} missing 'calibrated_probabilities'; using raw values"
+                                                    )
+                                            except Exception as calib_exc:
+                                                tprint_warning(
+                                                    f"⚠️ Failed to calibrate ensemble confidence column {col_name}: {calib_exc}"
+                                                )
+
+                                        if calibrated_count > 0:
+                                            tprint_success(
+                                                f"✅ Ensemble confidence calibration applied using method='{method}' for {calibrated_count} columns"
+                                            )
+                                        else:
+                                            tprint_warning(
+                                                "⚠️ No ensemble confidence columns were successfully calibrated; using raw ensemble outputs"
+                                            )
+                                    else:
+                                        tprint_warning(
+                                            "⚠️ Not enough samples with valid targets for ensemble confidence calibration; "
+                                            "saving raw ensemble outputs"
+                                        )
+                                else:
+                                    tprint_info(
+                                        "ℹ️ No confidence-like columns found in analyst_ensemble_outputs; skipping ensemble calibration"
+                                    )
+                            else:
+                                tprint_warning(
+                                    "⚠️ Analyst targets not available or ensemble outputs empty; skipping ensemble confidence calibration"
+                                )
+                    except Exception as e:
+                        tprint_warning(
+                            f"⚠️ Ensemble confidence calibration failed, using raw ensemble outputs: {e}"
+                        )
+
                     predictions_path = self._save_artifact(
-                        data=result['predictions'],
+                        data=predictions_df,
                         artifact_name='analyst_ensemble_outputs',
                         artifact_type='data',
                         data_category='predictions'
                     )
                     artifacts['analyst_ensemble_outputs'] = predictions_path
-                    tprint_success(f"✅ Saved analyst_ensemble_outputs: {result['predictions'].shape}")
+                    tprint_success(f"✅ Saved analyst_ensemble_outputs: {predictions_df.shape}")
+
+                    # Log summary statistics for ensemble confidence-like outputs
+                    try:
+                        primary_conf_cols = [
+                            c for c in predictions_df.columns if 'confidence' in c.lower()
+                        ]
+                        secondary_conf_cols = [
+                            c for c in predictions_df.columns
+                            if (
+                                ('prob' in c.lower() or 'probability' in c.lower())
+                                and c not in primary_conf_cols
+                            )
+                        ]
+                        conf_cols = primary_conf_cols + secondary_conf_cols
+                        if conf_cols:
+                            flat = predictions_df[conf_cols].to_numpy().ravel()
+                        else:
+                            flat = predictions_df.to_numpy().ravel()
+
+                        if flat.size > 0:
+                            mean_val = float(np.nanmean(flat))
+                            std_val = float(np.nanstd(flat))
+                            min_val = float(np.nanmin(flat))
+                            max_val = float(np.nanmax(flat))
+                            tprint_info(
+                                "📊 analyst_ensemble_outputs confidence-like summary: "
+                                f"mean={mean_val:.4f}, std={std_val:.4f}, "
+                                f"min={min_val:.4f}, max={max_val:.4f}"
+                            )
+                    except Exception as stats_exc:
+                        self.logger.debug(f"Failed to log analyst_ensemble_outputs summary: {stats_exc}")
+
                 except Exception as e:
                     tprint_warning(f"⚠️ Failed to save analyst_ensemble_outputs: {e}")
                 
@@ -4192,6 +4735,56 @@ class UnifiedModelsTrainingStep(BaseStep):
 
                 return flat
 
+            def compute_confidence_reliability(calibration_data, global_calibration):
+                brier = calibration_data.get('brier_score') if isinstance(calibration_data, dict) else None
+                if brier is None and isinstance(global_calibration, dict):
+                    if 'overall_brier_score' in global_calibration:
+                        brier = global_calibration.get('overall_brier_score')
+                    elif 'brier_score' in global_calibration:
+                        brier = global_calibration.get('brier_score')
+                ece = None
+                if isinstance(calibration_data, dict):
+                    if 'expected_calibration_error' in calibration_data:
+                        ece = calibration_data.get('expected_calibration_error')
+                    elif 'ece' in calibration_data:
+                        ece = calibration_data.get('ece')
+                if ece is None and isinstance(global_calibration, dict):
+                    if 'overall_ece' in global_calibration:
+                        ece = global_calibration.get('overall_ece')
+                    elif 'expected_calibration_error' in global_calibration:
+                        ece = global_calibration.get('expected_calibration_error')
+                    elif 'ece' in global_calibration:
+                        ece = global_calibration.get('ece')
+                components = []
+                if isinstance(brier, (int, float)):
+                    try:
+                        brier_value = float(brier)
+                        brier_norm = max(0.0, min(1.0, (0.5 - brier_value) / 0.5))
+                        components.append(brier_norm)
+                    except Exception:
+                        pass
+                if isinstance(ece, (int, float)):
+                    try:
+                        ece_value = float(ece)
+                        ece_norm = max(0.0, min(1.0, (0.2 - ece_value) / 0.2))
+                        components.append(ece_norm)
+                    except Exception:
+                        pass
+                if not components:
+                    return None, None
+                score = float(sum(components) / len(components))
+                if score >= 0.85:
+                    level = 'very_high'
+                elif score >= 0.7:
+                    level = 'high'
+                elif score >= 0.5:
+                    level = 'medium'
+                elif score >= 0.3:
+                    level = 'low'
+                else:
+                    level = 'very_low'
+                return score, level
+
             # Build rows for each model
             for model_name in models.keys():
                 row = {}
@@ -4268,6 +4861,19 @@ class UnifiedModelsTrainingStep(BaseStep):
                 if comprehensive_metrics.get('ensemble_specific'):
                     ensemble_flat = flatten_metrics(comprehensive_metrics['ensemble_specific'], 'ensemble_')
                     row.update(ensemble_flat)
+
+                calibration_all = comprehensive_metrics.get('uncertainty_calibration', {})
+                model_calibration_key = f"{model_name}_calibration"
+                model_calibration = {}
+                if isinstance(calibration_all, dict) and model_calibration_key in calibration_all:
+                    calib_value = calibration_all.get(model_calibration_key)
+                    if isinstance(calib_value, dict):
+                        model_calibration = calib_value
+                reliability_score, reliability_level = compute_confidence_reliability(model_calibration, calibration_all)
+                if reliability_score is not None:
+                    row['confidence_reliability_score'] = reliability_score
+                if reliability_level is not None:
+                    row['confidence_reliability_level'] = reliability_level
 
                 # Collect all column names
                 for key in row.keys():
@@ -4669,9 +5275,10 @@ class UnifiedModelsTrainingStep(BaseStep):
                     for key, value in sorted(data_quality.items()):
                         label = key.replace('_', ' ').title()
                         if isinstance(value, (int, float)) and not isinstance(value, bool):
-                            f.write(f"| {label} | {value:.6f if isinstance(value, float) else value} |\n")
+                            formatted_value = f"{float(value):.6f}"
                         else:
-                            f.write(f"| {label} | {value} |\n")
+                            formatted_value = value
+                        f.write(f"| {label} | {formatted_value} |\n")
                     f.write("\n")
                 else:
                     f.write("*No data quality metrics available.*\n\n")
@@ -4686,9 +5293,10 @@ class UnifiedModelsTrainingStep(BaseStep):
                     for key, value in sorted(complexity.items()):
                         label = key.replace('_', ' ').title()
                         if isinstance(value, (int, float)) and not isinstance(value, bool):
-                            f.write(f"| {label} | {value:.6f if isinstance(value, float) else value} |\n")
+                            formatted_value = f"{float(value):.6f}"
                         else:
-                            f.write(f"| {label} | {value} |\n")
+                            formatted_value = value
+                        f.write(f"| {label} | {formatted_value} |\n")
                     f.write("\n")
                 else:
                     f.write("*No model complexity metrics available.*\n\n")

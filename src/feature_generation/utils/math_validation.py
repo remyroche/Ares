@@ -125,7 +125,8 @@ def safe_percentage_change(old_value, new_value):
                 try:
                     current_old = old_value.iloc[i]
                     current_new = new_value.iloc[i]
-                    if pd.isna(current_old) or current_old == 0:
+                    # If either side is NaN or the denominator is zero, treat as 0% change
+                    if pd.isna(current_old) or pd.isna(current_new) or current_old == 0:
                         result.iloc[i] = 0.0
                     else:
                         result.iloc[i] = ((current_new - current_old) / current_old) * 100
@@ -134,7 +135,13 @@ def safe_percentage_change(old_value, new_value):
             return result
         else:
             # Handle scalar inputs
-            if old_value is None or (isinstance(old_value, float) and np.isnan(old_value)) or old_value == 0:
+            if (
+                old_value is None
+                or new_value is None
+                or (isinstance(old_value, float) and np.isnan(old_value))
+                or (isinstance(new_value, float) and np.isnan(new_value))
+                or old_value == 0
+            ):
                 return 0.0
             return ((new_value - old_value) / old_value) * 100
     except Exception:

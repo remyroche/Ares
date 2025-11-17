@@ -96,6 +96,13 @@ from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 )
 from src.utils.common_operations import safe_divide
+from tests.utils.assertions import (
+    assert_true, assert_equals, assert_not_equals, assert_greater_than,
+    assert_less_than, assert_greater_than_or_equal, assert_less_than_or_equal,
+    assert_array_shape, assert_array_not_empty, assert_array_no_nan,
+    assert_array_no_inf, assert_dtype, assert_in_range, assert_is_none,
+    assert_is_not_none, assert_contains, assert_not_contains
+)
 
 from ..shared_utils import get_logger
 from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
@@ -911,7 +918,7 @@ def adaptive_tau(dJ, floor=0.0, q=0.25):
 
 def assert_cluster_axis(name, a, K):
     """Guard assertions to catch cluster axis bugs early."""
-    assert a.shape[0] == K, f"{name}.shape[0]={a.shape[0]} != K={K}"
+    assert_equals(a.shape[0], K, f"{name}.shape[0]={a.shape[0]} != K={K}", "Vérification de l'axe du cluster")
 
 class StrictSplitPolicy:
     """Strict split policy to prevent over-splitting and ensure high-quality splits only."""
@@ -1654,10 +1661,10 @@ class ClusteringStats:
 
     def _validate_state(self):
         """Comprehensive state validation to catch desync issues early."""
-        assert self.assignments.max() < self.K_fixed, f"Assignment max {self.assignments.max()} >= K_fixed {self.K_fixed}"
-        assert len(self.assignments) == len(self.features), f"Assignments length {len(self.assignments)} != features length {len(self.features)}"
-        assert np.sum(self.sizes) == len(self.assignments), f"Size sum {np.sum(self.sizes)} != assignments length {len(self.assignments)}"
-        assert self.K == len(np.unique(self.assignments)), f"K {self.K} != unique assignments {len(np.unique(self.assignments))}"
+        assert_less_than(self.assignments.max(), self.K_fixed, f"Assignment max {self.assignments.max()} >= K_fixed {self.K_fixed}", "Validation de l'état des assignments")
+        assert_equals(len(self.assignments), len(self.features), f"Assignments length {len(self.assignments)} != features length {len(self.features)}", "Validation de la cohérence des tailles")
+        assert_equals(np.sum(self.sizes), len(self.assignments), f"Size sum {np.sum(self.sizes)} != assignments length {len(self.assignments)}", "Validation de la somme des tailles")
+        assert_equals(self.K, len(np.unique(self.assignments)), f"K {self.K} != unique assignments {len(np.unique(self.assignments))}", "Validation du nombre de clusters uniques")
         return True
 
     def _snapshot_state(self):
@@ -3282,25 +3289,25 @@ class IterativeOptimization:
                                     entity_ids: np.ndarray = None, time_idx: np.ndarray = None) -> None:
         """Comprehensive validation of optimization inputs."""
         # Validate features
-        assert X is not None, "Features array cannot be None"
-        assert X.size > 0, "Features array cannot be empty"
-        assert len(X.shape) == 2, f"Features must be 2D array, got shape {X.shape}"
-        assert not np.any(np.isnan(X)), "Features array contains NaN values"
-        assert not np.any(np.isinf(X)), "Features array contains infinite values"
+        assert_is_not_none(X, "Features array cannot be None", "Validation des features")
+        assert_greater_than(X.size, 0, "Features array cannot be empty", "Validation des features")
+        assert_equals(len(X.shape), 2, f"Features must be 2D array, got shape {X.shape}", "Validation des features")
+        assert_array_no_nan(X, "Features array contains NaN values", "Validation des features")
+        assert_array_no_inf(X, "Features array contains infinite values", "Validation des features")
 
         # Validate assignments
-        assert initial_assignments is not None, "Initial assignments cannot be None"
-        assert len(initial_assignments) == len(X), f"Assignments length {len(initial_assignments)} != features length {len(X)}"
-        assert initial_assignments.dtype in [np.int32, np.int64], f"Assignments must be integer type, got {initial_assignments.dtype}"
-        assert initial_assignments.min() >= 0, f"Assignments must be non-negative, got min {initial_assignments.min()}"
-        assert len(np.unique(initial_assignments)) >= 2, f"Must have at least 2 clusters, got {len(np.unique(initial_assignments))}"
+        assert_is_not_none(initial_assignments, "Initial assignments cannot be None", "Validation des assignments")
+        assert_equals(len(initial_assignments), len(X), f"Assignments length {len(initial_assignments)} != features length {len(X)}", "Validation des assignments")
+        assert_true(initial_assignments.dtype in [np.int32, np.int64], f"Assignments must be integer type, got {initial_assignments.dtype}", "Validation des assignments")
+        assert_greater_than_or_equal(initial_assignments.min(), 0, f"Assignments must be non-negative, got min {initial_assignments.min()}", "Validation des assignments")
+        assert_greater_than_or_equal(len(np.unique(initial_assignments)), 2, f"Must have at least 2 clusters, got {len(np.unique(initial_assignments))}", "Validation des assignments")
 
         # Validate optional arrays
         if entity_ids is not None:
-            assert len(entity_ids) == len(X), f"Entity IDs length {len(entity_ids)} != features length {len(X)}"
+            assert_equals(len(entity_ids), len(X), f"Entity IDs length {len(entity_ids)} != features length {len(X)}", "Validation des entity IDs")
         if time_idx is not None:
-            assert len(time_idx) == len(X), f"Time index length {len(time_idx)} != features length {len(X)}"
-            assert np.all(time_idx >= 0), "Time index must be non-negative"
+            assert_equals(len(time_idx), len(X), f"Time index length {len(time_idx)} != features length {len(X)}", "Validation du time index")
+            assert_true(np.all(time_idx >= 0), "Time index must be non-negative", "Validation du time index")
 
         # Validate configuration consistency
         N = len(X)
@@ -3313,21 +3320,21 @@ class IterativeOptimization:
         """Validate state consistency between stats and features."""
         try:
             # Basic consistency checks
-            assert len(stats.assignments) == len(features), f"Assignments length {len(stats.assignments)} != features length {len(features)}"
-            assert stats.assignments.max() < stats.K_fixed, f"Assignment max {stats.assignments.max()} >= K_fixed {stats.K_fixed}"
-            assert np.sum(stats.cluster_sizes) == len(features), f"Cluster sizes sum {np.sum(stats.cluster_sizes)} != features length {len(features)}"
+            assert_equals(len(stats.assignments), len(features), f"Assignments length {len(stats.assignments)} != features length {len(features)}", "Validation de la cohérence des tailles")
+            assert_less_than(stats.assignments.max(), stats.K_fixed, f"Assignment max {stats.assignments.max()} >= K_fixed {stats.K_fixed}", "Validation des assignments")
+            assert_equals(np.sum(stats.cluster_sizes), len(features), f"Cluster sizes sum {np.sum(stats.cluster_sizes)} != features length {len(features)}", "Validation de la somme des tailles de clusters")
 
             # Validate cluster ID mappings
             unique_assignments = np.unique(stats.assignments)
             for cluster_id in unique_assignments:
-                assert cluster_id in stats.cluster_id_map, f"Cluster ID {cluster_id} not in cluster_id_map"
+                assert_true(cluster_id in stats.cluster_id_map, f"Cluster ID {cluster_id} not in cluster_id_map", "Validation des cluster IDs")
                 compact_id = stats.cluster_id_map[cluster_id]
-                assert 0 <= compact_id < stats.K_fixed, f"Compact ID {compact_id} out of bounds [0, {stats.K_fixed})"
+                assert_in_range(compact_id, 0, stats.K_fixed - 1, f"Compact ID {compact_id} out of bounds [0, {stats.K_fixed})", "Validation des compact IDs")
 
             # Validate sufficient statistics
-            assert stats.S.shape[0] == stats.K_fixed, f"S shape {stats.S.shape[0]} != K_fixed {stats.K_fixed}"
-            assert stats.Q_trace.shape[0] == stats.K_fixed, f"Q_trace shape {stats.Q_trace.shape[0]} != K_fixed {stats.K_fixed}"
-            assert stats.centroids.shape[0] == stats.K_fixed, f"Centroids shape {stats.centroids.shape[0]} != K_fixed {stats.K_fixed}"
+            assert_equals(stats.S.shape[0], stats.K_fixed, f"S shape {stats.S.shape[0]} != K_fixed {stats.K_fixed}", "Validation des statistiques suffisantes")
+            assert_equals(stats.Q_trace.shape[0], stats.K_fixed, f"Q_trace shape {stats.Q_trace.shape[0]} != K_fixed {stats.K_fixed}", "Validation des statistiques suffisantes")
+            assert_equals(stats.centroids.shape[0], stats.K_fixed, f"Centroids shape {stats.centroids.shape[0]} != K_fixed {stats.K_fixed}", "Validation des centroids")
 
             return True
         except AssertionError as e:
@@ -3397,9 +3404,9 @@ class IterativeOptimization:
         self.state_epoch += 1
 
         # Sanity asserts: catch state desync immediately
-        assert self.sizes.max() == np.bincount(self.assignments).max(), "State desync: sizes stale vs assignments"
-        assert self.K == len(np.unique(self.assignments)), f"K mismatch: {self.K} vs {len(np.unique(self.assignments))}"
-        assert self.sizes.sum() == len(self.assignments), "Size sum mismatch"
+        assert_equals(self.sizes.max(), np.bincount(self.assignments).max(), "State desync: sizes stale vs assignments", "Validation de la cohérence de l'état")
+        assert_equals(self.K, len(np.unique(self.assignments)), f"K mismatch: {self.K} vs {len(np.unique(self.assignments))}", "Validation du nombre de clusters")
+        assert_equals(self.sizes.sum(), len(self.assignments), "Size sum mismatch", "Validation de la somme des tailles")
 
         self._log_with_context(f"✅ Atomic commit: K={self.K}, sizes={self.sizes[self.sizes > 0]}, epoch={self.state_epoch}", "DEBUG", "COMMIT")
 
@@ -5293,8 +5300,8 @@ class IterativeOptimization:
             # CRITICAL FIX: Use fixed K throughout optimization
             K_fixed = stats.K_fixed
             unique_labels = np.unique(current_assignments)
-            assert 0 <= unique_labels.min() < K_fixed, f"Bad cluster id {unique_labels.min()} for K_fixed={K_fixed}"
-            assert 0 <= unique_labels.max() < K_fixed, f"Bad cluster id {unique_labels.max()} for K_fixed={K_fixed}"
+            assert_in_range(unique_labels.min(), 0, K_fixed - 1, f"Bad cluster id {unique_labels.min()} for K_fixed={K_fixed}", "Validation des IDs de cluster")
+            assert_in_range(unique_labels.max(), 0, K_fixed - 1, f"Bad cluster id {unique_labels.max()} for K_fixed={K_fixed}", "Validation des IDs de cluster")
 
             # CRITICAL FIX: Add guard assertions for all per-cluster arrays
             assert_cluster_axis("cluster_sizes", stats.cluster_sizes, K_fixed)
@@ -5571,8 +5578,8 @@ class IterativeOptimization:
             # CRITICAL FIX: Use fixed K throughout optimization
             K_fixed = stats.K_fixed
             unique_labels = np.unique(current_assignments)
-            assert 0 <= unique_labels.min() < K_fixed, f"Bad cluster id {unique_labels.min()} for K_fixed={K_fixed}"
-            assert 0 <= unique_labels.max() < K_fixed, f"Bad cluster id {unique_labels.max()} for K_fixed={K_fixed}"
+            assert_in_range(unique_labels.min(), 0, K_fixed - 1, f"Bad cluster id {unique_labels.min()} for K_fixed={K_fixed}", "Validation des IDs de cluster")
+            assert_in_range(unique_labels.max(), 0, K_fixed - 1, f"Bad cluster id {unique_labels.max()} for K_fixed={K_fixed}", "Validation des IDs de cluster")
 
             # CRITICAL FIX: Add guard assertions for all per-cluster arrays
             assert_cluster_axis("cluster_sizes", stats.cluster_sizes, K_fixed)
@@ -7822,7 +7829,7 @@ class IterativeOptimization:
         tprint(f"[SPLIT] {base_label} -> {len(child_labels)} parts; sizes={child_sizes}; K={K1}", "INFO")
 
         # Add invariants after every split
-        assert np.bincount(assignments).sum() == assignments.size, "Assignment count mismatch"
+        assert_equals(np.bincount(assignments).sum(), assignments.size, "Assignment count mismatch", "Validation de la cohérence des assignments")
         # Note: K_MAX check is handled by the calling function
 
         return len(child_labels) - 1  # increments to K
@@ -8393,8 +8400,8 @@ class IterativeOptimization:
             n_unique = np.unique(Xc, axis=0).shape[0]
 
             # Hard guards to prevent wrong slice usage
-            assert members.size == n, f"Split mask mismatch: members.size={members.size} != n={n}"
-            assert Xc.shape[0] == members.size, f"Xc.shape[0]={Xc.shape[0]} != members.size={members.size}"
+            assert_equals(members.size, n, f"Split mask mismatch: members.size={members.size} != n={n}", "Validation des masques de split")
+            assert_equals(Xc.shape[0], members.size, f"Xc.shape[0]={Xc.shape[0]} != members.size={members.size}", "Validation des dimensions des features")
 
             # Critical sanity checks (log these right before KMeans)
             tprint(f"split members={n}, intended_k={k_parts}, unique={n_unique}", "DEBUG")

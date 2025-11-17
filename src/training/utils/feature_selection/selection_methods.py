@@ -1650,7 +1650,7 @@ class CompositeFeatureScorer:
         """Initialize composite feature scorer."""
         self.config = config or {}
         self.logger = logger.getChild('CompositeFeatureScorer')
-        
+
         # Scoring weights (must sum to 1.0)
         self.weights = {
             'mi': 0.20,           # Mutual Information
@@ -1659,16 +1659,16 @@ class CompositeFeatureScorer:
             'shap': 0.20,         # SHAP values
             'stability': 0.20     # Temporal stability
         }
-        
+
         # RFE parameters
         self.rfe_removal_rate = self.config.get('rfe_removal_rate', 0.33)  # Remove 33% per round
         self.min_features_per_round = self.config.get('min_features_per_round', 10)
         self.use_mi_proxy = self.config.get('use_mi_proxy', True)
         self.use_vectorization = self.config.get('use_vectorization', True)
-        
+
         # Initialize MI proxy
         self.mi_proxy = get_mi_proxy() if self.use_mi_proxy else None
-        
+
         # Initialize vectorization manager
         self.vectorization_manager = None
         if self.use_vectorization and VECTORIZATION_AVAILABLE:
@@ -1677,7 +1677,7 @@ class CompositeFeatureScorer:
                 _LOGGER.info("✅ Vectorization manager initialized for composite scoring")
             except Exception as e:
                 _LOGGER.warning(f"⚠️ Could not initialize vectorization manager: {e}")
-        
+
         _LOGGER.info("🔍 CompositeFeatureScorer initialized")
         _LOGGER.info(f"⚙️ Scoring weights: {self.weights}")
         _LOGGER.info(f"⚙️ RFE removal rate: {self.rfe_removal_rate:.0%} per round")
@@ -1798,7 +1798,18 @@ class CompositeFeatureScorer:
                 'execution_time': elapsed_time,
                 'success': False
             }
-    
+
+    def score_features_once(self, X: np.ndarray, y: np.ndarray,
+                             feature_names: List[str]) -> Dict[str, float]:
+        """Compute composite scores in a single pass (no RFE).
+
+        This uses the same preprocessing and component scorers as
+        select_features, but returns only the composite score dict
+        for the provided feature set.
+        """
+        X_processed = preprocess_features_for_ml(X, "composite_scoring", feature_names)
+        return self._calculate_composite_scores(X_processed, y, feature_names)
+
     def _calculate_composite_scores(self, X: np.ndarray, y: np.ndarray, 
                                     feature_names: List[str]) -> Dict[str, float]:
         """
@@ -1808,22 +1819,38 @@ class CompositeFeatureScorer:
             Dict mapping feature_name -> composite_score (0-1)
         """
         n_features = len(feature_names)
-        
+
+        # Guard against non-finite targets: filter once and reuse across all
+        # component scorers so that downstream MI/LGBM/SHAP never see NaNs.
+        valid_mask = np.isfinite(y)
+        if valid_mask.sum() < 2:
+            _LOGGER.warning(
+                "⚠️ Composite scoring: insufficient finite target values; returning neutral scores"
+            )
+            return {name: 0.5 for name in feature_names}
+        if valid_mask.sum() < len(y):
+            _LOGGER.warning(
+                f"⚠️ Composite scoring: filtering out {len(y) - valid_mask.sum()} non-finite target values"
+            )
+
+        X_clean = X[valid_mask]
+        y_clean = y[valid_mask]
+
         # 1. Calculate MI scores (20% weight)
-        mi_scores = self._calculate_mi_scores(X, y, feature_names)
-        
+        mi_scores = self._calculate_mi_scores(X_clean, y_clean, feature_names)
+
         # 2. Calculate redundancy scores (20% weight)
-        redundancy_scores = self._calculate_redundancy_scores(X, feature_names)
-        
+        redundancy_scores = self._calculate_redundancy_scores(X_clean, feature_names)
+
         # 3. Calculate LGBM importance (20% weight)
-        lgbm_scores = self._calculate_lgbm_importance(X, y, feature_names)
-        
+        lgbm_scores = self._calculate_lgbm_importance(X_clean, y_clean, feature_names)
+
         # 4. Calculate SHAP values (20% weight)
-        shap_scores = self._calculate_shap_importance(X, y, feature_names)
-        
+        shap_scores = self._calculate_shap_importance(X_clean, y_clean, feature_names)
+
         # 5. Calculate stability scores (20% weight)
-        stability_scores = self._calculate_stability_scores(X, y, feature_names)
-        
+        stability_scores = self._calculate_stability_scores(X_clean, y_clean, feature_names)
+
         # Combine with equal weights
         composite_scores = {}
         for feat in feature_names:
@@ -1834,7 +1861,7 @@ class CompositeFeatureScorer:
                 self.weights['shap'] * shap_scores.get(feat, 0.0) +
                 self.weights['stability'] * stability_scores.get(feat, 0.0)
             )
-        
+
         return composite_scores
     
     def _calculate_mi_scores(self, X: np.ndarray, y: np.ndarray, 

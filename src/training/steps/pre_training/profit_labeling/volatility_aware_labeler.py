@@ -139,6 +139,90 @@ def _align_like(left: pd.Series, right: pd.Series) -> Tuple[pd.Series, pd.Series
     return a, b
 
 
+def compute_path_based_tp_sl_labels(
+    close: pd.Series,
+    high: pd.Series,
+    low: pd.Series,
+    tp_pct: float,
+    sl_pct: float,
+    max_holding_bars: int,
+) -> pd.Series:
+    """Compute path-based TP/SL labels for a long-only strategy.
+
+    For each bar t, we assume a hypothetical long entry at the previous
+    close price and simulate the price path bar-by-bar up to
+    ``max_holding_bars`` ahead. The label encodes which event occurs first:
+
+    - +1 if the take-profit level is hit before the stop-loss.
+    - -1 if the stop-loss level is hit before the take-profit.
+    -  0 if neither level is hit within the max holding window or if
+         both TP and SL are touched in the same bar (neutral outcome).
+
+    This is intentionally aligned with the grid backtester semantics:
+    entries are decided using information at bar t and executed from
+    bar t+1, with TP/SL checked using high/low relative to the entry
+    close.
+    """
+
+    if max_holding_bars <= 0:
+        raise ValueError("max_holding_bars must be positive")
+
+    index = close.index
+    close = close.reindex(index).astype(float)
+    high = high.reindex(index).astype(float)
+    low = low.reindex(index).astype(float)
+
+    n = len(index)
+    labels = pd.Series(0, index=index, dtype="int8")
+
+    # We cannot open a new trade starting from the very last bar because
+    # there is no lookahead window. Label it as neutral by construction.
+    if n == 0:
+        return labels
+
+    for i in range(n - 1):
+        entry_price = float(close.iloc[i])
+        if entry_price <= 0.0 or not np.isfinite(entry_price):
+            labels.iloc[i] = 0
+            continue
+
+        tp_hit_first = False
+        sl_hit_first = False
+
+        # First bar in the path is i+1, consistent with using t's
+        # information to decide an entry that becomes active on the
+        # next bar.
+        max_j = min(n - 1, i + max_holding_bars)
+        for j in range(i + 1, max_j + 1):
+            high_ret = float(high.iloc[j] / entry_price - 1.0)
+            low_ret = float(low.iloc[j] / entry_price - 1.0)
+
+            # If both TP and SL are hit in the same bar, treat as
+            # neutral outcome, consistent with the grid backtester.
+            if low_ret <= -sl_pct and high_ret >= tp_pct:
+                tp_hit_first = False
+                sl_hit_first = False
+                break
+            if high_ret >= tp_pct:
+                tp_hit_first = True
+                break
+            if low_ret <= -sl_pct:
+                sl_hit_first = True
+                break
+
+        if tp_hit_first and not sl_hit_first:
+            labels.iloc[i] = 1
+        elif sl_hit_first and not tp_hit_first:
+            labels.iloc[i] = -1
+        else:
+            # Neither hit within the window, or both in the same bar
+            labels.iloc[i] = 0
+
+    # Last bar remains 0 by construction (no future path)
+    labels.iloc[-1] = 0
+    return labels
+
+
 class LabelDefinitionType(Enum):
     """Enum for label definition types."""
     BINARY = "binary"
@@ -312,11 +396,12 @@ class MultiTargetConfig:
     """Configuration for single-target labeling with volatility modulation."""
     def __init__(self) -> None:
         self.horizons = []
-        self.target_profit = 0.5  # 0.5% target over 6 periods (90min) - reasonable for 15m data
+        self.target_profit = 0.8  # 0.7% target over 6 periods (90min) - calibrated for 15m data
         self.min_lqs_score = 0.2  # Reduced from 0.3 to 0.2
         self.volatility_modulation = True  # Enable volatility-based threshold adjustment
-        self.min_threshold_multiplier = 0.3  # Further reduced for crypto (was 0.5) to allow more opportunities
-        self.max_threshold_multiplier = 2.0  # Maximum threshold multiplier
+        self.min_threshold_multiplier = 1.0  # Minimum threshold multiplier (1.0x base)
+        self.max_threshold_multiplier = 2.0  # Maximum threshold multiplier (2.0x base for 2:1 ratio)
+        self.asymmetric_barrier_ratio = 2.5  # Lower barrier is 1/2.5 of upper barrier (2.5:1 asymmetry)
 
 
 class VolatilityConfig:
@@ -564,7 +649,16 @@ class VolatilityAwareMultiHorizonLabeler:
                 # Generate labels based on volatility and (optionally) calibrated profit targets
                 # Check if we should use new simplified target structure or legacy approach
                 if hasattr(self.config, 'use_simplified_targets') and self.config.use_simplified_targets:
-                    labels = self._generate_simplified_target_labels(price_series, volatility, calibrated_targets)
+                    # Use OHLC data when available so TP/SL are evaluated on intrabar extremes
+                    high_series = data['high'] if 'high' in data.columns else None
+                    low_series = data['low'] if 'low' in data.columns else None
+                    labels = self._generate_simplified_target_labels(
+                        price_series,
+                        volatility,
+                        calibrated_targets,
+                        high=high_series,
+                        low=low_series,
+                    )
                 else:
                     labels = self._generate_price_target_vol_normalized_labels(price_series, volatility, calibrated_targets)
             
@@ -618,7 +712,9 @@ class VolatilityAwareMultiHorizonLabeler:
                 # Data-driven calibration diagnostics (if enabled)
                 "data_driven": self._last_data_driven_report if hasattr(self, '_last_data_driven_report') else None,
                 # Sample weights for PROXIMITY_REGRESSION labels (bugfix: was missing)
-                "sample_weights": self.get_all_sample_weights() if hasattr(self, '_sample_weights') else None
+                "sample_weights": self.get_all_sample_weights() if hasattr(self, '_sample_weights') else None,
+                # Raw triple-barrier coverage stats from simplified target generator (pre-smoothing, pre-gating)
+                "raw_triple_barrier_stats": getattr(self, "_last_raw_triple_barrier_stats", None),
             }
             
             # Log data-driven diagnostics if available
@@ -655,10 +751,16 @@ class VolatilityAwareMultiHorizonLabeler:
                 signal_rate = (result_labels != 0).mean() if len(result_labels) else 0.0
                 positive_rate = (result_labels > 0).mean() if len(result_labels) else 0.0
             coverage = signal_rate
-            
-            self.logger.info(f"Labels generated: {metadata['total_labels']} rows, {n_targets} targets, "
-                           f"coverage {coverage:.1%}, positive rate {positive_rate:.1%}, "
-                           f"vol window {self.config.volatility.window}/{self.config.volatility.enabled}")
+
+            raw_stats = metadata.get("raw_triple_barrier_stats") or {}
+            raw_cov = float(raw_stats.get("any_signal_coverage", 0.0))
+
+            self.logger.info(
+                f"Labels generated: {metadata['total_labels']} rows, {n_targets} targets, "
+                f"coverage {coverage:.1%}, positive rate {positive_rate:.1%}, "
+                f"raw_triple_barrier_coverage {raw_cov:.1%}, "
+                f"vol window {self.config.volatility.window}/{self.config.volatility.enabled}"
+            )
             
             # Warn on suspicious states
             if coverage < 0.01 and metadata["total_labels"] > 0:
@@ -708,11 +810,31 @@ class VolatilityAwareMultiHorizonLabeler:
         try:
             # Extract quality scores for uncertainty shrinkage
             opportunity_quality = None
-            if quality_scores and 'opportunity_quality_scores' in quality_scores:
-                opportunity_quality = quality_scores['opportunity_quality_scores']
-                # Ensure alignment with labels
-                if isinstance(opportunity_quality, pd.Series):
-                    opportunity_quality = opportunity_quality.reindex(labels.index)
+            # Prefer raw opportunity-level quality scores for smoothing, while also
+            # propagating a per-bar view for downstream gating logic.
+            if isinstance(quality_scores, dict) and quality_scores:
+                try:
+                    first_quality = next(iter(quality_scores.values()))
+                except StopIteration:
+                    first_quality = None
+
+                if first_quality is not None and hasattr(first_quality, 'opportunity_quality_scores'):
+                    base_quality = first_quality.opportunity_quality_scores
+                    if isinstance(base_quality, pd.Series) and not base_quality.empty:
+                        # Use the raw opportunity-level quality (aligned) for smoothing
+                        opportunity_quality = base_quality.reindex(labels.index)
+
+                        # Additionally propagate quality forward over a limited window to
+                        # create a per-bar quality series for downstream gating
+                        dense = base_quality.reindex(labels.index)
+                        propagation_bars = max(1, int(getattr(self.config, 'lookahead_periods', 3))) * 2
+                        dense = dense.ffill(limit=propagation_bars)
+                        try:
+                            setattr(first_quality, 'per_bar_quality_scores', dense)
+                        except Exception:
+                            pass
+            elif isinstance(quality_scores, pd.Series):
+                opportunity_quality = quality_scores.reindex(labels.index)
 
             # Extract volatility if available
             volatility = None
@@ -812,8 +934,22 @@ class VolatilityAwareMultiHorizonLabeler:
         short_opportunities = len(trade_opportunities[trade_opportunities < 0])
         # Count trade opportunities by direction
         
-        # Calculate potential profit for each trade opportunity
+        # Calculate potential profit for each trade opportunity (raw)
         potential_profits = self._calculate_potential_profits(trade_opportunities, prices_aligned, target_name)
+
+        # Regime-normalized potential profits for quality metrics (keep raw for downstream)
+        potential_profits_for_metrics = potential_profits
+        try:
+            returns = prices_aligned.pct_change()
+            vol = returns.rolling(20).std()
+            vol_median = vol.median()
+            if pd.notna(vol_median) and vol_median > 1e-8:
+                vol_at_signals = vol.reindex(trade_opportunities.index).fillna(vol_median)
+                regime_scale = (vol_at_signals / vol_median).abs().clip(lower=0.5, upper=2.0)
+                regime_scale = regime_scale.replace(0.0, 1.0)
+                potential_profits_for_metrics = potential_profits / regime_scale
+        except Exception:
+            potential_profits_for_metrics = potential_profits
         
         # Construct lookahead returns to estimate predictability properly
         try:
@@ -824,15 +960,15 @@ class VolatilityAwareMultiHorizonLabeler:
 
         # Calculate quality metrics based on potential profit, enriched with returns-based predictability
         metrics = self._calculate_trade_opportunity_metrics(
-            trade_opportunities, potential_profits, target_name, lookahead_returns
+            trade_opportunities, potential_profits_for_metrics, target_name, lookahead_returns
         )
         
         # Calculate composite score based on potential profit quality
-        composite_score = self._calculate_potential_profit_quality_score(metrics, potential_profits)
+        composite_score = self._calculate_potential_profit_quality_score(metrics, potential_profits_for_metrics)
         
-        # Calculate individual opportunity scores and weights
-        opportunity_scores = self._calculate_individual_opportunity_scores(trade_opportunities, potential_profits, metrics)
-        opportunity_weights = self._calculate_individual_opportunity_weights(trade_opportunities, potential_profits, metrics)
+        # Calculate individual opportunity scores and weights (using regime-normalized profits)
+        opportunity_scores = self._calculate_individual_opportunity_scores(trade_opportunities, potential_profits_for_metrics, metrics)
+        opportunity_weights = self._calculate_individual_opportunity_weights(trade_opportunities, potential_profits_for_metrics, metrics)
         
         # Create trade opportunity quality score object
         class TradeOpportunityQualityScore:
@@ -845,11 +981,39 @@ class VolatilityAwareMultiHorizonLabeler:
                 self.potential_profits = potential_profits
                 self.avg_potential_profit = potential_profits.mean() if len(potential_profits) > 0 else 0.0
                 self.max_potential_profit = potential_profits.max() if len(potential_profits) > 0 else 0.0
+                # Long/short opportunity statistics
+                try:
+                    long_mask = trade_opportunities > 0
+                    short_mask = trade_opportunities < 0
+                    self.long_count = int(long_mask.sum())
+                    self.short_count = int(short_mask.sum())
+                    self.long_avg_potential_profit = float(potential_profits[long_mask].mean()) if self.long_count > 0 else 0.0
+                    self.short_avg_potential_profit = float(potential_profits[short_mask].mean()) if self.short_count > 0 else 0.0
+                    self.long_hit_rate = float(metrics.get('hit_rate_long', 0.0))
+                    self.short_hit_rate = float(metrics.get('hit_rate_short', 0.0))
+                    # Direction-specific quality proxies
+                    self.long_quality = float(self.overall_quality * self.long_hit_rate) if self.long_hit_rate > 0 else 0.0
+                    self.short_quality = float(self.overall_quality * self.short_hit_rate) if self.short_hit_rate > 0 else 0.0
+                except Exception:
+                    self.long_count = 0
+                    self.short_count = 0
+                    self.long_avg_potential_profit = 0.0
+                    self.short_avg_potential_profit = 0.0
+                    self.long_hit_rate = 0.0
+                    self.short_hit_rate = 0.0
+                    self.long_quality = 0.0
+                    self.short_quality = 0.0
                 # Individual opportunity scoring for downstream use
                 self.opportunity_scores = opportunity_scores  # Per-opportunity quality scores
                 self.opportunity_weights = opportunity_weights  # Per-opportunity weights
-                # Calculate per-opportunity quality scores for high-quality counting
-                self.opportunity_quality_scores = [self._calculate_individual_opportunity_quality_score(opp_score, opp_weight, metrics) for opp_score, opp_weight in zip(opportunity_scores, opportunity_weights)]
+                # Calculate per-opportunity quality scores for high-quality counting, aligned to trade timestamps
+                self.opportunity_quality_scores = pd.Series(
+                    [
+                        self._calculate_individual_opportunity_quality_score(opp_score, opp_weight, metrics)
+                        for opp_score, opp_weight in zip(opportunity_scores, opportunity_weights)
+                    ],
+                    index=trade_opportunities.index,
+                )
                 # Store all metrics for detailed analysis
                 self.metrics = metrics
                 self.red_flag_reasons = self._extract_trade_opportunity_red_flags(metrics, potential_profits)
@@ -878,10 +1042,35 @@ class VolatilityAwareMultiHorizonLabeler:
                 # This creates a data-driven quality assessment for each opportunity
                 base_quality = self.overall_quality * opp_score * opp_weight
 
-                # Normalize to 0-1 range
-                return max(0, min(1, base_quality))
+                # Opportunity-level IC boost (higher IC → higher confidence)
+                ic_val = float(self.metrics.get('ic', 0.0)) if hasattr(self, 'metrics') else 0.0
+                ic_boost = 1.0 + 0.3 * ic_val
+                if ic_boost < 0.0:
+                    ic_boost = 0.0
+                adjusted_quality = base_quality * ic_boost
 
-        return TradeOpportunityQualityScore(composite_score, metrics, potential_profits, target_name, opportunity_scores, opportunity_weights, trade_opportunities)
+                # Normalize to 0-1 range
+                return max(0.0, min(1.0, adjusted_quality))
+
+        quality = TradeOpportunityQualityScore(composite_score, metrics, potential_profits, target_name, opportunity_scores, opportunity_weights, trade_opportunities)
+
+        # Diagnostics logging for label quality assessment
+        try:
+            self.logger.info(
+                "TradeOpportunityQuality: target=%s overall=%.3f ic=%.3f hit_rate=%.3f avg_pnl=%.4f n_ops=%d long=%d short=%d",
+                target_name,
+                float(quality.overall_quality),
+                float(quality.predictability),
+                float(metrics.get('hit_rate', 0.0)),
+                float(metrics.get('avg_potential_profit', 0.0)),
+                int(len(potential_profits)),
+                int(getattr(quality, 'long_count', 0)),
+                int(getattr(quality, 'short_count', 0)),
+            )
+        except Exception:
+            pass
+
+        return quality
     
     def _calculate_potential_profits(self, trade_opportunities: pd.Series, prices: pd.Series, target_name: str) -> pd.Series:
         """Calculate potential profit based on signal direction over a fixed lookahead window (default: 6 bars ≈ 90min on 15m data)."""
@@ -938,6 +1127,24 @@ class VolatilityAwareMultiHorizonLabeler:
         metrics['max_potential_profit'] = potential_profits.max()
         metrics['min_potential_profit'] = potential_profits.min()
         metrics['std_potential_profit'] = potential_profits.std()
+
+        # Long/short breakdown for diagnostics and direction-specific quality
+        try:
+            long_mask = trade_opportunities > 0
+            short_mask = trade_opportunities < 0
+            metrics['long_count'] = int(long_mask.sum())
+            metrics['short_count'] = int(short_mask.sum())
+            metrics['avg_potential_profit_long'] = float(potential_profits[long_mask].mean()) if metrics['long_count'] > 0 else 0.0
+            metrics['avg_potential_profit_short'] = float(potential_profits[short_mask].mean()) if metrics['short_count'] > 0 else 0.0
+            metrics['std_potential_profit_long'] = float(potential_profits[long_mask].std()) if metrics['long_count'] > 1 else 0.0
+            metrics['std_potential_profit_short'] = float(potential_profits[short_mask].std()) if metrics['short_count'] > 1 else 0.0
+        except Exception:
+            metrics['long_count'] = 0
+            metrics['short_count'] = 0
+            metrics['avg_potential_profit_long'] = 0.0
+            metrics['avg_potential_profit_short'] = 0.0
+            metrics['std_potential_profit_long'] = 0.0
+            metrics['std_potential_profit_short'] = 0.0
         
         # Quality metrics based on returns-based predictability at signal times
         # Compute IC over non-zero signals only; calculate confidence based on signal quality and consistency
@@ -1005,14 +1212,20 @@ class VolatilityAwareMultiHorizonLabeler:
                 total = len(pos_idx) + len(neg_idx)
                 hit_rate = (pos_hits * len(pos_idx) + neg_hits * len(neg_idx)) / total if total > 0 else 0.0
                 metrics['hit_rate'] = float(hit_rate) if not np.isnan(hit_rate) else 0.0
+                metrics['hit_rate_long'] = float(pos_hits) if not np.isnan(pos_hits) else 0.0
+                metrics['hit_rate_short'] = float(neg_hits) if not np.isnan(neg_hits) else 0.0
             except Exception:
                 avg_profit = potential_profits.mean()
                 hit_rate = (potential_profits > avg_profit).mean()
                 metrics['hit_rate'] = hit_rate if not np.isnan(hit_rate) else 0.0
+                metrics['hit_rate_long'] = metrics['hit_rate']
+                metrics['hit_rate_short'] = metrics['hit_rate']
         else:
             avg_profit = potential_profits.mean()
             hit_rate = (potential_profits > avg_profit).mean()
             metrics['hit_rate'] = hit_rate if not np.isnan(hit_rate) else 0.0
+            metrics['hit_rate_long'] = metrics['hit_rate']
+            metrics['hit_rate_short'] = metrics['hit_rate']
         
         # Uplift: return difference between signals and non-signals at signal times fallback to profit distribution
         if lookahead_returns is not None and len(lookahead_returns) > 0:
@@ -1031,9 +1244,13 @@ class VolatilityAwareMultiHorizonLabeler:
                         short_uplift = -(rets[short_mask].mean() - rets[~short_mask].mean())  # positive is better
                     else:
                         short_uplift = 0.0
+                    metrics['uplift_long'] = float(np.nan_to_num(long_uplift, nan=0.0))
+                    metrics['uplift_short'] = float(np.nan_to_num(short_uplift, nan=0.0))
                     metrics['uplift'] = float(np.nan_to_num((long_uplift + short_uplift), nan=0.0))
                 else:
                     metrics['uplift'] = 0.0
+                    metrics['uplift_long'] = 0.0
+                    metrics['uplift_short'] = 0.0
             except Exception:
                 # Fallback to profit-based uplift
                 if len(potential_profits) > 1:
@@ -1041,10 +1258,16 @@ class VolatilityAwareMultiHorizonLabeler:
                     if high_profit_mask.sum() > 0 and (~high_profit_mask).sum() > 0:
                         uplift = potential_profits[high_profit_mask].mean() - potential_profits[~high_profit_mask].mean()
                         metrics['uplift'] = uplift if not np.isnan(uplift) else 0.0
+                        metrics['uplift_long'] = metrics['uplift']
+                        metrics['uplift_short'] = 0.0
                     else:
                         metrics['uplift'] = 0.0
+                        metrics['uplift_long'] = 0.0
+                        metrics['uplift_short'] = 0.0
                 else:
                     metrics['uplift'] = 0.0
+                    metrics['uplift_long'] = 0.0
+                    metrics['uplift_short'] = 0.0
         
         # Stability: consistency of potential profits over time
         if len(potential_profits) > 3:
@@ -1061,7 +1284,22 @@ class VolatilityAwareMultiHorizonLabeler:
             metrics['sharpe'] = sharpe if not np.isnan(sharpe) else 0.0
         else:
             metrics['sharpe'] = 0.0
-        
+        try:
+            if metrics.get('std_potential_profit_long', 0.0) > 0 and metrics.get('long_count', 0) > 1:
+                sharpe_long = metrics['avg_potential_profit_long'] / metrics['std_potential_profit_long']
+                metrics['sharpe_long'] = float(sharpe_long) if not np.isnan(sharpe_long) else 0.0
+            else:
+                metrics['sharpe_long'] = 0.0
+
+            if metrics.get('std_potential_profit_short', 0.0) > 0 and metrics.get('short_count', 0) > 1:
+                sharpe_short = metrics['avg_potential_profit_short'] / metrics['std_potential_profit_short']
+                metrics['sharpe_short'] = float(sharpe_short) if not np.isnan(sharpe_short) else 0.0
+            else:
+                metrics['sharpe_short'] = 0.0
+        except Exception:
+            metrics['sharpe_long'] = 0.0
+            metrics['sharpe_short'] = 0.0
+
         return metrics
 
     def _calibrate_rate_scale(
@@ -1307,7 +1545,9 @@ class VolatilityAwareMultiHorizonLabeler:
         self,
         prices: pd.Series,
         volatility: pd.Series,
-        calibrated_targets: List[float]
+        calibrated_targets: List[float],
+        high: Optional[pd.Series] = None,
+        low: Optional[pd.Series] = None,
     ) -> pd.DataFrame:
         """
         Generate simplified target labels (target_long, target_short) based on volatility.
@@ -1316,27 +1556,27 @@ class VolatilityAwareMultiHorizonLabeler:
         for long and short positions, volume-normalized as requested.
         
         Args:
-            prices: Price series for label generation
-            volatility: Volatility series for modulation
-            calibrated_targets: List of calibrated profit targets
+            prices: Close price series for label generation (base price).
+            volatility: Volatility series for modulation.
+            calibrated_targets: List of calibrated profit targets.
+            high: Optional high price series for TP/SL evaluation.
+            low: Optional low price series for TP/SL evaluation.
             
         Returns:
             DataFrame with target_long and target_short columns
         """
         tprint_info("🎯 Generating simplified target labels (target_long, target_short)")
         
-        # Use the first calibrated target or default to 0.5%
-        base_target = calibrated_targets[0] if calibrated_targets else 0.005
+        # Use the first calibrated target or default to 0.7%
+        base_target = calibrated_targets[0] if calibrated_targets else 0.008
         
-        # Calculate forward returns
+        # Calculate forward returns at multiple horizons for multi-horizon confirmation
         H = max(1, int(self.config.lookahead_periods))
-        fut_ret = prices.pct_change(H).shift(-H)
-        
-        # Calculate volatility-modulated thresholds
+
+        # Calculate volatility-modulated thresholds (profit target 1x-2x base)
         vol_mean = volatility.mean()
         if vol_mean > 0:
             vol_norm = volatility / vol_mean
-            # Apply volatility modulation with clipping
             vol_factor = np.clip(
                 1.0 + self.config.volatility.sensitivity * (vol_norm - 1.0),
                 self.config.multi_target.min_threshold_multiplier,
@@ -1345,10 +1585,131 @@ class VolatilityAwareMultiHorizonLabeler:
             effective_threshold = base_target * vol_factor
         else:
             effective_threshold = pd.Series(base_target, index=prices.index)
-        
-        # Generate binary targets for long and short positions
-        target_long = (fut_ret > effective_threshold).astype(np.int8)
-        target_short = (fut_ret < -effective_threshold).astype(np.int8)
+
+        # Triple-barrier configuration: profit target = 1x-2x base, stop = base / asymmetric_ratio
+        asymmetric_ratio = getattr(self.config.multi_target, 'asymmetric_barrier_ratio', 2.5)
+        profit_threshold = effective_threshold
+        stop_threshold = effective_threshold / asymmetric_ratio
+
+        horizons = {
+            'short': H,        # 3 bars (45min)
+            'medium': H * 2,   # 6 bars (90min)
+            'long': H * 3,     # 9 bars (135min)
+        }
+
+        price_values = prices.to_numpy(dtype=float, copy=False)
+        n = len(price_values)
+        high_values = high.to_numpy(dtype=float, copy=False) if high is not None else None
+        low_values = low.to_numpy(dtype=float, copy=False) if low is not None else None
+        profit_values = profit_threshold.to_numpy(dtype=float, copy=False)
+        stop_values = stop_threshold.to_numpy(dtype=float, copy=False)
+
+        def _compute_barrier_signals(horizon: int):
+            horizon = max(1, int(horizon))
+            profit_long = np.zeros(n, dtype=bool)
+            stop_long = np.zeros(n, dtype=bool)
+            profit_short = np.zeros(n, dtype=bool)
+            stop_short = np.zeros(n, dtype=bool)
+            limit = max(0, n - horizon)
+            if limit == 0:
+                return profit_long, stop_long, profit_short, stop_short
+            for i in range(limit):
+                base_price = price_values[i]
+                thr_profit = profit_values[i]
+                thr_stop = stop_values[i]
+                if (base_price == 0) or np.isnan(base_price) or np.isnan(thr_profit) or np.isnan(thr_stop):
+                    continue
+
+                # Use intrabar highs/lows when available for TP/SL evaluation, otherwise fall back to close prices
+                if high_values is not None and low_values is not None:
+                    window_high = high_values[i + 1:i + horizon + 1]
+                    window_low = low_values[i + 1:i + horizon + 1]
+                    window_high = window_high[~np.isnan(window_high)]
+                    window_low = window_low[~np.isnan(window_low)]
+                    if window_high.size == 0 or window_low.size == 0:
+                        continue
+                    up_moves = (window_high - base_price) / base_price
+                    down_moves = (window_low - base_price) / base_price
+                    max_ret = up_moves.max()
+                    min_ret = down_moves.min()
+                else:
+                    window = price_values[i + 1:i + horizon + 1]
+                    window = window[~np.isnan(window)]
+                    if window.size == 0:
+                        continue
+                    rel_returns = (window - base_price) / base_price
+                    max_ret = rel_returns.max()
+                    min_ret = rel_returns.min()
+
+                profit_long[i] = max_ret >= thr_profit
+                stop_long[i] = min_ret <= -thr_stop
+                profit_short[i] = min_ret <= -thr_profit
+                stop_short[i] = max_ret >= thr_stop
+            return profit_long, stop_long, profit_short, stop_short
+
+        pl_short, sl_short, ps_short, ss_short = _compute_barrier_signals(horizons['short'])
+        pl_medium, sl_medium, ps_medium, ss_medium = _compute_barrier_signals(horizons['medium'])
+        pl_long, sl_long, ps_long, ss_long = _compute_barrier_signals(horizons['long'])
+
+        # Diagnostic: raw barrier hit counts per horizon
+        tprint_info(f"🔍 [BARRIER DIAGNOSTICS] Long direction:")
+        tprint_info(f"   Short horizon ({horizons['short']} bars): profit_hits={pl_short.sum()}, stop_hits={sl_short.sum()}")
+        tprint_info(f"   Medium horizon ({horizons['medium']} bars): profit_hits={pl_medium.sum()}, stop_hits={sl_medium.sum()}")
+        tprint_info(f"   Long horizon ({horizons['long']} bars): profit_hits={pl_long.sum()}, stop_hits={sl_long.sum()}")
+        tprint_info(f"🔍 [BARRIER DIAGNOSTICS] Short direction:")
+        tprint_info(f"   Short horizon ({horizons['short']} bars): profit_hits={ps_short.sum()}, stop_hits={ss_short.sum()}")
+        tprint_info(f"   Medium horizon ({horizons['medium']} bars): profit_hits={ps_medium.sum()}, stop_hits={ss_medium.sum()}")
+        tprint_info(f"   Long horizon ({horizons['long']} bars): profit_hits={ps_long.sum()}, stop_hits={ss_long.sum()}")
+
+        long_short_confirmed = pl_short & ~sl_short
+        long_medium_confirmed = pl_medium & ~sl_medium
+        long_long_confirmed = pl_long & ~sl_long
+
+        short_short_confirmed = ps_short & ~ss_short
+        short_medium_confirmed = ps_medium & ~ss_medium
+        short_long_confirmed = ps_long & ~ss_long
+
+        tprint_info(f"🔍 [CONFIRMATION DIAGNOSTICS] Long direction (profit without stop):")
+        tprint_info(f"   Short confirmed: {long_short_confirmed.sum()}")
+        tprint_info(f"   Medium confirmed: {long_medium_confirmed.sum()}")
+        tprint_info(f"   Long confirmed: {long_long_confirmed.sum()}")
+        tprint_info(f"   Medium OR Long: {(long_medium_confirmed | long_long_confirmed).sum()}")
+        tprint_info(f"🔍 [CONFIRMATION DIAGNOSTICS] Short direction (profit without stop):")
+        tprint_info(f"   Short confirmed: {short_short_confirmed.sum()}")
+        tprint_info(f"   Medium confirmed: {short_medium_confirmed.sum()}")
+        tprint_info(f"   Long confirmed: {short_long_confirmed.sum()}")
+
+        confirmed_long = long_short_confirmed & (long_medium_confirmed | long_long_confirmed)
+        confirmed_short = short_short_confirmed & (short_medium_confirmed | short_long_confirmed)
+
+        # Diagnostics: how many short-horizon candidates did multi-horizon confirmation filter out?
+        long_short_candidates = int(long_short_confirmed.sum())
+        long_confirmed_count = int(confirmed_long.sum())
+        long_filtered_count = max(0, long_short_candidates - long_confirmed_count)
+        long_filtered_pct = (long_filtered_count / long_short_candidates * 100.0) if long_short_candidates > 0 else 0.0
+
+        short_short_candidates = int(short_short_confirmed.sum())
+        short_confirmed_count = int(confirmed_short.sum())
+        short_filtered_count = max(0, short_short_candidates - short_confirmed_count)
+        short_filtered_pct = (short_filtered_count / short_short_candidates * 100.0) if short_short_candidates > 0 else 0.0
+
+        tprint_info(f"🔍 [FINAL CONFIRMATION] After multi-horizon AND logic:")
+        tprint_info(f"   Confirmed long: {long_confirmed_count} (short AND (medium OR long))")
+        tprint_info(f"   Confirmed short: {short_confirmed_count} (short AND (medium OR long))")
+        tprint_info(f"   Long candidates filtered by confirmation: {long_filtered_count} ({long_filtered_pct:.1f}% of short-horizon long candidates)")
+        tprint_info(f"   Short candidates filtered by confirmation: {short_filtered_count} ({short_filtered_pct:.1f}% of short-horizon short candidates)")
+
+        target_long = pd.Series(confirmed_long.astype(np.int8), index=prices.index)
+        target_short = pd.Series(confirmed_short.astype(np.int8), index=prices.index)
+
+        short_h_signals = int(long_short_confirmed.sum())
+        medium_h_signals = int(long_medium_confirmed.sum())
+        long_h_signals = int(long_long_confirmed.sum())
+        short_h_signals_s = int(short_short_confirmed.sum())
+        medium_h_signals_s = int(short_medium_confirmed.sum())
+        long_h_signals_s = int(short_long_confirmed.sum())
+
+        # Confirmation metrics are logged below
         
         # Create result DataFrame
         labels = pd.DataFrame({
@@ -1356,16 +1717,52 @@ class VolatilityAwareMultiHorizonLabeler:
             'target_short': target_short
         }, index=prices.index)
         
-        # Log statistics
-        long_signals = target_long.sum()
-        short_signals = target_short.sum()
+        dataset_len = len(labels)
+        long_signals = int(target_long.sum())
+        short_signals = int(target_short.sum())
         total_signals = long_signals + short_signals
         
-        tprint_info(f"📊 Simplified target statistics:")
-        tprint_info(f"   Long signals: {long_signals} ({long_signals/len(labels):.1%})")
-        tprint_info(f"   Short signals: {short_signals} ({short_signals/len(labels):.1%})")
-        tprint_info(f"   Total signals: {total_signals} ({total_signals/len(labels):.1%})")
+        short_h_signals = int(long_short_confirmed.sum())
+        medium_h_signals = int(long_medium_confirmed.sum())
+        long_h_signals = int(long_long_confirmed.sum())
+        short_h_signals_s = int(short_short_confirmed.sum())
+        medium_h_signals_s = int(short_medium_confirmed.sum())
+        long_h_signals_s = int(short_long_confirmed.sum())
+        confirmation_rate = (long_signals / short_h_signals * 100) if short_h_signals > 0 else 0.0
+        confirmation_rate_short = (short_signals / short_h_signals_s * 100) if short_h_signals_s > 0 else 0.0
+
+        # Raw triple-barrier coverage (before smoothing and quality gating)
+        raw_any_signals = (target_long != 0) | (target_short != 0)
+        raw_any_count = int(raw_any_signals.sum())
+        raw_any_coverage = (raw_any_count / dataset_len) if dataset_len > 0 else 0.0
+        long_rate = (long_signals / dataset_len) if dataset_len > 0 else 0.0
+        short_rate = (short_signals / dataset_len) if dataset_len > 0 else 0.0
+
+        # Persist stats for downstream reporting
+        self._last_raw_triple_barrier_stats = {
+            "dataset_len": int(dataset_len),
+            "long_signals": long_signals,
+            "short_signals": short_signals,
+            "total_signals": total_signals,
+            "any_signal_count": raw_any_count,
+            "any_signal_coverage": float(raw_any_coverage),
+            "long_rate": float(long_rate),
+            "short_rate": float(short_rate),
+        }
+
+        tprint_info(f"📊 Multi-horizon target statistics:")
+        tprint_info(f"   Short-horizon (3-bar) candidates: {short_h_signals} ({short_h_signals/dataset_len:.1%})")
+        tprint_info(f"   Medium-horizon (6-bar) confirmations: {medium_h_signals} ({medium_h_signals/dataset_len:.1%})")
+        tprint_info(f"   Long-horizon (12-bar) confirmations: {long_h_signals} ({long_h_signals/dataset_len:.1%})")
+        tprint_info(f"   Confirmed long signals: {long_signals} ({long_signals/dataset_len:.1%})")
+        tprint_info(f"   Long confirmation rate: {confirmation_rate:.1f}% (short-horizon confirmed by medium/long)")
+        tprint_info(f"   Short-horizon (3-bar) short candidates: {short_h_signals_s} ({short_h_signals_s/dataset_len:.1%})")
+        tprint_info(f"   Confirmed short signals: {short_signals} ({short_signals/dataset_len:.1%})")
+        tprint_info(f"   Short confirmation rate: {confirmation_rate_short:.1f}%")
+        tprint_info(f"   Raw triple-barrier coverage (any long/short): {raw_any_coverage:.1%} ({raw_any_count}/{dataset_len})")
         tprint_info(f"   Base threshold: {base_target:.4f} ({base_target*10000:.1f} bps)")
+        tprint_info(f"   Profit target range: {effective_threshold.min():.4f} - {effective_threshold.max():.4f}")
+        tprint_info(f"   Stop threshold: base/{asymmetric_ratio:.1f} (≈{stop_threshold.mean():.4f})")
         
         return labels
 
@@ -1464,9 +1861,21 @@ class VolatilityAwareMultiHorizonLabeler:
         if len(potential_profits) == 0:
             return 0.0
         
-        # Base score from average potential profit (higher is better)
+        # Base score from average potential profit (higher is better) with quantile-based saturation
         avg_profit = metrics.get('avg_potential_profit', 0.0)
-        profit_score = min(1.0, avg_profit / 0.02)  # Normalize to 2% max expected profit
+        try:
+            median_profit = float(potential_profits.median())
+            q1 = float(potential_profits.quantile(0.25))
+            q3 = float(potential_profits.quantile(0.75))
+            iqr = q3 - q1
+            if not np.isfinite(iqr) or iqr <= 1e-8:
+                iqr = 1e-8
+            profit_z = (avg_profit - median_profit) / iqr
+            # Map z-score to [0, 1] via logistic; 0 → 0.5, positive → >0.5
+            profit_score = 1.0 / (1.0 + np.exp(-profit_z))
+        except Exception:
+            # Fallback to simple scaling if quantiles fail
+            profit_score = min(1.0, max(0.0, avg_profit / 0.02))
         
         # Consistency score (lower std is better)
         std_profit = metrics.get('std_potential_profit', 0.0)
@@ -1483,15 +1892,26 @@ class VolatilityAwareMultiHorizonLabeler:
         # Sharpe score (risk-adjusted)
         sharpe = metrics.get('sharpe', 0.0)
         sharpe_score = min(1.0, max(0.0, (sharpe + 1) / 2))  # Normalize from [-1,1] to [0,1]
+
+        # Predictability score from IC
+        ic_val = float(metrics.get('ic', 0.0))
+        ic_score = min(1.0, max(0.0, (ic_val + 1.0) / 2.0))  # Map [-1,1] → [0,1]
+
+        # Coverage penalty: require a reasonable number of opportunities for high scores
+        n_ops = int(len(potential_profits))
+        coverage_penalty = min(1.0, n_ops / 50.0)  # Full credit after ~50 opportunities
         
-        # Weighted composite score
+        # Weighted composite score with IC included
         composite_score = (
-            0.4 * profit_score +      # 40% weight on potential profit
-            0.2 * consistency_score + # 20% weight on consistency
-            0.2 * hit_rate_score +    # 20% weight on hit rate
-            0.1 * stability_score +   # 10% weight on stability
-            0.1 * sharpe_score        # 10% weight on risk-adjusted return
+            0.35 * profit_score +      # 35% weight on potential profit
+            0.20 * consistency_score + # 20% weight on consistency
+            0.15 * hit_rate_score +    # 15% weight on hit rate
+            0.10 * stability_score +   # 10% weight on stability
+            0.10 * sharpe_score +      # 10% weight on risk-adjusted return
+            0.10 * ic_score            # 10% weight on predictability (IC)
         )
+
+        composite_score *= coverage_penalty
         
         return composite_score
     
@@ -1780,6 +2200,7 @@ class VolatilityAwareMultiHorizonLabeler:
         opp_weights_list: List[pd.Series] = []
         potential_profits_list: List[pd.Series] = []
         signal_dirs_list: List[pd.Series] = []
+        opp_quality_list: List[pd.Series] = []
 
         for _, quality in target_qualities.items():
             if hasattr(quality, 'metrics'):
@@ -1798,6 +2219,8 @@ class VolatilityAwareMultiHorizonLabeler:
                 potential_profits_list.append(quality.potential_profits)
             if hasattr(quality, 'signal_directions') and isinstance(quality.signal_directions, pd.Series):
                 signal_dirs_list.append(quality.signal_directions)
+            if hasattr(quality, 'opportunity_quality_scores') and isinstance(quality.opportunity_quality_scores, pd.Series):
+                opp_quality_list.append(quality.opportunity_quality_scores)
 
         # Calculate median across targets for each metric
         aggregated_metrics: Dict[str, float] = {}
@@ -1813,13 +2236,15 @@ class VolatilityAwareMultiHorizonLabeler:
         aggregated_opp_weights = pd.concat(opp_weights_list) if opp_weights_list else pd.Series(dtype=float)
         aggregated_potential_profits = pd.concat(potential_profits_list) if potential_profits_list else pd.Series(dtype=float)
         aggregated_signal_dirs = pd.concat(signal_dirs_list) if signal_dirs_list else pd.Series(dtype=float)
+        aggregated_opp_quality = pd.concat(opp_quality_list) if opp_quality_list else pd.Series(dtype=float)
 
         # Create aggregated quality score
         composite_score = self._calculate_composite_score(aggregated_metrics)
 
         class AggregatedQualityScore:
             def __init__(self, composite_score, aggregated_metrics, n_targets,
-                         coverage, opp_scores, opp_weights, pot_profits, signal_dirs):
+                         coverage, opp_scores, opp_weights, pot_profits, signal_dirs,
+                         opp_quality_scores):
                 self.overall_quality = composite_score
                 self.predictability = aggregated_metrics.get('ic', 0.0)
                 self.stability = aggregated_metrics.get('stability', 0.0)
@@ -1832,6 +2257,7 @@ class VolatilityAwareMultiHorizonLabeler:
                 self.opportunity_weights = opp_weights
                 self.potential_profits = pot_profits
                 self.signal_directions = signal_dirs
+                self.opportunity_quality_scores = opp_quality_scores
 
         return {
             'aggregated': AggregatedQualityScore(
@@ -1843,6 +2269,7 @@ class VolatilityAwareMultiHorizonLabeler:
                 aggregated_opp_weights,
                 aggregated_potential_profits,
                 aggregated_signal_dirs,
+                aggregated_opp_quality,
             )
         }
     

@@ -23,7 +23,8 @@ from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
 )
 from src.utils.ml_common.optimization.shared_utils.evaluation_metrics import (
     UnifiedEvaluator,
-    create_unified_evaluator
+    create_unified_evaluator,
+    calculate_custom_balanced_score_for_hpo,
 )
 from src.utils.logger import system_logger
 
@@ -128,8 +129,8 @@ class ModelParameterGroups:
             ParameterGroup(
                 name="structure_learning_rate",
                 params={
-                    "max_depth": {"type": "int", "low": 3, "high": 10},
-                    "learning_rate": {"type": "float", "low": 0.01, "high": 0.3, "log": True}
+                    "max_depth": {"type": "int", "low": 3, "high": 8},
+                    "learning_rate": {"type": "float", "low": 0.01, "high": 0.15, "log": True}
                 },
                 priority=1,
                 description="Core structure and learning rate parameters"
@@ -138,9 +139,9 @@ class ModelParameterGroups:
                 name="regularization_subsampling",
                 params={
                     # num_leaves removed - auto-derived from max_depth
-                    "reg_lambda": {"type": "float", "low": 0.0, "high": 5.0},
-                    "sampling_rate": {"type": "float", "low": 0.6, "high": 1.0},  # Replaces subsample + colsample_bytree
-                    "min_child_samples": {"type": "int", "low": 10, "high": 100}
+                    "reg_lambda": {"type": "float", "low": 0.0, "high": 3.0},
+                    "sampling_rate": {"type": "float", "low": 0.7, "high": 1.0},  # Replaces subsample + colsample_bytree
+                    "min_child_samples": {"type": "int", "low": 20, "high": 80}
                 },
                 priority=2,
                 depends_on=["structure_learning_rate"],
@@ -163,9 +164,9 @@ class ModelParameterGroups:
             ParameterGroup(
                 name="structure_learning",
                 params={
-                    "depth": {"type": "int", "low": 4, "high": 10},
-                    "learning_rate": {"type": "float", "low": 0.01, "high": 0.3, "log": True},
-                    "iterations": {"type": "int", "low": 300, "high": 1500}
+                    "depth": {"type": "int", "low": 4, "high": 8},
+                    "learning_rate": {"type": "float", "low": 0.02, "high": 0.15, "log": True},
+                    "iterations": {"type": "int", "low": 200, "high": 800}
                 },
                 priority=1,
                 description="Core structure and learning parameters"
@@ -173,8 +174,8 @@ class ModelParameterGroups:
             ParameterGroup(
                 name="regularization",
                 params={
-                    "l2_leaf_reg": {"type": "float", "low": 1.0, "high": 10.0},
-                    "sampling_rate": {"type": "float", "low": 0.6, "high": 1.0}  # Replaces subsample + colsample_bylevel
+                    "l2_leaf_reg": {"type": "float", "low": 2.0, "high": 8.0},
+                    "sampling_rate": {"type": "float", "low": 0.7, "high": 1.0}  # Replaces subsample + colsample_bylevel
                 },
                 priority=2,
                 depends_on=["structure_learning"],
@@ -483,86 +484,60 @@ class CustomBalancedScoreObjective:
             if X_val is None or len(X_val) == 0:
                 logger.warning(f"⚠️ X_val is empty (shape: {getattr(X_val, 'shape', 'None')}), skipping prediction")
                 return 0.0
-            
+
             if y_val is None or len(y_val) == 0:
                 logger.warning(f"⚠️ y_val is empty (shape: {getattr(y_val, 'shape', 'None')}), skipping prediction")
                 return 0.0
-            
-            # Make predictions
+
+            # Make predictions (use probabilities for classification when available)
             try:
-                y_pred = model.predict(X_val)
+                if self.is_classification and hasattr(model, "predict_proba"):
+                    proba = model.predict_proba(X_val)
+                    if isinstance(proba, np.ndarray) and proba.ndim == 2 and proba.shape[1] >= 2:
+                        y_pred = proba[:, 1]
+                    else:
+                        y_pred = np.asarray(proba).ravel()
+                else:
+                    y_pred = model.predict(X_val)
             except Exception as e:
-                logger.warning(f"⚠️ Model predict failed: {e}")
+                logger.warning(f"Model predict failed: {e}")
                 return 0.0
-            
-            # Calculate metrics needed for custom_balanced_score
-            from sklearn.metrics import (
-                mean_squared_error, mean_absolute_error, r2_score,
-                f1_score, accuracy_score
-            )
-            
-            # Create mock financial metrics (in real use, these would come from trading simulation)
-            # For now, we use prediction quality as proxy
-            mse = mean_squared_error(y_val, y_pred)
-            mae = mean_absolute_error(y_val, y_pred)
-            
-            # Construct simple financial metrics from prediction error
-            # Better predictions → better "financial" performance
-            sharpe_proxy = max(0, 3.0 * (1.0 - min(mse, 1.0)))  # 0-3 range
-            max_drawdown_proxy = min(0.5, mse / 2.0)  # Lower is better
-            profit_factor_proxy = max(1.0, 3.0 * (1.0 - min(mae, 1.0)))
-            
-            # Statistical metrics
-            if self.is_classification:
-                zero_division_safe = cast(Any, 0)
-                f1 = f1_score(
-                    y_val,
-                    y_pred,
-                    average='weighted',
-                    zero_division=zero_division_safe,
+
+            # Prepare arrays for scoring
+            try:
+                y_val_array = y_val.values if isinstance(y_val, pd.Series) else np.asarray(y_val)
+                pred_array = np.asarray(y_pred)
+                if y_val_array.shape != pred_array.shape:
+                    y_val_array = y_val_array.reshape(-1)
+                    pred_array = pred_array.reshape(-1)
+            except Exception as e:
+                logger.warning(f"Failed to prepare arrays for scoring: {e}")
+                return 0.0
+
+            # Build confidence-weighted returns: sign(pred) * normalized |pred| * target
+            returns = None
+            try:
+                if y_val_array is not None:
+                    conf = np.abs(pred_array)
+                    max_conf = float(np.nanmax(conf)) if conf.size > 0 else 0.0
+                    if max_conf > 0:
+                        conf = conf / max_conf
+                    returns = np.sign(pred_array) * conf * y_val_array
+            except Exception as e:
+                logger.warning(f"Failed to compute returns for custom_balanced_score: {e}")
+                returns = None
+
+            # Use the unified custom_balanced_score tailored for trading models
+            try:
+                score = calculate_custom_balanced_score_for_hpo(
+                    predictions=pred_array,
+                    targets=y_val_array,
+                    returns=returns,
                 )
-                acc = accuracy_score(y_val, y_pred)
-                r2 = 0.5  # Not applicable for classification
-            else:
-                r2_raw = float(r2_score(y_val, y_pred))
-                r2 = max(0.0, r2_raw)
-                # For regression, create pseudo-classification metrics
-                f1 = float(max(0.0, 1.0 - min(mae, 1.0)))
-                acc = float(max(0.0, 1.0 - min(mse, 1.0)))
-            
-            # Create mock metric objects for evaluator
-            class FinancialMetrics:
-                def __init__(self, sharpe, drawdown, pf, ret):
-                    self.sharpe_ratio = sharpe
-                    self.max_drawdown = drawdown
-                    self.profit_factor = pf
-                    self.total_return = ret
-            
-            class StatisticalMetrics:
-                def __init__(self, f1, acc, r2):
-                    self.f1_score = f1
-                    self.accuracy = acc
-                    self.r2_score = r2
-            
-            financial_metrics = FinancialMetrics(
-                sharpe=sharpe_proxy,
-                drawdown=max_drawdown_proxy,
-                pf=profit_factor_proxy,
-                ret=sharpe_proxy * 0.1  # Simple return proxy
-            )
-            
-            statistical_metrics = StatisticalMetrics(f1=f1, acc=acc, r2=r2)
-            
-            # Calculate custom balanced score
-            score = self.evaluator._calculate_custom_balanced_score(
-                financial_metrics=financial_metrics,
-                statistical_metrics=statistical_metrics,
-                weights=self.weights,
-                sample_count=len(y_val),
-                apply_sample_penalty=True
-            )
-            
-            return score
+                return float(score)
+            except Exception as e:
+                logger.warning(f"Objective evaluation failed: {e}")
+                return 0.0
             
         except Exception as e:
             logger.warning(f"Objective evaluation failed: {e}")

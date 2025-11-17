@@ -95,9 +95,18 @@ class BaseStep(ABC):
             self._artifact_manager = ArtifactManager(config={})
             # Apply deferred context
             if self._current_context:
+                # Only forward keys supported by ArtifactManager.set_context
+                allowed_keys = {
+                    'symbol', 'exchange', 'timeframe', 'datetime',
+                    'information', 'direction', 'model'
+                }
+                context_for_artifact = {
+                    k: v for k, v in self._current_context.items()
+                    if k in allowed_keys
+                }
                 self._artifact_manager.set_context(
                     step_name=self.step_name,
-                    **{k: v for k, v in self._current_context.items() if k != 'step_name'}
+                    **context_for_artifact,
                 )
         return self._artifact_manager
 
@@ -171,7 +180,19 @@ class BaseStep(ABC):
 
         self._current_context.update(kwargs)
         if self._artifact_manager is not None:
-            self._artifact_manager.set_context(**self._current_context)
+            # Only forward keys supported by ArtifactManager.set_context
+            allowed_keys = {
+                'symbol', 'exchange', 'timeframe', 'datetime',
+                'information', 'direction', 'model'
+            }
+            context_for_artifact = {
+                k: v for k, v in self._current_context.items()
+                if k in allowed_keys
+            }
+            self._artifact_manager.set_context(
+                step_name=self.step_name,
+                **context_for_artifact,
+            )
             tprint(
                 f"🔄 Applied new context to ArtifactManager for '{self.step_name}'"
             )
@@ -271,7 +292,19 @@ class BaseStep(ABC):
                     )
         finally:
             # Restore original context
-            self.artifact_manager.set_context(**original_context)
+            # Only forward keys supported by ArtifactManager.set_context
+            allowed_keys = {
+                'symbol', 'exchange', 'timeframe', 'datetime',
+                'information', 'direction', 'model'
+            }
+            context_for_artifact = {
+                k: v for k, v in original_context.items()
+                if k in allowed_keys
+            }
+            self.artifact_manager.set_context(
+                step_name=self.step_name,
+                **context_for_artifact,
+            )
 
         return None
 
@@ -553,32 +586,37 @@ class BaseStep(ABC):
         Returns:
             'analyst' or 'tactician'
         """
-        # Primary detection: Check current step name for Tactician training steps
+        requested_cli_mode = str(config.get('execution_mode', '')).lower()
+        if requested_cli_mode not in {'full', 'light', 'blank', 'small_dataset'}:
+            requested_cli_mode = 'unspecified'
+        
         is_tactician_training_step = (
             'tactician_base_training' in self.step_name or
             'tactician_ensemble_training' in self.step_name or
             'tactician' in self.step_name.lower()
         )
         
-        # Secondary detection: Check execution context
         tactician_execution_context = config.get('execution_context', '').lower()
         is_tactician_context = 'tactician' in tactician_execution_context
         
-        # Tertiary detection: Check for explicit mode setting
         explicit_mode = config.get('interaction_generation_mode', '').lower()
-        
-        # Quaternary detection: Check for Tactician-specific configuration
         tactician_mode_config = config.get('tactician_mode', False)
         
-        # Determine mode
         if (is_tactician_training_step or is_tactician_context or 
             explicit_mode == 'tactician' or tactician_mode_config):
-            mode = 'tactician'  # Uses MI-based selection
+            mode = 'tactician'
         else:
-            mode = 'analyst'  # Uses CMI-based selection
+            mode = 'analyst'
         
-        self.logger.info(f"Execution mode detected: {mode}")
-        tprint(f"🎯 Execution mode for '{self.step_name}': {mode}")
+        self.logger.info(
+            "Execution mode resolved for %s: requested_cli=%s → persona=%s",
+            self.step_name,
+            requested_cli_mode,
+            mode
+        )
+        tprint(
+            f"🎯 Execution mode for '{self.step_name}': requested_cli={requested_cli_mode} → persona={mode}"
+        )
         return mode
         
     @abstractmethod

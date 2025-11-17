@@ -58,6 +58,54 @@ def calculate_target_quality_metrics(
         if len(y) == 0:
             return _empty_metrics()
 
+        # Special handling for constant/all-zero targets: these are deterministic
+        # (zero entropy) but should not be flagged as "highly noisy" or "skewed".
+        if len(y) > 0 and np.allclose(y, y[0]):
+            variance_metrics = _calculate_variance_metrics(y)
+            metrics['variance_distribution'] = variance_metrics
+
+            # Autocorrelation: constant target → no structure, but also not "noisy".
+            metrics['autocorrelation'] = {
+                'lag1_autocorrelation': 0.0,
+                'mean_autocorrelation': 0.0,
+                'max_abs_autocorrelation': 0.0,
+                'autocorrelation_by_lag': {},
+                'is_highly_noisy': False,
+                'has_temporal_structure': False,
+                'interpretation': 'CONSTANT - Target is constant; autocorrelation not informative',
+            }
+
+            # Distribution: constant value → symmetric, no outliers.
+            constant_val = float(y[0])
+            metrics['distribution_outliers'] = {
+                'percentile_5': constant_val,
+                'percentile_25': constant_val,
+                'median': constant_val,
+                'percentile_75': constant_val,
+                'percentile_95': constant_val,
+                'iqr': 0.0,
+                'skewness': 0.0,
+                'kurtosis': 0.0,
+                'n_outliers': 0,
+                'outlier_percentage': 0.0,
+                'is_symmetric': True,
+                'is_heavy_tailed': False,
+                'has_many_outliers': False,
+                'interpretation': 'CONSTANT - Target is constant; no outliers',
+            }
+
+            # Entropy & baselines behave as usual on this deterministic series.
+            entropy_metrics = _calculate_entropy_metrics(y, bins)
+            metrics['entropy'] = entropy_metrics
+
+            baseline_metrics = _calculate_baseline_metrics(y)
+            metrics['baseline_predictors'] = baseline_metrics
+
+            # Overall assessment based on these metrics
+            metrics['overall_assessment'] = _assess_overall_quality(metrics)
+
+            return metrics
+
         # 1. Variance & Distribution Metrics
         variance_metrics = _calculate_variance_metrics(y)
         metrics['variance_distribution'] = variance_metrics

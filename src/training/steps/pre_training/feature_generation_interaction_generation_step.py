@@ -15,7 +15,7 @@ Pipeline Phases:
 Key Features:
 - Mode detection based on launcher arguments (analyst/tactician)
 - RobustScaler bounding to prevent extreme values
-- Cross-timeframe feature generation with 3x, 6x, 9x, 27x lookback ratios
+- Cross-timeframe feature generation with 3x, 6x, 9x, 15x, 27x, 45x, 60x lookback ratios
 - Category protection during pruning (maintain ≥3 per category)
 - Tree-based interaction guidance with corrected SHAP analysis
 - Comprehensive causality enforcement
@@ -24,10 +24,14 @@ Key Features:
 - Support for simplified target structure (target_long, target_short) from labeling integration
 
 Cross-Timeframe Features:
-- For each variant feature (base, volnorm, vwap, trend_adj), generates 4 additional timeframe versions
-- Creates ratio-based interactions: feature_base / feature_3x, feature_base / feature_6x, feature_base / feature_9x, feature_base / feature_27x
+- For each variant feature (base, volnorm, vwap, trend_adj), generates 7 additional timeframe versions
+- Creates ratio-based interactions across multiple regime timescales:
+  - Short-term (3x, 6x): Micro to short-term regime shifts
+  - Medium-term (9x, 15x): Intraday regime transitions
+  - Long-term (27x, 45x, 60x): Multi-regime and market memory interactions
+- Ratio features: feature_base / feature_Nx for each multiplier
 - Uses safe division with math validation and causality enforcement (.shift(1))
-- Effectively multiplies feature count by ~5x after Phase 1 (1 base + 4 ratios per variant)
+- Effectively multiplies feature count by ~8x after Phase 1 (1 base + 7 ratios per variant)
 
 Target Structure:
 - Works with simplified binary targets from labeling integration step:
@@ -584,7 +588,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_info(f"🔍 DEBUG: Variant features columns: {list(variant_features.columns)[:10]}...")  # Show first 10 columns
             
             # Check for cross-timeframe features
-            cross_timeframe_cols = [c for c in variant_features.columns if '_3x_ratio' in c or '_6x_ratio' in c or '_9x_ratio' in c or '_27x_ratio' in c]
+            cross_timeframe_cols = [c for c in variant_features.columns if any(f'_{m}x_ratio' in c for m in [3, 6, 9, 15, 27, 45, 60])]
             if len(cross_timeframe_cols) > 0:
                 tprint_info(f"🔍 Found {len(cross_timeframe_cols)} cross-timeframe features before pruning")
             
@@ -603,7 +607,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 tprint_info(f"🔍 DEBUG: Pruned features columns: {list(pruned_features.columns)[:10]}...")  # Show first 10 columns
                 
                 # Check for cross-timeframe features after pruning
-                cross_timeframe_cols_after = [c for c in pruned_features.columns if '_3x_ratio' in c or '_6x_ratio' in c or '_9x_ratio' in c or '_27x_ratio' in c]
+                cross_timeframe_cols_after = [c for c in pruned_features.columns if any(f'_{m}x_ratio' in c for m in [3, 6, 9, 15, 27, 45, 60])]
                 if len(cross_timeframe_cols_after) > 0:
                     tprint_info(f"🔍 Found {len(cross_timeframe_cols_after)} cross-timeframe features after pruning")
                 else:
@@ -1092,7 +1096,68 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         # Return original if no match found
         return category
-    
+
+    def _apply_multi_window_priority_boost(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply priority boost to ATR, EMA/EWMA, and multi-window features.
+
+        These features strongly benefit from multi-window signals and show natural
+        nonlinear interactions across different market regimes:
+        - ATR: Captures volatility regime changes and risk dynamics
+        - EMA/EWMA: Exponential decay with recency weighting, multi-timeframe trends
+        - Multi-window features: Short-term vs long-term interactions
+
+        Args:
+            features_df: DataFrame with feature_name and composite_score
+
+        Returns:
+            DataFrame with boosted composite_score for priority features
+        """
+        priority_patterns = [
+            # ATR features (volatility and regime detection)
+            'atr', 'average_true_range', 'true_range',
+            # EMA/EWMA features (exponential decay and trend)
+            'ema', 'ewma', 'exponential_ma', 'exp_ma',
+            # Multi-window indicators
+            'multi_window', 'multi_timeframe', 'cross_timeframe',
+            # Cross-timeframe ratio features (all multipliers)
+            '_3x_ratio', '_6x_ratio', '_9x_ratio', '_15x_ratio',
+            '_27x_ratio', '_45x_ratio', '_60x_ratio',
+            # Bollinger Bands (ATR-related volatility)
+            'bb', 'bollinger',
+            # Volume-weighted features (multi-window volume interactions)
+            'vwap', 'volume_weighted',
+            # Momentum oscillators with multi-window characteristics
+            'macd', 'stochastic', 'rsi_ewm',
+        ]
+
+        boosted_df = features_df.copy()
+
+        # Track which features get boosted for logging
+        boosted_features = []
+
+        for idx, row in boosted_df.iterrows():
+            feature_name = row.get('feature_name', '').lower()
+
+            # Check if feature matches any priority pattern
+            is_priority = any(pattern in feature_name for pattern in priority_patterns)
+
+            if is_priority:
+                # Apply 15% boost to composite_score for priority features
+                original_score = row['composite_score']
+                boosted_score = original_score * 1.15
+                boosted_df.at[idx, 'composite_score'] = boosted_score
+                boosted_features.append((row['feature_name'], original_score, boosted_score))
+
+        if boosted_features:
+            tprint_info(f"🚀 Applied multi-window priority boost to {len(boosted_features)} features:")
+            for feat_name, orig, boosted in boosted_features[:5]:  # Show first 5
+                tprint_info(f"  ✓ {feat_name}: {orig:.4f} → {boosted:.4f} (+15%)")
+            if len(boosted_features) > 5:
+                tprint_info(f"  ... and {len(boosted_features) - 5} more features")
+
+        return boosted_df
+
     def _select_top_features_per_category(self, lookback_optimization: pd.DataFrame, top_n: int = 4) -> Dict:
         """
         Select top features per category using MI-based selection for Analyst mode.
@@ -1152,8 +1217,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 else:
                     tprint_warning(f"❌ No features found for category {category} even with name inference")
                     continue
-            
-            # Sort by composite_score descending
+
+            # Apply multi-window priority boost to ATR, EMA, and other multi-window features
+            category_features = self._apply_multi_window_priority_boost(category_features)
+
+            # Sort by composite_score descending (after priority boost)
             category_features = category_features.sort_values('composite_score', ascending=False)
             
             # Adaptive selection logic
@@ -1243,8 +1311,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 tprint_warning(f"⚠️ No features found for category: {category}")
                 top_features_by_category[category] = []
                 continue
-            
-            # Sort by composite_score (descending)
+
+            # Apply multi-window priority boost to ATR, EMA, and other multi-window features
+            category_features = self._apply_multi_window_priority_boost(category_features)
+
+            # Sort by composite_score (descending) (after priority boost)
             category_features = category_features.sort_values('composite_score', ascending=False)
             n_features = len(category_features)
             
@@ -1677,8 +1748,12 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 return result
         
         cross_timeframe_features = {}
-        timeframe_multipliers = [3, 6, 9, 27]
-        
+        # Extended timeframe multipliers to capture longer-term regime interactions
+        # Short-term: 3x, 6x (micro to short-term regime shifts)
+        # Medium-term: 9x, 15x (intraday regime transitions)
+        # Long-term: 27x, 45x, 60x (multi-regime and market memory interactions)
+        timeframe_multipliers = [3, 6, 9, 15, 27, 45, 60]
+
         # Create lookback mapping from original features
         lookback_mapping = {}
         for category, features in top_features_by_category.items():

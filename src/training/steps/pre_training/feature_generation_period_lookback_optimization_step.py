@@ -158,18 +158,30 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             self.vectorization_manager = None
     
     def _generate_intelligent_lookback_ranges(self) -> List[int]:
-        """Generate intelligent lookback ranges for optimization."""
-        # For the current 3-bar target horizon, emphasize short-to-medium
-        # windows that are most relevant for micro-structure behavior, while
-        # still providing a few broader context windows. This keeps the
-        # search focused and avoids very long lookbacks that are unlikely to
-        # be appropriate for a 3-bar profit target.
+        """Generate intelligent lookback ranges for optimization.
+
+        Extended to research periods up to 15m 300 bars to capture:
+        - Recency weighting and exponential decay
+        - Regime recognition and transitions
+        - Short-term vs long-term interactions
+        - Complex nonlinear relationships across multiple market regimes
+        """
+        # Comprehensive lookback ranges from micro-structure to macro context
+        # Short-term (2-20): Micro-structure behavior and immediate patterns
+        # Medium-term (25-100): Intraday trends and regime transitions
+        # Long-term (120-300): Multi-regime interactions and market memory
         lookbacks = [
+            # Micro-structure: 2-20 bars (immediate price action)
             2, 3, 4, 5, 8, 10, 15, 20,
+            # Short-term: 25-50 bars (local trends and patterns)
             25, 30, 35, 40, 45, 50,
+            # Medium-term: 60-100 bars (intraday regime shifts)
+            60, 70, 80, 90, 100,
+            # Long-term: 120-300 bars (multi-regime interactions)
+            120, 150, 180, 210, 240, 270, 300,
         ]
         self.logger.info(
-            f"🎯 Generated {len(lookbacks)} intelligent lookback ranges for 3-bar target horizon: {lookbacks}"
+            f"🎯 Generated {len(lookbacks)} intelligent lookback ranges up to 300 bars: {lookbacks}"
         )
         return lookbacks
     

@@ -1092,7 +1092,65 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         # Return original if no match found
         return category
-    
+
+    def _apply_multi_window_priority_boost(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply priority boost to ATR, EMA/EWMA, and multi-window features.
+
+        These features strongly benefit from multi-window signals and show natural
+        nonlinear interactions across different market regimes:
+        - ATR: Captures volatility regime changes and risk dynamics
+        - EMA/EWMA: Exponential decay with recency weighting, multi-timeframe trends
+        - Multi-window features: Short-term vs long-term interactions
+
+        Args:
+            features_df: DataFrame with feature_name and composite_score
+
+        Returns:
+            DataFrame with boosted composite_score for priority features
+        """
+        priority_patterns = [
+            # ATR features (volatility and regime detection)
+            'atr', 'average_true_range', 'true_range',
+            # EMA/EWMA features (exponential decay and trend)
+            'ema', 'ewma', 'exponential_ma', 'exp_ma',
+            # Multi-window indicators
+            'multi_window', 'multi_timeframe', 'cross_timeframe',
+            # Bollinger Bands (ATR-related volatility)
+            'bb', 'bollinger',
+            # Volume-weighted features (multi-window volume interactions)
+            'vwap', 'volume_weighted',
+            # Momentum oscillators with multi-window characteristics
+            'macd', 'stochastic', 'rsi_ewm',
+        ]
+
+        boosted_df = features_df.copy()
+
+        # Track which features get boosted for logging
+        boosted_features = []
+
+        for idx, row in boosted_df.iterrows():
+            feature_name = row.get('feature_name', '').lower()
+
+            # Check if feature matches any priority pattern
+            is_priority = any(pattern in feature_name for pattern in priority_patterns)
+
+            if is_priority:
+                # Apply 15% boost to composite_score for priority features
+                original_score = row['composite_score']
+                boosted_score = original_score * 1.15
+                boosted_df.at[idx, 'composite_score'] = boosted_score
+                boosted_features.append((row['feature_name'], original_score, boosted_score))
+
+        if boosted_features:
+            tprint_info(f"🚀 Applied multi-window priority boost to {len(boosted_features)} features:")
+            for feat_name, orig, boosted in boosted_features[:5]:  # Show first 5
+                tprint_info(f"  ✓ {feat_name}: {orig:.4f} → {boosted:.4f} (+15%)")
+            if len(boosted_features) > 5:
+                tprint_info(f"  ... and {len(boosted_features) - 5} more features")
+
+        return boosted_df
+
     def _select_top_features_per_category(self, lookback_optimization: pd.DataFrame, top_n: int = 4) -> Dict:
         """
         Select top features per category using MI-based selection for Analyst mode.
@@ -1152,8 +1210,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 else:
                     tprint_warning(f"❌ No features found for category {category} even with name inference")
                     continue
-            
-            # Sort by composite_score descending
+
+            # Apply multi-window priority boost to ATR, EMA, and other multi-window features
+            category_features = self._apply_multi_window_priority_boost(category_features)
+
+            # Sort by composite_score descending (after priority boost)
             category_features = category_features.sort_values('composite_score', ascending=False)
             
             # Adaptive selection logic
@@ -1243,8 +1304,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 tprint_warning(f"⚠️ No features found for category: {category}")
                 top_features_by_category[category] = []
                 continue
-            
-            # Sort by composite_score (descending)
+
+            # Apply multi-window priority boost to ATR, EMA, and other multi-window features
+            category_features = self._apply_multi_window_priority_boost(category_features)
+
+            # Sort by composite_score (descending) (after priority boost)
             category_features = category_features.sort_values('composite_score', ascending=False)
             n_features = len(category_features)
             

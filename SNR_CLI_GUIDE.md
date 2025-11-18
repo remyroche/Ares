@@ -326,14 +326,19 @@ Add to cron for regular monitoring:
 2. Re-run meta-labeling step
 3. Check data schema
 
-### "Could not load model"
+### "Why doesn't the CLI use my pre-trained model?"
 
-**Problem**: Trained model not found or incompatible
+**This is by design!** The CLI always trains fresh models for diagnostics.
 
-**Solutions**:
-1. CLI will train a simple RF model for diagnostics
-2. For full model analysis, ensure model is pickled in `artifacts/`
-3. Check model naming: `{model_type}_model_{symbol}_{timeframe}_*.pkl`
+**Reason**: We measure the **signal in the labels**, not the performance of a specific pre-trained model. Using fresh models with cross-validation ensures:
+- Fair, consistent comparison across all diagnostics
+- No train/test contamination
+- Unbiased assessment of label quality
+
+**What the CLI uses**:
+- **LightGBM** with the same config as `feature_generation_meta_labeling_step`
+- For model comparison, also trains: Linear (Ridge, Lasso, ElasticNet), RF, GBM, MLP
+- Always uses cross-validation for unbiased predictions
 
 ### Memory Issues
 

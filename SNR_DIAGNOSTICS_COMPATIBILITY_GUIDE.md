@@ -28,7 +28,7 @@ artifacts/
 
 **Naming Convention**:
 - Labeled data: `*labeled_data*{symbol}*{timeframe}*.parquet`
-- Models: `*{model_type}_model*{symbol}*{timeframe}*.pkl`
+- **Note**: Models are NOT loaded from artifacts - fresh models are always trained for diagnostics
 
 #### 2. Expected Data Schema
 
@@ -296,18 +296,33 @@ print(df.columns.tolist())  # Should include 'meta_label'
 print(df['meta_label'].describe())  # Check label distribution
 ```
 
-### Error: "Could not load model"
+### "Why doesn't the CLI use my pre-trained model?"
 
-**Expected Behavior**: CLI will train a simple Random Forest for diagnostics
+**This is by design!** The CLI **never** uses pre-trained models because:
 
-**This is normal!** The CLI doesn't require a pre-trained model. It will:
-1. Try to load an existing model if available
-2. Fall back to training a simple RF model with cross-validation
-3. Generate unbiased predictions for diagnostics
+1. **Measures label signal, not model performance**: We want to assess the inherent signal in the meta-labels, not how well a specific model was trained
+2. **Ensures fair comparison**: Using the same fresh model config for all diagnostics ensures consistent, comparable results
+3. **Avoids train/test contamination**: Pre-trained models may have been trained on different data splits
 
-**To use your trained model** (optional):
-- Save model as pickle in artifacts: `{model_type}_model_{symbol}_{timeframe}_*.pkl`
-- CLI will automatically detect and use it
+**What the CLI does instead**:
+- Always trains fresh LightGBM models using the **exact same config** as feature_generation_meta_labeling_step
+- Uses cross-validation to generate unbiased predictions
+- For model comparison diagnostics, trains multiple model families (Linear, RF, GBM, LGBM, MLP) for fair comparison
+
+**LightGBM Config** (matching meta-labeling):
+```python
+lgb.LGBMRegressor(
+    n_estimators=800,
+    max_depth=8,
+    learning_rate=0.01,
+    num_leaves=63,
+    min_child_samples=20,
+    subsample=0.8,
+    colsample_bytree=0.7,
+    reg_alpha=0.1,
+    reg_lambda=0.2
+)
+```
 
 ### Warning: "Wide confidence intervals"
 

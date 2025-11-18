@@ -127,54 +127,46 @@ class DiagnosticsCLI:
 
         tprint(f"  Loaded {len(df)} samples, {len(feature_cols)} features", "INFO")
 
-        # Try to load trained model from meta-labeling (search subdirectories)
-        model = None
-        y_pred = None
+        # Always train fresh model for diagnostics (never use pre-trained)
+        # This ensures we measure signal in labels, not performance of a specific model
+        tprint("  Training fresh LGBM model for diagnostics (matching meta-labeling config)...", "INFO")
+        import lightgbm as lgb
+        from sklearn.model_selection import cross_val_predict
 
-        model_pattern = f"**/*{model_type}_model*{symbol}*{timeframe}*.pkl"
-        model_files = list(self.artifacts_dir.glob(model_pattern))
+        # Use same config as meta-labeling step, adapted for regression
+        # Based on feature_generation_meta_labeling_step.py LGBMClassifier config
+        model = lgb.LGBMRegressor(
+            objective='regression',
+            metric='rmse',
+            n_estimators=800,
+            max_depth=8,
+            learning_rate=0.01,
+            num_leaves=63,
+            min_child_samples=20,
+            subsample=0.8,
+            subsample_freq=1,
+            colsample_bytree=0.7,
+            reg_alpha=0.1,
+            reg_lambda=0.2,
+            n_jobs=-1,
+            verbose=-1,
+            random_state=42
+        )
 
-        if model_files:
-            latest_model_file = model_files[-1]
-            tprint(f"  Found model: {latest_model_file.name}", "INFO")
+        # Remove NaN labels
+        valid_mask = ~pd.isna(y)
+        X_valid = X_df[valid_mask].values
+        y_valid = y[valid_mask]
 
-            try:
-                import pickle
-                with open(latest_model_file, 'rb') as f:
-                    model = pickle.load(f)
+        # Cross-validated predictions to avoid overfitting
+        tprint("  Generating cross-validated predictions (5-fold)...", "INFO")
+        y_pred_valid = cross_val_predict(model, X_valid, y_valid, cv=5, n_jobs=-1)
 
-                # Generate predictions
-                if hasattr(model, 'predict_proba'):
-                    y_pred = model.predict_proba(X_df.values)[:, 1]
-                else:
-                    y_pred = model.predict(X_df.values)
+        # Create full prediction array
+        y_pred = np.full(len(y), np.nan)
+        y_pred[valid_mask] = y_pred_valid
 
-                tprint(f"  Generated predictions from trained model", "SUCCESS")
-
-            except Exception as e:
-                tprint(f"  Warning: Could not load model: {e}", "WARNING")
-
-        # If no predictions, train a simple model for diagnostics
-        if y_pred is None:
-            tprint("  Training simple model for diagnostics...", "INFO")
-            from sklearn.ensemble import RandomForestRegressor
-            from sklearn.model_selection import cross_val_predict
-
-            model = RandomForestRegressor(n_estimators=100, max_depth=8, random_state=42, n_jobs=-1)
-
-            # Remove NaN labels
-            valid_mask = ~pd.isna(y)
-            X_valid = X_df[valid_mask].values
-            y_valid = y[valid_mask]
-
-            # Cross-validated predictions to avoid overfitting
-            y_pred_valid = cross_val_predict(model, X_valid, y_valid, cv=5, n_jobs=-1)
-
-            # Create full prediction array
-            y_pred = np.full(len(y), np.nan)
-            y_pred[valid_mask] = y_pred_valid
-
-            tprint(f"  Generated CV predictions", "SUCCESS")
+        tprint(f"  Generated CV predictions from fresh LGBM model", "SUCCESS")
 
         return model, X_df, y, y_pred
 

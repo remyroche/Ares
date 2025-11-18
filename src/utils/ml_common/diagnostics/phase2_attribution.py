@@ -35,6 +35,7 @@ from sklearn.model_selection import cross_val_predict, KFold
 from sklearn.metrics import r2_score, mean_squared_error
 import matplotlib.pyplot as plt
 import seaborn as sns
+import lightgbm as lgb
 
 from .snr_diagnostics import compute_snr_metrics, SNRDiagnostics
 
@@ -118,21 +119,43 @@ class SignalAttributionExperiments:
         # Define model families
         if task == 'regression':
             models = {
+                # LightGBM (PRIMARY - matching meta-labeling config)
+                'LGBM_MetaLabeling': lgb.LGBMRegressor(
+                    objective='regression',
+                    metric='rmse',
+                    n_estimators=800,
+                    max_depth=8,
+                    learning_rate=0.01,
+                    num_leaves=63,
+                    min_child_samples=20,
+                    subsample=0.8,
+                    subsample_freq=1,
+                    colsample_bytree=0.7,
+                    reg_alpha=0.1,
+                    reg_lambda=0.2,
+                    n_jobs=-1,
+                    verbose=-1,
+                    random_state=self.random_state
+                ),
+                # Linear models
                 'Linear_Ridge': Ridge(alpha=1.0, random_state=self.random_state),
                 'Linear_Lasso': Lasso(alpha=0.1, random_state=self.random_state, max_iter=2000),
                 'Linear_ElasticNet': ElasticNet(alpha=0.1, random_state=self.random_state, max_iter=2000),
+                # Random Forest
                 'RF_Shallow': RandomForestRegressor(
                     n_estimators=100, max_depth=5, random_state=self.random_state, n_jobs=-1
                 ),
                 'RF_Deep': RandomForestRegressor(
                     n_estimators=100, max_depth=15, random_state=self.random_state, n_jobs=-1
                 ),
+                # Gradient Boosting (sklearn)
                 'GBM_Shallow': GradientBoostingRegressor(
                     n_estimators=100, max_depth=3, learning_rate=0.1, random_state=self.random_state
                 ),
                 'GBM_Deep': GradientBoostingRegressor(
                     n_estimators=100, max_depth=7, learning_rate=0.1, random_state=self.random_state
                 ),
+                # Neural networks
                 'MLP_Small': MLPRegressor(
                     hidden_layer_sizes=(50,), activation='relu',
                     random_state=self.random_state, max_iter=500
@@ -144,19 +167,42 @@ class SignalAttributionExperiments:
             }
         else:  # classification
             models = {
+                # LightGBM (PRIMARY - matching meta-labeling config)
+                'LGBM_MetaLabeling': lgb.LGBMClassifier(
+                    objective='binary',
+                    metric='auc',
+                    n_estimators=800,
+                    max_depth=8,
+                    learning_rate=0.01,
+                    num_leaves=63,
+                    min_child_samples=20,
+                    subsample=0.8,
+                    subsample_freq=1,
+                    colsample_bytree=0.7,
+                    reg_alpha=0.1,
+                    reg_lambda=0.2,
+                    class_weight='balanced',
+                    n_jobs=-1,
+                    verbose=-1,
+                    random_state=self.random_state
+                ),
+                # Linear models
                 'Logistic': LogisticRegression(max_iter=1000, random_state=self.random_state),
+                # Random Forest
                 'RF_Shallow': RandomForestClassifier(
                     n_estimators=100, max_depth=5, random_state=self.random_state, n_jobs=-1
                 ),
                 'RF_Deep': RandomForestClassifier(
                     n_estimators=100, max_depth=15, random_state=self.random_state, n_jobs=-1
                 ),
+                # Gradient Boosting (sklearn)
                 'GBM_Shallow': GradientBoostingClassifier(
                     n_estimators=100, max_depth=3, learning_rate=0.1, random_state=self.random_state
                 ),
                 'GBM_Deep': GradientBoostingClassifier(
                     n_estimators=100, max_depth=7, learning_rate=0.1, random_state=self.random_state
                 ),
+                # Neural networks
                 'MLP_Small': MLPClassifier(
                     hidden_layer_sizes=(50,), activation='relu',
                     random_state=self.random_state, max_iter=500

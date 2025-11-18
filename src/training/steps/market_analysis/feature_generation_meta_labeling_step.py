@@ -19,10 +19,11 @@ Major enhancements:
 - Feature selection (remove correlated features, limit max features)
 - Sequential bootstrapping sample weights (handle overlapping events)
 
-TODO (Future Enhancements):
-- [ ] Focal Loss: Custom loss function for LGBM/XGB to focus on hard examples
-- [ ] CUSUM Filters: Replace momentum filter with de Prado's CUSUM event detector
-- [ ] Multi-Class Labels: (0=Timeout, 1=Profit, 2=Stop) instead of binary
+IMPLEMENTED ADVANCED FEATURES:
+- [✓] Focal Loss: Custom loss function for LGBM/XGB (optional, use_focal_loss parameter)
+- [✓] CUSUM Filters: de Prado's structural break detector (use_cusum_filter parameter)
+- [✓] Multi-Class Labels: (0=Timeout, 1=Profit, 2=Stop) - use_multiclass_labels parameter
+- [✓] HPO System: Label quality discovery with learnability scoring and entropy constraints
 
 Based on guidance from "Advances in Financial Machine Learning" by Marcos López de Prado.
 """
@@ -57,8 +58,11 @@ from sklearn.metrics import (
 from sklearn.isotonic import IsotonicRegression
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.utils.class_weight import compute_class_weight
+from sklearn.model_selection import cross_val_score
 import lightgbm as lgb
 import xgboost as xgb
+import hashlib
+import pickle
 
 # Vectorized computation (if available)
 try:
@@ -3021,6 +3025,228 @@ def select_top_k_signals(
         tprint(f"  ⚠️ No signals selected (total_k={total_k})", "WARNING")
 
     return selected_mask
+
+
+# ========================================================================================
+# HPO SYSTEM FOR LABEL QUALITY DISCOVERY
+# ========================================================================================
+
+def compute_learnability_score(
+    X: pd.DataFrame,
+    y: pd.Series,
+    cv_splits: int = 3,
+    time_aware_cv: bool = True
+) -> Tuple[float, float]:
+    """
+    Measure how "learnable" a specific set of labels is given the features.
+
+    Uses a lightweight, depth-constrained probe model to prevent overfitting.
+    Returns the cross-validated AUC penalized by stability (std).
+
+    Based on concept: If AUC = 0.5, labels are random noise. If AUC = 0.7,
+    labels capture structural inefficiency that features can explain.
+
+    Args:
+        X: Feature matrix
+        y: Binary labels (or multi-class in future)
+        cv_splits: Number of CV splits
+        time_aware_cv: Use TimeSeriesSplit instead of KFold
+
+    Returns:
+        Tuple of (learnability_score, mean_auc)
+    """
+    # Remove NaN labels
+    valid_mask = ~y.isna()
+    X_clean = X[valid_mask].fillna(0)
+    y_clean = y[valid_mask]
+
+    if len(y_clean) < 50:
+        return 0.0, 0.5  # Too few samples
+
+    # Check if labels are degenerate (all same class)
+    if len(y_clean.unique()) < 2:
+        return 0.0, 0.5  # No signal
+
+    # Lightweight Probe Model (shallow, fast)
+    probe = lgb.LGBMClassifier(
+        boosting_type='gbdt',
+        objective='binary',
+        max_depth=3,  # Very shallow
+        n_estimators=50,  # Very few trees
+        learning_rate=0.1,  # Fast convergence
+        subsample=0.7,  # Stochastic for stability
+        colsample_bytree=0.7,  # Feature subsampling
+        min_child_samples=20,  # Prevent overfitting
+        n_jobs=-1,
+        verbose=-1,
+        random_state=42
+    )
+
+    # Time-aware CV
+    if time_aware_cv:
+        from sklearn.model_selection import TimeSeriesSplit
+        cv = TimeSeriesSplit(n_splits=cv_splits)
+    else:
+        from sklearn.model_selection import KFold
+        cv = KFold(n_splits=cv_splits, shuffle=True, random_state=42)
+
+    # Cross-validate
+    try:
+        scores = cross_val_score(probe, X_clean, y_clean, cv=cv, scoring='roc_auc', n_jobs=-1)
+
+        mean_auc = scores.mean()
+        std_auc = scores.std()
+
+        # Learnability score: penalize instability
+        learnability = mean_auc - (0.5 * std_auc)
+
+        return learnability, mean_auc
+
+    except Exception as e:
+        tprint(f"⚠️ Learnability scoring failed: {e}", "WARNING")
+        return 0.0, 0.5
+
+
+def compute_label_entropy_score(
+    y: pd.Series,
+    min_positive_rate: float = 0.05,
+    max_positive_rate: float = 0.95,
+    min_samples: int = 50
+) -> float:
+    """
+    Compute entropy-based balance score for labels.
+
+    Penalizes extremes (too many or too few positive labels) using a parabolic curve.
+    Ensures we have enough samples for statistical significance.
+
+    Args:
+        y: Binary labels
+        min_positive_rate: Minimum acceptable positive rate
+        max_positive_rate: Maximum acceptable positive rate
+        min_samples: Minimum number of positive samples required
+
+    Returns:
+        Balance score in [0, 1], where 1 is perfectly balanced (50/50)
+    """
+    valid_mask = ~y.isna()
+    y_clean = y[valid_mask]
+
+    if len(y_clean) < min_samples:
+        return 0.0  # Not enough samples
+
+    pos_rate = y_clean.mean()
+    n_positive = (y_clean == 1).sum()
+
+    # Hard constraint: too few positive samples
+    if n_positive < min_samples:
+        return 0.0
+
+    # Hard constraint: too extreme distribution
+    if pos_rate < min_positive_rate or pos_rate > max_positive_rate:
+        return 0.0
+
+    # Balance score: parabolic curve peaking at 0.5
+    # balance = 1 - (2 * |0.5 - pos_rate|)^2
+    balance_score = 1.0 - (2.0 * abs(0.5 - pos_rate)) ** 2
+
+    return balance_score
+
+
+def combined_label_quality_objective(
+    X: pd.DataFrame,
+    y: pd.Series,
+    learnability_weight: float = 0.7,
+    balance_weight: float = 0.3,
+    cv_splits: int = 3
+) -> Tuple[float, Dict[str, float]]:
+    """
+    Combined objective for HPO: Learnability * Balance.
+
+    Finds labeling parameters that produce:
+    1. High learnability (AUC >> 0.5)
+    2. Sufficient sample size (not too sparse)
+    3. Balanced distribution (not too extreme)
+
+    Args:
+        X: Feature matrix
+        y: Binary labels
+        learnability_weight: Weight for learnability component (0.7 = 70%)
+        balance_weight: Weight for balance component (0.3 = 30%)
+        cv_splits: Number of CV splits for learnability
+
+    Returns:
+        Tuple of (combined_score, diagnostics_dict)
+    """
+    # Compute components
+    learnability, mean_auc = compute_learnability_score(X, y, cv_splits=cv_splits)
+    balance = compute_label_entropy_score(y)
+
+    # Combined score
+    combined = (learnability_weight * learnability) + (balance_weight * balance)
+
+    # Diagnostics
+    diagnostics = {
+        'learnability': learnability,
+        'mean_auc': mean_auc,
+        'balance': balance,
+        'combined': combined,
+        'n_samples': (~y.isna()).sum(),
+        'positive_rate': y.mean() if (~y.isna()).sum() > 0 else 0.0
+    }
+
+    return combined, diagnostics
+
+
+class HPOCache:
+    """Simple cache for HPO computations to avoid recomputing labels."""
+
+    def __init__(self, cache_dir: Optional[Path] = None):
+        self.cache_dir = cache_dir or Path("/tmp/hpo_cache")
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.cache = {}
+
+    def _get_key(self, params: Dict[str, Any]) -> str:
+        """Generate cache key from parameters."""
+        # Sort keys for consistent hashing
+        param_str = str(sorted(params.items()))
+        return hashlib.md5(param_str.encode()).hexdigest()
+
+    def get(self, params: Dict[str, Any]) -> Optional[Tuple[pd.Series, pd.Series]]:
+        """Retrieve cached labels."""
+        key = self._get_key(params)
+
+        # Check memory cache first
+        if key in self.cache:
+            return self.cache[key]
+
+        # Check disk cache
+        cache_file = self.cache_dir / f"{key}.pkl"
+        if cache_file.exists():
+            try:
+                with open(cache_file, 'rb') as f:
+                    data = pickle.load(f)
+                self.cache[key] = data  # Load into memory
+                return data
+            except Exception as e:
+                tprint(f"⚠️ Cache load failed: {e}", "WARNING")
+                return None
+
+        return None
+
+    def put(self, params: Dict[str, Any], labels: Tuple[pd.Series, pd.Series]):
+        """Store labels in cache."""
+        key = self._get_key(params)
+
+        # Store in memory
+        self.cache[key] = labels
+
+        # Store on disk
+        cache_file = self.cache_dir / f"{key}.pkl"
+        try:
+            with open(cache_file, 'wb') as f:
+                pickle.dump(labels, f)
+        except Exception as e:
+            tprint(f"⚠️ Cache save failed: {e}", "WARNING")
 
 
 class FeatureGenerationMetaLabelingStep(BaseStep):

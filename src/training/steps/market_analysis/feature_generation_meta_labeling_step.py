@@ -44,6 +44,7 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.utils.class_weight import compute_class_weight
 import lightgbm as lgb
+import xgboost as xgb
 
 # Vectorized computation (if available)
 try:
@@ -291,13 +292,16 @@ def generate_primary_signals(
     macd_slow_long: int = 104,  # 4x longer
     macd_signal_long: int = 36,  # 4x longer
     macd_threshold: float = 0.02,  # LOOSER difference threshold
-    momentum_threshold: float = 0.005
+    momentum_threshold: float = 0.006  # TIGHTENED from 0.005 to reduce noise
 ) -> pd.DataFrame:
     """
-    Generate primary trading signals from technical indicators with LOOSER thresholds.
+    Generate primary trading signals from technical indicators with enhanced filters.
 
-    ENHANCED: Uses looser thresholds to generate more candidate signals for meta-model filtering.
-    Includes long-term indicators (4x periods) for multi-timeframe analysis.
+    ENHANCED IMPROVEMENTS:
+    - Tightened momentum threshold (0.006 from 0.005)
+    - Added volatility expansion filter (vol_short > 0.9 * vol_long)
+    - Added volatility weighting to consensus
+    - Signal funnel logging to track rejection rates
 
     CRITICAL: These signals are FIXED and must never be re-optimized during CV.
     They define the "primary model" whose signals we will meta-label.
@@ -307,6 +311,10 @@ def generate_primary_signals(
     """
     signals = pd.DataFrame(index=df.index)
     df_local = df.copy()
+
+    # SIGNAL FUNNEL TRACKING
+    funnel = {'total_bars': len(df)}
+    raw_signal_count = 0
 
     # ===== RSI SIGNALS (short + long term) =====
     df_local['rsi'] = compute_rsi(df_local['close'], period=rsi_period)
@@ -360,10 +368,57 @@ def generate_primary_signals(
     signals.loc[df_local['momentum'] > momentum_threshold, 'mom'] = 1
     signals.loc[df_local['momentum'] < -momentum_threshold, 'mom'] = -1
 
-    # ===== CONSENSUS SIGNAL =====
+    # ===== VOLATILITY EXPANSION CHECK =====
+    # Compute short and long volatility
+    log_ret = np.log(df_local['close']).diff()
+    vol_short = log_ret.rolling(20).std()  # Short-term volatility (20 bars ~5h on 15m)
+    vol_long = log_ret.rolling(96).std()   # Long-term volatility (96 bars ~1 day on 15m)
+
+    # Create volatility expansion filter
+    vol_expansion_filter = vol_short > (0.9 * vol_long)
+    vol_expansion_filter = vol_expansion_filter.fillna(False)
+
+    # Store volatility values for meta-features and diagnostics
+    signals['vol_short'] = vol_short
+    signals['vol_long'] = vol_long
+    signals['vol_expansion'] = vol_expansion_filter.astype(int)
+
+    # ===== CONSENSUS SIGNAL WITH VOLATILITY WEIGHTING =====
     # Use all signals for consensus (including long-term for multi-timeframe agreement)
     signal_cols = ['rsi', 'rsi_long', 'macd', 'macd_long', 'ma', 'mom']
-    signals['consensus'] = signals[signal_cols].sum(axis=1).apply(np.sign)
+
+    # Count raw signals before filtering
+    raw_consensus = signals[signal_cols].sum(axis=1).apply(np.sign)
+    raw_signal_count = (raw_consensus != 0).sum()
+    funnel['raw_signals'] = raw_signal_count
+
+    # Apply volatility-weighted consensus
+    # Weight signals by current volatility regime
+    vol_weight = (vol_short / (vol_long + 1e-8)).clip(0.5, 2.0)  # Boost signals in expansion
+    weighted_sum = signals[signal_cols].sum(axis=1) * vol_weight
+    signals['consensus'] = weighted_sum.apply(np.sign)
+
+    # Apply volatility expansion filter
+    signals_before_vol_filter = (signals['consensus'] != 0).sum()
+    signals.loc[~vol_expansion_filter, 'consensus'] = 0
+
+    # SIGNAL FUNNEL LOGGING
+    signals_after_vol_filter = (signals['consensus'] != 0).sum()
+    funnel['after_volatility_expansion_filter'] = signals_after_vol_filter
+    funnel['dropped_by_vol_expansion'] = signals_before_vol_filter - signals_after_vol_filter
+
+    # Calculate rejection rates
+    if raw_signal_count > 0:
+        vol_rejection_rate = funnel['dropped_by_vol_expansion'] / raw_signal_count * 100
+    else:
+        vol_rejection_rate = 0.0
+
+    # Log signal funnel
+    tprint(f"📊 Signal Funnel:", "INFO")
+    tprint(f"  Total bars: {funnel['total_bars']}", "INFO")
+    tprint(f"  Raw signals generated: {funnel['raw_signals']}", "INFO")
+    tprint(f"  Dropped by volatility expansion filter: {funnel['dropped_by_vol_expansion']} ({vol_rejection_rate:.1f}%)", "INFO")
+    tprint(f"  Final signals: {funnel['after_volatility_expansion_filter']}", "INFO")
 
     # Store raw indicator values for meta-features (signal disagreement, magnitude, etc.)
     signals['rsi_value'] = df_local['rsi']
@@ -384,29 +439,37 @@ def compute_realized_returns(
     stop_threshold: Union[float, pd.Series] = 0.010,
     horizon: int = 16,
     transaction_cost: float = 0.0005,
-    min_event_spacing: int = 4
-) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    min_event_spacing: int = 4,
+    volatility_series: Optional[pd.Series] = None
+) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
     """
     Compute realized returns for each signal event.
 
-    IMPROVED: Returns continuous values (realized return) instead of binary labels.
-    This allows isotonic regression to map probabilities to expected returns.
-
-    ENHANCED: Supports adaptive thresholds based on volatility.
+    ENHANCED IMPROVEMENTS:
+    - Uses High/Low prices for TP/SL checks (more realistic)
+    - Adds velocity/efficiency penalty for slow trades
+    - Dynamic horizon based on volatility (linear scaling)
+    - Tracks MFE/MAE for diagnostics
+    - Supports adaptive thresholds based on volatility
 
     Args:
-        df: DataFrame with price data
+        df: DataFrame with OHLCV data
         signals: DataFrame with signal columns
         profit_threshold: Profit target as fraction (float or Series for adaptive)
         stop_threshold: Stop loss as fraction (float or Series for adaptive)
-        horizon: Maximum bars to look ahead
+        horizon: Base maximum bars to look ahead
         transaction_cost: Transaction cost per trade (round trip)
         min_event_spacing: Minimum bars between signals (prevents overlapping events)
+        volatility_series: Volatility series for dynamic horizon scaling (optional)
 
     Returns:
-        Tuple of (realized_returns, binary_labels)
+        Tuple of (realized_returns, binary_labels, exit_reasons, event_durations, mfe_series, mae_series)
         - realized_returns: Actual returns achieved (NaN where no signal)
         - binary_labels: Binary success/failure (for model training)
+        - exit_reasons: How each event exited ('profit', 'stop', 'timeout')
+        - event_durations: Bars held for each event
+        - mfe_series: Maximum Favorable Excursion for each event
+        - mae_series: Maximum Adverse Excursion for each event
     """
     realized_returns = pd.Series(index=df.index, dtype=float)
     realized_returns[:] = np.nan
@@ -420,7 +483,16 @@ def compute_realized_returns(
     event_durations = pd.Series(index=df.index, dtype=float)
     event_durations[:] = np.nan
 
+    # NEW: Track MFE/MAE for each event
+    mfe_series = pd.Series(index=df.index, dtype=float)
+    mfe_series[:] = np.nan
+
+    mae_series = pd.Series(index=df.index, dtype=float)
+    mae_series[:] = np.nan
+
     close_prices = df['close'].values
+    high_prices = df['high'].values if 'high' in df.columns else close_prices
+    low_prices = df['low'].values if 'low' in df.columns else close_prices
     consensus_signals = signals['consensus'].values
 
     # Convert thresholds to arrays for adaptive support
@@ -434,13 +506,32 @@ def compute_realized_returns(
     else:
         stop_thresholds = stop_threshold.values
 
+    # Dynamic horizon based on volatility (LINEAR scaling)
+    if volatility_series is not None:
+        vol_array = volatility_series.values
+        # Normalize volatility to [0, 1] range using quantiles
+        vol_clean = vol_array[~np.isnan(vol_array)]
+        if len(vol_clean) > 10:
+            vol_min = np.percentile(vol_clean, 10)
+            vol_max = np.percentile(vol_clean, 90)
+            # Linear scaling: low vol → longer horizon, high vol → shorter horizon
+            # normalized_vol = 0 for low vol, 1 for high vol
+            normalized_vol = np.clip((vol_array - vol_min) / (vol_max - vol_min + 1e-8), 0, 1)
+            # Scale horizon: 1.5x at low vol, 0.75x at high vol
+            horizon_multiplier = 1.5 - 0.75 * normalized_vol  # Range: [0.75, 1.5]
+            dynamic_horizons = (horizon * horizon_multiplier).astype(int)
+            dynamic_horizons = np.clip(dynamic_horizons, horizon // 2, horizon * 2)  # Safety bounds
+        else:
+            dynamic_horizons = np.full(len(df), horizon)
+    else:
+        dynamic_horizons = np.full(len(df), horizon)
+
     last_event_idx = -min_event_spacing  # Track last signal to avoid overlaps
 
     i = 0
     n = len(df)
-    max_start = n - horizon
 
-    while i < max_start:
+    while i < n - 1:
         signal = consensus_signals[i]
 
         # Only create labels where we have a signal
@@ -453,9 +544,13 @@ def compute_realized_returns(
             i = last_event_idx + min_event_spacing
             continue
 
+        # Get dynamic horizon for this event
+        event_horizon = int(dynamic_horizons[i])
+
         # Edge window handling: skip events too close to end of available data
-        if i + horizon >= n:
-            break
+        if i + event_horizon >= n:
+            i += 1
+            continue
 
         entry_price = close_prices[i]
         exit_price = None
@@ -466,49 +561,74 @@ def compute_realized_returns(
         profit_thr = profit_thresholds[i]
         stop_thr = stop_thresholds[i]
 
-        # Look ahead up to horizon bars
-        for j in range(1, horizon + 1):
+        # Track MFE/MAE during the event
+        max_favorable = 0.0
+        max_adverse = 0.0
+
+        # Look ahead up to dynamic horizon bars
+        for j in range(1, event_horizon + 1):
             idx = i + j
             if idx >= n:
                 break
 
-            future_price = close_prices[idx]
+            # NEW: Use High/Low prices for more realistic TP/SL checks
+            high_price = high_prices[idx]
+            low_price = low_prices[idx]
+            close_price = close_prices[idx]
 
             if signal > 0:  # Long signal
-                pnl = (future_price - entry_price) / entry_price
+                # Check high for profit target (intra-bar high could have hit TP)
+                pnl_high = (high_price - entry_price) / entry_price
+                # Check low for stop loss (intra-bar low could have hit SL)
+                pnl_low = (low_price - entry_price) / entry_price
+                # Current P&L based on close
+                pnl_close = (close_price - entry_price) / entry_price
 
-                # Hit profit target
-                if pnl >= profit_thr:
-                    exit_price = future_price
+                # Track MFE/MAE
+                max_favorable = max(max_favorable, pnl_high)
+                max_adverse = min(max_adverse, pnl_low)
+
+                # Hit profit target (check high first)
+                if pnl_high >= profit_thr:
+                    # Assume we got filled at profit target price
+                    exit_price = entry_price * (1 + profit_thr)
                     exit_reason = 'profit'
                     event_end_idx = idx
                     break
-                # Hit stop loss
-                elif pnl <= -stop_thr:
-                    exit_price = future_price
+                # Hit stop loss (check low)
+                elif pnl_low <= -stop_thr:
+                    # Assume we got filled at stop loss price
+                    exit_price = entry_price * (1 - stop_thr)
                     exit_reason = 'stop'
                     event_end_idx = idx
                     break
 
             elif signal < 0:  # Short signal
-                pnl = (entry_price - future_price) / entry_price
+                # For shorts: check low for profit, high for stop
+                pnl_high = (entry_price - high_price) / entry_price  # High is bad for shorts
+                pnl_low = (entry_price - low_price) / entry_price  # Low is good for shorts
+                pnl_close = (entry_price - close_price) / entry_price
 
-                # Hit profit target
-                if pnl >= profit_thr:
-                    exit_price = future_price
+                # Track MFE/MAE
+                max_favorable = max(max_favorable, pnl_low)
+                max_adverse = min(max_adverse, pnl_high)
+
+                # Hit profit target (check low for shorts)
+                if pnl_low >= profit_thr:
+                    exit_price = entry_price * (1 - profit_thr)
                     exit_reason = 'profit'
                     event_end_idx = idx
                     break
-                # Hit stop loss
-                elif pnl <= -stop_thr:
-                    exit_price = future_price
+                # Hit stop loss (check high for shorts)
+                elif pnl_high <= -stop_thr:
+                    exit_price = entry_price * (1 + stop_thr)
                     exit_reason = 'stop'
                     event_end_idx = idx
                     break
 
         # If no exit, use end-of-horizon price (timeout)
         if exit_price is None:
-            event_end_idx = min(i + horizon, n - 1)
+            event_end_idx = min(i + event_horizon, n - 1)
             exit_price = close_prices[event_end_idx]
             exit_reason = 'timeout'
 
@@ -522,32 +642,46 @@ def compute_realized_returns(
 
         event_length = event_end_idx - i
 
+        # Store realized return and event info
         realized_returns.iloc[i] = net_return
         exit_reasons.iloc[i] = exit_reason
         event_durations.iloc[i] = float(event_length)
+        mfe_series.iloc[i] = max_favorable
+        mae_series.iloc[i] = abs(max_adverse)  # Store as positive value
 
+        # NEW: Velocity/efficiency-adjusted binary labeling
+        # Penalize trades that take too long to achieve returns
         econ_min_return = ECON_MIN_RETURN_MULTIPLE * transaction_cost
 
         if abs(net_return) < econ_min_return:
             binary_labels.iloc[i] = np.nan
         else:
+            # Efficiency ratio: 1.0 / log(1 + duration)
+            # Fast trades (1-2 bars) get full credit, slow trades (16+ bars) get penalized
+            efficiency_ratio = 1.0 / np.log1p(event_length)
+
+            # Velocity-adjusted return for binary labeling only
+            velocity_adjusted_return = net_return * efficiency_ratio
+
             risk_unit = stop_thr if stop_thr > 0 else profit_thr
             if risk_unit <= 0:
                 r_multiple = 0.0
             else:
-                r_multiple = net_return / risk_unit
+                # Use velocity-adjusted return for R-multiple calculation
+                r_multiple = velocity_adjusted_return / risk_unit
 
             if r_multiple >= R_MULTIPLE_POS_THRESHOLD:
                 binary_labels.iloc[i] = 1.0
-            elif r_multiple <= R_MULTIPLE_NEG_THRESHOLD:
+            elif net_return < 0:  # Losses are losses regardless of speed
                 binary_labels.iloc[i] = 0.0
             else:
+                # Profitable but too slow = noise/drift
                 binary_labels.iloc[i] = np.nan
 
         last_event_idx = i  # Update last event position
         i += 1
 
-    return realized_returns, binary_labels, exit_reasons, event_durations
+    return realized_returns, binary_labels, exit_reasons, event_durations, mfe_series, mae_series
 
 
 def create_meta_features(
@@ -800,6 +934,103 @@ def create_meta_features(
         features['bars_since_last_signal'] = np.nan
         features['signal_density_50'] = 0.0
 
+    # ===== CROSS-TIMEFRAME FEATURES (1H, 4H AGGREGATIONS) =====
+    # Aggregate 15m data to higher timeframes for multi-horizon analysis
+
+    # 1h aggregation (4 bars of 15m data)
+    close_1h = df['close'].rolling(4).mean()
+    high_1h = df['high'].rolling(4).max()
+    low_1h = df['low'].rolling(4).min()
+
+    features['returns_1h'] = close_1h.pct_change()
+    features['momentum_1h'] = df['close'].pct_change(4)
+    features['volatility_1h_agg'] = features['returns_1h'].rolling(16).std()  # 16h of 1h bars
+    features['range_1h'] = (high_1h - low_1h) / (close_1h + 1e-8)
+
+    # 4h aggregation (16 bars of 15m data)
+    close_4h = df['close'].rolling(16).mean()
+    high_4h = df['high'].rolling(16).max()
+    low_4h = df['low'].rolling(16).min()
+
+    features['returns_4h'] = close_4h.pct_change()
+    features['momentum_4h'] = df['close'].pct_change(16)
+    features['volatility_4h_agg'] = features['returns_4h'].rolling(16).std()
+    features['range_4h'] = (high_4h - low_4h) / (close_4h + 1e-8)
+
+    # ===== ROLLING WINDOW FEATURES (FOR TREE MODELS) =====
+    # Trees work better with explicitly computed rolling statistics
+
+    for window in [5, 10, 20, 50]:
+        # Rolling returns statistics
+        features[f'returns_mean_{window}'] = returns.rolling(window).mean()
+        features[f'returns_std_{window}'] = returns.rolling(window).std()
+
+        # Rolling price statistics
+        features[f'close_min_{window}'] = df['close'].rolling(window).min()
+        features[f'close_max_{window}'] = df['close'].rolling(window).max()
+        features[f'close_range_{window}'] = (
+            features[f'close_max_{window}'] - features[f'close_min_{window}']
+        ) / (df['close'] + 1e-8)
+
+        # Distance from recent high/low
+        features[f'dist_from_recent_high_{window}'] = (
+            df['close'] - features[f'close_max_{window}']
+        ) / (df['close'] + 1e-8)
+        features[f'dist_from_recent_low_{window}'] = (
+            df['close'] - features[f'close_min_{window}']
+        ) / (df['close'] + 1e-8)
+
+    # ===== MORE INTERACTION FEATURES =====
+    # Combine features to capture non-linear relationships
+
+    # Volatility × Momentum interactions
+    if 'volatility_1d' in features.columns and 'momentum_20' in features.columns:
+        features['vol_momentum_interaction'] = features['volatility_1d'] * features['momentum_20']
+
+    if 'volatility_regime' in features.columns:
+        # Regime-conditional momentum
+        for col in ['momentum_5', 'momentum_10', 'momentum_20']:
+            if col in features.columns:
+                # Create dummy variables for regime if they don't exist
+                if 'vol_regime_high' in features.columns:
+                    features[f'{col}_x_regime_high'] = features[col] * features['vol_regime_high']
+                if 'vol_regime_medium' in features.columns:
+                    features[f'{col}_x_regime_medium'] = features[col] * features['vol_regime_medium']
+
+    # ATR × Momentum
+    if 'atr_ratio' in features.columns and 'momentum_20' in features.columns:
+        features['atr_momentum'] = features['atr_ratio'] * features['momentum_20']
+
+    # Volatility × Range Position
+    if 'vol_ratio' in features.columns and 'range_position' in features.columns:
+        features['vol_range_interaction'] = features['vol_ratio'] * features['range_position']
+
+    # Distance features × Volatility
+    if 'dist_from_recent_high_50' in features.columns and 'volatility_1d' in features.columns:
+        features['high_dist_x_vol'] = features['dist_from_recent_high_50'] * features['volatility_1d']
+        features['low_dist_x_vol'] = features['dist_from_recent_low_50'] * features['volatility_1d']
+
+    # ===== EVENT HISTORY FEATURES (FOR PRE-FILTERING) =====
+    # Track historical event performance to filter low-quality signals
+    # NOTE: These will only be populated after first run; use with caution to avoid leakage
+
+    # Placeholder for event history features (to be populated from previous runs)
+    # These should be computed from historical realized returns, NOT current data
+    features['event_win_rate_last_50'] = 0.0  # Will be updated externally
+    features['event_mean_return_last_50'] = 0.0  # Will be updated externally
+    features['bars_since_last_event'] = np.nan  # Will be computed from signals
+
+    # Compute bars since last event (non-leaking, based on past signals only)
+    if 'consensus' in signals.columns:
+        signal_active = (signals['consensus'] != 0).astype(int)
+        idx_array = np.arange(len(df))
+        last_event_idx = np.where(signal_active == 1, idx_array, np.nan)
+        last_event_idx_series = pd.Series(last_event_idx, index=df.index).ffill()
+
+        bars_since_event = idx_array - last_event_idx_series.values
+        bars_since_event[last_event_idx_series.isna().values] = np.nan
+        features['bars_since_last_event'] = bars_since_event
+
     # ===== RAW SIGNALS (OPTIONAL, FOR DIAGNOSTICS) =====
 
     if include_raw_signals:
@@ -839,18 +1070,53 @@ def fit_probability_to_return_mapping(
     Returns:
         Fitted IsotonicRegression model
     """
+    # DEBUG LOGGING: Input statistics
+    logger.info(f"Isotonic regression fitting - Input statistics:")
+    logger.info(f"  Probabilities: n={len(probabilities)}, mean={np.nanmean(probabilities):.4f}, std={np.nanstd(probabilities):.4f}, min={np.nanmin(probabilities):.4f}, max={np.nanmax(probabilities):.4f}")
+    logger.info(f"  Returns: n={len(realized_returns)}, mean={np.nanmean(realized_returns):.4f}, std={np.nanstd(realized_returns):.4f}, min={np.nanmin(realized_returns):.4f}, max={np.nanmax(realized_returns):.4f}")
+
+    n_nan_prob = np.isnan(probabilities).sum()
+    n_nan_ret = np.isnan(realized_returns).sum()
+    n_inf_prob = np.isinf(probabilities).sum()
+    n_inf_ret = np.isinf(realized_returns).sum()
+
+    logger.info(f"  NaN counts: probabilities={n_nan_prob}, returns={n_nan_ret}")
+    logger.info(f"  Inf counts: probabilities={n_inf_prob}, returns={n_inf_ret}")
+
     # Remove NaN values
     mask = ~(np.isnan(probabilities) | np.isnan(realized_returns))
     p_clean = probabilities[mask]
     r_clean = realized_returns[mask]
 
+    logger.info(f"  After NaN filtering: {len(p_clean)} samples remaining")
+
     if len(p_clean) < 10:
         tprint("⚠️ Warning: Very few samples for probability mapping", "WARNING")
+        logger.warning(f"Only {len(p_clean)} samples available for isotonic regression fitting")
 
     if method == 'isotonic':
         # Isotonic regression: monotonic mapping
         iso = IsotonicRegression(out_of_bounds='clip')
         iso.fit(p_clean, r_clean)
+
+        # DEBUG LOGGING: Check fitted mapping quality
+        test_probs = np.linspace(0, 1, 11)
+        test_expected_returns = iso.predict(test_probs)
+
+        logger.info(f"  Isotonic regression fitted successfully")
+        logger.info(f"  Test mapping (prob → expected return):")
+        for p, r in zip(test_probs, test_expected_returns):
+            logger.info(f"    {p:.1f} → {r:.4f}")
+
+        # Check correlation between input probabilities and returns
+        if len(p_clean) > 2:
+            from scipy.stats import spearmanr
+            try:
+                corr, pval = spearmanr(p_clean, r_clean)
+                logger.info(f"  Spearman correlation (prob, return): {corr:.4f} (p={pval:.4e})")
+            except:
+                logger.warning("  Could not compute Spearman correlation")
+
         return iso
 
     elif method == 'binned':
@@ -872,13 +1138,15 @@ def translate_to_targets_with_isotonic(
     """
     Translate probabilities to continuous targets using isotonic regression.
 
-    This creates economically meaningful targets based on expected returns.
+    FIXED: Uses net expectancy approach instead of hard clipping below cost threshold.
+    This preserves gradient signal for "small profit" vs "big profit" distinction.
 
     Args:
         realized_returns: Actual returns (used only for validation)
         probabilities: Predicted probabilities from meta-model
         signals: Signal directions
         iso_regressor: Fitted isotonic regression model
+        cost_threshold: Transaction cost per trade
 
     Returns:
         Tuple of (target_long, target_short)
@@ -890,24 +1158,45 @@ def translate_to_targets_with_isotonic(
 
     # VECTORIZED: Predict on entire probability array at once (much faster)
     expected_returns = iso_regressor.predict(probabilities)
+
+    # DEBUG LOGGING: Check for anomalies in isotonic predictions
+    n_nan = np.isnan(expected_returns).sum()
+    n_inf = np.isinf(expected_returns).sum()
+    if n_nan > 0 or n_inf > 0:
+        tprint(f"⚠️ WARNING: Isotonic predictions contain {n_nan} NaN and {n_inf} Inf values", "WARNING")
+        expected_returns = np.nan_to_num(expected_returns, nan=0.0, posinf=0.1, neginf=-0.1)
+
+    # Ensure non-negative expected returns (can't target losses)
     expected_returns = np.maximum(0.0, expected_returns)
 
+    # FIXED APPROACH: Net Expectancy (subtract cost first, then clip)
+    # This preserves the difference between 0.14% gain (good!) and -5% loss (bad!)
     cost_thr = float(cost_threshold)
-    if cost_thr > 0.0:
-        below_cost_mask = expected_returns < cost_thr
-        expected_returns[below_cost_mask] = 0.0
-        above_cost_mask = expected_returns >= cost_thr
-        if np.any(above_cost_mask):
-            ratio = expected_returns[above_cost_mask] / cost_thr
-            ratio = np.maximum(1.0, ratio)
-            expected_returns[above_cost_mask] = cost_thr * np.power(ratio, TARGET_POWER)
+    net_expected_returns = expected_returns - cost_thr
+
+    # Clip negative net expectancy to 0 (we don't target negative returns)
+    net_expected_returns = np.maximum(0.0, net_expected_returns)
+
+    # Apply power scaling to emphasize higher net returns
+    final_targets = np.power(net_expected_returns, TARGET_POWER)
+
+    # DEBUG LOGGING: Target statistics
+    n_nonzero = (final_targets > 1e-6).sum()
+    pct_nonzero = n_nonzero / len(final_targets) * 100 if len(final_targets) > 0 else 0
+    logger.info(f"Target generation: {n_nonzero}/{len(final_targets)} ({pct_nonzero:.1f}%) non-zero targets")
+    logger.info(f"Target stats: mean={final_targets.mean():.6f}, std={final_targets.std():.6f}, max={final_targets.max():.6f}")
 
     # Vectorized assignment based on signal direction
     long_mask = (consensus > 0) & (~realized_returns.isna())
     short_mask = (consensus < 0) & (~realized_returns.isna())
 
-    target_long.iloc[long_mask] = expected_returns[long_mask]
-    target_short.iloc[short_mask] = expected_returns[short_mask]
+    target_long.iloc[long_mask] = final_targets[long_mask]
+    target_short.iloc[short_mask] = final_targets[short_mask]
+
+    # DEBUG LOGGING: Verify assignment coverage
+    n_long_assigned = (target_long > 0).sum()
+    n_short_assigned = (target_short > 0).sum()
+    logger.info(f"Target assignment: {n_long_assigned} long, {n_short_assigned} short")
 
     return target_long, target_short
 
@@ -921,19 +1210,23 @@ def generate_diagnostics_report(
     probabilities: np.ndarray,
     final_model: RandomForestClassifier,
     config: Dict[str, Any],
-    output_dir: Path
+    output_dir: Path,
+    exit_reasons: Optional[pd.Series] = None,
+    event_durations: Optional[pd.Series] = None,
+    mfe_series: Optional[pd.Series] = None,
+    mae_series: Optional[pd.Series] = None,
+    target_long: Optional[pd.Series] = None,
+    target_short: Optional[pd.Series] = None
 ) -> str:
     """
     Generate comprehensive diagnostics report for meta-labeling.
 
-    This creates a markdown document with:
-    1. Label distribution analysis
-    2. Signal coverage/sparsity
-    3. Feature correlation analysis
-    4. P&L distribution per label
-    5. Time-series stability and regime analysis
-    6. Out-of-fold probability diagnostics
-    7. SHAP/feature importance
+    ENHANCED: Includes new diagnostic metrics:
+    - Path Efficiency Ratio (PER)
+    - Time-to-Outcome Ratio (TTO)
+    - MFE/MAE Ratio
+    - Target Volatility health check
+    - Information Coefficient (IC)
 
     Args:
         labeled_data: Full labeled dataset
@@ -942,6 +1235,15 @@ def generate_diagnostics_report(
         realized_returns: Realized returns for each event
         smoothed_labels: Kalman-smoothed continuous labels
         probabilities: Model predicted probabilities
+        final_model: Trained meta-model
+        config: Configuration dictionary
+        output_dir: Directory to save report
+        exit_reasons: How each event exited ('profit', 'stop', 'timeout')
+        event_durations: Bars held for each event
+        mfe_series: Maximum Favorable Excursion for each event
+        mae_series: Maximum Adverse Excursion for each event
+        target_long: Continuous target values for long positions
+        target_short: Continuous target values for short positions
         final_model: Trained meta-model
         config: Configuration dictionary
         output_dir: Directory to save report
@@ -1388,6 +1690,142 @@ def generate_diagnostics_report(
     except Exception as e:
         report_lines.append(f"\n⚠️ Could not compute event mechanics diagnostics: {e}")
 
+    # ===== 9B. ENHANCED EVENT DIAGNOSTICS (PER, TTO, MFE/MAE) =====
+    report_lines.append("\n## 9B. Enhanced Event Quality Metrics\n")
+    report_lines.append(
+        "These advanced metrics help distinguish between efficient momentum capture "
+        "and random drift trades. They measure path efficiency, timing quality, and "
+        "entry/exit effectiveness.\n"
+    )
+
+    try:
+        # Path Efficiency Ratio (PER)
+        if event_durations is not None and mfe_series is not None:
+            labeled_durations = event_durations[labeled_mask].dropna()
+            labeled_returns = returns_labeled
+            labeled_mfe = mfe_series[labeled_mask].dropna() if mfe_series is not None else None
+
+            # PER: Net price change / sum of absolute moves (approximation)
+            # Higher PER = more direct path to profit
+            if labeled_mfe is not None and len(labeled_mfe) > 0:
+                # Approx: PER = abs(return) / MFE
+                per_values = np.abs(labeled_returns) / (labeled_mfe + 1e-6)
+                per_values = per_values.replace([np.inf, -np.inf], np.nan).dropna()
+
+                if len(per_values) > 0:
+                    report_lines.append("\n### Path Efficiency Ratio (PER)\n")
+                    report_lines.append(f"- **Mean PER:** {per_values.mean():.3f}")
+                    report_lines.append(f"- **Median PER:** {per_values.median():.3f}")
+
+                    if per_values.mean() < 0.3:
+                        report_lines.append(f"\n⚠️ **Alert:** Mean PER < 0.3 indicates excessive random walk / drift")
+                    else:
+                        report_lines.append(f"\n✅ **OK:** Reasonable path efficiency")
+
+            # Time-to-Outcome Ratio (TTO)
+            horizon_config = config.get('horizon', 16)
+            if len(labeled_durations) > 0:
+                tto_values = labeled_durations / horizon_config
+                report_lines.append("\n### Time-to-Outcome Ratio (TTO)\n")
+                report_lines.append(f"- **Mean TTO:** {tto_values.mean():.3f}")
+                report_lines.append(f"- **Median TTO:** {tto_values.median():.3f}")
+
+                if tto_values.mean() > 0.9:
+                    report_lines.append(f"\n⚠️ **Alert:** Mean TTO > 0.9 confirms excessive timeouts (not hitting barriers)")
+                elif tto_values.mean() < 0.4 or tto_values.mean() > 0.6:
+                    report_lines.append(f"\n⚠️ **Warning:** TTO outside target range [0.4, 0.6]")
+                else:
+                    report_lines.append(f"\n✅ **OK:** TTO in healthy range [0.4, 0.6]")
+
+            # MFE/MAE Ratio
+            if mfe_series is not None and mae_series is not None:
+                labeled_mfe = mfe_series[labeled_mask].dropna()
+                labeled_mae = mae_series[labeled_mask].dropna()
+
+                if len(labeled_mfe) > 0 and len(labeled_mae) > 0:
+                    mfe_mae_ratio = labeled_mfe / (labeled_mae + 1e-6)
+                    mfe_mae_ratio = mfe_mae_ratio.replace([np.inf, -np.inf], np.nan).dropna()
+
+                    if len(mfe_mae_ratio) > 0:
+                        report_lines.append("\n### MFE/MAE Ratio (Maximum Favorable vs Adverse Excursion)\n")
+                        report_lines.append(f"- **Mean MFE/MAE:** {mfe_mae_ratio.mean():.3f}")
+                        report_lines.append(f"- **Median MFE/MAE:** {mfe_mae_ratio.median():.3f}")
+
+                        if mfe_mae_ratio.mean() < 1.0:
+                            report_lines.append(f"\n⚠️ **Alert:** Average MFE/MAE < 1.0 indicates poor entry timing or fundamentally random signals")
+                        else:
+                            report_lines.append(f"\n✅ **OK:** Favorable excursions exceed adverse excursions")
+
+    except Exception as e:
+        report_lines.append(f"\n⚠️ Could not compute enhanced event diagnostics: {e}")
+
+    # ===== 9C. TARGET HEALTH CHECK =====
+    report_lines.append("\n## 9C. Target Volatility Health Check\n")
+    report_lines.append(
+        "Verifies that the continuous target values have sufficient variance to train a regression model. "
+        "If targets are constant or near-zero, the model cannot learn meaningful patterns.\n"
+    )
+
+    try:
+        # Combine long and short targets
+        combined_targets = pd.Series(0.0, index=labeled_data.index)
+        if target_long is not None:
+            combined_targets = combined_targets + target_long.fillna(0)
+        if target_short is not None:
+            combined_targets = combined_targets + target_short.fillna(0)
+
+        target_nonzero = combined_targets[combined_targets > 1e-6]
+        target_std = combined_targets.std()
+        target_mean = combined_targets.mean()
+        pct_nonzero = len(target_nonzero) / len(combined_targets) * 100 if len(combined_targets) > 0 else 0
+
+        report_lines.append(f"- **Target mean:** {target_mean:.6f}")
+        report_lines.append(f"- **Target std:** {target_std:.6f}")
+        report_lines.append(f"- **Non-zero targets:** {len(target_nonzero)} / {len(combined_targets)} ({pct_nonzero:.1f}%)")
+
+        if target_std < 1e-5:
+            report_lines.append(f"\n🚨 **CRITICAL:** Target std < 1e-5 - targets are effectively constant! Abort training.")
+        elif pct_nonzero < 1.0:
+            report_lines.append(f"\n⚠️ **Warning:** Very few non-zero targets ({pct_nonzero:.1f}%)")
+        else:
+            report_lines.append(f"\n✅ **OK:** Targets have sufficient variance")
+
+    except Exception as e:
+        report_lines.append(f"\n⚠️ Could not compute target health check: {e}")
+
+    # ===== 9D. INFORMATION COEFFICIENT (IC) =====
+    report_lines.append("\n## 9D. Information Coefficient (IC)\n")
+    report_lines.append(
+        "Measures the rank correlation between predicted probabilities and realized returns. "
+        "This is the purest measure of ranking ability, independent of absolute calibration.\n"
+    )
+
+    try:
+        from scipy.stats import spearmanr
+
+        prob_labeled = probabilities[labeled_mask]
+        ret_labeled = returns_labeled
+
+        # Remove NaN values
+        valid_mask = ~(np.isnan(prob_labeled) | np.isnan(ret_labeled))
+        if valid_mask.sum() > 10:
+            ic_corr, ic_pval = spearmanr(prob_labeled[valid_mask], ret_labeled[valid_mask])
+
+            report_lines.append(f"- **Spearman IC (prob, return):** {ic_corr:.4f}")
+            report_lines.append(f"- **P-value:** {ic_pval:.4e}")
+
+            if abs(ic_corr) < 0.05:
+                report_lines.append(f"\n⚠️ **Warning:** Very weak IC (|IC| < 0.05) - model has minimal ranking ability")
+            elif abs(ic_corr) < 0.1:
+                report_lines.append(f"\n⚠️ **Caution:** Weak IC (|IC| < 0.1) - limited practical value")
+            else:
+                report_lines.append(f"\n✅ **OK:** Meaningful rank correlation")
+        else:
+            report_lines.append(f"\n⚠️ Too few valid samples to compute IC")
+
+    except Exception as e:
+        report_lines.append(f"\n⚠️ Could not compute Information Coefficient: {e}")
+
     # ===== 10. REGIME AND TIME-CONDITIONAL LABEL CHECKS =====
     report_lines.append("\n## 10. Regime and Time-Conditional Label Checks\n")
     report_lines.append(
@@ -1748,9 +2186,9 @@ def create_base_models(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Create base models for ensemble with proper regularization.
 
-    Three models optimized for different strengths:
-    - LGBM: Gradient boosting for ranking and AUC
-    - LogisticRegression: Linear blender with elastic net regularization
+    ENHANCED: Three powerful tree-based models optimized for different strengths:
+    - LGBM: Deeper gradient boosting for ranking and AUC (10 depth from 6)
+    - XGBoost: Powerful gradient boosting with class weighting (replaces LogReg)
     - RandomForest: Non-linear ensemble for robustness
 
     Args:
@@ -1761,51 +2199,52 @@ def create_base_models(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     models = {}
 
-    # LightGBM: Slightly higher capacity and weaker regularization for richer patterns
+    # LightGBM: INCREASED capacity (deeper trees, more leaves)
     models['lgbm'] = lgb.LGBMClassifier(
         objective='binary',
         metric='auc',
-        n_estimators=800,
-        max_depth=6,
+        n_estimators=1000,  # Increased from 800
+        max_depth=10,  # INCREASED from 6 for more complex patterns
         learning_rate=0.01,
-        num_leaves=63,
+        num_leaves=127,  # Increased from 63 (2^depth - 1)
         min_child_samples=10,
         subsample=0.8,
         subsample_freq=1,
         colsample_bytree=0.8,
         reg_alpha=0.05,  # L1 regularization
         reg_lambda=0.05,  # L2 regularization
+        class_weight='balanced',  # Handle 18.8% imbalance
         n_jobs=-1,
         verbose=-1,
         random_state=42
     )
 
-    # Logistic Regression with elastic net (L1 + L2), slightly weaker regularization
-    models['logreg'] = Pipeline([
-        (
-            'scaler',
-            RobustScaler()
-        ),
-        (
-            'logreg',
-            LogisticRegression(
-                penalty='elasticnet',
-                solver='saga',
-                C=2.0,
-                l1_ratio=0.3,
-                max_iter=1000,
-                n_jobs=-1,
-                random_state=42
-            )
-        ),
-    ])
+    # XGBoost: REPLACES LogisticRegression with powerful tree ensemble
+    models['xgb'] = xgb.XGBClassifier(
+        objective='binary:logistic',
+        eval_metric='auc',
+        n_estimators=1000,
+        max_depth=8,
+        learning_rate=0.01,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        min_child_weight=5,
+        gamma=0.1,  # Minimum loss reduction for split
+        reg_alpha=0.05,  # L1 regularization
+        reg_lambda=0.1,  # L2 regularization
+        scale_pos_weight=4.3,  # Handle imbalance (81.2 / 18.8 ≈ 4.3)
+        n_jobs=-1,
+        random_state=42,
+        verbosity=0
+    )
 
-    # Random Forest with slightly higher capacity
+    # Random Forest: Increased capacity
     models['rf'] = RandomForestClassifier(
-        n_estimators=200,
-        max_depth=10,
-        min_samples_leaf=10,
+        n_estimators=300,  # Increased from 200
+        max_depth=12,  # Increased from 10
+        min_samples_leaf=8,  # Slightly reduced for more flexibility
         max_features='sqrt',
+        class_weight='balanced',  # Handle imbalance
         n_jobs=-1,
         random_state=42
     )
@@ -1837,11 +2276,16 @@ def train_ensemble_with_kfold(
         Tuple of (trained_models_dict, out_of_fold_predictions_series)
     """
     # Initialize storage
-    trained_models = {'lgbm': [], 'logreg': [], 'rf': []}
+    trained_models = {'lgbm': [], 'xgb': [], 'rf': []}
     oof_predictions = {
         'lgbm': pd.Series(np.nan, index=X.index),
-        'logreg': pd.Series(np.nan, index=X.index),
+        'xgb': pd.Series(np.nan, index=X.index),
         'rf': pd.Series(np.nan, index=X.index)
+    }
+    oof_aucs = {
+        'lgbm': [],
+        'xgb': [],
+        'rf': []
     }
 
     # Time-series CV
@@ -1900,18 +2344,32 @@ def train_ensemble_with_kfold(
                 test_indices_with_labels = test_idx[test_mask]
                 oof_predictions[model_name].iloc[test_indices_with_labels] = y_pred_proba
 
-                # Metrics
+                # Metrics (track for early stopping)
                 try:
                     auc = roc_auc_score(y_test_clean, y_pred_proba)
+                    oof_aucs[model_name].append(auc)
                     if verbose:
                         tprint(f"    ✓ {model_name}: AUC={auc:.3f}", "INFO")
                 except:
+                    oof_aucs[model_name].append(np.nan)
                     if verbose:
                         tprint(f"    ⚠️ {model_name}: Could not compute AUC", "WARNING")
 
             except Exception as e:
                 if verbose:
                     tprint(f"    ❌ {model_name} failed: {e}", "ERROR")
+
+    # EARLY STOPPING CHECK: Compute mean OOF AUC across folds
+    for model_name in ['lgbm', 'xgb', 'rf']:
+        valid_aucs = [a for a in oof_aucs[model_name] if not np.isnan(a)]
+        if valid_aucs:
+            mean_auc = np.mean(valid_aucs)
+            std_auc = np.std(valid_aucs)
+            if verbose:
+                tprint(f"  {model_name} Mean OOF AUC: {mean_auc:.4f} ± {std_auc:.4f}", "INFO")
+        else:
+            if verbose:
+                tprint(f"  {model_name}: No valid AUC scores", "WARNING")
 
     # Combine OOF predictions into DataFrame
     oof_df = pd.DataFrame(oof_predictions, index=X.index)
@@ -2310,14 +2768,15 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
 
             # STEP 3: Compute realized returns (continuous) and binary labels with adaptive thresholds
             tprint("💰 Computing realized returns with adaptive thresholds and transaction costs...", "INFO")
-            realized_returns, binary_labels, exit_reasons, event_durations = compute_realized_returns(
+            realized_returns, binary_labels, exit_reasons, event_durations, mfe_series, mae_series = compute_realized_returns(
                 market_data,
                 primary_signals,
                 profit_threshold=adaptive_profit_threshold,
                 stop_threshold=adaptive_stop_threshold,
                 horizon=horizon,
                 transaction_cost=transaction_cost,
-                min_event_spacing=min_event_spacing
+                min_event_spacing=min_event_spacing,
+                volatility_series=volatility_1d  # Enable dynamic horizon based on volatility
             )
 
             # Statistics
@@ -2657,7 +3116,13 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     probabilities=probabilities,
                     final_model=final_model,
                     config=config,
-                    output_dir=outcomes_dir
+                    output_dir=outcomes_dir,
+                    exit_reasons=exit_reasons,
+                    event_durations=event_durations,
+                    mfe_series=mfe_series,
+                    mae_series=mae_series,
+                    target_long=target_long,
+                    target_short=target_short
                 )
                 tprint(f"✅ Diagnostics report saved: {diagnostics_path}", "SUCCESS")
             except Exception as e:
@@ -2711,7 +3176,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         'use_adaptive_thresholds': True,
                         'use_kalman_label_smoothing': True,
                         'use_ensemble': True,
-                        'ensemble_models': ['lgbm', 'logreg', 'rf'],
+                        'ensemble_models': ['lgbm', 'xgb', 'rf'],
                         'use_platt_calibration': True,
                         'use_isotonic_calibration': True,
                         'include_signal_disagreement': True

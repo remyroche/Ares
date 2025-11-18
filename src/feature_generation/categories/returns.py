@@ -903,10 +903,16 @@ class ReturnsSkewnessGenerator(VectorizedFeatureGenerator):
             # Filter out NaN values
             valid_returns = window_returns[np.isfinite(window_returns)]
             if len(valid_returns) > 2:  # Need at least 3 values for skewness
-                mean_ret = np.mean(valid_returns)
-                std_ret = np.std(valid_returns, ddof=1)
+                # Winsorize the rolling window data at 1% and 99% percentiles
+                # to prevent single outliers from distorting the skewness metric
+                lower_bound = np.percentile(valid_returns, 1)
+                upper_bound = np.percentile(valid_returns, 99)
+                winsorized_returns = np.clip(valid_returns, lower_bound, upper_bound)
+
+                mean_ret = np.mean(winsorized_returns)
+                std_ret = np.std(winsorized_returns, ddof=1)
                 if std_ret > 0:
-                    skewness[i] = np.mean(((valid_returns - mean_ret) / std_ret) ** 3)
+                    skewness[i] = np.mean(((winsorized_returns - mean_ret) / std_ret) ** 3)
 
         return pd.Series(skewness, index=data.index)
 
@@ -982,10 +988,16 @@ class ReturnsKurtosisGenerator(VectorizedFeatureGenerator):
             # Filter out NaN values
             valid_returns = window_returns[np.isfinite(window_returns)]
             if len(valid_returns) > 3:  # Need at least 4 values for kurtosis
-                mean_ret = np.mean(valid_returns)
-                std_ret = np.std(valid_returns, ddof=1)
+                # Winsorize the rolling window data at 1% and 99% percentiles
+                # to prevent single outliers from distorting the kurtosis metric
+                lower_bound = np.percentile(valid_returns, 1)
+                upper_bound = np.percentile(valid_returns, 99)
+                winsorized_returns = np.clip(valid_returns, lower_bound, upper_bound)
+
+                mean_ret = np.mean(winsorized_returns)
+                std_ret = np.std(winsorized_returns, ddof=1)
                 if std_ret > 0:
-                    kurtosis[i] = np.mean(((valid_returns - mean_ret) / std_ret) ** 4) - 3  # Excess kurtosis
+                    kurtosis[i] = np.mean(((winsorized_returns - mean_ret) / std_ret) ** 4) - 3  # Excess kurtosis
 
         return pd.Series(kurtosis, index=data.index)
 

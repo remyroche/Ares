@@ -1370,19 +1370,29 @@ class VolumeRatioGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin
                 avg_volume = self.vectorbt_optimizer.rolling_mean(volume, self.period)
                 # Use safe division - replace zeros and NaN with forward fill, then small positive number
                 avg_volume_safe = avg_volume.replace(0, np.nan).fillna(method='ffill').fillna(volume.mean())
-                return volume / avg_volume_safe
+                volume_ratio = volume / avg_volume_safe
             except Exception as e:
                 # Fallback to pandas
                 avg_volume = volume.rolling(self.period).mean()
                 # Use safe division - replace zeros and NaN with forward fill, then small positive number
                 avg_volume_safe = avg_volume.replace(0, np.nan).fillna(method='ffill').fillna(volume.mean())
-                return volume / avg_volume_safe
+                volume_ratio = volume / avg_volume_safe
         else:
             # Fallback to pandas
             avg_volume = volume.rolling(self.period).mean()
             # Use safe division - replace zeros and NaN with forward fill, then small positive number
             avg_volume_safe = avg_volume.replace(0, np.nan).fillna(method='ffill').fillna(volume.mean())
-            return volume / avg_volume_safe
+            volume_ratio = volume / avg_volume_safe
+
+        # Winsorize volume ratio to cap extreme spikes
+        # Volume follows a power law - opening/closing auctions or glitches can be 100x normal
+        volume_ratio_clean = volume_ratio.dropna()
+        if len(volume_ratio_clean) > 0:
+            lower_bound = volume_ratio_clean.quantile(0.01)
+            upper_bound = volume_ratio_clean.quantile(0.99)
+            volume_ratio = volume_ratio.clip(lower=lower_bound, upper=upper_bound)
+
+        return volume_ratio
 
         if len(data) == 0 or 'volume' not in data.columns:
             return pd.Series(dtype=float, index=data.index, name=f'volume_ratio_{self.period}')
@@ -1491,7 +1501,17 @@ class VolumeROCGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                 self.performance_stats['pandas_fallbacks'] += 1
 
         # Final fallback to pandas
-        return volume.pct_change(periods=self.period) * 100
+        volume_roc = volume.pct_change(periods=self.period) * 100
+
+        # Winsorize volume ROC to cap extreme spikes
+        # Volume spikes can be 10x-50x the average due to power law distribution
+        volume_roc_clean = volume_roc.dropna()
+        if len(volume_roc_clean) > 0:
+            lower_bound = volume_roc_clean.quantile(0.01)
+            upper_bound = volume_roc_clean.quantile(0.99)
+            volume_roc = volume_roc.clip(lower=lower_bound, upper=upper_bound)
+
+        return volume_roc
 
 # Volume Standard Deviation
 

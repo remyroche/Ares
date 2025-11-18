@@ -271,6 +271,14 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
         # Calculate returns
         returns = close_prices.pct_change().dropna()
 
+        # Winsorize returns at 1% and 99% percentiles to prevent flash crashes
+        # from exploding volatility for the entire window
+        if VECTORBT_AVAILABLE and winsorize is not None and len(returns) > 0:
+            try:
+                returns = winsorize(returns, lower_quantile=0.01, upper_quantile=0.99)
+            except Exception as e:
+                self.logger.warning(f"Winsorization failed: {e}, using raw returns")
+
         if len(returns) < self.period:
             return pd.Series(np.nan, index=data.index, name=f'volatility_{self.period}')
 
@@ -1221,6 +1229,102 @@ class VectorBTYangZhangVolatilityGenerator(VectorBTFeatureGenerator):
             self.logger.error(f"Error generating Yang-Zhang volatility: {e}")
             return pd.Series(np.nan, index=data.index, name=f'vectorbt_yang_zhang_volatility_{self.period}')
 
+
+class VectorBTVolatilityExpansionGenerator(VectorBTFeatureGenerator):
+    """
+    Volatility Expansion (Rate of Change in Volatility) Generator.
+
+    Measures the acceleration or deceleration of volatility, which is crucial
+    for regime detection. A spike in volatility expansion often precedes
+    major market moves or regime changes.
+
+    This feature is especially useful for:
+    - Detecting regime transitions (quiet -> volatile)
+    - Identifying volatility breakouts
+    - Improving risk management models
+    """
+    def __init__(self, period: int = 20, expansion_window: int = 5):
+        """
+        Initialize Volatility Expansion Generator.
+
+        Args:
+            period: Period for volatility calculation (default: 20)
+            expansion_window: Window for measuring rate of change in volatility (default: 5)
+        """
+        config = FeatureConfig(
+            name=f"volatility_expansion_{period}_{expansion_window}",
+            category=FeatureCategory.VOLATILITY,
+            description=f"Volatility expansion (acceleration) over {period} period volatility with {expansion_window} ROC window",
+            required_columns=['close'],
+            default_lookback=period + expansion_window,
+            min_lookback=period + expansion_window,
+            max_lookback=period + expansion_window,
+            parameters={
+                "period": period,
+                "expansion_window": expansion_window
+            },
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config)
+        self.period = period
+        self.expansion_window = expansion_window
+
+        # Initialize rolling optimizer
+        self.rolling_optimizer = None
+        try:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer()
+        except Exception as e:
+            logger.warning(f"Failed to initialize VectorBT rolling optimizer: {e}")
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate volatility expansion feature."""
+        try:
+            if len(data) == 0 or 'close' not in data.columns:
+                return pd.Series(dtype=float, index=data.index,
+                               name=f'volatility_expansion_{self.period}_{self.expansion_window}')
+
+            if len(data) < self.period + self.expansion_window:
+                return pd.Series(np.nan, index=data.index,
+                               name=f'volatility_expansion_{self.period}_{self.expansion_window}')
+
+            close_prices = data['close'].astype(float)
+
+            # Calculate returns with winsorization to prevent outliers from dominating
+            returns = close_prices.pct_change().dropna()
+
+            # Winsorize returns at 1% and 99% percentiles to prevent flash crashes
+            # from exploding the volatility for the entire window
+            if VECTORBT_AVAILABLE and winsorize is not None:
+                try:
+                    returns = winsorize(returns, lower_quantile=0.01, upper_quantile=0.99)
+                except Exception as e:
+                    logger.warning(f"Winsorization failed: {e}, using raw returns")
+
+            # Calculate rolling volatility using VectorBT optimization
+            if self.rolling_optimizer:
+                try:
+                    volatility = self.rolling_optimizer.rolling_std(returns, window=self.period)
+                except Exception as e:
+                    logger.warning(f"VectorBT rolling optimizer failed: {e}, using pandas fallback")
+                    volatility = returns.rolling(window=self.period).std()
+            else:
+                volatility = returns.rolling(window=self.period).std()
+
+            # Calculate rate of change in volatility (expansion)
+            # ROC = (current_vol - previous_vol) / previous_vol
+            volatility_expansion = volatility.pct_change(periods=self.expansion_window)
+
+            # Align with original data index
+            volatility_expansion = volatility_expansion.reindex(data.index)
+
+            return volatility_expansion.rename(f'volatility_expansion_{self.period}_{self.expansion_window}')
+
+        except Exception as e:
+            self.logger.error(f"Error generating volatility expansion: {e}")
+            return pd.Series(np.nan, index=data.index,
+                           name=f'volatility_expansion_{self.period}_{self.expansion_window}')
+
     def _optimized_rolling_operation(self, data: pd.Series, operation: str,
                                    window: int, **kwargs) -> pd.Series:
         """Perform rolling operation using centralized VectorBTRollingOptimizer."""
@@ -1356,6 +1460,11 @@ def create_default_volatility_generators() -> List[FeatureGenerator]:
             generators.append(VectorBTParkinsonVolatilityGenerator(period))
             generators.append(VectorBTRogersSatchellVolatilityGenerator(period))
             generators.append(VectorBTYangZhangVolatilityGenerator(period))
+
+        # Volatility expansion for regime detection
+        for period in [14, 20, 30]:
+            for expansion_window in [3, 5, 7]:
+                generators.append(VectorBTVolatilityExpansionGenerator(period, expansion_window))
     else:
         # Fallback to original generators
         for period in [10, 14, 20, 30, 50]:
@@ -1416,7 +1525,12 @@ def create_comprehensive_vectorbt_volatility_generators(
                 generators.append(VectorBTRogersSatchellVolatilityGenerator(period))
                 generators.append(VectorBTYangZhangVolatilityGenerator(period))
                 generators.append(VectorBTGarmanKlassVolatilityGenerator(period))
-        
+
+            # Volatility expansion for regime detection
+            for period in periods[:3]:  # Use first 3 periods for expansion
+                for expansion_window in [3, 5, 7]:
+                    generators.append(VectorBTVolatilityExpansionGenerator(period, expansion_window))
+
         return generators
 
     # Fallback to standard VectorBT generators

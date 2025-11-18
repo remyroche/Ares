@@ -315,6 +315,15 @@ class BasicReturnsEngineer:
             featured_df['price_range'] = featured_df['high'] - featured_df['low']
             featured_df['price_range_pct'] = featured_df['price_range'] / featured_df['close']
 
+            # Winsorize price_range_pct to handle flash crashes and bad ticks
+            # During a flash crash, Low can be artificially low, causing price_range_pct to explode
+            price_range_clean = featured_df['price_range_pct'].dropna()
+            if len(price_range_clean) > 0:
+                lower_bound = price_range_clean.quantile(0.01)
+                upper_bound = price_range_clean.quantile(0.99)
+                featured_df['price_range_pct'] = featured_df['price_range_pct'].clip(lower=lower_bound, upper=upper_bound)
+                self.logger.info(f"✓ Winsorized price_range_pct at [{lower_bound:.6f}, {upper_bound:.6f}]")
+
             # Calculate body features
             featured_df = self._calculate_body_features(featured_df)
 
@@ -368,6 +377,15 @@ class BasicReturnsEngineer:
         self.logger.info(f"📊 Calculating candle body features...")
         featured_df['body_size'] = abs(featured_df['close'] - featured_df['open'])
         featured_df['body_size_pct'] = featured_df['body_size'] / featured_df['close']
+
+        # Winsorize body_size_pct to handle flash crashes and bad ticks
+        # Extreme price movements can create artificially large body sizes
+        body_size_clean = featured_df['body_size_pct'].dropna()
+        if len(body_size_clean) > 0:
+            lower_bound = body_size_clean.quantile(0.01)
+            upper_bound = body_size_clean.quantile(0.99)
+            featured_df['body_size_pct'] = featured_df['body_size_pct'].clip(lower=lower_bound, upper=upper_bound)
+            self.logger.info(f"✓ Winsorized body_size_pct at [{lower_bound:.6f}, {upper_bound:.6f}]")
 
         # Time-based features
         self.logger.info(f"🕐 Adding time-based features...")

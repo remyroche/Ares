@@ -1015,19 +1015,366 @@ class HMMMLAlphaStep(BaseStep):
 
         return model, full_scores, pred_col_name, training_metrics, feature_pipeline_artifacts
 
+    def _calculate_iqr_winsorization_percentiles(
+        self, data: pd.Series
+    ) -> Tuple[float, float]:
+        """Calculate winsorization percentiles using the IQR method.
+
+        Returns fence values at Q1 - 1.5*IQR and Q3 + 1.5*IQR, then converts
+        them to percentiles in the data distribution.
+
+        Args:
+            data: Series of numeric values
+
+        Returns:
+            Tuple of (lower_percentile, upper_percentile) for winsorization
+        """
+        q1 = data.quantile(0.25)
+        q3 = data.quantile(0.75)
+        iqr = q3 - q1
+
+        lower_fence = q1 - 1.5 * iqr
+        upper_fence = q3 + 1.5 * iqr
+
+        # Convert fence values to percentiles
+        lower_pct = (data <= lower_fence).sum() / len(data)
+        upper_pct = (data >= upper_fence).sum() / len(data)
+
+        # Ensure we have reasonable bounds (at least 1%, at most 20%)
+        lower_pct = max(0.01, min(lower_pct, 0.20))
+        upper_pct = max(0.01, min(upper_pct, 0.20))
+
+        return lower_pct, upper_pct
+
+    def _calculate_winsorized_cv(
+        self, data: pd.Series, lower_pct: Optional[float] = None, upper_pct: Optional[float] = None
+    ) -> Tuple[float, float]:
+        """Calculate both standard CV and Winsorized CV.
+
+        If percentiles are not provided, uses IQR method to determine them.
+
+        Args:
+            data: Series of numeric values
+            lower_pct: Lower percentile for winsorization (optional)
+            upper_pct: Upper percentile for winsorization (optional)
+
+        Returns:
+            Tuple of (standard_cv, winsorized_cv)
+        """
+        data_clean = data.dropna()
+        if len(data_clean) < 2:
+            return 0.0, 0.0
+
+        # Standard CV
+        mean_val = data_clean.mean()
+        std_val = data_clean.std()
+        cv = abs(std_val / (mean_val + 1e-8))
+
+        # Winsorized CV using IQR method if percentiles not provided
+        if lower_pct is None or upper_pct is None:
+            lower_pct, upper_pct = self._calculate_iqr_winsorization_percentiles(data_clean)
+
+        lower_bound = data_clean.quantile(lower_pct)
+        upper_bound = data_clean.quantile(1.0 - upper_pct)
+
+        # Winsorize: cap values at bounds
+        winsorized = data_clean.clip(lower=lower_bound, upper=upper_bound)
+
+        win_mean = winsorized.mean()
+        win_std = winsorized.std()
+        wcv = abs(win_std / (win_mean + 1e-8))
+
+        return cv, wcv
+
+    def _calculate_economic_cv_ratio(
+        self,
+        regime_labels: np.ndarray,
+        forward_returns: pd.Series,
+        use_winsorized: bool = True,
+    ) -> Tuple[float, Dict[str, float]]:
+        """Calculate Economic CV Ratio: Between-Regime CV / Within-Regime CV.
+
+        This measures signal-to-noise: how distinct regime means are (signal)
+        versus how noisy returns are within each regime (noise).
+
+        Args:
+            regime_labels: Array of regime assignments
+            forward_returns: Series of forward returns aligned with labels
+            use_winsorized: Whether to use winsorized CV (default: True)
+
+        Returns:
+            Tuple of (cv_ratio, metrics_dict) where metrics_dict contains:
+                - between_cv / between_wcv
+                - within_cv / within_wcv (sample-size weighted)
+                - cv_ratio / wcv_ratio
+        """
+        unique_regimes = np.unique(regime_labels)
+        if len(unique_regimes) < 2:
+            return 0.0, {}
+
+        # Calculate per-regime statistics
+        regime_means = []
+        regime_sizes = []
+        within_cvs = []
+        within_wcvs = []
+
+        for regime in unique_regimes:
+            mask = regime_labels == regime
+            regime_returns = forward_returns[mask].dropna()
+
+            if len(regime_returns) < 2:
+                continue
+
+            regime_mean = regime_returns.mean()
+            regime_means.append(regime_mean)
+            regime_sizes.append(len(regime_returns))
+
+            # Within-regime CV and WCV
+            cv, wcv = self._calculate_winsorized_cv(regime_returns)
+            within_cvs.append(cv)
+            within_wcvs.append(wcv)
+
+        if len(regime_means) < 2:
+            return 0.0, {}
+
+        # Between-Regime CV: variability of regime means
+        regime_means_series = pd.Series(regime_means)
+        between_mean = regime_means_series.mean()
+        between_std = regime_means_series.std()
+        between_cv = abs(between_std / (between_mean + 1e-8))
+
+        # For between WCV, we winsorize the regime means themselves
+        _, between_wcv = self._calculate_winsorized_cv(regime_means_series)
+
+        # Within-Regime CV: sample-size weighted average of within-regime CVs
+        total_samples = sum(regime_sizes)
+        weights = [size / total_samples for size in regime_sizes]
+
+        within_cv_weighted = sum(cv * w for cv, w in zip(within_cvs, weights))
+        within_wcv_weighted = sum(wcv * w for wcv, w in zip(within_wcvs, weights))
+
+        # CV Ratio: signal-to-noise
+        cv_ratio = between_cv / (within_cv_weighted + 1e-8)
+        wcv_ratio = between_wcv / (within_wcv_weighted + 1e-8)
+
+        metrics = {
+            "between_cv": between_cv,
+            "between_wcv": between_wcv,
+            "within_cv": within_cv_weighted,
+            "within_wcv": within_wcv_weighted,
+            "cv_ratio": cv_ratio,
+            "wcv_ratio": wcv_ratio,
+            "n_regimes": len(unique_regimes),
+            "total_samples": total_samples,
+        }
+
+        # Use winsorized ratio if requested
+        final_ratio = wcv_ratio if use_winsorized else cv_ratio
+
+        return final_ratio, metrics
+
+    def _optimize_regime_boundaries(
+        self,
+        alpha_scores: pd.Series,
+        forward_returns: pd.Series,
+        n_regimes: int,
+        min_bin_pct: float = 0.10,
+        max_bin_pct: float = 0.35,
+        jiggle_pct: float = 0.01,
+        max_iterations: int = 100,
+    ) -> Tuple[np.ndarray, float, Dict[str, Any]]:
+        """Optimize regime boundaries to maximize Economic CV Ratio.
+
+        Uses iterative "jiggle" search: starts with quantile boundaries,
+        then systematically shifts each boundary to improve the objective.
+
+        Args:
+            alpha_scores: Predicted alpha scores (feature)
+            forward_returns: Forward returns (target)
+            n_regimes: Number of regimes to create
+            min_bin_pct: Minimum percentage of samples per bin (default: 10%)
+            max_bin_pct: Maximum percentage of samples per bin (default: 35%)
+            jiggle_pct: Percentage of data to shift boundaries by (default: 1%)
+            max_iterations: Maximum optimization iterations (default: 100)
+
+        Returns:
+            Tuple of (optimal_labels, best_score, metrics_dict)
+        """
+        # Sort data by alpha scores
+        sorted_indices = alpha_scores.argsort()
+        sorted_scores = alpha_scores.iloc[sorted_indices].values
+        sorted_returns = forward_returns.iloc[sorted_indices]
+
+        n_samples = len(sorted_scores)
+        min_bin_size = int(n_samples * min_bin_pct)
+        max_bin_size = int(n_samples * max_bin_pct)
+        jiggle_size = max(1, int(n_samples * jiggle_pct))
+
+        # Initialize with quantile boundaries
+        quantile_indices = [int(n_samples * i / n_regimes) for i in range(1, n_regimes)]
+        current_boundaries = np.array(quantile_indices, dtype=int)
+
+        # Ensure boundaries respect min/max bin size
+        current_boundaries = self._enforce_bin_constraints(
+            current_boundaries, n_samples, min_bin_size, max_bin_size
+        )
+
+        # Calculate initial score
+        current_labels = self._boundaries_to_labels(current_boundaries, n_samples)
+        current_score, current_metrics = self._calculate_economic_cv_ratio(
+            current_labels, sorted_returns, use_winsorized=True
+        )
+
+        best_boundaries = current_boundaries.copy()
+        best_score = current_score
+        best_metrics = current_metrics
+
+        improved = True
+        iteration = 0
+
+        while improved and iteration < max_iterations:
+            improved = False
+            iteration += 1
+
+            # Try jiggling each boundary
+            for i in range(len(current_boundaries)):
+                # Try moving left
+                test_boundaries = current_boundaries.copy()
+                test_boundaries[i] = max(
+                    test_boundaries[i] - jiggle_size,
+                    test_boundaries[i - 1] + min_bin_size if i > 0 else min_bin_size
+                )
+
+                # Check if this configuration satisfies constraints
+                if self._check_bin_constraints(test_boundaries, n_samples, min_bin_size, max_bin_size):
+                    test_labels = self._boundaries_to_labels(test_boundaries, n_samples)
+                    test_score, test_metrics = self._calculate_economic_cv_ratio(
+                        test_labels, sorted_returns, use_winsorized=True
+                    )
+
+                    if test_score > best_score:
+                        best_boundaries = test_boundaries.copy()
+                        best_score = test_score
+                        best_metrics = test_metrics
+                        improved = True
+
+                # Try moving right
+                test_boundaries = current_boundaries.copy()
+                test_boundaries[i] = min(
+                    test_boundaries[i] + jiggle_size,
+                    (test_boundaries[i + 1] - min_bin_size if i < len(current_boundaries) - 1
+                     else n_samples - min_bin_size)
+                )
+
+                if self._check_bin_constraints(test_boundaries, n_samples, min_bin_size, max_bin_size):
+                    test_labels = self._boundaries_to_labels(test_boundaries, n_samples)
+                    test_score, test_metrics = self._calculate_economic_cv_ratio(
+                        test_labels, sorted_returns, use_winsorized=True
+                    )
+
+                    if test_score > best_score:
+                        best_boundaries = test_boundaries.copy()
+                        best_score = test_score
+                        best_metrics = test_metrics
+                        improved = True
+
+            if improved:
+                current_boundaries = best_boundaries.copy()
+                current_score = best_score
+
+        # Convert sorted labels back to original order
+        optimal_labels_sorted = self._boundaries_to_labels(best_boundaries, n_samples)
+        optimal_labels = np.empty(n_samples, dtype=int)
+        optimal_labels[sorted_indices] = optimal_labels_sorted
+
+        best_metrics["optimization_iterations"] = iteration
+        best_metrics["converged"] = not improved or iteration < max_iterations
+
+        return optimal_labels, best_score, best_metrics
+
+    def _enforce_bin_constraints(
+        self,
+        boundaries: np.ndarray,
+        n_samples: int,
+        min_bin_size: int,
+        max_bin_size: int,
+    ) -> np.ndarray:
+        """Enforce minimum and maximum bin size constraints on boundaries."""
+        adjusted = boundaries.copy()
+
+        # Ensure first bin is large enough
+        adjusted[0] = max(adjusted[0], min_bin_size)
+
+        # Ensure spacing between boundaries
+        for i in range(1, len(adjusted)):
+            adjusted[i] = max(adjusted[i], adjusted[i-1] + min_bin_size)
+
+        # Ensure last bin is large enough
+        adjusted[-1] = min(adjusted[-1], n_samples - min_bin_size)
+
+        return adjusted
+
+    def _check_bin_constraints(
+        self,
+        boundaries: np.ndarray,
+        n_samples: int,
+        min_bin_size: int,
+        max_bin_size: int,
+    ) -> bool:
+        """Check if boundaries satisfy bin size constraints."""
+        # Check first bin
+        if boundaries[0] < min_bin_size or boundaries[0] > max_bin_size:
+            return False
+
+        # Check middle bins
+        for i in range(1, len(boundaries)):
+            bin_size = boundaries[i] - boundaries[i-1]
+            if bin_size < min_bin_size or bin_size > max_bin_size:
+                return False
+
+        # Check last bin
+        last_bin_size = n_samples - boundaries[-1]
+        if last_bin_size < min_bin_size or last_bin_size > max_bin_size:
+            return False
+
+        return True
+
+    def _boundaries_to_labels(self, boundaries: np.ndarray, n_samples: int) -> np.ndarray:
+        """Convert boundary indices to regime labels."""
+        labels = np.zeros(n_samples, dtype=int)
+
+        for i, boundary in enumerate(boundaries):
+            labels[boundary:] = i + 1
+
+        return labels
+
     def _assign_alpha_regimes(
         self,
         alpha_df: pd.DataFrame,
         alpha_scores: pd.Series,
         config: Dict[str, Any],
     ) -> Tuple[pd.DataFrame, Optional[pd.DataFrame], Optional[str]]:
-        """Derive 3–5 alpha regimes from predicted scores and compute stats."""
-        # Default to 5 quantile bins over expected forward return
-        num_bins = int(config.get("alpha_regime_bins", 5))
-        if num_bins < 3:
-            num_bins = 3
-        if num_bins > 5:
-            num_bins = 5
+        """Derive alpha regimes using flexible quantile optimization.
+
+        This method now:
+        1. Tests multiple regime counts (4, 5, 6)
+        2. Optimizes boundaries to maximize Economic CV Ratio
+        3. Enforces 10-35% bin size constraints
+        4. Uses sample-size weighted Within-CV
+        5. Reports both CV and Winsorized CV metrics
+        """
+        # Get configuration for regime optimization
+        use_flexible_regimes = bool(config.get("alpha_use_flexible_regimes", True))
+        regime_counts_to_test = config.get("alpha_regime_counts", [4, 5, 6])
+        min_bin_pct = float(config.get("alpha_min_bin_pct", 0.10))
+        max_bin_pct = float(config.get("alpha_max_bin_pct", 0.35))
+
+        # Validate regime counts
+        if isinstance(regime_counts_to_test, int):
+            regime_counts_to_test = [regime_counts_to_test]
+        regime_counts_to_test = [n for n in regime_counts_to_test if 3 <= n <= 6]
+        if not regime_counts_to_test:
+            regime_counts_to_test = [5]  # Fallback to default
 
         # Optional smoothing of alpha scores before constructing regimes
         score_smoothing_method = str(
@@ -1067,37 +1414,132 @@ class HMMMLAlphaStep(BaseStep):
         valid_scores = scores_for_binning.dropna()
         if valid_scores.empty:
             tprint_warning(
-                f"Not enough valid alpha scores ({len(valid_scores)}) to define {num_bins} regimes"
+                f"Not enough valid alpha scores ({len(valid_scores)}) to define regimes"
             )
             return alpha_df, None, None
 
-        if len(valid_scores) < num_bins:
-            if len(valid_scores) >= 2:
-                num_bins = len(valid_scores)
-                tprint_warning(
-                    f"Reducing alpha regime bins to {num_bins} due to limited samples ({len(valid_scores)})"
-                )
-            else:
-                tprint_warning(
-                    f"Not enough valid alpha scores ({len(valid_scores)}) to define {num_bins} regimes"
-                )
-                return alpha_df, None, None
-
-        try:
-            ranks = valid_scores.rank(method="first")
-            bucket_codes = pd.qcut(ranks, q=num_bins, labels=False)
-        except ValueError as e:
-            tprint_warning(f"Failed to compute quantile-based alpha regimes: {e}")
+        # Get forward returns for optimization
+        fwd_cols = [col for col in alpha_df.columns if col.startswith("alpha_forward_return_")]
+        if not fwd_cols:
+            tprint_warning("No alpha_forward_return column found for regime optimization")
             return alpha_df, None, None
+
+        fwd_col = fwd_cols[0]
+        forward_returns = alpha_df[fwd_col].dropna()
+
+        # Align scores and returns
+        common_idx = valid_scores.index.intersection(forward_returns.index)
+        if len(common_idx) < 20:
+            tprint_warning(
+                f"Not enough valid samples ({len(common_idx)}) for regime optimization"
+            )
+            return alpha_df, None, None
+
+        aligned_scores = valid_scores.loc[common_idx]
+        aligned_returns = forward_returns.loc[common_idx]
+
+        # Multi-regime competition: test multiple regime counts
+        if use_flexible_regimes:
+            tprint_info(
+                f"🔍 Testing flexible regime optimization for {regime_counts_to_test} regime counts "
+                f"(min_bin={min_bin_pct*100:.0f}%, max_bin={max_bin_pct*100:.0f}%)"
+            )
+
+            best_n_regimes = None
+            best_score = -np.inf
+            best_labels = None
+            best_metrics = None
+            competition_results = []
+
+            for n_regimes in regime_counts_to_test:
+                if len(aligned_scores) < n_regimes * int(len(aligned_scores) * min_bin_pct):
+                    tprint_warning(
+                        f"Skipping {n_regimes} regimes: insufficient samples for bin constraints"
+                    )
+                    continue
+
+                try:
+                    labels, score, metrics = self._optimize_regime_boundaries(
+                        alpha_scores=aligned_scores,
+                        forward_returns=aligned_returns,
+                        n_regimes=n_regimes,
+                        min_bin_pct=min_bin_pct,
+                        max_bin_pct=max_bin_pct,
+                        jiggle_pct=float(config.get("alpha_jiggle_pct", 0.01)),
+                        max_iterations=int(config.get("alpha_max_opt_iterations", 100)),
+                    )
+
+                    competition_results.append({
+                        "n_regimes": n_regimes,
+                        "wcv_ratio": score,
+                        "cv_ratio": metrics.get("cv_ratio", 0.0),
+                        "between_cv": metrics.get("between_cv", 0.0),
+                        "between_wcv": metrics.get("between_wcv", 0.0),
+                        "within_cv": metrics.get("within_cv", 0.0),
+                        "within_wcv": metrics.get("within_wcv", 0.0),
+                        "iterations": metrics.get("optimization_iterations", 0),
+                        "converged": metrics.get("converged", False),
+                    })
+
+                    if score > best_score:
+                        best_score = score
+                        best_n_regimes = n_regimes
+                        best_labels = labels
+                        best_metrics = metrics
+
+                    tprint_info(
+                        f"  → {n_regimes} regimes: WCV Ratio={score:.4f}, "
+                        f"CV Ratio={metrics.get('cv_ratio', 0.0):.4f}, "
+                        f"iterations={metrics.get('optimization_iterations', 0)}"
+                    )
+
+                except Exception as opt_exc:
+                    tprint_warning(f"Optimization failed for {n_regimes} regimes: {opt_exc}")
+                    continue
+
+            if best_labels is None:
+                tprint_warning("All regime optimization attempts failed; falling back to simple quantiles")
+                use_flexible_regimes = False
+            else:
+                num_bins = best_n_regimes
+                bucket_codes = pd.Series(best_labels, index=common_idx)
+                tprint_info(
+                    f"✅ Selected {num_bins} regimes with WCV Ratio={best_score:.4f} "
+                    f"(Between WCV={best_metrics.get('between_wcv', 0.0):.4f}, "
+                    f"Within WCV={best_metrics.get('within_wcv', 0.0):.4f})"
+                )
+
+        # Fallback to simple quantile binning if flexible optimization is disabled or failed
+        if not use_flexible_regimes:
+            num_bins = int(config.get("alpha_regime_bins", 5))
+            num_bins = max(3, min(num_bins, 6))
+
+            if len(aligned_scores) < num_bins:
+                if len(aligned_scores) >= 3:
+                    num_bins = len(aligned_scores)
+                    tprint_warning(
+                        f"Reducing alpha regime bins to {num_bins} due to limited samples"
+                    )
+                else:
+                    tprint_warning(
+                        f"Not enough valid alpha scores ({len(aligned_scores)}) to define regimes"
+                    )
+                    return alpha_df, None, None
+
+            try:
+                ranks = aligned_scores.rank(method="first")
+                bucket_codes = pd.qcut(ranks, q=num_bins, labels=False)
+                tprint_info(
+                    f"📊 Using simple quantile binning with {num_bins} equal-sized regimes"
+                )
+            except ValueError as e:
+                tprint_warning(f"Failed to compute quantile-based alpha regimes: {e}")
+                return alpha_df, None, None
 
         bucket_col = f"alpha_regime_bucket_{num_bins}"
         alpha_df[bucket_col] = bucket_codes.reindex(alpha_df.index)
 
-        fwd_cols = [col for col in alpha_df.columns if col.startswith("alpha_forward_return_")]
-        if not fwd_cols:
-            tprint_warning("No alpha_forward_return column found for regime statistics")
-            return alpha_df, None, bucket_col
-
+        # Compute comprehensive regime statistics with CV and WCV metrics
         fwd_col = fwd_cols[0]
 
         stats_records = []
@@ -1115,6 +1557,9 @@ class HMMMLAlphaStep(BaseStep):
             mean_ret = float(ret.mean())
             std_ret = float(ret.std()) if len(ret) > 1 else 0.0
             sharpe = mean_ret / (std_ret + 1e-8) if std_ret > 0 else 0.0
+
+            # CV and Winsorized CV for this regime
+            cv, wcv = self._calculate_winsorized_cv(ret)
 
             # Realized volatility (same units as std_ret, kept separate for clarity)
             realized_vol = std_ret
@@ -1183,12 +1628,18 @@ class HMMMLAlphaStep(BaseStep):
             hit_rate = float((ret > 0).mean())
             mean_target = float(group["alpha_target"].mean())
 
+            # Calculate bin percentage
+            bin_pct = float(len(group)) / float(len(alpha_df))
+
             stats_records.append(
                 {
                     "alpha_regime_bucket": int(bucket),
                     "n_samples": int(len(group)),
+                    "bin_percentage": bin_pct,
                     "mean_forward_return": mean_ret,
                     "std_forward_return": std_ret,
+                    "cv_forward_return": cv,
+                    "wcv_forward_return": wcv,
                     "sharpe_forward_return": sharpe,
                     "realized_vol_forward_return": realized_vol,
                     "downside_vol_forward_return": downside_vol,
@@ -1211,10 +1662,35 @@ class HMMMLAlphaStep(BaseStep):
 
         regime_stats_df = pd.DataFrame(stats_records).set_index("alpha_regime_bucket").sort_index()
 
+        # Calculate overall economic metrics (Between/Within CV ratios)
+        if use_flexible_regimes and best_metrics is not None:
+            overall_metrics = {
+                "overall_between_cv": best_metrics.get("between_cv", 0.0),
+                "overall_between_wcv": best_metrics.get("between_wcv", 0.0),
+                "overall_within_cv": best_metrics.get("within_cv", 0.0),
+                "overall_within_wcv": best_metrics.get("within_wcv", 0.0),
+                "overall_cv_ratio": best_metrics.get("cv_ratio", 0.0),
+                "overall_wcv_ratio": best_metrics.get("wcv_ratio", 0.0),
+                "optimization_iterations": best_metrics.get("optimization_iterations", 0),
+                "optimization_converged": best_metrics.get("converged", False),
+            }
+            # Add as a row in the stats dataframe for easy reporting
+            for key, value in overall_metrics.items():
+                regime_stats_df[key] = value
+
         tprint_info(
             f"📊 Computed alpha regime statistics for {len(regime_stats_df)} regimes "
             f"(bins={num_bins})"
         )
+
+        if use_flexible_regimes and best_metrics is not None:
+            tprint_info(
+                f"📈 Overall Economic Metrics: "
+                f"CV Ratio={best_metrics.get('cv_ratio', 0.0):.4f}, "
+                f"WCV Ratio={best_metrics.get('wcv_ratio', 0.0):.4f}, "
+                f"Between WCV={best_metrics.get('between_wcv', 0.0):.4f}, "
+                f"Within WCV={best_metrics.get('within_wcv', 0.0):.4f}"
+            )
 
         return alpha_df, regime_stats_df, bucket_col
 

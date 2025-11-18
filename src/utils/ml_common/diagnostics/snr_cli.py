@@ -74,36 +74,16 @@ class DiagnosticsCLI:
         """
         tprint(f"Loading latest artifacts for {symbol}/{timeframe}...", "INFO")
 
-        # Find latest labeled data (search subdirectories recursively)
-        # Try multiple naming patterns
-        search_patterns = [
-            f"**/*labeled_data*{symbol}*{timeframe}*.parquet",  # Standard labeling
-            f"**/*alpha_training_data*{timeframe}*.parquet",     # hmm_ml_alpha
-            f"**/*{symbol}*{timeframe}*.parquet",                # Generic fallback
-        ]
-
-        labeled_files = []
-        for pattern in search_patterns:
-            labeled_files.extend(self.artifacts_dir.glob(pattern))
-            if labeled_files:
-                break
+        # Find latest labeled data from meta-labeling step (search subdirectories)
+        pattern = f"**/*labeled_data*{symbol}*{timeframe}*.parquet"
+        labeled_files = list(self.artifacts_dir.glob(pattern))
 
         if not labeled_files:
-            # Try versioned artifacts
-            versioned_path = Path(f"versioned_artifacts/{symbol}_binance_{timeframe}_long_analyst")
-            if not versioned_path.exists():
-                versioned_path = Path(f"versioned_artifacts/{symbol}_binance_{timeframe}_long_regime_alpha")
-
-            if versioned_path.exists():
-                tprint(f"  Found versioned artifacts at {versioned_path}", "INFO")
-                tprint(f"  ⚠️  Versioned artifact loading not yet implemented", "WARNING")
-                tprint(f"  Please ensure data files exist in artifacts/ directory", "WARNING")
-
             raise FileNotFoundError(
                 f"No labeled data found for {symbol}/{timeframe}\n"
-                f"  Searched patterns: {search_patterns}\n"
+                f"  Searched pattern: {pattern}\n"
                 f"  In directory: {self.artifacts_dir}\n"
-                f"  Please run the pipeline to generate labeled data first."
+                f"  Please run feature_generation_meta_labeling_step to generate labeled data first."
             )
 
         latest_labeled = sorted(labeled_files)[-1]
@@ -113,8 +93,8 @@ class DiagnosticsCLI:
         # Load labeled data
         df = pd.read_parquet(latest_labeled)
 
-        # Extract labels (support multiple naming conventions)
-        label_columns = ['meta_label', 'label', 'target', 'alpha_target', 'y', 'y_true']
+        # Extract labels (from meta-labeling step)
+        label_columns = ['meta_label', 'label', 'target']
         y = None
         label_col_found = None
 
@@ -127,17 +107,16 @@ class DiagnosticsCLI:
 
         if y is None:
             raise ValueError(
-                f"No label column found in data. Searched for: {label_columns}\n"
-                f"Available columns: {list(df.columns)}"
+                f"No label column found in data. Expected one of: {label_columns}\n"
+                f"Available columns: {list(df.columns)}\n"
+                f"Please ensure feature_generation_meta_labeling_step has run successfully."
             )
 
         # Extract features (exclude label columns and non-feature columns)
         exclude_cols = [
-            'meta_label', 'label', 'target', 'alpha_target', 'y', 'y_true',
+            'meta_label', 'label', 'target',
             'timestamp', 'close', 'open', 'high', 'low', 'volume',
-            'realized_return', 'smoothed_label', 'binary_label', 'exit_reason',
-            'alpha_forward_return_1h', 'alpha_pred_prob', 'alpha_regime_bucket_3',
-            'regime_label', 'regime_label_ml'  # Categorical regime labels
+            'realized_return', 'smoothed_label', 'binary_label', 'exit_reason'
         ]
         feature_cols = [col for col in df.columns if col not in exclude_cols]
 
@@ -148,21 +127,12 @@ class DiagnosticsCLI:
 
         tprint(f"  Loaded {len(df)} samples, {len(feature_cols)} features", "INFO")
 
-        # Try to load trained model (search subdirectories)
+        # Try to load trained model from meta-labeling (search subdirectories)
         model = None
         y_pred = None
 
-        model_patterns = [
-            f"**/*{model_type}_model*{symbol}*{timeframe}*.pkl",
-            f"**/*alpha_model*{timeframe}*.pkl",
-            f"**/*model*{symbol}*{timeframe}*.pkl",
-        ]
-
-        model_files = []
-        for pattern in model_patterns:
-            model_files.extend(self.artifacts_dir.glob(pattern))
-            if model_files:
-                break
+        model_pattern = f"**/*{model_type}_model*{symbol}*{timeframe}*.pkl"
+        model_files = list(self.artifacts_dir.glob(model_pattern))
 
         if model_files:
             latest_model_file = model_files[-1]

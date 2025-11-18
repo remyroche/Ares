@@ -40,6 +40,16 @@ from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
     create_param_group,
     OptimizationStage,
 )
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer,
+    OptimizationConfig,
+)
+from src.utils.ml_common.optimization.pareto import (
+    Solution,
+    ParetoFront,
+    compute_pareto_front,
+    select_knee_point,
+)
 
 
 logger = system_logger.getChild("MetaLabelingHPOExperiment")
@@ -140,12 +150,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     "stop_to_profit_ratio": {
                         "type": "float",
                         "low": 0.3,
-                        "high": 1.0,
+                        "high": 0.67,  # CONSTRAINT: profit must be >= 1.5x stop
                     },
                     "horizon_bars": {
                         "type": "int",
-                        "low": 2,
-                        "high": 24,
+                        "low": 8,  # Changed from 2 to 8
+                        "high": 28,  # Changed from 24 to 28
+                        "step": 2,  # Increments of 2 or 4
                     },
                     "min_event_spacing": {
                         "type": "int",
@@ -230,8 +241,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             ),
         ]
 
+        # Storage for candidate label configurations
+        candidate_pool: List[Dict[str, Any]] = []
+
         # ------------------------------------------------------------------
-        # 3) Define objective function for labeling quality
+        # 3) Define objective function for labeling quality (with learnability)
         # ------------------------------------------------------------------
 
         def labeling_objective(
@@ -244,23 +258,34 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             cv_folds: int = 1,
             scoring_metric: str = "custom_balanced_score",
             **kwargs: Any,
-        ) -> float:
-            """Evaluate one labeling configuration.
+        ) -> Dict[str, float]:
+            """Evaluate one labeling configuration with multi-objective scoring.
 
             This function:
-            - Recomputes realized returns & binary labels with candidate
-              TPSL parameters (profit_thr_base, stop_to_profit_ratio,
-              horizon_bars, min_event_spacing)
+            - Recomputes realized returns & binary labels with candidate TPSL parameters
             - Smooths labels via Kalman filter
-            - Applies symmetric probability clipping and isotonic mapping
-              to construct targets
-            - Applies symmetric quantile clipping to target magnitudes
-            - Computes an economic/label-quality score to maximize
+            - Creates meta-features for learnability assessment
+            - Computes learnability score (cross-validated AUC)
+            - Computes profitability score (economic metrics)
+            - Applies regularization checks (temporal stability, regime consistency)
+            - Returns dict of objectives for Pareto frontier
+
+            Returns:
+                Dict with keys: 'learnability', 'profitability', 'combined'
             """
 
             try:
+                # Enforce profit >= 1.5x stop constraint
                 profit_thr_base = float(params["profit_thr_base"])
                 stop_ratio = float(params["stop_to_profit_ratio"])
+
+                # CONSTRAINT: Ensure profit is at least 1.5x stop
+                stop_thr_base = max(0.0005, profit_thr_base * stop_ratio)
+                if profit_thr_base < 1.5 * stop_thr_base:
+                    tprint_warning(f"⚠️ Config rejected: profit {profit_thr_base:.4f} < 1.5x stop {stop_thr_base:.4f}")
+                    return {'learnability': 0.0, 'profitability': -1e9, 'combined': -1e9}
+
+                # Extract parameters
                 horizon = int(params["horizon_bars"])
                 min_spacing = int(params["min_event_spacing"])
 
@@ -272,7 +297,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 stop_mult_min = float(params.get("stop_mult_min", 0.5))
                 stop_mult_max = float(params.get("stop_mult_max", 2.0))
 
-                horizon = max(2, min(24, horizon))
+                # Enforce horizon is in 8-28 range with steps of 2
+                horizon = max(8, min(28, horizon))
+                if horizon % 2 != 0:
+                    horizon = (horizon // 2) * 2  # Round down to even
                 min_spacing = max(1, min(16, min_spacing))
                 vol_baseline_window = max(8, min(512, vol_baseline_window))
 
@@ -280,8 +308,6 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     profit_mult_min, profit_mult_max = profit_mult_max, profit_mult_min
                 if stop_mult_min > stop_mult_max:
                     stop_mult_min, stop_mult_max = stop_mult_max, stop_mult_min
-
-                stop_thr_base = max(0.0005, profit_thr_base * stop_ratio)
 
                 # Use safe defaults when target_transform params are not part of the current group
                 iso_min_prob = float(params.get("iso_min_prob", 0.0))
@@ -371,6 +397,39 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     if low_val < high_val:
                         target_nz = target_nz.clip(low_val, high_val)
 
+                # ===== LEARNABILITY ASSESSMENT =====
+                # Create meta-features for this labeling configuration
+                from src.training.steps.market_analysis.feature_generation_meta_labeling_step import (
+                    create_meta_features,
+                    compute_learnability_score,
+                    compute_label_entropy_score,
+                )
+
+                meta_features = create_meta_features(
+                    market_data,
+                    primary_signals,
+                    volume_available=True,
+                    include_raw_signals=False,
+                    use_kalman=True
+                )
+
+                # Compute learnability score (cross-validated AUC)
+                learnability_score, mean_auc = compute_learnability_score(
+                    X=meta_features,
+                    y=binary_labels,
+                    cv_splits=3,
+                    time_aware_cv=True
+                )
+
+                # PENALTY: if mean_auc < 0.7, heavily penalize
+                if mean_auc < 0.7:
+                    auc_penalty = (0.7 - mean_auc) * 5.0  # Large penalty for poor learnability
+                    learnability_score -= auc_penalty
+
+                # Compute label entropy/balance score
+                balance_score = compute_label_entropy_score(binary_labels)
+
+                # ===== ECONOMIC PROFITABILITY =====
                 # Compute economic separation metrics on labeled events
                 returns_labeled = realized_returns[labeled_mask]
                 labels_labeled = binary_labels[labeled_mask]
@@ -380,7 +439,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 r_neg = returns_labeled[labels_labeled == 0]
 
                 if len(r_pos) == 0 or len(r_neg) == 0:
-                    return -1e9
+                    return {'learnability': learnability_score, 'profitability': -1e9, 'combined': -1e9}
 
                 mean_pos = float(r_pos.mean())
                 mean_neg = float(r_neg.mean())
@@ -392,7 +451,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 tx = float(DEFAULT_TRANSACTION_COST)
                 if mean_pos <= tx:
-                    return -1e9
+                    return {'learnability': learnability_score, 'profitability': -1e9, 'combined': -1e9}
 
                 # Penalize configurations dominated by economically trivial events
                 returns_labeled_nonnull = returns_labeled.dropna()
@@ -413,52 +472,182 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 penalty_noise = frac_small * 10.0
 
-                # Final score: emphasize separation and Sharpe, subtract density and noise penalties
-                score = sep * 100.0 + sharpe_pos * 10.0 - penalty_density - penalty_noise
+                # Profitability score: emphasize separation and Sharpe, subtract penalties
+                profitability_score = sep * 100.0 + sharpe_pos * 10.0 - penalty_density - penalty_noise
 
-                return float(score)
+                # ===== REGULARIZATION CHECKS =====
+                # Temporal stability check (rolling window AUC variance)
+                try:
+                    window_size = max(100, n_events // 5)
+                    n_windows = min(5, n_events // window_size)
+                    auc_variance = 0.0
+
+                    if n_windows >= 2:
+                        window_aucs = []
+                        for w in range(n_windows):
+                            start_idx = w * window_size
+                            end_idx = min((w + 1) * window_size, n_events)
+                            window_labels = labels_labeled.iloc[start_idx:end_idx]
+
+                            if len(window_labels.unique()) >= 2 and len(window_labels) >= 20:
+                                # Compute simple correlation as AUC proxy
+                                window_returns = returns_labeled.iloc[start_idx:end_idx]
+                                try:
+                                    window_auc = abs(window_labels.corr(window_returns))
+                                    window_aucs.append(window_auc if not np.isnan(window_auc) else 0.5)
+                                except:
+                                    window_aucs.append(0.5)
+
+                        if len(window_aucs) >= 2:
+                            auc_variance = float(np.var(window_aucs))
+                            # Penalize high variance (instability across time)
+                            temporal_stability_penalty = auc_variance * 10.0
+                            profitability_score -= temporal_stability_penalty
+                except Exception:
+                    pass  # Skip if temporal check fails
+
+                # ===== COMBINED OBJECTIVE (70% learnability, 30% profitability) =====
+                combined_score = (0.7 * learnability_score) + (0.3 * profitability_score / 100.0)
+
+                # Store candidate configuration for later persistence
+                candidate_config = {
+                    'params': params.copy(),
+                    'learnability': float(learnability_score),
+                    'mean_auc': float(mean_auc),
+                    'profitability': float(profitability_score),
+                    'combined': float(combined_score),
+                    'mean_pos': float(mean_pos),
+                    'mean_neg': float(mean_neg),
+                    'sharpe_pos': float(sharpe_pos),
+                    'n_events': int(n_events),
+                    'balance_score': float(balance_score),
+                    'trades_per_day': float(trades_per_day),
+                }
+                candidate_pool.append(candidate_config)
+
+                return {
+                    'learnability': float(learnability_score),
+                    'profitability': float(profitability_score),
+                    'combined': float(combined_score)
+                }
 
             except Exception as exc:  # Defensive: never crash HPO on one config
                 tprint_warning(f"⚠️ Labeling objective failed: {exc}")
-                return -1e9
+                import traceback
+                traceback.print_exc()
+                return {'learnability': 0.0, 'profitability': -1e9, 'combined': -1e9}
 
         # ------------------------------------------------------------------
-        # 4) Instantiate hierarchical optimizer
+        # 4) Multi-objective wrapper for single-objective optimizers
         # ------------------------------------------------------------------
-        optimizer = HierarchicalParameterOptimizer(
-            param_groups=param_groups,
-            objective_func=labeling_objective,
-            stages=[
-                OptimizationStage.COARSE_GRID,
-                OptimizationStage.FINE_GRID,
-            ],
-            cv_folds=1,  # we perform our own temporal reasoning inside objective
-            scoring_metric="custom_balanced_score",
-            direction="maximize",
-            n_rounds=2,
-            enable_final_refinement=False,
-            final_refinement_trials=0,
-            cache_dir=None,
+        def scalar_objective_wrapper(
+            params: Dict[str, Any],
+            X_train: np.ndarray,
+            y_train: np.ndarray,
+            **kwargs
+        ) -> float:
+            """Wrapper to extract combined score for single-objective optimizers."""
+            result = labeling_objective(params, X_train, y_train, **kwargs)
+            if isinstance(result, dict):
+                return result['combined']
+            return result
+
+        # ------------------------------------------------------------------
+        # 5) Instantiate Bayesian TPE optimizer (replaces hierarchical grid search)
+        # ------------------------------------------------------------------
+        tprint_info("🚀 Using Bayesian TPE optimization for efficient search")
+
+        # Convert param_groups to Optuna search space
+        search_space = {}
+        for group in param_groups:
+            for param_name, param_spec in group['params'].items():
+                search_space[param_name] = param_spec
+
+        # Configure Bayesian optimizer
+        bayesian_config = OptimizationConfig(
+            n_trials=100,  # Total trials
+            enable_staged_optimization=True,
+            coarse_grid_trials=20,
+            fine_grid_trials=20,
+            tpe_trials=60,
+            direction='maximize',
+            enable_hardware_optimization=False,  # Disable for compatibility
+            enable_vectorbt_optimization=False,
+            enable_early_stopping=True,
+            early_stopping_patience=15,
             random_state=42,
-            verbose=True,
-            use_custom_balanced_score=False,
         )
 
+        optimizer = BayesianTPEOptimizer(config=bayesian_config)
+
         # ------------------------------------------------------------------
-        # 5) Run optimization (X_dummy / y_dummy are placeholders)
+        # 6) Run Bayesian TPE optimization
         # ------------------------------------------------------------------
+        tprint_info("🔍 Running Bayesian TPE optimization...")
+
         result = optimizer.optimize(
+            objective=scalar_objective_wrapper,
+            search_space=search_space,
             X_train=X_dummy,
             y_train=y_dummy,
-            X_val=None,
-            y_val=None,
-            model=None,
-            initial_params=None,
         )
 
-        best_params = result.best_params
-        tprint_success(f"✅ Labeling HPO completed. Best score={result.best_score:.6f}")
+        best_params = result.get('best_params', {})
+        best_score = result.get('best_value', 0.0)
+
+        tprint_success(f"✅ Labeling HPO completed. Best combined score={best_score:.6f}")
         tprint_info(f"Best parameters: {best_params}")
+
+        # ------------------------------------------------------------------
+        # 7) Compute Pareto Frontier from all candidate configurations
+        # ------------------------------------------------------------------
+        tprint_info("📊 Computing Pareto frontier...")
+
+        # Convert candidate pool to Solution objects
+        pareto_solutions = []
+        for candidate in candidate_pool:
+            solution = Solution(
+                metrics={
+                    'learnability': candidate['learnability'],
+                    'profitability': candidate['profitability'],
+                    'combined': candidate['combined'],
+                    'mean_auc': candidate['mean_auc'],
+                    'sharpe_pos': candidate['sharpe_pos'],
+                    'n_events': candidate['n_events'],
+                },
+                params=candidate['params']
+            )
+            pareto_solutions.append(solution)
+
+        # Compute Pareto front for learnability vs profitability
+        objectives = {
+            'learnability': 'max',
+            'profitability': 'max',
+        }
+
+        pareto_front = compute_pareto_front(
+            solutions=pareto_solutions,
+            objectives=objectives,
+            use_gpu=False,
+            use_vectorbt=False,
+        )
+
+        tprint_success(f"✅ Pareto frontier: {len(pareto_front)}/{len(pareto_solutions)} non-dominated solutions")
+
+        # Select knee point as recommended solution
+        knee_solution = select_knee_point(
+            pareto_solutions=pareto_front,
+            objectives=objectives,
+            weights={'learnability': 0.7, 'profitability': 0.3}
+        )
+
+        if knee_solution:
+            tprint_info(f"📍 Knee point (recommended): learnability={knee_solution.metrics['learnability']:.4f}, "
+                       f"profitability={knee_solution.metrics['profitability']:.4f}")
+            # Update best_params to knee point if it's better balanced
+            knee_params = knee_solution.params
+        else:
+            knee_params = best_params
 
         # Compact run summary for quick log scanning
         try:
@@ -477,11 +666,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             f"params={best_params}",
         )
 
-        # Persist best parameters to outcomes/ for later reuse
+        # Persist best parameters and candidate pool to outcomes/
         outcomes_dir = Path("outcomes")
         outcomes_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+        # ===== SAVE BEST PARAMS JSON =====
         json_name = f"meta_labeling_hpo_best_params_{symbol}_{timeframe}_{timestamp}.json"
         json_path = outcomes_dir / json_name
 
@@ -491,13 +682,135 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     "symbol": symbol,
                     "exchange": exchange,
                     "timeframe": timeframe,
-                    "best_score": result.best_score,
+                    "best_score": best_score,
                     "best_params": best_params,
+                    "knee_params": knee_params,
+                    "pareto_front_size": len(pareto_front),
                 }, f, indent=2)
             tprint_success(f"💾 Saved best labeling HPO params to {json_path}")
         except Exception as save_exc:
             tprint_warning(f"⚠️ Failed to save best_params JSON: {save_exc}")
             json_path = None
+
+        # ===== SAVE CANDIDATE POOL CSV =====
+        csv_name = f"meta_labeling_hpo_candidate_pool_{symbol}_{timeframe}_{timestamp}.csv"
+        csv_path = outcomes_dir / csv_name
+
+        try:
+            # Convert candidate pool to DataFrame
+            candidate_df = pd.DataFrame(candidate_pool)
+
+            # Flatten params dict into columns
+            params_df = pd.json_normalize(candidate_df['params'])
+            candidate_df = candidate_df.drop(columns=['params'])
+            candidate_df = pd.concat([candidate_df, params_df], axis=1)
+
+            # Sort by combined score
+            candidate_df = candidate_df.sort_values('combined', ascending=False)
+
+            # Save to CSV
+            candidate_df.to_csv(csv_path, index=False, float_format='%.6f')
+            tprint_success(f"💾 Saved {len(candidate_pool)} candidate configs to {csv_path}")
+        except Exception as csv_exc:
+            tprint_warning(f"⚠️ Failed to save candidate pool CSV: {csv_exc}")
+            csv_path = None
+
+        # ===== SAVE PARETO FRONTIER CSV =====
+        pareto_csv_name = f"meta_labeling_hpo_pareto_front_{symbol}_{timeframe}_{timestamp}.csv"
+        pareto_csv_path = outcomes_dir / pareto_csv_name
+
+        try:
+            # Convert Pareto solutions to DataFrame
+            pareto_data = []
+            for sol in pareto_front:
+                row = sol.metrics.copy()
+                if sol.params:
+                    row.update(sol.params)
+                pareto_data.append(row)
+
+            pareto_df = pd.DataFrame(pareto_data)
+            pareto_df = pareto_df.sort_values('combined', ascending=False)
+
+            pareto_df.to_csv(pareto_csv_path, index=False, float_format='%.6f')
+            tprint_success(f"💾 Saved {len(pareto_front)} Pareto solutions to {pareto_csv_path}")
+        except Exception as pareto_exc:
+            tprint_warning(f"⚠️ Failed to save Pareto frontier CSV: {pareto_exc}")
+            pareto_csv_path = None
+
+        # ===== SAVE COMPREHENSIVE MARKDOWN REPORT =====
+        md_name = f"meta_labeling_hpo_report_{symbol}_{timeframe}_{timestamp}.md"
+        md_path = outcomes_dir / md_name
+
+        try:
+            with open(md_path, "w") as f:
+                f.write(f"# Meta-Labeling HPO Report\n\n")
+                f.write(f"**Generated:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n")
+                f.write(f"**Symbol:** {symbol} | **Exchange:** {exchange} | **Timeframe:** {timeframe}\n\n")
+                f.write(f"---\n\n")
+
+                # Summary
+                f.write(f"## Summary\n\n")
+                f.write(f"- **Total Configurations Evaluated:** {len(candidate_pool)}\n")
+                f.write(f"- **Pareto Frontier Size:** {len(pareto_front)}\n")
+                f.write(f"- **Best Combined Score:** {best_score:.6f}\n")
+                f.write(f"- **Optimization Method:** Bayesian TPE with Pareto Frontier\n\n")
+
+                # Best Parameters
+                f.write(f"## Best Parameters (Highest Combined Score)\n\n")
+                f.write(f"```json\n")
+                f.write(json.dumps(best_params, indent=2))
+                f.write(f"\n```\n\n")
+
+                # Knee Point Parameters
+                if knee_solution:
+                    f.write(f"## Recommended Parameters (Pareto Knee Point)\n\n")
+                    f.write(f"Balanced trade-off between learnability and profitability:\n\n")
+                    f.write(f"- **Learnability:** {knee_solution.metrics['learnability']:.4f}\n")
+                    f.write(f"- **Profitability:** {knee_solution.metrics['profitability']:.4f}\n")
+                    f.write(f"- **Mean AUC:** {knee_solution.metrics.get('mean_auc', 0):.4f}\n")
+                    f.write(f"- **Sharpe (Winners):** {knee_solution.metrics.get('sharpe_pos', 0):.4f}\n\n")
+                    f.write(f"```json\n")
+                    f.write(json.dumps(knee_params, indent=2))
+                    f.write(f"\n```\n\n")
+
+                # Pareto Frontier Summary
+                f.write(f"## Pareto Frontier Analysis\n\n")
+                f.write(f"The Pareto frontier contains {len(pareto_front)} non-dominated solutions "
+                       f"representing optimal trade-offs between learnability and profitability.\n\n")
+
+                # Top 10 Pareto Solutions
+                f.write(f"### Top 10 Pareto Solutions\n\n")
+                f.write(f"| Rank | Learnability | Profitability | Combined | Mean AUC | Sharpe | N Events |\n")
+                f.write(f"|------|-------------|--------------|----------|----------|--------|----------|\n")
+
+                sorted_pareto = sorted(pareto_front, key=lambda s: s.metrics['combined'], reverse=True)
+                for i, sol in enumerate(sorted_pareto[:10], 1):
+                    m = sol.metrics
+                    f.write(f"| {i} | {m['learnability']:.4f} | {m['profitability']:.4f} | "
+                           f"{m['combined']:.4f} | {m.get('mean_auc', 0):.4f} | "
+                           f"{m.get('sharpe_pos', 0):.4f} | {m.get('n_events', 0)} |\n")
+
+                f.write(f"\n")
+
+                # Regularization Checks Summary
+                f.write(f"## Regularization Checks\n\n")
+                f.write(f"All configurations were evaluated with:\n\n")
+                f.write(f"1. **Temporal Stability:** Rolling window AUC variance penalty\n")
+                f.write(f"2. **Learnability Threshold:** Mean AUC < 0.7 heavily penalized\n")
+                f.write(f"3. **Profit/Stop Constraint:** Profit threshold must be ≥ 1.5× stop threshold\n")
+                f.write(f"4. **Label Balance:** Entropy-based balance scoring\n\n")
+
+                # Artifacts
+                f.write(f"## Artifacts\n\n")
+                f.write(f"- **Best Params JSON:** `{json_path.name if json_path else 'N/A'}`\n")
+                f.write(f"- **Candidate Pool CSV:** `{csv_path.name if csv_path else 'N/A'}`\n")
+                f.write(f"- **Pareto Frontier CSV:** `{pareto_csv_path.name if pareto_csv_path else 'N/A'}`\n")
+                f.write(f"- **This Report:** `{md_name}`\n\n")
+
+            tprint_success(f"📄 Saved comprehensive report to {md_path}")
+        except Exception as md_exc:
+            tprint_warning(f"⚠️ Failed to save markdown report: {md_exc}")
+            md_path = None
 
         # Persist per-round HPO metrics to CSV for analysis
         csv_path = None

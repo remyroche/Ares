@@ -2,13 +2,27 @@
 Feature Generation Meta-Labeling Step (Production Version).
 
 Major enhancements:
-1. Ensemble models (LGBM + LogisticRegression + RF) with soft voting
+1. Ensemble models (LGBM + XGBoost + RF) with soft voting
 2. K-fold cross-fitting to prevent leakage
 3. Volatility-adaptive labeling with Kalman filtering
 4. Robust feature engineering with RobustScaler
 5. Vectorized operations for performance
 6. Comprehensive diagnostics and calibration
 7. Production TPSL parameters (1% profit, 0.5% stop, 0.15% fee)
+
+2025-11-18 DATA STARVATION FIX:
+- Removed vol_expansion FILTER → now a continuous FEATURE
+- Dynamic threshold tuning: targets 1-3 trades/day (500-1500 signals/year)
+- Removed cost subtraction & power scaling from target generation
+- Wider volatility-adjusted horizons: 0.5x to 3.0x (was 0.75x to 1.5x)
+- Stronger regularization in tree models (prevent overfitting)
+- Feature selection (remove correlated features, limit max features)
+- Sequential bootstrapping sample weights (handle overlapping events)
+
+TODO (Future Enhancements):
+- [ ] Focal Loss: Custom loss function for LGBM/XGB to focus on hard examples
+- [ ] CUSUM Filters: Replace momentum filter with de Prado's CUSUM event detector
+- [ ] Multi-Class Labels: (0=Timeout, 1=Profit, 2=Stop) instead of binary
 
 Based on guidance from "Advances in Financial Machine Learning" by Marcos López de Prado.
 """
@@ -292,16 +306,18 @@ def generate_primary_signals(
     macd_slow_long: int = 104,  # 4x longer
     macd_signal_long: int = 36,  # 4x longer
     macd_threshold: float = 0.02,  # LOOSER difference threshold
-    momentum_threshold: float = 0.006  # TIGHTENED from 0.005 to reduce noise
+    momentum_threshold: Optional[float] = None,  # If None, will be auto-tuned
+    target_trades_per_day: float = 2.0,  # Target signal density for dynamic tuning
+    enable_dynamic_tuning: bool = True  # Enable auto-tuning of momentum threshold
 ) -> pd.DataFrame:
     """
-    Generate primary trading signals from technical indicators with enhanced filters.
+    Generate primary trading signals from technical indicators.
 
-    ENHANCED IMPROVEMENTS:
-    - Tightened momentum threshold (0.006 from 0.005)
-    - Added volatility expansion filter (vol_short > 0.9 * vol_long)
-    - Added volatility weighting to consensus
-    - Signal funnel logging to track rejection rates
+    ENHANCED IMPROVEMENTS (2025-11-18):
+    - Removed volatility expansion FILTER → now a continuous FEATURE for ML
+    - Dynamic threshold tuning to target specific sample sizes (1-3 trades/day)
+    - Volatility weighting for consensus signals
+    - Signal funnel logging
 
     CRITICAL: These signals are FIXED and must never be re-optimized during CV.
     They define the "primary model" whose signals we will meta-label.
@@ -315,6 +331,51 @@ def generate_primary_signals(
     # SIGNAL FUNNEL TRACKING
     funnel = {'total_bars': len(df)}
     raw_signal_count = 0
+
+    # ===== DYNAMIC THRESHOLD TUNING =====
+    # Auto-tune momentum_threshold to achieve target signal density
+    if enable_dynamic_tuning and momentum_threshold is None:
+        # Estimate dataset duration (bars_per_day depends on timeframe, assume 15m → 96 bars/day)
+        bars_per_day = 96  # 15m timeframe: 24h * 4 bars/hour = 96
+        n_days = len(df) / bars_per_day
+        target_total_signals = int(target_trades_per_day * n_days)
+
+        tprint(f"🔧 Dynamic threshold tuning: Target {target_trades_per_day:.1f} trades/day × {n_days:.1f} days = {target_total_signals} signals", "INFO")
+
+        # Binary search for optimal threshold
+        low_thresh, high_thresh = 0.001, 0.015  # Search range
+        best_thresh = 0.006  # Fallback
+        tolerance = 0.15  # Accept within 15% of target
+
+        for iteration in range(12):  # Max 12 iterations
+            mid_thresh = (low_thresh + high_thresh) / 2
+
+            # Test with candidate threshold (run momentum calc only)
+            test_momentum = df_local['close'].pct_change(momentum_period)
+            test_count_long = (test_momentum > mid_thresh).sum()
+            test_count_short = (test_momentum < -mid_thresh).sum()
+            test_count = test_count_long + test_count_short
+
+            error_ratio = abs(test_count - target_total_signals) / (target_total_signals + 1)
+
+            if error_ratio < tolerance:
+                best_thresh = mid_thresh
+                tprint(f"  ✓ Converged at iteration {iteration+1}: threshold={best_thresh:.4f} → {test_count} signals", "INFO")
+                break
+            elif test_count < target_total_signals:
+                high_thresh = mid_thresh  # Loosen (lower threshold)
+            else:
+                low_thresh = mid_thresh  # Tighten (raise threshold)
+
+            if iteration == 11:  # Last iteration
+                best_thresh = mid_thresh
+                tprint(f"  ⚠️ Max iterations reached: threshold={best_thresh:.4f} → {test_count} signals (target: {target_total_signals})", "WARNING")
+
+        momentum_threshold = best_thresh
+    elif momentum_threshold is None:
+        momentum_threshold = 0.006  # Default fallback
+
+    tprint(f"📊 Using momentum_threshold={momentum_threshold:.4f}", "INFO")
 
     # ===== RSI SIGNALS (short + long term) =====
     df_local['rsi'] = compute_rsi(df_local['close'], period=rsi_period)
@@ -368,20 +429,20 @@ def generate_primary_signals(
     signals.loc[df_local['momentum'] > momentum_threshold, 'mom'] = 1
     signals.loc[df_local['momentum'] < -momentum_threshold, 'mom'] = -1
 
-    # ===== VOLATILITY EXPANSION CHECK =====
+    # ===== VOLATILITY EXPANSION CALCULATION =====
     # Compute short and long volatility
     log_ret = np.log(df_local['close']).diff()
     vol_short = log_ret.rolling(20).std()  # Short-term volatility (20 bars ~5h on 15m)
     vol_long = log_ret.rolling(96).std()   # Long-term volatility (96 bars ~1 day on 15m)
 
-    # Create volatility expansion filter
-    vol_expansion_filter = vol_short > (0.9 * vol_long)
-    vol_expansion_filter = vol_expansion_filter.fillna(False)
+    # Calculate volatility expansion ratio (NO LONGER A FILTER - now a feature for ML)
+    vol_expansion_ratio = vol_short / (vol_long + 1e-8)
+    vol_expansion_ratio = vol_expansion_ratio.fillna(1.0)
 
     # Store volatility values for meta-features and diagnostics
     signals['vol_short'] = vol_short
     signals['vol_long'] = vol_long
-    signals['vol_expansion'] = vol_expansion_filter.astype(int)
+    signals['vol_expansion'] = vol_expansion_ratio  # Continuous ratio, not boolean
 
     # ===== CONSENSUS SIGNAL WITH VOLATILITY WEIGHTING =====
     # Use all signals for consensus (including long-term for multi-timeframe agreement)
@@ -398,27 +459,15 @@ def generate_primary_signals(
     weighted_sum = signals[signal_cols].sum(axis=1) * vol_weight
     signals['consensus'] = weighted_sum.apply(np.sign)
 
-    # Apply volatility expansion filter
-    signals_before_vol_filter = (signals['consensus'] != 0).sum()
-    signals.loc[~vol_expansion_filter, 'consensus'] = 0
+    # SIGNAL FUNNEL LOGGING (NO FILTER - wider net for ML to learn from)
+    final_signal_count = (signals['consensus'] != 0).sum()
+    funnel['final_signals'] = final_signal_count
 
-    # SIGNAL FUNNEL LOGGING
-    signals_after_vol_filter = (signals['consensus'] != 0).sum()
-    funnel['after_volatility_expansion_filter'] = signals_after_vol_filter
-    funnel['dropped_by_vol_expansion'] = signals_before_vol_filter - signals_after_vol_filter
-
-    # Calculate rejection rates
-    if raw_signal_count > 0:
-        vol_rejection_rate = funnel['dropped_by_vol_expansion'] / raw_signal_count * 100
-    else:
-        vol_rejection_rate = 0.0
-
-    # Log signal funnel
     tprint(f"📊 Signal Funnel:", "INFO")
     tprint(f"  Total bars: {funnel['total_bars']}", "INFO")
     tprint(f"  Raw signals generated: {funnel['raw_signals']}", "INFO")
-    tprint(f"  Dropped by volatility expansion filter: {funnel['dropped_by_vol_expansion']} ({vol_rejection_rate:.1f}%)", "INFO")
-    tprint(f"  Final signals: {funnel['after_volatility_expansion_filter']}", "INFO")
+    tprint(f"  Final signals (no vol filter): {funnel['final_signals']}", "INFO")
+    tprint(f"  ℹ️  Vol expansion now used as ML feature, not filter", "INFO")
 
     # Store raw indicator values for meta-features (signal disagreement, magnitude, etc.)
     signals['rsi_value'] = df_local['rsi']
@@ -506,7 +555,9 @@ def compute_realized_returns(
     else:
         stop_thresholds = stop_threshold.values
 
-    # Dynamic horizon based on volatility (LINEAR scaling)
+    # Dynamic horizon based on volatility (EXPANDED RANGE: 0.5x to 3.0x)
+    # Lower vol = More time needed (price moves slower in low vol environments)
+    # Higher vol = Less time needed (price moves faster in high vol environments)
     if volatility_series is not None:
         vol_array = volatility_series.values
         # Normalize volatility to [0, 1] range using quantiles
@@ -514,13 +565,16 @@ def compute_realized_returns(
         if len(vol_clean) > 10:
             vol_min = np.percentile(vol_clean, 10)
             vol_max = np.percentile(vol_clean, 90)
-            # Linear scaling: low vol → longer horizon, high vol → shorter horizon
             # normalized_vol = 0 for low vol, 1 for high vol
             normalized_vol = np.clip((vol_array - vol_min) / (vol_max - vol_min + 1e-8), 0, 1)
-            # Scale horizon: 1.5x at low vol, 0.75x at high vol
-            horizon_multiplier = 1.5 - 0.75 * normalized_vol  # Range: [0.75, 1.5]
-            dynamic_horizons = (horizon * horizon_multiplier).astype(int)
-            dynamic_horizons = np.clip(dynamic_horizons, horizon // 2, horizon * 2)  # Safety bounds
+
+            # NEW WIDER RANGE: 3.0x at low vol (slow moves), 0.5x at high vol (fast moves)
+            # time_multiplier = 3.0 - 2.5 * normalized_vol → Range: [0.5, 3.0]
+            time_multiplier = 3.0 - 2.5 * normalized_vol
+            dynamic_horizons = (horizon * time_multiplier).astype(int)
+
+            # Safety bounds (wider than before)
+            dynamic_horizons = np.clip(dynamic_horizons, max(4, horizon // 3), horizon * 4)
         else:
             dynamic_horizons = np.full(len(df), horizon)
     else:
@@ -1049,6 +1103,86 @@ def prepare_feature_matrix(features: pd.DataFrame) -> pd.DataFrame:
     return numeric
 
 
+def select_features_by_importance(
+    X: pd.DataFrame,
+    y: pd.Series,
+    max_features: Optional[int] = None,
+    correlation_threshold: float = 0.95,
+    method: str = 'tree'
+) -> List[str]:
+    """
+    Select important features while removing highly correlated ones.
+
+    NEW (2025-11-18): Proper feature selection to prevent overfitting with
+    increased signal count and feature complexity.
+
+    Args:
+        X: Feature matrix
+        y: Binary labels
+        max_features: Maximum number of features to keep (None = no limit)
+        correlation_threshold: Remove features with correlation > this value
+        method: 'tree' for tree-based importance, 'mutual_info' for MI
+
+    Returns:
+        List of selected feature names
+    """
+    # Remove features with NaN/Inf
+    clean_mask = ~y.isna()
+    X_clean = X[clean_mask].fillna(0)
+    y_clean = y[clean_mask]
+
+    if len(y_clean) < 20:
+        tprint("⚠️ Too few samples for feature selection, using all features", "WARNING")
+        return list(X.columns)
+
+    # Step 1: Remove highly correlated features
+    tprint(f"🔍 Feature selection: Starting with {len(X.columns)} features", "INFO")
+
+    corr_matrix = X_clean.corr().abs()
+    upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+
+    # Find features to drop (keep first of each correlated pair)
+    to_drop = [col for col in upper_tri.columns if any(upper_tri[col] > correlation_threshold)]
+    features_after_corr = [col for col in X.columns if col not in to_drop]
+
+    tprint(f"  ✓ Removed {len(to_drop)} highly correlated features (>{correlation_threshold})", "INFO")
+    X_reduced = X_clean[features_after_corr]
+
+    # Step 2: Rank by importance (if max_features specified)
+    if max_features is not None and len(features_after_corr) > max_features:
+        if method == 'tree':
+            # Quick RandomForest for feature importance
+            from sklearn.ensemble import RandomForestClassifier
+            rf_quick = RandomForestClassifier(
+                n_estimators=50,
+                max_depth=8,
+                min_samples_leaf=20,
+                n_jobs=-1,
+                random_state=42
+            )
+            rf_quick.fit(X_reduced, y_clean)
+            importances = rf_quick.feature_importances_
+
+        elif method == 'mutual_info':
+            # Mutual information
+            from sklearn.feature_selection import mutual_info_classif
+            importances = mutual_info_classif(X_reduced, y_clean, random_state=42)
+        else:
+            raise ValueError(f"Unknown method: {method}")
+
+        # Select top K
+        top_indices = np.argsort(importances)[::-1][:max_features]
+        selected_features = [features_after_corr[i] for i in top_indices]
+
+        tprint(f"  ✓ Selected top {max_features} features by {method} importance", "INFO")
+    else:
+        selected_features = features_after_corr
+
+    tprint(f"  ✓ Final feature count: {len(selected_features)}", "INFO")
+
+    return selected_features
+
+
 def fit_probability_to_return_mapping(
     probabilities: np.ndarray,
     realized_returns: np.ndarray,
@@ -1138,18 +1272,22 @@ def translate_to_targets_with_isotonic(
     """
     Translate probabilities to continuous targets using isotonic regression.
 
-    FIXED: Uses net expectancy approach instead of hard clipping below cost threshold.
-    This preserves gradient signal for "small profit" vs "big profit" distinction.
+    NEW APPROACH (2025-11-18): Returns RAW expected returns without cost subtraction
+    or power scaling. The model trains on ALL signals to learn the pattern.
+    Cost-based filtering happens at DEPLOYMENT time, not training time.
+
+    This fixes data starvation: instead of 3 signals passing through aggressive
+    filters, we now have 500+ signals for the model to learn from.
 
     Args:
         realized_returns: Actual returns (used only for validation)
         probabilities: Predicted probabilities from meta-model
         signals: Signal directions
         iso_regressor: Fitted isotonic regression model
-        cost_threshold: Transaction cost per trade
+        cost_threshold: Transaction cost per trade (used only for logging)
 
     Returns:
-        Tuple of (target_long, target_short)
+        Tuple of (target_long, target_short) with raw expected returns
     """
     target_long = pd.Series(0.0, index=realized_returns.index)
     target_short = pd.Series(0.0, index=realized_returns.index)
@@ -1166,25 +1304,23 @@ def translate_to_targets_with_isotonic(
         tprint(f"⚠️ WARNING: Isotonic predictions contain {n_nan} NaN and {n_inf} Inf values", "WARNING")
         expected_returns = np.nan_to_num(expected_returns, nan=0.0, posinf=0.1, neginf=-0.1)
 
-    # Ensure non-negative expected returns (can't target losses)
-    expected_returns = np.maximum(0.0, expected_returns)
+    # NEW APPROACH (2025-11-18): Use RAW expected returns for training
+    # Cost subtraction and filtering happen at DEPLOYMENT time, not training time
+    # This allows the model to learn patterns from ALL signals (winners AND losers)
 
-    # FIXED APPROACH: Net Expectancy (subtract cost first, then clip)
-    # This preserves the difference between 0.14% gain (good!) and -5% loss (bad!)
-    cost_thr = float(cost_threshold)
-    net_expected_returns = expected_returns - cost_thr
-
-    # Clip negative net expectancy to 0 (we don't target negative returns)
-    net_expected_returns = np.maximum(0.0, net_expected_returns)
-
-    # Apply power scaling to emphasize higher net returns
-    final_targets = np.power(net_expected_returns, TARGET_POWER)
+    # Only apply minimal threshold to avoid extreme outliers
+    final_targets = np.clip(expected_returns, 0.0, 0.15)  # Cap at 15% to avoid outliers
 
     # DEBUG LOGGING: Target statistics
     n_nonzero = (final_targets > 1e-6).sum()
     pct_nonzero = n_nonzero / len(final_targets) * 100 if len(final_targets) > 0 else 0
-    logger.info(f"Target generation: {n_nonzero}/{len(final_targets)} ({pct_nonzero:.1f}%) non-zero targets")
-    logger.info(f"Target stats: mean={final_targets.mean():.6f}, std={final_targets.std():.6f}, max={final_targets.max():.6f}")
+    n_above_cost = (final_targets > cost_threshold).sum()
+    pct_above_cost = n_above_cost / len(final_targets) * 100 if len(final_targets) > 0 else 0
+
+    logger.info(f"Target generation (RAW expected returns):")
+    logger.info(f"  Non-zero: {n_nonzero}/{len(final_targets)} ({pct_nonzero:.1f}%)")
+    logger.info(f"  Above cost ({cost_threshold:.3%}): {n_above_cost}/{len(final_targets)} ({pct_above_cost:.1f}%)")
+    logger.info(f"  Mean={final_targets.mean():.6f}, Std={final_targets.std():.6f}, Max={final_targets.max():.6f}")
 
     # Vectorized assignment based on signal direction
     long_mask = (consensus > 0) & (~realized_returns.isna())
@@ -2199,51 +2335,53 @@ def create_base_models(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     models = {}
 
-    # LightGBM: INCREASED capacity (deeper trees, more leaves)
+    # LightGBM: Balanced capacity with STRONGER regularization (2025-11-18 update)
     models['lgbm'] = lgb.LGBMClassifier(
         objective='binary',
         metric='auc',
-        n_estimators=1000,  # Increased from 800
-        max_depth=10,  # INCREASED from 6 for more complex patterns
+        n_estimators=800,  # Reduced for faster training with more data
+        max_depth=8,  # REDUCED from 10 to prevent overfitting
         learning_rate=0.01,
-        num_leaves=127,  # Increased from 63 (2^depth - 1)
-        min_child_samples=10,
+        num_leaves=63,  # Reduced from 127 (2^depth - 1, but constrained)
+        min_child_samples=20,  # INCREASED from 10 for regularization
         subsample=0.8,
         subsample_freq=1,
-        colsample_bytree=0.8,
-        reg_alpha=0.05,  # L1 regularization
-        reg_lambda=0.05,  # L2 regularization
-        class_weight='balanced',  # Handle 18.8% imbalance
+        colsample_bytree=0.7,  # REDUCED from 0.8 for more regularization
+        reg_alpha=0.1,  # INCREASED L1 regularization (from 0.05)
+        reg_lambda=0.2,  # INCREASED L2 regularization (from 0.05)
+        class_weight='balanced',  # Handle imbalance
         n_jobs=-1,
         verbose=-1,
         random_state=42
     )
 
-    # XGBoost: REPLACES LogisticRegression with powerful tree ensemble
+    # XGBoost: Strong regularization (2025-11-18 update)
     models['xgb'] = xgb.XGBClassifier(
         objective='binary:logistic',
         eval_metric='auc',
-        n_estimators=1000,
-        max_depth=8,
+        n_estimators=800,  # Reduced for faster training
+        max_depth=6,  # REDUCED from 8 for regularization
         learning_rate=0.01,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        min_child_weight=5,
-        gamma=0.1,  # Minimum loss reduction for split
-        reg_alpha=0.05,  # L1 regularization
-        reg_lambda=0.1,  # L2 regularization
-        scale_pos_weight=4.3,  # Handle imbalance (81.2 / 18.8 ≈ 4.3)
+        subsample=0.75,  # REDUCED from 0.8
+        colsample_bytree=0.7,  # REDUCED from 0.8
+        min_child_weight=8,  # INCREASED from 5 for regularization
+        gamma=0.2,  # INCREASED minimum loss reduction (from 0.1)
+        reg_alpha=0.1,  # INCREASED L1 (from 0.05)
+        reg_lambda=0.3,  # INCREASED L2 (from 0.1)
+        scale_pos_weight=4.3,  # Handle imbalance (dynamically computed in training)
         n_jobs=-1,
         random_state=42,
         verbosity=0
     )
 
-    # Random Forest: Increased capacity
+    # Random Forest: Balanced capacity with regularization (2025-11-18 update)
     models['rf'] = RandomForestClassifier(
-        n_estimators=300,  # Increased from 200
-        max_depth=12,  # Increased from 10
-        min_samples_leaf=8,  # Slightly reduced for more flexibility
-        max_features='sqrt',
+        n_estimators=200,  # Reduced from 300 for speed
+        max_depth=10,  # REDUCED from 12 for regularization
+        min_samples_leaf=15,  # INCREASED from 8 for regularization
+        min_samples_split=30,  # NEW: Require more samples for splits
+        max_features='sqrt',  # Good default for high-dimensional data
+        max_samples=0.8,  # NEW: Bootstrap sample size (regularization)
         class_weight='balanced',  # Handle imbalance
         n_jobs=-1,
         random_state=42
@@ -2252,11 +2390,103 @@ def create_base_models(config: Dict[str, Any]) -> Dict[str, Any]:
     return models
 
 
+def compute_sample_weights_with_uniqueness(
+    event_start_times: pd.Series,
+    event_end_times: pd.Series,
+    y: pd.Series,
+    class_weight_mult: float = 5.0
+) -> np.ndarray:
+    """
+    Compute sample weights combining class weighting and sequential bootstrapping.
+
+    Sequential Bootstrapping (de Prado): Down-weight samples that overlap heavily
+    with others to prevent overfitting to clustered events (e.g., 10 trades during
+    a single volatility spike).
+
+    NEW (2025-11-18): Critical for handling increased signal count from loosened filters.
+
+    Args:
+        event_start_times: Start timestamps for each event
+        event_end_times: End timestamps for each event
+        y: Binary labels
+        class_weight_mult: Multiplier for positive class (5.0 = 5x more important)
+
+    Returns:
+        Sample weights array
+    """
+    labeled_mask = ~y.isna()
+    n_labeled = labeled_mask.sum()
+
+    if n_labeled == 0:
+        return np.ones(len(y))
+
+    # Base class weights (handle imbalance)
+    n_positive = (y == 1.0).sum()
+    n_negative = (y == 0.0).sum()
+
+    if n_positive > 0 and n_negative > 0:
+        # Rare winners get higher weight
+        pos_weight = n_negative / (n_positive + 1e-8) * class_weight_mult
+        neg_weight = 1.0
+    else:
+        pos_weight = class_weight_mult
+        neg_weight = 1.0
+
+    class_weights = np.where(y == 1.0, pos_weight, neg_weight)
+    class_weights = np.where(labeled_mask, class_weights, 0.0)
+
+    # Sequential bootstrapping: compute uniqueness weights
+    # Map concurrency (how many events are active at each time)
+    try:
+        # Get all unique timestamps
+        all_times = pd.DatetimeIndex(
+            sorted(set(event_start_times.dropna()).union(set(event_end_times.dropna())))
+        )
+
+        if len(all_times) < 2:
+            # No overlap possible
+            uniqueness_weights = np.ones(len(y))
+        else:
+            # Count concurrency at each event
+            concurrency = pd.Series(0, index=all_times)
+
+            for start, end in zip(event_start_times[labeled_mask], event_end_times[labeled_mask]):
+                if pd.notna(start) and pd.notna(end):
+                    mask = (all_times >= start) & (all_times <= end)
+                    concurrency[mask] += 1
+
+            # Compute average uniqueness for each event
+            uniqueness_weights = np.ones(len(y))
+
+            for idx, (start, end) in enumerate(zip(event_start_times, event_end_times)):
+                if labeled_mask.iloc[idx] and pd.notna(start) and pd.notna(end):
+                    event_times = all_times[(all_times >= start) & (all_times <= end)]
+                    if len(event_times) > 0:
+                        avg_concurrency = concurrency[event_times].mean()
+                        uniqueness_weights[idx] = 1.0 / max(avg_concurrency, 1.0)
+
+            tprint(f"  ✓ Sequential bootstrapping: avg uniqueness = {uniqueness_weights[labeled_mask].mean():.3f}", "INFO")
+
+    except Exception as e:
+        tprint(f"  ⚠️ Sequential bootstrapping failed: {e}, using class weights only", "WARNING")
+        uniqueness_weights = np.ones(len(y))
+
+    # Combined weights
+    final_weights = class_weights * uniqueness_weights
+
+    # Normalize
+    if final_weights.sum() > 0:
+        final_weights = final_weights / final_weights.mean()
+
+    return final_weights
+
+
 def train_ensemble_with_kfold(
     X: pd.DataFrame,
     y: pd.Series,
     horizon: int,
     n_splits: int = 5,
+    sample_weights: Optional[np.ndarray] = None,
     verbose: bool = True
 ) -> Tuple[Dict[str, Any], pd.Series]:
     """
@@ -2265,11 +2495,14 @@ def train_ensemble_with_kfold(
     CRITICAL: Uses purged time-series CV to avoid lookahead bias.
     Each model is trained on fold ∖i and predicts on fold i.
 
+    NEW (2025-11-18): Support for sample weights (class imbalance + sequential bootstrapping)
+
     Args:
         X: Feature matrix
         y: Binary labels
         horizon: Forward-looking horizon (for purging)
         n_splits: Number of CV folds
+        sample_weights: Optional sample weights (e.g., from sequential bootstrapping)
         verbose: Whether to print progress
 
     Returns:
@@ -2328,13 +2561,22 @@ def train_ensemble_with_kfold(
         X_test_clean = X_test[test_mask].fillna(0)
         y_test_clean = y_test[test_mask]
 
+        # Extract sample weights for this fold (if provided)
+        if sample_weights is not None:
+            weights_train_clean = sample_weights[train_idx_purged][train_mask]
+        else:
+            weights_train_clean = None
+
         # Train each base model
         base_models = create_base_models({})
 
         for model_name, model in base_models.items():
             try:
-                # Train
-                model.fit(X_train_clean, y_train_clean)
+                # Train with sample weights
+                if weights_train_clean is not None:
+                    model.fit(X_train_clean, y_train_clean, sample_weight=weights_train_clean)
+                else:
+                    model.fit(X_train_clean, y_train_clean)
                 trained_models[model_name].append(model)
 
                 # Predict on test fold

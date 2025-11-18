@@ -75,6 +75,7 @@ except ImportError:
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+from src.utils.ml_common.diagnostics.snr_diagnostics import SNRDiagnostics
 
 logger = logging.getLogger(__name__)
 
@@ -3795,6 +3796,174 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 tprint(f"⚠️ Warning: Could not generate diagnostics report: {e}", "WARNING")
                 diagnostics_path = None
 
+            # STEP 14: SNR Diagnostics for signal quality assessment
+            tprint("📊 Running SNR diagnostics for signal quality assessment...", "INFO")
+            snr_report_paths = None
+            snr_metrics_summary = {}
+
+            try:
+                # Create SNR diagnostics output directory
+                snr_output_dir = outcomes_dir / f"snr_diagnostics_{config['symbol']}_{config['timeframe']}"
+                snr_output_dir.mkdir(exist_ok=True)
+
+                # Prepare data for SNR analysis
+                # Get valid samples (non-NaN features and labels)
+                valid_mask = ~binary_labels.isna() & ~realized_returns.isna()
+                for col in X_full.columns:
+                    valid_mask &= ~X_full[col].isna()
+
+                if valid_mask.sum() >= 100:  # Minimum samples for meaningful analysis
+                    X_snr = X_full[valid_mask].values
+                    y_binary = binary_labels[valid_mask].values
+                    y_returns = realized_returns[valid_mask].values
+
+                    # Initialize SNR diagnostics
+                    snr_diag = SNRDiagnostics(
+                        output_dir=snr_output_dir,
+                        cv_folds=config.get('snr_cv_folds', 5),
+                        bootstrap_iterations=config.get('snr_bootstrap_iterations', 1000),
+                        permutation_iterations=config.get('snr_permutation_iterations', 1000),
+                        random_state=42,
+                        verbose=True
+                    )
+
+                    # Analyze 1: Binary classification (label prediction)
+                    tprint("  → Analyzing binary label predictability...", "INFO")
+                    from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier as RFC
+                    from sklearn.linear_model import LogisticRegression as LR
+
+                    classification_models = {
+                        'Logistic_Regression': LR(max_iter=1000, random_state=42),
+                        'Random_Forest': RFC(n_estimators=100, max_depth=8, random_state=42, n_jobs=-1),
+                        'Gradient_Boosting': GradientBoostingClassifier(
+                            n_estimators=100, max_depth=5, random_state=42
+                        )
+                    }
+
+                    # For classification, we need to convert probabilities to continuous predictions
+                    # We'll use the probability of class 1 as the prediction
+                    from sklearn.base import BaseEstimator, ClassifierMixin
+
+                    class ProbabilityWrapper(BaseEstimator, ClassifierMixin):
+                        """Wrapper to convert classifier to output probabilities (regression-like)."""
+                        def __init__(self, estimator):
+                            self.estimator = estimator
+
+                        def fit(self, X, y):
+                            self.estimator.fit(X, y)
+                            self.classes_ = np.array([0, 1])
+                            return self
+
+                        def predict(self, X):
+                            # Return probability of class 1
+                            return self.estimator.predict_proba(X)[:, 1]
+
+                        def predict_proba(self, X):
+                            return self.estimator.predict_proba(X)
+
+                    classification_models_wrapped = {
+                        name: ProbabilityWrapper(model)
+                        for name, model in classification_models.items()
+                    }
+
+                    # Run diagnostics on binary labels (as probabilities)
+                    cv_preds_binary, metrics_binary, plots_binary, reports_binary = snr_diag.run_full_diagnostics(
+                        models=classification_models_wrapped,
+                        X=X_snr,
+                        y=y_binary,
+                        groups=None,
+                        stratify=False
+                    )
+
+                    # Analyze 2: Regression (realized returns prediction)
+                    tprint("  → Analyzing realized returns predictability...", "INFO")
+                    from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+                    from sklearn.linear_model import Ridge
+
+                    # Create new diagnostics instance for regression
+                    snr_diag_reg = SNRDiagnostics(
+                        output_dir=snr_output_dir / 'regression',
+                        cv_folds=config.get('snr_cv_folds', 5),
+                        bootstrap_iterations=config.get('snr_bootstrap_iterations', 1000),
+                        permutation_iterations=config.get('snr_permutation_iterations', 1000),
+                        random_state=42,
+                        verbose=True
+                    )
+
+                    regression_models = {
+                        'Ridge_Regression': Ridge(alpha=1.0, random_state=42),
+                        'Random_Forest_Regressor': RandomForestRegressor(
+                            n_estimators=100, max_depth=8, random_state=42, n_jobs=-1
+                        ),
+                        'Gradient_Boosting_Regressor': GradientBoostingRegressor(
+                            n_estimators=100, max_depth=5, random_state=42
+                        )
+                    }
+
+                    cv_preds_returns, metrics_returns, plots_returns, reports_returns = snr_diag_reg.run_full_diagnostics(
+                        models=regression_models,
+                        X=X_snr,
+                        y=y_returns,
+                        groups=None,
+                        stratify=False
+                    )
+
+                    # Create summary metrics
+                    snr_metrics_summary = {
+                        'binary_classification': {
+                            name: {
+                                'r2': float(m.r2),
+                                'snr': float(m.snr) if not np.isinf(m.snr) else 999.0,
+                                'rmse': float(m.rmse),
+                                'bootstrap_ci': [float(m.bootstrap_ci_lower), float(m.bootstrap_ci_upper)],
+                                'permutation_pvalue': float(m.permutation_pvalue)
+                            }
+                            for name, m in metrics_binary.items()
+                        },
+                        'regression_returns': {
+                            name: {
+                                'r2': float(m.r2),
+                                'snr': float(m.snr) if not np.isinf(m.snr) else 999.0,
+                                'rmse': float(m.rmse),
+                                'bootstrap_ci': [float(m.bootstrap_ci_lower), float(m.bootstrap_ci_upper)],
+                                'permutation_pvalue': float(m.permutation_pvalue)
+                            }
+                            for name, m in metrics_returns.items()
+                        }
+                    }
+
+                    # Save combined summary
+                    summary_path = snr_output_dir / 'snr_summary.json'
+                    with open(summary_path, 'w') as f:
+                        json.dump(snr_metrics_summary, f, indent=2)
+
+                    snr_report_paths = {
+                        'binary_csv': reports_binary[0],
+                        'binary_md': reports_binary[1],
+                        'returns_csv': reports_returns[0],
+                        'returns_md': reports_returns[1],
+                        'summary_json': summary_path
+                    }
+
+                    # Print summary
+                    tprint("✅ SNR Diagnostics Summary:", "SUCCESS")
+                    tprint("  Binary Classification (Label Prediction):", "INFO")
+                    for name, metrics in snr_metrics_summary['binary_classification'].items():
+                        tprint(f"    {name}: R²={metrics['r2']:.4f}, SNR={metrics['snr']:.4f}, p={metrics['permutation_pvalue']:.4f}", "INFO")
+
+                    tprint("  Regression (Returns Prediction):", "INFO")
+                    for name, metrics in snr_metrics_summary['regression_returns'].items():
+                        tprint(f"    {name}: R²={metrics['r2']:.4f}, SNR={metrics['snr']:.4f}, p={metrics['permutation_pvalue']:.4f}", "INFO")
+
+                    tprint(f"  📁 SNR reports saved to: {snr_output_dir}", "SUCCESS")
+                else:
+                    tprint(f"⚠️ Insufficient valid samples ({valid_mask.sum()}) for SNR analysis (need >= 100)", "WARNING")
+
+            except Exception as e:
+                tprint(f"⚠️ Warning: SNR diagnostics failed: {e}", "WARNING")
+                import traceback
+                traceback.print_exc()
+
             # Calculate metrics
             avg_auc = np.mean([r['auc'] for r in cv_results]) if cv_results else 0.5
             avg_precision = np.mean([r['precision'] for r in cv_results]) if cv_results else 0.0
@@ -3818,7 +3987,8 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 'artifacts': {
                     'labeled_data_path': labeled_data_path,
                     'labeled_data_file': labeled_data_path,
-                    'diagnostics_report_path': diagnostics_path
+                    'diagnostics_report_path': diagnostics_path,
+                    'snr_report_paths': snr_report_paths
                 },
                 'metrics': {
                     'n_samples': len(labeled_data),
@@ -3832,6 +4002,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     'n_cv_folds': len(cv_results),
                     'elapsed_seconds': elapsed_time,
                     'top_features': dict(top_features),
+                    'snr_diagnostics': snr_metrics_summary,
                     'config': {
                         'profit_threshold': profit_threshold,
                         'stop_threshold': stop_threshold,

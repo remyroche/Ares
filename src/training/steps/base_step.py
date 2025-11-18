@@ -163,6 +163,11 @@ class BaseStep(ABC):
     def quality_assessor(self):
         """Lazy initialization of quality assessor."""
         if self._quality_assessor is None:
+            # Import here to avoid circular import with market_analysis.__init__
+            from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
+                create_cluster_quality_assessor,
+            )
+
             self._quality_assessor = create_cluster_quality_assessor(
                 artifact_manager=self.artifact_manager
             )

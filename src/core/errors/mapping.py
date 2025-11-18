@@ -67,20 +67,14 @@ def map_exception(exc: Exception) -> AppError:
     """Convenience function to map exceptions."""
     return error_mapper.map_exception(exc)
 
-def register_exception_mapping(exception_type: type[Exception], mapper: Callable[[Exception], AppError] | type[AppError]) -> None:
-    """
-    Register a custom exception mapping.
+def register_exception_mapping(exception_type: type[Exception], mapper: Callable[[Exception], AppError]) -> None:
+    """Register a custom exception mapping using a callable mapper.
 
-    Args:
-        exception_type: The exception type to map
-            pass
-        mapper: Either a function that maps the exception to AppError,
-                or an AppError class to instantiate with str(exception)
+    The mapper should be a function taking the original exception and returning
+    an AppError instance. This avoids the need for runtime union types which
+    are not supported on older Python versions.
     """
-    if isinstance(mapper, type) and issubclass(mapper, AppError):
-        error_mapper.register_mapping(exception_type, lambda e: mapper(str(e)))
-    else:
-        error_mapper.register_mapping(exception_type, mapper)
+    error_mapper.register_mapping(exception_type, mapper)
 
 # Global error mapper instance
 error_mapper = ErrorMapper()

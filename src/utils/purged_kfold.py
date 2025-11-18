@@ -18,8 +18,8 @@ class PurgedKFoldTime:
     interpreted as number of rows.
     """
     n_splits: int = 5
-    purge: pd.Timedelta | int = pd.Timedelta(minutes = 30)
-    embargo: pd.Timedelta | int = pd.Timedelta(minutes = 15)
+    purge: Union[pd.Timedelta, int] = pd.Timedelta(minutes = 30)
+    embargo: Union[pd.Timedelta, int] = pd.Timedelta(minutes = 15)
 
     def split(self, X: pd.DataFrame, y: Union[pd.Series, np.ndarray]=None, groups: List[Any]=None) -> Iterator[tuple[np.ndarray, np.ndarray]]:
         if not isinstance(X, pd.DataFrame):
@@ -55,8 +55,8 @@ class PurgedKFoldTime:
                 train_mask[val_idx] = False
                 train_idx = np.nonzero(train_mask)[0]
             else:
-                purge_n = int(self.purge) if isinstance(self.purge, int | float) else 0
-                embargo_n = int(self.embargo) if isinstance(self.embargo, int | float) else 0
+                purge_n = int(self.purge) if isinstance(self.purge, (int, float)) else 0
+                embargo_n = int(self.embargo) if isinstance(self.embargo, (int, float)) else 0
                 left = max(0, val_start_i - purge_n)
                 right = min(n_samples, val_stop_i + embargo_n)
                 train_mask = np.ones(n_samples, dtype = bool)
@@ -104,8 +104,8 @@ class PurgedKFoldTime:
                 train_mask[val_idx] = False
                 train_idx = np.nonzero(train_mask)[0]
             else:
-                purge_n = int(self.purge) if isinstance(self.purge, int | float) else 0
-                embargo_n = int(self.embargo) if isinstance(self.embargo, int | float) else 0
+                purge_n = int(self.purge) if isinstance(self.purge, (int, float)) else 0
+                embargo_n = int(self.embargo) if isinstance(self.embargo, (int, float)) else 0
                 left = max(0, val_start_i - purge_n)
                 right = min(n_samples, val_stop_i + embargo_n)
                 train_mask = np.ones(n_samples, dtype=bool)

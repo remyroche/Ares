@@ -28,8 +28,18 @@ import warnings
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from sklearn.preprocessing import RobustScaler
+from sklearn.pipeline import Pipeline
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score, log_loss
+from sklearn.metrics import (
+    roc_auc_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    log_loss,
+    brier_score_loss,
+    average_precision_score,
+    mutual_info_score,
+)
 from sklearn.isotonic import IsotonicRegression
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.utils.class_weight import compute_class_weight
@@ -53,6 +63,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_PROFIT_THRESHOLD = 0.01  # 1%
 DEFAULT_STOP_THRESHOLD = 0.005   # 0.5%
 DEFAULT_TRANSACTION_COST = 0.0015  # 0.15% per trade
+R_MULTIPLE_POS_THRESHOLD = 0.7
+R_MULTIPLE_NEG_THRESHOLD = -0.25
+ECON_MIN_RETURN_MULTIPLE = 1.25
+TARGET_POWER = 1.5
 
 
 def purge_training_idxs(
@@ -371,7 +385,7 @@ def compute_realized_returns(
     horizon: int = 16,
     transaction_cost: float = 0.0005,
     min_event_spacing: int = 4
-) -> Tuple[pd.Series, pd.Series]:
+) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
     """
     Compute realized returns for each signal event.
 
@@ -400,6 +414,12 @@ def compute_realized_returns(
     binary_labels = pd.Series(index=df.index, dtype=float)
     binary_labels[:] = np.nan
 
+    exit_reasons = pd.Series(index=df.index, dtype=object)
+    exit_reasons[:] = pd.NA
+
+    event_durations = pd.Series(index=df.index, dtype=float)
+    event_durations[:] = np.nan
+
     close_prices = df['close'].values
     consensus_signals = signals['consensus'].values
 
@@ -416,25 +436,31 @@ def compute_realized_returns(
 
     last_event_idx = -min_event_spacing  # Track last signal to avoid overlaps
 
-    for i in range(len(df) - horizon):
+    i = 0
+    n = len(df)
+    max_start = n - horizon
+
+    while i < max_start:
         signal = consensus_signals[i]
 
         # Only create labels where we have a signal
         if signal == 0:
+            i += 1
             continue
 
-        # Handle overlapping events: skip if too close to previous signal
+        # Handle overlapping events: skip ahead if too close to previous signal
         if (i - last_event_idx) < min_event_spacing:
+            i = last_event_idx + min_event_spacing
             continue
 
         # Edge window handling: skip events too close to end of available data
-        if i + horizon >= len(df):
-            # Mark as NaN - incomplete forward window
-            continue
+        if i + horizon >= n:
+            break
 
         entry_price = close_prices[i]
         exit_price = None
         exit_reason = None
+        event_end_idx = i
 
         # Get adaptive thresholds for this event
         profit_thr = profit_thresholds[i]
@@ -442,10 +468,11 @@ def compute_realized_returns(
 
         # Look ahead up to horizon bars
         for j in range(1, horizon + 1):
-            if i + j >= len(df):
+            idx = i + j
+            if idx >= n:
                 break
 
-            future_price = close_prices[i + j]
+            future_price = close_prices[idx]
 
             if signal > 0:  # Long signal
                 pnl = (future_price - entry_price) / entry_price
@@ -454,11 +481,13 @@ def compute_realized_returns(
                 if pnl >= profit_thr:
                     exit_price = future_price
                     exit_reason = 'profit'
+                    event_end_idx = idx
                     break
                 # Hit stop loss
                 elif pnl <= -stop_thr:
                     exit_price = future_price
                     exit_reason = 'stop'
+                    event_end_idx = idx
                     break
 
             elif signal < 0:  # Short signal
@@ -468,16 +497,19 @@ def compute_realized_returns(
                 if pnl >= profit_thr:
                     exit_price = future_price
                     exit_reason = 'profit'
+                    event_end_idx = idx
                     break
                 # Hit stop loss
                 elif pnl <= -stop_thr:
                     exit_price = future_price
                     exit_reason = 'stop'
+                    event_end_idx = idx
                     break
 
         # If no exit, use end-of-horizon price (timeout)
         if exit_price is None:
-            exit_price = close_prices[min(i + horizon, len(df) - 1)]
+            event_end_idx = min(i + horizon, n - 1)
+            exit_price = close_prices[event_end_idx]
             exit_reason = 'timeout'
 
         # Compute realized return accounting for transaction costs
@@ -486,15 +518,36 @@ def compute_realized_returns(
         else:  # Short
             gross_return = (entry_price - exit_price) / entry_price
 
-        net_return = gross_return - transaction_cost  # Subtract costs
+        net_return = gross_return - transaction_cost
 
-        # Store results
+        event_length = event_end_idx - i
+
         realized_returns.iloc[i] = net_return
-        binary_labels.iloc[i] = 1.0 if net_return > 0 else 0.0
+        exit_reasons.iloc[i] = exit_reason
+        event_durations.iloc[i] = float(event_length)
+
+        econ_min_return = ECON_MIN_RETURN_MULTIPLE * transaction_cost
+
+        if abs(net_return) < econ_min_return:
+            binary_labels.iloc[i] = np.nan
+        else:
+            risk_unit = stop_thr if stop_thr > 0 else profit_thr
+            if risk_unit <= 0:
+                r_multiple = 0.0
+            else:
+                r_multiple = net_return / risk_unit
+
+            if r_multiple >= R_MULTIPLE_POS_THRESHOLD:
+                binary_labels.iloc[i] = 1.0
+            elif r_multiple <= R_MULTIPLE_NEG_THRESHOLD:
+                binary_labels.iloc[i] = 0.0
+            else:
+                binary_labels.iloc[i] = np.nan
 
         last_event_idx = i  # Update last event position
+        i += 1
 
-    return realized_returns, binary_labels
+    return realized_returns, binary_labels, exit_reasons, event_durations
 
 
 def create_meta_features(
@@ -548,20 +601,26 @@ def create_meta_features(
     # Compute rolling volatility for regime detection
     vol_for_regime = log_ret.rolling(96).std()
 
-    # Create regime labels using quantiles
+    # Create regime labels using quantiles estimated on early history to reduce lookahead
     try:
-        regime_labels = pd.qcut(
-            vol_for_regime.dropna(),
-            q=3,
-            labels=['low', 'medium', 'high'],
-            duplicates='drop'
-        )
-        # Reindex to match original data
-        features['volatility_regime'] = regime_labels.reindex(df.index)
+        vol_non_null = vol_for_regime.dropna()
+        if len(vol_non_null) >= 10:
+            split_idx = max(1, int(len(vol_non_null) * 0.7))
+            vol_train = vol_non_null.iloc[:split_idx]
+        else:
+            vol_train = vol_non_null
 
-        # One-hot encode (drop first to avoid multicollinearity)
-        regime_dummies = pd.get_dummies(features['volatility_regime'], prefix='vol_regime', drop_first=True)
-        features = features.join(regime_dummies)
+        if len(vol_train) >= 3:
+            q1, q2 = vol_train.quantile([1 / 3, 2 / 3])
+            bins = [-np.inf, q1, q2, np.inf]
+            labels = ['low', 'medium', 'high']
+            regime_full = pd.cut(vol_for_regime, bins=bins, labels=labels)
+            features['volatility_regime'] = regime_full
+
+            regime_dummies = pd.get_dummies(features['volatility_regime'], prefix='vol_regime', drop_first=True)
+            features = features.join(regime_dummies)
+        else:
+            raise ValueError("Not enough non-null volatility samples for regime estimation")
     except Exception as e:
         tprint(f"⚠️ Warning: Could not create volatility regimes: {e}", "WARNING")
         features['vol_regime_medium'] = 0
@@ -662,11 +721,22 @@ def create_meta_features(
         vol_mean = df['volume'].rolling(96).mean()
         vol_std = df['volume'].rolling(96).std()
         features['volume_zscore'] = (df['volume'] - vol_mean) / (vol_std + 1e-8)
+
+        # Additional volume/flow proxies
+        volume_long_mean = df['volume'].rolling(96).mean()
+        features['volume_spike'] = df['volume'] / (volume_long_mean + 1e-8)
+        features['volume_spike_ema'] = features['volume_spike'].ewm(span=20).mean()
+
+        signed_volume = np.sign(returns.fillna(0.0)) * df['volume']
+        features['signed_volume_ema'] = signed_volume.ewm(span=20).mean()
     else:
         features['volume_ratio'] = 1.0
         features['volume_trend'] = 1.0
         features['vol_price_corr'] = 0.0
         features['volume_zscore'] = 0.0
+        features['volume_spike'] = 1.0
+        features['volume_spike_ema'] = 1.0
+        features['signed_volume_ema'] = 0.0
 
     # ===== MARKET MOMENTUM =====
 
@@ -700,6 +770,36 @@ def create_meta_features(
         features['hour'] = 0
         features['day_of_week'] = 0
 
+    # Volatility / trend interaction features
+    if 'kalman_trend' in features.columns and 'vol_ratio' in features.columns:
+        features['kalman_trend_x_vol_ratio'] = features['kalman_trend'] * features['vol_ratio']
+    if 'sma_slope' in features.columns and 'vol_ratio' in features.columns:
+        features['sma_slope_x_vol_ratio'] = features['sma_slope'] * features['vol_ratio']
+    if 'price_vs_sma20' in features.columns and 'vol_ratio' in features.columns:
+        features['price_vs_sma20_x_vol_ratio'] = features['price_vs_sma20'] * features['vol_ratio']
+    if 'range_position' in features.columns and 'vol_ratio' in features.columns:
+        features['range_position_x_vol_ratio'] = features['range_position'] * features['vol_ratio']
+
+    # Signal-aware diagnostic features (without leaking raw rule logic)
+    if 'consensus' in signals.columns:
+        signal_consensus = signals['consensus']
+        signal_active = (signal_consensus != 0).astype(int)
+        features['signal_active'] = signal_active
+
+        idx = np.arange(len(df))
+        last_signal_idx = np.where(signal_active == 1, idx, np.nan)
+        last_signal_idx_series = pd.Series(last_signal_idx, index=df.index).ffill()
+
+        signal_age = idx - last_signal_idx_series.values
+        signal_age[last_signal_idx_series.isna().values] = np.nan
+        features['bars_since_last_signal'] = signal_age
+
+        features['signal_density_50'] = signal_consensus.abs().rolling(50).sum()
+    else:
+        features['signal_active'] = 0
+        features['bars_since_last_signal'] = np.nan
+        features['signal_density_50'] = 0.0
+
     # ===== RAW SIGNALS (OPTIONAL, FOR DIAGNOSTICS) =====
 
     if include_raw_signals:
@@ -708,6 +808,14 @@ def create_meta_features(
         features['signal_consensus'] = signals['consensus'].abs()
 
     return features
+
+
+def prepare_feature_matrix(features: pd.DataFrame) -> pd.DataFrame:
+    numeric = features.select_dtypes(include=[np.number])
+    if numeric.empty:
+        return numeric
+    numeric = numeric.astype(np.float32, copy=False)
+    return numeric
 
 
 def fit_probability_to_return_mapping(
@@ -758,7 +866,8 @@ def translate_to_targets_with_isotonic(
     realized_returns: pd.Series,
     probabilities: np.ndarray,
     signals: pd.DataFrame,
-    iso_regressor: IsotonicRegression
+    iso_regressor: IsotonicRegression,
+    cost_threshold: float = DEFAULT_TRANSACTION_COST,
 ) -> Tuple[pd.Series, pd.Series]:
     """
     Translate probabilities to continuous targets using isotonic regression.
@@ -781,7 +890,17 @@ def translate_to_targets_with_isotonic(
 
     # VECTORIZED: Predict on entire probability array at once (much faster)
     expected_returns = iso_regressor.predict(probabilities)
-    expected_returns = np.maximum(0, expected_returns)  # Clip negative returns to 0
+    expected_returns = np.maximum(0.0, expected_returns)
+
+    cost_thr = float(cost_threshold)
+    if cost_thr > 0.0:
+        below_cost_mask = expected_returns < cost_thr
+        expected_returns[below_cost_mask] = 0.0
+        above_cost_mask = expected_returns >= cost_thr
+        if np.any(above_cost_mask):
+            ratio = expected_returns[above_cost_mask] / cost_thr
+            ratio = np.maximum(1.0, ratio)
+            expected_returns[above_cost_mask] = cost_thr * np.power(ratio, TARGET_POWER)
 
     # Vectorized assignment based on signal direction
     long_mask = (consensus > 0) & (~realized_returns.isna())
@@ -836,6 +955,9 @@ def generate_diagnostics_report(
     # Prepare data
     labeled_mask = ~binary_labels.isna()
     n_labeled = labeled_mask.sum()
+
+    # Represent probabilities as Series aligned with index for richer diagnostics
+    prob_series = pd.Series(probabilities, index=labeled_data.index)
 
     report_lines = []
     report_lines.append("# Meta-Labeling Diagnostics Report")
@@ -912,8 +1034,9 @@ def generate_diagnostics_report(
     # ===== 3. CORRELATION ANALYSIS =====
     report_lines.append("\n## 3. Feature-Label Correlation Analysis\n")
 
-    # Compute correlations
-    features_clean = meta_features[labeled_mask].fillna(0)
+    # Compute correlations (numeric features only to avoid categorical fill issues)
+    features_clean = meta_features[labeled_mask]
+    features_clean = features_clean.select_dtypes(include=[np.number]).fillna(0)
     labels_clean = binary_labels[labeled_mask]
 
     try:
@@ -958,17 +1081,31 @@ def generate_diagnostics_report(
 
     report_lines.append("### Label = 1 (Profitable Signals):\n")
     report_lines.append(f"- **Count:** {len(returns_positive)}")
-    report_lines.append(f"- **Mean return:** {returns_positive.mean():.2%}")
-    report_lines.append(f"- **Median return:** {returns_positive.median():.2%}")
-    report_lines.append(f"- **Std return:** {returns_positive.std():.2%}")
-    report_lines.append(f"- **% Actually positive:** {(returns_positive > 0).sum() / len(returns_positive):.1%}")
+    if len(returns_positive) > 0:
+        report_lines.append(f"- **Mean return:** {returns_positive.mean():.2%}")
+        report_lines.append(f"- **Median return:** {returns_positive.median():.2%}")
+        report_lines.append(f"- **Std return:** {returns_positive.std():.2%}")
+        pct_pos_pos = (returns_positive > 0).sum() / len(returns_positive)
+        report_lines.append(f"- **% Actually positive:** {pct_pos_pos:.1%}")
+    else:
+        report_lines.append("- **Mean return:** N/A")
+        report_lines.append("- **Median return:** N/A")
+        report_lines.append("- **Std return:** N/A")
+        report_lines.append("- **% Actually positive:** N/A")
 
     report_lines.append("\n### Label = 0 (Unprofitable Signals):\n")
     report_lines.append(f"- **Count:** {len(returns_negative)}")
-    report_lines.append(f"- **Mean return:** {returns_negative.mean():.2%}")
-    report_lines.append(f"- **Median return:** {returns_negative.median():.2%}")
-    report_lines.append(f"- **Std return:** {returns_negative.std():.2%}")
-    report_lines.append(f"- **% Actually positive:** {(returns_negative > 0).sum() / len(returns_negative):.1%}")
+    if len(returns_negative) > 0:
+        report_lines.append(f"- **Mean return:** {returns_negative.mean():.2%}")
+        report_lines.append(f"- **Median return:** {returns_negative.median():.2%}")
+        report_lines.append(f"- **Std return:** {returns_negative.std():.2%}")
+        pct_pos_neg = (returns_negative > 0).sum() / len(returns_negative)
+        report_lines.append(f"- **% Actually positive:** {pct_pos_neg:.1%}")
+    else:
+        report_lines.append("- **Mean return:** N/A")
+        report_lines.append("- **Median return:** N/A")
+        report_lines.append("- **Std return:** N/A")
+        report_lines.append("- **% Actually positive:** N/A")
 
     # Overlap check
     overlap_pos_in_neg = (returns_positive < 0).sum()
@@ -983,6 +1120,30 @@ def generate_diagnostics_report(
             report_lines.append(f"\n⚠️ **Warning:** High label overlap ({pct_overlap:.1%}) - labels may be too noisy or horizon too short")
         else:
             report_lines.append(f"\n✅ **OK:** Acceptable label overlap ({pct_overlap:.1%})")
+
+    # Cost-aware economic summary
+    try:
+        tx_cost = float(config.get('transaction_cost', DEFAULT_TRANSACTION_COST))
+    except Exception:
+        tx_cost = float(DEFAULT_TRANSACTION_COST)
+
+    if len(returns_labeled) > 0:
+        unconditional_mean = float(returns_labeled.mean())
+        frac_small = float((returns_labeled.abs() < tx_cost).mean())
+    else:
+        unconditional_mean = 0.0
+        frac_small = 0.0
+
+    if len(returns_positive) > 0:
+        mean_pos_ret = float(returns_positive.mean())
+    else:
+        mean_pos_ret = 0.0
+
+    report_lines.append("\n### Cost-Aware Event Quality Summary\n")
+    report_lines.append(f"- **Transaction cost (per event, approx):** {tx_cost:.3%}")
+    report_lines.append(f"- **Unconditional mean event return:** {unconditional_mean:.2%}")
+    report_lines.append(f"- **Mean return (label=1) minus cost:** {(mean_pos_ret - tx_cost):.2%}")
+    report_lines.append(f"- **Fraction of labeled events with |return| < cost:** {frac_small:.1%}")
 
     # ===== 5. TIME-SERIES STABILITY / REGIME CHECK =====
     report_lines.append("\n## 5. Time-Series Stability and Regime Analysis\n")
@@ -1036,7 +1197,7 @@ def generate_diagnostics_report(
 
     try:
         # Calibration analysis
-        prob_clean = probabilities[labeled_mask]
+        prob_clean = prob_series[labeled_mask]
         labels_clean_array = binary_labels[labeled_mask].values
 
         # Bin probabilities
@@ -1067,17 +1228,54 @@ def generate_diagnostics_report(
         else:
             report_lines.append(f"\n✅ **OK:** Reasonable calibration")
 
+        # Monotonicity and slope diagnostics: probability bins vs realized returns
+        try:
+            mean_ret_by_bin = []
+            mean_prob_by_bin = []
+            unique_bins = sorted([b for b in prob_bins.dropna().unique()])
+            for b in unique_bins:
+                mask_bin = (prob_bins == b)
+                if mask_bin.sum() == 0:
+                    continue
+                mean_prob_bin = prob_clean[mask_bin].mean()
+                mean_ret_bin = returns_labeled[mask_bin].mean()
+                mean_prob_by_bin.append(float(mean_prob_bin))
+                mean_ret_by_bin.append(float(mean_ret_bin))
+
+            if len(mean_ret_by_bin) >= 2:
+                violations = 0
+                for i in range(len(mean_ret_by_bin) - 1):
+                    if mean_ret_by_bin[i + 1] < mean_ret_by_bin[i] - 1e-8:
+                        violations += 1
+                denom = max(len(mean_ret_by_bin) - 1, 1)
+                violation_frac = violations / denom
+
+                # Simple slope in upper half of probability spectrum
+                mid = len(mean_prob_by_bin) // 2
+                x = np.array(mean_prob_by_bin[mid:], dtype=float)
+                y = np.array(mean_ret_by_bin[mid:], dtype=float)
+                if x.size >= 2 and np.var(x) > 0:
+                    slope_high = float(np.cov(x, y)[0, 1] / (np.var(x) + 1e-8))
+                else:
+                    slope_high = float('nan')
+
+                report_lines.append("\n### Monotonicity and Slope Checks (Prob → Realized Return)\n")
+                report_lines.append(f"- **Monotonicity violations (adjacent bins):** {violations} / {denom}")
+                report_lines.append(f"- **Approx. slope in high-probability region:** {slope_high:.6f}")
+        except Exception as e_mono:
+            report_lines.append(f"\n⚠️ Could not compute monotonicity diagnostics: {e_mono}")
+
     except Exception as e:
         report_lines.append(f"\n⚠️ Could not compute calibration: {e}")
 
     # Probability distribution
     report_lines.append("\n### Probability Distribution:\n")
-    report_lines.append(f"- **Mean probability:** {probabilities.mean():.3f}")
-    report_lines.append(f"- **Median probability:** {np.median(probabilities):.3f}")
-    report_lines.append(f"- **Std probability:** {probabilities.std():.3f}")
+    report_lines.append(f"- **Mean probability:** {prob_series.mean():.3f}")
+    report_lines.append(f"- **Median probability:** {prob_series.median():.3f}")
+    report_lines.append(f"- **Std probability:** {prob_series.std():.3f}")
 
     # Check for collapsed predictions
-    if probabilities.std() < 0.05:
+    if prob_series.std() < 0.05:
         report_lines.append(f"\n⚠️ **Warning:** Very low probability variance - model may not be learning useful patterns")
 
     # ===== 7. SHAP / FEATURE IMPORTANCE =====
@@ -1141,6 +1339,389 @@ def generate_diagnostics_report(
     else:
         report_lines.append("\n⚠️ Smoothed labels not available")
 
+    # ===== 9. EVENT MECHANICS: EXIT REASONS, DURATIONS, R-MULTIPLES =====
+    report_lines.append("\n## 9. Event Mechanics and R-Multiples\n")
+    report_lines.append(
+        "These diagnostics describe how trades exit (profit, stop, or timeout), "
+        "how long they stay open, and how large the realized return is relative "
+        "to the configured stop-loss (R-multiple). They help verify that the "
+        "triple-barrier / TPSL configuration produces economically meaningful events.\n"
+    )
+
+    try:
+        exit_reasons_series = labeled_data.get('exit_reason')
+        durations_series = labeled_data.get('event_duration_bars')
+        stop_threshold_series = labeled_data.get('adaptive_stop_threshold')
+
+        if exit_reasons_series is not None:
+            exit_labeled = exit_reasons_series[labeled_mask].dropna()
+            total_events = len(exit_labeled)
+            if total_events > 0:
+                value_counts = exit_labeled.value_counts(normalize=True)
+                report_lines.append("\n### Exit Reason Mix (Labeled Events)\n")
+                for reason, frac in value_counts.items():
+                    report_lines.append(f"- **{reason}:** {frac:.1%}")
+
+        if durations_series is not None:
+            dur_clean = durations_series[labeled_mask].dropna()
+            if len(dur_clean) > 0:
+                report_lines.append("\n### Event Duration Distribution (Bars)\n")
+                report_lines.append(f"- **Mean duration:** {dur_clean.mean():.2f}")
+                report_lines.append(f"- **Median duration:** {dur_clean.median():.2f}")
+                report_lines.append(f"- **90th percentile:** {dur_clean.quantile(0.9):.2f}")
+
+        if stop_threshold_series is not None:
+            stop_labeled = stop_threshold_series[labeled_mask]
+            # Avoid division by zero
+            r_multiple = returns_labeled / (stop_labeled.replace(0, np.nan) + 1e-8)
+            r_multiple_pos = r_multiple[labels_clean == 1]
+            r_multiple_neg = r_multiple[labels_clean == 0]
+
+            report_lines.append("\n### R-Multiple Distribution (Return / Stop Threshold)\n")
+            if len(r_multiple_pos) > 0:
+                report_lines.append(f"- **R-multiple (label=1) mean:** {r_multiple_pos.mean():.2f}")
+                report_lines.append(f"- **R-multiple (label=1) median:** {r_multiple_pos.median():.2f}")
+            if len(r_multiple_neg) > 0:
+                report_lines.append(f"- **R-multiple (label=0) mean:** {r_multiple_neg.mean():.2f}")
+                report_lines.append(f"- **R-multiple (label=0) median:** {r_multiple_neg.median():.2f}")
+
+    except Exception as e:
+        report_lines.append(f"\n⚠️ Could not compute event mechanics diagnostics: {e}")
+
+    # ===== 10. REGIME AND TIME-CONDITIONAL LABEL CHECKS =====
+    report_lines.append("\n## 10. Regime and Time-Conditional Label Checks\n")
+    report_lines.append(
+        "These metrics show how label base-rates and realized returns change "
+        "across volatility regimes, trend states, and time-of-day/weekday. "
+        "Large differences indicate that learnability and edge are "
+        "regime-dependent, which is important for downstream model conditioning.\n"
+    )
+
+    try:
+        # Volatility regime base-rates
+        regime_series = None
+        if 'volatility_regime' in meta_features.columns:
+            regime_series = meta_features['volatility_regime']
+        elif 'vol_regime_high' in meta_features.columns or 'vol_regime_medium' in meta_features.columns:
+            # Derive simple labels from dummies
+            regime_labels = []
+            for idx in meta_features.index:
+                if 'vol_regime_high' in meta_features.columns and meta_features.at[idx, 'vol_regime_high'] == 1:
+                    regime_labels.append('high')
+                elif 'vol_regime_medium' in meta_features.columns and meta_features.at[idx, 'vol_regime_medium'] == 1:
+                    regime_labels.append('medium')
+                else:
+                    regime_labels.append('low')
+            regime_series = pd.Series(regime_labels, index=meta_features.index)
+
+        if regime_series is not None:
+            regime_labeled = regime_series[labeled_mask]
+            report_lines.append("\n### Label Base-Rate by Volatility Regime\n")
+            for regime in sorted(regime_labeled.dropna().unique()):
+                mask_reg = labeled_mask & (regime_series == regime)
+                if mask_reg.sum() < 10:
+                    continue
+                pos_rate_reg = binary_labels[mask_reg].mean()
+                mean_ret_reg = realized_returns[mask_reg].mean()
+                report_lines.append(
+                    f"- **Regime {regime}:** positive={pos_rate_reg:.1%}, mean_return={mean_ret_reg:.2%}"
+                )
+
+        # Trend-conditional checks using price_vs_sma20 if available
+        if 'price_vs_sma20' in meta_features.columns:
+            trend_measure = meta_features['price_vs_sma20']
+            trend_labeled = trend_measure[labeled_mask]
+            high_trend = trend_labeled.quantile(0.75)
+            low_trend = trend_labeled.quantile(0.25)
+
+            strong_up = labeled_mask & (trend_measure >= high_trend)
+            strong_down = labeled_mask & (trend_measure <= low_trend)
+
+            if strong_up.sum() >= 10:
+                report_lines.append("\n### Trend-Conditional (Price vs SMA20)\n")
+                pos_up = binary_labels[strong_up].mean()
+                mean_ret_up = realized_returns[strong_up].mean()
+                report_lines.append(
+                    f"- **Strong uptrend:** positive={pos_up:.1%}, mean_return={mean_ret_up:.2%}"
+                )
+            if strong_down.sum() >= 10:
+                pos_down = binary_labels[strong_down].mean()
+                mean_ret_down = realized_returns[strong_down].mean()
+                report_lines.append(
+                    f"- **Strong downtrend:** positive={pos_down:.1%}, mean_return={mean_ret_down:.2%}"
+                )
+
+        # Time-of-day / weekday conditional
+        if 'hour' in meta_features.columns:
+            hour_labeled = meta_features['hour'][labeled_mask]
+            pos_by_hour = labels_clean.groupby(hour_labeled).mean()
+            if len(pos_by_hour) > 0:
+                top_hours = pos_by_hour.sort_values(ascending=False).head(3)
+                bottom_hours = pos_by_hour.sort_values().head(3)
+                report_lines.append("\n### Time-of-Day Positive Rates (Top/Bottom)\n")
+                report_lines.append("- **Top hours by positive rate:**")
+                for h, v in top_hours.items():
+                    report_lines.append(f"  - Hour {int(h)}: {v:.1%}")
+                report_lines.append("- **Bottom hours by positive rate:**")
+                for h, v in bottom_hours.items():
+                    report_lines.append(f"  - Hour {int(h)}: {v:.1%}")
+
+        if 'day_of_week' in meta_features.columns:
+            dow_labeled = meta_features['day_of_week'][labeled_mask]
+            pos_by_dow = labels_clean.groupby(dow_labeled).mean()
+            if len(pos_by_dow) > 0:
+                report_lines.append("\n### Day-of-Week Positive Rates\n")
+                for d, v in pos_by_dow.items():
+                    report_lines.append(f"- Day {int(d)}: {v:.1%}")
+
+    except Exception as e:
+        report_lines.append(f"\n⚠️ Could not compute regime/time-conditional diagnostics: {e}")
+
+    # ===== 11. LABEL–RETURN SEPARATION AND INFORMATION CONTENT =====
+    report_lines.append("\n## 11. Label–Return Separation and Information Content\n")
+    report_lines.append(
+        "This section quantifies how well the labels separate profitable from "
+        "unprofitable events (effect size) and how much information they carry "
+        "about the sign of future returns compared to a random baseline "
+        "(mutual information and permutation tests).\n"
+    )
+
+    try:
+        if len(returns_positive) > 0 and len(returns_negative) > 0:
+            mean_diff = returns_positive.mean() - returns_negative.mean()
+            var_pos = returns_positive.var()
+            var_neg = returns_negative.var()
+            pooled_std = np.sqrt(((len(returns_positive) - 1) * var_pos + (len(returns_negative) - 1) * var_neg) /
+                                 max(len(returns_positive) + len(returns_negative) - 2, 1))
+            effect_size = mean_diff / pooled_std if pooled_std > 0 else np.nan
+
+            report_lines.append("\n### Separation Metrics\n")
+            report_lines.append(f"- **Mean return difference (label=1 - label=0):** {mean_diff:.2%}")
+            report_lines.append(f"- **Cohen's d effect size:** {effect_size:.3f}")
+
+        # Information content vs trivial baseline using mutual information
+        label_array = labels_clean.values.astype(int)
+        # Binary sign of realized return
+        ret_sign = (returns_labeled > 0).astype(int).values
+        if len(label_array) > 0:
+            mi_observed = mutual_info_score(label_array, ret_sign)
+            # Baseline: shuffle returns relative to labels multiple times
+            rng = np.random.default_rng(42)
+            mi_baseline_samples = []
+            for _ in range(50):
+                perm = rng.permutation(len(ret_sign))
+                mi_baseline_samples.append(mutual_info_score(label_array, ret_sign[perm]))
+            mi_baseline_mean = float(np.mean(mi_baseline_samples))
+            report_lines.append("\n### Information Content vs Permutation Baseline\n")
+            report_lines.append(f"- **Mutual information (labels vs realized sign):** {mi_observed:.4f}")
+            report_lines.append(f"- **Baseline MI (mean over permutations):** {mi_baseline_mean:.4f}")
+
+    except Exception as e:
+        report_lines.append(f"\n⚠️ Could not compute separation/information diagnostics: {e}")
+
+    # ===== 12. TARGET AND EXPECTED-RETURN ALIGNMENT =====
+    report_lines.append("\n## 12. Target and Expected-Return Alignment\n")
+    report_lines.append(
+        "Here we check whether the continuous targets produced by the isotonic "
+        "mapping are consistent with realized returns: higher targets should "
+        "correspond to higher average realized P&L, and most non-zero targets "
+        "should exceed transaction costs.\n"
+    )
+
+    try:
+        # Build unified target magnitude series
+        target_long = labeled_data.get('target_long')
+        target_short = labeled_data.get('target_short')
+        if target_long is not None and target_short is not None:
+            target_mag = pd.Series(0.0, index=labeled_data.index)
+            long_mask_target = target_long > 0
+            short_mask_target = target_short > 0
+            target_mag[long_mask_target] = target_long[long_mask_target]
+            target_mag[short_mask_target] = target_short[short_mask_target]
+
+            trade_mask = labeled_mask & (target_mag > 0) & ~realized_returns.isna()
+            target_trades = target_mag[trade_mask]
+            returns_trades = realized_returns[trade_mask]
+
+            if len(target_trades) > 0:
+                corr_tr = target_trades.corr(returns_trades)
+                mse_tr = float(np.mean((target_trades - returns_trades) ** 2))
+                report_lines.append("\n### Target vs Realized Return\n")
+                report_lines.append(f"- **Correlation (target, realized):** {corr_tr:.3f}")
+                report_lines.append(f"- **MSE (target vs realized):** {mse_tr:.6f}")
+
+                # Decile check
+                try:
+                    deciles = pd.qcut(target_trades, 10, labels=False, duplicates='drop')
+                    mean_target_by_decile = target_trades.groupby(deciles).mean()
+                    mean_ret_by_decile = returns_trades.groupby(deciles).mean()
+                    report_lines.append("\n### Target/Return by Target Decile\n")
+                    for d in mean_target_by_decile.index:
+                        report_lines.append(
+                            f"- Decile {int(d)}: target={mean_target_by_decile[d]:.4f}, realized={mean_ret_by_decile[d]:.4f}"
+                        )
+                except Exception as e_dec:
+                    report_lines.append(f"\n⚠️ Could not compute decile diagnostics: {e_dec}")
+
+            # Target distribution sanity
+            target_nz = target_mag[target_mag > 0]
+            if len(target_nz) > 0:
+                report_lines.append("\n### Target Distribution Sanity\n")
+                report_lines.append(f"- **Non-zero target fraction (all samples):** {len(target_nz) / len(target_mag):.1%}")
+                report_lines.append(f"- **Mean non-zero target:** {target_nz.mean():.4f}")
+                report_lines.append(f"- **Median non-zero target:** {target_nz.median():.4f}")
+                tx_cost = float(config.get('transaction_cost', DEFAULT_TRANSACTION_COST))
+                frac_below_cost = (target_nz < tx_cost).mean()
+                report_lines.append(f"- **Fraction of targets below transaction cost ({tx_cost:.3%}):** {frac_below_cost:.1%}")
+
+    except Exception as e:
+        report_lines.append(f"\n⚠️ Could not compute target/return alignment diagnostics: {e}")
+
+    # ===== 13. COST-AWARE METRICS AND THRESHOLD P&L =====
+    report_lines.append("\n## 13. Cost-Aware Metrics and Threshold P&L\n")
+    report_lines.append(
+        "These diagnostics evaluate the meta-model from a trading perspective: "
+        "global AUC/Brier/PR-AUC, and how mean and cumulative returns evolve "
+        "as you raise the probability threshold used to filter trades. This "
+        "helps choose probability cutoffs that are profitable after costs.\n"
+    )
+
+    try:
+        # Cost-aware classification metrics
+        if len(prob_clean) > 0:
+            try:
+                brier = brier_score_loss(labels_clean_array, prob_clean)
+                ap = average_precision_score(labels_clean_array, prob_clean)
+                auc_global = roc_auc_score(labels_clean_array, prob_clean)
+                report_lines.append("\n### Cost-Aware Classification Metrics (OOF)\n")
+                report_lines.append(f"- **AUC:** {auc_global:.3f}")
+                report_lines.append(f"- **Brier score:** {brier:.4f}")
+                report_lines.append(f"- **Average precision (PR-AUC):** {ap:.3f}")
+            except Exception as e_metrics:
+                report_lines.append(f"\n⚠️ Could not compute cost-aware metrics: {e_metrics}")
+
+        # Threshold sweep P&L curves
+        report_lines.append("\n### Threshold-Sweep P&L (Using Meta Probability)\n")
+        report_lines.append("\n| Threshold | Trades | Mean Return | Cum Return | Sharpe (per trade) |")
+        report_lines.append("|----------|--------|-------------|------------|---------------------|")
+
+        # Evaluate a dense grid of thresholds in the operational region [0.50, 0.65]
+        thresholds = [round(x, 2) for x in np.arange(0.5, 0.651, 0.01)]
+        for thr in thresholds:
+            mask_thr = (prob_series >= thr) & labeled_mask & ~realized_returns.isna()
+            n_trades_thr = int(mask_thr.sum())
+            if n_trades_thr == 0:
+                report_lines.append(f"| {thr:.2f} | 0 | N/A | N/A | N/A |")
+                continue
+            ret_thr = realized_returns[mask_thr]
+            mean_ret_thr = ret_thr.mean()
+            std_ret_thr = ret_thr.std()
+            cum_ret_thr = ret_thr.sum()
+            sharpe_thr = (
+                mean_ret_thr / (std_ret_thr + 1e-8) * np.sqrt(n_trades_thr)
+                if std_ret_thr > 0
+                else np.nan
+            )
+            report_lines.append(
+                f"| {thr:.2f} | {n_trades_thr} | {mean_ret_thr:.2%} | {cum_ret_thr:.2%} | {sharpe_thr:.3f} |"
+            )
+
+    except Exception as e:
+        report_lines.append(f"\n⚠️ Could not compute threshold/P&L diagnostics: {e}")
+
+    # ===== 14. STABILITY AND BOOTSTRAP STATISTICS =====
+    report_lines.append("\n## 14. Stability and Bootstrap Statistics\n")
+    report_lines.append(
+        "Finally, we assess how stable the labeling and model performance are "
+        "across time (years and time-series folds) and how sensitive key "
+        "metrics such as positive rate and label–return separation are under "
+        "bootstrap resampling. Tight confidence intervals indicate robust "
+        "signal rather than fragile noise.\n"
+    )
+
+    try:
+        # Per-year stability (if datetime index)
+        if isinstance(labeled_data.index, pd.DatetimeIndex):
+            years = labeled_data.index.year
+            report_lines.append("\n### Per-Year Label and Return Stability\n")
+            for year in sorted(np.unique(years)):
+                year_mask = labeled_mask & (years == year)
+                if year_mask.sum() < 20:
+                    continue
+                pos_rate_y = binary_labels[year_mask].mean()
+                mean_ret_y = realized_returns[year_mask].mean()
+                try:
+                    auc_y = roc_auc_score(binary_labels[year_mask], prob_series[year_mask])
+                except Exception:
+                    auc_y = float('nan')
+                report_lines.append(
+                    f"- **Year {int(year)}:** positive={pos_rate_y:.1%}, mean_return={mean_ret_y:.2%}, AUC={auc_y:.3f}"
+                )
+
+        # Approximate per-fold stability using TimeSeriesSplit on chronology
+        try:
+            tscv_diag = TimeSeriesSplit(n_splits=5)
+            indices = np.arange(len(labeled_data))
+            report_lines.append("\n### Time-Series Fold Stability (Approximate)\n")
+            for fold_idx, (_, test_idx) in enumerate(tscv_diag.split(indices)):
+                fold_mask = pd.Series(False, index=labeled_data.index)
+                fold_mask.iloc[test_idx] = True
+                fold_mask &= labeled_mask
+                if fold_mask.sum() < 20:
+                    continue
+                pos_rate_f = binary_labels[fold_mask].mean()
+                mean_ret_f = realized_returns[fold_mask].mean()
+                try:
+                    auc_f = roc_auc_score(binary_labels[fold_mask], prob_series[fold_mask])
+                except Exception:
+                    auc_f = float('nan')
+                report_lines.append(
+                    f"- **Fold {fold_idx + 1}:** positive={pos_rate_f:.1%}, mean_return={mean_ret_f:.2%}, AUC={auc_f:.3f}"
+                )
+        except Exception as e_fold:
+            report_lines.append(f"\n⚠️ Could not compute fold stability: {e_fold}")
+
+        # Bootstrap label statistics
+        report_lines.append("\n### Bootstrap Label Statistics (Labeled Events)\n")
+        try:
+            n_boot = 100
+            idx = np.where(labeled_mask.values)[0]
+            if len(idx) >= 10:
+                rng = np.random.default_rng(123)
+                boot_pos_rates = []
+                boot_mean_diffs = []
+                for _ in range(n_boot):
+                    sample_idx = rng.choice(idx, size=len(idx), replace=True)
+                    y_boot = binary_labels.iloc[sample_idx]
+                    r_boot = realized_returns.iloc[sample_idx]
+                    pos_rate_b = y_boot.mean()
+                    boot_pos_rates.append(pos_rate_b)
+
+                    r_pos_b = r_boot[y_boot == 1]
+                    r_neg_b = r_boot[y_boot == 0]
+                    if len(r_pos_b) > 0 and len(r_neg_b) > 0:
+                        boot_mean_diffs.append(r_pos_b.mean() - r_neg_b.mean())
+
+                def _ci(arr: List[float], lower: float = 2.5, upper: float = 97.5) -> Tuple[float, float]:
+                    arr_np = np.array(arr, dtype=float)
+                    arr_np = arr_np[np.isfinite(arr_np)]
+                    if arr_np.size == 0:
+                        return float('nan'), float('nan')
+                    return float(np.percentile(arr_np, lower)), float(np.percentile(arr_np, upper))
+
+                pos_low, pos_high = _ci(boot_pos_rates)
+                diff_low, diff_high = _ci(boot_mean_diffs)
+                report_lines.append(f"- **Positive rate 95% CI:** [{pos_low:.1%}, {pos_high:.1%}]")
+                if not np.isnan(diff_low):
+                    report_lines.append(
+                        f"- **Mean return diff (label=1 - label=0) 95% CI:** [{diff_low:.2%}, {diff_high:.2%}]"
+                    )
+        except Exception as e_boot:
+            report_lines.append(f"\n⚠️ Could not compute bootstrap statistics: {e_boot}")
+
+    except Exception as e:
+        report_lines.append(f"\n⚠️ Could not compute stability/bootstrap diagnostics: {e}")
+
     # ===== SUMMARY =====
     report_lines.append("\n---\n")
     report_lines.append("\n## Summary and Recommendations\n")
@@ -1180,41 +1761,50 @@ def create_base_models(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     models = {}
 
-    # LightGBM: Optimized for AUC with early stopping and regularization
+    # LightGBM: Slightly higher capacity and weaker regularization for richer patterns
     models['lgbm'] = lgb.LGBMClassifier(
         objective='binary',
         metric='auc',
-        n_estimators=500,
-        max_depth=5,
+        n_estimators=800,
+        max_depth=6,
         learning_rate=0.01,
-        num_leaves=31,
-        min_child_samples=20,
+        num_leaves=63,
+        min_child_samples=10,
         subsample=0.8,
         subsample_freq=1,
         colsample_bytree=0.8,
-        reg_alpha=0.1,  # L1 regularization
-        reg_lambda=0.1,  # L2 regularization
+        reg_alpha=0.05,  # L1 regularization
+        reg_lambda=0.05,  # L2 regularization
         n_jobs=-1,
         verbose=-1,
         random_state=42
     )
 
-    # Logistic Regression with elastic net (L1 + L2)
-    models['logreg'] = LogisticRegression(
-        penalty='elasticnet',
-        solver='saga',
-        C=1.0,
-        l1_ratio=0.5,  # Balance between L1 and L2
-        max_iter=1000,
-        n_jobs=-1,
-        random_state=42
-    )
+    # Logistic Regression with elastic net (L1 + L2), slightly weaker regularization
+    models['logreg'] = Pipeline([
+        (
+            'scaler',
+            RobustScaler()
+        ),
+        (
+            'logreg',
+            LogisticRegression(
+                penalty='elasticnet',
+                solver='saga',
+                C=2.0,
+                l1_ratio=0.3,
+                max_iter=1000,
+                n_jobs=-1,
+                random_state=42
+            )
+        ),
+    ])
 
-    # Random Forest with conservative parameters
+    # Random Forest with slightly higher capacity
     models['rf'] = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=8,
-        min_samples_leaf=20,
+        n_estimators=200,
+        max_depth=10,
+        min_samples_leaf=10,
         max_features='sqrt',
         n_jobs=-1,
         random_state=42
@@ -1395,8 +1985,9 @@ def calibrate_ensemble(
                 tprint(f"    ⚠️ {model_name} calibration failed: {e}", "WARNING")
                 calibrated_predictions[model_name] = oof_predictions[model_name]
     else:
-        # Skip Platt, use raw predictions
+        # Skip Platt, use raw predictions but fill missing with neutral 0.5
         calibrated_predictions = oof_predictions.copy()
+        calibrated_predictions = calibrated_predictions.fillna(0.5)
 
     # STAGE 2: Blend models with soft voting
     tprint("  📊 Stage 2: Blending models with soft voting...", "INFO")
@@ -1409,34 +2000,7 @@ def calibrate_ensemble(
 
     ensemble_valid = ensemble_probs[valid_mask].values
 
-    # Optional: Include entropy/volatility as context
-    if include_context and meta_features is not None:
-        try:
-            # Compute prediction entropy (uncertainty)
-            pred_entropy = -ensemble_valid * np.log(ensemble_valid + 1e-8) - \
-                           (1 - ensemble_valid) * np.log(1 - ensemble_valid + 1e-8)
-
-            # Get volatility from meta-features
-            if 'volatility_1h' in meta_features.columns:
-                vol_valid = meta_features['volatility_1h'][valid_mask].fillna(0).values
-            else:
-                vol_valid = np.zeros(len(ensemble_valid))
-
-            # Combine: probability, entropy, volatility
-            # Weight: prob has highest weight, entropy/vol are context
-            calibration_input = (
-                0.7 * ensemble_valid +
-                0.2 * (1 - pred_entropy / pred_entropy.max()) +  # Lower entropy = more confident
-                0.1 * (vol_valid / (vol_valid.max() + 1e-8))     # Volatility normalization
-            )
-
-            tprint(f"    ✓ Including entropy + volatility context", "INFO")
-
-        except Exception as e:
-            tprint(f"    ⚠️ Could not include context, using probabilities only: {e}", "WARNING")
-            calibration_input = ensemble_valid
-    else:
-        calibration_input = ensemble_valid
+    calibration_input = ensemble_valid
 
     # Fit isotonic regression: calibrated_prob -> expected_return
     try:
@@ -1516,32 +2080,45 @@ def select_top_k_signals(
         tprint("  ⚠️ No signals meet minimum probability threshold", "WARNING")
         return selected_mask
 
-    # Compute volatility-adjusted score
-    # Higher probability + lower volatility = better signal
-    vol_normalized = volatility / (volatility.mean() + 1e-8)
-    vol_normalized = vol_normalized.clip(0.5, 2.0)  # Prevent extreme values
+    # Align volatility with signals index
+    if volatility is not None:
+        vol_aligned = volatility.reindex(signals.index)
+    else:
+        vol_aligned = pd.Series(np.nan, index=signals.index)
 
-    # Score = probability / volatility_factor
-    # This favors high-probability signals in low-volatility environments
-    scores = probabilities / (vol_normalized + 0.5)
-    scores[~signal_mask] = -np.inf  # Exclude non-signals
+    vol_values = vol_aligned.to_numpy(dtype=float)
+    vol_mean = np.nanmean(vol_values)
+    if not np.isfinite(vol_mean) or vol_mean == 0.0:
+        vol_mean = 1.0
+
+    vol_normalized = vol_values / (vol_mean + 1e-8)
+    vol_normalized = np.clip(vol_normalized, 0.5, 2.0)
+
+    scores = probabilities.astype(float)
+    scores = scores / (vol_normalized + 0.5)
+    scores = np.where(np.isfinite(scores), scores, -np.inf)
+    scores[~signal_mask.to_numpy()] = -np.inf
 
     # Determine how many signals to select
     # Assume ~96 bars per day (15min timeframe)
     bars_per_day = 96
-    n_days = n_samples / bars_per_day
-    total_k = int(k_per_day * n_days)
+    n_days = n_samples / bars_per_day if bars_per_day > 0 else 0
+    total_k = int(k_per_day * n_days) if n_days > 0 else 0
 
     # Select top-K by score
-    if total_k > 0:
-        threshold_idx = min(total_k, signal_mask.sum())
-        score_threshold = np.partition(scores, -threshold_idx)[-threshold_idx]
-        selected_mask = scores >= score_threshold
+    if total_k > 0 and np.isfinite(scores).any():
+        threshold_idx = min(total_k, int(signal_mask.sum()))
+        finite_scores = scores[np.isfinite(scores)]
+        if threshold_idx > 0 and finite_scores.size >= threshold_idx:
+            score_threshold = np.partition(finite_scores, -threshold_idx)[-threshold_idx]
+            selected_mask = pd.Series(scores >= score_threshold, index=signals.index)
 
-        n_selected = selected_mask.sum()
-        actual_per_day = n_selected / n_days if n_days > 0 else 0
+            n_selected = selected_mask.sum()
+            actual_per_day = n_selected / n_days if n_days > 0 else 0
 
-        tprint(f"  ✓ Selected {n_selected} signals ({actual_per_day:.1f} per day)", "SUCCESS")
+            tprint(f"  ✓ Selected {n_selected} signals ({actual_per_day:.1f} per day)", "SUCCESS")
+        else:
+            tprint("  ⚠️ Not enough finite scores to select signals", "WARNING")
     else:
         tprint(f"  ⚠️ No signals selected (total_k={total_k})", "WARNING")
 
@@ -1583,18 +2160,99 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
         missing = [k for k in required if k not in config or not config[k]]
         if missing:
             error_msg = f"Missing required config keys: {', '.join(missing)}"
-            tprint(f"❌ {error_msg}", "ERROR")
+            tprint(f" {error_msg}", "ERROR")
             return {'success': False, 'error': error_msg}
 
-        tprint(f"🏷️ Starting enhanced meta-labeling for {config['symbol']}", "INFO")
+        tprint(f" Starting enhanced meta-labeling for {config['symbol']}", "INFO")
 
         try:
+            self.set_context(
+                symbol=config['symbol'],
+                exchange=config['exchange'],
+                timeframe=config['timeframe'],
+                direction=config.get('direction', 'long'),
+                model=config.get('model', 'analyst')
+            )
+
             # Extract config parameters (using production defaults)
             profit_threshold = config.get('profit_threshold', DEFAULT_PROFIT_THRESHOLD)  # 1%
             stop_threshold = config.get('stop_threshold', DEFAULT_STOP_THRESHOLD)  # 0.5%
             horizon = config.get('horizon', 16)
             transaction_cost = config.get('transaction_cost', DEFAULT_TRANSACTION_COST)  # 0.15%
             min_event_spacing = config.get('min_event_spacing', 4)
+
+            # Extended labeling parameters (Kalman, volatility adaptation, clipping)
+            kalman_Q = float(config.get('kalman_Q', 1e-4))
+            kalman_R = float(config.get('kalman_R', 0.01))
+            vol_baseline_window = int(config.get('vol_baseline_window', 96))
+            profit_mult_min = float(config.get('profit_mult_min', 0.5))
+            profit_mult_max = float(config.get('profit_mult_max', 2.0))
+            stop_mult_min = float(config.get('stop_mult_min', 0.5))
+            stop_mult_max = float(config.get('stop_mult_max', 2.0))
+            iso_min_prob_param = float(config.get('iso_min_prob', 0.0))
+            target_clip_high_q_param = config.get('target_clip_high_q', None)
+
+            # Optionally override labeling parameters using latest HPO results
+            # enable_labeling_hpo_params: if True (default), try to load best params JSON
+            if config.get('enable_labeling_hpo_params', True):
+                try:
+                    outcomes_dir = Path('outcomes')
+                    symbol = str(config['symbol'])
+                    timeframe = str(config['timeframe'])
+                    pattern = f"meta_labeling_hpo_best_params_{symbol}_{timeframe}_*.json"
+                    candidates = sorted(outcomes_dir.glob(pattern)) if outcomes_dir.exists() else []
+                    if candidates:
+                        latest = candidates[-1]
+                        tprint(f"🔍 Using labeling HPO params from {latest}", "INFO")
+                        import json as _json
+                        with open(latest, 'r') as f:
+                            hpo_cfg = _json.load(f)
+                        best_params = hpo_cfg.get('best_params', {}) if isinstance(hpo_cfg, dict) else {}
+
+                        # Map HPO params → step parameters with safety clamps
+                        if 'profit_thr_base' in best_params:
+                            profit_threshold = float(best_params['profit_thr_base'])
+                        if 'stop_to_profit_ratio' in best_params:
+                            stop_ratio = float(best_params['stop_to_profit_ratio'])
+                            stop_threshold = max(0.0005, profit_threshold * stop_ratio)
+                        if 'horizon_bars' in best_params:
+                            horizon = int(best_params['horizon_bars'])
+                        if 'min_event_spacing' in best_params:
+                            min_event_spacing = int(best_params['min_event_spacing'])
+
+                        if 'kalman_Q' in best_params:
+                            kalman_Q = float(best_params['kalman_Q'])
+                        if 'kalman_R' in best_params:
+                            kalman_R = float(best_params['kalman_R'])
+                        if 'vol_baseline_window' in best_params:
+                            vol_baseline_window = int(best_params['vol_baseline_window'])
+                        if 'profit_mult_min' in best_params:
+                            profit_mult_min = float(best_params['profit_mult_min'])
+                        if 'profit_mult_max' in best_params:
+                            profit_mult_max = float(best_params['profit_mult_max'])
+                        if 'stop_mult_min' in best_params:
+                            stop_mult_min = float(best_params['stop_mult_min'])
+                        if 'stop_mult_max' in best_params:
+                            stop_mult_max = float(best_params['stop_mult_max'])
+                        if 'iso_min_prob' in best_params:
+                            iso_min_prob_param = float(best_params['iso_min_prob'])
+                        if 'target_clip_high_q' in best_params:
+                            target_clip_high_q_param = float(best_params['target_clip_high_q'])
+
+                        vol_baseline_window = max(8, min(512, vol_baseline_window))
+                        if profit_mult_min > profit_mult_max:
+                            profit_mult_min, profit_mult_max = profit_mult_max, profit_mult_min
+                        if stop_mult_min > stop_mult_max:
+                            stop_mult_min, stop_mult_max = stop_mult_max, stop_mult_min
+
+                        tprint(
+                            f"⚙️ HPO overrides → profit={profit_threshold:.3%}, stop={stop_threshold:.3%}, horizon={horizon}, spacing={min_event_spacing}",
+                            "INFO",
+                        )
+                    else:
+                        tprint("ℹ️ No HPO best-params file found; using configured/default labeling parameters", "INFO")
+                except Exception as hpo_exc:
+                    tprint(f"⚠️ Failed to load labeling HPO params: {hpo_exc}", "WARNING")
 
             # Load market data
             tprint("📊 Loading market data...", "INFO")
@@ -1628,22 +2286,23 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             # STEP 2: Compute volatility for adaptive thresholds
             tprint("📊 Computing volatility for adaptive thresholds...", "INFO")
             log_ret = np.log(market_data['close']).diff()
-            volatility_1d = log_ret.rolling(96).std()  # Daily volatility
-            vol_baseline = volatility_1d.rolling(96).mean()
+            volatility_1d = log_ret.rolling(96).std()  # Short volatility estimate
+
+            # Baseline volatility over configurable window (HPO-aware)
+            vol_baseline = volatility_1d.rolling(vol_baseline_window).mean()
             vol_factor = volatility_1d / (vol_baseline + 1e-8)
 
-            # Adaptive thresholds based on volatility
+            # Adaptive thresholds based on volatility and HPO multipliers
             adaptive_profit_threshold = profit_threshold * vol_factor
             adaptive_stop_threshold = stop_threshold * vol_factor
 
-            # Clip to reasonable bounds (e.g., 0.5x to 2x base threshold)
             adaptive_profit_threshold = adaptive_profit_threshold.clip(
-                lower=profit_threshold * 0.5,
-                upper=profit_threshold * 2.0
+                lower=profit_threshold * profit_mult_min,
+                upper=profit_threshold * profit_mult_max,
             )
             adaptive_stop_threshold = adaptive_stop_threshold.clip(
-                lower=stop_threshold * 0.5,
-                upper=stop_threshold * 2.0
+                lower=stop_threshold * stop_mult_min,
+                upper=stop_threshold * stop_mult_max,
             )
 
             tprint(f"📊 Adaptive thresholds: Profit {adaptive_profit_threshold.mean():.2%} ± {adaptive_profit_threshold.std():.2%}", "INFO")
@@ -1651,7 +2310,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
 
             # STEP 3: Compute realized returns (continuous) and binary labels with adaptive thresholds
             tprint("💰 Computing realized returns with adaptive thresholds and transaction costs...", "INFO")
-            realized_returns, binary_labels = compute_realized_returns(
+            realized_returns, binary_labels, exit_reasons, event_durations = compute_realized_returns(
                 market_data,
                 primary_signals,
                 profit_threshold=adaptive_profit_threshold,
@@ -1684,11 +2343,44 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             tprint("📈 Applying Kalman smoothing to binary labels...", "INFO")
             smoothed_labels, label_uncertainty = kalman_smooth_labels(
                 binary_labels,
-                Q=1e-4,
-                R=0.01,
+                Q=kalman_Q,
+                R=kalman_R,
                 volatility=volatility_1d
             )
             tprint(f"📊 Smoothed labels: Mean={smoothed_labels[labeled_mask].mean():.3f}, Std={smoothed_labels[labeled_mask].std():.3f}", "INFO")
+
+            # Event-centric and label-history features (event-only where applicable)
+            event_mask = ~binary_labels.isna()
+
+            # Bars since last labeled event
+            idx = np.arange(len(market_data))
+            last_event_idx = np.where(event_mask.to_numpy(), idx, np.nan)
+            last_event_idx_series = pd.Series(last_event_idx, index=market_data.index).ffill()
+
+            bars_since_last_event = idx - last_event_idx_series.values
+            bars_since_last_event[last_event_idx_series.isna().values] = np.nan
+
+            # Distance to recent highs/lows and recent drawdown
+            recent_high_50 = market_data['high'].rolling(50).max()
+            recent_low_50 = market_data['low'].rolling(50).min()
+            dist_from_recent_high_50 = (market_data['close'] - recent_high_50) / (recent_high_50 + 1e-8)
+            dist_from_recent_low_50 = (market_data['close'] - recent_low_50) / (recent_low_50 + 1e-8)
+
+            rolling_max_100 = market_data['close'].rolling(100).max()
+            drawdown_100 = (market_data['close'] - rolling_max_100) / (rolling_max_100 + 1e-8)
+
+            # Label-history (rolling over past events only)
+            event_returns = realized_returns[event_mask]
+            event_labels = binary_labels[event_mask]
+
+            rolling_win_rate_50 = event_labels.rolling(window=50, min_periods=1).mean()
+            rolling_mean_ret_50 = event_returns.rolling(window=50, min_periods=1).mean()
+
+            win_rate_50_full = pd.Series(np.nan, index=market_data.index)
+            win_rate_50_full.loc[rolling_win_rate_50.index] = rolling_win_rate_50
+
+            mean_ret_50_full = pd.Series(np.nan, index=market_data.index)
+            mean_ret_50_full.loc[rolling_mean_ret_50.index] = rolling_mean_ret_50
 
             # STEP 5: Create meta-features with Kalman filtering
             tprint("🔧 Creating meta-features with Kalman filtering...", "INFO")
@@ -1700,12 +2392,25 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 use_kalman=True  # Enable Kalman filtering
             )
 
+            # Attach event-centric and label-history features
+            event_meta_features = pd.DataFrame(index=market_data.index)
+            event_meta_features['bars_since_last_event'] = bars_since_last_event
+            event_meta_features['dist_from_recent_high_50'] = dist_from_recent_high_50
+            event_meta_features['dist_from_recent_low_50'] = dist_from_recent_low_50
+            event_meta_features['drawdown_100'] = drawdown_100
+            event_meta_features['event_win_rate_last_50'] = win_rate_50_full
+            event_meta_features['event_mean_return_last_50'] = mean_ret_50_full
+
+            meta_features = meta_features.join(event_meta_features)
+
+            meta_features_model = prepare_feature_matrix(meta_features)
+
             # STEP 6: Train ensemble meta-models with K-fold cross-fitting
             tprint("🎓 Training ensemble meta-models (LGBM + LogReg + RF) with purged K-fold CV...", "INFO")
 
             # Train ensemble and get OOF predictions
             trained_models, oof_predictions_df = train_ensemble_with_kfold(
-                X=meta_features,
+                X=meta_features_model,
                 y=binary_labels,
                 horizon=horizon,
                 n_splits=5,
@@ -1719,22 +2424,22 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 meta_features=meta_features
             )
 
-            # STEP 8: Calibrate ensemble with Platt + isotonic regression
-            tprint("📈 Calibrating ensemble (Platt per model + isotonic on blend with entropy/volatility)...", "INFO")
+            # STEP 8: Calibrate ensemble with isotonic regression only (preserve variance)
+            tprint("📈 Calibrating ensemble (isotonic on blended predictions)...", "INFO")
 
             platt_calibrators, iso_regressor = calibrate_ensemble(
                 oof_predictions=oof_predictions_df,
                 y_true=binary_labels,
                 realized_returns=realized_returns,
                 meta_features=meta_features_enhanced,
-                method='platt_isotonic',
-                include_context=True  # Include entropy/volatility
+                method='isotonic_only',
+                include_context=False
             )
 
             # STEP 9: Generate final ensemble predictions
             tprint("🎯 Generating final ensemble predictions...", "INFO")
 
-            # Average OOF predictions after Platt calibration (for final probabilities)
+            # Average OOF predictions after calibration (for final probabilities)
             if platt_calibrators:
                 # Apply Platt calibration to OOF predictions
                 calibrated_oof = pd.DataFrame(index=oof_predictions_df.index)
@@ -1743,15 +2448,18 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         try:
                             oof_vals = oof_predictions_df[model_name].fillna(0.5).values.reshape(-1, 1)
                             calibrated_oof[model_name] = platt_calibrators[model_name].predict_proba(oof_vals)[:, 1]
-                        except:
+                        except Exception:
                             calibrated_oof[model_name] = oof_predictions_df[model_name]
                     else:
                         calibrated_oof[model_name] = oof_predictions_df[model_name]
 
-                ensemble_probs = calibrated_oof.mean(axis=1).values
+                ensemble_probs_series = calibrated_oof.fillna(0.5).mean(axis=1)
             else:
-                ensemble_probs = oof_predictions_df.mean(axis=1).values
+                # No per-model Platt calibration; blend raw OOF predictions with neutral fill
+                oof_filled = oof_predictions_df.fillna(0.5)
+                ensemble_probs_series = oof_filled.mean(axis=1)
 
+            ensemble_probs = ensemble_probs_series.values
             probabilities = ensemble_probs
 
             # Compute CV metrics for reporting
@@ -1787,7 +2495,8 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             tprint("🎓 Training final ensemble models on full dataset...", "INFO")
 
             full_mask = ~binary_labels.isna()
-            X_full = meta_features_enhanced[full_mask].fillna(0)
+            meta_features_enhanced_model = prepare_feature_matrix(meta_features_enhanced)
+            X_full = meta_features_enhanced_model[full_mask].fillna(0)
             y_full = binary_labels[full_mask]
 
             final_models = create_base_models({})
@@ -1805,12 +2514,38 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             tprint("🔄 Translating probabilities to economic targets...", "INFO")
 
             if iso_regressor is not None:
+                # Apply symmetric probability clipping if configured/HPO-provided
+                iso_min_prob = max(0.0, min(0.1, iso_min_prob_param))
+                iso_max_prob = 1.0 - iso_min_prob
+                iso_max_prob = max(0.9, min(1.0, iso_max_prob))
+
+                prob_array = np.asarray(probabilities, dtype=float)
+                prob_clipped = np.clip(prob_array, iso_min_prob, iso_max_prob)
+
                 target_long, target_short = translate_to_targets_with_isotonic(
                     realized_returns,
-                    probabilities,
+                    prob_clipped,
                     primary_signals,
                     iso_regressor
                 )
+
+                # Optional symmetric quantile clipping of target magnitudes
+                if target_clip_high_q_param is not None:
+                    try:
+                        q_high = float(target_clip_high_q_param)
+                        q_high = max(0.90, min(0.99, q_high))
+                        q_low = max(0.0, min(0.5, 1.0 - q_high))
+
+                        for series in (target_long, target_short):
+                            nz = series[series > 0]
+                            if len(nz) >= 100:
+                                low_val = nz.quantile(q_low)
+                                high_val = nz.quantile(q_high)
+                                if low_val < high_val:
+                                    series_mask = series > 0
+                                    series.loc[series_mask] = series.loc[series_mask].clip(low_val, high_val)
+                    except Exception as clip_exc:
+                        tprint(f"⚠️ Failed to apply target quantile clipping: {clip_exc}", "WARNING")
             else:
                 # Fallback: simple threshold-based approach
                 tprint("⚠️ Using fallback threshold-based translation", "WARNING")
@@ -1839,10 +2574,34 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             labeled_data['smoothed_label'] = smoothed_labels
             labeled_data['label_uncertainty'] = label_uncertainty
             labeled_data['meta_probability'] = probabilities
+            labeled_data['exit_reason'] = exit_reasons
+            labeled_data['event_duration_bars'] = event_durations
+
+            try:
+                r_unit = labeled_data['adaptive_stop_threshold'].abs().replace(0.0, np.nan)
+                r_multiple = (labeled_data['realized_return'] / r_unit).replace([np.inf, -np.inf], np.nan)
+
+                strength = r_multiple.abs().clip(lower=0.5, upper=3.0)
+                confidence = labeled_data['meta_probability'].astype(float).clip(lower=0.2, upper=1.0)
+
+                raw_weight = np.sqrt(strength * confidence)
+                sample_weight = raw_weight.clip(lower=0.1, upper=5.0)
+
+                if 'binary_label' in labeled_data.columns:
+                    sample_weight = sample_weight.where(~labeled_data['binary_label'].isna())
+
+                labeled_data['r_multiple'] = r_multiple.astype(np.float32)
+                labeled_data['target_sample_weight'] = sample_weight.astype(np.float32)
+            except Exception:
+                labeled_data['target_sample_weight'] = np.float32(1.0)
 
             # Rename targets to "fused" for backward compatibility with subsequent steps
             labeled_data['fused_target_long'] = target_long
             labeled_data['fused_target_short'] = target_short
+            labeled_data['target_long'] = target_long
+            labeled_data['target_short'] = target_short
+            labeled_data['target_long_fused'] = target_long
+            labeled_data['target_short_fused'] = target_short
 
             # Add primary signal for reference
             labeled_data['primary_signal'] = primary_signals['consensus']
@@ -1851,13 +2610,19 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             labeled_data['adaptive_profit_threshold'] = adaptive_profit_threshold
             labeled_data['adaptive_stop_threshold'] = adaptive_stop_threshold
 
+            timestamp_ns = np.int64(pd.Timestamp.utcnow().value)
+            labeled_data['labeling_timestamp'] = timestamp_ns
+            labeled_data['labeling_method_id'] = np.int8(2)
+
             # Save labeled data
-            tprint("💾 Saving labeled data...", "INFO")
+            tprint("Saving labeled data...", "INFO")
 
             labeled_data_path = self._save_artifact(
                 data=labeled_data,
-                artifact_name=f"{config['symbol']}_{config['timeframe']}_meta_labeled_data_v2",
+                artifact_name=f"labeled_data_{config['symbol']}_{config['timeframe']}",
                 artifact_type="data",
+                compression="auto",
+                data_category="features",
                 metadata={
                     'symbol': config['symbol'],
                     'exchange': config['exchange'],
@@ -1905,7 +2670,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
 
             # Feature importances (use enhanced features)
             try:
-                feature_importances = dict(zip(meta_features_enhanced.columns, final_model.feature_importances_))
+                feature_importances = dict(zip(X_full.columns, final_model.feature_importances_))
                 top_features = sorted(feature_importances.items(), key=lambda x: x[1], reverse=True)[:10]
 
                 tprint("🎯 Top 10 features:", "INFO")
@@ -1921,6 +2686,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 'success': True,
                 'artifacts': {
                     'labeled_data_path': labeled_data_path,
+                    'labeled_data_file': labeled_data_path,
                     'diagnostics_report_path': diagnostics_path
                 },
                 'metrics': {

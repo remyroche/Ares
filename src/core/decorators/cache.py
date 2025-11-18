@@ -1,4 +1,6 @@
-'\nCaching decorators with flexible policies.\n\nProvides decorators for caching function results with support for\nper-request caching, cross-request caching, TTL, and invalidation.\n'
+"\nCaching decorators with flexible policies.\n\nProvides decorators for caching function results with support for\nper-request caching, cross-request caching, TTL, and invalidation.\n"
+from __future__ import annotations
+
 import functools
 import hashlib
 import json

@@ -1,5 +1,5 @@
 {
-  "total_features_available": 423,
+  "total_features_available": 421,
   "feature_set_sizes": [
     60,
     50,
@@ -8,7 +8,7 @@
   "selection_method": "permutation",
   "scoring_threshold": 0.01,
   "use_tree_based": true,
-  "timestamp": "2025-11-16T23:49:19.611272",
+  "timestamp": "2025-11-18T08:27:44.537708",
   "symbol": "ETHUSDT",
   "exchange": "binance",
   "timeframe": "15m",

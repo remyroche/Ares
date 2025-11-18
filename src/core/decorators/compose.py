@@ -6,10 +6,17 @@ Provides a tiny, typed utility that wraps sync/async functions consistently,
 preserving signature and metadata.
 """
 
+from __future__ import annotations
+
 import asyncio
 import functools
-from typing import ParamSpec, TypeVar, cast, Callable, Any
+from typing import TypeVar, cast, Callable, Any
 import logging
+
+try:  # Python 3.10+ provides ParamSpec; older runtimes fall back to TypeVar
+    from typing import ParamSpec
+except ImportError:  # pragma: no cover - fallback for Python < 3.10
+    ParamSpec = TypeVar  # type: ignore[misc, assignment]
 
 P = ParamSpec("P")
 R = TypeVar("R")

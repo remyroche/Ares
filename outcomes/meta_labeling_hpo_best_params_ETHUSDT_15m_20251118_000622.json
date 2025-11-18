@@ -1,0 +1,21 @@
+{
+  "symbol": "ETHUSDT",
+  "exchange": "binance",
+  "timeframe": "15m",
+  "best_score": 54.459651818623456,
+  "best_params": {
+    "profit_thr_base": 0.029724999999999998,
+    "stop_to_profit_ratio": 1.0,
+    "horizon_bars": 16,
+    "min_event_spacing": 3,
+    "iso_min_prob": 0.0,
+    "target_clip_high_q": 0.9,
+    "kalman_Q": 1e-05,
+    "kalman_R": 0.0010000000000000002,
+    "vol_baseline_window": 50,
+    "profit_mult_min": 0.99625,
+    "profit_mult_max": 1.1500000000000001,
+    "stop_mult_min": 1.0,
+    "stop_mult_max": 1.1199999999999999
+  }
+}

@@ -4,6 +4,7 @@ Request and DTO validation decorators.
 Provides decorators for validating function inputs using various
 validation strategies (pydantic, dataclasses, custom validators).
 """
+from __future__ import annotations
 
 import inspect
 import logging

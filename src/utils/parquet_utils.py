@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 import gc
 import os
 import pandas as pd
@@ -81,10 +81,10 @@ class ParquetUtils:
     def safe_read_parquet(
         self,
         file_path: str,
-        columns: list[str] | None = None,
-        nrows: int | None = None,
+        columns: Optional[list[str]] = None,
+        nrows: Optional[int] = None,
         **kwargs: Any,
-    ) -> pd.DataFrame | None:
+    ) -> Optional[pd.DataFrame]:
         """
         Safely read a parquet file with multiple fallback strategies and enhanced schema compatibility.
 
@@ -139,10 +139,10 @@ class ParquetUtils:
     def safe_read_parquet_with_dtype_normalization(
         self,
         file_path: str,
-        columns: list[str] | None = None,
-        nrows: int | None = None,
+        columns: Optional[list[str]] = None,
+        nrows: Optional[int] = None,
         **kwargs: Any,
-    ) -> pd.DataFrame | None:
+    ) -> Optional[pd.DataFrame]:
         """
         Safely read a parquet file with dtype normalization after reading.
 
@@ -285,7 +285,7 @@ class ParquetUtils:
 
     @handles_errors(default_return = False, context="ParquetUtils.repair_parquet_file")
     def repair_parquet_file(
-        self, file_path: str, backup_path: str | None = None
+        self, file_path: str, backup_path: Optional[str] = None
     ) -> bool:
         """
         Attempt to repair a corrupted parquet file.
@@ -314,7 +314,7 @@ class ParquetUtils:
         return False
 
     @handles_errors(default_return=None, context="ParquetUtils.harmonize_schema_after_read")
-    def harmonize_schema_after_read(self, df: pd.DataFrame, schema_reference: dict[str, str] | None = None) -> pd.DataFrame | None:
+    def harmonize_schema_after_read(self, df: pd.DataFrame, schema_reference: Optional[dict[str, str]] = None) -> Optional[pd.DataFrame]:
         """
         Harmonize DataFrame schema immediately after reading from parquet to prevent schema incompatibilities.
 
@@ -430,7 +430,7 @@ class ParquetUtils:
             return df
 
     def safe_read_parquet_with_harmonization(self, file_path: str, harmonize_schema: bool = True,
-                                           schema_reference: dict[str, str] | None = None) -> pd.DataFrame | None:
+                                           schema_reference: Optional[dict[str, str]] = None) -> Optional[pd.DataFrame]:
         """
         Read parquet file with automatic schema harmonization.
 

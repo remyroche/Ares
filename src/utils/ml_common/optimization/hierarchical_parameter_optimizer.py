@@ -1397,9 +1397,9 @@ class HierarchicalParameterOptimizer:
     ) -> float:
         """Evaluate a set of parameters using the objective function."""
         try:
-            # 🔍 DIAGNOSTIC LOGS: Cross-validation fold analysis
-            logger.info(f"🔍 CV DEBUG: Total samples={len(X_train)}, cv_folds={self.cv_folds}")
-            logger.info(f"🔍 CV DEBUG: Expected samples per fold={len(X_train) // self.cv_folds}")
+            # 🔍 DIAGNOSTIC LOGS: Cross-validation fold analysis (debug-only)
+            logger.debug(f"🔍 CV DEBUG: Total samples={len(X_train)}, cv_folds={self.cv_folds}")
+            logger.debug(f"🔍 CV DEBUG: Expected samples per fold={len(X_train) // self.cv_folds}")
             
             # Create cross-validation object to analyze fold sizes
             try:
@@ -1420,18 +1420,18 @@ class HierarchicalParameterOptimizer:
                 # Regular KFold can cause data leakage by using future data to predict past
                 # This ensures temporal ordering is always respected during cross-validation
                 cv = TimeSeriesSplit(n_splits=self.cv_folds)
-                logger.info(f"🕐 Using TimeSeriesSplit for temporal data (n_splits={self.cv_folds})")
+                logger.debug(f"🕐 Using TimeSeriesSplit for temporal data (n_splits={self.cv_folds})")
                 
                 # Analyze fold sizes
                 if cv and hasattr(cv, 'split'):
                     for fold_idx, (train_idx, val_idx) in enumerate(cv.split(X_train, y_train)):
-                        logger.info(f"🔍 CV DEBUG: Fold {fold_idx+1}/{self.cv_folds}: train_size={len(train_idx)}, val_size={len(val_idx)}")
+                        logger.debug(f"🔍 CV DEBUG: Fold {fold_idx+1}/{self.cv_folds}: train_size={len(train_idx)}, val_size={len(val_idx)}")
                         if len(val_idx) == 0:
                             logger.error(f"🚨 CV CRITICAL: Fold {fold_idx+1} has 0 validation samples!")
                         elif len(val_idx) < 5:
                             logger.warning(f"⚠️ CV WARNING: Fold {fold_idx+1} has only {len(val_idx)} validation samples (may be insufficient)")
             except Exception as cv_debug_error:
-                logger.warning(f"🔍 CV DEBUG: Could not analyze fold sizes: {cv_debug_error}")
+                logger.debug(f"🔍 CV DEBUG: Could not analyze fold sizes: {cv_debug_error}")
             
             # Validate data before calling objective function
             if X_train is None or len(X_train) == 0:

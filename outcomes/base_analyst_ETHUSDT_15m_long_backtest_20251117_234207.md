@@ -4,7 +4,7 @@
 - Exchange: binance
 - Timeframe: 15m
 - Direction: long
-- Execution Mode: blank
+- Execution Mode: light
 - Bars: 5960
 - Approx. Duration: 62.1 days
 - Data Source: artifacts
@@ -14,14 +14,14 @@
 
 | Metric | Value |
 |--------|-------|
-| Total Return | -14.89% |
-| Annualized Return | -51.57% |
-| Annualized Volatility | 66.74% |
-| Sharpe Ratio | -0.7727 |
-| Sortino Ratio | -1.0712 |
-| Max Drawdown | -24.76% |
+| Total Return | -23.44% |
+| Annualized Return | -75.76% |
+| Annualized Volatility | 55.26% |
+| Sharpe Ratio | -1.3710 |
+| Sortino Ratio | -1.9056 |
+| Max Drawdown | -31.79% |
 | Win Rate | 49.62% |
-| Profit Factor | 0.9838 |
-| Avg Win per Bar | 0.25% |
-| Avg Loss per Bar | -0.25% |
-| Approx. Trades | 5956 |
+| Profit Factor | 0.9630 |
+| Avg Win per Bar | 0.21% |
+| Avg Loss per Bar | -0.22% |
+| Approx. Trades | 5958 |

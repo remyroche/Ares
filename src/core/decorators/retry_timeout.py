@@ -1,5 +1,5 @@
-
 '\nRetry, timeout, and circuit breaker decorators.\n\nProvides resilience patterns for handling transient failures,\ntimeouts, and cascading failures.\n'
+from __future__ import annotations
 import asyncio
 import random
 import time

@@ -184,6 +184,45 @@ class ModelTrainer(BaseTrainer):
             else:
                 tprint_success(f"✅ Dataset size is adequate for training")
 
+            # Target and feature diagnostics on the exact training subset
+            if processed_targets is not None:
+                try:
+                    if isinstance(processed_targets, pd.Series):
+                        y = processed_targets.astype(float)
+                    else:
+                        y = pd.Series(processed_targets).astype(float)
+                    if y.nunique(dropna=True) <= 1:
+                        tprint_warning(
+                            "⚠️ Target appears constant or nearly constant after preprocessing; "
+                            "model may not learn useful structure."
+                        )
+                    else:
+                        desc = y.describe(percentiles=[0.01, 0.05, 0.5, 0.95, 0.99])
+                        tprint_info("📊 Target statistics on training subset:")
+                        tprint_info(
+                            f"   count={desc['count']:.0f}, mean={desc['mean']:.6f}, std={desc['std']:.6f}, "
+                            f"min={desc['min']:.6f}, p1={desc['1%']:.6f}, p5={desc['5%']:.6f}, "
+                            f"median={desc['50%']:.6f}, p95={desc['95%']:.6f}, p99={desc['99%']:.6f}, max={desc['max']:.6f}"
+                        )
+
+                        numeric_cols = processed_data.select_dtypes(include=[np.number]).columns
+                        if len(numeric_cols) > 0:
+                            corrs = processed_data[numeric_cols].corrwith(y).dropna()
+                            if not corrs.empty:
+                                corrs_sorted = corrs.reindex(corrs.abs().sort_values(ascending=False).index)
+                                tprint_info("📈 Top feature–target correlations (by |corr|):")
+                                for name, val in corrs_sorted.head(20).items():
+                                    tprint_info(f"   {name}: corr={val:.4f}")
+
+                                strong = corrs_sorted[corrs_sorted.abs() >= 0.95]
+                                if not strong.empty:
+                                    tprint_warning(
+                                        f"⚠️ Extremely high feature–target correlations detected (|corr|≥0.95); "
+                                        f"potential leakage: {list(strong.index)}"
+                                    )
+                except Exception as diag_exc:
+                    tprint_warning(f"⚠️ Failed to compute target/feature diagnostics: {diag_exc}")
+
             # Train each model type with comprehensive metrics
             training_results = {}
             best_model = None
@@ -592,9 +631,25 @@ class ModelTrainer(BaseTrainer):
             reg_lambda = model_params.get('reg_lambda', 1.0) # lambda_l2
             min_child_samples = model_params.get('min_child_samples', 128)
             
-            # Early stopping controls
+            # Early stopping controls with safety floors to avoid degenerate 1-iteration models
             es_rounds = model_params.get('early_stopping_rounds', 50)
             min_boost_rounds = model_params.get('min_boost_rounds', 100)
+            # Enforce sensible lower bounds regardless of YAML/HPO values
+            if n_estimators < 100:
+                tprint_warning(
+                    f"   n_estimators={n_estimators} too low, raising to 100 to avoid degenerate trees"
+                )
+                n_estimators = 100
+            if min_boost_rounds < 100:
+                tprint_warning(
+                    f"   min_boost_rounds={min_boost_rounds} too low, raising to 100"
+                )
+                min_boost_rounds = 100
+            if es_rounds < 10:
+                tprint_warning(
+                    f"   early_stopping_rounds={es_rounds} too low, raising to 10"
+                )
+                es_rounds = 10
             num_boost_round = max(n_estimators, min_boost_rounds)
             
             # Adjust parameters for small datasets to avoid "no more leaves" warning
@@ -741,7 +796,13 @@ class ModelTrainer(BaseTrainer):
             tprint_info(f"   📊 Val R²: {metrics['val_r2']:.4f}, RMSE: {metrics['val_rmse']:.4f}")
             tprint_info(f"   📊 Test R²: {metrics['test_r2']:.4f}, RMSE: {metrics['test_rmse']:.4f}")
             tprint_info(f"   ⚠️  Train-Test Gap: {metrics['train_test_r2_gap']:.4f} ({metrics['overfitting_ratio']*100:.1f}%)")
-            
+        
+            if best_iter is not None and best_iter <= 5:
+                tprint_warning(
+                    f"   ⚠️ LightGBM used only {best_iter} boosting iterations – model may be degenerate "
+                    f"(check target variance and training subset size)."
+                )
+        
             if metrics['overfitting_ratio'] > 0.2:
                 tprint_warning(f"   ⚠️  HIGH OVERFITTING detected! Model may not generalize well.")
             elif metrics['overfitting_ratio'] > 0.1:

@@ -1,6 +1,6 @@
 # Rapport de Pertinence Économique des Régimes
 
-**Date:** 2025-11-16 17:36:35
+**Date:** 2025-11-17 22:52:17
 **Analyse:** Does being right about regimes translate into better P&L in a stable, actionable way?
 
 ---
@@ -8,21 +8,15 @@
 ## Résumé Exécutif
 
 **Benchmark (Buy & Hold):**
-- Rendement total: 59.31%
-- Sharpe Ratio: 0.03
-- Maximum Drawdown: -65.28%
+- Rendement total: 23.47%
+- Sharpe Ratio: -0.05
+- Maximum Drawdown: -68.75%
 
 **Stratégie Basée sur les Régimes:**
-- Rendement total: -82.86% (-142.17% vs benchmark)
-- Sharpe Ratio: -1.05 (-1.07 vs benchmark)
-- Maximum Drawdown: -84.01%
-- Turnover: 0.1419
-
-**Stratégie Basée sur les Régimes Prédits:**
-- Rendement total: -82.86% (-142.17% vs benchmark)
-- Sharpe Ratio: -1.05 (-1.07 vs benchmark)
-- Maximum Drawdown: -84.01%
-- Turnover: 0.1419
+- Rendement total: 21.24% (-2.23% vs benchmark)
+- Sharpe Ratio: -0.12 (-0.07 vs benchmark)
+- Maximum Drawdown: -34.87%
+- Turnover: 0.1634
 
 ## Conclusion sur la Pertinence Économique
 
@@ -38,9 +32,8 @@ Les régimes identifiés n'ont pas de valeur économique actionnable dans leur f
 
 | Stratégie | Rendement Total | CAGR | Sharpe | Volatilité | Max DD | Calmar | Turnover |
 |------------|-----------------|-------|---------|-------------|---------|---------|----------|
-| Buy & Hold | 59.31% | 1.51% | 0.03 | 12.84% | -65.28% | 0.02 | 0.0000 |
-| Régimes Réels | -82.86% | -5.52% | -1.05 | 7.10% | -84.01% | -0.07 | 0.1419 |
-| Régimes Prédits | -82.86% | -5.52% | -1.05 | 7.10% | -84.01% | -0.07 | 0.1419 |
+| Buy & Hold | 23.47% | 0.61% | -0.05 | 12.04% | -68.75% | 0.01 | 0.0000 |
+| Régimes Réels | 21.24% | 0.56% | -0.12 | 8.61% | -34.87% | 0.02 | 0.1634 |
 ---
 
 ## Tests de Signification

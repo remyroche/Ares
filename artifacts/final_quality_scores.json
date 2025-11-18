@@ -14,17 +14,17 @@
     "recommendations_count": 9
   },
   "final_dataset_40": {
-    "overall_score": 0.4,
-    "quality_level": "fair",
+    "overall_score": 0.6,
+    "quality_level": "good",
     "issues_count": 0,
-    "warnings_count": 6,
+    "warnings_count": 4,
     "recommendations_count": 9
   },
   "labeled_dataframe": {
-    "overall_score": 0.3,
-    "quality_level": "poor",
-    "issues_count": 3,
-    "warnings_count": 2,
+    "overall_score": 0.7,
+    "quality_level": "good",
+    "issues_count": 2,
+    "warnings_count": 1,
     "recommendations_count": 8
   }
 }

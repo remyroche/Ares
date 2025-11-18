@@ -32,7 +32,7 @@ class User:
     """User model for authentication/authorization."""
     id: str
     username: str
-    email: str | None = None
+    email: Optional[str] = None
     roles: set[str] = None
     permissions: set[str] = None
     attributes: dict[str, Any] = None
@@ -73,21 +73,21 @@ class AuthProvider(ABC):
     """Abstract authentication provider."""
 
     @abstractmethod
-    def get_current_user(self) -> User | None:
+    def get_current_user(self) -> Optional[User]:
         """Get the current authenticated user."""
 
     @abstractmethod
-    def validate_token(self, token: str) -> User | None:
+    def validate_token(self, token: str) -> Optional[User]:
         """Validate a token and return the user."""
 
 class SimpleAuthProvider(AuthProvider):
     """Simple auth provider using context variables."""
 
-    def get_current_user(self) -> User | None:
+    def get_current_user(self) -> Optional[User]:
         """Get user from context variable."""
         return current_user_var.get()
 
-    def validate_token(self, token: str) -> User | None:
+    def validate_token(self, token: str) -> Optional[User]:
         """Simple token validation (override in production)."""
         if token == 'valid_token':
             return User(id='1', username='test_user')
@@ -99,11 +99,11 @@ def set_auth_provider(provider: AuthProvider) -> None:
     global _auth_provider
     _auth_provider = provider
 
-def get_current_user() -> User | None:
+def get_current_user() -> Optional[User]:
     """Get the current authenticated user."""
     return _auth_provider.get_current_user()
 
-def set_current_user(user: User | None) -> None:
+def set_current_user(user: Optional[User]) -> None:
     """Set the current user in context."""
     current_user_var.set(user)
 
@@ -303,7 +303,7 @@ def owner_only(owner_field: str='user_id', param_name: str = None) -> Callable[[
         return await func(*args, **kwargs)
     return uniform_wrapper(f'owner_only({owner_field})', sync_handler, async_handler)
 
-def rate_limit(*, calls: int = 10, period: float = 60.0, key_func: Callable[[], str] | None = None) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def rate_limit(*, calls: int = 10, period: float = 60.0, key_func: Optional[Callable[[], str]] = None) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Rate limit function calls per user.
 

@@ -5,6 +5,7 @@ Distributed tracing decorators for observability.
 Provides decorators for creating and managing trace spans,
 compatible with OpenTelemetry and other tracing systems.
 """
+from __future__ import annotations
 
 import time
 from contextvars import ContextVar

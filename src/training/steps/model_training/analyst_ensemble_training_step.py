@@ -96,34 +96,124 @@ class AnalystEnsembleTrainingStep(BaseStep):
 
             tprint(f"✅ Loaded features: {features_data.shape}", "SUCCESS")
 
-            # Step 2: Load regime probabilities
-            tprint("📥 Step 2/4: Loading regime probabilities from HDF5...", "INFO")
-            self.set_context(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=regime_timeframe,
-                direction=direction,
-                model='regime'
-            )
+            # Step 2: Load regime probabilities (prefer HMM Alpha regimes)
+            tprint("📥 Step 2/4: Loading regime probabilities (preferring HMM Alpha)...", "INFO")
 
-            regime_probs = self._get_artifact(
-                'regime_ensemble_predictions',
-                artifact_type='data',
-                data_category='predictions'
-            )
+            regime_probs = None
 
-            if regime_probs is None:
-                tprint("⚠️ No regime probabilities found, trying alternative artifact name...", "WARNING")
-                regime_probs = self._get_artifact(
-                    'rolling_hmm_regime_probabilities',
+            # 2a. Try HMM Alpha regime features first (preferred)
+            try:
+                self.set_context(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=regime_timeframe,
+                    direction=direction,
+                    model='regime_alpha'
+                )
+
+                alpha_training = self._get_artifact(
+                    'hmm_alpha_training_data_1h',
                     artifact_type='data',
                     data_category='features'
                 )
 
-            if regime_probs is not None:
-                tprint(f"✅ Loaded regime probabilities: {regime_probs.shape}", "SUCCESS")
-            else:
-                tprint("⚠️ No regime probabilities found, will continue without regime features", "WARNING")
+                if alpha_training is not None:
+                    if not isinstance(alpha_training, pd.DataFrame):
+                        alpha_training = pd.DataFrame(alpha_training)
+
+                    # Standardize to DatetimeIndex using timestamp column if present
+                    if 'timestamp' in alpha_training.columns:
+                        alpha_training = alpha_training.copy()
+                        alpha_training['timestamp'] = pd.to_datetime(alpha_training['timestamp'])
+                        alpha_training.set_index('timestamp', inplace=True)
+                    elif not isinstance(alpha_training.index, pd.DatetimeIndex):
+                        tprint("⚠️ HMM Alpha training data has no DatetimeIndex; skipping alpha regime features", "WARNING")
+                        alpha_training = None
+
+                if alpha_training is not None and not alpha_training.empty:
+                    tprint(f"✅ Retrieved hmm_alpha_training_data_1h for regimes: {alpha_training.shape}", "SUCCESS")
+
+                    # Select safe alpha regime feature columns
+                    alpha_cols = [
+                        c for c in alpha_training.columns
+                        if c.startswith('alpha_regime_bucket_') or c.startswith('alpha_pred_')
+                    ]
+
+                    if alpha_cols:
+                        alpha_features = alpha_training[alpha_cols].copy()
+                        tprint(
+                            f"   ↪ Selected {len(alpha_cols)} HMM Alpha regime/score columns: "
+                            f"{alpha_cols[:5]}{'...' if len(alpha_cols) > 5 else ''}",
+                            "INFO",
+                        )
+
+                        # Create an OOS-style proxy by shifting one step forward and ffill
+                        tprint(
+                            "⚠️ HMM Alpha regime features are in-sample; "
+                            "creating OOS proxy via 1-step shift (ffill)",
+                            "WARNING",
+                        )
+                        alpha_features = alpha_features.shift(1).fillna(method='ffill')
+
+                        # Align to analyst feature index (typically 15m)
+                        if not alpha_features.index.equals(features_data.index):
+                            tprint(
+                                "   Aligning HMM Alpha regime features to analyst timeframe via reindex+ffill",
+                                "INFO",
+                            )
+                            alpha_features = alpha_features.reindex(features_data.index, method='ffill')
+
+                        regime_probs = alpha_features
+                        tprint(f"✅ Using HMM Alpha regime probabilities: {regime_probs.shape}", "SUCCESS")
+                    else:
+                        tprint(
+                            "⚠️ HMM Alpha training data contains no alpha_regime_bucket_* or "
+                            "alpha_pred_* columns; skipping alpha regime features",
+                            "WARNING",
+                        )
+
+            except Exception as e:
+                tprint(
+                    f"⚠️ Failed to load HMM Alpha regime features, will try legacy regime artifacts: {e}",
+                    "WARNING",
+                )
+
+            # 2b. Legacy regime ensemble / rolling HMM fallback if Alpha not available
+            if regime_probs is None:
+                self.set_context(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=regime_timeframe,
+                    direction=direction,
+                    model='regime'
+                )
+
+                regime_probs = self._get_artifact(
+                    'regime_ensemble_predictions',
+                    artifact_type='data',
+                    data_category='predictions'
+                )
+
+                if regime_probs is None:
+                    tprint(
+                        "⚠️ No regime probabilities from HMM Alpha or regime_ensemble_predictions; "
+                        "trying rolling_hmm_regime_probabilities...",
+                        "WARNING",
+                    )
+                    regime_probs = self._get_artifact(
+                        'rolling_hmm_regime_probabilities',
+                        artifact_type='data',
+                        data_category='features'
+                    )
+
+                if regime_probs is not None:
+                    tprint(f"✅ Loaded regime probabilities from legacy artifacts: {regime_probs.shape}", "SUCCESS")
+                else:
+                    tprint(
+                        "⚠️ No regime probabilities found from HMM Alpha or legacy artifacts; "
+                        "will continue without regime features",
+                        "WARNING",
+                    )
 
             # Step 3: Load analyst base model outputs
             tprint("📥 Step 3/4: Loading analyst base model outputs from HDF5...", "INFO")
@@ -218,7 +308,8 @@ class AnalystEnsembleTrainingStep(BaseStep):
             tprint(f"   Execution Mode: {execution_mode.upper()}", "INFO")
 
             if execution_mode == 'blank':
-                # In blank mode, show detailed breakdown
+                # In blank mode, we intentionally use regime features along with
+                # base predictions and disagreement features (no raw FG features).
                 label_count = len([col for col in ensemble_features.columns
                                  if ('label' in col.lower() or 'target' in col.lower())
                                  and 'regime' not in col.lower()])
@@ -232,12 +323,8 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 tprint(f"   Label columns: {label_count}", "INFO")
                 tprint(f"   Base predictions: {base_pred_actual}", "INFO")
                 tprint(f"   Disagreement features: {disagreement_actual}", "INFO")
-                tprint(f"   Regime features (should be 0): {regime_in_final}", "WARNING" if regime_in_final > 0 else "INFO")
+                tprint(f"   Regime features: {regime_in_final}", "INFO")
                 tprint(f"   Total combined: {ensemble_features.shape[1]}", "INFO")
-
-                if regime_in_final > 0:
-                    regime_cols = [col for col in ensemble_features.columns if 'regime' in col.lower()]
-                    tprint(f"   ⚠️ WARNING: Regime features found in BLANK mode: {regime_cols[:5]}", "WARNING")
             else:
                 # Full/light mode - show original breakdown
                 tprint(f"   Original features: {original_feature_count}", "INFO")
@@ -433,7 +520,10 @@ class AnalystEnsembleTrainingStep(BaseStep):
         execution_mode = config.get('execution_mode', 'full')
         
         if execution_mode == 'blank':
-            tprint("🎯 BLANK MODE: Using only base predictions and disagreement features", "INFO")
+            # In blank mode, avoid feeding raw feature-generation columns directly,
+            # but still allow regime probabilities, base predictions, and disagreement
+            # features to be used as inputs to the ensemble.
+            tprint("🎯 BLANK MODE: Using regime probabilities, base predictions and disagreement features (no raw FG features)", "INFO")
             combined = pd.DataFrame(index=features_data.index)
         else:
             combined = features_data.copy()
@@ -445,8 +535,8 @@ class AnalystEnsembleTrainingStep(BaseStep):
         # Align all dataframes to the same index
         common_index = combined.index if not combined.empty else features_data.index
 
-        # Add regime probabilities if available (skip in blank mode)
-        if regime_probs is not None and execution_mode != 'blank':
+        # Add regime probabilities if available (for all execution modes)
+        if regime_probs is not None:
             # Ensure regime_probs has datetime index if common_index is datetime
             if hasattr(common_index, 'dtype') and 'datetime' in str(common_index.dtype):
                 if not hasattr(regime_probs.index, 'dtype') or 'datetime' not in str(regime_probs.index.dtype):

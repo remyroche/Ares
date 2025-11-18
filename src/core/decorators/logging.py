@@ -10,7 +10,7 @@ import logging
 import time
 import uuid
 from contextvars import ContextVar
-from typing import Any, Callable
+from typing import Any, Callable, Optional, Tuple
 
 from .compose import P, R, uniform_wrapper
 
@@ -23,7 +23,7 @@ except ImportError:
     np = None
 
 # Context variable for correlation ID
-correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", default = None)
+correlation_id_var: ContextVar[Optional[str]] = ContextVar("correlation_id", default = None)
 
 # Sensitive field names to mask
 SENSITIVE_FIELDS = {
@@ -86,7 +86,7 @@ def mask_sensitive_data(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
                 masked[key] = mask_sensitive_data(value, depth + 1, max_depth)
         return masked
 
-    if isinstance(data, list | tuple):
+    if isinstance(data, (list, tuple)):
         return type(data)(
             mask_sensitive_data(item, depth + 1, max_depth) for item in data
         )
@@ -108,7 +108,7 @@ def log_call(
     log_duration: bool = True,
     mask_sensitive: bool = True,
     include_metadata: bool = True,
-    logger_name: str | None = None,
+    logger_name: Optional[str] = None,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Log function calls with structured data.
@@ -140,8 +140,8 @@ def log_call(
         args: tuple,
         kwargs: dict,
         result: Any = None,
-        error: Exception | None = None,
-        duration: float | None = None,
+        error: Optional[Exception] = None,
+        duration: Optional[float] = None,
     ) -> dict[str, Any]:
         """Prepare structured log data."""
         log_data = {
@@ -239,9 +239,9 @@ def log_call(
 
 def log_execution_time(
     *,
-    threshold_ms: float | None = None,
-    logger_name: str | None = None,
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    threshold_ms: Optional[float] = None,
+    logger_name: Optional[str] = None,
+) -> Callable[[Callable], Callable]:
     """
     Log execution time of functions.
 
@@ -260,7 +260,7 @@ def log_execution_time(
             return logging.getLogger(logger_name)
         return logging.getLogger(func.__module__)
 
-    def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    def sync_handler(func: Callable, *args, **kwargs):
         start_time = time.time()
 
         try:
@@ -280,8 +280,8 @@ def log_execution_time(
                 )
 
     async def async_handler(
-        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
-    ) -> R:
+        func: Callable, *args, **kwargs
+    ):
         start_time = time.time()
 
         try:
@@ -304,12 +304,12 @@ def log_execution_time(
 
 def audit_log(
     *,
-    action: str | None = None,
-    resource_type: str | None = None,
+    action: Optional[str] = None,
+    resource_type: Optional[str] = None,
     include_user: bool = True,
     include_ip: bool = True,
     logger_name: str = "audit",
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
+) -> Callable[[Callable], Callable]:
     """
     Create audit log entries for sensitive operations.
 

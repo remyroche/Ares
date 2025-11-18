@@ -86,6 +86,22 @@ class HMMMLAlphaStep(BaseStep):
             )
             direction = str(config.get("direction", "long"))
 
+            # Set default alpha-specific configuration if not provided
+            # Smoothing defaults are chosen to target ~3–5 bar regime persistence
+            # while allowing overrides via config/CLI when needed.
+            alpha_defaults: Dict[str, Any] = {
+                "alpha_target_smoothing_method": "ewm",
+                "alpha_target_smoothing_window": 3,
+                "alpha_score_smoothing_method": "ewm",
+                "alpha_score_smoothing_window": 6,
+                # Keep HPO opt-in; these defaults are used when explicitly enabled
+                "alpha_enable_hpo": False,
+                "alpha_hpo_cv_folds": 3,
+                "alpha_hpo_final_trials": 20,
+            }
+            for k, v in alpha_defaults.items():
+                config.setdefault(k, v)
+
             if not symbol or not exchange:
                 raise ValueError("Config must include 'symbol' and 'exchange'")
 
@@ -204,6 +220,36 @@ class HMMMLAlphaStep(BaseStep):
                 tprint_warning(
                     f"Alpha model training failed; continuing with labels only: {model_exc}"
                 )
+
+            if alpha_scores is None or regime_col_name is None:
+                try:
+                    forward_ret_cols = [
+                        col
+                        for col in alpha_df.columns
+                        if col.startswith("alpha_forward_return_")
+                    ]
+                    if forward_ret_cols:
+                        fallback_series = alpha_df[forward_ret_cols[0]].astype(float)
+                        valid_count = fallback_series.notna().sum()
+                        if valid_count >= 3:
+                            pred_col_name_fallback = f"alpha_fallback_score_{forward_ret_cols[0].split('_')[-1]}"
+                            alpha_scores = fallback_series
+                            alpha_df[pred_col_name_fallback] = alpha_scores
+                            alpha_df, regime_stats_df, regime_col_name = self._assign_alpha_regimes(
+                                alpha_df,
+                                alpha_scores,
+                                config,
+                            )
+                            training_metrics["alpha_fallback_used"] = True
+                            training_metrics["alpha_fallback_source"] = "forward_return"
+                        else:
+                            tprint_warning(
+                                f"Not enough samples ({valid_count}) for fallback alpha regime assignment"
+                            )
+                except Exception as fallback_exc:
+                    tprint_warning(
+                        f"Alpha fallback regime assignment failed; proceeding without regimes: {fallback_exc}"
+                    )
 
             # ------------------------------------------------------------------
             # 6) Switch context to dedicated alpha namespace and assess quality
@@ -548,42 +594,60 @@ class HMMMLAlphaStep(BaseStep):
     ) -> pd.DataFrame:
         """Compute forward-return-based alpha labels on the aligned dataset.
 
-        Current implementation:
-            - Computes forward 1-bar log returns on 'close'.
-            - Builds a binary classification target: 1 if return > 0, else 0.
+        For regression:
+            - Compute forward returns for horizons 1–4h.
+            - Use the average of these horizons as a smoother macro alpha target.
+
+        For classification:
+            - Use the sign of the 1h forward return.
         """
-        horizon = int(config.get("alpha_horizon_bars", 1))
+
         return_type = str(config.get("alpha_return_type", "log")).lower()
-        # Default to regression so alpha_target is a continuous forward return
         target_type = str(config.get("alpha_target_type", "regression")).lower()
 
         df = aligned_df.copy()
-
         if "close" not in df.columns:
             raise ValueError("Aligned dataset must contain a 'close' column for returns")
 
         close = df["close"].astype(float)
 
+        # Always compute 1h forward return
         if return_type == "simple":
-            fwd_ret = close.shift(-horizon) / close - 1.0
+            fwd_ret_1h = close.shift(-1) / close - 1.0
         else:
-            # Default to log returns
-            fwd_ret = np.log(close.shift(-horizon) / close)
+            fwd_ret_1h = np.log(close.shift(-1) / close)
+        df["alpha_forward_return_1h"] = fwd_ret_1h
 
-        df[f"alpha_forward_return_{horizon}h"] = fwd_ret
+        # Multi-horizon forward returns (1–4h)
+        max_h = 4
+        fwd_cols: Dict[int, str] = {1: "alpha_forward_return_1h"}
+        for h in range(2, max_h + 1):
+            if return_type == "simple":
+                fwd_ret_h = close.shift(-h) / close - 1.0
+            else:
+                fwd_ret_h = np.log(close.shift(-h) / close)
+            col_name = f"alpha_forward_return_{h}h"
+            df[col_name] = fwd_ret_h
+            fwd_cols[h] = col_name
 
         if target_type == "regression":
-            # For regression, just use the forward return as target
-            df["alpha_target"] = df[f"alpha_forward_return_{horizon}h"]
+            # Average of 1–4h forward returns as macro target
+            horizon_keys = [h for h in fwd_cols.keys() if 1 <= h <= max_h]
+            fwd_stack = [df[fwd_cols[h]] for h in horizon_keys]
+            multi_target = pd.concat(fwd_stack, axis=1).mean(axis=1)
+            df["alpha_target"] = multi_target
+            effective_horizon = f"1-{max_h}h_mean"
         else:
-            # For classification, simple sign-based target
-            target = (fwd_ret > 0).astype(float)
-            target = target.where(~fwd_ret.isna())
+            # Classification: sign of 1h forward return
+            target = (fwd_ret_1h > 0).astype(float)
+            target = target.where(~fwd_ret_1h.isna())
             df["alpha_target"] = target
+            effective_horizon = "1h_classification"
 
-        # Drop rows where we cannot compute forward returns (usually the last few)
+        # Drop rows where we cannot compute all required forward returns
+        required_cols = ["alpha_target"] + [fwd_cols[h] for h in sorted(fwd_cols.keys())]
         before = len(df)
-        df = df[df[f"alpha_forward_return_{horizon}h"].notna()]
+        df = df.dropna(subset=required_cols)
         dropped = before - len(df)
         if dropped > 0:
             tprint_warning(
@@ -592,7 +656,7 @@ class HMMMLAlphaStep(BaseStep):
 
         tprint_info(
             f"🎯 Alpha label dataset shape: {df.shape} "
-            f"(horizon={horizon}, return_type={return_type}, target_type={target_type})"
+            f"(target_type={target_type}, effective_horizon={effective_horizon}, return_type={return_type})"
         )
 
         return df
@@ -620,6 +684,14 @@ class HMMMLAlphaStep(BaseStep):
             roc_auc_score = None  # type: ignore[assignment]
             r2_score = None  # type: ignore[assignment]
             mean_squared_error = None  # type: ignore[assignment]
+
+        def _safe_rmse(y_true: pd.Series, y_pred: np.ndarray) -> Optional[float]:
+            if mean_squared_error is None:
+                return None
+            try:
+                return float(mean_squared_error(y_true, y_pred, squared=False))
+            except TypeError:
+                return float(np.sqrt(mean_squared_error(y_true, y_pred)))  # type: ignore[call-arg]
 
         # Default to regression model for continuous alpha
         target_type = str(config.get("alpha_target_type", "regression")).lower()
@@ -677,44 +749,69 @@ class HMMMLAlphaStep(BaseStep):
         X_val_scaled = scaler.transform(X_val_raw)
         X_scaled_full = scaler.transform(X)
 
-        # Optionally augment with EWMA-smoothed features on the scaled space
+        # Optionally apply EWMA temporal smoothing on the scaled space
         use_ewm_features = bool(config.get("alpha_use_ewm_features", True))
-        ewma_periods_cfg = config.get("alpha_ewm_periods", [2, 4, 6, 8])
+        ewma_periods_cfg = config.get("alpha_ewm_periods", [2, 6, 10])
         try:
             ewma_periods = [int(p) for p in ewma_periods_cfg if int(p) > 0]
         except Exception:
-            ewma_periods = [2, 4, 6, 8]
+            ewma_periods = [2, 6, 10]
 
         if use_ewm_features and ewma_periods:
             base_df = X_scaled_full.copy()
             feature_names_seq: List[str] = list(base_df.columns)
-            features_df = base_df
+
+            aggregated_ewm: Optional[np.ndarray] = None
+            n_features = base_df.shape[1]
 
             for period in ewma_periods:
                 alpha_val = 2.0 / float(period + 1)
                 try:
-                    smoothed_array, feature_names_seq = apply_ewm_smoothing(
-                        features_df.values,
+                    smoothed_array, _ = apply_ewm_smoothing(
+                        base_df.values,
                         alpha=alpha_val,
                         feature_names=feature_names_seq,
                         use_vectorization_optimization=False,
                     )
-                    features_df = pd.DataFrame(
-                        smoothed_array,
-                        index=base_df.index,
-                        columns=pd.Index(feature_names_seq),
-                    )
+
+                    # apply_ewm_smoothing returns [original, ewm] for our usage;
+                    # take only the EWM-smoothed block so dimensionality stays constant.
+                    if smoothed_array.shape[1] < 2 * n_features:
+                        raise ValueError(
+                            f"Unexpected smoothed_array shape {smoothed_array.shape} for n_features={n_features}"
+                        )
+
+                    ewm_block = smoothed_array[:, n_features:]
+
+                    if aggregated_ewm is None:
+                        aggregated_ewm = ewm_block.astype(float)
+                    else:
+                        aggregated_ewm = aggregated_ewm + ewm_block.astype(float)
                 except Exception as e:
-                    tprint_warning(f"EWMA feature generation failed for period={period}: {e}")
-                    features_df = base_df
-                    feature_names_seq = list(base_df.columns)
+                    tprint_warning(
+                        f"EWMA temporal smoothing failed for period={period} (using unsmoothed features): {e}"
+                    )
+                    aggregated_ewm = None
                     break
 
-            X_features_full = features_df
-            X_train = X_features_full.iloc[:split_idx].copy()
-            X_val = X_features_full.iloc[split_idx:].copy()
-            X_scaled_full = X_features_full
-            extended_feature_names = feature_names_seq
+            if aggregated_ewm is not None:
+                aggregated_ewm = aggregated_ewm / float(len(ewma_periods))
+                features_df = pd.DataFrame(
+                    aggregated_ewm,
+                    index=base_df.index,
+                    columns=pd.Index(feature_names_seq),
+                )
+
+                X_features_full = features_df
+                X_train = X_features_full.iloc[:split_idx].copy()
+                X_val = X_features_full.iloc[split_idx:].copy()
+                X_scaled_full = X_features_full
+                extended_feature_names = feature_names_seq
+            else:
+                # Fallback: use robust-scaled features without EWMA smoothing
+                X_train = X_train_scaled
+                X_val = X_val_scaled
+                extended_feature_names = list(X_scaled_full.columns)
         else:
             X_train = X_train_scaled
             X_val = X_val_scaled
@@ -822,18 +919,18 @@ class HMMMLAlphaStep(BaseStep):
             if r2_score is not None:
                 training_metrics["train_r2"] = float(r2_score(y_train, train_pred))
             if mean_squared_error is not None:
-                training_metrics["train_rmse"] = float(
-                    mean_squared_error(y_train, train_pred, squared=False)
-                )
+                rmse_val = _safe_rmse(y_train, train_pred)
+                if rmse_val is not None:
+                    training_metrics["train_rmse"] = rmse_val
 
             if len(X_val) > 0:
                 val_pred = model.predict(X_val)
                 if r2_score is not None:
                     training_metrics["val_r2"] = float(r2_score(y_val, val_pred))
                 if mean_squared_error is not None:
-                    training_metrics["val_rmse"] = float(
-                        mean_squared_error(y_val, val_pred, squared=False)
-                    )
+                    rmse_val = _safe_rmse(y_val, val_pred)
+                    if rmse_val is not None:
+                        training_metrics["val_rmse"] = rmse_val
 
             scores = pd.Series(model.predict(X_scaled_full), index=df.index, name="alpha_pred_return")
             pred_col_name = "alpha_pred_return"
@@ -932,12 +1029,59 @@ class HMMMLAlphaStep(BaseStep):
         if num_bins > 5:
             num_bins = 5
 
-        valid_scores = alpha_scores.dropna()
-        if valid_scores.empty or len(valid_scores) < num_bins:
+        # Optional smoothing of alpha scores before constructing regimes
+        score_smoothing_method = str(
+            config.get("alpha_score_smoothing_method", "none")
+        ).lower()
+        score_smoothing_window = int(config.get("alpha_score_smoothing_window", 1))
+        scores_for_binning = alpha_scores.copy()
+        if score_smoothing_method != "none" and score_smoothing_window > 1:
+            try:
+                if score_smoothing_method == "ewm":
+                    scores_for_binning = scores_for_binning.ewm(
+                        span=score_smoothing_window, adjust=False
+                    ).mean()
+                elif score_smoothing_method == "rolling_median":
+                    scores_for_binning = (
+                        scores_for_binning
+                        .rolling(window=score_smoothing_window, min_periods=1)
+                        .median()
+                    )
+                elif score_smoothing_method == "rolling_mean":
+                    scores_for_binning = (
+                        scores_for_binning
+                        .rolling(window=score_smoothing_window, min_periods=1)
+                        .mean()
+                    )
+                tprint_info(
+                    f"🧹 Applied {score_smoothing_method} smoothing to alpha scores "
+                    f"(window={score_smoothing_window}) before regime binning"
+                )
+            except Exception as score_smooth_exc:
+                tprint_warning(
+                    "Alpha score smoothing failed (ignored, using raw scores): "
+                    f"{score_smooth_exc}"
+                )
+                scores_for_binning = alpha_scores
+
+        valid_scores = scores_for_binning.dropna()
+        if valid_scores.empty:
             tprint_warning(
                 f"Not enough valid alpha scores ({len(valid_scores)}) to define {num_bins} regimes"
             )
             return alpha_df, None, None
+
+        if len(valid_scores) < num_bins:
+            if len(valid_scores) >= 2:
+                num_bins = len(valid_scores)
+                tprint_warning(
+                    f"Reducing alpha regime bins to {num_bins} due to limited samples ({len(valid_scores)})"
+                )
+            else:
+                tprint_warning(
+                    f"Not enough valid alpha scores ({len(valid_scores)}) to define {num_bins} regimes"
+                )
+                return alpha_df, None, None
 
         try:
             ranks = valid_scores.rank(method="first")
@@ -1104,8 +1248,14 @@ class HMMMLAlphaStep(BaseStep):
         drop_cols.extend([c for c in numeric_df.columns if c.startswith("alpha_forward_return_")])
         feature_cols = [c for c in numeric_df.columns if c not in drop_cols]
         if not feature_cols:
-            tprint_warning("No numeric features available for alpha regime quality assessment")
-            return None, None
+            forward_ret_feature_cols = [
+                c for c in numeric_df.columns if c.startswith("alpha_forward_return_")
+            ]
+            if forward_ret_feature_cols:
+                feature_cols = forward_ret_feature_cols
+            else:
+                tprint_warning("No numeric features available for alpha regime quality assessment")
+                return None, None
 
         feature_data = numeric_df[feature_cols].loc[valid_mask]
 

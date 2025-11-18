@@ -2924,6 +2924,43 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             except Exception as e:
                 tprint_warning(f"⚠️ Fused target computation failed, continuing with binary labels only: {e}")
 
+            try:
+                from pathlib import Path
+                from src.utils.versioned_artifacts import VersionedArtifactStore
+                symbol_ctx = self._current_context.get('symbol', 'ETHUSDT') if hasattr(self, '_current_context') else 'ETHUSDT'
+                exchange_ctx = self._current_context.get('exchange', 'binance') if hasattr(self, '_current_context') else 'binance'
+                timeframe_ctx = self._current_context.get('timeframe', '15m') if hasattr(self, '_current_context') else '15m'
+                direction_ctx = self._current_context.get('direction', 'long') if hasattr(self, '_current_context') else 'long'
+                model_ctx = self._current_context.get('model', 'analyst') if hasattr(self, '_current_context') else 'analyst'
+                store_path = Path("versioned_artifacts") / f"{symbol_ctx}_{exchange_ctx}_{timeframe_ctx}_{direction_ctx}_{model_ctx}"
+                meta_df = None
+                if store_path.exists():
+                    meta_store = VersionedArtifactStore(store_path=store_path)
+                    versions = meta_store.list_versions()
+                    artifact_prefix = f"labeled_data_{symbol_ctx}_{timeframe_ctx}".lower()
+                    candidate_versions = [v for v in versions if artifact_prefix in v.lower()]
+                    for v in sorted(candidate_versions, reverse=True):
+                        try:
+                            view = meta_store.get_view(v)
+                            df_meta = view.materialize()
+                            if isinstance(df_meta, pd.DataFrame) and 'meta_probability' in df_meta.columns:
+                                meta_df = df_meta
+                                break
+                        except Exception:
+                            continue
+                if meta_df is not None and not meta_df.empty:
+                    meta_aligned = meta_df.reindex(target_df.index)
+                    if 'binary_label' in meta_aligned.columns:
+                        target_df['binary_label'] = meta_aligned['binary_label']
+                    if 'meta_probability' in meta_aligned.columns:
+                        target_df['meta_probability'] = meta_aligned['meta_probability']
+                    if 'r_multiple' in meta_aligned.columns:
+                        target_df['r_multiple'] = pd.to_numeric(meta_aligned['r_multiple'], errors='coerce').astype(np.float32)
+                    if 'target_sample_weight' in meta_aligned.columns:
+                        target_df['target_sample_weight'] = pd.to_numeric(meta_aligned['target_sample_weight'], errors='coerce').astype(np.float32)
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to augment targets with meta-labeling data: {e}")
+
             tprint_success(f"✅ Created simplified target DataFrame with columns: {list(target_df.columns)}")
             tprint(f"🐛 DEBUG: Final target DataFrame shape: {target_df.shape}", "INFO")
             

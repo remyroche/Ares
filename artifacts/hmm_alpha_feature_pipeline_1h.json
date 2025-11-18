@@ -1,0 +1,60 @@
+{
+  "data": {
+    "feature_names": [
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume",
+      "regime_label",
+      "regime_label_ml",
+      "regime_0_prob",
+      "regime_1_prob",
+      "regime_2_prob",
+      "regime_3_prob",
+      "regime_4_prob",
+      "hl_range",
+      "mean_return_short",
+      "return_1h",
+      "return_momentum",
+      "sharpe",
+      "volatility_short",
+      "volume_ratio"
+    ],
+    "scaler": "<src.features_common.transforms.scaling_normalization.ScalingNormalizer object at 0x3358ccd50>",
+    "normalizer_config": {
+      "default_strategy": "robust",
+      "auto_select": false,
+      "handle_outliers": true,
+      "outlier_threshold": 3.0,
+      "use_vectorbt": false
+    }
+  },
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1h",
+    "feature_names": [
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume",
+      "regime_label",
+      "regime_label_ml",
+      "regime_0_prob",
+      "regime_1_prob",
+      "regime_2_prob",
+      "regime_3_prob",
+      "regime_4_prob",
+      "hl_range",
+      "mean_return_short",
+      "return_1h",
+      "return_momentum",
+      "sharpe",
+      "volatility_short",
+      "volume_ratio"
+    ]
+  },
+  "saved_at": "2025-11-18T01:06:13.857640"
+}

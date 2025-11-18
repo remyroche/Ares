@@ -671,14 +671,18 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             from src.training.steps.pre_training.baseline_predictive_check import BaselinePredictiveCheck
             from pathlib import Path
 
-            # Need a target variable - prefer fused/simplified targets from features if available,
+            # Need a target variable - prefer binary_label if present, then fused/simplified targets,
             # otherwise create a simple return-based target.
 
             target = None
             direction = str(config.get('direction', 'long')).lower()
 
+            # 0) Prefer primary binary meta-label when available
+            if 'binary_label' in features.columns:
+                target = features['binary_label']
+
             # 1) Prefer fused targets if present
-            if 'target_long_fused' in features.columns or 'target_short_fused' in features.columns:
+            if target is None and ('target_long_fused' in features.columns or 'target_short_fused' in features.columns):
                 if 'short' in direction and 'target_short_fused' in features.columns:
                     target = features['target_short_fused']
                 elif 'long' in direction and 'target_long_fused' in features.columns:
@@ -1145,6 +1149,46 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
 
                     # Add formatted markdown section
                     f.write(temp_checker.format_for_markdown())
+
+                    # Add explicit pointers to CSV artifacts for downstream analysis
+                    csv_path = baseline_check_results.get('csv_path')
+                    multivariate_csv_path = baseline_check_results.get('multivariate_csv_path')
+                    if csv_path or multivariate_csv_path:
+                        f.write("\n### Baseline Metrics CSV Exports\n\n")
+                        if csv_path:
+                            f.write(f"- **Univariate baseline metrics CSV:** `{csv_path}`\n")
+                        if multivariate_csv_path:
+                            f.write(f"- **Multivariate baseline metrics CSV:** `{multivariate_csv_path}`\n")
+                        f.write(
+                            "\nThese CSV files mirror the baseline diagnostics in a tabular format so you can "
+                            "track learnability across runs, symbols, or execution modes.\n\n"
+                        )
+
+                    # Explain how to interpret Test R² and the quality score for learnability
+                    f.write("### How to Interpret Baseline Learnability Metrics\n\n")
+                    f.write(
+                        "The baseline check fits simple models (linear regression and small LightGBM baselines) "
+                        "on each feature individually, and on a few 2–3 feature combinations. This provides an "
+                        "upper bound on how learnable the target is from the raw feature set alone, before "
+                        "any complex modeling.\n\n"
+                    )
+                    f.write(
+                        "- **Test R²** measures how much of the variance in the target is explained out-of-sample "
+                        "by a given feature (or feature combination). Values near 0 mean the feature carries very "
+                        "little predictive signal; values above roughly 0.3–0.4 indicate strong linear signal; "
+                        "negative values indicate that even a simple model fails to generalize.\n"
+                    )
+                    f.write(
+                        "- The **quality score** aggregates how many features achieve positive Test R², how strong "
+                        "the best feature(s) are, and how consistent performance is across evaluated features. "
+                        "Scores close to 1.0 mean that many features contain robust, learnable signal; scores near "
+                        "0 indicate that almost all features behave like noise.\n\n"
+                    )
+                    f.write(
+                        "In practice, a low quality score, many negative Test R² values, or a best feature with "
+                        "weak Test R² suggests that labels/targets or feature definitions may need to be revisited "
+                        "before investing further in complex downstream models.\n\n"
+                    )
 
                 f.write("## Next Steps\n\n")
                 f.write("- Features are ready for feature selection and interaction generation\n")

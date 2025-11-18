@@ -2384,7 +2384,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                             if target_cols:
                                 tprint_info(f"📋 Available target columns: {target_cols}")
 
-                                # Prefer fused targets when available, then simplified structure
+                                # Enforce fused targets ONLY for analyst fallback
                                 if 'target_long_fused' in labeled_data.columns and 'target_short_fused' in labeled_data.columns:
                                     # Fused target structure from labeling integration step
                                     if direction == 'long':
@@ -2406,44 +2406,15 @@ class UnifiedModelsTrainingStep(BaseStep):
                                     tprint_info(f"   • Long fused signals: {long_signals} ({long_signals/len(labeled_data)*100:.1f}%)")
                                     tprint_info(f"   • Short fused signals: {short_signals} ({short_signals/len(labeled_data)*100:.1f}%)")
                                     tprint_info(f"   • Total fused signals: {total_signals} ({total_signals/len(labeled_data)*100:.1f}%)")
-
-                                elif 'target_long' in labeled_data.columns and 'target_short' in labeled_data.columns:
-                                    # New simplified target structure from labeling integration step
-                                    # Use direction-specific target based on the training direction
-                                    if direction == 'long':
-                                        target_col = 'target_long'
-                                        tprint_success(f"✅ Using new simplified target structure: target_long for {direction} direction")
-                                    elif direction == 'short':
-                                        target_col = 'target_short'
-                                        tprint_success(f"✅ Using new simplified target structure: target_short for {direction} direction")
-                                    else:
-                                        # For 'both' direction, use target_long as default for analyst
-                                        target_col = 'target_long'
-                                        tprint_success(f"✅ Using new simplified target structure: target_long (default for analyst)")
-                                    
-                                    # Log target statistics for the new simplified structure
-                                    long_signals = (labeled_data['target_long'] > 0).sum()
-                                    short_signals = (labeled_data['target_short'] > 0).sum()
-                                    total_signals = long_signals + short_signals
-                                    tprint_info(f"📊 Simplified target statistics:")
-                                    tprint_info(f"   • Long signals: {long_signals} ({long_signals/len(labeled_data)*100:.1f}%)")
-                                    tprint_info(f"   • Short signals: {short_signals} ({short_signals/len(labeled_data)*100:.1f}%)")
-                                    tprint_info(f"   • Total signals: {total_signals} ({total_signals/len(labeled_data)*100:.1f}%)")
-                                    
                                 else:
-                                    # Fallback to legacy target detection
-                                    # Prioritize direction-specific target columns
-                                    direction_specific_cols = [
-                                        col for col in target_cols
-                                        if direction in col.lower()
-                                    ]
-
-                                    if direction_specific_cols:
-                                        target_col = direction_specific_cols[0]
-                                        tprint_success(f"✅ Using legacy direction-specific target column: {target_col}")
-                                    else:
-                                        target_col = target_cols[0]
-                                        tprint_warning(f"⚠️ No direction-specific column found, using legacy: {target_col}")
+                                    error_msg = (
+                                        "❌ CRITICAL: Fused targets required in labeled_data fallback but not found.\n"
+                                        "   Expected columns: 'target_long_fused' and 'target_short_fused'.\n"
+                                        "   Found only non-fused target columns.\n"
+                                        "   Please re-run labeling integration to produce fused targets."
+                                    )
+                                    tprint_error(error_msg)
+                                    raise ValueError(error_msg)
 
                                 analyst_targets = labeled_data[target_col]
                                 tprint_success(f"✅ Extracted analyst targets: {len(analyst_targets)} samples")
@@ -2483,7 +2454,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                 try:
                     labeled_data = locals()['labeled_data']
                     if isinstance(labeled_data, pd.DataFrame):
-                        # For tactician, use the appropriate target based on direction
+                        # For tactician, REQUIRE fused targets when using labeled_data fallback
                         if 'target_long_fused' in labeled_data.columns and 'target_short_fused' in labeled_data.columns:
                             # Fused target structure for tactician exit signals
                             if direction == 'long':
@@ -2498,24 +2469,14 @@ class UnifiedModelsTrainingStep(BaseStep):
                                 # Default: use long fused target for tactician (both directions)
                                 tactician_targets = labeled_data['target_long_fused']
                                 tprint_success("✅ Using target_long_fused for tactician (default for both directions)")
-                        elif 'target_long' in labeled_data.columns and 'target_short' in labeled_data.columns:
-                            # New simplified target structure
-                            if direction == 'long':
-                                # For long direction tactician, use target_short (exit signals for long positions)
-                                tactician_targets = labeled_data['target_short']
-                                tprint_success(f"✅ Using target_short for tactician {direction} direction (exit signals)")
-                            elif direction == 'short':
-                                # For short direction tactician, use target_long (exit signals for short positions)
-                                tactician_targets = labeled_data['target_long']
-                                tprint_success(f"✅ Using target_long for tactician {direction} direction (exit signals)")
-                            else:
-                                # Default: use target_long for tactician (both directions)
-                                tactician_targets = labeled_data['target_long']
-                                tprint_success(f"✅ Using target_long for tactician (default for both directions)")
                         else:
-                            # Fallback to legacy structure - use same targets as analyst
-                            tactician_targets = analyst_targets.copy() if analyst_targets is not None else None
-                            tprint_warning(f"⚠️ Using legacy targets for tactician (same as analyst)")
+                            error_msg = (
+                                "❌ CRITICAL: Fused targets required in labeled_data fallback for tactician but not found.\n"
+                                "   Expected columns: 'target_long_fused' and 'target_short_fused'.\n"
+                                "   Please re-run labeling integration to produce fused targets."
+                            )
+                            tprint_error(error_msg)
+                            raise ValueError(error_msg)
                 except Exception as e:
                     self.logger.warning(f"Failed to extract tactician targets: {e}")
             
@@ -2629,29 +2590,65 @@ class UnifiedModelsTrainingStep(BaseStep):
                 # Attempt to load and align external sample weights for training
                 try:
                     weight_series = None
-                    # Reuse labeled_data if available in locals(); else fetch from artifacts
-                    ld = None
-                    try:
-                        if 'labeled_data' in locals():
-                            ld = locals()['labeled_data']
-                    except Exception:
+
+                    # Prefer meta-labeling probabilities as sample weights for analyst_ensemble
+                    training_type_local = str(config.get('training_type', 'analyst_base')).lower()
+                    if training_type_local == 'analyst_ensemble':
+                        symbol_cfg = config.get('symbol', 'ETHUSDT')
+                        timeframe_cfg = config.get('timeframe', '15m')
+                        meta_ld = None
+                        meta_source_name = None
+
+                        # First try the meta-labeling artifact name pattern, then generic labeled_data
+                        for artifact_name_candidate in [
+                            f"labeled_data_{symbol_cfg}_{timeframe_cfg}",
+                            'labeled_data',
+                        ]:
+                            try:
+                                candidate_ld = self._get_artifact(artifact_name_candidate, 'data')
+                            except Exception:
+                                candidate_ld = None
+
+                            if isinstance(candidate_ld, pd.DataFrame) and 'meta_probability' in candidate_ld.columns:
+                                meta_ld = candidate_ld
+                                meta_source_name = artifact_name_candidate
+                                break
+
+                        if isinstance(meta_ld, pd.DataFrame) and 'meta_probability' in meta_ld.columns:
+                            # Use meta_probability directly as a soft importance weight, clipped to avoid zeros
+                            mp = pd.to_numeric(meta_ld['meta_probability'], errors='coerce')
+                            weight_series = mp.clip(lower=0.01, upper=1.0)
+                            src_name = meta_source_name or 'labeled_data(meta)'
+                            tprint_info(
+                                f"⚖️ Using meta_probability from '{src_name}' as sample weights for analyst_ensemble"
+                            )
+
+                    # Generic path or fallback when meta_probabilities are not available
+                    if weight_series is None:
+                        # Reuse labeled_data if available in locals(); else fetch from artifacts
                         ld = None
-                    if ld is None or not isinstance(ld, pd.DataFrame):
                         try:
-                            ld = self._get_artifact('labeled_data', 'data')
+                            if 'labeled_data' in locals():
+                                ld = locals()['labeled_data']
                         except Exception:
                             ld = None
-                    if isinstance(ld, pd.DataFrame):
-                        # Prefer explicit weight column name
-                        for cname in ['target_sample_weight', 'sample_weight', 'label_sample_weight']:
-                            if cname in ld.columns:
-                                weight_series = ld[cname]
-                                break
-                        # If not found, try to derive a weight from fused targets (fallback: average)
-                        if weight_series is None:
-                            candidates = [c for c in ld.columns if c in ['target_long_fused','target_short_fused']]
-                            if candidates:
-                                weight_series = ld[candidates].mean(axis=1)
+                        if ld is None or not isinstance(ld, pd.DataFrame):
+                            try:
+                                ld = self._get_artifact('labeled_data', 'data')
+                            except Exception:
+                                ld = None
+                        if isinstance(ld, pd.DataFrame):
+                            # Prefer explicit weight column name
+                            for cname in ['target_sample_weight', 'sample_weight', 'label_sample_weight']:
+                                if cname in ld.columns:
+                                    weight_series = ld[cname]
+                                    break
+                            # If not found, try to derive a weight from fused targets (fallback: average)
+                            if weight_series is None:
+                                candidates = [c for c in ld.columns if c in ['target_long_fused','target_short_fused']]
+                                if candidates:
+                                    weight_series = ld[candidates].mean(axis=1)
+
                     if weight_series is not None:
                         # Align to training_data index and fill missing with 1.0
                         aligned_weights = weight_series.reindex(training_data.index).fillna(1.0).astype(float)
@@ -3000,159 +2997,243 @@ class UnifiedModelsTrainingStep(BaseStep):
         try:
             additional_features_list = []
             base_outputs_for_stats = None # Store the specific DataFrame to calculate stats on
-
-            # --- START: Load and Resample Regime Features (FAST-FAIL) ---
+            # --- START: Load HMM Alpha regime features (preferred) ---
             # ========================================================================
-            # REGIME PROBABILITY LOADING FROM HDF5 VERSIONED ARTIFACTS
+            # PREFERRED REGIME FEATURES: HMM Alpha training artifacts
             # ========================================================================
+            have_regime_features = False
             try:
                 tprint_info("=" * 80)
-                tprint_info("🌍 LOADING REGIME PROBABILITIES FROM HDF5 VERSIONED ARTIFACTS")
+                tprint_info("🌟 LOADING HMM ALPHA REGIME FEATURES FROM HDF5 VERSIONED ARTIFACTS (PREFERRED)")
                 tprint_info("=" * 80)
-                tprint_info(f"   Source Step: regime_ensemble_training")
-                tprint_info(f"   Artifact Name: regime_ensemble_predictions")
+                tprint_info(f"   Source Step: hmm_ml_alpha_step")
+                tprint_info(f"   Artifact Name: hmm_alpha_training_data_1h")
                 tprint_info(f"   Storage Format: HDF5 (via versioned_artifacts)")
 
-                # Load regime model predictions (from regime steps) - REQUIRED
-                # Try ensemble predictions first, then base model predictions
-                regime_features = None
-                # Prefer OOS/OOF artifacts to avoid leakage
-                regime_candidates = [
-                    'regime_ensemble_predictions_oof',
-                    'regime_ensemble_predictions_oos',
-                    'regime_models_predictions_oof',
-                    'regime_models_predictions_oos',
-                    'regime_ensemble_predictions',
-                    'regime_models_predictions'
-                ]
-                for artifact_name in regime_candidates:
-                    try:
-                        regime_features = self._get_artifact(artifact_name, 'data')
-                        if regime_features is not None:
-                            tprint_success(f"✅ Found regime features in '{artifact_name}' (preferred OOF/OOS if available)")
-                            # If not OOF/OOS, create a causally safe OOS proxy by shifting one step forward
-                            if ('oof' not in artifact_name.lower()) and ('oos' not in artifact_name.lower()):
-                                try:
-                                    tprint_warning("⚠️ Regime features are in-sample; creating OOS proxy via 1-step shift (ffill)")
-                                    regime_features = regime_features.shift(1).fillna(method='ffill')
-                                    # Save for reuse
-                                    try:
-                                        saved_path = self._save_artifact(
-                                            data=regime_features,
-                                            artifact_name='regime_ensemble_predictions_oos',
-                                            artifact_type='data'
-                                        )
-                                        tprint_info(f"   ↪ Saved OOS proxy regime features at: {saved_path}")
-                                    except Exception as e:
-                                        tprint_warning(f"   ⚠️ Failed to save OOS proxy regime features: {e}")
-                                except Exception as e:
-                                    tprint_warning(f"⚠️ Failed to create OOS proxy for regime features: {e}")
-                            # DEBUG: Print first few rows of regime data
-                            tprint_info(f"🔍 [DEBUG] Regime features shape: {regime_features.shape}")
-                            tprint_info(f"🔍 [DEBUG] Regime features columns: {list(regime_features.columns)}")
-                            tprint_info(f"🔍 [DEBUG] Regime features index range: {regime_features.index.min()} to {regime_features.index.max()}")
-                            tprint_info(f"🔍 [DEBUG] First 5 rows of regime features:")
-                            tprint_info(f"{regime_features.head().to_string()}")
-                            
-                            # Check for non-finite values in regime features
-                            non_finite_mask = ~np.isfinite(regime_features.select_dtypes(include=[np.number]))
-                            if non_finite_mask.any().any():
-                                non_finite_counts = non_finite_mask.sum()
-                                tprint_warning(f"🔍 [DEBUG] Non-finite values found in regime features:")
-                                for col in regime_features.columns:
-                                    col_non_finite = non_finite_mask[col].sum()
-                                    if col_non_finite > 0:
-                                        tprint_warning(f"   - {col}: {col_non_finite} non-finite values ({col_non_finite/len(regime_features)*100:.1f}%)")
-                                        # Show actual non-finite values
-                                        non_finite_indices = regime_features.index[non_finite_mask[col]]
-                                        non_finite_values = regime_features.loc[non_finite_indices, col]
-                                        tprint_info(f"     Sample non-finite values: {non_finite_values.head().to_dict()}")
-                            break
-                    except Exception as e:
-                        self.logger.debug(f"   Artifact '{artifact_name}' not found: {e}")
-                        continue
-                
-                if regime_features is None:
-                    error_msg = (
-                        "❌ CRITICAL: No regime predictions artifact found!\n"
-                        "   Expected artifacts:\n"
-                        "   - regime_ensemble_predictions (from regime_ensemble_training step) - preferred\n"
-                        "   - regime_models_predictions (from regime_models_training step) - alternative\n"
-                        "   \n"
-                        "   This artifact is REQUIRED for model training.\n"
-                        "   Format: HDF5 (versioned_artifacts)\n"
-                        "   \n"
-                        "   Please ensure regime_ensemble_training or regime_models_training step\n"
-                        "   has run successfully and generated regime probability predictions."
-                    )
-                    tprint_error(error_msg)
-                    raise ValueError(error_msg)
+                # Use direct ArtifactRouter access with the HMM Alpha context,
+                # since the alpha step writes to model='regime_alpha' on the
+                # regime_timeframe (typically 1h), not the analyst base context.
+                symbol = config.get('symbol', 'ETHUSDT')
+                exchange = config.get('exchange', 'binance')
+                regime_timeframe = config.get('regime_timeframe', config.get('timeframe', '1h'))
+                direction = config.get('direction', 'long')
 
-                tprint_info(f"   ↪ Retrieved regime_ensemble_predictions from HDF5: shape={regime_features.shape}, columns={len(regime_features.columns)}")
-                
-                # DEBUG: Log regime features before adding
-                tprint_info("=" * 80)
-                tprint_info("🔍 [DEBUG] REGIME FEATURES ANALYSIS")
-                tprint_info("=" * 80)
-                tprint_info(f"🔍 [DEBUG] Regime features shape: {regime_features.shape}")
-                tprint_info(f"🔍 [DEBUG] Regime features columns: {list(regime_features.columns)}")
-                tprint_info(f"🔍 [DEBUG] Regime features count: {len(regime_features.columns)}")
-                tprint_info("=" * 80)
-                tprint_success(f"✅ Loaded regime ensemble predictions from HDF5: {regime_features.shape}")
+                alpha_context = {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': regime_timeframe,
+                    'direction': direction,
+                    'model': 'regime_alpha',
+                    'step_name': 'hmm_ml_alpha_step',
+                }
 
-                # Log regime feature addition with comprehensive preview
-                tprint_info("=" * 80)
-                tprint_info("🌍 REGIME FEATURE ADDITION: Loading Regime Probabilities")
-                tprint_info("=" * 80)
-                tprint_data_preview(
-                    regime_features,
-                    name="Regime Ensemble Predictions (Before Resampling)",
-                    max_rows=5,
-                    max_cols=10,
-                    show_dtypes=True,
-                    show_shape=True
+                alpha_training = self.artifact_router.load(
+                    artifact_name='hmm_alpha_training_data_1h',
+                    artifact_type='data',
+                    data_category='features',
+                    context=alpha_context,
                 )
 
-                # Resample regime features if needed to match training data (should already be 15m)
-                if not regime_features.index.equals(training_data.index):
-                    tprint_warning(f"Regime features index mismatch. Resampling {len(regime_features)} rows to match {len(training_data)} rows.")
-                    # Use ffill and bfill for any alignment issues
-                    regime_features_resampled = regime_features.reindex(training_data.index, method='ffill')
-                    tprint_info(
-                        f"   ↪ Resampled regime features -> shape={regime_features_resampled.shape}, columns={len(regime_features_resampled.columns)}"
-                    )
+                if alpha_training is not None:
+                    if not isinstance(alpha_training, pd.DataFrame):
+                        alpha_training = pd.DataFrame(alpha_training)
 
-                    # Log after resampling
+                    # Standardize to DatetimeIndex
+                    if 'timestamp' in alpha_training.columns:
+                        alpha_training = alpha_training.copy()
+                        alpha_training['timestamp'] = pd.to_datetime(alpha_training['timestamp'])
+                        alpha_training.set_index('timestamp', inplace=True)
+                    elif not isinstance(alpha_training.index, pd.DatetimeIndex):
+                        tprint_warning("⚠️ HMM Alpha training data has no DatetimeIndex; skipping alpha regime features")
+                        alpha_training = None
+
+                if alpha_training is not None and not alpha_training.empty:
+                    tprint_info(f"   ↪ Retrieved hmm_alpha_training_data_1h: shape={alpha_training.shape}, columns={len(alpha_training.columns)}")
+
+                    # Select safe alpha regime feature columns
+                    alpha_cols = [
+                        c for c in alpha_training.columns
+                        if c.startswith('alpha_regime_bucket_') or c.startswith('alpha_pred_')
+                    ]
+
+                    if alpha_cols:
+                        alpha_features = alpha_training[alpha_cols].copy()
+                        tprint_info(f"   ↪ Selected {len(alpha_cols)} alpha regime/score columns: {alpha_cols[:5]}{'...' if len(alpha_cols) > 5 else ''}")
+
+                        # Create OOS-style proxy: shift forward by one step then ffill
+                        tprint_warning("⚠️ HMM Alpha regime features are in-sample; creating OOS proxy via 1-step shift (ffill)")
+                        alpha_features = alpha_features.shift(1).fillna(method='ffill')
+
+                        # Align/resample to training_data index (typically 15m)
+                        if not alpha_features.index.equals(training_data.index):
+                            tprint_warning(
+                                f"HMM Alpha features index mismatch. Resampling {len(alpha_features)} rows to match {len(training_data)} rows."
+                            )
+                            alpha_features_resampled = alpha_features.reindex(training_data.index, method='ffill')
+                            tprint_info(
+                                f"   ↪ Resampled HMM Alpha features -> shape={alpha_features_resampled.shape}, columns={len(alpha_features_resampled.columns)}"
+                            )
+                            alpha_features = alpha_features_resampled
+
+                        additional_features_list.append(alpha_features)
+                        have_regime_features = True
+                        tprint_success(f"✅ Added HMM Alpha regime features: shape={alpha_features.shape}")
+                    else:
+                        tprint_warning("⚠️ HMM Alpha training data contains no alpha_regime_bucket_* or alpha_pred_* columns; skipping alpha regime features")
+
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to load HMM Alpha regime features, falling back to legacy regime ensemble features: {e}")
+
+            # --- START: Load and Resample legacy regime features ONLY if alpha not available ---
+            # ========================================================================
+            if not have_regime_features:
+                try:
                     tprint_info("=" * 80)
-                    tprint_info("🌍 DATA MODIFICATION: Regime Features After Resampling")
+                    tprint_info("🌍 LOADING LEGACY REGIME ENSEMBLE PROBABILITIES FROM HDF5 VERSIONED ARTIFACTS")
+                    tprint_info("=" * 80)
+                    tprint_info(f"   Source Step: regime_ensemble_training")
+                    tprint_info(f"   Artifact Name: regime_ensemble_predictions")
+                    tprint_info(f"   Storage Format: HDF5 (via versioned_artifacts)")
+
+                    # Load regime model predictions (from regime steps)
+                    regime_features = None
+                    # Prefer OOS/OOF artifacts to avoid leakage
+                    regime_candidates = [
+                        'regime_ensemble_predictions_oof',
+                        'regime_ensemble_predictions_oos',
+                        'regime_models_predictions_oof',
+                        'regime_models_predictions_oos',
+                        'regime_ensemble_predictions',
+                        'regime_models_predictions'
+                    ]
+                    for artifact_name in regime_candidates:
+                        try:
+                            regime_features = self._get_artifact(artifact_name, 'data')
+                            if regime_features is not None:
+                                tprint_success(f"✅ Found regime features in '{artifact_name}' (preferred OOF/OOS if available)")
+                                # If not OOF/OOS, create a causally safe OOS proxy by shifting one step forward
+                                if ('oof' not in artifact_name.lower()) and ('oos' not in artifact_name.lower()):
+                                    try:
+                                        tprint_warning("⚠️ Regime features are in-sample; creating OOS proxy via 1-step shift (ffill)")
+                                        regime_features = regime_features.shift(1).fillna(method='ffill')
+                                        # Save for reuse
+                                        try:
+                                            saved_path = self._save_artifact(
+                                                data=regime_features,
+                                                artifact_name='regime_ensemble_predictions_oos',
+                                                artifact_type='data'
+                                            )
+                                            tprint_info(f"   ↪ Saved OOS proxy regime features at: {saved_path}")
+                                        except Exception as e:
+                                            tprint_warning(f"   ⚠️ Failed to save OOS proxy regime features: {e}")
+                                    except Exception as e:
+                                        tprint_warning(f"⚠️ Failed to create OOS proxy for regime features: {e}")
+                                # DEBUG: Print first few rows of regime data
+                                tprint_info(f"🔍 [DEBUG] Regime features shape: {regime_features.shape}")
+                                tprint_info(f"🔍 [DEBUG] Regime features columns: {list(regime_features.columns)}")
+                                tprint_info(f"🔍 [DEBUG] Regime features index range: {regime_features.index.min()} to {regime_features.index.max()}")
+                                tprint_info(f"🔍 [DEBUG] First 5 rows of regime features:")
+                                tprint_info(f"{regime_features.head().to_string()}")
+                                
+                                # Check for non-finite values in regime features
+                                non_finite_mask = ~np.isfinite(regime_features.select_dtypes(include=[np.number]))
+                                if non_finite_mask.any().any():
+                                    non_finite_counts = non_finite_mask.sum()
+                                    tprint_warning(f"🔍 [DEBUG] Non-finite values found in regime features:")
+                                    for col in regime_features.columns:
+                                        col_non_finite = non_finite_mask[col].sum()
+                                        if col_non_finite > 0:
+                                            tprint_warning(f"   - {col}: {col_non_finite} non-finite values ({col_non_finite/len(regime_features)*100:.1f}%)")
+                                            # Show actual non-finite values
+                                            non_finite_indices = regime_features.index[non_finite_mask[col]]
+                                            non_finite_values = regime_features.loc[non_finite_indices, col]
+                                            tprint_info(f"     Sample non-finite values: {non_finite_values.head().to_dict()}")
+                                break
+                        except Exception as e:
+                            self.logger.debug(f"   Artifact '{artifact_name}' not found: {e}")
+                            continue
+                    
+                    if regime_features is None:
+                        error_msg = (
+                            "❌ CRITICAL: No regime predictions artifact found!\n"
+                            "   Expected artifacts:\n"
+                            "   - regime_ensemble_predictions (from regime_ensemble_training step) - preferred\n"
+                            "   - regime_models_predictions (from regime_models_training step) - alternative\n"
+                            "   \n"
+                            "   This artifact is REQUIRED for model training.\n"
+                            "   Format: HDF5 (versioned_artifacts)\n"
+                            "   \n"
+                            "   Please ensure regime_ensemble_training or regime_models_training step\n"
+                            "   has run successfully and generated regime probability predictions."
+                        )
+                        tprint_error(error_msg)
+                        raise ValueError(error_msg)
+
+                    tprint_info(f"   ↪ Retrieved regime_ensemble_predictions from HDF5: shape={regime_features.shape}, columns={len(regime_features.columns)}")
+                    
+                    # DEBUG: Log regime features before adding
+                    tprint_info("=" * 80)
+                    tprint_info("🔍 [DEBUG] REGIME FEATURES ANALYSIS")
+                    tprint_info("=" * 80)
+                    tprint_info(f"🔍 [DEBUG] Regime features shape: {regime_features.shape}")
+                    tprint_info(f"🔍 [DEBUG] Regime features columns: {list(regime_features.columns)}")
+                    tprint_info(f"🔍 [DEBUG] Regime features count: {len(regime_features.columns)}")
+                    tprint_info("=" * 80)
+                    tprint_success(f"✅ Loaded regime ensemble predictions from HDF5: {regime_features.shape}")
+
+                    # Log regime feature addition with comprehensive preview
+                    tprint_info("=" * 80)
+                    tprint_info("🌍 REGIME FEATURE ADDITION: Loading Regime Probabilities")
                     tprint_info("=" * 80)
                     tprint_data_preview(
-                        regime_features_resampled,
-                        name="Regime Features (After Resampling)",
+                        regime_features,
+                        name="Regime Ensemble Predictions (Before Resampling)",
                         max_rows=5,
                         max_cols=10,
                         show_dtypes=True,
                         show_shape=True
                     )
 
-                    additional_features_list.append(regime_features_resampled)
-                    tprint_success("✅ Resampled and added regime ensemble features.")
-                else:
-                    tprint_info("   ↪ Regime features already aligned with training index")
-                    additional_features_list.append(regime_features)
+                    # Resample regime features if needed to match training data (should already be 15m)
+                    if not regime_features.index.equals(training_data.index):
+                        tprint_warning(f"Regime features index mismatch. Resampling {len(regime_features)} rows to match {len(training_data)} rows.")
+                        # Use ffill and bfill for any alignment issues
+                        regime_features_resampled = regime_features.reindex(training_data.index, method='ffill')
+                        tprint_info(
+                            f"   ↪ Resampled regime features -> shape={regime_features_resampled.shape}, columns={len(regime_features_resampled.columns)}"
+                        )
 
-                    # DEBUG: Log regime features
-                    tprint_info(f"🔍 [DEBUG] Regime features shape: {regime_features.shape}")
-                    tprint_info(f"🔍 [DEBUG] Regime features columns: {list(regime_features.columns)}")
-                tprint_info("=" * 80)
-            except ValueError:
-                # Re-raise ValueError for fast-fail
-                raise
-            except Exception as e:
-                # Unexpected errors should also fast-fail
-                error_msg = f"❌ CRITICAL: Failed to load regime_ensemble_predictions: {e}"
-                tprint_error(error_msg)
-                raise ValueError(error_msg) from e
+                        # Log after resampling
+                        tprint_info("=" * 80)
+                        tprint_info("🌍 DATA MODIFICATION: Regime Features After Resampling")
+                        tprint_info("=" * 80)
+                        tprint_data_preview(
+                            regime_features_resampled,
+                            name="Regime Features (After Resampling)",
+                            max_rows=5,
+                            max_cols=10,
+                            show_dtypes=True,
+                            show_shape=True
+                        )
+
+                        additional_features_list.append(regime_features_resampled)
+                        tprint_success("✅ Resampled and added regime ensemble features.")
+                    else:
+                        tprint_info("   ↪ Regime features already aligned with training index")
+                        additional_features_list.append(regime_features)
+
+                        # DEBUG: Log regime features
+                        tprint_info(f"🔍 [DEBUG] Regime features shape: {regime_features.shape}")
+                        tprint_info(f"🔍 [DEBUG] Regime features columns: {list(regime_features.columns)}")
+                    tprint_info("=" * 80)
+                except ValueError:
+                    # Re-raise ValueError for fast-fail
+                    raise
+                except Exception as e:
+                    # Unexpected errors should also fast-fail
+                    error_msg = f"❌ CRITICAL: Failed to load regime_ensemble_predictions: {e}"
+                    tprint_error(error_msg)
+                    raise ValueError(error_msg) from e
             # --- END: Load and Resample Regime Features (FAST-FAIL) ---
 
 
@@ -4339,7 +4420,10 @@ class UnifiedModelsTrainingStep(BaseStep):
             'overall_accuracy', 'overall_precision', 'overall_recall', 'overall_f1_score',
             'overall_r2_score', 'overall_mse', 'overall_mae', 'overall_rmse',
             'overall_mape', 'overall_sharpe_ratio', 'overall_sortino_ratio',
-            'best_model', 'best_model_score', 'model_count'
+            'best_model', 'best_model_score', 'model_count',
+            'train_test_r2_gap', 'overfitting_ratio', 'generalization_score',
+            'avg_overfitting_ratio', 'std_overfitting_ratio',
+            'avg_generalization_score', 'std_generalization_score'
         ]
         for key in overall_keys:
             if key in metrics:
@@ -4785,6 +4869,69 @@ class UnifiedModelsTrainingStep(BaseStep):
                     level = 'very_low'
                 return score, level
 
+            def compute_learnability_summary(comprehensive_metrics: Dict[str, Any]) -> Tuple[Optional[float], str, str]:
+                overall = comprehensive_metrics.get('overall_performance', {}) or {}
+                training_split = comprehensive_metrics.get('training_metrics', {}) or {}
+                validation_split = comprehensive_metrics.get('validation_metrics', {}) or {}
+                test_split = comprehensive_metrics.get('test_metrics', {}) or {}
+
+                overfit_ratio = overall.get('overfitting_ratio')
+                gen_score = overall.get('generalization_score')
+
+                test_r2 = None
+                for key in ['r2', 'r2_score']:
+                    if key in test_split:
+                        test_r2 = test_split.get(key)
+                        break
+
+                components = []
+                if isinstance(test_r2, (int, float)):
+                    try:
+                        test_r2_value = float(test_r2)
+                        components.append(max(0.0, min(1.0, (test_r2_value + 1.0) / 2.0)))
+                    except Exception:
+                        pass
+                if isinstance(gen_score, (int, float)):
+                    try:
+                        gen_value = float(gen_score)
+                        components.append(max(0.0, min(1.0, gen_value)))
+                    except Exception:
+                        pass
+                if isinstance(overfit_ratio, (int, float)):
+                    try:
+                        of_value = float(overfit_ratio)
+                        components.append(max(0.0, min(1.0, 1.0 - of_value)))
+                    except Exception:
+                        pass
+
+                learnability_score: Optional[float] = None
+                if components:
+                    learnability_score = float(sum(components) / len(components))
+
+                if learnability_score is None:
+                    learnability_status = 'unknown'
+                elif learnability_score >= 0.8:
+                    learnability_status = 'strong'
+                elif learnability_score >= 0.6:
+                    learnability_status = 'moderate'
+                else:
+                    learnability_status = 'weak'
+
+                overfitting_category = 'unknown'
+                if isinstance(overfit_ratio, (int, float)):
+                    try:
+                        of_value = float(overfit_ratio)
+                        if of_value < 0.1:
+                            overfitting_category = 'low'
+                        elif of_value < 0.2:
+                            overfitting_category = 'moderate'
+                        else:
+                            overfitting_category = 'high'
+                    except Exception:
+                        overfitting_category = 'unknown'
+
+                return learnability_score, learnability_status, overfitting_category
+
             # Build rows for each model
             for model_name in models.keys():
                 row = {}
@@ -4810,6 +4957,12 @@ class UnifiedModelsTrainingStep(BaseStep):
                 row['execution_time_seconds'] = comprehensive_metrics['execution_summary'].get('execution_time_seconds', 0)
                 row['success'] = comprehensive_metrics['execution_summary'].get('success', False)
                 row['models_trained_count'] = comprehensive_metrics['execution_summary'].get('models_trained_count', 0)
+
+                learnability_score, learnability_status, overfitting_category = compute_learnability_summary(comprehensive_metrics)
+                if learnability_score is not None:
+                    row['learnability_score'] = learnability_score
+                row['learnability_status'] = learnability_status
+                row['overfitting_category'] = overfitting_category
 
                 # Add flattened metrics from all categories
                 categories = [
@@ -5148,6 +5301,128 @@ class UnifiedModelsTrainingStep(BaseStep):
                     f.write("*No test metrics available.*\n\n")
                 f.write("---\n\n")
 
+                f.write("## 📚 Learnability & Generalization Diagnostics\n\n")
+                f.write("This section summarizes how the model learns from data and how robustly it generalizes.\n\n")
+
+                learn_train = comprehensive_metrics.get('training_metrics', {}) or {}
+                learn_val = comprehensive_metrics.get('validation_metrics', {}) or {}
+                learn_test = comprehensive_metrics.get('test_metrics', {}) or {}
+                overall_perf = comprehensive_metrics.get('overall_performance', {}) or {}
+
+                has_r2 = any(k in learn_train for k in ['r2', 'r2_score']) or any(k in learn_val for k in ['r2', 'r2_score']) or any(k in learn_test for k in ['r2', 'r2_score'])
+                has_acc = 'accuracy' in learn_train or 'accuracy' in learn_val or 'accuracy' in learn_test
+
+                if has_r2 or has_acc:
+                    f.write("| Metric | Train | Validation | Test |\n")
+                    f.write("|--------|-------|------------|------|\n")
+
+                    def _fmt_split(split_dict, key):
+                        value = split_dict.get(key)
+                        if isinstance(value, (int, float)) and not isinstance(value, bool):
+                            return f"{value:.4f}"
+                        return "N/A"
+
+                    if has_r2:
+                        f.write(
+                            "| R² | "
+                            f"{_fmt_split(learn_train, 'r2')} | "
+                            f"{_fmt_split(learn_val, 'r2')} | "
+                            f"{_fmt_split(learn_test, 'r2')} |\n"
+                        )
+                    if has_acc:
+                        f.write(
+                            "| Accuracy | "
+                            f"{_fmt_split(learn_train, 'accuracy')} | "
+                            f"{_fmt_split(learn_val, 'accuracy')} | "
+                            f"{_fmt_split(learn_test, 'accuracy')} |\n"
+                        )
+                    f.write("\n")
+                else:
+                    f.write("*No split-based R²/accuracy metrics available for learnability summary.*\n\n")
+
+                gap = overall_perf.get('train_test_r2_gap')
+                overfit_ratio = overall_perf.get('overfitting_ratio')
+                gen_score = overall_perf.get('generalization_score')
+
+                if any(v is not None for v in [gap, overfit_ratio, gen_score]):
+                    f.write("### Overfitting & Generalization Indicators\n\n")
+
+                    def _fmt_float(value):
+                        try:
+                            return f"{float(value):.4f}"
+                        except Exception:
+                            return str(value)
+
+                    if gap is not None:
+                        f.write(f"- **Train–Test R² Gap:** {_fmt_float(gap)}  \\n")
+                        f.write("  Larger gaps indicate that the model fits the training data much better than unseen data.\n")
+                    if overfit_ratio is not None:
+                        level = "unknown"
+                        try:
+                            ratio_val = float(overfit_ratio)
+                            if ratio_val < 0.1:
+                                level = "low (good)"
+                            elif ratio_val < 0.2:
+                                level = "moderate"
+                            else:
+                                level = "high (risk of overfitting)"
+                        except Exception:
+                            level = "unknown"
+                        f.write(f"- **Overfitting Ratio:** {_fmt_float(overfit_ratio)}  \\n")
+                        f.write(f"  Approximate relative gap between train and test performance → **{level}**.\n")
+                    if gen_score is not None:
+                        f.write(f"- **Generalization Score:** {_fmt_float(gen_score)}  \\n")
+                        f.write("  Ratio of test to train performance; values near 1.0 indicate similar train/test behaviour.\n")
+                    f.write("\n")
+                else:
+                    f.write("*No explicit overfitting/generalization indicators were recorded for this run.*\n\n")
+
+                f.write("---\n\n")
+
+                regime_metadata = result.get('metadata', {}) if isinstance(result, dict) else {}
+                regime_breakdown = None
+                if isinstance(regime_metadata, dict):
+                    if isinstance(regime_metadata.get('regime_performance'), dict):
+                        regime_breakdown = regime_metadata.get('regime_performance')
+                    elif isinstance(regime_metadata.get('regime_analysis'), dict):
+                        ra = regime_metadata.get('regime_analysis')
+                        if isinstance(ra.get('regime_performance'), dict):
+                            regime_breakdown = ra.get('regime_performance')
+                        else:
+                            regime_breakdown = ra
+                    elif isinstance(regime_metadata.get('regime_performance'), list):
+                        temp = {}
+                        for entry in regime_metadata.get('regime_performance'):
+                            if isinstance(entry, dict):
+                                name = entry.get('regime') or entry.get('regime_name')
+                                if name:
+                                    temp[name] = entry
+                        if temp:
+                            regime_breakdown = temp
+
+                if regime_breakdown:
+                    f.write("## 🌍 Regime Breakdown\n\n")
+                    f.write("| Regime | Metric | Value |\n")
+                    f.write("|--------|--------|-------|\n")
+
+                    for regime_name, stats in sorted(regime_breakdown.items()):
+                        if not isinstance(stats, dict):
+                            continue
+                        for key, value in sorted(stats.items()):
+                            if key in ('regime', 'regime_name'):
+                                continue
+                            label = key.replace('_', ' ').title()
+                            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                                try:
+                                    value_str = f"{float(value):.4f}"
+                                except Exception:
+                                    value_str = str(value)
+                            else:
+                                value_str = str(value)
+                            f.write(f"| {regime_name} | {label} | {value_str} |\n")
+
+                    f.write("\n---\n\n")
+
                 # ===== PER-MODEL DETAILED METRICS =====
                 f.write("## 🤖 Per-Model Detailed Metrics\n\n")
                 per_model = comprehensive_metrics['per_model_metrics']
@@ -5241,6 +5516,50 @@ class UnifiedModelsTrainingStep(BaseStep):
                                 f.write(f"| {label} | {value:.6f} |\n")
                             else:
                                 f.write(f"| {label} | {value} |\n")
+                        f.write("\n")
+
+                        diversity = ensemble_metrics.get('ensemble_diversity')
+                        stacking_gain = ensemble_metrics.get('stacking_improvement')
+                        simple_gain = None
+                        weighted_gain = None
+                        best_base = None
+
+                        try:
+                            if 'base_models_count' in ensemble_metrics:
+                                best_base = ensemble_metrics.get('best_base_score')
+                        except Exception:
+                            best_base = None
+
+                        try:
+                            if 'simple_voting_accuracy' in ensemble_metrics and best_base is not None:
+                                simple_gain = float(ensemble_metrics['simple_voting_accuracy']) - float(best_base)
+                            if 'weighted_voting_accuracy' in ensemble_metrics and best_base is not None:
+                                weighted_gain = float(ensemble_metrics['weighted_voting_accuracy']) - float(best_base)
+                        except Exception:
+                            simple_gain = None
+                            weighted_gain = None
+
+                        f.write("### Diversity & Per-Member vs Ensemble Gains\n\n")
+                        f.write("This section helps interpret how much the ensemble benefits from member disagreement and stacking.\n\n")
+
+                        def _fmt_val(v):
+                            try:
+                                return f"{float(v):.4f}"
+                            except Exception:
+                                return str(v)
+
+                        if diversity is not None:
+                            f.write(f"- **Ensemble Diversity:** {_fmt_val(diversity)}  \\\n")
+                            f.write("  Higher values indicate that base models make sufficiently different predictions to enable useful aggregation.\n")
+                        if stacking_gain is not None:
+                            f.write(f"- **Stacking Improvement:** {_fmt_val(stacking_gain)}  \\\n")
+                            f.write("  Average performance gain of the stacked meta-model over the best individual base model.\n")
+                        if simple_gain is not None or weighted_gain is not None:
+                            if simple_gain is not None:
+                                f.write(f"- **Simple Voting Gain (vs Best Base):** {_fmt_val(simple_gain)}  \\\n")
+                            if weighted_gain is not None:
+                                f.write(f"- **Weighted Voting Gain (vs Best Base):** {_fmt_val(weighted_gain)}  \\\n")
+                            f.write("  Positive gains mean the ensemble is extracting extra signal beyond any single member.\n")
                         f.write("\n")
                     else:
                         f.write("*No ensemble-specific metrics available.*\n\n")

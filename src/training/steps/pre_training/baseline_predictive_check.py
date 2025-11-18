@@ -491,6 +491,38 @@ class BaselinePredictiveCheck:
         if 'lgbm_best_test_r2' in summary:
             rows.append({'metric_category': 'summary', 'metric_name': 'lgbm_best_test_r2', 'value': summary.get('lgbm_best_test_r2', 0)})
 
+        # Compact learnability summary
+        rows.append({'metric_category': 'summary', 'metric_name': 'best_quality_score', 'value': summary.get('best_quality_score', 0)})
+        rows.append({'metric_category': 'summary', 'metric_name': 'positive_features', 'value': summary.get('positive_features', 0)})
+        rows.append({'metric_category': 'summary', 'metric_name': 'positive_ratio', 'value': summary.get('positive_ratio', 0.0)})
+        rows.append({'metric_category': 'summary', 'metric_name': 'avg_test_r2', 'value': summary.get('avg_test_r2', 0.0)})
+        rows.append({'metric_category': 'summary', 'metric_name': 'median_test_r2', 'value': summary.get('median_test_r2', 0.0)})
+
+        multivariate_summary = self.results.get('multivariate_summary', {})
+        if isinstance(multivariate_summary, dict) and multivariate_summary:
+            if 'best_pair_test_r2' in multivariate_summary:
+                rows.append({
+                    'metric_category': 'multivariate_summary',
+                    'metric_name': 'best_pair_test_r2',
+                    'value': multivariate_summary.get('best_pair_test_r2', 0.0),
+                })
+            if 'best_triplet_test_r2' in multivariate_summary:
+                rows.append({
+                    'metric_category': 'multivariate_summary',
+                    'metric_name': 'best_triplet_test_r2',
+                    'value': multivariate_summary.get('best_triplet_test_r2', 0.0),
+                })
+            rows.append({
+                'metric_category': 'multivariate_summary',
+                'metric_name': 'num_pairs_evaluated',
+                'value': multivariate_summary.get('num_pairs_evaluated', 0),
+            })
+            rows.append({
+                'metric_category': 'multivariate_summary',
+                'metric_name': 'num_triplets_evaluated',
+                'value': multivariate_summary.get('num_triplets_evaluated', 0),
+            })
+
         interpretation = self.results.get('interpretation', {})
         rows.append({'metric_category': 'interpretation', 'metric_name': 'quality_score', 'value': interpretation.get('quality_score', 0)})
         rows.append({'metric_category': 'interpretation', 'metric_name': 'summary', 'value': interpretation.get('summary', '')})

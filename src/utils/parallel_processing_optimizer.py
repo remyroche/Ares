@@ -15,7 +15,7 @@ import subprocess
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from functools import partial, wraps
-from typing import Callable, Any
+from typing import Callable, Any, Optional, Union
 from collections.abc import Iterable
 
 import psutil
@@ -33,7 +33,7 @@ class MacM1ParallelOptimizer:
     Parallel processing optimizer with Apple Silicon awareness.
     """
 
-    def __init__(self, max_workers: int | None = None, *, chunk_size: int = 1000, use_process_pool: bool = True, memory_limit_mb: int = 2048) -> None:
+    def __init__(self, max_workers: Optional[int] = None, *, chunk_size: int = 1000, use_process_pool: bool = True, memory_limit_mb: int = 2048) -> None:
         """
         Initialize the parallel optimizer.
 
@@ -88,7 +88,7 @@ class MacM1ParallelOptimizer:
         optimal = max(base_chunk_size, adaptive)
         return min(optimal, 10000)
 
-    def _split_dataframe(self, df: pd.DataFrame, *, chunk_size: int | None = None) -> list[pd.DataFrame]:
+    def _split_dataframe(self, df: pd.DataFrame, *, chunk_size: Optional[int] = None) -> list[pd.DataFrame]:
         """
         Split DataFrame into chunks.
         """
@@ -114,7 +114,7 @@ class MacM1ParallelOptimizer:
         logger.debug(f'🔗 Merged {len(chunks_list)} chunks into DataFrame with {len(merged_df)} rows')
         return merged_df
 
-    def parallel_apply(self, df: pd.DataFrame, func: Callable[[pd.DataFrame, Any], pd.DataFrame] | Callable[[pd.DataFrame], pd.DataFrame], *args: Any, **kwargs: Any) -> pd.DataFrame:
+    def parallel_apply(self, df: pd.DataFrame, func: Union[Callable[[pd.DataFrame, Any], pd.DataFrame], Callable[[pd.DataFrame], pd.DataFrame]], *args: Any, **kwargs: Any) -> pd.DataFrame:
         """
         Apply a function to DataFrame chunks in parallel.
         """
@@ -203,7 +203,7 @@ class MacM1ParallelOptimizer:
         logger.info(f"   Max workers: {info['max_workers']}")
         logger.info(f"   Chunk size: {info['chunk_size']}")
         logger.info(f"   Memory limit per worker: {info['memory_limit_mb']} MB")
-_parallel_optimizer: MacM1ParallelOptimizer | None = None
+_parallel_optimizer: Optional[MacM1ParallelOptimizer] = None
 
 def get_parallel_optimizer() -> MacM1ParallelOptimizer:
     """
@@ -228,7 +228,7 @@ def parallel_feature_engineering(max_workers: int = 4) -> Callable[[Callable[...
         def wrapper(*args: Any, **kwargs: Any) -> None:
             optimizer = get_parallel_optimizer()
             optimizer.max_workers = max(1, max_workers)
-            df_arg: pd.DataFrame | None = None
+            df_arg: Optional[pd.DataFrame] = None
             for arg in args:
                 if isinstance(arg, pd.DataFrame):
                     df_arg = arg

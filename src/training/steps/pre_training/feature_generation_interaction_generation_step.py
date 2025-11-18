@@ -2228,8 +2228,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         # Get targets from labeled data - comprehensive detection
         
         # Primary target columns (from labeling integration step)
-        # Prefer fused targets when available for more informative selection
+        # Prefer binary meta-label when available, then fused targets for more informative selection
         preferred_order = [
+            'binary_label',
             'target_long_fused', 'target_short_fused',
             'target_long', 'target_short',
             'directional_confidence', 'opportunity_asymmetry',
@@ -4431,6 +4432,56 @@ def _fast_joint_prob_numba(x_binned, y_binned, n_bins):
                     'importance_score': float(count),
                 })
 
+            # Add compact interaction learnability summary based on interaction scores
+            interaction_rows = [
+                row for row in summary_rows
+                if row['feature_type'] in ('interaction', 'ct_interaction')
+            ]
+
+            interaction_values = [row['importance_score'] for row in interaction_rows]
+            if interaction_values:
+                scores_arr = np.array(interaction_values, dtype=float)
+                n_interactions = int(len(scores_arr))
+                mean_score = float(scores_arr.mean())
+                median_score = float(np.median(scores_arr))
+                max_score = float(scores_arr.max())
+                positive_count = int((scores_arr > 0).sum())
+                positive_ratio = (
+                    positive_count / n_interactions if n_interactions > 0 else 0.0
+                )
+
+                # Store summary as special rows for easy downstream aggregation
+                summary_rows.append({
+                    'feature_name': '__summary__::interaction_count',
+                    'feature_type': 'interaction_summary',
+                    'category': 'all',
+                    'importance_score': float(n_interactions),
+                })
+                summary_rows.append({
+                    'feature_name': '__summary__::interaction_mean_score',
+                    'feature_type': 'interaction_summary',
+                    'category': 'all',
+                    'importance_score': mean_score,
+                })
+                summary_rows.append({
+                    'feature_name': '__summary__::interaction_median_score',
+                    'feature_type': 'interaction_summary',
+                    'category': 'all',
+                    'importance_score': median_score,
+                })
+                summary_rows.append({
+                    'feature_name': '__summary__::interaction_best_score',
+                    'feature_type': 'interaction_summary',
+                    'category': 'all',
+                    'importance_score': max_score,
+                })
+                summary_rows.append({
+                    'feature_name': '__summary__::interaction_positive_ratio',
+                    'feature_type': 'interaction_summary',
+                    'category': 'all',
+                    'importance_score': float(positive_ratio),
+                })
+
             if summary_rows:
                 summary_df = pd.DataFrame(summary_rows)
                 summary_path = Path('artifacts') / 'analyst_interaction_summary.csv'
@@ -4749,6 +4800,36 @@ def _fast_joint_prob_numba(x_binned, y_binned, n_bins):
                 content += f"- **Top Interaction Examples**:\n"
                 for i, (interaction, score) in enumerate(top_interactions, 1):
                     content += f"  {i}. `{interaction}` (Score: {score:.4f})\n"
+
+                # Interaction learnability summary
+                scores_dict = interaction_stats.get('interaction_scores', {}) or {}
+                if isinstance(scores_dict, dict) and scores_dict:
+                    score_values = np.array(list(scores_dict.values()), dtype=float)
+                    n_interactions = int(len(score_values))
+                    mean_score = float(score_values.mean()) if n_interactions > 0 else 0.0
+                    median_score = float(np.median(score_values)) if n_interactions > 0 else 0.0
+                    best_score = float(score_values.max()) if n_interactions > 0 else 0.0
+                    positive_count = int((score_values > 0).sum())
+                    positive_ratio = (
+                        positive_count / n_interactions if n_interactions > 0 else 0.0
+                    )
+
+                    content += "\n### Interaction Learnability Summary\n"
+                    content += f"- **Interactions evaluated:** {n_interactions}\n"
+                    content += f"- **Average interaction score:** {mean_score:.4f}\n"
+                    content += f"- **Median interaction score:** {median_score:.4f}\n"
+                    content += f"- **Best interaction score:** {best_score:.4f}\n"
+                    content += (
+                        f"- **Interactions with positive score:** {positive_count}/{n_interactions} "
+                        f"({positive_ratio*100:.1f}%)\n"
+                    )
+                    content += (
+                        "\nInteraction scores summarize how much incremental signal the discovered "
+                        "interactions add under the mutual-information / model-importance scoring "
+                        "used in Phase 3.3. A large fraction of positive, high-scoring interactions "
+                        "suggests that the interaction layer is learnable and worth exposing to "
+                        "downstream models.\n"
+                    )
         
         # Add SHAP analysis insights
         if 'shap_analysis' in shap_metadata:

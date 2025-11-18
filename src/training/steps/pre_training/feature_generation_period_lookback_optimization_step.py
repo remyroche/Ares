@@ -749,35 +749,40 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             tprint("📊 Computing feature importance from merged data...")
             
             # Identify target and feature columns (prefer fused, fallback to binary)
-            preferred_targets = [
-                'target_long_fused', 'target_short_fused',
-                'target_long', 'target_short'
-            ]
-            available = [c for c in preferred_targets if c in merged_data.columns]
-            if not available:
-                tprint("⚠️ No fused/binary target columns found in merged data")
-                return {}
-            
-            # Choose target based on requested direction when possible
-            direction = getattr(self, '_target_direction', None)
             target_col = None
-            if isinstance(direction, str):
-                dir_lower = direction.lower()
-                if 'short' in dir_lower and 'target_short_fused' in available:
-                    target_col = 'target_short_fused'
-                elif 'long' in dir_lower and 'target_long_fused' in available:
-                    target_col = 'target_long_fused'
-                elif 'short' in dir_lower and 'target_short' in available:
-                    target_col = 'target_short'
-                elif 'long' in dir_lower and 'target_long' in available:
-                    target_col = 'target_long'
 
-            if target_col is None:
-                # Fallback: use first available preferred target
-                target_col = available[0]
+            # Prefer primary binary meta-label when available
+            if 'binary_label' in merged_data.columns:
+                target_col = 'binary_label'
+            else:
+                preferred_targets = [
+                    'target_long_fused', 'target_short_fused',
+                    'target_long', 'target_short'
+                ]
+                available = [c for c in preferred_targets if c in merged_data.columns]
+                if not available:
+                    tprint("⚠️ No fused/binary target columns found in merged data")
+                    return {}
+                
+                # Choose target based on requested direction when possible
+                direction = getattr(self, '_target_direction', None)
+                if isinstance(direction, str):
+                    dir_lower = direction.lower()
+                    if 'short' in dir_lower and 'target_short_fused' in available:
+                        target_col = 'target_short_fused'
+                    elif 'long' in dir_lower and 'target_long_fused' in available:
+                        target_col = 'target_long_fused'
+                    elif 'short' in dir_lower and 'target_short' in available:
+                        target_col = 'target_short'
+                    elif 'long' in dir_lower and 'target_long' in available:
+                        target_col = 'target_long'
 
-            if target_col in ('target_long', 'target_short'):
-                tprint("⚠️ Fused targets not found for requested direction; falling back to binary targets for importance")
+                if target_col is None:
+                    # Fallback: use first available preferred target
+                    target_col = available[0]
+
+                if target_col in ('target_long', 'target_short'):
+                    tprint("⚠️ Fused targets not found for requested direction; falling back to binary targets for importance")
             
             # Exclude all target-like columns from features
             exclude_cols = set([c for c in merged_data.columns if 'target' in c.lower()] + ['timestamp', 'labeling_method_id', 'labeling_timestamp'])
@@ -4097,8 +4102,23 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Step 3: Merge features and labels
             if generated_features is not None and labeled_data is not None:
                 # Identify target columns from labeled data
-                target_columns = [col for col in labeled_data.columns 
-                                 if 'target' in col.lower() or col in ['price_target_vol_normalized']]
+                priority_target_columns = [
+                    'binary_label',
+                    'target_long_fused',
+                    'target_short_fused',
+                    'target_long',
+                    'target_short',
+                    'price_target_vol_normalized',
+                    'target_sample_weight',
+                    'meta_probability',
+                    'r_multiple',
+                ]
+                target_columns = [col for col in priority_target_columns if col in labeled_data.columns]
+                # Also include any other columns with 'target' in the name
+                target_columns += [
+                    col for col in labeled_data.columns
+                    if 'target' in col.lower() and col not in target_columns
+                ]
                 
                 if not target_columns:
                     tprint(f"⚠️ WARNING: No target columns found in labeled data")
@@ -5374,7 +5394,165 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 f.write("- **Good** (0.70-0.85): Solid features, suitable for most models\n")
                 f.write("- **Acceptable** (0.60-0.70): May be useful but require validation\n")
                 f.write("- **Poor** (<0.60): Consider excluding or investigating for issues\n\n")
-                
+
+                validation_results = artifacts.get('validation_results')
+                if validation_results:
+                    f.write("### Learnability and Validation Diagnostics\n\n")
+                    f.write(
+                        "These diagnostics evaluate whether the optimized features are stable, statistically "
+                        "significant, and free of obvious leakage or data issues that could hurt downstream "
+                        "model learnability.\n\n"
+                    )
+
+                    walk_forward = validation_results.get('walk_forward', {})
+                    if isinstance(walk_forward, dict) and walk_forward:
+                        stable_count = walk_forward.get('stable_count', 0)
+                        total_features = walk_forward.get('total', 0)
+                        stable_ratio = (
+                            stable_count / total_features
+                            if isinstance(stable_count, (int, float))
+                            and isinstance(total_features, (int, float))
+                            and total_features > 0
+                            else 0.0
+                        )
+                        f.write("#### Walk-Forward Stability\n\n")
+                        f.write(
+                            f"- **Stable features across windows:** {stable_count}/{total_features} "
+                            f"({stable_ratio:.1%} if total_features > 0 else 0.0)\n"
+                        )
+                        f.write(
+                            "Features that remain predictive across rolling windows are more likely to "
+                            "generalize to unseen periods.\n\n"
+                        )
+
+                    null_test = validation_results.get('null_test', {})
+                    if isinstance(null_test, dict) and null_test:
+                        status = null_test.get('status')
+                        if status == 'failed':
+                            f.write("#### Null/Shuffle Test\n\n")
+                            f.write("- **Status:** Failed or insufficient data to compute null distribution\n\n")
+                        else:
+                            significant_count = null_test.get('significant_count', 0)
+                            null_total = null_test.get('total', 0)
+                            null_ratio = (
+                                significant_count / null_total
+                                if isinstance(significant_count, (int, float))
+                                and isinstance(null_total, (int, float))
+                                and null_total > 0
+                                else 0.0
+                            )
+                            null_mean = null_test.get('null_mean', 0.0)
+                            null_std = null_test.get('null_std', 0.0)
+                            f.write("#### Null/Shuffle Test\n\n")
+                            f.write(
+                                f"- **Features beating shuffled baseline (p<0.05):** {significant_count}/{null_total} "
+                                f"({null_ratio:.1%} if null_total > 0 else 0.0)\n"
+                            )
+                            f.write(f"- **Null distribution mean |corr|:** {null_mean:.4f}\n")
+                            f.write(f"- **Null distribution std:** {null_std:.4f}\n")
+                            f.write(
+                                "If only a small fraction of features beat the shuffled-label baseline, most "
+                                "correlations are likely noise rather than learnable signal.\n\n"
+                            )
+
+                    alignment = validation_results.get('alignment_audit', {})
+                    if isinstance(alignment, dict) and alignment:
+                        issue_count = alignment.get('issue_count', 0)
+                        f.write("#### Index Alignment Audit\n\n")
+                        f.write(f"- **Potential issues detected:** {issue_count}\n")
+                        f.write(
+                            "High counts may indicate NaN-heavy or suspiciously aligned features, which can "
+                            "hide lookahead bias or data leaks.\n\n"
+                        )
+
+                    fdr_results = validation_results.get('fdr_adjusted', {})
+                    if isinstance(fdr_results, dict) and fdr_results:
+                        status = fdr_results.get('status')
+                        if status == 'skipped':
+                            f.write("#### FDR-Corrected Significance\n\n")
+                            f.write("- **Status:** Skipped (no per-feature p-values available)\n\n")
+                        else:
+                            fdr_significant = fdr_results.get('significant_count', 0)
+                            fdr_total = fdr_results.get('total', 0)
+                            fdr_ratio = (
+                                fdr_significant / fdr_total
+                                if isinstance(fdr_significant, (int, float))
+                                and isinstance(fdr_total, (int, float))
+                                and fdr_total > 0
+                                else 0.0
+                            )
+                            f.write("#### FDR-Corrected Significance\n\n")
+                            f.write(
+                                f"- **Features significant after FDR correction:** {fdr_significant}/{fdr_total} "
+                                f"({fdr_ratio:.1%} if fdr_total > 0 else 0.0)\n"
+                            )
+                            f.write(
+                                "This controls the expected false discovery rate when testing many features "
+                                "simultaneously.\n\n"
+                            )
+
+                    metric_def = validation_results.get('metric_definition', {})
+                    if isinstance(metric_def, dict) and metric_def:
+                        target_type = metric_def.get('target_type', 'unknown')
+                        is_binary = metric_def.get('is_binary', False)
+                        f.write("#### Metric Definition and Target Type\n\n")
+                        f.write(f"- **Target type:** {target_type}\n")
+                        f.write(f"- **Binary target:** {bool(is_binary)}\n")
+                        warning = metric_def.get('warning')
+                        if warning:
+                            f.write(f"- **Warning:** {warning}\n")
+                        f.write(
+                            "This confirms whether the target behaves as expected (binary vs continuous) and "
+                            "flags obvious definition issues.\n\n"
+                        )
+
+                    label_balance = validation_results.get('label_balance', {})
+                    if isinstance(label_balance, dict) and label_balance:
+                        f.write("#### Label Balance\n\n")
+                        minority_ratio = label_balance.get('minority_ratio')
+                        if minority_ratio is not None:
+                            f.write(f"- **Minority class ratio:** {minority_ratio:.3f}\n")
+                        is_balanced = label_balance.get('is_balanced')
+                        if is_balanced is not None:
+                            f.write(f"- **Balanced classes:** {bool(is_balanced)}\n")
+                        recommendation = label_balance.get('recommendation')
+                        if recommendation:
+                            f.write(f"- **Recommendation:** {recommendation}\n")
+                        f.write(
+                            "Severe class imbalance reduces effective learnability and often requires "
+                            "stratified sampling or reweighting.\n\n"
+                        )
+
+                    multicollinearity = validation_results.get('multicollinearity', {})
+                    if isinstance(multicollinearity, dict) and multicollinearity:
+                        high_corr_pairs = multicollinearity.get('high_correlation_pairs', 0)
+                        threshold_used = multicollinearity.get('threshold_used', 0.95)
+                        recommendation = multicollinearity.get('recommendation')
+                        f.write("#### Multicollinearity Check\n\n")
+                        f.write(
+                            f"- **Highly correlated feature pairs (|r| > {threshold_used}):** {high_corr_pairs}\n"
+                        )
+                        if recommendation:
+                            f.write(f"- **Recommendation:** {recommendation}\n")
+                        f.write(
+                            "Strongly collinear features can inflate variance and reduce the effective "
+                            "dimensionality of learnable signal.\n\n"
+                        )
+
+                    stability_comp = validation_results.get('stability_computation', {})
+                    if isinstance(stability_comp, dict) and stability_comp:
+                        status = stability_comp.get('status')
+                        note = stability_comp.get('note')
+                        f.write("#### Stability Computation\n\n")
+                        if status:
+                            f.write(f"- **Status:** {status}\n")
+                        if note:
+                            f.write(f"- **Note:** {note}\n")
+                        f.write(
+                            "Confirms that stability metrics are computed on non-overlapping time folds, which "
+                            "is critical for realistic learnability estimates.\n\n"
+                        )
+
                 # Detailed per-category feature analysis with individual feature results
                 f.write("### Individual Feature Analysis by Category\n\n")
                 
@@ -5549,7 +5727,102 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             # Prepare per-feature data
             per_feature_data = []
-            
+
+            # Extract high-level validation/learnability diagnostics to attach to each row
+            validation_results = artifacts.get('validation_results') or {}
+            validation_summary: Dict[str, Any] = {}
+
+            if isinstance(validation_results, dict) and validation_results:
+                # Walk-forward stability
+                walk_forward = validation_results.get('walk_forward', {})
+                if isinstance(walk_forward, dict) and walk_forward:
+                    stable_count = walk_forward.get('stable_count', 0)
+                    total_features = walk_forward.get('total', 0)
+                    stable_ratio = (
+                        stable_count / total_features
+                        if isinstance(stable_count, (int, float))
+                        and isinstance(total_features, (int, float))
+                        and total_features > 0
+                        else 0.0
+                    )
+                    validation_summary['walk_forward_stable_count'] = int(stable_count)
+                    validation_summary['walk_forward_total'] = int(total_features)
+                    validation_summary['walk_forward_stable_ratio'] = float(stable_ratio)
+
+                # Null/shuffle test
+                null_test = validation_results.get('null_test', {})
+                if isinstance(null_test, dict) and null_test:
+                    if null_test.get('status') != 'failed':
+                        significant_count = null_test.get('significant_count', 0)
+                        null_total = null_test.get('total', 0)
+                        null_ratio = (
+                            significant_count / null_total
+                            if isinstance(significant_count, (int, float))
+                            and isinstance(null_total, (int, float))
+                            and null_total > 0
+                            else 0.0
+                        )
+                        validation_summary['null_significant_count'] = int(significant_count)
+                        validation_summary['null_total'] = int(null_total)
+                        validation_summary['null_significant_ratio'] = float(null_ratio)
+                        validation_summary['null_mean_abs_corr'] = float(null_test.get('null_mean', 0.0))
+                        validation_summary['null_std_abs_corr'] = float(null_test.get('null_std', 0.0))
+
+                # Alignment audit
+                alignment = validation_results.get('alignment_audit', {})
+                if isinstance(alignment, dict) and alignment:
+                    validation_summary['alignment_issue_count'] = int(alignment.get('issue_count', 0))
+
+                # FDR correction
+                fdr_results = validation_results.get('fdr_adjusted', {})
+                if isinstance(fdr_results, dict) and fdr_results and fdr_results.get('status') != 'skipped':
+                    fdr_significant = fdr_results.get('significant_count', 0)
+                    fdr_total = fdr_results.get('total', 0)
+                    fdr_ratio = (
+                        fdr_significant / fdr_total
+                        if isinstance(fdr_significant, (int, float))
+                        and isinstance(fdr_total, (int, float))
+                        and fdr_total > 0
+                        else 0.0
+                    )
+                    validation_summary['fdr_significant_count'] = int(fdr_significant)
+                    validation_summary['fdr_total'] = int(fdr_total)
+                    validation_summary['fdr_significant_ratio'] = float(fdr_ratio)
+
+                # Metric definition
+                metric_def = validation_results.get('metric_definition', {})
+                if isinstance(metric_def, dict) and metric_def:
+                    validation_summary['metric_target_type'] = str(metric_def.get('target_type', 'unknown'))
+                    validation_summary['metric_is_binary'] = bool(metric_def.get('is_binary', False))
+                    warning = metric_def.get('warning')
+                    if warning is not None:
+                        validation_summary['metric_warning'] = str(warning)
+
+                # Label balance
+                label_balance = validation_results.get('label_balance', {})
+                if isinstance(label_balance, dict) and label_balance:
+                    if 'minority_ratio' in label_balance:
+                        validation_summary['label_balance_minority_ratio'] = float(label_balance.get('minority_ratio', 0.0))
+                    if 'is_balanced' in label_balance:
+                        validation_summary['label_balance_is_balanced'] = bool(label_balance.get('is_balanced', False))
+                    recommendation = label_balance.get('recommendation')
+                    if recommendation is not None:
+                        validation_summary['label_balance_recommendation'] = str(recommendation)
+
+                # Multicollinearity
+                multicollinearity = validation_results.get('multicollinearity', {})
+                if isinstance(multicollinearity, dict) and multicollinearity:
+                    validation_summary['multicollinearity_high_corr_pairs'] = int(multicollinearity.get('high_correlation_pairs', 0))
+                    validation_summary['multicollinearity_threshold_used'] = float(multicollinearity.get('threshold_used', 0.95))
+
+                # Stability computation metadata
+                stability_comp = validation_results.get('stability_computation', {})
+                if isinstance(stability_comp, dict) and stability_comp:
+                    if 'status' in stability_comp:
+                        validation_summary['stability_status'] = str(stability_comp.get('status'))
+                    if 'note' in stability_comp:
+                        validation_summary['stability_note'] = str(stability_comp.get('note'))
+
             # Get individual feature results from artifacts - try multiple possible keys
             individual_results = artifacts.get('individual_feature_results', {})
             per_feature_metrics = artifacts.get('per_feature_metrics', {})
@@ -5739,6 +6012,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             tprint(f"📊 CSV: Collected {len(per_feature_data)} individual feature rows")
             if len(per_feature_data) == 0:
                 tprint("⚠️ CSV: No individual feature data collected - CSV will be empty")
+
+            # Attach validation/learnability summary metrics to each row
+            if validation_summary and per_feature_data:
+                for row in per_feature_data:
+                    row.update(validation_summary)
 
             # Create DataFrame and save to CSV
             df = pd.DataFrame(per_feature_data)
@@ -6179,6 +6457,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             if not hasattr(features, 'columns'):
                 return None
             
+            # Prefer binary meta-label when available
+            if 'binary_label' in features.columns:
+                tprint("🎯 Found primary binary target column: binary_label")
+                return 'binary_label'
+            
             fused_targets = [
                 'target_long_fused',
                 'target_short_fused',
@@ -6263,6 +6546,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             # Define target patterns with their importance weights
             target_patterns = {
+                'binary_label': 1.0,
                 # High priority patterns (analyst targets)
                 'analyst_target': 1.0,
                 'analyst_entry': 0.9,

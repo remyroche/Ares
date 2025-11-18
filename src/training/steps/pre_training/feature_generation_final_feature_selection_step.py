@@ -138,11 +138,13 @@ configure_tprint(TPrintConfig(
 logger = logging.getLogger(__name__)
 
 # Define target column names once to avoid hardcoding throughout the codebase
-# Updated to include fused/simplified target structures
+# Updated to include fused/simplified target structures and meta-label outputs
 TARGET_COLUMN_NAMES = [
+    'binary_label',
     'target_long_fused', 'target_short_fused',
     'target_long', 'target_short',
     'target', 'label', 'return', 'price_target_vol_normalized',
+    'meta_probability', 'r_multiple',
     'target_sample_weight', 'labeling_method_id', 'labeling_timestamp'
 ]
 
@@ -1439,9 +1441,13 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         else:
             tprint_error(f"❌ NO INTERACTION FEATURES in final result!")
         
-        # Debug: Check if target column is present with priority for new simplified target structure
-        # First check for new simplified target structure (highest priority)
-        if 'target_long_fused' in result_df.columns and 'target_short_fused' in result_df.columns:
+        # Debug: Check if target column is present with priority for binary_label, then new simplified target structure
+        if 'binary_label' in result_df.columns:
+            available_targets = ['binary_label']
+            tprint_info("📊 Using primary binary target: binary_label")
+            tprint_info(f"📊 Target column 'binary_label' non-NaN count: {result_df['binary_label'].notna().sum()}")
+        # Next check for new simplified target structure (highest priority among price-based targets)
+        elif 'target_long_fused' in result_df.columns and 'target_short_fused' in result_df.columns:
             available_targets = ['target_long_fused', 'target_short_fused']
             tprint_info("📊 Using fused target structure: target_long_fused, target_short_fused")
             tprint_info(f"📊 Target columns found: target_long_fused ({result_df['target_long_fused'].notna().sum()} non-NaN), target_short_fused ({result_df['target_short_fused'].notna().sum()} non-NaN)")
@@ -1752,8 +1758,15 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         # Prioritize sophisticated features first
         feature_cols = sophisticated_features + basic_engineered_features
         
-        # Check for new simplified target structure first (highest priority)
-        if 'target_long_fused' in features_df.columns and 'target_short_fused' in features_df.columns:
+        # Check for primary binary meta-label first
+        if 'binary_label' in features_df.columns:
+            target_cols = ['binary_label']
+            tprint_info("📊 Using primary binary target: binary_label")
+            pos_signals = (features_df['binary_label'] == 1).sum()
+            neg_signals = (features_df['binary_label'] == 0).sum()
+            tprint_info(f"📊 Target statistics: positives={pos_signals}, negatives={neg_signals}")
+        # Next check for new simplified target structure (highest priority among price-based targets)
+        elif 'target_long_fused' in features_df.columns and 'target_short_fused' in features_df.columns:
             target_cols = ['target_long_fused', 'target_short_fused']
             tprint_info("📊 Using fused target structure: target_long_fused, target_short_fused")
             # Log target statistics for fused structure
@@ -3573,6 +3586,47 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                         report += f"\n✅ All features have sufficient information content\n"
 
                     report += f"\n"
+
+            # Baseline learnability diagnostics for the final selected feature set (if available)
+            baseline_check_results = feature_sets.get('baseline_check')
+            if isinstance(baseline_check_results, dict) and baseline_check_results.get('success', False):
+                from src.training.steps.pre_training.baseline_predictive_check import BaselinePredictiveCheck
+
+                report += "\n## Baseline Learnability of Selected Features\n\n"
+                report += (
+                    "This baseline fits simple models (linear regression and small LightGBM baselines) "
+                    "using only the final selected features. It provides an upper bound on how much of "
+                    "the target variance is explainable by this feature set alone, before any complex "
+                    "downstream modeling.\n\n"
+                )
+
+                temp_checker = BaselinePredictiveCheck()
+                temp_checker.results = baseline_check_results
+                report += temp_checker.format_for_markdown()
+
+                csv_path = baseline_check_results.get('csv_path')
+                if csv_path:
+                    report += f"\n**Baseline learnability CSV:** `{csv_path}`\n"
+
+                report += "\n### How to Read These Learnability Metrics\n\n"
+                report += (
+                    "- **Test R²** rows show, for each selected feature, how much of the target variance it "
+                    "explains out-of-sample in a simple regression. Values near 0 mean weak signal; values "
+                    "above roughly 0.3–0.4 indicate strong linear signal; negative values indicate that even "
+                    "a simple model fails to generalize.\n"
+                )
+                report += (
+                    "- The **quality score** aggregates how many features achieve positive Test R², how strong "
+                    "the best feature(s) are, and how consistent performance is across evaluated features. "
+                    "Scores close to 1.0 mean that many features contain robust, learnable signal; scores near "
+                    "0 indicate that this feature set behaves mostly like noise.\n"
+                )
+                report += (
+                    "If the selected-feature quality score is low, or if most Test R² values are negative, "
+                    "it suggests that the final selection may be too aggressive or misaligned with the target. "
+                    "In that case, consider revisiting labeling, feature generation, or selection thresholds "
+                    "before relying on this set in production models.\n\n"
+                )
 
                 # Method Analysis
                 if 'method_analysis' in enhanced_analysis:

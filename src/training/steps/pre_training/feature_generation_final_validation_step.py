@@ -498,6 +498,7 @@ class FeatureGenerationFinalValidationStep(BaseStep):
 
     def _identify_target_columns(self, dataset: pd.DataFrame) -> List[str]:
         priority_targets = [
+            'binary_label',
             'target_long_fused',
             'target_short_fused',
             'target_long',
@@ -518,6 +519,9 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         target_cols: List[str] = []
         for col in dataset.columns:
             col_lower = col.lower()
+            # Never treat sample weight columns as primary targets
+            if 'sample_weight' in col_lower:
+                continue
             if any(pattern in col_lower for pattern in target_patterns):
                 if 'quality_scores' in col_lower:
                     continue
@@ -1402,6 +1406,25 @@ class FeatureGenerationFinalValidationStep(BaseStep):
 
                         # Add formatted markdown section
                         report += "\n" + temp_checker.format_for_markdown()
+
+                        csv_path = bpc.get('csv_path')
+                        if csv_path:
+                            report += f"\n**Baseline learnability CSV (final validation):** `{csv_path}`\n"
+
+                        report += "\n#### Learnability Interpretation\n\n"
+                        report += (
+                            "These baseline diagnostics estimate how learnable the validated dataset is using "
+                            "simple models only. **Test R²** rows show per-feature out-of-sample variance explained; "
+                            "values near 0 indicate weak signal, values above roughly 0.3–0.4 indicate strong linear "
+                            "signal, and negative values indicate that even a simple model fails to generalize.\n"
+                        )
+                        report += (
+                            "The reported **quality score** aggregates how many features have positive Test R², "
+                            "how strong the best features are, and how consistent performance is across features. "
+                            "High scores (close to 1.0) suggest a learnable dataset; low scores (near 0) or many "
+                            "negative Test R² values suggest that labels/targets or feature engineering may need "
+                            "to be revisited before expecting strong downstream model performance.\n"
+                        )
                     else:
                         report += f"\n#### ⚠️ Baseline Predictive Check\n"
                         report += f"- **Status:** Failed - {bpc.get('error', 'Unknown error')}\n"

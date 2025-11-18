@@ -40,6 +40,9 @@ from .hmm_ml_alpha_step import HMMMLAlphaStep
 # Import Feature Generation Meta-Labeling Step
 from .feature_generation_meta_labeling_step import FeatureGenerationMetaLabelingStep
 
+# Import Meta-Labeling HPO Experiment Step (offline, optional)
+from .meta_labeling_hpo_experiment_step import MetaLabelingHPOExperimentStep
+
 # Note: EconomicRegimeFeatureSelector removed - it had circular dependency issues
 # and lacked unsupervised mode. Use EnhancedRegimeFeatureSelector instead.
 
@@ -59,3 +62,4 @@ step_registry.register("sticky_finite_hmm_regime_discovery", StickyFiniteHMMRegi
 step_registry.register("rolling_hmm_regime_discovery", RollingHMMRegimeDiscoveryStep)
 step_registry.register("hmm_ml_alpha_step", HMMMLAlphaStep)
 step_registry.register("feature_generation_meta_labeling_step", FeatureGenerationMetaLabelingStep)
+step_registry.register("meta_labeling_hpo_experiment", MetaLabelingHPOExperimentStep)

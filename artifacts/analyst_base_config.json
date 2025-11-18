@@ -5,6 +5,7 @@
     "timeframe": "15m",
     "direction": "long",
     "execution_mode": "blank",
+    "regime_timeframe": "1h",
     "lookback_days": 360,
     "execution_context": "analyst",
     "training_type": "analyst_base",
@@ -13,8 +14,8 @@
   },
   "metadata": {
     "training_type": "analyst_base",
-    "created_at": "2025-11-16T22:49:19.480303",
+    "created_at": "2025-11-18T08:30:00.040239",
     "timeframe": "15m"
   },
-  "saved_at": "2025-11-16T22:49:19.480785"
+  "saved_at": "2025-11-18T08:30:00.040716"
 }

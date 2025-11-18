@@ -561,7 +561,8 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             'entropy',
             'acceleration',
             'advanced_statistical',
-            'spectral_wavelet'
+            'spectral_wavelet',
+            'time'  # Time features: hour_sin, hour_cos, day_of_week_sin, day_of_week_cos
         ]
 
         # Fix FeatureBank bug by disabling optimized pipeline

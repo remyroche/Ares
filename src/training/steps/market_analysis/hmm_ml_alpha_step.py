@@ -630,6 +630,27 @@ class HMMMLAlphaStep(BaseStep):
             df[col_name] = fwd_ret_h
             fwd_cols[h] = col_name
 
+        # Winsorize forward returns at 1% and 99% percentiles
+        # This prevents extreme events (flash crashes, +50% bars) from dominating
+        # the Loss Function (MSE) of LightGBM/XGBoost models
+        winsorize_enabled = config.get("alpha_winsorize_targets", True)
+        winsorize_lower = config.get("alpha_winsorize_lower_quantile", 0.01)
+        winsorize_upper = config.get("alpha_winsorize_upper_quantile", 0.99)
+
+        if winsorize_enabled:
+            tprint_info(
+                f"🔧 Winsorizing forward returns at {winsorize_lower:.1%} and {winsorize_upper:.1%} quantiles"
+            )
+            for col_name in fwd_cols.values():
+                col_data = df[col_name].dropna()
+                if len(col_data) > 0:
+                    lower_bound = col_data.quantile(winsorize_lower)
+                    upper_bound = col_data.quantile(winsorize_upper)
+                    df[col_name] = df[col_name].clip(lower=lower_bound, upper=upper_bound)
+                    tprint_info(
+                        f"  ✓ {col_name}: clipped to [{lower_bound:.6f}, {upper_bound:.6f}]"
+                    )
+
         if target_type == "regression":
             # Average of 1–4h forward returns as macro target
             horizon_keys = [h for h in fwd_cols.keys() if 1 <= h <= max_h]

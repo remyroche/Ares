@@ -41,6 +41,7 @@ except ImportError:
 __all__ = [
     "ScalingNormalizer",
     "zscore_normalize",
+    "winsorized_zscore_normalize",
     "robust_normalize",
     "rank_normalize",
 ]
@@ -75,6 +76,55 @@ def zscore_normalize(
     stds = df.std(axis=0, ddof=ddof)
     stds_replaced = stds.replace(0, np.nan)
     normalized = (df - means) / stds_replaced
+    normalized = normalized.fillna(0.0)
+
+    return _restore_output(normalized.astype(float), was_series, data)
+
+
+def winsorized_zscore_normalize(
+    data: Union[pd.DataFrame, pd.Series],
+    ddof: int = 0,
+    lower_quantile: float = 0.01,
+    upper_quantile: float = 0.99,
+) -> Union[pd.DataFrame, pd.Series]:
+    """
+    Apply z-score normalization with winsorization to handle outliers.
+
+    Winsorization prevents extreme outliers from inflating the standard deviation,
+    which would otherwise compress normal values into a tiny range. This is critical
+    for financial data where flash crashes or fat-finger errors can distort the
+    entire distribution.
+
+    Args:
+        data: Input data (Series or DataFrame)
+        ddof: Degrees of freedom for standard deviation calculation
+        lower_quantile: Lower quantile for winsorization (default: 0.01 = 1st percentile)
+        upper_quantile: Upper quantile for winsorization (default: 0.99 = 99th percentile)
+
+    Returns:
+        Winsorized z-score normalized data
+    """
+    df, was_series = _normalize_input(data)
+
+    # Winsorize each column to cap extreme outliers
+    df_winsorized = df.copy()
+    for col in df.columns:
+        col_data = df[col].dropna()
+        if len(col_data) == 0:
+            continue
+
+        # Calculate winsorization bounds
+        lower_bound = col_data.quantile(lower_quantile)
+        upper_bound = col_data.quantile(upper_quantile)
+
+        # Clip values to bounds
+        df_winsorized[col] = df[col].clip(lower=lower_bound, upper=upper_bound)
+
+    # Apply z-score normalization on winsorized data
+    means = df_winsorized.mean(axis=0)
+    stds = df_winsorized.std(axis=0, ddof=ddof)
+    stds_replaced = stds.replace(0, np.nan)
+    normalized = (df_winsorized - means) / stds_replaced
     normalized = normalized.fillna(0.0)
 
     return _restore_output(normalized.astype(float), was_series, data)
@@ -164,11 +214,13 @@ class ScalingNormalizer:
         }
 
         # Configuration
-        self.default_strategy = self.config.get('default_strategy', 'robust')
+        # Changed default from 'robust' to 'winsorized_zscore' for better outlier handling
+        self.default_strategy = self.config.get('default_strategy', 'winsorized_zscore')
         self.auto_select = self.config.get('auto_select', True)
         self.handle_outliers = self.config.get('handle_outliers', True)
         self.outlier_threshold = self.config.get('outlier_threshold', 3.0)
         self.use_vectorbt = self.config.get('use_vectorbt', VECTORBT_AVAILABLE)
+        self.winsorize_quantiles = self.config.get('winsorize_quantiles', (0.01, 0.99))
 
         # Fitted scalers and feature mappings
         self.fitted_scalers = {}
@@ -448,7 +500,17 @@ class ScalingNormalizer:
                 is_vectorbt = scaler_info.get('vectorbt', False)
 
                 # Apply transformation
-                if is_vectorbt and hasattr(scaler, f'{strategy}_normalize'):
+                if strategy == 'winsorized_zscore':
+                    # Apply winsorized z-score normalization
+                    lower_q = scaler_info.get('lower_quantile', 0.01)
+                    upper_q = scaler_info.get('upper_quantile', 0.99)
+                    transformed_feature = winsorized_zscore_normalize(
+                        data[feature],
+                        lower_quantile=lower_q,
+                        upper_quantile=upper_q
+                    )
+                    transformed_data[feature] = transformed_feature
+                elif is_vectorbt and hasattr(scaler, f'{strategy}_normalize'):
                     # Use VectorBT transformation
                     feature_data = data[[feature]].copy()
                     transformed_feature = getattr(scaler, f'{strategy}_normalize')(feature_data)
@@ -474,6 +536,29 @@ class ScalingNormalizer:
                       strategy: str, fit: bool = True) -> Optional[pd.Series]:
         """Apply specific scaling strategy to a feature."""
         try:
+            # Handle winsorized_zscore as a special case
+            if strategy == 'winsorized_zscore':
+                try:
+                    lower_q, upper_q = self.winsorize_quantiles
+                    scaled_series = winsorized_zscore_normalize(
+                        data,
+                        lower_quantile=lower_q,
+                        upper_quantile=upper_q
+                    )
+                    # Store metadata for this strategy
+                    if fit:
+                        self.fitted_scalers[feature_name] = {
+                            'scaler': None,  # Functional approach, no scaler object
+                            'strategy': 'winsorized_zscore',
+                            'vectorbt': False,
+                            'lower_quantile': lower_q,
+                            'upper_quantile': upper_q
+                        }
+                    return scaled_series
+                except Exception as e:
+                    tprint_error(f"❌ Winsorized z-score normalization failed for {feature_name}: {e}")
+                    return None
+
             # Get scaler
             if strategy not in self.scalers:
                 tprint_warning(f"⚠️ Unknown scaling strategy: {strategy}")

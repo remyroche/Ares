@@ -290,6 +290,59 @@ def compute_macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int =
     return macd_line, signal_line, histogram
 
 
+def detect_cusum_events(
+    returns: pd.Series,
+    threshold: float = 0.02,
+    drift: float = 0.0
+) -> Tuple[pd.Series, pd.Series]:
+    """
+    CUSUM (Cumulative Sum) Filter for event detection.
+
+    Detects structural breaks by accumulating deviations from a drift level.
+    More robust than simple momentum thresholds as it captures persistent directional moves.
+
+    Based on de Prado's "Advances in Financial Machine Learning" Chapter 2.5.
+
+    Args:
+        returns: Log returns series
+        threshold: CUSUM threshold (e.g., 0.02 = 2% cumulative move)
+        drift: Expected drift per period (usually 0.0 for log returns)
+
+    Returns:
+        Tuple of (long_events, short_events) boolean series
+    """
+    cusum_pos = pd.Series(0.0, index=returns.index)
+    cusum_neg = pd.Series(0.0, index=returns.index)
+
+    long_events = pd.Series(False, index=returns.index)
+    short_events = pd.Series(False, index=returns.index)
+
+    s_pos = 0.0
+    s_neg = 0.0
+
+    for i in range(1, len(returns)):
+        if np.isnan(returns.iloc[i]):
+            continue
+
+        # Positive CUSUM (detects upward structural breaks)
+        s_pos = max(0.0, s_pos + returns.iloc[i] - drift)
+        cusum_pos.iloc[i] = s_pos
+
+        if s_pos > threshold:
+            long_events.iloc[i] = True
+            s_pos = 0.0  # Reset
+
+        # Negative CUSUM (detects downward structural breaks)
+        s_neg = min(0.0, s_neg + returns.iloc[i] - drift)
+        cusum_neg.iloc[i] = s_neg
+
+        if s_neg < -threshold:
+            short_events.iloc[i] = True
+            s_neg = 0.0  # Reset
+
+    return long_events, short_events
+
+
 def generate_primary_signals(
     df: pd.DataFrame,
     rsi_period: int = 14,
@@ -308,7 +361,9 @@ def generate_primary_signals(
     macd_threshold: float = 0.02,  # LOOSER difference threshold
     momentum_threshold: Optional[float] = None,  # If None, will be auto-tuned
     target_trades_per_day: float = 2.0,  # Target signal density for dynamic tuning
-    enable_dynamic_tuning: bool = True  # Enable auto-tuning of momentum threshold
+    enable_dynamic_tuning: bool = True,  # Enable auto-tuning of momentum threshold
+    use_cusum_filter: bool = True,  # Use CUSUM filter instead of momentum threshold
+    cusum_threshold: float = 0.015  # CUSUM threshold for event detection
 ) -> pd.DataFrame:
     """
     Generate primary trading signals from technical indicators.
@@ -423,11 +478,27 @@ def generate_primary_signals(
     signals.loc[df_local['sma_fast'] > df_local['sma_slow'], 'ma'] = 1
     signals.loc[df_local['sma_fast'] < df_local['sma_slow'], 'ma'] = -1
 
-    # ===== MOMENTUM SIGNALS =====
-    df_local['momentum'] = df_local['close'].pct_change(momentum_period)
-    signals['mom'] = 0
-    signals.loc[df_local['momentum'] > momentum_threshold, 'mom'] = 1
-    signals.loc[df_local['momentum'] < -momentum_threshold, 'mom'] = -1
+    # ===== MOMENTUM / CUSUM SIGNALS =====
+    if use_cusum_filter:
+        # Use CUSUM filter (de Prado's structural break detector)
+        log_returns = np.log(df_local['close']).diff()
+        cusum_long, cusum_short = detect_cusum_events(
+            log_returns,
+            threshold=cusum_threshold,
+            drift=0.0
+        )
+
+        signals['mom'] = 0
+        signals.loc[cusum_long, 'mom'] = 1
+        signals.loc[cusum_short, 'mom'] = -1
+
+        tprint(f"  CUSUM events: {cusum_long.sum()} long, {cusum_short.sum()} short", "INFO")
+    else:
+        # Use simple momentum threshold
+        df_local['momentum'] = df_local['close'].pct_change(momentum_period)
+        signals['mom'] = 0
+        signals.loc[df_local['momentum'] > momentum_threshold, 'mom'] = 1
+        signals.loc[df_local['momentum'] < -momentum_threshold, 'mom'] = -1
 
     # ===== VOLATILITY EXPANSION CALCULATION =====
     # Compute short and long volatility
@@ -489,7 +560,8 @@ def compute_realized_returns(
     horizon: int = 16,
     transaction_cost: float = 0.0005,
     min_event_spacing: int = 4,
-    volatility_series: Optional[pd.Series] = None
+    volatility_series: Optional[pd.Series] = None,
+    use_multiclass_labels: bool = False  # NEW: 3-class labels (0=timeout, 1=profit, 2=stop)
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
     """
     Compute realized returns for each signal event.
@@ -497,9 +569,10 @@ def compute_realized_returns(
     ENHANCED IMPROVEMENTS:
     - Uses High/Low prices for TP/SL checks (more realistic)
     - Adds velocity/efficiency penalty for slow trades
-    - Dynamic horizon based on volatility (linear scaling)
+    - Dynamic horizon based on volatility (linear scaling, 2x max cap)
     - Tracks MFE/MAE for diagnostics
     - Supports adaptive thresholds based on volatility
+    - NEW: Multi-class labels (0=timeout, 1=profit, 2=stop) for more nuanced learning
 
     Args:
         df: DataFrame with OHLCV data
@@ -510,11 +583,13 @@ def compute_realized_returns(
         transaction_cost: Transaction cost per trade (round trip)
         min_event_spacing: Minimum bars between signals (prevents overlapping events)
         volatility_series: Volatility series for dynamic horizon scaling (optional)
+        use_multiclass_labels: If True, returns 3-class labels (0=timeout, 1=profit, 2=stop)
+                               If False, returns binary labels (0=loss/timeout, 1=profit)
 
     Returns:
-        Tuple of (realized_returns, binary_labels, exit_reasons, event_durations, mfe_series, mae_series)
+        Tuple of (realized_returns, labels, exit_reasons, event_durations, mfe_series, mae_series)
         - realized_returns: Actual returns achieved (NaN where no signal)
-        - binary_labels: Binary success/failure (for model training)
+        - labels: Binary (0/1) or Multi-class (0/1/2) depending on use_multiclass_labels
         - exit_reasons: How each event exited ('profit', 'stop', 'timeout')
         - event_durations: Bars held for each event
         - mfe_series: Maximum Favorable Excursion for each event
@@ -555,7 +630,7 @@ def compute_realized_returns(
     else:
         stop_thresholds = stop_threshold.values
 
-    # Dynamic horizon based on volatility (EXPANDED RANGE: 0.5x to 3.0x)
+    # Dynamic horizon based on volatility (LINEAR with 2x max cap)
     # Lower vol = More time needed (price moves slower in low vol environments)
     # Higher vol = Less time needed (price moves faster in high vol environments)
     if volatility_series is not None:
@@ -568,13 +643,13 @@ def compute_realized_returns(
             # normalized_vol = 0 for low vol, 1 for high vol
             normalized_vol = np.clip((vol_array - vol_min) / (vol_max - vol_min + 1e-8), 0, 1)
 
-            # NEW WIDER RANGE: 3.0x at low vol (slow moves), 0.5x at high vol (fast moves)
-            # time_multiplier = 3.0 - 2.5 * normalized_vol → Range: [0.5, 3.0]
-            time_multiplier = 3.0 - 2.5 * normalized_vol
+            # LINEAR SCALING: 2.0x at low vol (slow moves), 0.5x at high vol (fast moves)
+            # time_multiplier = 2.0 - 1.5 * normalized_vol → Range: [0.5, 2.0]
+            time_multiplier = 2.0 - 1.5 * normalized_vol
             dynamic_horizons = (horizon * time_multiplier).astype(int)
 
-            # Safety bounds (wider than before)
-            dynamic_horizons = np.clip(dynamic_horizons, max(4, horizon // 3), horizon * 4)
+            # Safety bounds: [horizon/2, horizon*2]
+            dynamic_horizons = np.clip(dynamic_horizons, max(4, horizon // 2), horizon * 2)
         else:
             dynamic_horizons = np.full(len(df), horizon)
     else:
@@ -703,34 +778,47 @@ def compute_realized_returns(
         mfe_series.iloc[i] = max_favorable
         mae_series.iloc[i] = abs(max_adverse)  # Store as positive value
 
-        # NEW: Velocity/efficiency-adjusted binary labeling
-        # Penalize trades that take too long to achieve returns
+        # Label assignment: Binary or Multi-class
         econ_min_return = ECON_MIN_RETURN_MULTIPLE * transaction_cost
 
-        if abs(net_return) < econ_min_return:
-            binary_labels.iloc[i] = np.nan
+        if use_multiclass_labels:
+            # MULTI-CLASS LABELS: 0=timeout, 1=profit, 2=stop
+            # This allows model to learn different patterns for each exit type
+            if exit_reason == 'timeout':
+                binary_labels.iloc[i] = 0.0  # Timeout/noise
+            elif exit_reason == 'profit':
+                binary_labels.iloc[i] = 1.0  # Hit profit target
+            elif exit_reason == 'stop':
+                binary_labels.iloc[i] = 2.0  # Hit stop loss (bad entry)
+            else:
+                binary_labels.iloc[i] = np.nan  # Should not happen
         else:
-            # Efficiency ratio: 1.0 / log(1 + duration)
-            # Fast trades (1-2 bars) get full credit, slow trades (16+ bars) get penalized
-            efficiency_ratio = 1.0 / np.log1p(event_length)
-
-            # Velocity-adjusted return for binary labeling only
-            velocity_adjusted_return = net_return * efficiency_ratio
-
-            risk_unit = stop_thr if stop_thr > 0 else profit_thr
-            if risk_unit <= 0:
-                r_multiple = 0.0
-            else:
-                # Use velocity-adjusted return for R-multiple calculation
-                r_multiple = velocity_adjusted_return / risk_unit
-
-            if r_multiple >= R_MULTIPLE_POS_THRESHOLD:
-                binary_labels.iloc[i] = 1.0
-            elif net_return < 0:  # Losses are losses regardless of speed
-                binary_labels.iloc[i] = 0.0
-            else:
-                # Profitable but too slow = noise/drift
+            # BINARY LABELS: Velocity/efficiency-adjusted (legacy)
+            # Penalize trades that take too long to achieve returns
+            if abs(net_return) < econ_min_return:
                 binary_labels.iloc[i] = np.nan
+            else:
+                # Efficiency ratio: 1.0 / log(1 + duration)
+                # Fast trades (1-2 bars) get full credit, slow trades (16+ bars) get penalized
+                efficiency_ratio = 1.0 / np.log1p(event_length)
+
+                # Velocity-adjusted return for binary labeling only
+                velocity_adjusted_return = net_return * efficiency_ratio
+
+                risk_unit = stop_thr if stop_thr > 0 else profit_thr
+                if risk_unit <= 0:
+                    r_multiple = 0.0
+                else:
+                    # Use velocity-adjusted return for R-multiple calculation
+                    r_multiple = velocity_adjusted_return / risk_unit
+
+                if r_multiple >= R_MULTIPLE_POS_THRESHOLD:
+                    binary_labels.iloc[i] = 1.0
+                elif net_return < 0:  # Losses are losses regardless of speed
+                    binary_labels.iloc[i] = 0.0
+                else:
+                    # Profitable but too slow = noise/drift
+                    binary_labels.iloc[i] = np.nan
 
         last_event_idx = i  # Update last event position
         i += 1
@@ -2318,7 +2406,70 @@ def generate_diagnostics_report(
     return str(report_path)
 
 
-def create_base_models(config: Dict[str, Any]) -> Dict[str, Any]:
+def focal_loss_lgb(y_pred, dtrain, alpha=0.25, gamma=2.0):
+    """
+    Focal Loss for LightGBM (custom objective function).
+
+    Focal Loss: FL(p_t) = -alpha * (1 - p_t)^gamma * log(p_t)
+
+    Down-weights easy examples and focuses on hard misclassifications.
+    Critical for imbalanced datasets with noisy borderline samples.
+
+    Args:
+        y_pred: Raw predictions (logits)
+        dtrain: LightGBM Dataset with labels
+        alpha: Weighting factor for positive class (0.25 = slight positive bias)
+        gamma: Focusing parameter (2.0 = strong focus on hard examples)
+
+    Returns:
+        Tuple of (gradient, hessian)
+    """
+    y_true = dtrain.get_label()
+
+    # Sigmoid to get probabilities
+    p = 1.0 / (1.0 + np.exp(-y_pred))
+
+    # Compute focal weights
+    p_t = np.where(y_true == 1, p, 1 - p)
+    focal_weight = alpha * np.power(1 - p_t, gamma)
+
+    # Gradient and Hessian for binary cross-entropy with focal weighting
+    grad = focal_weight * (p - y_true)
+    hess = focal_weight * p * (1 - p)
+
+    return grad, hess
+
+
+def focal_loss_xgb(y_pred, dtrain, alpha=0.25, gamma=2.0):
+    """
+    Focal Loss for XGBoost (custom objective function).
+
+    Args:
+        y_pred: Raw predictions (logits)
+        dtrain: XGBoost DMatrix with labels
+        alpha: Weighting factor for positive class
+        gamma: Focusing parameter
+
+    Returns:
+        Tuple of (gradient, hessian)
+    """
+    y_true = dtrain.get_label()
+
+    # Sigmoid to get probabilities
+    p = 1.0 / (1.0 + np.exp(-y_pred))
+
+    # Compute focal weights
+    p_t = np.where(y_true == 1, p, 1 - p)
+    focal_weight = alpha * np.power(1 - p_t, gamma)
+
+    # Gradient and Hessian
+    grad = focal_weight * (p - y_true)
+    hess = focal_weight * p * (1 - p)
+
+    return grad, hess
+
+
+def create_base_models(config: Dict[str, Any], use_focal_loss: bool = True) -> Dict[str, Any]:
     """
     Create base models for ensemble with proper regularization.
 
@@ -2336,43 +2487,88 @@ def create_base_models(config: Dict[str, Any]) -> Dict[str, Any]:
     models = {}
 
     # LightGBM: Balanced capacity with STRONGER regularization (2025-11-18 update)
-    models['lgbm'] = lgb.LGBMClassifier(
-        objective='binary',
-        metric='auc',
-        n_estimators=800,  # Reduced for faster training with more data
-        max_depth=8,  # REDUCED from 10 to prevent overfitting
-        learning_rate=0.01,
-        num_leaves=63,  # Reduced from 127 (2^depth - 1, but constrained)
-        min_child_samples=20,  # INCREASED from 10 for regularization
-        subsample=0.8,
-        subsample_freq=1,
-        colsample_bytree=0.7,  # REDUCED from 0.8 for more regularization
-        reg_alpha=0.1,  # INCREASED L1 regularization (from 0.05)
-        reg_lambda=0.2,  # INCREASED L2 regularization (from 0.05)
-        class_weight='balanced',  # Handle imbalance
-        n_jobs=-1,
-        verbose=-1,
-        random_state=42
-    )
+    if use_focal_loss:
+        # Use focal loss custom objective
+        models['lgbm'] = lgb.LGBMClassifier(
+            objective=focal_loss_lgb,  # Custom focal loss
+            metric='auc',
+            n_estimators=800,
+            max_depth=8,
+            learning_rate=0.01,
+            num_leaves=63,
+            min_child_samples=20,
+            subsample=0.8,
+            subsample_freq=1,
+            colsample_bytree=0.7,
+            reg_alpha=0.1,
+            reg_lambda=0.2,
+            n_jobs=-1,
+            verbose=-1,
+            random_state=42
+        )
+        models['lgbm']._use_focal = True  # Flag for prediction handling
+    else:
+        # Standard binary cross-entropy
+        models['lgbm'] = lgb.LGBMClassifier(
+            objective='binary',
+            metric='auc',
+            n_estimators=800,
+            max_depth=8,
+            learning_rate=0.01,
+            num_leaves=63,
+            min_child_samples=20,
+            subsample=0.8,
+            subsample_freq=1,
+            colsample_bytree=0.7,
+            reg_alpha=0.1,
+            reg_lambda=0.2,
+            class_weight='balanced',
+            n_jobs=-1,
+            verbose=-1,
+            random_state=42
+        )
+        models['lgbm']._use_focal = False
 
     # XGBoost: Strong regularization (2025-11-18 update)
-    models['xgb'] = xgb.XGBClassifier(
-        objective='binary:logistic',
-        eval_metric='auc',
-        n_estimators=800,  # Reduced for faster training
-        max_depth=6,  # REDUCED from 8 for regularization
-        learning_rate=0.01,
-        subsample=0.75,  # REDUCED from 0.8
-        colsample_bytree=0.7,  # REDUCED from 0.8
-        min_child_weight=8,  # INCREASED from 5 for regularization
-        gamma=0.2,  # INCREASED minimum loss reduction (from 0.1)
-        reg_alpha=0.1,  # INCREASED L1 (from 0.05)
-        reg_lambda=0.3,  # INCREASED L2 (from 0.1)
-        scale_pos_weight=4.3,  # Handle imbalance (dynamically computed in training)
-        n_jobs=-1,
-        random_state=42,
-        verbosity=0
-    )
+    if use_focal_loss:
+        # Use focal loss custom objective
+        models['xgb'] = xgb.XGBClassifier(
+            objective=focal_loss_xgb,  # Custom focal loss
+            eval_metric='auc',
+            n_estimators=800,
+            max_depth=6,
+            learning_rate=0.01,
+            subsample=0.75,
+            colsample_bytree=0.7,
+            min_child_weight=8,
+            gamma=0.2,
+            reg_alpha=0.1,
+            reg_lambda=0.3,
+            n_jobs=-1,
+            random_state=42,
+            verbosity=0
+        )
+        models['xgb']._use_focal = True
+    else:
+        # Standard binary logistic
+        models['xgb'] = xgb.XGBClassifier(
+            objective='binary:logistic',
+            eval_metric='auc',
+            n_estimators=800,
+            max_depth=6,
+            learning_rate=0.01,
+            subsample=0.75,
+            colsample_bytree=0.7,
+            min_child_weight=8,
+            gamma=0.2,
+            reg_alpha=0.1,
+            reg_lambda=0.3,
+            scale_pos_weight=4.3,  # Handle imbalance
+            n_jobs=-1,
+            random_state=42,
+            verbosity=0
+        )
+        models['xgb']._use_focal = False
 
     # Random Forest: Balanced capacity with regularization (2025-11-18 update)
     models['rf'] = RandomForestClassifier(
@@ -2568,7 +2764,9 @@ def train_ensemble_with_kfold(
             weights_train_clean = None
 
         # Train each base model
-        base_models = create_base_models({})
+        # NOTE: use_focal_loss=False for now (standard objectives work better with predict_proba)
+        # Set to True to enable focal loss (focuses on hard examples, good for noise)
+        base_models = create_base_models({}, use_focal_loss=False)
 
         for model_name, model in base_models.items():
             try:

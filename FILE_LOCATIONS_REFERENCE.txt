@@ -1,0 +1,223 @@
+================================================================================
+ARES ML PIPELINE - ABSOLUTE FILE LOCATIONS REFERENCE
+================================================================================
+
+=== FEATURE GENERATION ===
+/home/user/Ares/src/feature_generation/core/feature_generator.py
+/home/user/Ares/src/feature_generation/core/feature_bank.py
+/home/user/Ares/src/feature_generation/core/auto_optimized_feature_generator.py
+/home/user/Ares/src/feature_generation/shared/feature_engineer.py
+/home/user/Ares/src/feature_generation/shared/regime_feature_engineer.py
+/home/user/Ares/src/feature_generation/categories/
+  ├── technical_indicators.py
+  ├── trend.py
+  ├── volatility_indicators.py
+  ├── support_resistance.py
+  └── spectral_features.py
+
+=== META-LABELING ===
+/home/user/Ares/src/utils/ml_common/labeling/meta_labeling.py
+/home/user/Ares/src/training/steps/market_analysis/feature_generation_meta_labeling_step.py
+/home/user/Ares/src/training/steps/market_analysis/meta_labeling_hpo_experiment_step.py
+
+=== REPORTING & METRICS ===
+/home/user/Ares/src/utils/ml_common/reporting/enhanced_reporting_system.py
+/home/user/Ares/src/training/steps/pre_training/utils/comprehensive_report_generator.py
+/home/user/Ares/src/training/steps/market_analysis/shared_utils/metrics.py
+/home/user/Ares/src/training/steps/pre_training/metrics_sink.py
+/home/user/Ares/src/training/steps/pre_training/utils/target_quality_metrics.py
+
+=== TRAINING PIPELINE STEPS ===
+/home/user/Ares/src/training/steps/base_step.py (Abstract base class)
+/home/user/Ares/src/training/steps/pre_training/feature_generation_data_validation_step.py
+/home/user/Ares/src/training/steps/pre_training/feature_generation_feature_generation_step.py
+/home/user/Ares/src/training/steps/pre_training/feature_generation_feature_selection_step.py
+/home/user/Ares/src/training/steps/pre_training/feature_generation_interaction_generation_step.py
+/home/user/Ares/src/training/steps/pre_training/feature_generation_final_feature_selection_step.py
+/home/user/Ares/src/training/steps/pre_training/feature_generation_final_validation_step.py
+/home/user/Ares/src/training/steps/market_analysis/feature_generation_meta_labeling_step.py
+
+=== CONFIGURATION FILES (YAML) ===
+/home/user/Ares/src/training/steps/model_training/analyst_base_config.yaml
+/home/user/Ares/src/training/steps/model_training/analyst_ensemble_config.yaml
+/home/user/Ares/src/training/steps/model_training/tactician_base_config.yaml
+/home/user/Ares/src/training/steps/model_training/tactician_ensemble_config.yaml
+/home/user/Ares/src/training/steps/model_training/hpo_backups/ (30+ timestamped backups)
+/home/user/Ares/src/config/
+  ├── regime_features.yaml
+  ├── training_modes.yaml
+  └── [50+ other config files]
+
+=== LAUNCHER & ORCHESTRATION ===
+/home/user/Ares/src/launcher/ares_launcher.py
+/home/user/Ares/src/training/core/training_manager.py
+/home/user/Ares/src/training/core/pipeline_base.py
+
+=== STEP REGISTRATION MODULES ===
+/home/user/Ares/src/training/steps/__init__.py
+/home/user/Ares/src/training/steps/data_collection/__init__.py
+/home/user/Ares/src/training/steps/pre_training/__init__.py
+/home/user/Ares/src/training/steps/market_analysis/__init__.py
+/home/user/Ares/src/training/steps/model_training/__init__.py
+
+=== UTILITIES ===
+/home/user/Ares/src/utils/artifact_manager.py
+/home/user/Ares/src/utils/versioned_artifacts.py
+/home/user/Ares/src/utils/tprint.py
+/home/user/Ares/src/utils/logger.py
+/home/user/Ares/src/utils/hardware/unified_hardware_manager.py
+
+=== OUTPUT DIRECTORIES ===
+/home/user/Ares/artifacts/              (Parquet/HDF5 files - ~122MB)
+/home/user/Ares/outcomes/               (CSV & Markdown reports)
+/home/user/Ares/versioned_artifacts/    (Timestamped versions)
+/home/user/Ares/analysis_output/        (Analysis reports)
+
+=== DOCUMENTATION ===
+/home/user/Ares/CODEBASE_EXPLORATION_SUMMARY.md    (Full 666-line reference)
+/home/user/Ares/QUICK_REFERENCE.md                  (Quick lookup guide)
+/home/user/Ares/FILE_LOCATIONS_REFERENCE.txt        (This file)
+
+================================================================================
+QUICK NAVIGATION BY FUNCTION
+================================================================================
+
+FINDING FEATURE GENERATION CODE:
+  1. Core generator: /home/user/Ares/src/feature_generation/core/
+  2. Feature engineer: /home/user/Ares/src/feature_generation/shared/feature_engineer.py
+  3. Feature step: /home/user/Ares/src/training/steps/pre_training/feature_generation_feature_generation_step.py
+
+FINDING META-LABELING CODE:
+  1. Core functions: /home/user/Ares/src/utils/ml_common/labeling/meta_labeling.py
+  2. Step implementation: /home/user/Ares/src/training/steps/market_analysis/feature_generation_meta_labeling_step.py
+  3. HPO: /home/user/Ares/src/training/steps/market_analysis/meta_labeling_hpo_experiment_step.py
+
+FINDING REPORT GENERATION:
+  1. Reporting system: /home/user/Ares/src/utils/ml_common/reporting/enhanced_reporting_system.py
+  2. Report generator: /home/user/Ares/src/training/steps/pre_training/utils/comprehensive_report_generator.py
+  3. Output: /home/user/Ares/outcomes/
+
+FINDING METRICS COMPUTATION:
+  1. Metrics calculator: /home/user/Ares/src/training/steps/market_analysis/shared_utils/metrics.py
+  2. Metrics sink: /home/user/Ares/src/training/steps/pre_training/metrics_sink.py
+  3. Target quality: /home/user/Ares/src/training/steps/pre_training/utils/target_quality_metrics.py
+
+FINDING MODEL TRAINING CODE:
+  1. Base step: /home/user/Ares/src/training/steps/base_step.py
+  2. Model configs: /home/user/Ares/src/training/steps/model_training/
+  3. Training manager: /home/user/Ares/src/training/core/training_manager.py
+
+FINDING CONFIGURATION FILES:
+  1. Model configs: /home/user/Ares/src/training/steps/model_training/*.yaml
+  2. General configs: /home/user/Ares/src/config/
+  3. Feature configs: /home/user/Ares/src/config/features/
+
+FINDING LAUNCHER:
+  1. Main launcher: /home/user/Ares/src/launcher/ares_launcher.py
+  2. Step registry: /home/user/Ares/src/training/steps/base_step.py (step_registry)
+
+FINDING ARTIFACTS:
+  1. Artifact manager: /home/user/Ares/src/utils/artifact_manager.py
+  2. Storage: /home/user/Ares/artifacts/
+  3. Versioned: /home/user/Ares/versioned_artifacts/
+
+================================================================================
+PIPELINE FLOW (STEPS IN ORDER)
+================================================================================
+
+1. Data Validation
+   /home/user/Ares/src/training/steps/pre_training/feature_generation_data_validation_step.py
+
+2. Feature Generation (300+ features)
+   /home/user/Ares/src/training/steps/pre_training/feature_generation_feature_generation_step.py
+
+3. Feature Selection (300 → 100)
+   /home/user/Ares/src/training/steps/pre_training/feature_generation_feature_selection_step.py
+
+4. Interaction Generation
+   /home/user/Ares/src/training/steps/pre_training/feature_generation_interaction_generation_step.py
+
+5. Final Feature Selection (100 → 40/50/60)
+   /home/user/Ares/src/training/steps/pre_training/feature_generation_final_feature_selection_step.py
+   Output: /home/user/Ares/outcomes/feature_quality_*.csv
+
+6. Meta-Labeling (Triple Barrier)
+   /home/user/Ares/src/training/steps/market_analysis/feature_generation_meta_labeling_step.py
+   Output: /home/user/Ares/outcomes/meta_labeling_hpo_pareto_front_*.csv
+
+7. Model Training (Analyst + Tactician)
+   Config: /home/user/Ares/src/training/steps/model_training/
+   Manager: /home/user/Ares/src/training/core/training_manager.py
+
+================================================================================
+KEY CLASSES & THEIR LOCATIONS
+================================================================================
+
+BaseStep (abstract):
+  /home/user/Ares/src/training/steps/base_step.py
+
+FeatureGenerator:
+  /home/user/Ares/src/feature_generation/core/feature_generator.py
+
+FeatureBank:
+  /home/user/Ares/src/feature_generation/core/feature_bank.py
+
+FeatureEngineer:
+  /home/user/Ares/src/feature_generation/shared/feature_engineer.py
+
+MetricsCalculator:
+  /home/user/Ares/src/training/steps/market_analysis/shared_utils/metrics.py
+
+EnhancedReportingSystem:
+  /home/user/Ares/src/utils/ml_common/reporting/enhanced_reporting_system.py
+
+ArtifactManager:
+  /home/user/Ares/src/utils/artifact_manager.py
+
+VersionedArtifactStore:
+  /home/user/Ares/src/utils/versioned_artifacts.py
+
+================================================================================
+METRIC LOCATIONS
+================================================================================
+
+Where metrics are computed:
+  /home/user/Ares/src/training/steps/market_analysis/shared_utils/metrics.py
+  /home/user/Ares/src/training/steps/pre_training/utils/target_quality_metrics.py
+
+Where metrics are recorded:
+  /home/user/Ares/src/training/steps/pre_training/metrics_sink.py
+
+Where reports are generated:
+  /home/user/Ares/src/utils/ml_common/reporting/enhanced_reporting_system.py
+  /home/user/Ares/src/training/steps/pre_training/utils/comprehensive_report_generator.py
+
+Report output location:
+  /home/user/Ares/outcomes/
+
+CSV files generated by meta-labeling HPO:
+  /home/user/Ares/outcomes/meta_labeling_hpo_pareto_front_<symbol>_<timeframe>_<timestamp>.csv
+
+================================================================================
+CONFIGURATION QUICK ACCESS
+================================================================================
+
+Main launcher mode lookback:
+  /home/user/Ares/src/launcher/ares_launcher.py (MODE_LOOKBACK_DAYS)
+
+Model configurations with HPO:
+  /home/user/Ares/src/training/steps/model_training/tactician_base_config.yaml
+  /home/user/Ares/src/training/steps/model_training/analyst_base_config.yaml
+
+HPO backup history:
+  /home/user/Ares/src/training/steps/model_training/hpo_backups/
+
+Main configuration directory:
+  /home/user/Ares/src/config/
+
+Feature-specific configs:
+  /home/user/Ares/src/config/features/
+
+================================================================================
+END OF REFERENCE
+================================================================================

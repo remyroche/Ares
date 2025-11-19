@@ -111,9 +111,12 @@ volatility:
 # ============================================================================
 volume_flow:
   description: "Volume, flow, and market impact metrics"
-  target_features: 60
+  target_features: 80
   lookback_windows: [5, 10, 20, 50, 100]
-  
+  microstructure_enabled: true
+  market_impact_enabled: true
+  order_flow_enabled: true
+
   features:
     # Volume indicators
     - name: "volume_ratio"
@@ -163,6 +166,19 @@ volume_flow:
       windows: [1, 5, 10]
       dependencies: ["buy_sell_pressure"]
 
+    # Additional microstructure metrics
+    - name: "effective_spread"
+      formula: "2 * abs(close - vwap) / vwap"
+      windows: [5, 10, 20]
+      dependencies: ["close", "volume"]
+      note: "Measure of bid-ask spread through market impact"
+
+    - name: "volume_weighted_volatility"
+      formula: "returns.rolling(window).std() * sqrt(volume.rolling(window).mean())"
+      windows: [10, 20, 50]
+      dependencies: ["log_returns", "volume"]
+      note: "Volatility scaled by volume strength"
+
 # ============================================================================
 # FEATURE FAMILY 4: ENTROPY/COMPLEXITY
 # ============================================================================
@@ -209,6 +225,21 @@ entropy_complexity:
       windows: [50, 100, 200]
       dependencies: ["close"]
       complexity: "O(N²)"
+      window_adjustment: "Increased from 20 to 50 minimum to reduce box-counting collapse"
+
+    # Additional advanced complexity metrics
+    - name: "hurst_exponent"
+      formula: "compute_hurst_exponent(close)"
+      windows: [50, 100, 200]
+      dependencies: ["close"]
+      complexity: "O(N log N)"
+      note: "More robust than fractal_dimension for financial time series"
+
+    - name: "permutation_entropy"
+      formula: "compute_permutation_entropy(close, m=3)"
+      windows: [20, 50, 100]
+      dependencies: ["close"]
+      complexity: "O(N)"
 
 # ============================================================================
 # FEATURE FAMILY 5: SPECTRAL/MULTI-SCALE
@@ -301,7 +332,7 @@ optimization:
 # FEATURE SELECTION AND PRUNING
 # ============================================================================
 feature_selection:
-  correlation_threshold: 0.95
+  correlation_threshold: 0.9
   mi_threshold: 0.9
   variance_threshold: 1e-8
   

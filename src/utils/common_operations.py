@@ -1554,45 +1554,109 @@ def calculate_rolling_skewness_kurtosis_ratio(df: pd.DataFrame,
     
     return df_skew_kurt_ratio
 
-def create_fractal_features(df: pd.DataFrame, 
+def compute_hurst_exponent(x: np.ndarray) -> float:
+    """
+    Compute Hurst exponent for financial time series.
+    More robust than fractal dimension for small windows.
+
+    Hurst Exponent interpretation:
+    - H < 0.5: Mean-reverting process
+    - H = 0.5: Random walk / White noise
+    - H > 0.5: Trending process
+    """
+    if len(x) < 10:
+        return np.nan
+    try:
+        # Ensure minimum 10 data points for reliability
+        if len(x) < 10:
+            return np.nan
+
+        # Calculate log returns (normalize)
+        returns = np.log(x[1:] / x[:-1])
+
+        # Calculate cumulative sum
+        Y = np.cumsum(returns - np.mean(returns))
+
+        # Calculate rescaled range
+        R = np.max(Y) - np.min(Y)
+        S = np.std(returns, ddof=1)
+
+        if S == 0:
+            return np.nan
+
+        # Hurst exponent
+        H = np.log(R / S) / np.log(len(x))
+
+        # Clamp to reasonable range [0, 2]
+        H = np.clip(H, 0.0, 2.0)
+
+        return H
+    except:
+        return np.nan
+
+def create_fractal_features(df: pd.DataFrame,
                           columns: List[str],
-                          window: int = 20) -> pd.DataFrame:
-    """Create fractal dimension features."""
+                          window: int = 50) -> pd.DataFrame:
+    """
+    Create fractal dimension features with improved box-counting method.
+    Default window increased to 50 to reduce numerical instability.
+    """
     df_fractal = df.copy()
-    
+
     for col in columns:
         if col in df.columns:
             def fractal_dimension(x):
-                if len(x) < 3:
+                """
+                Improved box-counting fractal dimension.
+                - Requires minimum window of 50 for stability
+                - Avoids collapse at small windows
+                """
+                if len(x) < 10:
                     return np.nan
                 try:
                     # Box-counting method for fractal dimension
                     n = len(x)
-                    scales = np.logspace(0.5, np.log10(n/4), 10).astype(int)
+                    # Ensure we have enough scale levels
+                    min_scale = max(2, n // 50)  # At least 2, at most 1/50th of window
+                    max_scale = max(10, n // 2)
+                    scales = np.logspace(np.log10(min_scale), np.log10(max_scale), max(5, n // 10)).astype(int)
+                    scales = np.unique(scales)
+
                     counts = []
-                    
                     for scale in scales:
-                        boxes = np.ceil(n / scale)
                         box_counts = []
                         for i in range(0, n, scale):
                             box_data = x[i:i+scale]
-                            if len(box_data) > 0:
+                            if len(box_data) > 1:
                                 box_counts.append(np.max(box_data) - np.min(box_data))
-                        counts.append(np.sum(box_counts))
-                    
+                        if len(box_counts) > 0:
+                            counts.append(np.mean(box_counts))
+
                     # Linear regression in log space
-                    if len(counts) > 1:
-                        log_scales = np.log(scales)
+                    if len(counts) > 1 and all(c > 0 for c in counts):
+                        log_scales = np.log(scales[:len(counts)])
                         log_counts = np.log(counts)
-                        slope = np.polyfit(log_scales, log_counts, 1)[0]
-                        return -slope
+                        slope, intercept = np.polyfit(log_scales, log_counts, 1)
+                        # Clamp to reasonable range [0, 2]
+                        fd = np.clip(-slope, 0.0, 2.0)
+                        return fd
                     else:
                         return np.nan
                 except:
                     return np.nan
-            
-            df_fractal[f"{col}_fractal_dim_{window}"] = df[col].rolling(window=window).apply(fractal_dimension, raw=True)
-    
+
+            def hurst_exp(x):
+                """Calculate Hurst exponent - more robust alternative to fractal dimension."""
+                return compute_hurst_exponent(x)
+
+            # Fractal dimension (requires minimum window size)
+            if window >= 50:
+                df_fractal[f"{col}_fractal_dim_{window}"] = df[col].rolling(window=window).apply(fractal_dimension, raw=True)
+
+            # Hurst exponent (more robust, works with smaller windows)
+            if window >= 10:
+                df_fractal[f"{col}_hurst_exp_{window}"] = df[col].rolling(window=window).apply(hurst_exp, raw=True)
+
     return df_fractal
 
 def create_comprehensive_features(df: pd.DataFrame, 

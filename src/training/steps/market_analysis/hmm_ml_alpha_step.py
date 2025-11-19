@@ -283,7 +283,46 @@ class HMMMLAlphaStep(BaseStep):
                     )
 
             # ------------------------------------------------------------------
-            # 6) Switch context to dedicated alpha namespace and assess quality
+            # 6) Extract and save regime thresholds for production use
+            # ------------------------------------------------------------------
+            regime_thresholds: Optional[Dict[str, Any]] = None
+            regime_thresholds_path: Optional[str] = None
+
+            if alpha_scores is not None and regime_col_name is not None and regime_col_name in alpha_df.columns:
+                try:
+                    regime_thresholds = self._extract_and_save_regime_thresholds(
+                        alpha_scores=alpha_scores,
+                        regime_labels=alpha_df[regime_col_name],
+                        regime_col_name=regime_col_name,
+                        symbol=symbol,
+                        config=config,
+                    )
+
+                    if regime_thresholds and "extraction_error" not in regime_thresholds:
+                        # Save thresholds as artifact
+                        try:
+                            regime_thresholds_path = self._save_artifact(
+                                data=regime_thresholds,
+                                artifact_name="hmm_alpha_regime_thresholds_1h",
+                                artifact_type="model",
+                                metadata={
+                                    "symbol": symbol,
+                                    "exchange": exchange,
+                                    "timeframe": regime_timeframe,
+                                    "n_regimes": regime_thresholds.get("n_regimes", 0),
+                                },
+                            )
+                            tprint_info(f"💾 Saved regime thresholds artifact: {regime_thresholds_path}")
+                        except Exception as thresholds_save_exc:
+                            tprint_warning(f"Failed to save regime thresholds artifact: {thresholds_save_exc}")
+
+                        # Add thresholds to training metrics for reporting
+                        training_metrics["regime_thresholds"] = regime_thresholds
+                except Exception as thresholds_exc:
+                    tprint_warning(f"Regime threshold extraction failed (non-fatal): {thresholds_exc}")
+
+            # ------------------------------------------------------------------
+            # 7) Switch context to dedicated alpha namespace and assess quality
             # ------------------------------------------------------------------
             # Switch context to a dedicated alpha model namespace so we do not
             # pollute the original HMM regime store.
@@ -449,6 +488,54 @@ class HMMMLAlphaStep(BaseStep):
                             f"Failed to save WFV metrics CSV (ignored): {wfv_csv_exc}"
                         )
 
+                # Regime thresholds CSV (if available) - CRITICAL for production deployment
+                regime_thresholds_data = training_metrics.get("regime_thresholds", {})
+                if regime_thresholds_data and "regime_thresholds" in regime_thresholds_data:
+                    try:
+                        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        thresholds_csv_name = f"hmm_alpha_regime_thresholds_{symbol}_{ts}.csv"
+                        thresholds_csv_path = f"outcomes/{thresholds_csv_name}"
+
+                        # Convert thresholds to DataFrame for easier viewing
+                        thresholds_dict = regime_thresholds_data["regime_thresholds"]
+                        threshold_rows = []
+                        for regime_id, threshold_info in sorted(thresholds_dict.items()):
+                            threshold_rows.append({
+                                "regime_id": regime_id,
+                                "min_score": threshold_info.get("min_score", 0.0),
+                                "max_score": threshold_info.get("max_score", 0.0),
+                                "mean_score": threshold_info.get("mean_score", 0.0),
+                                "median_score": threshold_info.get("median_score", 0.0),
+                                "std_score": threshold_info.get("std_score", 0.0),
+                                "n_samples": threshold_info.get("n_samples", 0),
+                                "sample_percentage": threshold_info.get("sample_percentage", 0.0),
+                            })
+
+                        thresholds_df = pd.DataFrame(threshold_rows)
+                        thresholds_df.to_csv(thresholds_csv_path, index=False)
+                        tprint_info(
+                            f"📊 Saved regime thresholds CSV: {thresholds_csv_path}"
+                        )
+
+                        # Also export percentile thresholds
+                        percentile_data = regime_thresholds_data.get("percentile_thresholds", {})
+                        if percentile_data:
+                            percentile_csv_name = f"hmm_alpha_percentile_thresholds_{symbol}_{ts}.csv"
+                            percentile_csv_path = f"outcomes/{percentile_csv_name}"
+                            percentile_rows = [
+                                {"percentile": p, "threshold_score": score}
+                                for p, score in sorted(percentile_data.items())
+                            ]
+                            percentile_df = pd.DataFrame(percentile_rows)
+                            percentile_df.to_csv(percentile_csv_path, index=False)
+                            tprint_info(
+                                f"📊 Saved percentile thresholds CSV: {percentile_csv_path}"
+                            )
+                    except Exception as thresholds_csv_exc:
+                        tprint_warning(
+                            f"Failed to save regime thresholds CSV (ignored): {thresholds_csv_exc}"
+                        )
+
                 # Feature importance analysis CSV (if available)
                 try:
                     feature_importance_dfs = []
@@ -525,6 +612,8 @@ class HMMMLAlphaStep(BaseStep):
                     "alpha_model_path": model_path,
                     "alpha_regime_stats": regime_stats_df,
                     "alpha_regime_stats_path": regime_stats_path,
+                    "alpha_regime_thresholds": regime_thresholds,
+                    "alpha_regime_thresholds_path": regime_thresholds_path,
                     "alpha_regime_quality_metrics": alpha_quality_metrics,
                     "alpha_regime_quality_path": alpha_quality_path,
                     "alpha_feature_pipeline": feature_pipeline_artifacts,
@@ -1954,6 +2043,152 @@ class HMMMLAlphaStep(BaseStep):
             )
 
         return alpha_df, regime_stats_df, bucket_col
+
+    def _extract_and_save_regime_thresholds(
+        self,
+        *,
+        alpha_scores: pd.Series,
+        regime_labels: pd.Series,
+        regime_col_name: str,
+        symbol: str,
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Extract regime bin thresholds from assigned regimes for live/production use.
+
+        This is a CRITICAL production artifact: it captures the score boundaries that define
+        each regime. Without these thresholds, you cannot consistently assign new predictions
+        to regime buckets in live trading.
+
+        Args:
+            alpha_scores: Series of alpha predictions (continuous)
+            regime_labels: Series of assigned regime labels (discrete)
+            regime_col_name: Name of the regime column
+            symbol: Trading symbol for artifact metadata
+            config: Configuration dictionary
+
+        Returns:
+            Dictionary with:
+            - thresholds: Dict mapping regime → {min_score, max_score}
+            - thresholds_by_quantile: Percentile-based thresholds
+            - regime_counts: How many samples per regime
+            - sortable_thresholds: Sorted list for efficient lookup in production
+        """
+        try:
+            threshold_data = {
+                "extraction_timestamp": datetime.now().isoformat(),
+                "symbol": symbol,
+                "regime_col_name": regime_col_name,
+                "total_samples": len(regime_labels),
+            }
+
+            # Calculate score thresholds for each regime
+            unique_regimes = sorted(regime_labels.unique())
+            threshold_data["n_regimes"] = len(unique_regimes)
+
+            # Thresholds indexed by regime label
+            regimes_dict = {}
+            regime_counts = {}
+            sortable_thresholds = []
+
+            for regime in unique_regimes:
+                mask = regime_labels == regime
+                regime_scores = alpha_scores[mask]
+
+                if len(regime_scores) > 0:
+                    min_score = float(regime_scores.min())
+                    max_score = float(regime_scores.max())
+                    mean_score = float(regime_scores.mean())
+                    median_score = float(regime_scores.median())
+                    std_score = float(regime_scores.std()) if len(regime_scores) > 1 else 0.0
+
+                    regimes_dict[int(regime)] = {
+                        "min_score": min_score,
+                        "max_score": max_score,
+                        "mean_score": mean_score,
+                        "median_score": median_score,
+                        "std_score": std_score,
+                        "n_samples": int(len(regime_scores)),
+                        "sample_percentage": float(len(regime_scores) / len(regime_labels) * 100),
+                    }
+
+                    regime_counts[int(regime)] = len(regime_scores)
+                    sortable_thresholds.append((min_score, max_score, int(regime)))
+
+            threshold_data["regime_thresholds"] = regimes_dict
+            threshold_data["regime_counts"] = regime_counts
+
+            # Sort thresholds for efficient binary search in production
+            sortable_thresholds = sorted(sortable_thresholds, key=lambda x: x[0])
+            threshold_data["sortable_thresholds"] = [
+                {
+                    "regime": t[2],
+                    "min_score": t[0],
+                    "max_score": t[1],
+                }
+                for t in sortable_thresholds
+            ]
+
+            # Calculate percentile-based thresholds (0%, 25%, 50%, 75%, 100%)
+            percentiles = [0, 25, 50, 75, 100]
+            percentile_thresholds = {}
+            for p in percentiles:
+                percentile_thresholds[p] = float(np.percentile(alpha_scores, p))
+            threshold_data["percentile_thresholds"] = percentile_thresholds
+
+            tprint_info(
+                f"✅ Regime thresholds extracted: {len(unique_regimes)} regimes, "
+                f"min_score={min(alpha_scores):.6f}, max_score={max(alpha_scores):.6f}"
+            )
+
+            return threshold_data
+
+        except Exception as e:
+            tprint_warning(f"Regime threshold extraction failed: {e}")
+            return {"extraction_error": str(e)}
+
+    def _assign_alpha_regimes_with_thresholds(
+        self,
+        *,
+        alpha_scores: np.ndarray,
+        regime_thresholds: Dict[int, Dict[str, float]],
+    ) -> np.ndarray:
+        """Apply saved regime thresholds to new alpha predictions (for live trading).
+
+        This function replicates the regime assignment logic during backtest/live without
+        needing the full training dataset. Given a set of score thresholds, it assigns
+        each prediction to the appropriate regime.
+
+        Args:
+            alpha_scores: Array of new alpha predictions
+            regime_thresholds: Dict from _extract_and_save_regime_thresholds()["regime_thresholds"]
+
+        Returns:
+            Array of regime assignments matching the input scores
+        """
+        assignments = np.full(len(alpha_scores), -1, dtype=int)
+
+        for regime_id, threshold_info in regime_thresholds.items():
+            min_score = threshold_info["min_score"]
+            max_score = threshold_info["max_score"]
+
+            # Assign to this regime if score falls within bounds
+            # Use <= for max to handle boundary scores
+            mask = (alpha_scores >= min_score) & (alpha_scores <= max_score)
+            assignments[mask] = regime_id
+
+        # For scores outside all ranges (shouldn't happen in production), assign to nearest regime
+        unassigned_mask = assignments == -1
+        if unassigned_mask.any():
+            unassigned_scores = alpha_scores[unassigned_mask]
+            for idx in np.where(unassigned_mask)[0]:
+                # Assign to regime with closest mean score
+                closest_regime = min(
+                    regime_thresholds.keys(),
+                    key=lambda r: abs(unassigned_scores[idx] - regime_thresholds[r]["mean_score"])
+                )
+                assignments[idx] = closest_regime
+
+        return assignments
 
     def _perform_comprehensive_feature_analysis(
         self,

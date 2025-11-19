@@ -37,11 +37,11 @@ from .rolling_hmm_clustering.rolling_hmm_regime_discovery_step import RollingHMM
 # Import HMM ML alpha step (derives alpha labels and regimes from 1h HMM outputs)
 from .hmm_ml_alpha_step import HMMMLAlphaStep
 
-# Import Feature Generation Meta-Labeling Step
-from .feature_generation_meta_labeling_step import FeatureGenerationMetaLabelingStep
+# Import Feature Generation Meta-Labeling Step (now in labeling module)
+from src.training.steps.labeling import FeatureGenerationMetaLabelingStep
 
-# Import Meta-Labeling HPO Experiment Step (offline, optional)
-from .meta_labeling_hpo_experiment_step import MetaLabelingHPOExperimentStep
+# Import Meta-Labeling HPO Experiment Step (offline, optional) (now in labeling module)
+from src.training.steps.labeling import MetaLabelingHPOExperimentStep
 
 # Note: EconomicRegimeFeatureSelector removed - it had circular dependency issues
 # and lacked unsupervised mode. Use EnhancedRegimeFeatureSelector instead.

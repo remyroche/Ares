@@ -13,14 +13,25 @@ exit early if desired.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple, Optional
 import json
 from datetime import datetime
 from pathlib import Path
+from functools import partial
 
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.isotonic import IsotonicRegression
+from sklearn.model_selection import TimeSeriesSplit, cross_val_predict
+import lightgbm as lgb
+
+try:
+    import xgboost as xgb
+    XGBOOST_AVAILABLE = True
+except ImportError:
+    XGBOOST_AVAILABLE = False
+    xgb = None
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
@@ -67,6 +78,510 @@ logger = system_logger.getChild("MetaLabelingHPOExperiment")
 # robust, we disable these diagnostics by default and gate them behind this
 # constant, which can be flipped to True if deeper investigation is needed.
 GENERATE_RECOMMENDED_DIAGNOSTICS: bool = False
+
+# Toggle for underfit diagnostics - computes learning curves, feature importance
+# concentration, and probe vs deeper model comparisons. Adds computational cost.
+ENABLE_UNDERFIT_DIAGNOSTICS: bool = True
+
+# Multi-stage HPO configuration defaults
+DEFAULT_STAGE_CONFIG = [
+    {
+        "name": "Stage 1 (Screening)",
+        "complexity": "fast",
+        "n_trials": 100,
+        "top_k_to_pass": 30,  # Pass top 30 configurations to next stage
+        "model_params": {
+            "n_estimators": 50,
+            "max_depth": 3,
+            "learning_rate": 0.1,
+            "cv_splits": 3,
+        },
+    },
+    {
+        "name": "Stage 2 (Refinement)",
+        "complexity": "medium",
+        "n_trials": 50,
+        "top_k_to_pass": 10,  # Pass top 10 to final stage
+        "model_params": {
+            "n_estimators": 200,
+            "max_depth": 5,
+            "learning_rate": 0.05,
+            "cv_splits": 4,
+        },
+    },
+    {
+        "name": "Stage 3 (Production Proxy)",
+        "complexity": "strong",
+        "n_trials": 20,  # Fewer trials, expensive model
+        "top_k_to_pass": 1,
+        "model_params": {
+            "n_estimators": 500,
+            "max_depth": 8,
+            "learning_rate": 0.01,
+            "cv_splits": 5,
+        },
+    },
+]
+
+
+def compute_learnability_with_calibration(
+    X: pd.DataFrame,
+    y: pd.Series,
+    realized_returns: pd.Series,
+    model_complexity: str = "fast",
+    cv_splits: int = 3,
+    time_aware_cv: bool = True,
+    use_ensemble: bool = False,
+) -> Tuple[float, float, np.ndarray, Optional[IsotonicRegression]]:
+    """Compute learnability score with isotonic calibration for accurate P&L estimation.
+
+    Unlike the basic compute_learnability_score, this function:
+    1. Uses model complexity levels (fast/medium/strong)
+    2. Returns calibrated probabilities via isotonic regression
+    3. Supports ensemble models for strong complexity
+
+    Args:
+        X: Feature matrix
+        y: Binary labels
+        realized_returns: Realized returns for isotonic calibration
+        model_complexity: "fast", "medium", or "strong"
+        cv_splits: Number of CV splits
+        time_aware_cv: Use TimeSeriesSplit instead of KFold
+        use_ensemble: Whether to use ensemble of models (for strong complexity)
+
+    Returns:
+        Tuple of (learnability_score, mean_auc, calibrated_probabilities, isotonic_regressor)
+    """
+    from sklearn.model_selection import cross_val_score
+
+    # Remove NaN labels
+    valid_mask = ~y.isna()
+    X_num = X.select_dtypes(include=[np.number]) if isinstance(X, pd.DataFrame) else X
+    if isinstance(X_num, pd.DataFrame) and X_num.empty:
+        return 0.0, 0.5, np.array([]), None
+
+    X_clean = X_num[valid_mask].fillna(0)
+    y_clean = y[valid_mask]
+    returns_clean = realized_returns[valid_mask]
+
+    if len(y_clean) < 50:
+        return 0.0, 0.5, np.array([]), None
+
+    if len(y_clean.unique()) < 2:
+        return 0.0, 0.5, np.array([]), None
+
+    # Select model based on complexity
+    if model_complexity == "fast":
+        models = [lgb.LGBMClassifier(
+            boosting_type='gbdt',
+            objective='binary',
+            max_depth=3,
+            n_estimators=50,
+            learning_rate=0.1,
+            subsample=0.7,
+            colsample_bytree=0.7,
+            min_child_samples=20,
+            reg_alpha=0.1,  # L1 regularization
+            reg_lambda=0.1,  # L2 regularization
+            n_jobs=-1,
+            verbose=-1,
+            random_state=42
+        )]
+
+    elif model_complexity == "medium":
+        models = [lgb.LGBMClassifier(
+            boosting_type='gbdt',
+            objective='binary',
+            max_depth=5,
+            n_estimators=200,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            min_child_samples=15,
+            reg_alpha=0.05,
+            reg_lambda=0.05,
+            n_jobs=-1,
+            verbose=-1,
+            random_state=42
+        )]
+
+    else:  # strong
+        models = [
+            lgb.LGBMClassifier(
+                boosting_type='gbdt',
+                objective='binary',
+                max_depth=8,
+                n_estimators=500,
+                learning_rate=0.01,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                min_child_samples=10,
+                reg_alpha=0.01,
+                reg_lambda=0.01,
+                n_jobs=-1,
+                verbose=-1,
+                random_state=42
+            )
+        ]
+
+        # Add XGBoost and RF for ensemble if available and requested
+        if use_ensemble:
+            if XGBOOST_AVAILABLE:
+                models.append(xgb.XGBClassifier(
+                    max_depth=8,
+                    n_estimators=500,
+                    learning_rate=0.01,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    reg_alpha=0.01,
+                    reg_lambda=0.01,
+                    n_jobs=-1,
+                    verbosity=0,
+                    random_state=42
+                ))
+
+            models.append(RandomForestClassifier(
+                n_estimators=300,
+                max_depth=10,
+                min_samples_leaf=10,
+                n_jobs=-1,
+                random_state=42
+            ))
+
+    # Time-aware CV
+    if time_aware_cv:
+        cv = TimeSeriesSplit(n_splits=cv_splits)
+    else:
+        from sklearn.model_selection import KFold
+        cv = KFold(n_splits=cv_splits, shuffle=True, random_state=42)
+
+    try:
+        # Collect OOF predictions from all models
+        all_oof_probs = []
+        all_aucs = []
+
+        for model in models:
+            # Get OOF predictions
+            oof_probs = cross_val_predict(
+                model, X_clean, y_clean, cv=cv, method='predict_proba', n_jobs=-1
+            )[:, 1]
+
+            # Compute AUC
+            auc_scores = cross_val_score(model, X_clean, y_clean, cv=cv, scoring='roc_auc', n_jobs=-1)
+            mean_auc = auc_scores.mean()
+
+            all_oof_probs.append(oof_probs)
+            all_aucs.append(mean_auc)
+
+        # Ensemble: average probabilities (with signal disagreement awareness)
+        if len(models) > 1:
+            oof_probs_array = np.array(all_oof_probs)
+
+            # Calculate disagreement (std across models)
+            disagreement = np.std(oof_probs_array, axis=0)
+
+            # Average probabilities
+            avg_probs = np.mean(oof_probs_array, axis=0)
+
+            # Penalize high-disagreement predictions slightly
+            # (reduce confidence when models disagree)
+            confidence_penalty = 1.0 - (disagreement * 0.5)  # Max 50% penalty
+            final_probs = avg_probs * confidence_penalty + (1 - confidence_penalty) * 0.5
+            final_probs = np.clip(final_probs, 0.0, 1.0)
+
+            mean_auc = np.mean(all_aucs)
+        else:
+            final_probs = all_oof_probs[0]
+            mean_auc = all_aucs[0]
+
+        std_auc = np.std(all_aucs) if len(all_aucs) > 1 else 0.0
+
+        # Apply isotonic calibration to probabilities
+        iso_reg = None
+        if model_complexity in ["medium", "strong"]:
+            try:
+                iso_reg = IsotonicRegression(out_of_bounds='clip')
+
+                # Fit on valid (finite) samples
+                valid_for_iso = np.isfinite(returns_clean.values) & np.isfinite(final_probs)
+                if np.sum(valid_for_iso) > 50:
+                    iso_reg.fit(final_probs[valid_for_iso], returns_clean.values[valid_for_iso])
+                    # Calibrate probabilities
+                    calibrated_probs = iso_reg.predict(final_probs)
+                else:
+                    calibrated_probs = final_probs
+            except Exception:
+                calibrated_probs = final_probs
+                iso_reg = None
+        else:
+            calibrated_probs = final_probs
+
+        # Learnability score: penalize instability
+        learnability = mean_auc - (0.5 * std_auc)
+
+        return learnability, mean_auc, calibrated_probs, iso_reg
+
+    except Exception as e:
+        tprint(f"⚠️ Calibrated learnability scoring failed: {e}", "WARNING")
+        return 0.0, 0.5, np.array([]), None
+
+
+def compute_underfit_diagnostics(
+    X: pd.DataFrame,
+    y: pd.Series,
+    cv_splits: int = 3,
+    time_aware_cv: bool = True,
+) -> Dict[str, Any]:
+    """Compute underfit diagnostics to assess room for model improvement.
+
+    Computes:
+    1. Learning curves at different data fractions
+    2. Learning curves at different depths
+    3. Feature importance concentration
+    4. Probe vs deeper model AUC comparison
+
+    Args:
+        X: Feature matrix
+        y: Binary labels
+        cv_splits: Number of CV splits
+        time_aware_cv: Use TimeSeriesSplit
+
+    Returns:
+        Dictionary with diagnostic metrics
+    """
+    from sklearn.model_selection import cross_val_score, learning_curve
+
+    diagnostics = {
+        "learning_curve_fractions": {},
+        "learning_curve_depths": {},
+        "feature_importance_concentration": None,
+        "probe_vs_deep_auc_diff": None,
+        "is_underfit": False,
+        "underfit_indicators": [],
+    }
+
+    # Remove NaN labels
+    valid_mask = ~y.isna()
+    X_num = X.select_dtypes(include=[np.number]) if isinstance(X, pd.DataFrame) else X
+    if isinstance(X_num, pd.DataFrame) and X_num.empty:
+        return diagnostics
+
+    X_clean = X_num[valid_mask].fillna(0)
+    y_clean = y[valid_mask]
+
+    if len(y_clean) < 100 or len(y_clean.unique()) < 2:
+        return diagnostics
+
+    # Time-aware CV
+    if time_aware_cv:
+        cv = TimeSeriesSplit(n_splits=cv_splits)
+    else:
+        from sklearn.model_selection import KFold
+        cv = KFold(n_splits=cv_splits, shuffle=True, random_state=42)
+
+    try:
+        # 1. Learning curves with data fractions (20%, 40%, 60%, 80%, 100%)
+        fractions = [0.2, 0.4, 0.6, 0.8, 1.0]
+        fraction_aucs = []
+
+        probe_model = lgb.LGBMClassifier(
+            max_depth=3, n_estimators=50, learning_rate=0.1,
+            n_jobs=-1, verbose=-1, random_state=42
+        )
+
+        for frac in fractions:
+            n_samples = int(len(X_clean) * frac)
+            if n_samples < 50:
+                continue
+
+            X_frac = X_clean.iloc[:n_samples]
+            y_frac = y_clean.iloc[:n_samples]
+
+            if len(y_frac.unique()) < 2:
+                continue
+
+            try:
+                scores = cross_val_score(
+                    probe_model, X_frac, y_frac,
+                    cv=min(cv_splits, len(y_frac) // 20),
+                    scoring='roc_auc', n_jobs=-1
+                )
+                diagnostics["learning_curve_fractions"][frac] = float(scores.mean())
+                fraction_aucs.append(scores.mean())
+            except Exception:
+                pass
+
+        # Check if AUC keeps rising without plateau (underfit indicator)
+        if len(fraction_aucs) >= 3:
+            # If last improvement > 2%, likely underfit
+            if fraction_aucs[-1] - fraction_aucs[-2] > 0.02:
+                diagnostics["is_underfit"] = True
+                diagnostics["underfit_indicators"].append("AUC still rising with more data")
+
+        # 2. Learning curves with different depths (3, 5, 7)
+        depths = [3, 5, 7]
+        depth_aucs = []
+
+        for depth in depths:
+            model = lgb.LGBMClassifier(
+                max_depth=depth, n_estimators=100, learning_rate=0.05,
+                n_jobs=-1, verbose=-1, random_state=42
+            )
+
+            try:
+                scores = cross_val_score(model, X_clean, y_clean, cv=cv, scoring='roc_auc', n_jobs=-1)
+                auc = float(scores.mean())
+                diagnostics["learning_curve_depths"][depth] = auc
+                depth_aucs.append(auc)
+            except Exception:
+                pass
+
+        # 3. Probe vs deeper model comparison
+        if len(depth_aucs) >= 2:
+            probe_auc = depth_aucs[0]  # depth=3
+            best_deep_auc = max(depth_aucs[1:])  # best of deeper models
+
+            auc_diff = best_deep_auc - probe_auc
+            diagnostics["probe_vs_deep_auc_diff"] = float(auc_diff)
+
+            # If deeper model improves >5%, probe is underfit
+            if auc_diff > 0.05:
+                diagnostics["is_underfit"] = True
+                diagnostics["underfit_indicators"].append(f"Deeper model +{auc_diff:.1%} AUC")
+
+        # 4. Feature importance concentration (top 5 features)
+        try:
+            final_model = lgb.LGBMClassifier(
+                max_depth=5, n_estimators=100, learning_rate=0.05,
+                n_jobs=-1, verbose=-1, random_state=42
+            )
+            final_model.fit(X_clean, y_clean)
+
+            importances = final_model.feature_importances_
+            sorted_imp = np.sort(importances)[::-1]
+            total_imp = importances.sum()
+
+            if total_imp > 0:
+                top_5_concentration = sorted_imp[:5].sum() / total_imp
+                diagnostics["feature_importance_concentration"] = float(top_5_concentration)
+
+                # If top 5 features dominate 80%+, model is only scratching surface
+                if top_5_concentration > 0.8:
+                    diagnostics["is_underfit"] = True
+                    diagnostics["underfit_indicators"].append(
+                        f"Top 5 features = {top_5_concentration:.1%} importance"
+                    )
+        except Exception:
+            pass
+
+    except Exception as e:
+        tprint(f"⚠️ Underfit diagnostics failed: {e}", "WARNING")
+
+    return diagnostics
+
+
+def shrink_search_space(
+    original_space: Dict[str, Any],
+    previous_results: List[Dict[str, Any]],
+    top_k: int = 20,
+) -> Dict[str, Any]:
+    """Narrow the search space around the top-K best performing parameters.
+
+    Args:
+        original_space: Original parameter search space
+        previous_results: List of results from previous stage (must have 'params' and 'combined' keys)
+        top_k: Number of top candidates to consider
+
+    Returns:
+        Narrowed search space
+    """
+    if not previous_results:
+        return original_space.copy()
+
+    # Sort by combined score and take top-K
+    sorted_results = sorted(previous_results, key=lambda x: x.get('combined', 0), reverse=True)
+    best_candidates = sorted_results[:top_k]
+
+    if not best_candidates:
+        return original_space.copy()
+
+    new_space = {}
+
+    for param_name, config in original_space.items():
+        # Extract values for this param from best candidates
+        values = []
+        for c in best_candidates:
+            if 'params' in c and param_name in c['params']:
+                values.append(c['params'][param_name])
+
+        if not values:
+            new_space[param_name] = config.copy()
+            continue
+
+        param_type = config.get('type', 'float')
+
+        if param_type in ['float', 'int']:
+            min_val = min(values)
+            max_val = max(values)
+
+            # Add 10% buffer so we don't over-collapse
+            spread = max_val - min_val
+            if spread == 0:
+                spread = (config.get('high', 1) - config.get('low', 0)) * 0.1
+
+            buffer = spread * 0.1
+            new_low = max(config.get('low', 0), min_val - buffer)
+            new_high = min(config.get('high', 1), max_val + buffer)
+
+            # Ensure we don't collapse completely
+            if new_high <= new_low:
+                new_low = config.get('low', 0)
+                new_high = config.get('high', 1)
+
+            new_config = config.copy()
+            new_config['low'] = new_low if param_type == 'float' else int(new_low)
+            new_config['high'] = new_high if param_type == 'float' else int(max(new_high, new_low + 1))
+            new_space[param_name] = new_config
+
+        else:
+            # For categorical params, keep all or filter to frequent ones
+            new_space[param_name] = config.copy()
+
+    return new_space
+
+
+def compute_realistic_pnl_edge(
+    mean_return_positive: float,
+    mean_auc: float,
+    transaction_cost: float = DEFAULT_TRANSACTION_COST,
+) -> float:
+    """Compute realistic P&L edge using the capture ratio formula.
+
+    Edge = (Mean_Return_Label1 - Cost) × max(0, 2×AUC - 1)
+
+    This metric penalizes "profitable but unlearnable" strategies more realistically:
+    - If AUC is 0.5 (random), Edge is 0 regardless of profitability
+    - If AUC is 1.0 (perfect), you capture full mean return minus cost
+
+    Args:
+        mean_return_positive: Mean return of positive-labeled events
+        mean_auc: Cross-validated AUC of the model
+        transaction_cost: Transaction cost per trade
+
+    Returns:
+        Realistic P&L edge score
+    """
+    # Capture ratio: how much of theoretical profit we actually capture
+    # Clamped to [0, 1] to prevent negative edge from AUC < 0.5
+    capture_ratio = max(0.0, (2 * mean_auc) - 1)
+
+    # Net profitability after costs
+    net_profit = mean_return_positive - transaction_cost
+
+    # Edge = net profit × capture ratio
+    edge = net_profit * capture_ratio
+
+    return edge
 
 
 class MetaLabelingHPOExperimentStep(BaseStep):
@@ -271,6 +786,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             model: Any | None = None,
             cv_folds: int = 1,
             scoring_metric: str = "custom_balanced_score",
+            model_complexity: str = "fast",  # NEW: Model complexity level
+            use_ensemble: bool = False,  # NEW: Use ensemble for strong complexity
+            compute_diagnostics: bool = False,  # NEW: Whether to compute underfit diagnostics
             **kwargs: Any,
         ) -> Dict[str, float]:
             """Evaluate one labeling configuration with multi-objective scoring.
@@ -279,14 +797,23 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             - Recomputes realized returns & binary labels with candidate TPSL parameters
             - Smooths labels via Kalman filter
             - Creates meta-features for learnability assessment
-            - Computes learnability score (cross-validated AUC)
-            - Computes profitability score (economic metrics)
+            - Computes learnability score with isotonic calibration (cross-validated AUC)
+            - Computes realistic P&L edge metric
             - Applies regularization checks (temporal stability, regime consistency)
+            - Optionally computes underfit diagnostics
             - Returns dict of objectives for Pareto frontier
 
+            Args:
+                model_complexity: "fast", "medium", or "strong" - controls model capacity
+                use_ensemble: Whether to use model ensemble (for strong complexity)
+                compute_diagnostics: Whether to compute underfit diagnostics
+
             Returns:
-                Dict with keys: 'learnability', 'profitability', 'combined'
+                Dict with keys: 'learnability', 'profitability', 'combined', 'edge'
             """
+            # Determine CV splits based on model complexity
+            cv_splits_map = {"fast": 3, "medium": 4, "strong": 5}
+            cv_splits = cv_splits_map.get(model_complexity, 3)
 
             try:
                 # Enforce profit >= 1.5x stop constraint
@@ -430,11 +957,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     if low_val < high_val:
                         target_nz = target_nz.clip(low_val, high_val)
 
-                # ===== LEARNABILITY ASSESSMENT =====
+                # ===== LEARNABILITY ASSESSMENT WITH CALIBRATION =====
                 # Create meta-features for this labeling configuration
                 from src.training.steps.labeling.feature_generation_meta_labeling_step import (
                     create_meta_features,
-                    compute_learnability_score,
                     compute_label_entropy_score,
                 )
 
@@ -446,12 +972,15 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     use_kalman=True
                 )
 
-                # Compute learnability score (cross-validated AUC)
-                learnability_score, mean_auc = compute_learnability_score(
+                # Compute learnability score with isotonic calibration
+                learnability_score, mean_auc, calibrated_probs, iso_reg_probe = compute_learnability_with_calibration(
                     X=meta_features,
                     y=binary_labels,
-                    cv_splits=3,
-                    time_aware_cv=True
+                    realized_returns=realized_returns,
+                    model_complexity=model_complexity,
+                    cv_splits=cv_splits,
+                    time_aware_cv=True,
+                    use_ensemble=use_ensemble,
                 )
 
                 # PENALTY: if mean_auc < 0.7, heavily penalize
@@ -461,6 +990,16 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 # Compute label entropy/balance score
                 balance_score = compute_label_entropy_score(binary_labels)
+
+                # Optional underfit diagnostics
+                underfit_diagnostics = None
+                if compute_diagnostics and ENABLE_UNDERFIT_DIAGNOSTICS:
+                    underfit_diagnostics = compute_underfit_diagnostics(
+                        X=meta_features,
+                        y=binary_labels,
+                        cv_splits=cv_splits,
+                        time_aware_cv=True,
+                    )
 
                 # ===== ECONOMIC PROFITABILITY =====
                 # Compute economic separation metrics on labeled events
@@ -659,8 +1198,24 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 except Exception:
                     pass  # Skip if temporal check fails
 
-                # ===== COMBINED OBJECTIVE (70% learnability, 30% profitability) =====
-                combined_score = (0.7 * learnability_score) + (0.3 * profitability_score / 100.0)
+                # ===== REALISTIC P&L EDGE METRIC =====
+                # Edge = (Mean Return - Cost) × max(0, 2×AUC - 1)
+                # This penalizes "profitable but unlearnable" strategies more realistically
+                edge_score = compute_realistic_pnl_edge(
+                    mean_return_positive=mean_pos,
+                    mean_auc=mean_auc,
+                    transaction_cost=tx,
+                )
+
+                # Scale edge for combined metric (multiply by 1000 to make comparable)
+                edge_scaled = edge_score * 1000.0
+
+                # ===== COMBINED OBJECTIVE (Using Edge as Primary Metric) =====
+                # New formula: Edge-weighted combination
+                # Edge is already a function of both profitability AND learnability
+                # We add a small learnability bonus for high-AUC configs
+                learnability_bonus = max(0, (mean_auc - 0.6) * 2)  # Bonus above 0.6 AUC
+                combined_score = edge_scaled + (learnability_bonus * 10.0) - (penalty_density * 0.1)
 
                 # Store candidate configuration for later persistence
                 candidate_config = {
@@ -668,6 +1223,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'learnability': float(learnability_score),
                     'mean_auc': float(mean_auc),
                     'profitability': float(profitability_score),
+                    'edge': float(edge_score),
+                    'edge_scaled': float(edge_scaled),
                     'combined': float(combined_score),
                     'mean_pos': float(mean_pos),
                     'mean_neg': float(mean_neg),
@@ -684,12 +1241,19 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'effect_size_pre': float(d_pre) if np.isfinite(d_pre) else 0.0,
                     'effect_size_post': float(d_post) if np.isfinite(d_post) else 0.0,
                     'n_required_80pct_power': float(n_required_80),
+                    'model_complexity': model_complexity,
                 }
+
+                # Add underfit diagnostics if computed
+                if underfit_diagnostics is not None:
+                    candidate_config['underfit_diagnostics'] = underfit_diagnostics
+
                 candidate_pool.append(candidate_config)
 
                 return {
                     'learnability': float(learnability_score),
                     'profitability': float(profitability_score),
+                    'edge': float(edge_score),
                     'combined': float(combined_score)
                 }
 
@@ -697,66 +1261,223 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 tprint_warning(f"⚠️ Labeling objective failed: {exc}")
                 import traceback
                 traceback.print_exc()
-                return {'learnability': 0.0, 'profitability': -1e9, 'combined': -1e9}
+                return {'learnability': 0.0, 'profitability': -1e9, 'edge': 0.0, 'combined': -1e9}
 
         # ------------------------------------------------------------------
         # 4) Multi-objective wrapper for single-objective optimizers
         # ------------------------------------------------------------------
-        def scalar_objective_wrapper(params: Dict[str, Any]) -> float:
-            """Wrapper to extract combined score for single-objective optimizers.
+        def create_scalar_objective_wrapper(
+            model_complexity: str = "fast",
+            use_ensemble: bool = False,
+            compute_diagnostics: bool = False,
+        ) -> callable:
+            """Create a wrapper with specific complexity settings.
 
             BayesianTPEOptimizer always calls the objective as objective(params), so
-            we close over X_dummy / y_dummy instead of expecting them as arguments.
+            we close over X_dummy / y_dummy and complexity settings.
             """
-            result = labeling_objective(params, X_dummy, y_dummy)
-            if isinstance(result, dict):
-                return float(result.get('combined', 0.0))
-            return float(result)
+            def wrapper(params: Dict[str, Any]) -> float:
+                result = labeling_objective(
+                    params, X_dummy, y_dummy,
+                    model_complexity=model_complexity,
+                    use_ensemble=use_ensemble,
+                    compute_diagnostics=compute_diagnostics,
+                )
+                if isinstance(result, dict):
+                    return float(result.get('combined', 0.0))
+                return float(result)
+            return wrapper
 
         # ------------------------------------------------------------------
-        # 5) Instantiate Bayesian TPE optimizer (replaces hierarchical grid search)
+        # 5) Convert param_groups to search space
         # ------------------------------------------------------------------
-        tprint_info("🚀 Using Bayesian TPE optimization for efficient search")
+        tprint_info("🚀 Using Multi-Stage Bayesian TPE optimization")
 
         # Convert param_groups (ParameterGroup instances) to a flat Optuna-style search space
-        search_space: Dict[str, Dict[str, Any]] = {}
+        initial_search_space: Dict[str, Dict[str, Any]] = {}
         for group in param_groups:
             for param_name, param_spec in group.params.items():
-                search_space[param_name] = param_spec
-
-        # Configure Bayesian optimizer (aligned with OptimizationConfig signature)
-        bayesian_config = OptimizationConfig(
-            n_trials=100,  # Total trials
-            direction='maximize',
-            # Staged optimization settings
-            enable_staged_optimization=True,
-            coarse_grid_trials=20,
-            fine_grid_trials=20,
-            tpe_trials=60,
-            # Disable hardware/VectorBT-specific acceleration for compatibility in this step
-            enable_hardware_optimization=False,
-            enable_vectorbt_optimization=False,
-            # Early stopping configuration
-            early_stopping_patience=15,
-            early_stopping_threshold=None,
-            # Reproducibility
-            seed=42,
-        )
-
-        optimizer = BayesianTPEOptimizer(config=bayesian_config)
+                initial_search_space[param_name] = param_spec
 
         # ------------------------------------------------------------------
-        # 6) Run Bayesian TPE optimization
+        # 6) Multi-Stage HPO Execution Loop
         # ------------------------------------------------------------------
-        tprint_info("🔍 Running Bayesian TPE optimization...")
+        # Parameters optimized per stage:
+        # Stage 1: horizon_bars, min_event_spacing, target_clip_high_q +
+        #          kalman_Q, kalman_R, vol_baseline_window, profit_mult_min/max, stop_mult_min/max
+        # Stage 2: kalman_Q, kalman_R, vol_baseline_window, profit_mult_min/max, stop_mult_min/max
+        # Stage 3: All parameters (profit_thr_base, stop_to_profit_ratio, iso_min_prob + refinement)
+        #
+        # The multi-stage process progressively increases model complexity to find
+        # configurations that are both profitable AND learnable by production models.
 
-        result = optimizer.optimize(
-            objective=scalar_objective_wrapper,
-            search_space=search_space,
-        )
+        # Define which parameters to optimize at each stage
+        stage_1_params = [
+            'horizon_bars', 'min_event_spacing', 'target_clip_high_q',
+            'kalman_Q', 'kalman_R', 'vol_baseline_window',
+            'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'
+        ]
+        stage_2_params = [
+            'kalman_Q', 'kalman_R', 'vol_baseline_window',
+            'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'
+        ]
+        # Stage 3 uses all parameters
 
-        best_params = result.get('best_params', {})
-        best_score = result.get('best_value', 0.0)
+        stages = DEFAULT_STAGE_CONFIG
+        stage_results: List[Dict[str, Any]] = []
+        all_trials_count = 0
+        best_overall_score = float('-inf')
+        best_overall_params = {}
+
+        # Track best params from each stage to use as defaults for fixed params
+        accumulated_best_params: Dict[str, Any] = {}
+
+        for stage_idx, stage in enumerate(stages):
+            tprint_info(f"🚀 Starting {stage['name']} with complexity={stage['complexity']}...")
+
+            # Determine which parameters to optimize in this stage
+            if stage_idx == 0:  # Stage 1
+                active_params = stage_1_params
+            elif stage_idx == 1:  # Stage 2
+                active_params = stage_2_params
+            else:  # Stage 3 - all parameters
+                active_params = list(initial_search_space.keys())
+
+            # Create stage-specific search space
+            current_search_space = {
+                k: v for k, v in initial_search_space.items()
+                if k in active_params
+            }
+
+            tprint_info(f"   Optimizing parameters: {list(current_search_space.keys())}")
+
+            # Create objective wrapper that merges optimized params with fixed params from previous stages
+            def create_stage_objective_wrapper(
+                model_complexity: str,
+                use_ensemble: bool,
+                compute_diagnostics: bool,
+                fixed_params: Dict[str, Any],
+            ) -> callable:
+                """Create a wrapper that injects fixed params from previous stages."""
+                def wrapper(params: Dict[str, Any]) -> float:
+                    # Merge: fixed params from previous stages + current optimized params
+                    full_params = {**fixed_params, **params}
+                    result = labeling_objective(
+                        full_params, X_dummy, y_dummy,
+                        model_complexity=model_complexity,
+                        use_ensemble=use_ensemble,
+                        compute_diagnostics=compute_diagnostics,
+                    )
+                    if isinstance(result, dict):
+                        return float(result.get('combined', 0.0))
+                    return float(result)
+                return wrapper
+
+            # Get fixed params: best values from previous stages for params not being optimized
+            fixed_params = {
+                k: v for k, v in accumulated_best_params.items()
+                if k not in current_search_space
+            }
+
+            stage_objective = create_stage_objective_wrapper(
+                model_complexity=stage["complexity"],
+                use_ensemble=(stage["complexity"] == "strong"),
+                compute_diagnostics=(stage_idx == len(stages) - 1),
+                fixed_params=fixed_params,
+            )
+
+            # Configure Bayesian optimizer for this stage
+            bayesian_config = OptimizationConfig(
+                n_trials=stage["n_trials"],
+                direction='maximize',
+                # Staged optimization settings (use TPE directly for speed)
+                enable_staged_optimization=(stage_idx == 0),  # Only use grid in first stage
+                coarse_grid_trials=min(15, stage["n_trials"] // 5) if stage_idx == 0 else 0,
+                fine_grid_trials=min(10, stage["n_trials"] // 10) if stage_idx == 0 else 0,
+                tpe_trials=stage["n_trials"] - (25 if stage_idx == 0 else 0),
+                # Disable hardware/VectorBT-specific acceleration
+                enable_hardware_optimization=False,
+                enable_vectorbt_optimization=False,
+                # Early stopping per trial
+                early_stopping_patience=max(5, stage["n_trials"] // 5),
+                early_stopping_threshold=0.001,  # Stop if improvement < 0.1%
+                # Reproducibility
+                seed=42 + stage_idx,
+            )
+
+            optimizer = BayesianTPEOptimizer(config=bayesian_config)
+
+            # Run optimization for this stage
+            tprint_info(f"   Running {stage['n_trials']} trials with {stage['complexity']} model...")
+
+            try:
+                result = optimizer.optimize(
+                    objective=stage_objective,
+                    search_space=current_search_space,
+                )
+
+                stage_best_params = result.get('best_params', {})
+                stage_best_score = result.get('best_value', 0.0)
+                stage_trials = result.get('total_trials', stage["n_trials"])
+
+                all_trials_count += stage_trials
+
+                # Track best overall
+                if stage_best_score > best_overall_score:
+                    best_overall_score = stage_best_score
+                    best_overall_params = stage_best_params.copy()
+
+                # Accumulate best params from this stage for use in subsequent stages
+                accumulated_best_params.update(stage_best_params)
+
+                tprint_success(
+                    f"   ✅ {stage['name']} complete: "
+                    f"best_score={stage_best_score:.4f}, trials={stage_trials}"
+                )
+
+                # Store stage results
+                stage_results.append({
+                    'stage': stage['name'],
+                    'complexity': stage['complexity'],
+                    'best_score': stage_best_score,
+                    'best_params': stage_best_params,
+                    'trials': stage_trials,
+                })
+
+                # Get candidates from this stage
+                stage_candidates = [
+                    c for c in candidate_pool
+                    if c.get('model_complexity') == stage['complexity']
+                ]
+
+                # For Stage 3, shrink search space based on previous stages' best results
+                if stage_idx == len(stages) - 2 and stage_candidates:
+                    # Shrink the initial space for Stage 3 based on top candidates
+                    initial_search_space = shrink_search_space(
+                        original_space=initial_search_space,
+                        previous_results=stage_candidates,
+                        top_k=stage['top_k_to_pass'],
+                    )
+                    tprint_info(
+                        f"   📉 Narrowed Stage 3 search space based on "
+                        f"Top {min(len(stage_candidates), stage['top_k_to_pass'])} candidates"
+                    )
+
+                # Per-stage early stopping: if no improvement in this stage, move to next
+                # (This is handled by the optimizer's early_stopping_patience setting)
+
+            except Exception as stage_exc:
+                tprint_warning(f"   ⚠️ Stage {stage['name']} failed: {stage_exc}")
+                import traceback
+                traceback.print_exc()
+                # Continue to next stage or use best so far
+                continue
+
+        # Final best from all stages
+        best_params = best_overall_params
+        best_score = best_overall_score
+
+        tprint_info(f"   Total trials across all stages: {all_trials_count}")
 
         tprint_success(f"✅ Labeling HPO completed. Best combined score={best_score:.6f}")
         tprint_info(f"Best parameters: {best_params}")
@@ -773,10 +1494,12 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 metrics={
                     'learnability': candidate['learnability'],
                     'profitability': candidate['profitability'],
+                    'edge': candidate.get('edge', 0.0),
                     'combined': candidate['combined'],
                     'mean_auc': candidate['mean_auc'],
                     'sharpe_pos': candidate['sharpe_pos'],
                     'n_events': candidate['n_events'],
+                    'model_complexity': candidate.get('model_complexity', 'unknown'),
                 },
                 params=candidate['params']
             )
@@ -1066,15 +1789,33 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         json_path = outcomes_dir / json_name
 
         try:
+            # Get best edge from the best candidate
+            best_candidate_edge = 0.0
+            if candidate_pool:
+                sorted_candidates = sorted(candidate_pool, key=lambda x: x.get('combined', 0), reverse=True)
+                if sorted_candidates:
+                    best_candidate_edge = sorted_candidates[0].get('edge', 0.0)
+
             with open(json_path, "w") as f:
                 json.dump({
                     "symbol": symbol,
                     "exchange": exchange,
                     "timeframe": timeframe,
                     "best_score": best_score,
+                    "best_edge": best_candidate_edge,
                     "best_params": best_params,
                     "knee_params": knee_params,
                     "pareto_front_size": len(pareto_front),
+                    "total_trials": all_trials_count,
+                    "stage_results": [
+                        {
+                            "stage": sr["stage"],
+                            "complexity": sr["complexity"],
+                            "best_score": sr["best_score"],
+                            "trials": sr["trials"],
+                        }
+                        for sr in stage_results
+                    ],
                 }, f, indent=2)
             tprint_success(f"💾 Saved best labeling HPO params to {json_path}")
         except Exception as save_exc:
@@ -1146,9 +1887,18 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # Summary
                 f.write(f"## Summary\n\n")
                 f.write(f"- **Total Configurations Evaluated:** {len(candidate_pool)}\n")
+                f.write(f"- **Total Trials:** {all_trials_count}\n")
                 f.write(f"- **Pareto Frontier Size:** {len(pareto_front)}\n")
                 f.write(f"- **Best Combined Score:** {best_score:.6f}\n")
-                f.write(f"- **Optimization Method:** Bayesian TPE with Pareto Frontier\n\n")
+                f.write(f"- **Optimization Method:** Multi-Stage Bayesian TPE with Isotonic Calibration\n\n")
+
+                # Multi-Stage Results
+                f.write(f"## Multi-Stage HPO Results\n\n")
+                f.write(f"| Stage | Complexity | Best Score | Trials |\n")
+                f.write(f"|-------|------------|------------|--------|\n")
+                for sr in stage_results:
+                    f.write(f"| {sr['stage']} | {sr['complexity']} | {sr['best_score']:.4f} | {sr['trials']} |\n")
+                f.write(f"\n")
 
                 # Best Parameters
                 f.write(f"## Best Parameters (Highest Combined Score)\n\n")
@@ -1175,25 +1925,83 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 # Top 10 Pareto Solutions
                 f.write(f"### Top 10 Pareto Solutions\n\n")
-                f.write(f"| Rank | Learnability | Profitability | Combined | Mean AUC | Sharpe | N Events |\n")
-                f.write(f"|------|-------------|--------------|----------|----------|--------|----------|\n")
+                f.write(f"| Rank | Edge | Learnability | Profitability | Combined | Mean AUC | Sharpe | N Events | Complexity |\n")
+                f.write(f"|------|------|-------------|--------------|----------|----------|--------|----------|------------|\n")
 
                 sorted_pareto = sorted(pareto_front, key=lambda s: s.metrics['combined'], reverse=True)
                 for i, sol in enumerate(sorted_pareto[:10], 1):
                     m = sol.metrics
-                    f.write(f"| {i} | {m['learnability']:.4f} | {m['profitability']:.4f} | "
+                    f.write(f"| {i} | {m.get('edge', 0):.6f} | {m['learnability']:.4f} | {m['profitability']:.4f} | "
                            f"{m['combined']:.4f} | {m.get('mean_auc', 0):.4f} | "
-                           f"{m.get('sharpe_pos', 0):.4f} | {m.get('n_events', 0)} |\n")
+                           f"{m.get('sharpe_pos', 0):.4f} | {m.get('n_events', 0)} | {m.get('model_complexity', 'N/A')} |\n")
 
                 f.write(f"\n")
 
+                # Underfit Diagnostics (if available)
+                final_stage_candidates = [
+                    c for c in candidate_pool
+                    if c.get('model_complexity') == 'strong' and c.get('underfit_diagnostics')
+                ]
+                if final_stage_candidates:
+                    f.write(f"## Underfit Diagnostics (Final Stage)\n\n")
+
+                    # Get diagnostics from best strong candidate
+                    best_strong = sorted(final_stage_candidates, key=lambda x: x['combined'], reverse=True)[0]
+                    diag = best_strong.get('underfit_diagnostics', {})
+
+                    if diag.get('is_underfit'):
+                        f.write(f"**⚠️ Underfit Detected:** The model shows signs of underfitting.\n\n")
+                        f.write(f"Indicators:\n")
+                        for indicator in diag.get('underfit_indicators', []):
+                            f.write(f"- {indicator}\n")
+                        f.write(f"\n")
+                    else:
+                        f.write(f"**✅ No Significant Underfit:** The model appears well-fitted.\n\n")
+
+                    # Learning curves by data fraction
+                    if diag.get('learning_curve_fractions'):
+                        f.write(f"### Learning Curves (Data Fractions)\n\n")
+                        f.write(f"| Data Fraction | AUC |\n")
+                        f.write(f"|---------------|-----|\n")
+                        for frac, auc in sorted(diag['learning_curve_fractions'].items()):
+                            f.write(f"| {frac:.0%} | {auc:.4f} |\n")
+                        f.write(f"\n")
+
+                    # Learning curves by depth
+                    if diag.get('learning_curve_depths'):
+                        f.write(f"### Learning Curves (Model Depths)\n\n")
+                        f.write(f"| Depth | AUC |\n")
+                        f.write(f"|-------|-----|\n")
+                        for depth, auc in sorted(diag['learning_curve_depths'].items()):
+                            f.write(f"| {depth} | {auc:.4f} |\n")
+                        f.write(f"\n")
+
+                    # Feature importance concentration
+                    if diag.get('feature_importance_concentration') is not None:
+                        f.write(f"**Feature Importance Concentration (Top 5):** {diag['feature_importance_concentration']:.1%}\n\n")
+
+                    # Probe vs deep AUC diff
+                    if diag.get('probe_vs_deep_auc_diff') is not None:
+                        f.write(f"**Probe vs Deep Model AUC Improvement:** {diag['probe_vs_deep_auc_diff']:.1%}\n\n")
+
                 # Regularization Checks Summary
-                f.write(f"## Regularization Checks\n\n")
+                f.write(f"## Regularization & Scoring\n\n")
+                f.write(f"### Realistic P&L Edge Metric\n\n")
+                f.write(f"The primary scoring metric is the **Realistic P&L Edge**:\n\n")
+                f.write(f"```\n")
+                f.write(f"Edge = (Mean_Return_Label1 - Transaction_Cost) × max(0, 2×AUC - 1)\n")
+                f.write(f"```\n\n")
+                f.write(f"This metric penalizes 'profitable but unlearnable' strategies more realistically:\n")
+                f.write(f"- If AUC = 0.5 (random), Edge = 0 regardless of profitability\n")
+                f.write(f"- If AUC = 1.0 (perfect), you capture full mean return minus cost\n\n")
+                f.write(f"### Regularization Checks\n\n")
                 f.write(f"All configurations were evaluated with:\n\n")
-                f.write(f"1. **Temporal Stability:** Rolling window AUC variance penalty\n")
-                f.write(f"2. **Learnability Threshold:** Mean AUC < 0.7 heavily penalized\n")
-                f.write(f"3. **Profit/Stop Constraint:** Profit threshold must be ≥ 1.5× stop threshold\n")
-                f.write(f"4. **Label Balance:** Entropy-based balance scoring\n\n")
+                f.write(f"1. **Isotonic Calibration:** Probabilities calibrated to align with real expected returns\n")
+                f.write(f"2. **Temporal Stability:** Rolling window AUC variance penalty\n")
+                f.write(f"3. **Learnability Threshold:** Mean AUC < 0.7 heavily penalized\n")
+                f.write(f"4. **Profit/Stop Constraint:** Profit threshold must be ≥ 1.5× stop threshold\n")
+                f.write(f"5. **Label Balance:** Entropy-based balance scoring\n")
+                f.write(f"6. **Early Stopping:** Per-trial and global early stopping to prevent overfitting\n\n")
 
                 # Artifacts
                 f.write(f"## Artifacts\n\n")
@@ -1236,12 +2044,23 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         except Exception as csv_exc:
             tprint_warning(f"⚠️ Failed to save HPO round metrics CSV: {csv_exc}")
 
+        # Compute best edge from candidate pool
+        best_edge = 0.0
+        if candidate_pool:
+            best_candidate = max(candidate_pool, key=lambda x: x.get('combined', 0))
+            best_edge = best_candidate.get('edge', 0.0)
+
         metrics: Dict[str, Any] = {
             "best_score": best_score,
+            "best_edge": best_edge,
             "best_params": best_params,
             "best_params_json": str(json_path) if json_path is not None else None,
             "round_metrics_csv": str(csv_path) if csv_path is not None else None,
             "recommended_diagnostics_path": diagnostics_path,
+            "total_trials": all_trials_count,
+            "stage_results": stage_results,
+            "pareto_frontier_size": len(pareto_front),
+            "candidate_pool_size": len(candidate_pool),
         }
 
         artifacts: Dict[str, Any] = {}

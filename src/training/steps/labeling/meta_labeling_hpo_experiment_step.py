@@ -1302,30 +1302,88 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         # ------------------------------------------------------------------
         # 6) Multi-Stage HPO Execution Loop
         # ------------------------------------------------------------------
-        # Parameters being optimized across stages:
-        # - Event definition: profit_thr_base, stop_to_profit_ratio, horizon_bars, min_event_spacing
-        # - Target transform: iso_min_prob, target_clip_high_q
-        # - Kalman smoothing: kalman_Q, kalman_R
-        # - Volatility adaptation: vol_baseline_window, profit_mult_min/max, stop_mult_min/max
+        # Parameters optimized per stage:
+        # Stage 1: horizon_bars, min_event_spacing, target_clip_high_q +
+        #          kalman_Q, kalman_R, vol_baseline_window, profit_mult_min/max, stop_mult_min/max
+        # Stage 2: kalman_Q, kalman_R, vol_baseline_window, profit_mult_min/max, stop_mult_min/max
+        # Stage 3: All parameters (profit_thr_base, stop_to_profit_ratio, iso_min_prob + refinement)
         #
         # The multi-stage process progressively increases model complexity to find
         # configurations that are both profitable AND learnable by production models.
 
+        # Define which parameters to optimize at each stage
+        stage_1_params = [
+            'horizon_bars', 'min_event_spacing', 'target_clip_high_q',
+            'kalman_Q', 'kalman_R', 'vol_baseline_window',
+            'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'
+        ]
+        stage_2_params = [
+            'kalman_Q', 'kalman_R', 'vol_baseline_window',
+            'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'
+        ]
+        # Stage 3 uses all parameters
+
         stages = DEFAULT_STAGE_CONFIG
-        current_search_space = initial_search_space.copy()
         stage_results: List[Dict[str, Any]] = []
         all_trials_count = 0
         best_overall_score = float('-inf')
         best_overall_params = {}
 
+        # Track best params from each stage to use as defaults for fixed params
+        accumulated_best_params: Dict[str, Any] = {}
+
         for stage_idx, stage in enumerate(stages):
             tprint_info(f"🚀 Starting {stage['name']} with complexity={stage['complexity']}...")
 
-            # Create objective wrapper with this stage's complexity
-            stage_objective = create_scalar_objective_wrapper(
+            # Determine which parameters to optimize in this stage
+            if stage_idx == 0:  # Stage 1
+                active_params = stage_1_params
+            elif stage_idx == 1:  # Stage 2
+                active_params = stage_2_params
+            else:  # Stage 3 - all parameters
+                active_params = list(initial_search_space.keys())
+
+            # Create stage-specific search space
+            current_search_space = {
+                k: v for k, v in initial_search_space.items()
+                if k in active_params
+            }
+
+            tprint_info(f"   Optimizing parameters: {list(current_search_space.keys())}")
+
+            # Create objective wrapper that merges optimized params with fixed params from previous stages
+            def create_stage_objective_wrapper(
+                model_complexity: str,
+                use_ensemble: bool,
+                compute_diagnostics: bool,
+                fixed_params: Dict[str, Any],
+            ) -> callable:
+                """Create a wrapper that injects fixed params from previous stages."""
+                def wrapper(params: Dict[str, Any]) -> float:
+                    # Merge: fixed params from previous stages + current optimized params
+                    full_params = {**fixed_params, **params}
+                    result = labeling_objective(
+                        full_params, X_dummy, y_dummy,
+                        model_complexity=model_complexity,
+                        use_ensemble=use_ensemble,
+                        compute_diagnostics=compute_diagnostics,
+                    )
+                    if isinstance(result, dict):
+                        return float(result.get('combined', 0.0))
+                    return float(result)
+                return wrapper
+
+            # Get fixed params: best values from previous stages for params not being optimized
+            fixed_params = {
+                k: v for k, v in accumulated_best_params.items()
+                if k not in current_search_space
+            }
+
+            stage_objective = create_stage_objective_wrapper(
                 model_complexity=stage["complexity"],
                 use_ensemble=(stage["complexity"] == "strong"),
-                compute_diagnostics=(stage_idx == len(stages) - 1),  # Only compute diagnostics in final stage
+                compute_diagnostics=(stage_idx == len(stages) - 1),
+                fixed_params=fixed_params,
             )
 
             # Configure Bayesian optimizer for this stage
@@ -1369,6 +1427,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     best_overall_score = stage_best_score
                     best_overall_params = stage_best_params.copy()
 
+                # Accumulate best params from this stage for use in subsequent stages
+                accumulated_best_params.update(stage_best_params)
+
                 tprint_success(
                     f"   ✅ {stage['name']} complete: "
                     f"best_score={stage_best_score:.4f}, trials={stage_trials}"
@@ -1383,28 +1444,27 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'trials': stage_trials,
                 })
 
-                # Get candidates from this stage for space shrinking
-                # Extract candidates from candidate_pool that were added in this stage
+                # Get candidates from this stage
                 stage_candidates = [
                     c for c in candidate_pool
                     if c.get('model_complexity') == stage['complexity']
                 ]
 
-                # Shrink search space for next stage
-                if stage_idx < len(stages) - 1 and stage_candidates:
-                    current_search_space = shrink_search_space(
-                        original_space=current_search_space,
+                # For Stage 3, shrink search space based on previous stages' best results
+                if stage_idx == len(stages) - 2 and stage_candidates:
+                    # Shrink the initial space for Stage 3 based on top candidates
+                    initial_search_space = shrink_search_space(
+                        original_space=initial_search_space,
                         previous_results=stage_candidates,
                         top_k=stage['top_k_to_pass'],
                     )
                     tprint_info(
-                        f"   📉 Pruned search space for next stage based on "
+                        f"   📉 Narrowed Stage 3 search space based on "
                         f"Top {min(len(stage_candidates), stage['top_k_to_pass'])} candidates"
                     )
 
                 # Per-stage early stopping: if no improvement in this stage, move to next
                 # (This is handled by the optimizer's early_stopping_patience setting)
-                # The stage continues until its trial budget is exhausted or early stopping triggers
 
             except Exception as stage_exc:
                 tprint_warning(f"   ⚠️ Stage {stage['name']} failed: {stage_exc}")

@@ -35,10 +35,10 @@ except ImportError as e:
     FINAL_VALIDATION_STEP_AVAILABLE = False
 
 # Import missing feature generation steps
-from .feature_generation_data_validation_step import FeatureGenerationDataValidationStep
+from src.training.steps.labeling import FeatureGenerationDataValidationStep
 from .feature_generation_labeling_integration_step import FeatureGenerationLabelingIntegrationStep
-# NOTE: FeatureGenerationMetaLabelingStep moved to src/training/steps/market_analysis/
-# It is now registered in market_analysis/__init__.py
+# NOTE: FeatureGenerationMetaLabelingStep moved to src/training/steps/labeling/
+# It is now registered in labeling/__init__.py and market_analysis/__init__.py
 from .feature_generation_feature_generation_step import FeatureGenerationFeatureGenerationStep
 from .feature_generation_period_lookback_optimization_step import FeatureGenerationPeriodLookbackOptimizationStep
 from .feature_generation_feature_selection_step import FeatureGenerationFeatureSelectionStep

@@ -34,12 +34,12 @@ import numpy as np
 import pandas as pd
 
 # Ensure project root is on sys.path
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.utils.logger import system_logger  # type: ignore
-from src.training.steps.market_analysis.feature_generation_meta_labeling_step import (  # type: ignore
+from src.training.steps.labeling.feature_generation_meta_labeling_step import (  # type: ignore
     FeatureGenerationMetaLabelingStep,
     compute_learnability_score,
     compute_label_entropy_score,

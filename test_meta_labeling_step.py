@@ -21,7 +21,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 # Import the meta-labeling components
-from src.training.steps.pre_training.feature_generation_meta_labeling_step import (
+from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     purge_training_idxs,
     compute_rsi,
     generate_primary_signals,

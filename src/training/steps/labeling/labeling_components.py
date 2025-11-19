@@ -1,9 +1,9 @@
-from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 """Labeling Components for Step05.
 
 This module provides the core labeling logic components including regime-aware labeling,
 meta-labeling, and composite labeling strategies.
 """
+from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 import logging
 from typing import Any, Dict, Optional
 

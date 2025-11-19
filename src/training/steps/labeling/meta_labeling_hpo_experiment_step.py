@@ -27,7 +27,7 @@ from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_success
 
 # Reuse core labeling utilities from the production meta-labeling step
-from src.training.steps.market_analysis.feature_generation_meta_labeling_step import (
+from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     compute_realized_returns,
     kalman_smooth_labels,
     fit_probability_to_return_mapping,
@@ -432,7 +432,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 # ===== LEARNABILITY ASSESSMENT =====
                 # Create meta-features for this labeling configuration
-                from src.training.steps.market_analysis.feature_generation_meta_labeling_step import (
+                from src.training.steps.labeling.feature_generation_meta_labeling_step import (
                     create_meta_features,
                     compute_learnability_score,
                     compute_label_entropy_score,

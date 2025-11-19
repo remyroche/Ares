@@ -38,7 +38,7 @@ from .regime_aware_triple_barrier_optimizer import (
     optimize_regime_barriers,
     apply_optimized_regime_labeling
 )
-from .triple_barrier_validator import (
+from src.training.steps.labeling.triple_barrier_validator import (
     TripleBarrierValidator,
     ValidationReport,
     validate_triple_barrier_implementation,

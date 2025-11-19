@@ -801,10 +801,16 @@ def compute_realized_returns(
             else:
                 binary_labels.iloc[i] = np.nan  # Should not happen
         else:
-            # BINARY LABELS: Velocity/efficiency-adjusted (legacy)
-            # Penalize trades that take too long to achieve returns
+            # BINARY LABELS: Velocity/efficiency-adjusted (legacy) with SOFT-LABELING
+            # NEW: Instead of dropping small returns as NaN, soft-label them as class 0 (neutral)
+            # with implicit low sample weight (0.01). This helps model learn "what to avoid"
+            # without being penalized for missing "grey" trades.
             if abs(net_return) < econ_min_return:
-                binary_labels.iloc[i] = np.nan
+                # SOFT-LABELING: Treat small/economically trivial returns as class 0 (neutral)
+                # instead of dropping them. The model will see these as "grey" data but won't
+                # be heavily penalized for misclassifying them. Sample weights should be set to 0.01
+                # downstream in model training (src/training/steps/models_training/core/model_trainer.py)
+                binary_labels.iloc[i] = 0.0
             else:
                 # Efficiency ratio: 1.0 / log(1 + duration)
                 # Fast trades (1-2 bars) get full credit, slow trades (16+ bars) get penalized
@@ -825,8 +831,8 @@ def compute_realized_returns(
                 elif net_return < 0:  # Losses are losses regardless of speed
                     binary_labels.iloc[i] = 0.0
                 else:
-                    # Profitable but too slow = noise/drift
-                    binary_labels.iloc[i] = np.nan
+                    # Profitable but too slow = noise/drift, soft-label as class 0
+                    binary_labels.iloc[i] = 0.0
 
         last_event_idx = i  # Update last event position
         i += 1

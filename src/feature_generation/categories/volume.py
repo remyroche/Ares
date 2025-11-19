@@ -1879,9 +1879,9 @@ class VolumeVWAPGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin)
         }
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate Volume VWAP using VectorBT optimization."""
+        """Generate Price vs VWAP Ratio using VectorBT optimization."""
         if len(data) == 0 or 'close' not in data.columns or 'volume' not in data.columns:
-            return pd.Series(dtype=float, index=data.index, name=f'volume_vwap_{self.period}')
+            return pd.Series(dtype=float, index=data.index, name=f'price_vwap_ratio_{self.period}')
 
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1893,7 +1893,12 @@ class VolumeVWAPGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin)
         # Use Unified Vectorization Manager for intelligent optimization
         if self.unified_manager and self._should_use_unified_manager(volume):
             try:
-                return self._generate_vwap_with_unified_manager(close, volume)
+                vwap = self._generate_vwap_with_unified_manager(close, volume)
+                # Calculate Price vs VWAP ratio
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    ratio = close / vwap
+                    ratio = np.where(vwap == 0, np.nan, ratio)
+                return pd.Series(ratio, index=data.index, name=f'price_vwap_ratio_{self.period}')
             except Exception as e:
                 logger.warning(f"Unified Vectorization Manager failed: {e}, using VectorBT fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
@@ -1905,11 +1910,15 @@ class VolumeVWAPGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin)
                 price_volume_sum = self.rolling_optimizer.rolling_sum(price_volume, self.period)
                 volume_sum = self.rolling_optimizer.rolling_sum(volume, self.period)
                 self.performance_stats['vectorbt_operations'] += 2
-                # Handle division by zero
+                # Calculate VWAP
                 with np.errstate(divide='ignore', invalid='ignore'):
-                    result = price_volume_sum / volume_sum
-                    result = np.where(volume_sum == 0, np.nan, result)
-                return result
+                    vwap = price_volume_sum / volume_sum
+                    vwap = np.where(volume_sum == 0, np.nan, vwap)
+                # Calculate Price vs VWAP ratio
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    ratio = close / vwap
+                    ratio = np.where(vwap == 0, np.nan, ratio)
+                return pd.Series(ratio, index=data.index, name=f'price_vwap_ratio_{self.period}')
             except Exception as e:
                 logger.warning(f"VectorBT volume VWAP calculation failed: {e}, using fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
@@ -1921,21 +1930,27 @@ class VolumeVWAPGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin)
                 price_volume_sum = rolling_sum(price_volume, self.period)
                 volume_sum = rolling_sum(volume, self.period)
                 self.performance_stats['vectorbt_operations'] += 2
-                # Handle division by zero
+                # Calculate VWAP
                 with np.errstate(divide='ignore', invalid='ignore'):
-                    result = price_volume_sum / volume_sum
-                    result = np.where(volume_sum == 0, np.nan, result)
-                return result
+                    vwap = price_volume_sum / volume_sum
+                    vwap = np.where(volume_sum == 0, np.nan, vwap)
+                # Calculate Price vs VWAP ratio
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    ratio = close / vwap
+                    ratio = np.where(vwap == 0, np.nan, ratio)
+                return pd.Series(ratio, index=data.index, name=f'price_vwap_ratio_{self.period}')
             except Exception as e:
                 logger.warning(f"VectorBT volume VWAP calculation failed: {e}, using pandas fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
 
         # Final fallback to pandas
         with np.errstate(divide='ignore', invalid='ignore'):
-            result = (close * volume).rolling(self.period).sum() / volume.rolling(self.period).sum()
+            vwap = (close * volume).rolling(self.period).sum() / volume.rolling(self.period).sum()
+            # Calculate Price vs VWAP ratio
+            ratio = close / vwap
             # Handle any remaining NaN or inf values
-            result = result.replace([np.inf, -np.inf], np.nan)
-        return result
+            ratio = ratio.replace([np.inf, -np.inf], np.nan)
+        return ratio
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""

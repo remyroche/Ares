@@ -529,10 +529,11 @@ class LightGBMTrainer(BaseModelTrainer):
     def _get_default_hyperparameters(self) -> Dict[str, Any]:
         """Get default hyperparameters based on model type."""
         defaults = {
-            'lightgbm': {'objective': 'binary', 'metric': 'binary_logloss', 'num_leaves': 31,
-                        'learning_rate': 0.05, 'n_estimators': 100, 'random_state': 42, 'verbosity': -1},
-            'xgboost': {'objective': 'binary:logistic', 'eval_metric': 'logloss', 'max_depth': 6,
-                       'learning_rate': 0.05, 'n_estimators': 100, 'random_state': 42, 'verbosity': 0},
+            'lightgbm': {'objective': 'binary', 'metric': 'binary_logloss', 'num_leaves': 128,
+                        'learning_rate': 0.05, 'n_estimators': 1000, 'random_state': 42, 'verbosity': -1,
+                        'max_depth': 12, 'min_child_samples': 10},
+            'xgboost': {'objective': 'binary:logistic', 'eval_metric': 'logloss', 'max_depth': 10,
+                       'learning_rate': 0.05, 'n_estimators': 1000, 'random_state': 42, 'verbosity': 0},
             'random_forest': {'n_estimators': 100, 'max_depth': 10, 'min_samples_split': 2,
                              'min_samples_leaf': 1, 'random_state': 42, 'n_jobs': -1},
             'neural_network': {'hidden_layers': [64, 32], 'activation': 'relu', 'dropout_rate': 0.2,

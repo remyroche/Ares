@@ -5,7 +5,11 @@
 
 training_modes:
   # Full Production Mode - Complete training with all data
-  # Note: Lookback period is now centralized in src/config/pipeline_modes.py
+  # Note: Lookback period is now centralized in src/config/pipeline_modes.py (1095 days = 3 years)
+  # CRITICAL: Ensure feature generation pipeline uses the FULL lookback period to compute
+  # feature quality metrics (variance, correlation) on representative data.
+  # Diagnostics indicated "Ghost Data" discrepancy where feature analysis used only ~23% of data.
+  # Feature quality decisions must be based on complete historical dataset.
   full:
     description: "Production mode - Complete training with full dataset"
     training_mode: "full"

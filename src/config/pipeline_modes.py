@@ -49,6 +49,10 @@ FULL_MODE_CONFIG: Final[ModeConfiguration] = ModeConfiguration(
     name="full",
     description="Production mode - Complete training with full dataset",
     lookback_days=1095,  # 3 years (keep in sync with launcher)
+    # IMPORTANT: Feature generation pipeline must use this full lookback
+    # to ensure feature quality metrics (variance, correlation) are computed
+    # on representative data, not on a short subset. See diagnostics report
+    # regarding "Ghost Data" discrepancy where feature analysis uses only ~23% of data.
     lookback_years=3,
     intensity_percentage=1.0,  # 100% intensity
     computational_intensity="high",

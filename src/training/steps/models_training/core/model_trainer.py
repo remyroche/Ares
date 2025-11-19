@@ -620,16 +620,17 @@ class ModelTrainer(BaseTrainer):
                     model_params = {}
             
             # Extract hyperparameters (from HPO, YAML, or defaults)
-            n_estimators = model_params.get('n_estimators', 800)
+            # ENHANCED: Increased from conservative defaults to reduce underfitting
+            n_estimators = model_params.get('n_estimators', 1000)  # Increased from 800
             learning_rate = model_params.get('learning_rate', 0.05)
-            max_depth = model_params.get('max_depth', 6)
-            num_leaves = model_params.get('num_leaves', 31)
+            max_depth = model_params.get('max_depth', 12)  # Increased from 6 for deeper trees
+            num_leaves = model_params.get('num_leaves', 128)  # Increased from 31 for more complexity
             subsample = model_params.get('subsample', 0.7)  # bagging_fraction
             colsample_bytree = model_params.get('colsample_bytree', 0.7)  # feature_fraction
             # Stronger regularization defaults when HPO is off
             reg_alpha = model_params.get('reg_alpha', 0.5)   # lambda_l1
             reg_lambda = model_params.get('reg_lambda', 1.0) # lambda_l2
-            min_child_samples = model_params.get('min_child_samples', 128)
+            min_child_samples = model_params.get('min_child_samples', 10)  # Reduced from 128 to capture finer patterns
             
             # Early stopping controls with safety floors to avoid degenerate 1-iteration models
             es_rounds = model_params.get('early_stopping_rounds', 50)
@@ -1855,3 +1856,94 @@ class ModelTrainer(BaseTrainer):
         except Exception as e:
             self.logger.error(f"Prediction failed: {e}")
             return PredictionResult(success=False, error_message=str(e))
+
+    def _calibrate_probabilities_isotonic(self,
+                                         y_true: np.ndarray,
+                                         y_proba: np.ndarray) -> Optional[Any]:
+        """
+        Fit isotonic regression calibrator on validation data.
+
+        Maps model's raw output (0.0-1.0) to actual empirical probability of success.
+        Addresses "Negative R²" problem where model probabilities are worse than
+        guessing the average win rate.
+
+        Args:
+            y_true: True binary labels (0 or 1)
+            y_proba: Raw probabilities from model (shape: n_samples or n_samples x 2)
+
+        Returns:
+            Fitted isotonic regression calibrator or None if fitting fails
+        """
+        try:
+            from sklearn.isotonic import IsotonicRegression
+            import warnings
+
+            # Extract positive class probabilities if needed
+            if y_proba.ndim == 2:
+                y_proba_pos = y_proba[:, 1]
+            else:
+                y_proba_pos = y_proba
+
+            # Remove NaN values
+            valid_mask = ~(np.isnan(y_true) | np.isnan(y_proba_pos))
+            if valid_mask.sum() < 10:
+                self.logger.warning(f"Insufficient valid samples for calibration ({valid_mask.sum() < 10})")
+                return None
+
+            y_true_valid = y_true[valid_mask]
+            y_proba_valid = y_proba_pos[valid_mask]
+
+            # Fit isotonic regression
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                calibrator = IsotonicRegression(out_of_bounds='clip', n_subwindows=3)
+                calibrator.fit(y_proba_valid, y_true_valid)
+
+            self.logger.info(f"✅ Probability calibration fitted on {valid_mask.sum()} samples")
+            return calibrator
+
+        except Exception as e:
+            self.logger.warning(f"Failed to fit isotonic calibrator: {e}")
+            return None
+
+    def calibrate_predictions(self,
+                             probabilities: np.ndarray,
+                             calibrator: Optional[Any] = None) -> np.ndarray:
+        """
+        Apply probability calibration to model predictions.
+
+        Transforms model's raw probabilities to actual empirical probabilities
+        using fitted calibrator (Isotonic Regression).
+
+        Args:
+            probabilities: Raw probabilities from model
+            calibrator: Fitted isotonic regression calibrator
+
+        Returns:
+            Calibrated probabilities
+        """
+        if calibrator is None:
+            return probabilities
+
+        try:
+            # Extract positive class probabilities if 2D
+            if probabilities.ndim == 2:
+                y_proba_pos = probabilities[:, 1]
+                is_2d = True
+            else:
+                y_proba_pos = probabilities
+                is_2d = False
+
+            # Apply calibration
+            calibrated = calibrator.predict(y_proba_pos)
+
+            # Reconstruct 2D array if needed
+            if is_2d:
+                calibrated_proba = np.column_stack([1 - calibrated, calibrated])
+                return calibrated_proba
+            else:
+                return calibrated
+
+        except Exception as e:
+            self.logger.warning(f"Calibration failed: {e}, returning original probabilities")
+            return probabilities

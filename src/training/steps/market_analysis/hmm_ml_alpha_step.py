@@ -400,6 +400,23 @@ class HMMMLAlphaStep(BaseStep):
                         tprint_warning(
                             f"Failed to save alpha regime statistics CSV (ignored): {stats_csv_exc}"
                         )
+
+                # Walk-Forward Validation window metrics CSV (if available)
+                wfv_window_metrics = training_metrics.get("wfv_window_metrics", [])
+                if wfv_window_metrics and isinstance(wfv_window_metrics, list) and len(wfv_window_metrics) > 0:
+                    try:
+                        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        wfv_csv_name = f"hmm_alpha_wfv_window_metrics_{symbol}_{ts}.csv"
+                        wfv_csv_path = f"outcomes/{wfv_csv_name}"
+                        wfv_df = pd.DataFrame(wfv_window_metrics)
+                        wfv_df.to_csv(wfv_csv_path, index=False)
+                        tprint_info(
+                            f"📊 Saved Walk-Forward Validation window metrics CSV: {wfv_csv_path}"
+                        )
+                    except Exception as wfv_csv_exc:
+                        tprint_warning(
+                            f"Failed to save WFV metrics CSV (ignored): {wfv_csv_exc}"
+                        )
             except Exception as report_outer_exc:
                 tprint_warning(
                     f"Alpha report generation encountered a non-fatal error: {report_outer_exc}"
@@ -700,11 +717,13 @@ class HMMMLAlphaStep(BaseStep):
                 r2_score,
                 mean_squared_error,
             )
+            from sklearn.calibration import CalibratedClassifierCV
         except ImportError:  # pragma: no cover - optional metrics
             accuracy_score = None  # type: ignore[assignment]
             roc_auc_score = None  # type: ignore[assignment]
             r2_score = None  # type: ignore[assignment]
             mean_squared_error = None  # type: ignore[assignment]
+            CalibratedClassifierCV = None  # type: ignore[assignment]
 
         def _safe_rmse(y_true: pd.Series, y_pred: np.ndarray) -> Optional[float]:
             if mean_squared_error is None:
@@ -958,7 +977,7 @@ class HMMMLAlphaStep(BaseStep):
             training_metrics["model_type"] = "lightgbm_regression"
 
         else:
-            model = lgb.LGBMClassifier(
+            base_model = lgb.LGBMClassifier(
                 n_estimators=int(config.get("alpha_n_estimators", 300)),
                 learning_rate=float(config.get("alpha_learning_rate", 0.05)),
                 num_leaves=int(config.get("alpha_num_leaves", 64)),
@@ -966,16 +985,93 @@ class HMMMLAlphaStep(BaseStep):
                 colsample_bytree=float(config.get("alpha_colsample_bytree", 0.8)),
                 random_state=int(config.get("alpha_random_state", 42)),
             )
-            model.fit(X_train, y_train)
+            base_model.fit(X_train, y_train)
 
-            train_proba = model.predict_proba(X_train)[:, 1]
+            train_proba = base_model.predict_proba(X_train)[:, 1]
             train_pred = (train_proba > 0.5).astype(float)
 
             if roc_auc_score is not None:
-                training_metrics["train_auc"] = float(roc_auc_score(y_train, train_proba))
+                training_metrics["train_auc_uncalibrated"] = float(roc_auc_score(y_train, train_proba))
             if accuracy_score is not None:
-                training_metrics["train_accuracy"] = float(accuracy_score(y_train, train_pred))
+                training_metrics["train_accuracy_uncalibrated"] = float(accuracy_score(y_train, train_pred))
 
+            # Probability calibration using CalibratedClassifierCV with Isotonic Regression
+            calibration_enabled = bool(config.get("alpha_enable_probability_calibration", True))
+            training_metrics["probability_calibration_enabled"] = calibration_enabled
+
+            model = base_model
+            calibration_metrics = {}
+
+            if calibration_enabled and CalibratedClassifierCV is not None and len(X_val) > 0:
+                try:
+                    # Wrap base model with CalibratedClassifierCV using Isotonic Regression
+                    model = CalibratedClassifierCV(
+                        base_model,
+                        method='isotonic',
+                        cv='prefit'  # Use the already-trained model
+                    )
+                    # Fit calibration on validation set
+                    model.fit(X_val, y_val)
+
+                    tprint_info(
+                        f"✅ Probability calibration (Isotonic Regression) fitted on {len(X_val)} validation samples"
+                    )
+
+                    # Evaluate calibration improvement
+                    val_proba_calibrated = model.predict_proba(X_val)[:, 1]
+                    val_proba_uncalibrated = base_model.predict_proba(X_val)[:, 1]
+
+                    # Calibration quality metrics
+                    if roc_auc_score is not None:
+                        auc_cal = float(roc_auc_score(y_val, val_proba_calibrated))
+                        auc_uncal = float(roc_auc_score(y_val, val_proba_uncalibrated))
+                        calibration_metrics["val_auc_calibrated"] = auc_cal
+                        calibration_metrics["val_auc_uncalibrated"] = auc_uncal
+                        calibration_metrics["auc_improvement"] = auc_cal - auc_uncal
+                        training_metrics.update(calibration_metrics)
+
+                    # Expected Calibration Error (ECE) - simpler alternative to Brier score
+                    # Divide probabilities into bins and measure gap between average prob and accuracy
+                    try:
+                        n_bins = 10
+                        bin_edges = np.linspace(0, 1, n_bins + 1)
+                        bin_indices = np.digitize(val_proba_uncalibrated, bin_edges) - 1
+                        bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+                        ece_uncal = 0.0
+                        ece_cal = 0.0
+                        for bin_idx in range(n_bins):
+                            mask = bin_indices == bin_idx
+                            if mask.sum() > 0:
+                                bin_acc_uncal = float((y_val[mask] == 1).mean())
+                                bin_prob_uncal = float(val_proba_uncalibrated[mask].mean())
+                                ece_uncal += abs(bin_acc_uncal - bin_prob_uncal) * (mask.sum() / len(y_val))
+
+                                bin_acc_cal = float((y_val[mask] == 1).mean())
+                                bin_prob_cal = float(val_proba_calibrated[mask].mean())
+                                ece_cal += abs(bin_acc_cal - bin_prob_cal) * (mask.sum() / len(y_val))
+
+                        training_metrics["ece_uncalibrated"] = float(ece_uncal)
+                        training_metrics["ece_calibrated"] = float(ece_cal)
+                        training_metrics["ece_improvement"] = float(ece_uncal - ece_cal)
+                    except Exception as ece_err:
+                        tprint_warning(f"ECE calculation failed: {ece_err}")
+
+                    training_metrics["calibration_method"] = "isotonic_regression"
+
+                except Exception as calib_err:
+                    tprint_warning(f"Probability calibration failed, using uncalibrated model: {calib_err}")
+                    model = base_model
+                    training_metrics["calibration_failed"] = True
+                    training_metrics["calibration_error"] = str(calib_err)
+            elif not calibration_enabled:
+                tprint_info("Probability calibration disabled via config")
+            elif CalibratedClassifierCV is None:
+                tprint_warning("CalibratedClassifierCV not available; skipping probability calibration")
+            elif len(X_val) == 0:
+                tprint_warning("No validation set available; skipping probability calibration")
+
+            # Evaluate on validation set with calibrated probabilities
             if len(X_val) > 0:
                 val_proba = model.predict_proba(X_val)[:, 1]
                 val_pred = (val_proba > 0.5).astype(float)
@@ -984,6 +1080,27 @@ class HMMMLAlphaStep(BaseStep):
                 if accuracy_score is not None:
                     training_metrics["val_accuracy"] = float(accuracy_score(y_val, val_pred))
 
+                # Walk-Forward Validation on validation set to detect concept drift
+                try:
+                    wfv_metrics = self._calculate_walk_forward_validation_classification(
+                        X_val=X_val.to_numpy(dtype=float, copy=False) if hasattr(X_val, 'to_numpy') else X_val,
+                        y_val=y_val.to_numpy(dtype=float, copy=False) if hasattr(y_val, 'to_numpy') else y_val,
+                        model=base_model,
+                        config=config,
+                        accuracy_score=accuracy_score
+                    )
+                    if wfv_metrics:
+                        training_metrics.update(wfv_metrics)
+                        tprint_info(
+                            f"📊 Walk-Forward Validation completed: "
+                            f"avg_val_accuracy={wfv_metrics.get('wfv_avg_val_accuracy', 0.0):.3f}, "
+                            f"avg_test_accuracy={wfv_metrics.get('wfv_avg_test_accuracy', 0.0):.3f}, "
+                            f"accuracy_degradation={wfv_metrics.get('wfv_accuracy_degradation', 0.0):.3f}"
+                        )
+                except Exception as wfv_err:
+                    tprint_warning(f"Walk-Forward Validation failed: {wfv_err}")
+
+            # Get predictions on full dataset using calibrated model
             proba_all = model.predict_proba(X_scaled_full)[:, 1]
             scores = pd.Series(proba_all, index=df.index, name="alpha_pred_prob")
             pred_col_name = "alpha_pred_prob"
@@ -1722,6 +1839,168 @@ class HMMMLAlphaStep(BaseStep):
             )
 
         return alpha_df, regime_stats_df, bucket_col
+
+    def _calculate_walk_forward_validation_classification(
+        self,
+        *,
+        X_val: np.ndarray,
+        y_val: np.ndarray,
+        model: Any,
+        config: Dict[str, Any],
+        accuracy_score: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Calculate Walk-Forward Validation metrics for classification model.
+
+        Uses rolling windows on validation set to detect concept drift and
+        accuracy degradation over time.
+
+        Args:
+            X_val: Validation feature matrix (n_samples, n_features)
+            y_val: Validation labels (n_samples,)
+            model: Trained classifier with predict_proba method
+            config: Configuration dictionary
+            accuracy_score: Optional sklearn accuracy_score function
+
+        Returns:
+            Dictionary with WFV metrics including:
+            - wfv_window_size: Size of test window
+            - wfv_n_windows: Number of rolling windows tested
+            - wfv_avg_val_accuracy: Average accuracy on validation windows
+            - wfv_avg_test_accuracy: Average accuracy on test windows
+            - wfv_accuracy_degradation: Test accuracy - Validation accuracy
+            - wfv_max_degradation: Maximum degradation in any window
+            - wfv_stability_score: Consistency metric (higher is better)
+            - wfv_window_metrics: Per-window detailed metrics
+        """
+        if accuracy_score is None or X_val is None or len(X_val) < 20:
+            return {}
+
+        try:
+            # Configure rolling window sizes
+            val_set_size = len(X_val)
+            # Use approximately 60% for validation window, 40% for test window
+            window_size = max(int(val_set_size * 0.6), 10)
+            step_size = max(int(val_set_size * 0.2), 5)
+
+            # Ensure we have at least 2 windows
+            n_windows = (val_set_size - window_size) // step_size
+            if n_windows < 2:
+                tprint_warning(f"Insufficient validation set size ({val_set_size}) for walk-forward validation")
+                return {}
+
+            window_metrics_list = []
+            val_accuracies = []
+            test_accuracies = []
+
+            for window_idx in range(n_windows):
+                start_idx = window_idx * step_size
+                val_end_idx = start_idx + window_size
+                test_start_idx = val_end_idx
+                test_end_idx = min(test_start_idx + int(window_size * 0.4), val_set_size)
+
+                # Skip if test window is too small
+                if test_end_idx - test_start_idx < 3:
+                    continue
+
+                # Split validation window chronologically
+                val_split_idx = int(window_size * 0.75)
+                X_val_train = X_val[start_idx:start_idx + val_split_idx]
+                y_val_train = y_val[start_idx:start_idx + val_split_idx]
+                X_val_val = X_val[start_idx + val_split_idx:val_end_idx]
+                y_val_val = y_val[start_idx + val_split_idx:val_end_idx]
+
+                # Test window
+                X_test = X_val[test_start_idx:test_end_idx]
+                y_test = y_val[test_start_idx:test_end_idx]
+
+                # Train model on validation training portion
+                try:
+                    # Create a fresh model instance for this window
+                    window_model = model.__class__(**model.get_params())
+                    window_model.fit(X_val_train, y_val_train)
+
+                    # Evaluate on validation validation portion
+                    val_pred = window_model.predict(X_val_val)
+                    val_acc = float(accuracy_score(y_val_val, val_pred))
+                    val_accuracies.append(val_acc)
+
+                    # Evaluate on test portion
+                    test_pred = window_model.predict(X_test)
+                    test_acc = float(accuracy_score(y_test, test_pred))
+                    test_accuracies.append(test_acc)
+
+                    # Calculate degradation for this window
+                    degradation = test_acc - val_acc
+
+                    window_metrics_list.append({
+                        "window_idx": window_idx,
+                        "window_start": start_idx,
+                        "window_end": val_end_idx,
+                        "test_start": test_start_idx,
+                        "test_end": test_end_idx,
+                        "val_accuracy": val_acc,
+                        "test_accuracy": test_acc,
+                        "accuracy_degradation": degradation,
+                        "n_val_samples": len(X_val_val),
+                        "n_test_samples": len(X_test),
+                    })
+                except Exception as window_err:
+                    tprint_warning(f"WFV window {window_idx} failed: {window_err}")
+                    continue
+
+            if len(val_accuracies) < 1:
+                tprint_warning("No valid walk-forward validation windows")
+                return {}
+
+            # Calculate aggregate metrics
+            val_acc_array = np.array(val_accuracies)
+            test_acc_array = np.array(test_accuracies)
+
+            avg_val_acc = float(np.mean(val_acc_array))
+            avg_test_acc = float(np.mean(test_acc_array))
+            accuracy_degradation = avg_test_acc - avg_val_acc
+
+            # Stability score: 1 - coefficient of variation of accuracies (higher is better)
+            if len(val_acc_array) > 1:
+                val_cv = float(np.std(val_acc_array) / (np.mean(val_acc_array) + 1e-8))
+                test_cv = float(np.std(test_acc_array) / (np.mean(test_acc_array) + 1e-8))
+                stability_score = max(0.0, 1.0 - (val_cv + test_cv) / 2.0)
+            else:
+                stability_score = 1.0
+
+            # Max degradation
+            max_degradation = float(np.max(test_acc_array - val_acc_array))
+            min_degradation = float(np.min(test_acc_array - val_acc_array))
+
+            # Trend analysis: is degradation getting worse over time?
+            degradation_trend = 0.0
+            if len(window_metrics_list) > 1:
+                degradations = [w["accuracy_degradation"] for w in window_metrics_list]
+                # Simple linear fit to detect trend
+                x = np.arange(len(degradations))
+                if len(x) > 1:
+                    z = np.polyfit(x, degradations, 1)
+                    degradation_trend = float(z[0])  # Slope
+
+            return {
+                "wfv_enabled": True,
+                "wfv_window_size": int(window_size),
+                "wfv_n_windows": len(window_metrics_list),
+                "wfv_avg_val_accuracy": avg_val_acc,
+                "wfv_avg_test_accuracy": avg_test_acc,
+                "wfv_accuracy_degradation": accuracy_degradation,
+                "wfv_max_degradation": max_degradation,
+                "wfv_min_degradation": min_degradation,
+                "wfv_stability_score": stability_score,
+                "wfv_val_accuracy_std": float(np.std(val_acc_array)),
+                "wfv_test_accuracy_std": float(np.std(test_acc_array)),
+                "wfv_degradation_trend": degradation_trend,
+                "wfv_window_metrics": window_metrics_list,
+            }
+
+        except Exception as e:
+            tprint_warning(f"Walk-Forward Validation calculation failed: {e}")
+            return {}
 
     def _assess_alpha_regime_quality(
         self,

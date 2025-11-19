@@ -18,9 +18,194 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
 from datetime import datetime
+import os
+import glob
+import pickle
+from pathlib import Path
 
 # Suppress warnings for cleaner output in production
 warnings.filterwarnings("ignore")
+
+# ==========================================
+# Helper Functions for Auto-Loading Models & Predictions
+# ==========================================
+
+class ModelLoader:
+    """Utility class to automatically load latest models and predictions from artifact stores."""
+
+    @staticmethod
+    def load_latest_model(model_type: str = 'ensemble', artifacts_dir: str = None) -> Tuple[Any, Dict]:
+        """
+        Load the latest analyst model (base or ensemble).
+
+        Args:
+            model_type: 'ensemble' (default) or 'base'
+            artifacts_dir: Path to artifacts directory (auto-detects if not provided)
+
+        Returns:
+            Tuple of (model, metadata_dict)
+        """
+        if artifacts_dir is None:
+            # Auto-detect artifacts directory
+            artifacts_dir = os.path.join(os.path.dirname(__file__), '../../../artifacts')
+            if not os.path.exists(artifacts_dir):
+                artifacts_dir = os.path.abspath('./artifacts')
+
+        model_name = f'analyst_{model_type}_model.pkl'
+        model_path = os.path.join(artifacts_dir, model_name)
+
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model not found at {model_path}")
+
+        with open(model_path, 'rb') as f:
+            artifact = pickle.load(f)
+
+        # Handle both direct model and {model, metadata} dict structures
+        if isinstance(artifact, dict) and 'model' in artifact:
+            model = artifact['model']
+            metadata = artifact.get('metadata', {})
+        else:
+            model = artifact
+            metadata = {}
+
+        metadata['model_type'] = model_type
+        metadata['loaded_from'] = model_path
+
+        return model, metadata
+
+    @staticmethod
+    def load_latest_predictions_from_versioned_artifacts(
+        symbol: str = 'ETHUSDT',
+        exchange: str = 'binance',
+        timeframe: str = '15m',
+        direction: str = 'long',
+        prediction_type: str = 'ensemble',
+        base_dir: str = None
+    ) -> Tuple[pd.DataFrame, Dict]:
+        """
+        Load latest predictions from versioned artifacts HDF5 store.
+
+        Args:
+            symbol, exchange, timeframe, direction: Context parameters
+            prediction_type: 'ensemble' or 'base'
+            base_dir: Path to versioned_artifacts directory
+
+        Returns:
+            Tuple of (predictions_df, metadata)
+        """
+        if base_dir is None:
+            base_dir = os.path.join(os.path.dirname(__file__), '../../../versioned_artifacts')
+            if not os.path.exists(base_dir):
+                base_dir = os.path.abspath('./versioned_artifacts')
+
+        context_path = f"{symbol}_{exchange}_{timeframe}_{direction}_analyst"
+        store_path = os.path.join(base_dir, context_path, 'store.h5')
+        metadata_path = os.path.join(base_dir, context_path, 'metadata.json')
+
+        if not os.path.exists(store_path):
+            raise FileNotFoundError(f"Predictions store not found at {store_path}")
+
+        # Load metadata to find latest version
+        metadata = {}
+        if os.path.exists(metadata_path):
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+
+        # Load predictions from HDF5
+        try:
+            # Try to use h5py if available for better control
+            import h5py
+            predictions_df = None
+            with h5py.File(store_path, 'r') as hf:
+                # Find the appropriate version
+                if prediction_type == 'ensemble':
+                    pattern = 'analyst_ensemble_predictions'
+                else:
+                    pattern = 'analyst_base_predictions_oof'
+
+                # Get the latest version matching the pattern
+                versions_group = hf.get('versions', hf)
+                matching_keys = [k for k in versions_group.keys() if pattern in k]
+
+                if matching_keys:
+                    # Sort by timestamp (last part) and get the latest
+                    latest_key = sorted(matching_keys)[-1]
+                    ds = versions_group[latest_key]
+                    predictions_df = pd.DataFrame(ds[()], columns=ds.attrs.get('columns', None))
+        except Exception as e:
+            # Fallback to pandas read_hdf
+            try:
+                predictions_df = pd.read_hdf(store_path, mode='r')
+            except Exception as e2:
+                raise RuntimeError(f"Failed to load predictions: {e2}")
+
+        return predictions_df, metadata
+
+    @staticmethod
+    def auto_initialize_diagnostician(
+        symbol: str = 'ETHUSDT',
+        exchange: str = 'binance',
+        timeframe: str = '15m',
+        direction: str = 'long',
+        model_type: str = 'ensemble',
+        test_data: Dict[str, pd.DataFrame] = None
+    ) -> 'ModelDiagnostician':
+        """
+        Auto-initialize ModelDiagnostician by loading latest models and predictions.
+
+        Args:
+            symbol, exchange, timeframe, direction: Context params
+            model_type: 'ensemble' or 'base'
+            test_data: Optional dict with 'X_test', 'y_test', 'X_train', 'y_train'
+
+        Returns:
+            Initialized ModelDiagnostician instance
+        """
+        # Load model
+        model, model_metadata = ModelLoader.load_latest_model(model_type)
+
+        # Load predictions
+        predictions_df, pred_metadata = ModelLoader.load_latest_predictions_from_versioned_artifacts(
+            symbol=symbol, exchange=exchange, timeframe=timeframe,
+            direction=direction, prediction_type=model_type
+        )
+
+        # Use provided test data or extract from predictions
+        if test_data is not None:
+            X_test = test_data.get('X_test')
+            y_test = test_data.get('y_test')
+            X_train = test_data.get('X_train')
+            y_train = test_data.get('y_train')
+        else:
+            # Try to reconstruct from predictions_df
+            X_test = predictions_df.drop(columns=['prediction', 'target'], errors='ignore')
+            y_test = predictions_df.get('target') if 'target' in predictions_df else None
+            X_train = None
+            y_train = None
+
+        # Extract predictions (assume column name is 'prediction' or first numeric column)
+        if 'prediction' in predictions_df.columns:
+            y_pred = predictions_df['prediction'].values
+        else:
+            # Find first numeric column that looks like prediction
+            numeric_cols = predictions_df.select_dtypes(include=[np.number]).columns
+            y_pred = predictions_df[numeric_cols[0]].values if len(numeric_cols) > 0 else None
+
+        if y_pred is None:
+            raise ValueError("Could not extract predictions from data")
+
+        # Create diagnostician
+        diag = ModelDiagnostician(model, X_test, y_test, y_pred, X_train, y_train)
+        diag.context = {
+            'symbol': symbol,
+            'exchange': exchange,
+            'timeframe': timeframe,
+            'direction': direction,
+            'model_type': model_type
+        }
+
+        return diag
+
 
 class ModelDiagnostician:
     """
@@ -53,16 +238,19 @@ class ModelDiagnostician:
         
         # Sub-modules
         self.oracle = self.Oracle(self)
+        self.performance_analyst = self.PerformanceAnalyst(self)
         self.architect = self.Architect(self)
         self.critic = self.Critic(self)
         self.navigator = self.Navigator(self)
         self.stress_tester = self.StressTester(self)
 
     def run_full_diagnosis(self) -> Dict[str, Any]:
-        """Run all 22 diagnostic tests and return a structured dictionary."""
+        """Run all diagnostic tests and return a structured dictionary."""
         results = {}
         print("Running Oracle Diagnostics...")
         results['oracle'] = self.oracle.run_all()
+        print("Running Performance Metrics...")
+        results['performance'] = self.performance_analyst.run_all()
         print("Running Architect Diagnostics...")
         results['architect'] = self.architect.run_all()
         print("Running Critic Diagnostics...")
@@ -186,6 +374,163 @@ class ModelDiagnostician:
             # This typically requires trade logs. Returning heuristic.
             sharpe = self.p.y_pred.mean() / (self.p.y_pred.std() + 1e-9) * np.sqrt(252)
             return f"Est. Sharpe from Predictions: {sharpe:.2f}. If Realized << Est., check execution costs."
+
+    # ==========================================
+    # Module 1b: The Performance Analyst (Trading Metrics)
+    # ==========================================
+    class PerformanceAnalyst:
+        """Computes real-world trading performance metrics from predictions."""
+        def __init__(self, parent):
+            self.p = parent
+
+        def run_all(self):
+            return {
+                "pnl_analysis": self.calculate_pnl_metrics(),
+                "sharpe_ratio": self.calculate_sharpe_ratio(),
+                "max_drawdown": self.calculate_max_drawdown(),
+                "trade_metrics": self.calculate_trade_metrics(),
+                "calmar_ratio": self.calculate_calmar_ratio(),
+                "win_rate": self.calculate_win_rate()
+            }
+
+        def calculate_pnl_metrics(self) -> Dict:
+            """Calculate Profit & Loss metrics from predictions."""
+            # Assume y_test are returns and y_pred are prediction signals (-1, 0, 1)
+            # Strategy: position = sign(y_pred), pnl = position * actual_return
+
+            # Normalize predictions to [-1, 0, 1] signal
+            pred_signal = np.sign(self.p.y_pred)
+
+            # Calculate daily PnL (assuming y_test are daily returns)
+            daily_pnl = pred_signal * self.p.y_test
+
+            # Cumulative PnL
+            cumulative_pnl = np.cumsum(daily_pnl)
+
+            return {
+                "total_pnl": cumulative_pnl[-1] if len(cumulative_pnl) > 0 else 0,
+                "avg_daily_pnl": np.mean(daily_pnl),
+                "std_daily_pnl": np.std(daily_pnl),
+                "pnl_skewness": float(pd.Series(daily_pnl).skew()),
+                "cumulative_pnl_final": cumulative_pnl[-1] if len(cumulative_pnl) > 0 else 0
+            }
+
+        def calculate_sharpe_ratio(self, risk_free_rate: float = 0.02, periods: int = 252) -> Dict:
+            """Calculate Sharpe Ratio (risk-adjusted returns)."""
+            pred_signal = np.sign(self.p.y_pred)
+            strategy_returns = pred_signal * self.p.y_test
+
+            if len(strategy_returns) == 0 or np.std(strategy_returns) == 0:
+                return {"sharpe_ratio": 0, "annualized_sharpe": 0}
+
+            excess_returns = strategy_returns - risk_free_rate / periods
+            sharpe = np.mean(excess_returns) / np.std(excess_returns) * np.sqrt(periods)
+
+            return {
+                "sharpe_ratio": float(sharpe),
+                "annualized_sharpe": float(sharpe),
+                "interpretation": "Excellent" if sharpe > 2 else "Good" if sharpe > 1 else "Acceptable" if sharpe > 0.5 else "Poor"
+            }
+
+        def calculate_max_drawdown(self) -> Dict:
+            """Calculate Maximum Drawdown from cumulative returns."""
+            pred_signal = np.sign(self.p.y_pred)
+            strategy_returns = pred_signal * self.p.y_test
+            cumulative_returns = np.cumprod(1 + strategy_returns)
+
+            running_max = np.maximum.accumulate(cumulative_returns)
+            drawdown = (cumulative_returns - running_max) / running_max
+            max_dd = np.min(drawdown) if len(drawdown) > 0 else 0
+
+            return {
+                "max_drawdown": float(max_dd),
+                "max_drawdown_pct": float(max_dd * 100),
+                "interpretation": "High Risk" if max_dd < -0.30 else "Moderate Risk" if max_dd < -0.15 else "Acceptable"
+            }
+
+        def calculate_trade_metrics(self) -> Dict:
+            """Calculate trade frequency and characteristics."""
+            pred_signal = np.sign(self.p.y_pred)
+
+            # Count trades (sign changes)
+            trades = np.abs(np.diff(pred_signal))
+            num_trades = np.sum(trades > 0)
+            trades_per_day = num_trades / max(len(pred_signal) / 252, 1)
+
+            # Trade win rate
+            trade_returns = self.p.y_pred * self.p.y_test
+            winning_trades = np.sum(trade_returns > 0)
+            total_trades = np.sum(trade_returns != 0)
+            win_rate = (winning_trades / total_trades) if total_trades > 0 else 0
+
+            return {
+                "total_trades": int(num_trades),
+                "trades_per_day": float(trades_per_day),
+                "avg_trade_size": float(np.mean(np.abs(pred_signal))),
+                "consecutive_wins": self._max_consecutive_wins(trade_returns),
+                "consecutive_losses": self._max_consecutive_losses(trade_returns)
+            }
+
+        def _max_consecutive_wins(self, returns) -> int:
+            """Helper: max consecutive winning trades."""
+            wins = (returns > 0).astype(int)
+            consecutive = 0
+            max_consecutive = 0
+            for w in wins:
+                if w:
+                    consecutive += 1
+                    max_consecutive = max(max_consecutive, consecutive)
+                else:
+                    consecutive = 0
+            return max_consecutive
+
+        def _max_consecutive_losses(self, returns) -> int:
+            """Helper: max consecutive losing trades."""
+            losses = (returns < 0).astype(int)
+            consecutive = 0
+            max_consecutive = 0
+            for l in losses:
+                if l:
+                    consecutive += 1
+                    max_consecutive = max(max_consecutive, consecutive)
+                else:
+                    consecutive = 0
+            return max_consecutive
+
+        def calculate_calmar_ratio(self) -> Dict:
+            """Calmar Ratio = Annual Return / Max Drawdown."""
+            pred_signal = np.sign(self.p.y_pred)
+            strategy_returns = pred_signal * self.p.y_test
+
+            annual_return = np.mean(strategy_returns) * 252
+
+            cumulative_returns = np.cumprod(1 + strategy_returns)
+            running_max = np.maximum.accumulate(cumulative_returns)
+            drawdown = (cumulative_returns - running_max) / running_max
+            max_dd = np.min(drawdown) if len(drawdown) > 0 else -0.01
+
+            calmar = annual_return / abs(max_dd) if max_dd < 0 else 0
+
+            return {
+                "calmar_ratio": float(calmar),
+                "annual_return": float(annual_return),
+                "interpretation": "Excellent" if calmar > 5 else "Good" if calmar > 2 else "Acceptable" if calmar > 1 else "Poor"
+            }
+
+        def calculate_win_rate(self) -> Dict:
+            """Calculate percentage of profitable trades."""
+            trade_returns = self.p.y_pred * self.p.y_test
+            winning_trades = np.sum(trade_returns > 0)
+            total_trades = np.sum(trade_returns != 0)
+
+            win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+
+            return {
+                "win_rate_pct": float(win_rate),
+                "winning_trades": int(winning_trades),
+                "total_trades": int(total_trades),
+                "interpretation": "Excellent" if win_rate > 60 else "Good" if win_rate > 55 else "Marginal" if win_rate > 50 else "Unprofitable"
+            }
 
     # ==========================================
     # Module 2: The Architect (Feature Intelligence)
@@ -501,83 +846,184 @@ class DiagnosisReporter:
 
     def _generate_guidance(self) -> list:
         """
-        Rule-engine that translates metrics into specific English advice.
+        Comprehensive rule-engine that translates metrics into specific, actionable advice.
+        Highlights three critical diagnostic areas: CMI, Residual Analysis, Noise Ceiling.
         Returns a list of dicts: {'severity': 'critical|warning|info', 'title': str, 'message': str}
         """
         r = self.results
         advice = []
 
-        # --- Oracle Checks ---
+        # ========== KEY DIAGNOSTIC #1: NOISE CEILING / BAYES ERROR ESTIMATE ==========
         oracle = r.get('oracle', {})
-        # Noise Ceiling
-        if oracle.get('noise_ceiling', {}).get('gap', 0) > 0.01:
+        noise_ceiling = oracle.get('noise_ceiling', {})
+        estimated_ceiling = noise_ceiling.get('estimated_ceiling_r2', 0)
+        current_r2 = noise_ceiling.get('current_model_r2', 0)
+        gap = noise_ceiling.get('gap', 0)
+
+        if estimated_ceiling < 0.002:
             advice.append({
-                'severity': 'info', 'title': 'Untapped Potential',
-                'message': f"Theoretical R² is {oracle['noise_ceiling']['estimated_ceiling_r2']:.4f}, but your model is at {oracle['noise_ceiling']['current_model_r2']:.4f}. Significant signal remains uncaptured."
+                'severity': 'critical',
+                'title': '🚫 NOISE CEILING ALERT: Target is Unpredictable',
+                'message': f"Bayes Error Estimate shows theoretical maximum R² is only {estimated_ceiling:.4f}. This target contains insufficient signal for profitable prediction. ACTION: Change prediction horizon (try shorter/longer timeframes), modify target definition, or switch assets."
             })
-        elif oracle.get('noise_ceiling', {}).get('estimated_ceiling_r2', 0) < 0.002:
+        elif 0.002 <= estimated_ceiling < 0.01:
             advice.append({
-                'severity': 'critical', 'title': 'Target is Noise',
-                'message': "The theoretical ceiling for this target is near zero. No model can predict this profitably. Change the target horizon."
+                'severity': 'warning',
+                'title': '⚠️ NOISE CEILING: Very Tight Limits',
+                'message': f"Theoretical predictability ceiling is only {estimated_ceiling:.4f}. Even optimal models struggle with this target. Consider: (1) Feature engineering for stronger signals, (2) Ensemble methods to reduce noise, (3) Alternative targets with higher SNR."
+            })
+        elif gap > 0.05:
+            advice.append({
+                'severity': 'info',
+                'title': '💡 NOISE CEILING: Significant Untapped Potential',
+                'message': f"Your model R² is {current_r2:.4f} but theoretical maximum is {estimated_ceiling:.4f}. Gap of {gap:.4f} suggests major improvements possible. Investigation: (1) Feature importance analysis - missing key drivers? (2) Model architecture - try deeper/wider networks, (3) Hyperparameter tuning - learning rate, regularization."
+            })
+        elif gap <= 0.005:
+            advice.append({
+                'severity': 'success',
+                'title': '✅ NOISE CEILING: Near Saturation',
+                'message': f"Model performance ({current_r2:.4f}) is very close to theoretical ceiling ({estimated_ceiling:.4f}). Diminishing returns on further improvements. Focus on deployment stability and transaction costs."
             })
 
-        # --- Architect Checks ---
+        # ========== KEY DIAGNOSTIC #2: CONDITIONAL MUTUAL INFORMATION (CMI) ==========
         architect = r.get('architect', {})
-        # CMI
-        cmi_score = architect.get('cmi', {}).get('avg_unused_info', 0)
-        if cmi_score > 0.1:
+        cmi_data = architect.get('cmi', {})
+        cmi_score = cmi_data.get('avg_unused_info', 0)
+        top_missed = cmi_data.get('top_underutilized_features', [])
+
+        if cmi_score > 0.15:
             advice.append({
-                'severity': 'critical', 'title': 'Major Underfitting',
-                'message': f"High Conditional Mutual Information ({cmi_score:.2f}). Features contain signal your model missed. Increase model complexity (Depth/Layers)."
+                'severity': 'critical',
+                'title': '🔴 CMI ALERT: Severe Underfitting Detected',
+                'message': f"Conditional Mutual Information = {cmi_score:.3f}. Your model is leaving substantial signal on the table. Top unused features: {', '.join(top_missed[:3])}. ACTIONS: (1) Increase model complexity (tree depth, hidden layers, ensemble size), (2) Check feature engineering - are these features actually predictive? (3) Use feature interaction terms, (4) Try non-parametric models (RandomForest, XGBoost)."
             })
-        
-        # RSA (Linearity)
+        elif 0.10 <= cmi_score <= 0.15:
+            advice.append({
+                'severity': 'warning',
+                'title': '⚠️ CMI: Moderate Underfitting',
+                'message': f"CMI = {cmi_score:.3f}. Model is not capturing all available information. Top missed features: {', '.join(top_missed[:2])}. Consider: (1) Feature engineering to create interactions/combinations, (2) Increase model capacity, (3) Reduce regularization if overly constrained."
+            })
+        elif cmi_score < 0.05:
+            advice.append({
+                'severity': 'success',
+                'title': '✅ CMI: Efficient Feature Utilization',
+                'message': f"CMI = {cmi_score:.3f} shows your model is efficiently using available features with minimal unused information. Good feature engineering and model architecture."
+            })
+
+        # ========== KEY DIAGNOSTIC #3: RESIDUAL ANALYSIS (Clustering + Autocorrelation) ==========
+        critic = r.get('critic', {})
+
+        # Autocorrelation analysis
+        autocorr_data = critic.get('residual_autocorr', {})
+        lag1_autocorr = abs(autocorr_data.get('lag1_autocorr', 0))
+
+        # Clustering analysis
+        clustering_data = critic.get('residual_clustering', {})
+        is_heteroskedastic = clustering_data.get('heteroskedasticity_detected', False)
+
+        if lag1_autocorr > 0.20:
+            advice.append({
+                'severity': 'critical',
+                'title': '🔴 RESIDUAL AUTOCORR: Strong Temporal Leakage',
+                'message': f"Lag-1 autocorrelation = {lag1_autocorr:.3f} (critical threshold >0.20). Model missing trend/momentum structure. Errors are NOT white noise - they cluster in time. ACTIONS: (1) Add lagged target features (y[t-1], y[t-2]...), (2) Use RNN/LSTM for temporal dependencies, (3) Include regime-switching features, (4) Check for data leakage from future information."
+            })
+        elif 0.10 < lag1_autocorr <= 0.20:
+            advice.append({
+                'severity': 'warning',
+                'title': '⚠️ RESIDUAL AUTOCORR: Minor Temporal Leakage',
+                'message': f"Lag-1 autocorrelation = {lag1_autocorr:.3f}. Some trend information missed. Try: (1) Add 1-2 lagged target features, (2) Use moving averages as features, (3) Test for multi-step ahead predictions."
+            })
+
+        if is_heteroskedastic:
+            advice.append({
+                'severity': 'warning',
+                'title': '⚠️ RESIDUAL CLUSTERING: Regime-Dependent Performance',
+                'message': "Error variance changes over time (heteroskedasticity detected). Model performs differently across market regimes. ACTIONS: (1) Add volatility/regime indicators, (2) Use separate models for high/low volatility periods, (3) Quantile regression for tail-robust predictions, (4) Dynamic position sizing based on predicted volatility."
+            })
+
+        # ========== PERFORMANCE METRICS CHECKS ==========
+        perf = r.get('performance', {})
+
+        # Sharpe ratio
+        sharpe_data = perf.get('sharpe_ratio', {})
+        sharpe = sharpe_data.get('sharpe_ratio', 0)
+        if sharpe < 0:
+            advice.append({
+                'severity': 'critical',
+                'title': 'Negative Returns',
+                'message': f"Strategy Sharpe ratio is {sharpe:.2f} (negative). Model generates net losses. Review: (1) Are predictions inverted? (2) Transaction costs too high? (3) Target misalignment?"
+            })
+        elif 0 < sharpe < 0.5:
+            advice.append({
+                'severity': 'warning',
+                'title': 'Low Risk-Adjusted Returns',
+                'message': f"Sharpe ratio = {sharpe:.2f} (poor). Risk-adjusted returns are weak. Improve signal quality or reduce trading frequency."
+            })
+
+        # Drawdown
+        dd_data = perf.get('max_drawdown', {})
+        max_dd = dd_data.get('max_drawdown_pct', 0)
+        if max_dd < -30:
+            advice.append({
+                'severity': 'critical',
+                'title': 'Extreme Drawdown Risk',
+                'message': f"Maximum drawdown = {max_dd:.1f}%. Unacceptable risk. Review position sizing, stop-loss rules, and correlation risks."
+            })
+
+        # Win rate
+        wr_data = perf.get('win_rate', {})
+        win_rate = wr_data.get('win_rate_pct', 0)
+        if win_rate < 45:
+            advice.append({
+                'severity': 'warning',
+                'title': 'Below 50% Win Rate',
+                'message': f"Win rate = {win_rate:.1f}%. Majority of trades are losers. Check for prediction bias or threshold calibration."
+            })
+
+        # ========== ADDITIONAL CHECKS ==========
+
+        # Model Linearity
         rsa = architect.get('rsa', {}).get('similarity_score', 0)
         if rsa > 0.9:
             advice.append({
-                'severity': 'warning', 'title': 'Model is Linear',
-                'message': "Model representations are highly correlated with raw inputs. It is not learning complex features. Consider Non-linear models."
+                'severity': 'info',
+                'title': 'Linear Model Detected',
+                'message': f"RSA similarity = {rsa:.3f}. Model is essentially linear. If seeking alpha from non-linear patterns, consider: (1) Non-linear architectures (Neural Networks), (2) Tree-based ensembles, (3) Kernel methods."
             })
 
-        # --- Critic Checks ---
-        critic = r.get('critic', {})
-        # Autocorrelation
-        autocorr = abs(critic.get('residual_autocorr', {}).get('lag1_autocorr', 0))
-        if autocorr > 0.15:
-            advice.append({
-                'severity': 'critical', 'title': 'Trend Leaking',
-                'message': f"Residual autocorrelation is high ({autocorr:.2f}). The model is missing trend information. Add lag-1 target features or use RNNs."
-            })
-        
-        # Leakage
+        # Feature Leakage
         leaking = critic.get('orthogonal_tests', {}).get('leaking_features', {})
         if leaking:
             feats = ", ".join(list(leaking.keys())[:3])
             advice.append({
-                'severity': 'warning', 'title': 'Alpha Leakage',
-                'message': f"Residuals are correlated with: {feats}. Explicitly add these as features."
+                'severity': 'warning',
+                'title': 'Feature Correlation with Residuals',
+                'message': f"Features {feats} correlate with prediction errors. Integrate these into the model as explicit features for better capture."
             })
 
-        # --- Stress Tester Checks ---
-        stress = r.get('stress_tester', {})
         # Stability
+        stress = r.get('stress_tester', {})
         if stress.get('stability', {}).get('status') == 'Fragile':
             advice.append({
-                'severity': 'critical', 'title': 'Model Fragility',
-                'message': "Performance varies significantly across random seeds/subsets. Do not deploy. Use Bagging or reduce Learning Rate."
-            })
-            
-        # CI Edge
-        if not stress.get('bootstrap_ci', {}).get('reliable_edge', False):
-             advice.append({
-                'severity': 'critical', 'title': 'No Statistical Edge',
-                'message': "The 95% Confidence Interval for R² includes zero. Performance is indistinguishable from luck."
+                'severity': 'critical',
+                'title': '🔴 MODEL FRAGILITY',
+                'message': "Bootstrap stability test shows high variance across subsets. Model is unstable. DO NOT DEPLOY. Use: (1) Bagging/Stacking for ensemble stability, (2) Lower learning rates, (3) Increase regularization, (4) Data augmentation."
             })
 
+        # Confidence Interval
+        if not stress.get('bootstrap_ci', {}).get('reliable_edge', False):
+            advice.append({
+                'severity': 'critical',
+                'title': '🔴 NO STATISTICAL EDGE',
+                'message': "95% CI on R² includes zero. Performance indistinguishable from random chance. Model has no reliable edge. Requires major improvements before deployment."
+            })
+
+        # Default message if no issues found
         if not advice:
             advice.append({
-                'severity': 'success', 'title': 'Clean Bill of Health',
-                'message': "No major flags detected. Proceed to paper trading."
+                'severity': 'success',
+                'title': '✅ DIAGNOSTIC CLEAN BILL OF HEALTH',
+                'message': "No major red flags detected. Model shows good: (1) Predictability ceiling with room to improve, (2) Efficient feature usage (low CMI), (3) Clean residuals (low autocorrelation), (4) Statistical significance. Proceed to live paper trading with monitoring."
             })
 
         return advice

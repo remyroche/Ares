@@ -1,0 +1,31 @@
+{
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "model": "analyst",
+    "prefix": "snr_label_learnability",
+    "timestamp_utc": "20251119_004254"
+  },
+  "section": "label_learnability",
+  "n_valid": 52696,
+  "positive_rate": 0.2368490967056323,
+  "learnability": 0.5123239767959975,
+  "mean_auc": 0.5328446738709176,
+  "balance": 0.0,
+  "combined": 0.35862678375719825,
+  "diagnostics": {
+    "learnability": 0.5123239767959975,
+    "mean_auc": 0.5328446738709176,
+    "balance": 0.0,
+    "combined": 0.35862678375719825,
+    "n_samples": "52696",
+    "positive_rate": 0.2368490967056323
+  },
+  "summary_score": {
+    "score": 0.35862678375719825,
+    "rating": "Bad",
+    "comment": "Combined score < 0.4 \u2192 overall label quality is weak; consider revisiting thresholds."
+  }
+}

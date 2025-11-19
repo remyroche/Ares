@@ -1,0 +1,37 @@
+{
+  "symbol": "ETHUSDT",
+  "exchange": "binance",
+  "timeframe": "15m",
+  "best_score": 0.21816481378621627,
+  "best_params": {
+    "profit_thr_base": 0.012392823207483914,
+    "stop_to_profit_ratio": 0.49026674221303634,
+    "horizon_bars": 20,
+    "min_event_spacing": 2,
+    "iso_min_prob": 0.06075448519014384,
+    "target_clip_high_q": 0.9153471711318563,
+    "kalman_Q": 1.3492834268013232e-05,
+    "kalman_R": 0.07902619549708234,
+    "vol_baseline_window": 188,
+    "profit_mult_min": 0.9041986740582306,
+    "profit_mult_max": 1.3046137691733706,
+    "stop_mult_min": 0.5488360570031919,
+    "stop_mult_max": 1.6842330265121568
+  },
+  "knee_params": {
+    "profit_thr_base": 0.012392823207483914,
+    "stop_to_profit_ratio": 0.49026674221303634,
+    "horizon_bars": 20,
+    "min_event_spacing": 2,
+    "iso_min_prob": 0.06075448519014384,
+    "target_clip_high_q": 0.9153471711318563,
+    "kalman_Q": 1.3492834268013232e-05,
+    "kalman_R": 0.07902619549708234,
+    "vol_baseline_window": 188,
+    "profit_mult_min": 0.9041986740582306,
+    "profit_mult_max": 1.3046137691733706,
+    "stop_mult_min": 0.5488360570031919,
+    "stop_mult_max": 1.6842330265121568
+  },
+  "pareto_front_size": 2
+}

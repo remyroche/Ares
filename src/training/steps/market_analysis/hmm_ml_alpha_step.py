@@ -91,9 +91,9 @@ class HMMMLAlphaStep(BaseStep):
             # while allowing overrides via config/CLI when needed.
             alpha_defaults: Dict[str, Any] = {
                 "alpha_target_smoothing_method": "ewm",
-                "alpha_target_smoothing_window": 3,
+                "alpha_target_smoothing_window": 5,
                 "alpha_score_smoothing_method": "ewm",
-                "alpha_score_smoothing_window": 6,
+                "alpha_score_smoothing_window": 8,
                 # Keep HPO opt-in; these defaults are used when explicitly enabled
                 "alpha_enable_hpo": False,
                 "alpha_hpo_cv_folds": 3,
@@ -1196,6 +1196,7 @@ class HMMMLAlphaStep(BaseStep):
 
     def _optimize_regime_boundaries(
         self,
+        *,
         alpha_scores: pd.Series,
         forward_returns: pd.Series,
         n_regimes: int,
@@ -1256,6 +1257,13 @@ class HMMMLAlphaStep(BaseStep):
         while improved and iteration < max_iterations:
             improved = False
             iteration += 1
+
+            # Lightweight iteration progress (log every 10 iterations and first/last)
+            if iteration == 1 or iteration == max_iterations or iteration % 10 == 0:
+                tprint_info(
+                    f"    ↪ regime boundary optimization iter={iteration}/{max_iterations} "
+                    f"(current_best_WCV_ratio={best_score:.4f})"
+                )
 
             # Try jiggling each boundary
             for i in range(len(current_boundaries)):
@@ -1387,7 +1395,7 @@ class HMMMLAlphaStep(BaseStep):
         # Get configuration for regime optimization
         use_flexible_regimes = bool(config.get("alpha_use_flexible_regimes", True))
         regime_counts_to_test = config.get("alpha_regime_counts", [4, 5, 6])
-        min_bin_pct = float(config.get("alpha_min_bin_pct", 0.10))
+        min_bin_pct = float(config.get("alpha_min_bin_pct", 0.15))
         max_bin_pct = float(config.get("alpha_max_bin_pct", 0.35))
 
         # Validate regime counts

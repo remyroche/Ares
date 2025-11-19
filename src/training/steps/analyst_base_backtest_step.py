@@ -386,15 +386,18 @@ class AnalystBaseBacktestStep(BaseStep):
             drawdown = equity / running_max - 1.0
             max_drawdown = float(drawdown.min()) if len(drawdown) > 0 else 0.0
 
-            pos_changes = position.diff().fillna(0.0).abs()
-            approx_trades = int((pos_changes > 1e-8).sum())
+            # Bar-level approximation: count discrete entries (0->1 in in/out position)
+            in_position = (position != 0.0).astype(int)
+            pos_changes = in_position.diff().fillna(0)
+            entries = pos_changes == 1
+            approx_trades = int(entries.sum())
 
             positive = strategy_returns[strategy_returns > 0]
             negative = strategy_returns[strategy_returns < 0]
             n_pos = int(len(positive))
             n_neg = int(len(negative))
             n_nonzero = n_pos + n_neg
-            win_rate = float(n_pos / n_nonzero) if n_nonzero > 0 else 0.0
+            win_rate_bar = float(n_pos / n_nonzero) if n_nonzero > 0 else 0.0
             avg_win = float(positive.mean()) if n_pos > 0 else 0.0
             avg_loss = float(negative.mean()) if n_neg > 0 else 0.0
             gross_profit = float(positive.sum()) if n_pos > 0 else 0.0
@@ -409,7 +412,7 @@ class AnalystBaseBacktestStep(BaseStep):
                 "sharpe_ratio": sharpe,
                 "sortino_ratio": sortino,
                 "max_drawdown": max_drawdown,
-                "win_rate": win_rate,
+                "bar_win_rate": win_rate_bar,
                 "profit_factor": profit_factor,
                 "avg_win": avg_win,
                 "avg_loss": avg_loss,
@@ -442,6 +445,10 @@ class AnalystBaseBacktestStep(BaseStep):
             filepath = outcomes_dir / filename
 
             # Build multi-config grid summary (one row per TP/SL/conf combination)
+            trade_win_rate: float | None = None
+            grid_n_trades: int | None = None
+            grid_total_return_with_fees: float | None = None
+
             if direction == "long":
                 regime_col = None
                 try:
@@ -472,6 +479,22 @@ class AnalystBaseBacktestStep(BaseStep):
                 grid_summary.to_csv(csv_path, index=False)
                 tprint_info(f"📄 Base analyst grid backtest summary saved to CSV: {csv_path}")
 
+                # Derive trade-level summary metrics from the best TPSL configuration
+                try:
+                    if not grid_summary.empty:
+                        best_row = grid_summary.sort_values(
+                            "strategy_total_return_with_fees_%", ascending=False
+                        ).iloc[0]
+                        trade_win_rate = float(best_row.get("win_rate_with_fees", np.nan))
+                        grid_n_trades = int(best_row.get("number_of_trades", 0))
+                        grid_total_return_with_fees = float(
+                            best_row.get("strategy_total_return_with_fees_%", np.nan)
+                        ) / 100.0
+                except Exception:
+                    trade_win_rate = None
+                    grid_n_trades = None
+                    grid_total_return_with_fees = None
+
             tprint_info(f"📝 Writing base analyst backtest report to {filepath}")
 
             with open(filepath, "w") as f:
@@ -500,17 +523,29 @@ class AnalystBaseBacktestStep(BaseStep):
                 def num(x: float) -> str:
                     return f"{x:.4f}"
 
-                f.write(f"| Total Return | {pct(total_return)} |\n")
+                f.write(f"| Total Return (bar-level) | {pct(total_return)} |\n")
                 f.write(f"| Annualized Return | {pct(annualized_return)} |\n")
                 f.write(f"| Annualized Volatility | {pct(annualized_vol)} |\n")
                 f.write(f"| Sharpe Ratio | {num(sharpe)} |\n")
                 f.write(f"| Sortino Ratio | {num(sortino)} |\n")
                 f.write(f"| Max Drawdown | {pct(max_drawdown)} |\n")
-                f.write(f"| Win Rate | {pct(win_rate)} |\n")
+                f.write(f"| Bar Win Rate | {pct(win_rate_bar)} |\n")
+                if trade_win_rate is not None:
+                    f.write(
+                        f"| Trade Win Rate (grid TPSL best config) | {pct(trade_win_rate)} |\n"
+                    )
+                if grid_total_return_with_fees is not None:
+                    f.write(
+                        f"| Grid Total Return (with fees, best config) | {pct(grid_total_return_with_fees)} |\n"
+                    )
                 f.write(f"| Profit Factor | {num(profit_factor)} |\n")
                 f.write(f"| Avg Win per Bar | {pct(avg_win)} |\n")
                 f.write(f"| Avg Loss per Bar | {pct(avg_loss)} |\n")
-                f.write(f"| Approx. Trades | {approx_trades} |\n")
+                f.write(f"| Approx. Trades (position entries) | {approx_trades} |\n")
+                if grid_n_trades is not None:
+                    f.write(
+                        f"| Trades (grid TPSL best config) | {grid_n_trades} |\n"
+                    )
 
             tprint_success(f"✅ Base analyst backtest report saved to: {filepath}")
 

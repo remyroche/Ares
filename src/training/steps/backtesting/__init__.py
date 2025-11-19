@@ -15,6 +15,7 @@ from .reporting_step import ReportingStep
 from .final_parameters_optimization import FinalParametersOptimizer
 from .real_parameters_optimization import RealParametersOptimizer
 from .analyst_base_backtest_step import AnalystBaseBacktestStep
+from .meta_gated_backtest_step import MetaGatedBacktestStep
 
 # Register backtesting steps (these will be registered again when imported, but that's safe)
 # The individual step files also auto-register themselves
@@ -26,3 +27,4 @@ step_registry.register("reporting", ReportingStep)
 step_registry.register("final_parameters_optimization", FinalParametersOptimizer)
 step_registry.register("real_parameters_optimization", RealParametersOptimizer)
 step_registry.register("analyst_base_backtest", AnalystBaseBacktestStep)
+step_registry.register("meta_gated_backtest", MetaGatedBacktestStep)

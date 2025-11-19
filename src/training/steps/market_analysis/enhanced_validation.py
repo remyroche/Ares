@@ -313,7 +313,9 @@ class EnhancedValidationFramework:
             cv_scores = []
             tscv = TimeSeriesSplit(n_splits=5)
 
-            for train_idx, test_idx in tscv.split(market_data):
+            for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(market_data), start=1):
+                self.logger.info(f"      Fold {fold_idx}/{tscv.n_splits} - running CV evaluation...")
+
                 train_data = market_data.iloc[train_idx]
                 test_data = market_data.iloc[test_idx]
 
@@ -326,6 +328,10 @@ class EnhancedValidationFramework:
                 # Calculate performance
                 performance = self._calculate_cv_performance(train_labels, test_labels)
                 cv_scores.append(performance)
+
+                self.logger.info(
+                    f"      Fold {fold_idx}/{tscv.n_splits} - CV performance={performance:.4f}"
+                )
 
             avg_cv_score = np.mean(cv_scores)
             cv_std = np.std(cv_scores)

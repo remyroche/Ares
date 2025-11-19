@@ -43,7 +43,7 @@ from src.utils.nonlinear_optimization_helpers import (
     create_enhanced_search_space, convert_parameters_to_original_space
 )
 from src.utils.ml_common.optimization import (
-    HyperparameterOptimization, ParetoOptimizer, RegimeSpecificTPSLOptimizer,
+    HyperparameterOptimization, ParetoOptimizer,
     HierarchicalHPO, HierarchicalHPOConfig, HPOPhaseConfig
 )
 from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (

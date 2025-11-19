@@ -247,9 +247,11 @@ class AnalystBaseBacktestStep(BaseStep):
             drawdown = equity / running_max - 1.0
             max_drawdown = float(drawdown.min()) if len(drawdown) > 0 else 0.0
 
-            # Simple trade stats: approximate changes in position as trades
-            pos_changes = position.diff().fillna(0.0).abs()
-            approx_trades = int((pos_changes > 1e-8).sum())
+            # Simple trade stats: count discrete entries (0->1 transitions)
+            in_position = (position != 0.0).astype(int)
+            pos_changes = in_position.diff().fillna(0)
+            entries = pos_changes == 1
+            approx_trades = int(entries.sum())
 
             positive = strategy_returns[strategy_returns > 0]
             negative = strategy_returns[strategy_returns < 0]

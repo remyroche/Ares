@@ -86,3 +86,82 @@ class EnhancedArtifactManager:
             tmp_path.replace(self._metadata_path)
         except Exception as exc:
             self.logger.error("Failed to persist enhanced artifact metadata store: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Compatibility wrapper for legacy artifact_pickup_utils.get_artifact_manager
+# ---------------------------------------------------------------------------
+
+_global_artifact_manager: Optional["_CompatibleArtifactManager"] = None
+
+
+class _CompatibleArtifactManager:
+    """Lightweight adapter exposing methods expected by ArtifactPickupUtils.
+
+    This wraps EnhancedArtifactManager for metadata persistence, but implements
+    get_most_recent_artifact / load_most_recent_artifact / cleanup_old_artifacts
+    and base_paths with safe fallbacks so older utilities can import without
+    breaking newer pipelines.
+    """
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+        self._manager = EnhancedArtifactManager(config=config)
+        # Basic directory mapping used by artifact_pickup_utils
+        self.base_paths: Dict[str, Path] = {
+            "artifacts": Path("artifacts"),
+            "versioned_artifacts": Path("versioned_artifacts"),
+            "outcomes": Path("outcomes"),
+        }
+
+    # The following methods intentionally return conservative defaults.
+    # They are sufficient for modules that only need to *import* the
+    # utilities; more advanced behavior can be layered on later if needed.
+
+    def get_most_recent_artifact(
+        self,
+        base_name: str,
+        directory: str = "artifacts",
+        version: Optional[str] = None,
+        extension: Optional[str] = None,
+    ) -> Optional[ArtifactMetadata]:
+        """Return None to indicate no tracked artifacts (safe fallback)."""
+        return None
+
+    def load_most_recent_artifact(
+        self,
+        base_name: str,
+        directory: str = "artifacts",
+        version: Optional[str] = None,
+        extension: Optional[str] = None,
+    ):
+        """Return (None, None) as a safe default when no artifact is found."""
+        return None, None
+
+    def cleanup_old_artifacts(
+        self,
+        base_name: str,
+        directory: str = "artifacts",
+        keep_count: int = 5,
+        version: Optional[str] = None,
+    ):
+        """No-op cleanup that returns an empty list."""
+        return []
+
+    def _parse_artifact_filename(self, file_path: str) -> Optional[ArtifactMetadata]:
+        """Stub parser: callers will fall back to basic file stats when None."""
+        return None
+
+
+def get_artifact_manager(config: Optional[Dict[str, Any]] = None) -> _CompatibleArtifactManager:
+    """Return a module-wide compatible artifact manager instance.
+
+    This preserves the legacy get_artifact_manager() API expected by
+    artifact_pickup_utils while internally using EnhancedArtifactManager for
+    metadata storage.
+    """
+
+    global _global_artifact_manager
+    if _global_artifact_manager is None:
+        _global_artifact_manager = _CompatibleArtifactManager(config=config)
+    return _global_artifact_manager
+

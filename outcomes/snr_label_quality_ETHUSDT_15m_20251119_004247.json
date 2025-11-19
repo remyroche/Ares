@@ -1,0 +1,135 @@
+{
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "model": "analyst",
+    "prefix": "snr_label_quality",
+    "timestamp_utc": "20251119_004247"
+  },
+  "section": "label_quality",
+  "n_samples": 135775,
+  "n_labeled": 52696,
+  "coverage": 0.3881126864297551,
+  "n_positive": 12481,
+  "n_negative": 40215,
+  "positive_rate": 0.2368490967056323,
+  "pre": {
+    "n_total": 66522,
+    "n_positive": 21569,
+    "n_negative": 44953,
+    "mean_pos_return": 0.010088557051135573,
+    "mean_neg_return": -0.006596214454778217,
+    "cohens_d": 5.760511830256779,
+    "snr_pos": 2.9822664158702286
+  },
+  "post": {
+    "n_total": 52696,
+    "n_positive": 12481,
+    "n_negative": 40215,
+    "mean_pos_return": 0.011224974493287477,
+    "mean_neg_return": -0.0072888641002889385,
+    "cohens_d": 10.526281541735736,
+    "snr_pos": 6.1032344249150565
+  },
+  "retention": {
+    "total": 0.7921589849974444,
+    "positive": 0.5786545505123093,
+    "negative": 0.8946010277400841
+  },
+  "overlap": {
+    "pct_overlap": 0.0
+  },
+  "cost_metrics": {
+    "tx_cost": 0.0015,
+    "unconditional_mean_return": -0.0029038781528464906,
+    "mean_pos_minus_cost": 0.009724974493287478,
+    "frac_small_vs_cost": 0.0
+  },
+  "probability_buckets": {
+    "top_5": {
+      "frac": 0.05,
+      "threshold": 0.6369606186239881,
+      "n_events": 2635,
+      "win_rate": 0.4098671726755218,
+      "mean_expected_return": 2.6044187789082065e-05,
+      "sharpe_expected": 0.20084454541380137
+    },
+    "top_10": {
+      "frac": 0.1,
+      "threshold": 0.6050495034668131,
+      "n_events": 5270,
+      "win_rate": 0.38462998102466794,
+      "mean_expected_return": 1.3022093894541032e-05,
+      "sharpe_expected": 0.1406159041515287
+    },
+    "top_20": {
+      "frac": 0.2,
+      "threshold": 0.5549346408919714,
+      "n_events": 10540,
+      "win_rate": 0.35265654648956357,
+      "mean_expected_return": 6.511046947270516e-06,
+      "sharpe_expected": 0.09894271442442858
+    },
+    "top_30": {
+      "frac": 0.3,
+      "threshold": 0.5110992198876524,
+      "n_events": 15809,
+      "win_rate": 0.32898981592763615,
+      "mean_expected_return": 4.340972536164921e-06,
+      "sharpe_expected": 0.08065595846176232
+    },
+    "top_40": {
+      "frac": 0.4,
+      "threshold": 0.5,
+      "n_events": 26725,
+      "win_rate": 0.3066043030869972,
+      "mean_expected_return": 2.5678740813557055e-06,
+      "sharpe_expected": 0.06194907755197868
+    }
+  },
+  "volatility_buckets": {
+    "low": {
+      "n_events": 17558,
+      "n_positive": 3367,
+      "n_negative": 14191,
+      "positive_rate": 0.19176443786308237,
+      "mean_return": -0.0032833644596390013,
+      "sharpe": -0.4844915388656992,
+      "low_threshold": 0.0024447619243183802,
+      "high_threshold": 0.003585204432285652
+    },
+    "mid": {
+      "n_events": 17557,
+      "n_positive": 4106,
+      "n_negative": 13451,
+      "positive_rate": 0.23386683374152759,
+      "mean_return": -0.00311121564241561,
+      "sharpe": -0.39012761850944255,
+      "low_threshold": 0.0024447619243183802,
+      "high_threshold": 0.003585204432285652
+    },
+    "high": {
+      "n_events": 17558,
+      "n_positive": 5008,
+      "n_negative": 12550,
+      "positive_rate": 0.28522610775714774,
+      "mean_return": -0.0023078620855489715,
+      "sharpe": -0.25024894058177205,
+      "low_threshold": 0.0024447619243183802,
+      "high_threshold": 0.003585204432285652
+    }
+  },
+  "advanced": {
+    "aleatoric_uncertainty_fraction": 0.0,
+    "aleatoric_comment": "Aleatoric fraction < 40%: most error is model/feature-driven; improvement is possible.",
+    "noise_ceiling": null,
+    "noise_ceiling_comment": "Noise ceiling requires multiple labelers or repeated labels; not available in current artifacts."
+  },
+  "summary_score": {
+    "score": 0.8972497449328747,
+    "rating": "Great",
+    "comment": "Strong label quality with good coverage, separation and economic margins."
+  }
+}

@@ -809,6 +809,21 @@ class ClusterQualityAssessor:
         except Exception as e:
             tprint_error(f"❌ Balance metrics failed: {e}")
 
+        # 5b. Entropy of regime distribution (occupancy entropy)
+        if metrics.cluster_size_distribution:
+            try:
+                probs = np.array(metrics.cluster_size_distribution, dtype=float)
+                total = float(probs.sum())
+                if total > 0.0:
+                    probs = probs / total
+                    probs = probs[probs > 0]
+                    if probs.size > 0:
+                        entropy = -float(np.sum(probs * np.log(probs)))
+                        max_entropy = float(np.log(len(probs))) if len(probs) > 0 else 1.0
+                        metrics.occupancy_entropy = float(entropy / max_entropy) if max_entropy > 0 else 0.0
+            except Exception as e:
+                logger.debug(f"Occupancy entropy calculation failed: {e}", exc_info=True)
+
         # 6. Temporal metrics
         if timestamps is not None:
             try:
@@ -820,6 +835,15 @@ class ClusterQualityAssessor:
                 metrics.regime_persistence = self._calculate_regime_persistence(regime_labels)
                 metrics.regime_duration_distribution = self._calculate_regime_duration_distribution(regime_labels)
                 metrics.transition_probability_matrix = self._calculate_transition_probability_matrix(regime_labels)
+
+                # High-level transition and persistence summary
+                metrics.transition_insights = self._summarize_transition_insights(
+                    metrics.transition_probability_matrix,
+                    metrics.regime_duration_distribution,
+                    metrics.flip_flop_ratio,
+                    metrics.regime_persistence,
+                    regime_labels,
+                )
 
                 # Comprehensive temporal score
                 try:
@@ -874,6 +898,15 @@ class ClusterQualityAssessor:
                 )
             except Exception as e:
                 tprint_error(f"❌ Economic CV failed: {e}")
+
+        # 7c. Sub-period stability and stationarity tests (if returns available)
+        if forward_returns is not None and SCIPY_AVAILABLE:
+            try:
+                subsample = self._calculate_subsample_stability(regime_labels, forward_returns)
+                if subsample:
+                    metrics.subsample_stability = subsample
+            except Exception as e:
+                self.logger.warning(f"Failed to calculate sub-period stability: {e}")
 
         # 8. Economic validation
         if forward_returns is not None:
@@ -1639,6 +1672,87 @@ class ClusterQualityAssessor:
 
         return metrics_data
 
+    def _calculate_subsample_stability(
+        self,
+        regime_labels: np.ndarray,
+        forward_returns: pd.Series,
+        n_splits: int = 3,
+    ) -> Dict[str, Any]:
+        """Estimate stability of regime-conditioned returns across sub-periods.
+
+        Splits the time series into contiguous segments and compares
+        return distributions and per-regime mean returns between early
+        and late segments.
+        """
+        if n_splits < 2:
+            return {}
+
+        if len(regime_labels) < n_splits * 10 or len(forward_returns) < n_splits * 10:
+            # Not enough data per segment for meaningful tests
+            return {}
+
+        # Align lengths defensively
+        n = min(len(regime_labels), len(forward_returns))
+        labels = np.asarray(regime_labels[:n])
+        returns_aligned = forward_returns.iloc[:n]
+
+        # Build contiguous index segments
+        indices = np.array_split(np.arange(n), n_splits)
+
+        segment_stats: List[Dict[str, float]] = []
+        for seg_idx in indices:
+            seg_rets = returns_aligned.iloc[seg_idx]
+            segment_stats.append(
+                {
+                    'mean_return': float(seg_rets.mean()),
+                    'volatility': float(seg_rets.std()),
+                    'n_samples': int(len(seg_rets)),
+                }
+            )
+
+        # Stationarity proxy: KS test between early and late segments
+        ks_pvalue: Optional[float]
+        try:
+            early_rets = returns_aligned.iloc[indices[0]]
+            late_rets = returns_aligned.iloc[indices[-1]]
+            if len(early_rets) > 0 and len(late_rets) > 0 and stats is not None:
+                _, pval = stats.ks_2samp(early_rets.values, late_rets.values)  # type: ignore[attr-defined]
+                ks_pvalue = float(pval)
+            else:
+                ks_pvalue = None
+        except Exception:
+            ks_pvalue = None
+
+        # Per-regime mean-return shifts between early and late segments
+        regime_ids = [int(l) for l in np.unique(labels) if l != -1]
+        per_regime_shift: Dict[int, Dict[str, float]] = {}
+        if regime_ids:
+            all_idx = np.arange(n)
+            early_mask_idx = np.isin(all_idx, indices[0])
+            late_mask_idx = np.isin(all_idx, indices[-1])
+
+            for rid in regime_ids:
+                regime_mask = labels == rid
+                early_mask = regime_mask & early_mask_idx
+                late_mask = regime_mask & late_mask_idx
+
+                early_mean = float(returns_aligned.iloc[early_mask].mean()) if early_mask.any() else np.nan
+                late_mean = float(returns_aligned.iloc[late_mask].mean()) if late_mask.any() else np.nan
+
+                if not np.isnan(early_mean) and not np.isnan(late_mean):
+                    per_regime_shift[rid] = {
+                        'early_mean_return': early_mean,
+                        'late_mean_return': late_mean,
+                        'delta_mean_return': late_mean - early_mean,
+                    }
+
+        return {
+            'n_splits': int(n_splits),
+            'segment_stats': segment_stats,
+            'ks_pvalue_early_vs_late': ks_pvalue,
+            'per_regime_mean_return_shift': per_regime_shift,
+        }
+
     def _compute_economic_gap_analysis(
         self,
         per_regime_metrics: Dict[int, Dict[str, Any]],
@@ -1940,14 +2054,25 @@ class ClusterQualityAssessor:
         else:
             smoothness_raw = 1.0 - (regime_changes / max_possible_changes)
         
-        # Detect flip-flop patterns (A→B→A): regime at t-2 equals regime at t, but differs from t-1
+        # Detect flip-flop patterns (A→B→A and A→B→B→A): short-lived regime excursions
         if len(regime_labels) < 3:
-            flip_flops = 0.0
+            flip_flops_1 = 0.0
         else:
-            flip_flops = float(np.sum(
+            flip_flops_1 = float(np.sum(
                 (regime_labels[:-2] == regime_labels[2:]) &
                 (regime_labels[:-2] != regime_labels[1:-1])
             ))
+
+        if len(regime_labels) < 4:
+            flip_flops_2 = 0.0
+        else:
+            flip_flops_2 = float(np.sum(
+                (regime_labels[:-3] == regime_labels[3:]) &
+                (regime_labels[:-3] != regime_labels[1:-2]) &
+                (regime_labels[1:-2] == regime_labels[2:-1])
+            ))
+
+        flip_flops = flip_flops_1 + flip_flops_2
 
         # Calculate flip-flop ratio
         flip_flop_ratio = flip_flops / max_possible_changes if max_possible_changes > 0 else 0.0
@@ -2355,36 +2480,74 @@ class ClusterQualityAssessor:
                 'max_duration': 0,
                 'duration_stability_score': 0.0,
                 'long_regime_ratio': 0.0,
-                'short_regime_penalty': 1.0
+                'short_regime_penalty': 1.0,
+                'mean_durations': {}
             }
 
-        mean_duration = np.mean(durations)
-        std_duration = np.std(durations)
-        min_duration = np.min(durations)
-        max_duration = np.max(durations)
+        mean_duration = float(np.mean(durations))
+        std_duration = float(np.std(durations))
+        min_duration = int(np.min(durations))
+        max_duration = int(np.max(durations))
 
         # Duration stability: lower CV (coefficient of variation) is better
         cv_duration = std_duration / mean_duration if mean_duration > 0 else float('inf')
         duration_stability_score = 1.0 / (1.0 + cv_duration)
 
         # Long regime ratio: fraction of time spent in regimes longer than median
-        median_duration = np.median(durations)
-        long_regimes = np.sum(durations > median_duration)
-        long_regime_ratio = long_regimes / len(durations)
+        median_duration = float(np.median(durations))
+        long_regimes = int(np.sum(durations > median_duration))
+        long_regime_ratio = long_regimes / float(len(durations))
 
         # Short regime penalty: penalize too many short regimes
         short_regime_threshold = 5  # Very short regimes
-        short_regime_ratio = np.sum(durations <= short_regime_threshold) / len(durations)
-        short_regime_penalty = 1.0 - min(0.5, short_regime_ratio)  # Cap penalty at 0.5
+        short_regime_ratio = np.sum(durations <= short_regime_threshold) / float(len(durations))
+        short_regime_penalty = 1.0 - min(0.5, float(short_regime_ratio))  # Cap penalty at 0.5
+
+        # Per-regime duration statistics (regime-specific persistence)
+        per_regime_stats: Dict[int, Dict[str, float]] = {}
+        if len(regime_labels) > 0:
+            run_lengths: list[int] = []
+            run_regimes: list[int] = []
+            current_regime = int(regime_labels[0])
+            current_length = 1
+
+            for label in regime_labels[1:]:
+                label_int = int(label)
+                if label_int == current_regime:
+                    current_length += 1
+                else:
+                    run_lengths.append(current_length)
+                    run_regimes.append(current_regime)
+                    current_regime = label_int
+                    current_length = 1
+
+            run_lengths.append(current_length)
+            run_regimes.append(current_regime)
+
+            for regime_id in np.unique(run_regimes):
+                regime_id_int = int(regime_id)
+                regime_durations = [
+                    length for length, rid in zip(run_lengths, run_regimes) if rid == regime_id_int
+                ]
+                if not regime_durations:
+                    continue
+                arr = np.asarray(regime_durations, dtype=float)
+                per_regime_stats[regime_id_int] = {
+                    'mean': float(arr.mean()),
+                    'std': float(arr.std()),
+                    'min': float(arr.min()),
+                    'max': float(arr.max()),
+                }
 
         return {
             'mean_duration': mean_duration,
             'std_duration': std_duration,
             'min_duration': min_duration,
             'max_duration': max_duration,
-            'duration_stability_score': duration_stability_score,
-            'long_regime_ratio': long_regime_ratio,
-            'short_regime_penalty': short_regime_penalty
+            'duration_stability_score': float(duration_stability_score),
+            'long_regime_ratio': float(long_regime_ratio),
+            'short_regime_penalty': float(short_regime_penalty),
+            'mean_durations': per_regime_stats,
         }
 
     def _calculate_transition_probability_matrix(self, regime_labels: np.ndarray) -> Dict[str, Any]:
@@ -3654,6 +3817,42 @@ class ClusterQualityAssessor:
                         csv_data.append(['Economic Relevance', 'Sharpe Uplift vs B&H', f"{comparison.get('sharpe_uplift', 0.0):.2%}", 'Sharpe ratio improvement over buy & hold', 'Positive means outperformance'])
                         csv_data.append(['Economic Relevance', 'Return Uplift vs B&H', f"{comparison.get('return_uplift', 0.0):.2%}", 'Total return improvement over buy & hold', 'Positive means outperformance'])
                         csv_data.append(['Economic Relevance', 'Outperformance Frequency', f"{comparison.get('outperformance_frequency', 0.0):.2%}", 'Frequency of outperforming buy & hold', 'Higher is better'])
+
+                    # Per-regime long/short "only in regime k" strategies
+                    regime_strategy_keys = [
+                        key for key in strategy_perf.keys()
+                        if isinstance(key, str) and key.startswith('regime_')
+                    ]
+                    if regime_strategy_keys:
+                        for key in sorted(regime_strategy_keys):
+                            strat = strategy_perf.get(key, {})
+                            metrics_dict = strat.get('metrics', {}) if isinstance(strat, dict) else {}
+                            name = strat.get('name', key) if isinstance(strat, dict) else key
+                            total_ret = metrics_dict.get('total_return', 0.0)
+                            sharpe = metrics_dict.get('sharpe_ratio', 0.0)
+                            max_dd = metrics_dict.get('max_drawdown', 0.0)
+
+                            csv_data.append([
+                                'Economic Relevance',
+                                f'{name} - Total Return',
+                                f"{total_ret:.4f}",
+                                'Total return of per-regime long/short strategy',
+                                'Higher is better'
+                            ])
+                            csv_data.append([
+                                'Economic Relevance',
+                                f'{name} - Sharpe Ratio',
+                                f"{sharpe:.4f}",
+                                'Sharpe ratio of per-regime long/short strategy',
+                                'Higher is better'
+                            ])
+                            csv_data.append([
+                                'Economic Relevance',
+                                f'{name} - Max Drawdown',
+                                f"{max_dd:.4f}",
+                                'Maximum drawdown of per-regime long/short strategy',
+                                'Lower is better'
+                            ])
                 
                 # Significance Tests
                 if metrics.economic_significance_test:
@@ -4547,6 +4746,28 @@ This metric indicates how well the clustering can predict regime assignments on 
                     md += f"- Sharpe Uplift vs Buy & Hold: {comparison.get('sharpe_uplift', 'N/A'):.2%}\n"
                     md += f"- Return Uplift vs Buy & Hold: {comparison.get('return_uplift', 'N/A'):.2%}\n"
                     md += f"- Outperformance Frequency: {comparison.get('outperformance_frequency', 'N/A'):.2%}\n\n"
+
+                # Per-regime "only in regime k" long/short strategies
+                regime_keys = [
+                    key for key in strategy_perf.keys()
+                    if isinstance(key, str) and key.startswith('regime_')
+                ]
+                if regime_keys:
+                    md += "#### Per-Regime Long/Short Strategies\n\n"
+                    for key in sorted(regime_keys):
+                        strat = strategy_perf.get(key, {})
+                        metrics_dict = strat.get('metrics', {}) if isinstance(strat, dict) else {}
+                        name = strat.get('name', key) if isinstance(strat, dict) else key
+                        total_ret = metrics_dict.get('total_return', 0.0)
+                        sharpe = metrics_dict.get('sharpe_ratio', 0.0)
+                        max_dd = metrics_dict.get('max_drawdown', 0.0)
+                        md += (
+                            f"- {name}: "
+                            f"total_return={total_ret:.4f}, "
+                            f"sharpe={sharpe:.4f}, "
+                            f"max_dd={max_dd:.4f}\n"
+                        )
+                    md += "\n"
             
             # Significance Tests
             if 'significance_tests' in economic_analysis:

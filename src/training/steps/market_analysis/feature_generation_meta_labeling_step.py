@@ -84,7 +84,7 @@ DEFAULT_STOP_THRESHOLD = 0.005   # 0.5%
 DEFAULT_TRANSACTION_COST = 0.0015  # 0.15% per trade
 R_MULTIPLE_POS_THRESHOLD = 0.7
 R_MULTIPLE_NEG_THRESHOLD = -0.25
-ECON_MIN_RETURN_MULTIPLE = 1.25
+ECON_MIN_RETURN_MULTIPLE = 2.0
 TARGET_POWER = 1.5
 
 
@@ -520,7 +520,7 @@ def generate_primary_signals(
     signals['vol_expansion'] = vol_expansion_ratio  # Continuous ratio, not boolean
 
     # ===== CONSENSUS SIGNAL WITH VOLATILITY WEIGHTING =====
-    # Use all signals for consensus (including long-term for multi-timeframe agreement)
+    # Use all signals for consensus (including long-term for multi-timeframe)
     signal_cols = ['rsi', 'rsi_long', 'macd', 'macd_long', 'ma', 'mom']
 
     # Count raw signals before filtering
@@ -551,6 +551,10 @@ def generate_primary_signals(
     signals['macd_hist_long_value'] = df_local['macd_hist_long']
     signals['sma_fast_value'] = df_local['sma_fast']
     signals['sma_slow_value'] = df_local['sma_slow']
+
+    if 'momentum' not in df_local.columns:
+        df_local['momentum'] = df_local['close'].pct_change(momentum_period)
+
     signals['momentum_value'] = df_local['momentum']
 
     return signals
@@ -828,6 +832,60 @@ def compute_realized_returns(
         i += 1
 
     return realized_returns, binary_labels, exit_reasons, event_durations, mfe_series, mae_series
+
+
+def compute_vol_scaled_returns_for_events(
+    realized_returns: pd.Series,
+    volatility: Optional[pd.Series],
+) -> pd.Series:
+    vol_scaled = pd.Series(index=realized_returns.index, dtype=float)
+    vol_scaled[:] = np.nan
+
+    if volatility is None:
+        return vol_scaled
+
+    try:
+        vol_aligned = volatility.reindex(realized_returns.index)
+        vol_aligned = vol_aligned.astype(float)
+        vol_aligned = vol_aligned.replace(0.0, np.nan)
+        vol_scaled = realized_returns.astype(float) / (vol_aligned.abs() + 1e-8)
+
+        # Drop economically trivial events from the vol-scaled series so that
+        # quantile-based labels focus on meaningful moves.
+        econ_floor = ECON_MIN_RETURN_MULTIPLE * DEFAULT_TRANSACTION_COST
+        small_mask = realized_returns.abs() < econ_floor
+        vol_scaled[small_mask] = np.nan
+    except Exception:
+        vol_scaled[:] = np.nan
+
+    return vol_scaled
+
+
+def create_quantile_labels_from_vol_scaled_returns(
+    vol_scaled: pd.Series,
+    low_q: float = 0.3,
+    high_q: float = 0.7,
+) -> pd.Series:
+    labels = pd.Series(index=vol_scaled.index, dtype=float)
+    labels[:] = np.nan
+
+    try:
+        v = vol_scaled.dropna()
+        if len(v) < 100:
+            return labels
+
+        low_val = float(v.quantile(low_q))
+        high_val = float(v.quantile(high_q))
+
+        if not np.isfinite(low_val) or not np.isfinite(high_val) or low_val >= high_val:
+            return labels
+
+        labels.loc[vol_scaled >= high_val] = 1.0
+        labels.loc[vol_scaled <= low_val] = 0.0
+    except Exception:
+        labels[:] = np.nan
+
+    return labels
 
 
 def create_meta_features(
@@ -1195,6 +1253,84 @@ def prepare_feature_matrix(features: pd.DataFrame) -> pd.DataFrame:
     return numeric
 
 
+def winsorize_features(
+    X: pd.DataFrame,
+    lower_quantile: float = 0.01,
+    upper_quantile: float = 0.99,
+) -> pd.DataFrame:
+    if X.empty:
+        return X
+    lower = X.quantile(lower_quantile)
+    upper = X.quantile(upper_quantile)
+    X_clipped = X.clip(lower=lower, upper=upper, axis=1)
+    return X_clipped
+
+
+def rolling_robust_scale_features(
+    X: pd.DataFrame,
+    window: int = 256,
+    min_periods: int = 64,
+    skip_binary: bool = True,
+    skip_low_cardinality_int: bool = True,
+) -> pd.DataFrame:
+    if X.empty:
+        return X
+
+    if window <= 1:
+        window = 2
+    if min_periods <= 0 or min_periods > window:
+        min_periods = max(1, window // 4)
+
+    X_scaled = pd.DataFrame(index=X.index)
+
+    for col in X.columns:
+        s = X[col]
+
+        # Non-numeric columns are passed through
+        if not pd.api.types.is_numeric_dtype(s):
+            X_scaled[col] = s
+            continue
+
+        # Skip strictly binary indicators (0/1) if requested
+        if skip_binary:
+            unique_vals = pd.unique(s.dropna())
+            if len(unique_vals) <= 2 and set(unique_vals).issubset({0, 1}):
+                X_scaled[col] = s.astype(np.float32, copy=False)
+                continue
+
+        # Skip very low-cardinality features if requested (likely categorical encodings)
+        if skip_low_cardinality_int:
+            n_unique = s.dropna().nunique()
+            if n_unique <= 5:
+                X_scaled[col] = s.astype(np.float32, copy=False)
+                continue
+
+        # Rolling median and IQR
+        rolling_median = s.rolling(window=window, min_periods=min_periods).median()
+        rolling_q75 = s.rolling(window=window, min_periods=min_periods).quantile(0.75)
+        rolling_q25 = s.rolling(window=window, min_periods=min_periods).quantile(0.25)
+        rolling_iqr = rolling_q75 - rolling_q25
+
+        # Global fallback statistics for early samples / flat windows
+        global_median = s.median()
+        global_q75 = s.quantile(0.75)
+        global_q25 = s.quantile(0.25)
+        global_iqr = global_q75 - global_q25
+
+        if not np.isfinite(global_iqr) or global_iqr <= 0:
+            global_iqr = s.std()
+        if not np.isfinite(global_iqr) or global_iqr <= 0:
+            global_iqr = 1.0
+
+        rolling_median = rolling_median.fillna(global_median)
+        rolling_iqr = rolling_iqr.replace(0, np.nan).fillna(global_iqr)
+
+        scaled = (s - rolling_median) / (rolling_iqr + 1e-6)
+        X_scaled[col] = scaled.astype(np.float32)
+
+    return X_scaled
+
+
 def select_features_by_importance(
     X: pd.DataFrame,
     y: pd.Series,
@@ -1309,12 +1445,22 @@ def fit_probability_to_return_mapping(
     logger.info(f"  NaN counts: probabilities={n_nan_prob}, returns={n_nan_ret}")
     logger.info(f"  Inf counts: probabilities={n_inf_prob}, returns={n_inf_ret}")
 
-    # Remove NaN values
-    mask = ~(np.isnan(probabilities) | np.isnan(realized_returns))
+    # Remove NaN values and ignore economically trivial events (below cost floor)
+    econ_floor = ECON_MIN_RETURN_MULTIPLE * DEFAULT_TRANSACTION_COST
+    base_mask = ~(np.isnan(probabilities) | np.isnan(realized_returns))
+    econ_mask = np.abs(realized_returns) >= econ_floor
+    mask = base_mask & econ_mask
+
+    if not np.any(mask):
+        tprint("⚠️ Warning: No economically meaningful samples for probability mapping", "WARNING")
+        logger.warning("No samples with returns above economic floor for isotonic regression")
+        # Fallback: use all non-NaN samples
+        mask = base_mask
+
     p_clean = probabilities[mask]
     r_clean = realized_returns[mask]
 
-    logger.info(f"  After NaN filtering: {len(p_clean)} samples remaining")
+    logger.info(f"  After NaN/economic filtering: {len(p_clean)} samples remaining")
 
     if len(p_clean) < 10:
         tprint("⚠️ Warning: Very few samples for probability mapping", "WARNING")
@@ -1323,7 +1469,22 @@ def fit_probability_to_return_mapping(
     if method == 'isotonic':
         # Isotonic regression: monotonic mapping
         iso = IsotonicRegression(out_of_bounds='clip')
-        iso.fit(p_clean, r_clean)
+
+        # Cost-aware weighting: emphasize large absolute returns
+        try:
+            weights = np.abs(r_clean)
+            if np.isfinite(weights).any() and weights.mean() > 0:
+                weights = weights / weights.mean()
+            else:
+                weights = None
+
+            if weights is not None:
+                iso.fit(p_clean, r_clean, sample_weight=weights)
+            else:
+                iso.fit(p_clean, r_clean)
+        except TypeError:
+            # Older sklearn versions may not support sample_weight here
+            iso.fit(p_clean, r_clean)
 
         # DEBUG LOGGING: Check fitted mapping quality
         test_probs = np.linspace(0, 1, 11)
@@ -1364,12 +1525,11 @@ def translate_to_targets_with_isotonic(
     """
     Translate probabilities to continuous targets using isotonic regression.
 
-    NEW APPROACH (2025-11-18): Returns RAW expected returns without cost subtraction
-    or power scaling. The model trains on ALL signals to learn the pattern.
-    Cost-based filtering happens at DEPLOYMENT time, not training time.
-
-    This fixes data starvation: instead of 3 signals passing through aggressive
-    filters, we now have 500+ signals for the model to learn from.
+    UPDATED APPROACH (2025-11-18): Use net-of-cost expected returns as targets to
+    avoid collapsing around zero while preserving monotonicity. The mapping is
+    still learned on OOF probabilities, but small, economically trivial moves are
+    de-emphasized via the fit_probability_to_return_mapping filtering and the
+    cost subtraction here.
 
     Args:
         realized_returns: Actual returns (used only for validation)
@@ -1396,12 +1556,12 @@ def translate_to_targets_with_isotonic(
         tprint(f"⚠️ WARNING: Isotonic predictions contain {n_nan} NaN and {n_inf} Inf values", "WARNING")
         expected_returns = np.nan_to_num(expected_returns, nan=0.0, posinf=0.1, neginf=-0.1)
 
-    # NEW APPROACH (2025-11-18): Use RAW expected returns for training
-    # Cost subtraction and filtering happen at DEPLOYMENT time, not training time
-    # This allows the model to learn patterns from ALL signals (winners AND losers)
+    # Convert to net-of-cost expected returns and suppress negative expectations
+    net_expected = expected_returns - cost_threshold
+    net_positive = np.maximum(net_expected, 0.0)
 
-    # Only apply minimal threshold to avoid extreme outliers
-    final_targets = np.clip(expected_returns, 0.0, 0.15)  # Cap at 15% to avoid outliers
+    # Only apply minimal clipping to avoid extreme outliers
+    final_targets = np.clip(net_positive, 0.0, 0.15)  # Cap at 15% to avoid outliers
 
     # DEBUG LOGGING: Target statistics
     n_nonzero = (final_targets > 1e-6).sum()
@@ -1561,44 +1721,157 @@ def generate_diagnostics_report(
     else:
         report_lines.append(f"\n✅ **OK:** Reasonable signal coverage ({coverage:.1%})")
 
-    # ===== 3. CORRELATION ANALYSIS =====
-    report_lines.append("\n## 3. Feature-Label Correlation Analysis\n")
+    # ===== 3. FEATURE–LABEL CORRELATION ANALYSIS (POST-FILTER) =====
+    report_lines.append("\n## 3. Feature-Label Correlation Analysis (Post-Filter)\n")
 
     # Compute correlations (numeric features only to avoid categorical fill issues)
     features_clean = meta_features[labeled_mask]
     features_clean = features_clean.select_dtypes(include=[np.number]).fillna(0)
     labels_clean = binary_labels[labeled_mask]
 
+    correlations_post = {}
+
     try:
-        correlations = {}
         for col in features_clean.columns:
             corr = features_clean[col].corr(labels_clean)
             if not pd.isna(corr):
-                correlations[col] = corr
+                correlations_post[col] = corr
 
         # Sort by absolute correlation
-        sorted_corr = sorted(correlations.items(), key=lambda x: abs(x[1]), reverse=True)
+        sorted_corr_post = sorted(correlations_post.items(), key=lambda x: abs(x[1]), reverse=True)
 
-        report_lines.append("\n### Top 10 Most Correlated Features:\n")
-        for feat, corr in sorted_corr[:10]:
+        report_lines.append("\n### Top 10 Most Correlated Features (Post-Filter):\n")
+        for feat, corr in sorted_corr_post[:10]:
             report_lines.append(f"- **{feat}:** {corr:.4f}")
 
         # Check for concerning correlations
-        report_lines.append("\n### Correlation Health Check:\n")
+        report_lines.append("\n### Correlation Health Check (Post-Filter):\n")
 
-        very_high = [(f, c) for f, c in sorted_corr if abs(c) > 0.8]
-        very_low = [(f, c) for f, c in sorted_corr if abs(c) < 0.01]
+        very_high = [(f, c) for f, c in sorted_corr_post if abs(c) > 0.8]
+        very_low = [(f, c) for f, c in sorted_corr_post if abs(c) < 0.01]
 
         if very_high:
             report_lines.append(f"\n⚠️ **Warning:** {len(very_high)} features with |corr| > 0.8 (possible leakage):")
             for feat, corr in very_high[:5]:
                 report_lines.append(f"  - {feat}: {corr:.4f}")
 
-        if len(very_low) > len(sorted_corr) * 0.8:
+        if len(very_low) > len(sorted_corr_post) * 0.8:
             report_lines.append(f"\n⚠️ **Warning:** {len(very_low)} features with |corr| < 0.01 (mostly uninformative)")
 
     except Exception as e:
         report_lines.append(f"\n⚠️ Could not compute correlations: {e}")
+
+    # ===== 3B. PRE- VS POST-FILTER COMPARISON & FEATURE SHIFT =====
+    report_lines.append("\n## 3B. Pre- vs Post-Filter Comparison and Feature Shift\n")
+
+    try:
+        # Pre-filter: all events with realized returns
+        pre_mask = ~realized_returns.isna()
+        n_pre_total = int(pre_mask.sum())
+
+        if n_pre_total > 0:
+            tx_cost_local = config.get('transaction_cost', DEFAULT_TRANSACTION_COST)
+            try:
+                tx_cost_local = float(tx_cost_local)
+            except Exception:
+                tx_cost_local = float(DEFAULT_TRANSACTION_COST)
+
+            # Raw pre-filter labels: simple economic sign after costs
+            pre_returns = realized_returns[pre_mask]
+            raw_label_pre = (pre_returns > tx_cost_local).astype(int)
+
+            n_pre_pos = int((raw_label_pre == 1).sum())
+            n_pre_neg = int((raw_label_pre == 0).sum())
+
+            n_post_total = int(n_labeled)
+            n_post_pos = int((binary_labels == 1.0).sum())
+            n_post_neg = int((binary_labels == 0.0).sum())
+
+            retention_total = n_post_total / max(n_pre_total, 1)
+            retention_pos = n_post_pos / max(n_pre_pos, 1) if n_pre_pos > 0 else 0.0
+            retention_neg = n_post_neg / max(n_pre_neg, 1) if n_pre_neg > 0 else 0.0
+
+            report_lines.append("\n### Sample Counts and Retention\n")
+            report_lines.append(f"- **Pre-filter events (realized_return not NaN):** {n_pre_total}")
+            report_lines.append(f"- **Pre-filter positive/negative (raw economic):** {n_pre_pos} / {n_pre_neg}")
+            report_lines.append(f"- **Post-filter labeled events:** {n_post_total}")
+            report_lines.append(f"- **Post-filter positive/negative (binary_labels):** {n_post_pos} / {n_post_neg}")
+            report_lines.append(f"- **Total retention (post / pre):** {retention_total:.1%}")
+            report_lines.append(f"- **Positive retention:** {retention_pos:.1%}")
+            report_lines.append(f"- **Negative retention:** {retention_neg:.1%}")
+
+            if retention_pos < 0.2 and n_pre_pos >= 20:
+                report_lines.append("\n⚠️ **Warning:** Filters removed >80% of economically positive candidates – risk of losing learnable signal")
+
+            # Pre-filter effect size and simple SNR
+            pre_pos_ret = pre_returns[raw_label_pre == 1]
+            pre_neg_ret = pre_returns[raw_label_pre == 0]
+
+            # Post-filter realized returns (only where labels exist)
+            returns_post = realized_returns[labeled_mask]
+
+            def _safe_stats(x: pd.Series) -> Tuple[float, float]:
+                return (float(x.mean()) if len(x) > 0 else 0.0, float(x.std() if len(x) > 1 else 0.0))
+
+            pre_pos_mean, pre_pos_std = _safe_stats(pre_pos_ret)
+            pre_neg_mean, pre_neg_std = _safe_stats(pre_neg_ret)
+            post_pos_mean, post_pos_std = _safe_stats(returns_post[labels_clean == 1])
+            post_neg_mean, post_neg_std = _safe_stats(returns_post[labels_clean == 0])
+
+            def _cohens_d(m1, s1, n1, m2, s2, n2) -> float:
+                if n1 <= 1 or n2 <= 1:
+                    return float('nan')
+                pooled = ((n1 - 1) * (s1 ** 2) + (n2 - 1) * (s2 ** 2)) / max(n1 + n2 - 2, 1)
+                if pooled <= 0:
+                    return float('nan')
+                return (m1 - m2) / np.sqrt(pooled)
+
+            d_pre = _cohens_d(pre_pos_mean, pre_pos_std, max(len(pre_pos_ret), 1),
+                               pre_neg_mean, pre_neg_std, max(len(pre_neg_ret), 1))
+            d_post = _cohens_d(post_pos_mean, post_pos_std, max(len(returns_post[labels_clean == 1]), 1),
+                                post_neg_mean, post_neg_std, max(len(returns_post[labels_clean == 0]), 1))
+
+            # SNR-style metric (mean/std) for positive returns
+            snr_pre = pre_pos_mean / (pre_pos_std + 1e-8) if pre_pos_std > 0 else 0.0
+            snr_post = post_pos_mean / (post_pos_std + 1e-8) if post_pos_std > 0 else 0.0
+
+            report_lines.append("\n### Pre- vs Post-Filter Signal Quality\n")
+            report_lines.append(f"- **Pre-filter mean return (label=1/0):** {pre_pos_mean:.2%} / {pre_neg_mean:.2%}")
+            report_lines.append(f"- **Post-filter mean return (label=1/0):** {post_pos_mean:.2%} / {post_neg_mean:.2%}")
+            report_lines.append(f"- **Pre-filter Cohen's d (label=1 vs 0):** {d_pre:.3f}")
+            report_lines.append(f"- **Post-filter Cohen's d (label=1 vs 0):** {d_post:.3f}")
+            report_lines.append(f"- **Pre-filter SNR (mean/std, label=1):** {snr_pre:.3f}")
+            report_lines.append(f"- **Post-filter SNR (mean/std, label=1):** {snr_post:.3f}")
+
+            if np.isfinite(d_pre) and np.isfinite(d_post) and d_post < d_pre - 0.05:
+                report_lines.append("\n⚠️ **Warning:** Post-filter effect size is materially worse than pre-filter – filters may be discarding informative events")
+
+            # Pre- vs post-filter feature correlation shifts
+            features_clean_pre = meta_features.select_dtypes(include=[np.number]).fillna(0)
+            correlations_pre = {}
+            for col in features_clean_pre.columns:
+                try:
+                    correlations_pre[col] = float(features_clean_pre[col].loc[pre_mask].corr(raw_label_pre))
+                except Exception:
+                    continue
+
+            common_feats = set(correlations_pre.keys()).intersection(set(correlations_post.keys()))
+            delta_corr = []
+            for feat in common_feats:
+                pre_val = correlations_pre.get(feat, 0.0)
+                post_val = correlations_post.get(feat, 0.0)
+                delta_corr.append((feat, pre_val, post_val, abs(post_val) - abs(pre_val)))
+
+            delta_corr_sorted = sorted(delta_corr, key=lambda x: abs(x[3]), reverse=True)
+
+            report_lines.append("\n### Largest Feature Correlation Shifts (|post|-|pre|)\n")
+            for feat, pre_val, post_val, delta in delta_corr_sorted[:10]:
+                report_lines.append(
+                    f"- **{feat}:** pre={pre_val:.4f}, post={post_val:.4f}, Δ|corr|={delta:.4f}"
+                )
+
+    except Exception as e:
+        report_lines.append(f"\n⚠️ Could not compute pre/post-filter comparison: {e}")
 
     # ===== 4. P&L DISTRIBUTION PER LABEL =====
     report_lines.append("\n## 4. P&L Distribution Per Label\n")
@@ -1708,6 +1981,16 @@ def generate_diagnostics_report(
                 report_lines.append(f"\n⚠️ **Warning:** Strong correlation between win rate and volatility - performance is regime-dependent")
             else:
                 report_lines.append(f"\n✅ **OK:** Win rate not strongly correlated with volatility")
+
+            # Rolling SNR on daily returns
+            daily_std_ret = realized_returns.resample('1D').std()
+            daily_snr = daily_mean_return / (daily_std_ret + 1e-8)
+
+            if len(daily_snr.dropna()) > 0:
+                report_lines.append("\n### Rolling Daily SNR (Return / Std by Day)\n")
+                report_lines.append(f"- **Daily SNR mean:** {daily_snr.mean():.4f}")
+                report_lines.append(f"- **Daily SNR std:** {daily_snr.std():.4f}")
+                report_lines.append(f"- **Daily SNR min/max:** {daily_snr.min():.4f} / {daily_snr.max():.4f}")
 
             # Detect regime shifts
             report_lines.append("\n### Regime Shift Detection:\n")
@@ -2143,8 +2426,8 @@ def generate_diagnostics_report(
     except Exception as e:
         report_lines.append(f"\n⚠️ Could not compute regime/time-conditional diagnostics: {e}")
 
-    # ===== 11. LABEL–RETURN SEPARATION AND INFORMATION CONTENT =====
-    report_lines.append("\n## 11. Label–Return Separation and Information Content\n")
+    # ===== 11. LABEL–RETURN SEPARATION, INFORMATION CONTENT, AND SAMPLE SIZE =====
+    report_lines.append("\n## 11. Label–Return Separation, Information Content, and Sample Size\n")
     report_lines.append(
         "This section quantifies how well the labels separate profitable from "
         "unprofitable events (effect size) and how much information they carry "
@@ -2164,6 +2447,22 @@ def generate_diagnostics_report(
             report_lines.append("\n### Separation Metrics\n")
             report_lines.append(f"- **Mean return difference (label=1 - label=0):** {mean_diff:.2%}")
             report_lines.append(f"- **Cohen's d effect size:** {effect_size:.3f}")
+
+            # Simple power heuristic: N_required ≈ 16 / d^2 for 80% power
+            try:
+                if np.isfinite(effect_size) and effect_size != 0:
+                    n_required = 16.0 / (effect_size ** 2)
+                else:
+                    n_required = float('inf')
+            except Exception:
+                n_required = float('inf')
+
+            n_current = float(len(returns_positive) + len(returns_negative))
+            report_lines.append(f"- **Approx. required samples for 80% power (heuristic):** {n_required:.1f}")
+            report_lines.append(f"- **Current labeled samples used in separation:** {n_current:.1f}")
+
+            if np.isfinite(n_required) and n_current < n_required:
+                report_lines.append("\n⚠️ **Warning:** Current labeled sample size is below heuristic requirement for stable separation statistics")
 
         # Information content vs trivial baseline using mutual information
         label_array = labels_clean.values.astype(int)
@@ -2410,7 +2709,7 @@ def generate_diagnostics_report(
     return str(report_path)
 
 
-def focal_loss_lgb(y_pred, dtrain, alpha=0.25, gamma=2.0):
+def focal_loss_lgb(y_true, y_pred, alpha=0.25, gamma=2.0):
     """
     Focal Loss for LightGBM (custom objective function).
 
@@ -2428,7 +2727,6 @@ def focal_loss_lgb(y_pred, dtrain, alpha=0.25, gamma=2.0):
     Returns:
         Tuple of (gradient, hessian)
     """
-    y_true = dtrain.get_label()
 
     # Sigmoid to get probabilities
     p = 1.0 / (1.0 + np.exp(-y_pred))
@@ -2586,6 +2884,11 @@ def create_base_models(config: Dict[str, Any], use_focal_loss: bool = True) -> D
         n_jobs=-1,
         random_state=42
     )
+    models['logreg'] = LogisticRegression(
+        max_iter=1000,
+        class_weight='balanced',
+        solver='lbfgs',
+    )
 
     return models
 
@@ -2709,16 +3012,18 @@ def train_ensemble_with_kfold(
         Tuple of (trained_models_dict, out_of_fold_predictions_series)
     """
     # Initialize storage
-    trained_models = {'lgbm': [], 'xgb': [], 'rf': []}
+    trained_models = {'lgbm': [], 'xgb': [], 'rf': [], 'logreg': []}
     oof_predictions = {
         'lgbm': pd.Series(np.nan, index=X.index),
         'xgb': pd.Series(np.nan, index=X.index),
-        'rf': pd.Series(np.nan, index=X.index)
+        'rf': pd.Series(np.nan, index=X.index),
+        'logreg': pd.Series(np.nan, index=X.index),
     }
     oof_aucs = {
         'lgbm': [],
         'xgb': [],
-        'rf': []
+        'rf': [],
+        'logreg': [],
     }
 
     # Time-series CV
@@ -2804,7 +3109,7 @@ def train_ensemble_with_kfold(
                     tprint(f"    ❌ {model_name} failed: {e}", "ERROR")
 
     # EARLY STOPPING CHECK: Compute mean OOF AUC across folds
-    for model_name in ['lgbm', 'xgb', 'rf']:
+    for model_name in ['lgbm', 'xgb', 'rf', 'logreg']:
         valid_aucs = [a for a in oof_aucs[model_name] if not np.isnan(a)]
         if valid_aucs:
             mean_auc = np.mean(valid_aucs)
@@ -3037,8 +3342,7 @@ def compute_learnability_score(
     cv_splits: int = 3,
     time_aware_cv: bool = True
 ) -> Tuple[float, float]:
-    """
-    Measure how "learnable" a specific set of labels is given the features.
+    """Measure how "learnable" a specific set of labels is given the features.
 
     Uses a lightweight, depth-constrained probe model to prevent overfitting.
     Returns the cross-validated AUC penalized by stability (std).
@@ -3055,9 +3359,14 @@ def compute_learnability_score(
     Returns:
         Tuple of (learnability_score, mean_auc)
     """
-    # Remove NaN labels
+    # Remove NaN labels and ensure we only work with numeric features to avoid
+    # categorical setitem issues when filling NaNs.
     valid_mask = ~y.isna()
-    X_clean = X[valid_mask].fillna(0)
+    X_num = X.select_dtypes(include=[np.number]) if isinstance(X, pd.DataFrame) else X
+    if isinstance(X_num, pd.DataFrame) and X_num.empty:
+        return 0.0, 0.5
+
+    X_clean = X_num[valid_mask].fillna(0)
     y_clean = y[valid_mask]
 
     if len(y_clean) < 50:
@@ -3109,8 +3418,8 @@ def compute_learnability_score(
 
 def compute_label_entropy_score(
     y: pd.Series,
-    min_positive_rate: float = 0.05,
-    max_positive_rate: float = 0.95,
+    min_positive_rate: float = 0.30,
+    max_positive_rate: float = 0.70,
     min_samples: int = 50
 ) -> float:
     """
@@ -3287,7 +3596,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             tprint(f" {error_msg}", "ERROR")
             return {'success': False, 'error': error_msg}
 
-        tprint(f" Starting enhanced meta-labeling for {config['symbol']}", "INFO")
+        tprint(f"🚀 [0/13] Starting enhanced meta-labeling for {config['symbol']} ({config.get('timeframe', 'N/A')})", "INFO")
 
         try:
             self.set_context(
@@ -3379,7 +3688,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     tprint(f"⚠️ Failed to load labeling HPO params: {hpo_exc}", "WARNING")
 
             # Load market data
-            tprint("📊 Loading market data...", "INFO")
+            tprint("📊 [prep] Loading market data...", "INFO")
             from src.utils.data.klines_parquet import get_klines_manager
             klines_manager = get_klines_manager(data_dir=config.get('data_dir', 'historical_data'))
 
@@ -3400,7 +3709,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             volume_available = 'volume' in market_data.columns
 
             # STEP 1: Generate FIXED primary signals
-            tprint("🎯 Generating fixed primary signals...", "INFO")
+            tprint("🎯 [1/13] Generating fixed primary signals...", "INFO")
             primary_signals = generate_primary_signals(market_data)
 
             n_long_signals = (primary_signals['consensus'] > 0).sum()
@@ -3408,7 +3717,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             tprint(f"📊 Primary signals: {n_long_signals} long, {n_short_signals} short", "INFO")
 
             # STEP 2: Compute volatility for adaptive thresholds
-            tprint("📊 Computing volatility for adaptive thresholds...", "INFO")
+            tprint("📊 [2/13] Computing volatility for adaptive thresholds...", "INFO")
             log_ret = np.log(market_data['close']).diff()
             volatility_1d = log_ret.rolling(96).std()  # Short volatility estimate
 
@@ -3433,7 +3742,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             tprint(f"📊 Adaptive thresholds: Stop {adaptive_stop_threshold.mean():.2%} ± {adaptive_stop_threshold.std():.2%}", "INFO")
 
             # STEP 3: Compute realized returns (continuous) and binary labels with adaptive thresholds
-            tprint("💰 Computing realized returns with adaptive thresholds and transaction costs...", "INFO")
+            tprint("💰 [3/13] Computing realized returns with adaptive thresholds and transaction costs...", "INFO")
             realized_returns, binary_labels, exit_reasons, event_durations, mfe_series, mae_series = compute_realized_returns(
                 market_data,
                 primary_signals,
@@ -3442,10 +3751,31 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 horizon=horizon,
                 transaction_cost=transaction_cost,
                 min_event_spacing=min_event_spacing,
-                volatility_series=volatility_1d  # Enable dynamic horizon based on volatility
+                volatility_series=volatility_1d,  # Enable dynamic horizon based on volatility
             )
 
-            # Statistics
+            # NEW: Volatility-scaled returns and quantile-based labels to improve
+            # balance and focus labels on economically meaningful moves.
+            tprint("📊 [3b/13] Computing volatility-scaled returns and quantile-based labels...", "INFO")
+            vol_scaled_returns = compute_vol_scaled_returns_for_events(
+                realized_returns=realized_returns,
+                volatility=volatility_1d,
+            )
+
+            quantile_low_q = float(config.get("quantile_low_q", 0.3))
+            quantile_high_q = float(config.get("quantile_high_q", 0.7))
+
+            quantile_labels = create_quantile_labels_from_vol_scaled_returns(
+                vol_scaled=vol_scaled_returns,
+                low_q=quantile_low_q,
+                high_q=quantile_high_q,
+            )
+
+            # Always use quantile-based labels for meta-labeling. If they are
+            # very sparse, downstream diagnostics will reflect that directly.
+            binary_labels = quantile_labels
+
+            # Statistics (based on the effective binary_labels used for training)
             labeled_mask = ~binary_labels.isna()
             n_labeled = labeled_mask.sum()
             n_positive = (binary_labels == 1.0).sum()
@@ -3465,7 +3795,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 win_rate = 0.0
 
             # STEP 4: Apply Kalman smoothing to binary labels
-            tprint("📈 Applying Kalman smoothing to binary labels...", "INFO")
+            tprint("📈 [4/13] Applying Kalman smoothing to binary labels...", "INFO")
             smoothed_labels, label_uncertainty = kalman_smooth_labels(
                 binary_labels,
                 Q=kalman_Q,
@@ -3507,8 +3837,44 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             mean_ret_50_full = pd.Series(np.nan, index=market_data.index)
             mean_ret_50_full.loc[rolling_mean_ret_50.index] = rolling_mean_ret_50
 
+            # Event-mechanics history (R-multiple, TTO, MFE/MAE) based only on past events
+            try:
+                # Per-event R-multiple using adaptive stop as risk unit
+                r_unit_series = adaptive_stop_threshold.abs().replace(0.0, np.nan)
+                r_multiple_series = (realized_returns / (r_unit_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
+                event_r_multiple = r_multiple_series[event_mask]
+
+                # Time-to-outcome ratio (TTO): duration normalized by horizon
+                if horizon > 0:
+                    event_tto = (event_durations[event_mask] / float(horizon)).replace([np.inf, -np.inf], np.nan)
+                else:
+                    event_tto = pd.Series(index=event_returns.index, dtype=float)
+
+                # MFE/MAE ratio
+                event_mfe = mfe_series[event_mask]
+                event_mae = mae_series[event_mask]
+                mfe_mae_ratio_series = (event_mfe / (event_mae + 1e-6)).replace([np.inf, -np.inf], np.nan)
+
+                # Rolling histories over past events only
+                rolling_r_multiple_50 = event_r_multiple.rolling(window=50, min_periods=1).mean()
+                rolling_tto_50 = event_tto.rolling(window=50, min_periods=1).mean()
+                rolling_mfe_mae_ratio_50 = mfe_mae_ratio_series.rolling(window=50, min_periods=1).mean()
+
+                r_mult_50_full = pd.Series(np.nan, index=market_data.index)
+                r_mult_50_full.loc[rolling_r_multiple_50.index] = rolling_r_multiple_50
+
+                tto_50_full = pd.Series(np.nan, index=market_data.index)
+                tto_50_full.loc[rolling_tto_50.index] = rolling_tto_50
+
+                mfe_mae_ratio_50_full = pd.Series(np.nan, index=market_data.index)
+                mfe_mae_ratio_50_full.loc[rolling_mfe_mae_ratio_50.index] = rolling_mfe_mae_ratio_50
+            except Exception:
+                r_mult_50_full = pd.Series(np.nan, index=market_data.index)
+                tto_50_full = pd.Series(np.nan, index=market_data.index)
+                mfe_mae_ratio_50_full = pd.Series(np.nan, index=market_data.index)
+
             # STEP 5: Create meta-features with Kalman filtering
-            tprint("🔧 Creating meta-features with Kalman filtering...", "INFO")
+            tprint("🔧 [5/13] Creating meta-features with Kalman filtering...", "INFO")
             meta_features = create_meta_features(
                 market_data,
                 primary_signals,
@@ -3525,32 +3891,150 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             event_meta_features['drawdown_100'] = drawdown_100
             event_meta_features['event_win_rate_last_50'] = win_rate_50_full
             event_meta_features['event_mean_return_last_50'] = mean_ret_50_full
+            event_meta_features['event_r_multiple_mean_last_50'] = r_mult_50_full
+            event_meta_features['event_tto_mean_last_50'] = tto_50_full
+            event_meta_features['event_mfe_mae_ratio_mean_last_50'] = mfe_mae_ratio_50_full
 
-            meta_features = meta_features.join(event_meta_features)
+            # Attach/overwrite event-centric features without creating duplicate columns
+            meta_features[event_meta_features.columns] = event_meta_features
 
             meta_features_model = prepare_feature_matrix(meta_features)
 
+            meta_features_model_processed = meta_features_model
+            meta_feature_cfg = config.get('meta_feature_engineering', {})
+            if not isinstance(meta_feature_cfg, dict):
+                meta_feature_cfg = {}
+
+            if meta_feature_cfg.get('enable_winsorisation', False):
+                try:
+                    lower_q = float(meta_feature_cfg.get('winsor_lower_q', 0.01))
+                    upper_q = float(meta_feature_cfg.get('winsor_upper_q', 0.99))
+                    robust_window = int(meta_feature_cfg.get('robust_window', 256))
+                    robust_min_periods = int(meta_feature_cfg.get('robust_min_periods', max(1, robust_window // 4)))
+
+                    meta_features_model_processed = rolling_robust_scale_features(
+                        meta_features_model_processed,
+                        window=robust_window,
+                        min_periods=robust_min_periods,
+                        skip_binary=True,
+                        skip_low_cardinality_int=True,
+                    )
+                    meta_features_model_processed = winsorize_features(
+                        meta_features_model_processed,
+                        lower_quantile=lower_q,
+                        upper_quantile=upper_q,
+                    )
+                    tprint(
+                        f"📊 Applied rolling robust scaling (w={robust_window}) + winsorisation to meta-features (q={lower_q:.3f}-{upper_q:.3f})",
+                        "INFO",
+                    )
+                except Exception as e_w:
+                    tprint(f"⚠️ Winsorisation failed, using raw features: {e_w}", "WARNING")
+
+            selected_feature_names = list(meta_features_model_processed.columns)
+            if meta_feature_cfg.get('enable_feature_selection', False):
+                try:
+                    max_feats = meta_feature_cfg.get('max_features', None)
+                    if max_feats is not None:
+                        max_feats = int(max_feats)
+                    corr_threshold = float(meta_feature_cfg.get('correlation_threshold', 0.95))
+                    fs_method = meta_feature_cfg.get('selection_method', 'tree')
+                    selected_feature_names = select_features_by_importance(
+                        X=meta_features_model_processed,
+                        y=binary_labels,
+                        max_features=max_feats,
+                        correlation_threshold=corr_threshold,
+                        method=fs_method,
+                    )
+                    meta_features_model_processed = meta_features_model_processed[selected_feature_names]
+                except Exception as e_fs:
+                    tprint(f"⚠️ Feature selection failed, using all features: {e_fs}", "WARNING")
+                    selected_feature_names = list(meta_features_model_processed.columns)
+
+            sample_weights = None
+            if meta_feature_cfg.get('enable_sample_weighting', False):
+                try:
+                    if isinstance(market_data.index, pd.DatetimeIndex):
+                        event_mask = ~binary_labels.isna()
+                        if event_mask.any():
+                            index_series = pd.Series(market_data.index, index=market_data.index)
+                            event_start_times = pd.Series(pd.NaT, index=market_data.index)
+                            event_start_times[event_mask] = index_series[event_mask]
+
+                            # Use median bar spacing as scalar Timedelta; fall back to no adjustment on failure
+                            bar_delta = index_series.diff().dropna().median()
+                            if not isinstance(bar_delta, pd.Timedelta) or bar_delta <= pd.Timedelta(0):
+                                event_end_times = event_start_times.copy()
+                            else:
+                                durations_bars = event_durations.fillna(0).round().astype(int)
+                                event_end_times = event_start_times.copy()
+                                event_end_times[event_mask] = (
+                                    event_start_times[event_mask]
+                                    + durations_bars[event_mask] * bar_delta
+                                )
+                            sample_weights = compute_sample_weights_with_uniqueness(
+                                event_start_times=event_start_times,
+                                event_end_times=event_end_times,
+                                y=binary_labels,
+                                class_weight_mult=float(meta_feature_cfg.get('class_weight_mult', 5.0)),
+                            )
+
+                            # Optional cost- and R-multiple-aware reweighting
+                            if sample_weights is not None and meta_feature_cfg.get('enable_cost_aware_weighting', True):
+                                try:
+                                    weights = np.asarray(sample_weights, dtype=float)
+
+                                    # Compute per-event R-multiple at entry bars
+                                    r_unit_series = adaptive_stop_threshold.abs().replace(0.0, np.nan)
+                                    r_multiple_series = (realized_returns / (r_unit_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
+                                    r_multiple_arr = r_multiple_series.fillna(0.0).to_numpy(dtype=float)
+
+                                    # Emphasize high-R winners; clip to avoid extreme weights
+                                    r_pos = np.clip(r_multiple_arr, 0.0, 3.0)
+                                    r_factor = 1.0 + r_pos  # 1..4
+
+                                    # Down-weight clearly bad losers if configured
+                                    neg_weight_mult = float(meta_feature_cfg.get('neg_weight_mult', 0.7))
+                                    label_arr = binary_labels.fillna(-1.0).to_numpy(dtype=float)
+
+                                    class_factor = np.ones_like(weights, dtype=float)
+                                    class_factor = np.where(label_arr == 1.0, r_factor, class_factor)
+                                    class_factor = np.where(label_arr == 0.0, class_factor * neg_weight_mult, class_factor)
+
+                                    weights *= class_factor
+                                    # Normalize back to mean 1 to keep scale stable
+                                    if np.isfinite(weights).any() and weights.mean() > 0:
+                                        weights = weights / weights.mean()
+
+                                    sample_weights = weights
+                                except Exception as w_cost_exc:
+                                    tprint(f"⚠️ Cost-aware weighting failed, using uniqueness weights only: {w_cost_exc}", "WARNING")
+                except Exception as w_exc:
+                    tprint(f"⚠️ Sample weight computation failed, using uniform weights: {w_exc}", "WARNING")
+                    sample_weights = None
+
             # STEP 6: Train ensemble meta-models with K-fold cross-fitting
-            tprint("🎓 Training ensemble meta-models (LGBM + LogReg + RF) with purged K-fold CV...", "INFO")
+            tprint("🎓 [6/13] Training ensemble meta-models (LGBM + LogReg + RF) with purged K-fold CV...", "INFO")
 
             # Train ensemble and get OOF predictions
             trained_models, oof_predictions_df = train_ensemble_with_kfold(
-                X=meta_features_model,
+                X=meta_features_model_processed,
                 y=binary_labels,
                 horizon=horizon,
                 n_splits=5,
+                sample_weights=sample_weights,
                 verbose=True
             )
 
             # STEP 7: Add signal disagreement feature
-            tprint("🔧 Adding signal disagreement feature...", "INFO")
+            tprint("🔧 [7/13] Adding signal disagreement feature...", "INFO")
             meta_features_enhanced = add_signal_disagreement(
                 oof_predictions=oof_predictions_df,
                 meta_features=meta_features
             )
 
             # STEP 8: Calibrate ensemble with isotonic regression only (preserve variance)
-            tprint("📈 Calibrating ensemble (isotonic on blended predictions)...", "INFO")
+            tprint("📈 [8/13] Calibrating ensemble (isotonic on blended predictions)...", "INFO")
 
             platt_calibrators, iso_regressor = calibrate_ensemble(
                 oof_predictions=oof_predictions_df,
@@ -3562,7 +4046,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             )
 
             # STEP 9: Generate final ensemble predictions
-            tprint("🎯 Generating final ensemble predictions...", "INFO")
+            tprint("🎯 [9/13] Generating final ensemble predictions...", "INFO")
 
             # Average OOF predictions after calibration (for final probabilities)
             if platt_calibrators:
@@ -3617,11 +4101,45 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         tprint(f"  ⚠️ Could not compute metrics for {model_name}: {e}", "WARNING")
 
             # STEP 10: Train final models on full dataset (for deployment)
-            tprint("🎓 Training final ensemble models on full dataset...", "INFO")
+            tprint("🎓 [10/13] Training final ensemble models on full dataset...", "INFO")
 
             full_mask = ~binary_labels.isna()
             meta_features_enhanced_model = prepare_feature_matrix(meta_features_enhanced)
-            X_full = meta_features_enhanced_model[full_mask].fillna(0)
+
+            train_columns = list(meta_features_enhanced_model.columns)
+            try:
+                extra_cols = [c for c in meta_features_enhanced_model.columns if c.startswith('signal_disagreement')]
+                base_selected = selected_feature_names if 'selected_feature_names' in locals() else train_columns
+                train_columns = [c for c in meta_features_enhanced_model.columns if c in base_selected or c in extra_cols]
+                if not train_columns:
+                    train_columns = list(meta_features_enhanced_model.columns)
+            except Exception:
+                train_columns = list(meta_features_enhanced_model.columns)
+
+            X_full = meta_features_enhanced_model[train_columns]
+            if meta_feature_cfg.get('enable_winsorisation', False):
+                try:
+                    lower_q = float(meta_feature_cfg.get('winsor_lower_q', 0.01))
+                    upper_q = float(meta_feature_cfg.get('winsor_upper_q', 0.99))
+                    robust_window = int(meta_feature_cfg.get('robust_window', 256))
+                    robust_min_periods = int(meta_feature_cfg.get('robust_min_periods', max(1, robust_window // 4)))
+
+                    X_full = rolling_robust_scale_features(
+                        pd.DataFrame(X_full),
+                        window=robust_window,
+                        min_periods=robust_min_periods,
+                        skip_binary=True,
+                        skip_low_cardinality_int=True,
+                    )
+                    X_full = winsorize_features(
+                        X_full,
+                        lower_quantile=lower_q,
+                        upper_quantile=upper_q,
+                    )
+                except Exception as e_w_full:
+                    tprint(f"⚠️ Winsorisation for final models failed, using raw features: {e_w_full}", "WARNING")
+
+            X_full = pd.DataFrame(X_full)[full_mask].fillna(0)
             y_full = binary_labels[full_mask]
 
             final_models = create_base_models({})
@@ -3636,7 +4154,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             final_model = final_models.get('rf', list(final_models.values())[0])
 
             # STEP 11: Translate to targets using isotonic regression
-            tprint("🔄 Translating probabilities to economic targets...", "INFO")
+            tprint("🔄 [11/13] Translating probabilities to economic targets...", "INFO")
 
             if iso_regressor is not None:
                 # Apply symmetric probability clipping if configured/HPO-provided
@@ -3686,12 +4204,18 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                             target_short.iloc[i] = probabilities[i] - threshold
 
             # STEP 12: Create output DataFrame with enhanced features
-            tprint("📦 Creating output DataFrame...", "INFO")
+            tprint("📦 [12/13] Creating output DataFrame...", "INFO")
             labeled_data = market_data.copy()
 
             # Add log returns and volatility (for diagnostics)
             labeled_data['log_ret'] = log_ret
             labeled_data['volatility_1d'] = volatility_1d
+
+            # Store volatility-scaled returns for diagnostics
+            try:
+                labeled_data['vol_scaled_return'] = vol_scaled_returns
+            except Exception:
+                labeled_data['vol_scaled_return'] = np.nan
 
             # Add labeling results
             labeled_data['realized_return'] = realized_returns
@@ -3740,7 +4264,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             labeled_data['labeling_method_id'] = np.int8(2)
 
             # Save labeled data
-            tprint("Saving labeled data...", "INFO")
+            tprint("💾 [12b/13] Saving labeled data...", "INFO")
 
             labeled_data_path = self._save_artifact(
                 data=labeled_data,
@@ -3766,7 +4290,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             )
 
             # STEP 13: Generate comprehensive diagnostics report
-            tprint("📊 Generating diagnostics report...", "INFO")
+            tprint("📊 [13/13] Generating diagnostics report...", "INFO")
 
             # Create outcomes directory if it doesn't exist
             outcomes_dir = Path("outcomes")
@@ -3810,6 +4334,146 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             except Exception as e:
                 tprint(f"⚠️ Could not compute feature importances: {e}", "WARNING")
                 top_features = []
+
+            # ------------------------------------------------------------------
+            # Save isotonic regressor + meta-gating config for live trading
+            # ------------------------------------------------------------------
+            try:
+                symbol = config.get('symbol', 'UNKNOWN')
+                exchange = config.get('exchange', 'binance')
+                timeframe = config.get('timeframe', '15m')
+                direction = config.get('direction', 'long')
+
+                if iso_regressor is not None:
+                    # Versioned artifact directory for analyst models
+                    va_dir = Path("versioned_artifacts") / f"{symbol}_{exchange}_{timeframe}_{direction}_analyst"
+                    artifacts_dir = va_dir / "artifacts"
+                    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+                    # Save isotonic regressor artifact
+                    iso_rel_path = "artifacts/iso_regressor_analyst_meta.pkl"
+                    iso_path = va_dir / iso_rel_path
+                    try:
+                        with open(iso_path, "wb") as f_iso:
+                            pickle.dump(iso_regressor, f_iso)
+                        tprint(f"💾 Saved isotonic regressor artifact to {iso_path}", "INFO")
+                    except Exception as iso_exc:
+                        tprint(f"⚠️ Could not save isotonic regressor artifact: {iso_exc}", "WARNING")
+
+                    # Derive simple meta-gating thresholds from OOF probabilities + realized returns
+                    try:
+                        event_mask = ~realized_returns.isna()
+                        n_events = int(event_mask.sum())
+
+                        best_cfg = None
+                        if n_events >= 20:
+                            # Use ensemble_probs_series (pandas Series) for safe masking
+                            p_series = ensemble_probs_series.loc[event_mask].astype(float)
+                            r_series = realized_returns.loc[event_mask].astype(float)
+
+                            p_array = p_series.to_numpy()
+                            r_array = r_series.to_numpy()
+
+                            # Expected returns from isotonic mapping (if possible)
+                            try:
+                                E_hat_array = iso_regressor.predict(p_array)
+                            except Exception:
+                                E_hat_array = None
+
+                            prob_thresholds = [0.55, 0.60, 0.65, 0.70, 0.75]
+                            er_multipliers = [1.0, 2.0, 3.0]
+                            tx_cost = float(transaction_cost)
+
+                            for p_thr in prob_thresholds:
+                                for k in er_multipliers:
+                                    # If isotonic mapping is not available, fall back to prob-only gating
+                                    E_thr = tx_cost * k if E_hat_array is not None else 0.0
+
+                                    gate = p_array >= p_thr
+                                    if E_hat_array is not None:
+                                        gate &= (E_hat_array >= E_thr)
+
+                                    gated_r = r_array[gate]
+                                    n_trades = int(len(gated_r))
+                                    if n_trades < 10:
+                                        continue
+
+                                    mean_r = float(np.mean(gated_r))
+                                    std_r = float(np.std(gated_r, ddof=1)) if n_trades > 1 else 0.0
+                                    sharpe = float(mean_r / std_r) if std_r > 0 else 0.0
+
+                                    # Score: prefer higher Sharpe and more trades
+                                    score = sharpe * np.sqrt(max(n_trades, 1))
+
+                                    if (best_cfg is None) or (score > best_cfg["score"]):
+                                        best_cfg = {
+                                            "prob_threshold": float(p_thr),
+                                            "expected_return_threshold": float(E_thr),
+                                            "mean_return": mean_r,
+                                            "sharpe": sharpe,
+                                            "n_trades": n_trades,
+                                            "score": float(score),
+                                        }
+
+                        # Fallback if no valid configuration found
+                        if best_cfg is None:
+                            best_cfg = {
+                                "prob_threshold": 0.60,
+                                "expected_return_threshold": float(transaction_cost * 2.0),
+                                "mean_return": 0.0,
+                                "sharpe": 0.0,
+                                "n_trades": 0,
+                                "score": 0.0,
+                            }
+
+                        # Build meta-gating configuration payload
+                        meta_gating_config = {
+                            "symbol": symbol,
+                            "exchange": exchange,
+                            "timeframe": timeframe,
+                            "direction": direction,
+                            "model_family": "analyst_meta",
+                            "meta_gating": {
+                                "version": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
+                                "transaction_cost": float(transaction_cost),
+                                "entry": {
+                                    "prob_threshold": best_cfg["prob_threshold"],
+                                    "use_expected_return": bool(best_cfg["expected_return_threshold"] > 0),
+                                    "expected_return_threshold": best_cfg["expected_return_threshold"],
+                                    "expected_return_unit": "fraction",
+                                    "min_trades": int(best_cfg["n_trades"]),
+                                },
+                                "calibration": {
+                                    "iso_regressor_artifact": iso_rel_path,
+                                    "fitted_on": "train_oof",
+                                },
+                                # Expose the triple-barrier configuration used during labeling
+                                # so live trading can align TPSL/horizon with the same setup.
+                                "triple_barrier": {
+                                    "profit_threshold": float(profit_threshold),
+                                    "stop_threshold": float(stop_threshold),
+                                    "horizon_bars": int(horizon),
+                                    "min_event_spacing": int(min_event_spacing),
+                                },
+                                "backtest_metrics": {
+                                    "auc_oof": float(avg_auc),
+                                    "mean_return_gated": float(best_cfg["mean_return"]),
+                                    "sharpe_gated": float(best_cfg["sharpe"]),
+                                    "trades_gated": int(best_cfg["n_trades"]),
+                                },
+                            },
+                        }
+
+                        gating_path = va_dir / "meta_gating_config.json"
+                        with open(gating_path, "w") as f_gate:
+                            json.dump(meta_gating_config, f_gate, indent=2)
+
+                        tprint(f"💾 Saved meta-gating config to {gating_path}", "INFO")
+                    except Exception as gate_exc:
+                        tprint(f"⚠️ Could not compute/save meta-gating config: {gate_exc}", "WARNING")
+
+            except Exception as e:
+                tprint(f"⚠️ Meta-gating artifact saving failed: {e}", "WARNING")
 
             elapsed_time = (datetime.now() - start_time).total_seconds()
 
@@ -3862,7 +4526,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 'cv_results': cv_results
             }
 
-            tprint(f"✅ Enhanced meta-labeling completed in {elapsed_time:.1f}s", "SUCCESS")
+            tprint(f"✅ [done] Enhanced meta-labeling completed in {elapsed_time:.1f}s", "SUCCESS")
             tprint(f"📊 Performance: AUC={avg_auc:.3f}, Win Rate={win_rate:.1%}, Mean Return={mean_return:.2%}", "SUCCESS")
 
             return result

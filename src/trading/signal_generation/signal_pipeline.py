@@ -11,6 +11,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from collections import deque
 from threading import Lock
+from pathlib import Path
+import json
+import pickle
 import numpy as np
 import pandas as pd
 
@@ -114,6 +117,9 @@ class PositionState:
     entry_analyst_confidence: Optional[float] = None  # Track analyst confidence at entry
     entry_tactician_confidence: Optional[float] = None  # Track tactician confidence at entry
     peak_profit_pct: Optional[float] = None  # Tracks highest profit achieved for trailing
+    max_hold_time_seconds: Optional[int] = None  # Per-position max hold time (seconds)
+    profit_target_pct: Optional[float] = None  # Profit target fraction at entry
+    stop_loss_pct: Optional[float] = None  # Stop-loss fraction at entry
 
 @dataclass
 class SignalGenerationResult:
@@ -163,6 +169,10 @@ class SignalGenerationPipeline:
 
         # Model selection
         self.model_selector_service: Optional[Any] = None
+
+        # Meta-gating artifacts (loaded from meta-labeling step / versioned_artifacts)
+        self.meta_gating_params: Optional[Dict[str, Any]] = None
+        self.meta_iso_regressor: Optional[Any] = None
 
         # Optimization parameters (from backtesting)
         # These will be overridden by final_parameters_optimization if available
@@ -474,6 +484,98 @@ class SignalGenerationPipeline:
                 tprint_warning("⚠️ Using DEFAULT values - this may not be optimal for trading!")
                 self.logger.warning(f"⚠️ Failed to load optimized parameters: {e}")
 
+            # After (optional) optimized parameters, load meta-gating config + iso regressor
+            try:
+                va_dir = Path("versioned_artifacts") / f"{symbol}_{exchange}_{timeframe}_{direction}_analyst"
+                gating_path = va_dir / "meta_gating_config.json"
+
+                if gating_path.exists():
+                    with open(gating_path, "r") as f_gate:
+                        cfg = json.load(f_gate)
+
+                    self.meta_gating_params = cfg.get("meta_gating", {})
+                    calib_cfg = self.meta_gating_params.get("calibration", {})
+                    iso_rel_path = calib_cfg.get("iso_regressor_artifact")
+
+                    self.meta_iso_regressor = None
+                    if iso_rel_path:
+                        iso_path = va_dir / iso_rel_path
+                        if iso_path.exists():
+                            with open(iso_path, "rb") as f_iso:
+                                self.meta_iso_regressor = pickle.load(f_iso)
+                            tprint_success(
+                                f"✅ Loaded meta-gating config and iso regressor for {symbol} {timeframe} {direction}"
+                            )
+                        else:
+                            self.logger.warning(
+                                f"⚠️ Iso regressor artifact not found at {iso_path}; meta gate will use probability only"
+                            )
+                    else:
+                        self.logger.warning(
+                            f"⚠️ meta_gating_config.json for {symbol} {timeframe} {direction} is missing 'iso_regressor_artifact'"
+                        )
+                else:
+                    self.meta_gating_params = None
+                    self.meta_iso_regressor = None
+                    self.logger.info(
+                        f"ℹ️ No meta_gating_config.json found for {symbol} {timeframe} {direction}; trading will run without meta gate"
+                    )
+
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to load meta-gating configuration: {e}")
+                self.meta_gating_params = None
+                self.meta_iso_regressor = None
+
+            # Align exit_strategy TPSL/horizon with the triple-barrier configuration
+            # used for meta-labeling, if it is available in meta_gating_config.
+            try:
+                tb_cfg = {}
+                if self.meta_gating_params and isinstance(self.meta_gating_params, dict):
+                    tb_cfg = self.meta_gating_params.get("triple_barrier", {}) or {}
+
+                if isinstance(tb_cfg, dict) and tb_cfg:
+                    profit_thr = float(tb_cfg.get("profit_threshold", 0.0))
+                    stop_thr = float(tb_cfg.get("stop_threshold", 0.0))
+                    horizon_bars = int(tb_cfg.get("horizon_bars", 0))
+
+                    # Convert horizon in bars to seconds using timeframe (e.g. 15m → 900s)
+                    def _tf_to_seconds(tf: str) -> int:
+                        try:
+                            unit = tf[-1]
+                            value = int(tf[:-1])
+                            if unit == "m":
+                                return value * 60
+                            if unit == "h":
+                                return value * 3600
+                            if unit == "d":
+                                return value * 86400
+                            return 0
+                        except Exception:
+                            return 0
+
+                    bar_seconds = _tf_to_seconds(timeframe)
+
+                    exit_strategy = self.optimization_params.get("exit_strategy", {})
+                    if not isinstance(exit_strategy, dict):
+                        exit_strategy = {}
+
+                    # Only set defaults when optimization did not already specify them
+                    if profit_thr > 0.0 and "base_profit_target" not in exit_strategy:
+                        exit_strategy["base_profit_target"] = profit_thr
+                    if stop_thr > 0.0 and "base_stop_loss" not in exit_strategy:
+                        exit_strategy["base_stop_loss"] = stop_thr
+                    if horizon_bars > 0 and bar_seconds > 0 and "max_hold_time" not in exit_strategy:
+                        exit_strategy["max_hold_time"] = int(horizon_bars * bar_seconds)
+
+                    self.optimization_params["exit_strategy"] = exit_strategy
+                    self.logger.info(
+                        "✅ Aligned exit_strategy TPSL/horizon with meta-labeling triple-barrier config "
+                        f"(profit={profit_thr:.4f}, stop={stop_thr:.4f}, horizon_bars={horizon_bars})"
+                    )
+
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to align exit_strategy with triple-barrier config: {e}")
+
             self.logger.info("✅ Optimization parameters loaded")
 
         except Exception as e:
@@ -617,9 +719,12 @@ class SignalGenerationPipeline:
 
         # Update position state based on signal (thread-safe)
         self._update_position_state(
-            final_signal, timestamp, should_exit,
+            final_signal,
+            timestamp,
+            should_exit,
             analyst_output.analyst_confidence,
-            tactician_output.tactician_confidence
+            tactician_output.tactician_confidence,
+            market_data,
         )
 
         # Create result
@@ -1314,6 +1419,10 @@ class SignalGenerationPipeline:
             if ensemble_features:
                 meta_features.update(ensemble_features)
 
+            # Add meta-gate diagnostics if available
+            if meta_gate_info:
+                meta_features.update(meta_gate_info)
+
             return AnalystMetaOutput(
                 timestamp=timestamp,
                 analyst_confidence=regime_adjusted_confidence,
@@ -1627,6 +1736,55 @@ class SignalGenerationPipeline:
                 # Default to buy if high confidence (can be refined based on price action)
                 final_signal = 'buy'
                 signal_strength = tactician_confidence
+
+            # ------------------------------------------------------------------
+            # Apply meta-gating (analyst meta gate) if configuration is available
+            # This mirrors the meta-gated backtest step and the training meta gate
+            # ------------------------------------------------------------------
+            gate_pass = True
+            meta_gate_info: Dict[str, Any] = {}
+
+            if self.meta_gating_params is not None:
+                try:
+                    entry_cfg = self.meta_gating_params.get("entry", {})
+                    p_thr = float(entry_cfg.get("prob_threshold", 0.0))
+                    use_er = bool(entry_cfg.get("use_expected_return", False))
+                    er_thr = float(entry_cfg.get("expected_return_threshold", 0.0))
+
+                    p_hat = float(tactician_confidence)
+                    gate_pass = p_hat >= p_thr
+                    E_hat = None
+
+                    if use_er and self.meta_iso_regressor is not None:
+                        try:
+                            # IsotonicRegression expects 1D array-like
+                            E_hat = float(self.meta_iso_regressor.predict([p_hat])[0])
+                            gate_pass = gate_pass and (E_hat >= er_thr)
+                        except Exception as e:
+                            self.logger.warning(
+                                f"⚠️ Meta gate expected-return prediction failed: {e}; falling back to prob-only gate"
+                            )
+                            E_hat = None
+
+                    meta_gate_info = {
+                        'meta_probability': p_hat,
+                        'meta_expected_return': E_hat,
+                        'meta_gate_passed': gate_pass,
+                        'meta_prob_threshold': p_thr,
+                        'meta_er_threshold': er_thr if use_er else None,
+                    }
+
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Meta gating evaluation failed: {e}; disabling meta gate for this decision")
+                    gate_pass = True
+
+            if not gate_pass:
+                self.logger.debug(
+                    f"Meta gate blocked trade: p_hat={meta_gate_info.get('meta_probability'):.3f}, "
+                    f"E_hat={meta_gate_info.get('meta_expected_return')}"
+                )
+                final_signal = 'hold'
+                signal_strength = 0.0
             
             # Prepare meta features
             meta_features = {
@@ -1845,7 +2003,11 @@ class SignalGenerationPipeline:
             if current_pos.entry_timestamp:
                 elapsed_time = (timestamp - current_pos.entry_timestamp).total_seconds()
                 
-                if isinstance(exit_strategy, dict):
+                # Prefer per-position dynamic horizon if available, otherwise fall back to
+                # the global exit_strategy max_hold_time configuration.
+                max_hold_time = current_pos.max_hold_time_seconds
+
+                if max_hold_time is None and isinstance(exit_strategy, dict):
                     # Handle both formatted and raw formats
                     time_based = exit_strategy.get('time_based', {})
                     if time_based:
@@ -1853,9 +2015,11 @@ class SignalGenerationPipeline:
                     else:
                         # Check for raw format keys
                         max_hold_time = exit_strategy.get('max_hold_time', 10800)
-                    
-                    if elapsed_time >= max_hold_time:
-                        exit_reasons.append(f"Maximum hold time exceeded: {elapsed_time:.0f}s >= {max_hold_time:.0f}s")
+
+                if max_hold_time is not None and elapsed_time >= max_hold_time:
+                    exit_reasons.append(
+                        f"Maximum hold time exceeded: {elapsed_time:.0f}s >= {max_hold_time:.0f}s"
+                    )
             
             # 4. Profit trailing check (triggered when base_profit_target reached)
             if profit_pct is not None and isinstance(exit_strategy, dict):
@@ -1997,7 +2161,8 @@ class SignalGenerationPipeline:
         timestamp: datetime,
         should_exit: bool,
         analyst_confidence: float,
-        tactician_confidence: float
+        tactician_confidence: float,
+        market_data: pd.DataFrame,
     ):
         """
         Update position state based on signal and exit conditions (thread-safe).
@@ -2017,28 +2182,130 @@ class SignalGenerationPipeline:
                 # Handle exit conditions first
                 if should_exit and self.current_position and self.current_position.is_open:
                     # Close current position
-                    self.current_position.is_open = False
-                    self.position_history.append(self.current_position)
-                    self.logger.info(f"📉 Position closed: {self.current_position.direction} from {self.current_position.entry_timestamp}")
+                    pos = self.current_position
+                    pos.is_open = False
+                    self.position_history.append(pos)
+                    self.logger.info(
+                        "📉 Position closed: %s from %s (TP=%.4f, SL=%.4f, max_hold=%ss)",
+                        pos.direction,
+                        pos.entry_timestamp,
+                        pos.profit_target_pct if pos.profit_target_pct is not None else float('nan'),
+                        pos.stop_loss_pct if pos.stop_loss_pct is not None else float('nan'),
+                        pos.max_hold_time_seconds if pos.max_hold_time_seconds is not None else "n/a",
+                    )
                     self.current_position = None
                     return
 
                 # Handle new position entries
                 if signal in ['buy', 'sell'] and (not self.current_position or not self.current_position.is_open):
+                    # Derive TPSL/horizon configuration for this position
+                    exit_strategy = self.optimization_params.get('exit_strategy', {})
+                    if not isinstance(exit_strategy, dict):
+                        exit_strategy = {}
+
+                    profit_target_pct = exit_strategy.get('base_profit_target')
+                    stop_loss_pct = exit_strategy.get('base_stop_loss')
+
+                    # If meta-labeling triple-barrier config is available, prefer those values
+                    tb_cfg = {}
+                    if self.meta_gating_params and isinstance(self.meta_gating_params, dict):
+                        tb_cfg = self.meta_gating_params.get('triple_barrier', {}) or {}
+
+                    if isinstance(tb_cfg, dict) and tb_cfg:
+                        if profit_target_pct is None:
+                            profit_target_pct = float(tb_cfg.get('profit_threshold', 0.0)) or profit_target_pct
+                        if stop_loss_pct is None:
+                            stop_loss_pct = float(tb_cfg.get('stop_threshold', 0.0)) or stop_loss_pct
+                        base_horizon_bars = int(tb_cfg.get('horizon_bars', 0))
+                    else:
+                        base_horizon_bars = 0
+
+                    # Compute volatility-adaptive horizon similar to compute_realized_returns
+                    dynamic_max_hold_seconds: Optional[int] = None
+                    try:
+                        if base_horizon_bars > 0 and isinstance(market_data, pd.DataFrame) and 'close' in market_data.columns:
+                            close = market_data['close']
+                            if len(close) > 5:
+                                log_ret = np.log(close).diff()
+                                volatility_1d = log_ret.rolling(96).std()
+                                vol_array = volatility_1d.values
+                                vol_clean = vol_array[~np.isnan(vol_array)]
+
+                                if len(vol_clean) > 10:
+                                    vol_min = np.percentile(vol_clean, 10)
+                                    vol_max = np.percentile(vol_clean, 90)
+                                    normalized_vol = np.clip(
+                                        (vol_array - vol_min) / (vol_max - vol_min + 1e-8),
+                                        0,
+                                        1,
+                                    )
+                                    time_multiplier = 2.0 - 1.5 * normalized_vol
+                                    dynamic_horizons = (base_horizon_bars * time_multiplier).astype(int)
+                                    dynamic_horizons = np.clip(
+                                        dynamic_horizons,
+                                        max(4, base_horizon_bars // 2),
+                                        base_horizon_bars * 2,
+                                    )
+                                    event_horizon_bars = int(dynamic_horizons[-1])
+                                else:
+                                    event_horizon_bars = base_horizon_bars
+
+                                # Convert bars to seconds using configured timeframe
+                                def _tf_to_seconds(tf: str) -> int:
+                                    try:
+                                        unit = tf[-1]
+                                        value = int(tf[:-1])
+                                        if unit == 'm':
+                                            return value * 60
+                                        if unit == 'h':
+                                            return value * 3600
+                                        if unit == 'd':
+                                            return value * 86400
+                                        return 0
+                                    except Exception:
+                                        return 0
+
+                                tf = getattr(self.config, 'timeframe', '15m')
+                                bar_seconds = _tf_to_seconds(tf)
+                                if bar_seconds > 0:
+                                    dynamic_max_hold_seconds = int(event_horizon_bars * bar_seconds)
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Failed to compute volatility-adaptive horizon: {e}")
+                        dynamic_max_hold_seconds = None
+
+                    # Fallback: if dynamic horizon not available, use global max_hold_time from exit_strategy
+                    if dynamic_max_hold_seconds is None and isinstance(exit_strategy, dict):
+                        time_based = exit_strategy.get('time_based', {})
+                        if time_based:
+                            dynamic_max_hold_seconds = int(time_based.get('max_hold_time', 10800))
+                        else:
+                            dynamic_max_hold_seconds = int(exit_strategy.get('max_hold_time', 10800))
+
                     # Open new position
+                    direction = 'long' if signal == 'buy' else 'short'
                     self.current_position = PositionState(
                         is_open=True,
                         entry_timestamp=timestamp,
                         entry_price=None,  # Would be set by execution engine
                         position_size=None,  # Would be set by execution engine
-                        direction='long' if signal == 'buy' else 'short',
+                        direction=direction,
                         entry_confidence=confidence,
                         entry_analyst_confidence=analyst_confidence,
-                        entry_tactician_confidence=tactician_confidence
+                        entry_tactician_confidence=tactician_confidence,
+                        max_hold_time_seconds=dynamic_max_hold_seconds,
+                        profit_target_pct=profit_target_pct,
+                        stop_loss_pct=stop_loss_pct,
                     )
                     self.logger.info(
-                        f"📈 New position opened: {signal} at {timestamp} "
-                        f"(confidence: {confidence:.3f}, analyst: {analyst_confidence:.3f}, tactician: {tactician_confidence:.3f})"
+                        "📈 New position opened: %s at %s (conf=%.3f, analyst=%.3f, tactician=%.3f, TP=%s, SL=%s, max_hold=%ss)",
+                        direction,
+                        timestamp,
+                        confidence,
+                        analyst_confidence,
+                        tactician_confidence,
+                        f"{profit_target_pct:.4f}" if profit_target_pct is not None else "n/a",
+                        f"{stop_loss_pct:.4f}" if stop_loss_pct is not None else "n/a",
+                        dynamic_max_hold_seconds if dynamic_max_hold_seconds is not None else "n/a",
                     )
 
                 # Handle position closes from signal

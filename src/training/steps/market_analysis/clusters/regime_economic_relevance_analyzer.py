@@ -489,6 +489,48 @@ class RegimeEconomicRelevanceAnalyzer:
             )
         else:
             tprint_warning("   • Régimes prédits non fournis - stratégie omise")
+
+        # 4. Stratégies explicites par régime (long-only et short-only dans un régime, neutre sinon)
+        try:
+            unique_regimes = sorted(r for r in regime_labels_series.unique() if r != -1)
+            for rid in unique_regimes:
+                rid_int = int(rid)
+
+                # Long-only when in this regime, flat otherwise
+                long_key = f"regime_{rid_int}_only"
+                long_name = f"Regime {rid_int} Only (Long)"
+                long_positions = pd.Series(0.0, index=prices.index)
+                long_positions[regime_labels_series == rid_int] = 1.0
+
+                long_returns = self._calculate_strategy_returns(returns, long_positions)
+                long_metrics = self.calculate_performance_metrics(long_returns, long_positions)
+
+                strategies[long_key] = StrategyResults(
+                    name=long_name,
+                    positions=long_positions,
+                    returns=long_returns,
+                    metrics=long_metrics,
+                    benchmark_returns=buy_hold_returns
+                )
+
+                # Short-only when in this regime, flat otherwise
+                short_key = f"regime_{rid_int}_only_short"
+                short_name = f"Regime {rid_int} Only (Short)"
+                short_positions = pd.Series(0.0, index=prices.index)
+                short_positions[regime_labels_series == rid_int] = -1.0
+
+                short_returns = self._calculate_strategy_returns(returns, short_positions)
+                short_metrics = self.calculate_performance_metrics(short_returns, short_positions)
+
+                strategies[short_key] = StrategyResults(
+                    name=short_name,
+                    positions=short_positions,
+                    returns=short_returns,
+                    metrics=short_metrics,
+                    benchmark_returns=buy_hold_returns
+                )
+        except Exception as e:
+            tprint_warning(f"   • Per-regime strategy evaluation failed (ignored): {e}")
         
         # Afficher le résumé des performances
         self._print_strategy_summary(strategies)
@@ -1012,6 +1054,7 @@ class RegimeEconomicRelevanceAnalyzer:
                 }
             },
             'strategies': {name: strategy.to_dict() for name, strategy in strategies.items()},
+            'strategy_performance': {name: strategy.to_dict() for name, strategy in strategies.items()},
             'significance_results': significance_results or {}
         }
         with open(json_path, 'w', encoding='utf-8') as jf:

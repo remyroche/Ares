@@ -15,7 +15,9 @@ from .reporting_step import ReportingStep
 from .final_parameters_optimization import FinalParametersOptimizer
 from .real_parameters_optimization import RealParametersOptimizer
 from .analyst_base_backtest_step import AnalystBaseBacktestStep
-from .meta_gated_backtest_step import MetaGatedBacktestStep
+
+# Import MetaGatedBacktestStep from labeling module (now consolidated with labeling steps)
+from src.training.steps.labeling import MetaGatedBacktestStep
 
 # Register backtesting steps (these will be registered again when imported, but that's safe)
 # The individual step files also auto-register themselves

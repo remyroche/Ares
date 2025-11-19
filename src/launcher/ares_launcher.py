@@ -70,7 +70,7 @@ import src.training.steps.market_analysis  # Registers MARKET_ANALYSIS steps
 import src.training.steps.pre_training  # Registers PRE_TRAINING steps
 import src.training.steps.model_training  # Registers MODEL_TRAINING steps
 import src.training.steps.analyst_base_backtest_step  # Registers ANALYST_BASE_BACKTEST step
-import src.training.steps.backtesting.meta_gated_backtest_step  # Registers META_GATED_BACKTEST step
+import src.training.steps.labeling  # Registers LABELING steps (includes META_GATED_BACKTEST)
 # import src.training.steps.backtesting  # Registers BACKTESTING steps - temporarily disabled due to import issues
 
 

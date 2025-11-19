@@ -8,6 +8,7 @@ This module consolidates all labeling-specific functionality including:
 - Triple barrier validation framework
 - Data validation for feature generation
 - SNR diagnostics for label quality assessment
+- Meta-gated backtesting for labeling evaluation
 """
 
 from .labeling_components import (
@@ -46,6 +47,10 @@ from .feature_generation_data_validation_step import (
     FeatureGenerationDataValidationStep,
 )
 
+from .meta_gated_backtest_step import (
+    MetaGatedBacktestStep,
+)
+
 __all__ = [
     "RegimeAwareLabeling",
     "FeatureGenerationMetaLabelingStep",
@@ -54,6 +59,7 @@ __all__ = [
     "ValidationResult",
     "ValidationReport",
     "FeatureGenerationDataValidationStep",
+    "MetaGatedBacktestStep",
     "compute_realized_returns",
     "kalman_smooth_labels",
     "fit_probability_to_return_mapping",

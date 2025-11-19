@@ -27,6 +27,7 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
+from scipy.stats import spearmanr, pearsonr
 
 from src.training.steps.base_step import BaseStep
 from src.utils.tprint import (
@@ -46,6 +47,36 @@ from src.utils.ml_common.optimization import (
     OptimizationStage,
 )
 from src.utils.ml_common.feature_engineering.feature_smoothing import apply_ewm_smoothing
+
+# Feature analysis and selection tools
+try:
+    from src.feature_selection.advanced.permutation_importance import (
+        PermutationImportanceCalculator,
+        PermutationConfig,
+    )
+    PERMUTATION_IMPORTANCE_AVAILABLE = True
+except ImportError:
+    PERMUTATION_IMPORTANCE_AVAILABLE = False
+
+try:
+    from src.feature_selection.advanced.improved_mrmr import ImprovedMRMR
+    IMPROVED_MRMR_AVAILABLE = True
+except ImportError:
+    IMPROVED_MRMR_AVAILABLE = False
+
+try:
+    from src.utils.ml_common.evaluation.enhanced_learning_curve_analysis import (
+        EnhancedLearningCurveAnalyzer,
+    )
+    ENHANCED_LEARNING_CURVE_AVAILABLE = True
+except ImportError:
+    ENHANCED_LEARNING_CURVE_AVAILABLE = False
+
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    SHAP_AVAILABLE = False
 
 
 logger = logging.getLogger(__name__)
@@ -417,6 +448,70 @@ class HMMMLAlphaStep(BaseStep):
                         tprint_warning(
                             f"Failed to save WFV metrics CSV (ignored): {wfv_csv_exc}"
                         )
+
+                # Feature importance analysis CSV (if available)
+                try:
+                    feature_importance_dfs = []
+
+                    # LGBM importance
+                    lgbm_importance = training_metrics.get("lgbm_importance", [])
+                    if lgbm_importance:
+                        feature_importance_dfs.append(pd.DataFrame(lgbm_importance))
+
+                    # Permutation importance
+                    perm_importance = training_metrics.get("permutation_importance", {})
+                    if perm_importance:
+                        perm_data = []
+                        for feat_name, feat_data in perm_importance.items():
+                            perm_data.append({
+                                "feature_name": feat_name,
+                                "permutation_importance_mean": feat_data.get("importance_mean", 0.0),
+                                "permutation_importance_std": feat_data.get("importance_std", 0.0),
+                                "permutation_stability": feat_data.get("stability", True),
+                            })
+                        feature_importance_dfs.append(pd.DataFrame(perm_data))
+
+                    # mRMR analysis
+                    mrmr_relevance = training_metrics.get("mrmr_relevance_scores", {})
+                    if mrmr_relevance and isinstance(mrmr_relevance, dict):
+                        mrmr_selected = training_metrics.get("mrmr_selected_features", [])
+                        mrmr_data = []
+                        for feat_name, relevance_score in mrmr_relevance.items():
+                            mrmr_data.append({
+                                "feature_name": feat_name,
+                                "mrmr_relevance_score": relevance_score if isinstance(relevance_score, (int, float)) else float(relevance_score),
+                                "mrmr_selected": feat_name in mrmr_selected,
+                            })
+                        feature_importance_dfs.append(pd.DataFrame(mrmr_data))
+
+                    # SHAP importance
+                    shap_importance = training_metrics.get("shap_importance", [])
+                    if shap_importance:
+                        feature_importance_dfs.append(pd.DataFrame(shap_importance))
+
+                    # Merge all importance metrics
+                    if feature_importance_dfs:
+                        # Start with first dataframe
+                        merged_df = feature_importance_dfs[0].copy()
+
+                        # Merge remaining dataframes on feature_name
+                        for df in feature_importance_dfs[1:]:
+                            if "feature_name" in df.columns:
+                                merged_df = merged_df.merge(df, on="feature_name", how="outer")
+
+                        # Export combined importance CSV
+                        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        importance_csv_name = f"hmm_alpha_feature_importance_{symbol}_{ts}.csv"
+                        importance_csv_path = f"outcomes/{importance_csv_name}"
+                        merged_df = merged_df.fillna(0.0)
+                        merged_df.to_csv(importance_csv_path, index=False)
+                        tprint_info(
+                            f"📊 Saved feature importance metrics CSV: {importance_csv_path}"
+                        )
+                except Exception as importance_csv_exc:
+                    tprint_warning(
+                        f"Failed to save feature importance CSV (ignored): {importance_csv_exc}"
+                    )
             except Exception as report_outer_exc:
                 tprint_warning(
                     f"Alpha report generation encountered a non-fatal error: {report_outer_exc}"
@@ -1151,6 +1246,26 @@ class HMMMLAlphaStep(BaseStep):
         training_metrics["alpha_horizon_bars"] = horizon
         training_metrics["target_type"] = target_type
 
+        # Comprehensive feature analysis (IC, importance metrics, mRMR, learning curves)
+        try:
+            feature_analysis = self._perform_comprehensive_feature_analysis(
+                model=model if target_type == "regression" else base_model if 'base_model' in locals() else model,
+                X_train=X_train_scaled if hasattr(X_train_scaled, 'index') else pd.DataFrame(X_train_scaled, columns=extended_feature_names),
+                y_train=y_train,
+                X_val=X_val_scaled if len(X_val) > 0 and (hasattr(X_val_scaled, 'index') or True) else (pd.DataFrame(X_val_scaled, columns=extended_feature_names) if len(X_val) > 0 else None),
+                y_val=y_val if len(y_val) > 0 else None,
+                X_full=X_scaled_full if hasattr(X_scaled_full, 'index') else pd.DataFrame(X_scaled_full, columns=extended_feature_names),
+                y_full=y,
+                feature_names=extended_feature_names,
+                config=config,
+                is_classification=(target_type == "classification"),
+            )
+            if feature_analysis.get("feature_analysis_completed"):
+                training_metrics.update(feature_analysis)
+                tprint_info(f"✅ Comprehensive feature analysis completed and integrated into metrics")
+        except Exception as feature_analysis_err:
+            tprint_warning(f"Comprehensive feature analysis integration failed (non-fatal): {feature_analysis_err}")
+
         return model, full_scores, pred_col_name, training_metrics, feature_pipeline_artifacts
 
     def _calculate_iqr_winsorization_percentiles(
@@ -1839,6 +1954,247 @@ class HMMMLAlphaStep(BaseStep):
             )
 
         return alpha_df, regime_stats_df, bucket_col
+
+    def _perform_comprehensive_feature_analysis(
+        self,
+        *,
+        model: Any,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: Optional[pd.DataFrame],
+        y_val: Optional[pd.Series],
+        X_full: pd.DataFrame,
+        y_full: pd.Series,
+        feature_names: List[str],
+        config: Dict[str, Any],
+        is_classification: bool = False,
+    ) -> Dict[str, Any]:
+        """Perform comprehensive feature analysis including IC, importance metrics, mRMR, and learning curves.
+
+        Args:
+            model: Trained model
+            X_train: Training features
+            y_train: Training targets
+            X_val: Validation features (optional)
+            y_val: Validation targets (optional)
+            X_full: Full dataset features for full model predictions
+            y_full: Full dataset targets
+            feature_names: Feature names
+            config: Configuration dictionary
+            is_classification: Whether this is a classification task
+
+        Returns:
+            Dictionary with comprehensive feature analysis results
+        """
+        feature_analysis_results = {
+            "feature_analysis_enabled": bool(config.get("alpha_enable_comprehensive_feature_analysis", True)),
+            "features_analyzed": len(feature_names),
+        }
+
+        if not feature_analysis_results["feature_analysis_enabled"]:
+            return feature_analysis_results
+
+        try:
+            # 1. Information Coefficient (IC) - Correlation between predictions and targets
+            try:
+                y_pred = model.predict(X_full)
+
+                # Ensure y_pred is 1D for IC calculation
+                if hasattr(y_pred, 'shape') and len(y_pred.shape) > 1:
+                    y_pred = y_pred.ravel() if y_pred.shape[1] == 1 else y_pred[:, 1] if is_classification else y_pred[:, 0]
+
+                y_full_vals = y_full.values if isinstance(y_full, pd.Series) else y_full
+
+                # Pearson correlation
+                ic_pearson_corr, ic_pearson_pval = pearsonr(y_full_vals, y_pred)
+                feature_analysis_results["ic_pearson_correlation"] = float(ic_pearson_corr)
+                feature_analysis_results["ic_pearson_pvalue"] = float(ic_pearson_pval)
+
+                # Spearman correlation (rank-based)
+                ic_spearman_corr, ic_spearman_pval = spearmanr(y_full_vals, y_pred)
+                feature_analysis_results["ic_spearman_correlation"] = float(ic_spearman_corr)
+                feature_analysis_results["ic_spearman_pvalue"] = float(ic_spearman_pval)
+
+                # Hit rate for classification
+                if is_classification:
+                    hits = (np.sign(y_pred) == np.sign(y_full_vals)).mean()
+                    feature_analysis_results["ic_hit_rate"] = float(hits)
+
+                tprint_info(f"✅ Information Coefficient (IC) calculated: Pearson r={ic_pearson_corr:.4f}, Spearman r={ic_spearman_corr:.4f}")
+            except Exception as ic_err:
+                tprint_warning(f"IC calculation failed: {ic_err}")
+
+            # 2. LGBM built-in feature importance (split and gain)
+            try:
+                if hasattr(model, 'feature_importances_'):
+                    # LightGBM split importance (number of times feature is used)
+                    split_importance = model.feature_importances_
+
+                    lgbm_importance_data = []
+                    for i, name in enumerate(feature_names):
+                        lgbm_importance_data.append({
+                            "feature_name": name,
+                            "split_importance": float(split_importance[i]) if i < len(split_importance) else 0.0,
+                        })
+
+                    feature_analysis_results["lgbm_importance"] = lgbm_importance_data
+                    feature_analysis_results["lgbm_top_features"] = sorted(
+                        lgbm_importance_data,
+                        key=lambda x: x["split_importance"],
+                        reverse=True
+                    )[:10]
+
+                    tprint_info(f"✅ LGBM importance calculated for {len(feature_names)} features")
+            except Exception as lgbm_err:
+                tprint_warning(f"LGBM importance calculation failed: {lgbm_err}")
+
+            # 3. Permutation Importance with stability checking
+            if PERMUTATION_IMPORTANCE_AVAILABLE and bool(config.get("alpha_enable_permutation_importance", True)):
+                try:
+                    X_train_arr = X_train.to_numpy(dtype=float, copy=False) if hasattr(X_train, 'to_numpy') else X_train
+                    y_train_arr = y_train.to_numpy(dtype=float, copy=False) if hasattr(y_train, 'to_numpy') else y_train
+
+                    perm_config = PermutationConfig(
+                        n_repeats=int(config.get("alpha_permutation_n_repeats", 5)),
+                        scoring='r2' if not is_classification else 'accuracy',
+                        enable_stability_check=True,
+                        n_jobs=int(config.get("alpha_n_jobs", -1)),
+                    )
+
+                    perm_calc = PermutationImportanceCalculator(perm_config)
+                    perm_results = perm_calc.calculate_importance(
+                        model, X_train_arr, y_train_arr, feature_names
+                    )
+
+                    if perm_results.get("success"):
+                        feature_analysis_results["permutation_importance"] = perm_results.get("feature_importance", {})
+                        feature_analysis_results["permutation_importance_mean"] = perm_results.get("importance_mean", [])
+                        feature_analysis_results["permutation_importance_std"] = perm_results.get("importance_std", [])
+                        feature_analysis_results["permutation_importance_execution_time"] = perm_results.get("execution_time", 0.0)
+
+                        # Top features by permutation importance
+                        top_features = sorted(
+                            [(name, perm_results["feature_importance"].get(name, {}).get("importance_mean", 0.0))
+                             for name in feature_names],
+                            key=lambda x: x[1],
+                            reverse=True
+                        )[:10]
+                        feature_analysis_results["permutation_top_features"] = [
+                            {"feature_name": name, "importance_mean": imp} for name, imp in top_features
+                        ]
+
+                        tprint_info(f"✅ Permutation importance calculated in {perm_results.get('execution_time', 0.0):.3f}s")
+                except Exception as perm_err:
+                    tprint_warning(f"Permutation importance calculation failed: {perm_err}")
+
+            # 4. Improved mRMR for redundancy analysis
+            if IMPROVED_MRMR_AVAILABLE and bool(config.get("alpha_enable_mrmr_analysis", True)):
+                try:
+                    X_full_arr = X_full.to_numpy(dtype=float, copy=False) if hasattr(X_full, 'to_numpy') else X_full
+                    y_full_arr = y_full.to_numpy(dtype=float, copy=False) if hasattr(y_full, 'to_numpy') else y_full
+
+                    mrmr_config = {
+                        'mi_weight': 0.7,
+                        'spearman_weight': 0.3,
+                        'target_ratio': float(config.get("alpha_mrmr_target_ratio", 0.7)),
+                        'use_mi_proxy': True,
+                        'enable_hardware_optimization': True,
+                    }
+
+                    mrmr = ImprovedMRMR(mrmr_config)
+                    mrmr_results = mrmr.select_features(X_full_arr, y_full_arr, feature_names)
+
+                    feature_analysis_results["mrmr_selected_features"] = mrmr_results.get("selected_features", [])
+                    feature_analysis_results["mrmr_n_selected"] = len(mrmr_results.get("selected_features", []))
+                    feature_analysis_results["mrmr_relevance_scores"] = mrmr_results.get("relevance_scores", {})
+                    feature_analysis_results["mrmr_execution_time"] = mrmr_results.get("execution_time", 0.0)
+
+                    tprint_info(f"✅ mRMR selected {feature_analysis_results['mrmr_n_selected']} features (ratio: {feature_analysis_results['mrmr_n_selected']/len(feature_names):.2%})")
+                except Exception as mrmr_err:
+                    tprint_warning(f"mRMR analysis failed: {mrmr_err}")
+
+            # 5. Learning curve analysis for overfitting detection
+            if ENHANCED_LEARNING_CURVE_AVAILABLE and X_val is not None and y_val is not None and bool(config.get("alpha_enable_learning_curve_analysis", True)):
+                try:
+                    X_train_arr = X_train.to_numpy(dtype=float, copy=False) if hasattr(X_train, 'to_numpy') else X_train
+                    y_train_arr = y_train.to_numpy(dtype=float, copy=False) if hasattr(y_train, 'to_numpy') else y_train
+                    X_val_arr = X_val.to_numpy(dtype=float, copy=False) if hasattr(X_val, 'to_numpy') else X_val
+                    y_val_arr = y_val.to_numpy(dtype=float, copy=False) if hasattr(y_val, 'to_numpy') else y_val
+
+                    lc_analyzer = EnhancedLearningCurveAnalyzer(random_state=int(config.get("alpha_random_state", 42)))
+                    lc_result = lc_analyzer.analyze_learning_curve(
+                        model,
+                        X_train_arr,
+                        y_train_arr,
+                        X_val_arr,
+                        y_val_arr,
+                        cv_folds=int(config.get("alpha_hpo_cv_folds", 3)),
+                        scoring='r2' if not is_classification else 'accuracy',
+                    )
+
+                    feature_analysis_results["learning_curve_analysis"] = {
+                        "learning_rate": lc_result.learning_rate,
+                        "convergence_stability": lc_result.convergence_stability,
+                        "overfitting_risk": lc_result.overfitting_risk,
+                        "training_efficiency": lc_result.training_efficiency,
+                        "max_score_gap": float(lc_result.max_score_gap),
+                        "final_score_gap": float(lc_result.final_score_gap),
+                        "early_learning_slope": float(lc_result.early_learning_slope),
+                        "convergence_stability_score": float(lc_result.convergence_stability_score),
+                        "final_train_score": float(lc_result.final_train_score) if lc_result.final_train_score else None,
+                        "final_validation_score": float(lc_result.final_validation_score) if lc_result.final_validation_score else None,
+                        "anomalies": lc_result.anomalies,
+                        "recommendations": lc_result.recommendations,
+                    }
+
+                    tprint_info(f"✅ Learning curve analysis completed: {lc_result.learning_rate} learning rate, {lc_result.overfitting_risk} overfitting risk")
+                except Exception as lc_err:
+                    tprint_warning(f"Learning curve analysis failed: {lc_err}")
+
+            # 6. SHAP analysis (if available)
+            if SHAP_AVAILABLE and bool(config.get("alpha_enable_shap_importance", False)):
+                try:
+                    X_train_sample = X_train.head(min(100, len(X_train))) if isinstance(X_train, pd.DataFrame) else X_train[:min(100, len(X_train))]
+                    X_train_sample_arr = X_train_sample.to_numpy(dtype=float, copy=False) if hasattr(X_train_sample, 'to_numpy') else X_train_sample
+
+                    # Use TreeExplainer for tree-based models
+                    if hasattr(model, 'booster'):  # LightGBM
+                        explainer = shap.TreeExplainer(model)
+                    else:
+                        explainer = shap.KernelExplainer(model.predict, X_train_sample_arr)
+
+                    shap_values = explainer.shap_values(X_train_sample_arr)
+
+                    # Handle multi-output case
+                    if isinstance(shap_values, list):
+                        shap_values = shap_values[1] if len(shap_values) > 1 else shap_values[0]
+
+                    # Calculate mean absolute SHAP values
+                    shap_importance = np.abs(shap_values).mean(axis=0)
+
+                    shap_data = []
+                    for i, name in enumerate(feature_names):
+                        if i < len(shap_importance):
+                            shap_data.append({
+                                "feature_name": name,
+                                "shap_importance": float(shap_importance[i]),
+                            })
+
+                    feature_analysis_results["shap_importance"] = shap_data
+                    feature_analysis_results["shap_top_features"] = sorted(shap_data, key=lambda x: x["shap_importance"], reverse=True)[:10]
+
+                    tprint_info(f"✅ SHAP importance calculated for {len(feature_names)} features")
+                except Exception as shap_err:
+                    tprint_warning(f"SHAP analysis failed (SHAP may have issues with this data): {shap_err}")
+
+            feature_analysis_results["feature_analysis_completed"] = True
+
+            return feature_analysis_results
+
+        except Exception as e:
+            tprint_warning(f"Comprehensive feature analysis failed: {e}")
+            feature_analysis_results["feature_analysis_error"] = str(e)
+            return feature_analysis_results
 
     def _calculate_walk_forward_validation_classification(
         self,

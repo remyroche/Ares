@@ -12,10 +12,21 @@ Usage examples (from project root):
   python scripts/snr_diagnostics.py model-robustness \
       --symbol ETHUSDT --exchange binance --timeframe 15m
 
+  python scripts/snr_diagnostics.py trading-simulation \
+      --symbol ETHUSDT --exchange binance --timeframe 15m \
+      --prob-thresholds 0.55 0.60 0.65
+
+  python scripts/snr_diagnostics.py full \
+      --symbol ETHUSDT --exchange binance --timeframe 15m
+
 Subcommands:
-- label-quality:     Label distribution, coverage, economic SNR, retention.
-- label-learnability:Learnability (AUC-based) and entropy/balance of labels.
-- model-robustness:  Probe model CV stability (AUC mean/std across folds).
+- label-quality:      Label distribution, coverage, economic SNR, retention.
+- label-learnability: Learnability (AUC-based) and entropy/balance of labels.
+- model-robustness:   Probe model CV stability (AUC mean/std across folds).
+- trading-simulation: Model calibration, trades/day, PnL/day, equity curves,
+                      consecutive losses, win-rate stability at different
+                      probability thresholds.
+- full:               Run all diagnostics and aggregate results.
 
 This script is designed to be run *after* the
 `feature_generation_meta_labeling_step` has been executed via the launcher,
@@ -52,6 +63,7 @@ try:
     from sklearn.model_selection import TimeSeriesSplit
     from sklearn.metrics import roc_auc_score, brier_score_loss, average_precision_score
     from sklearn.linear_model import LogisticRegression
+    from sklearn.calibration import calibration_curve
 except ImportError as exc:  # pragma: no cover - environment dependent
     raise ImportError(
         "snr_diagnostics requires lightgbm and scikit-learn to be installed. "
@@ -1495,6 +1507,460 @@ def run_model_robustness(
     print(f"\nReports saved to: {json_path} and {md_path}")
 
 
+# --------------------------------------------------------------------------------------
+# Trading simulation diagnostics
+# --------------------------------------------------------------------------------------
+
+
+def run_trading_simulation(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    direction: str = "long",
+    model: str = "analyst",
+    prob_thresholds: list[float] | None = None,
+    cv_splits: int = 5,
+) -> None:
+    """Run trading simulation diagnostics with calibration and threshold analysis.
+
+    Computes:
+    - Model calibration (Brier score, calibration curves)
+    - Trading metrics at different probability thresholds (0.55, 0.60, 0.65):
+      - Trades per day
+      - PnL per day (average, percentage)
+      - Simplified equity curve simulation
+      - Consecutive loss metric
+      - Win-rate stability
+    """
+    if prob_thresholds is None:
+        prob_thresholds = [0.55, 0.60, 0.65]
+
+    df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model)
+    X, y = _build_feature_matrix_from_labeled(df)
+
+    if "meta_probability" not in df.columns:
+        raise ValueError("labeled_data must contain 'meta_probability' column for trading simulation")
+    if "realized_return" not in df.columns:
+        raise ValueError("labeled_data must contain 'realized_return' column for trading simulation")
+
+    # Get date range for trades per day calculation
+    if hasattr(df.index, 'to_pydatetime'):
+        dates = pd.to_datetime(df.index)
+    else:
+        dates = pd.to_datetime(df.index)
+
+    date_range_days = (dates.max() - dates.min()).days
+    if date_range_days <= 0:
+        date_range_days = 1
+
+    meta_prob = df["meta_probability"].astype(float)
+    realized_returns = df["realized_return"].astype(float)
+    binary_labels = df["binary_label"] if "binary_label" in df.columns else None
+
+    # Valid mask: events with both meta_probability and realized_return
+    valid_mask = meta_prob.notna() & realized_returns.notna()
+    if binary_labels is not None:
+        valid_mask = valid_mask & binary_labels.notna()
+
+    n_valid = int(valid_mask.sum())
+    if n_valid < 50:
+        print(f"Insufficient valid samples ({n_valid}) for trading simulation diagnostics.")
+        return
+
+    prob_valid = meta_prob[valid_mask].values
+    returns_valid = realized_returns[valid_mask].values
+    labels_valid = binary_labels[valid_mask].values if binary_labels is not None else None
+
+    # -------------------------------------------------------------------------
+    # 1. Model Calibration Diagnostics
+    # -------------------------------------------------------------------------
+
+    # Train a probe model and get predictions for calibration analysis
+    y_array = y.values.astype(float)
+    X_array = X.values.astype(float)
+
+    tscv = TimeSeriesSplit(n_splits=cv_splits)
+
+    all_y_true = []
+    all_p_pred = []
+
+    for fold_idx, (tr_idx, te_idx) in enumerate(tscv.split(X_array), start=1):
+        X_tr, X_te = X_array[tr_idx], X_array[te_idx]
+        y_tr, y_te = y_array[tr_idx], y_array[te_idx]
+
+        # Require both classes in train and test
+        if len(np.unique(y_tr[~np.isnan(y_tr)])) < 2 or len(np.unique(y_te[~np.isnan(y_te)])) < 2:
+            continue
+
+        mask_tr = ~np.isnan(y_tr)
+        y_tr_clean = y_tr[mask_tr]
+        X_tr_clean = X_tr[mask_tr]
+        mask_te = ~np.isnan(y_te)
+        y_te_clean = y_te[mask_te]
+        X_te_clean = X_te[mask_te]
+
+        if len(y_tr_clean) < 50 or len(y_te_clean) < 20:
+            continue
+
+        clf = lgb.LGBMClassifier(
+            boosting_type="gbdt",
+            objective="binary",
+            max_depth=3,
+            n_estimators=50,
+            learning_rate=0.1,
+            subsample=0.7,
+            colsample_bytree=0.7,
+            min_child_samples=20,
+            n_jobs=-1,
+            verbose=-1,
+            random_state=42,
+        )
+
+        clf.fit(X_tr_clean, y_tr_clean)
+        prob = clf.predict_proba(X_te_clean)[:, 1]
+
+        all_y_true.append(y_te_clean)
+        all_p_pred.append(prob)
+
+    # Aggregate predictions for calibration
+    calibration_metrics = {}
+    calibration_curve_data = {}
+
+    if all_y_true:
+        y_all = np.concatenate(all_y_true)
+        p_all = np.concatenate(all_p_pred)
+
+        # Brier score
+        try:
+            brier = float(brier_score_loss(y_all, p_all))
+        except Exception:
+            brier = float("nan")
+
+        # Calibration curve (reliability diagram data)
+        try:
+            fraction_of_positives, mean_predicted_value = calibration_curve(
+                y_all, p_all, n_bins=10, strategy='uniform'
+            )
+            calibration_curve_data = {
+                "fraction_of_positives": [float(x) for x in fraction_of_positives],
+                "mean_predicted_value": [float(x) for x in mean_predicted_value],
+            }
+
+            # Expected Calibration Error (ECE)
+            bin_counts = np.histogram(p_all, bins=10, range=(0, 1))[0]
+            ece = 0.0
+            for i in range(len(fraction_of_positives)):
+                if i < len(bin_counts) and bin_counts[i] > 0:
+                    ece += (bin_counts[i] / len(p_all)) * abs(fraction_of_positives[i] - mean_predicted_value[i])
+
+            # Maximum Calibration Error (MCE)
+            mce = float(np.max(np.abs(fraction_of_positives - mean_predicted_value)))
+
+        except Exception:
+            ece = float("nan")
+            mce = float("nan")
+
+        calibration_metrics = {
+            "brier_score": brier,
+            "expected_calibration_error": float(ece) if np.isfinite(ece) else float("nan"),
+            "max_calibration_error": float(mce) if np.isfinite(mce) else float("nan"),
+            "n_samples": int(len(y_all)),
+        }
+    else:
+        calibration_metrics = {
+            "brier_score": float("nan"),
+            "expected_calibration_error": float("nan"),
+            "max_calibration_error": float("nan"),
+            "n_samples": 0,
+        }
+
+    # -------------------------------------------------------------------------
+    # 2. Trading Simulation at Different Probability Thresholds
+    # -------------------------------------------------------------------------
+
+    threshold_results = {}
+
+    for threshold in prob_thresholds:
+        # Filter events passing the threshold
+        trade_mask = prob_valid >= threshold
+        n_trades = int(trade_mask.sum())
+
+        if n_trades < 10:
+            threshold_results[f"threshold_{threshold:.2f}"] = {
+                "threshold": float(threshold),
+                "n_trades": n_trades,
+                "trades_per_day": 0.0,
+                "mean_return_per_trade": float("nan"),
+                "pnl_per_day_pct": float("nan"),
+                "win_rate": float("nan"),
+                "max_consecutive_losses": 0,
+                "avg_consecutive_losses": float("nan"),
+                "win_rate_stability": float("nan"),
+                "sharpe_ratio": float("nan"),
+                "max_drawdown": float("nan"),
+                "final_equity": float("nan"),
+                "insufficient_data": True,
+            }
+            continue
+
+        trade_returns = returns_valid[trade_mask]
+        trade_labels = labels_valid[trade_mask] if labels_valid is not None else None
+
+        # Trades per day
+        trades_per_day = n_trades / date_range_days
+
+        # Mean return per trade
+        mean_return = float(np.mean(trade_returns))
+        std_return = float(np.std(trade_returns)) if n_trades > 1 else 0.0
+
+        # PnL per day (percentage)
+        total_pnl = float(np.sum(trade_returns))
+        pnl_per_day = total_pnl / date_range_days
+
+        # Win rate
+        if trade_labels is not None:
+            win_rate = float(np.mean(trade_labels == 1.0))
+        else:
+            win_rate = float(np.mean(trade_returns > 0))
+
+        # Sharpe ratio (trade-level)
+        if std_return > 0:
+            sharpe = mean_return / std_return * np.sqrt(n_trades)
+        else:
+            sharpe = float("nan")
+
+        # Equity curve simulation
+        equity_curve = np.cumprod(1 + trade_returns)
+        final_equity = float(equity_curve[-1]) if len(equity_curve) > 0 else 1.0
+
+        # Max drawdown
+        running_max = np.maximum.accumulate(equity_curve)
+        drawdowns = (equity_curve - running_max) / running_max
+        max_drawdown = float(np.min(drawdowns)) if len(drawdowns) > 0 else 0.0
+
+        # Consecutive losses metric
+        if trade_labels is not None:
+            losses = (trade_labels == 0.0).astype(int)
+        else:
+            losses = (trade_returns <= 0).astype(int)
+
+        consecutive_losses = []
+        current_streak = 0
+        for loss in losses:
+            if loss:
+                current_streak += 1
+            else:
+                if current_streak > 0:
+                    consecutive_losses.append(current_streak)
+                current_streak = 0
+        if current_streak > 0:
+            consecutive_losses.append(current_streak)
+
+        max_consecutive_losses = max(consecutive_losses) if consecutive_losses else 0
+        avg_consecutive_losses = float(np.mean(consecutive_losses)) if consecutive_losses else 0.0
+
+        # Win-rate stability (rolling window standard deviation)
+        if n_trades >= 20:
+            window_size = min(50, n_trades // 4)
+            if trade_labels is not None:
+                wins = (trade_labels == 1.0).astype(float)
+            else:
+                wins = (trade_returns > 0).astype(float)
+
+            rolling_win_rates = []
+            for i in range(0, n_trades - window_size + 1, window_size // 2):
+                window_wins = wins[i:i + window_size]
+                rolling_win_rates.append(float(np.mean(window_wins)))
+
+            if len(rolling_win_rates) > 1:
+                win_rate_stability = 1.0 - float(np.std(rolling_win_rates))
+            else:
+                win_rate_stability = float("nan")
+        else:
+            win_rate_stability = float("nan")
+
+        threshold_results[f"threshold_{threshold:.2f}"] = {
+            "threshold": float(threshold),
+            "n_trades": n_trades,
+            "trades_per_day": float(trades_per_day),
+            "mean_return_per_trade": float(mean_return),
+            "std_return_per_trade": float(std_return),
+            "pnl_per_day_pct": float(pnl_per_day * 100),
+            "win_rate": float(win_rate),
+            "sharpe_ratio": float(sharpe) if np.isfinite(sharpe) else float("nan"),
+            "max_drawdown": float(max_drawdown * 100),
+            "final_equity": float(final_equity),
+            "max_consecutive_losses": int(max_consecutive_losses),
+            "avg_consecutive_losses": float(avg_consecutive_losses),
+            "win_rate_stability": float(win_rate_stability) if np.isfinite(win_rate_stability) else float("nan"),
+            "insufficient_data": False,
+        }
+
+    # -------------------------------------------------------------------------
+    # Interpretation helpers
+    # -------------------------------------------------------------------------
+
+    brier = calibration_metrics.get("brier_score", float("nan"))
+    if not np.isfinite(brier):
+        brier_comment = "Brier score not available."
+    elif brier > 0.25:
+        brier_comment = "Brier > 0.25 → Poorly calibrated probabilities."
+    elif brier > 0.18:
+        brier_comment = "Brier 0.18-0.25 → Moderate calibration."
+    else:
+        brier_comment = "Brier ≤ 0.18 → Well-calibrated probabilities."
+
+    ece = calibration_metrics.get("expected_calibration_error", float("nan"))
+    if not np.isfinite(ece):
+        ece_comment = "ECE not available."
+    elif ece > 0.15:
+        ece_comment = "ECE > 0.15 → Significant calibration error."
+    elif ece > 0.05:
+        ece_comment = "ECE 0.05-0.15 → Moderate calibration error."
+    else:
+        ece_comment = "ECE ≤ 0.05 → Well-calibrated model."
+
+    # -------------------------------------------------------------------------
+    # Console output
+    # -------------------------------------------------------------------------
+
+    print("""
+=== Trading Simulation Diagnostics ===
+""".strip())
+    print(f"Symbol: {symbol} | Exchange: {exchange} | Timeframe: {timeframe}")
+    print(f"Date range: {date_range_days} days | Valid samples: {n_valid}")
+    print()
+
+    print("-- Model Calibration --")
+    print(f"Brier Score: {calibration_metrics.get('brier_score', float('nan')):.4f}")
+    print(f"Expected Calibration Error (ECE): {calibration_metrics.get('expected_calibration_error', float('nan')):.4f}")
+    print(f"Max Calibration Error (MCE): {calibration_metrics.get('max_calibration_error', float('nan')):.4f}")
+    print()
+
+    print("-- Trading Metrics by Probability Threshold --")
+    print()
+
+    for key in sorted(threshold_results.keys()):
+        result = threshold_results[key]
+        thr = result["threshold"]
+
+        if result.get("insufficient_data", False):
+            print(f"Threshold {thr:.2f}: Insufficient data ({result['n_trades']} trades)")
+            continue
+
+        print(f"Threshold {thr:.2f}:")
+        print(f"  Trades: {result['n_trades']} ({result['trades_per_day']:.2f}/day)")
+        print(f"  Mean Return/Trade: {result['mean_return_per_trade']*100:.4f}%")
+        print(f"  PnL/Day: {result['pnl_per_day_pct']:.4f}%")
+        print(f"  Win Rate: {result['win_rate']*100:.1f}%")
+        print(f"  Sharpe Ratio: {result['sharpe_ratio']:.3f}")
+        print(f"  Max Drawdown: {result['max_drawdown']:.2f}%")
+        print(f"  Final Equity: {result['final_equity']:.4f}")
+        print(f"  Max Consecutive Losses: {result['max_consecutive_losses']}")
+        print(f"  Avg Consecutive Losses: {result['avg_consecutive_losses']:.2f}")
+        print(f"  Win-Rate Stability: {result['win_rate_stability']:.3f}")
+        print()
+
+    print("-- Interpretation --")
+    print(f"Calibration ({brier:.4f}): {brier_comment}")
+    print(f"ECE ({ece:.4f}): {ece_comment}")
+
+    # -------------------------------------------------------------------------
+    # Export payload
+    # -------------------------------------------------------------------------
+
+    payload = {
+        "section": "trading_simulation",
+        "date_range_days": int(date_range_days),
+        "n_valid_samples": int(n_valid),
+        "calibration": calibration_metrics,
+        "calibration_curve": calibration_curve_data,
+        "threshold_results": threshold_results,
+    }
+
+    md_lines = [
+        "# Trading Simulation Diagnostics",
+        "",
+        f"**Symbol**: {symbol}",
+        f"**Exchange**: {exchange}",
+        f"**Timeframe**: {timeframe}",
+        f"**Direction**: {direction}",
+        "",
+        "## Overview",
+        f"- Date range: {date_range_days} days",
+        f"- Valid samples: {n_valid}",
+        "",
+        "## Model Calibration",
+        f"- Brier Score: {calibration_metrics.get('brier_score', float('nan')):.4f}",
+        f"- Expected Calibration Error (ECE): {calibration_metrics.get('expected_calibration_error', float('nan')):.4f}",
+        f"- Max Calibration Error (MCE): {calibration_metrics.get('max_calibration_error', float('nan')):.4f}",
+        "",
+        "### Calibration Interpretation",
+        f"- {brier_comment}",
+        f"- {ece_comment}",
+        "",
+        "## Trading Metrics by Probability Threshold",
+        "",
+    ]
+
+    # Add threshold results to markdown
+    for key in sorted(threshold_results.keys()):
+        result = threshold_results[key]
+        thr = result["threshold"]
+
+        md_lines.append(f"### Threshold {thr:.2f}")
+
+        if result.get("insufficient_data", False):
+            md_lines.append(f"- Insufficient data ({result['n_trades']} trades)")
+        else:
+            md_lines.extend([
+                f"- **Trades**: {result['n_trades']} ({result['trades_per_day']:.2f}/day)",
+                f"- **Mean Return/Trade**: {result['mean_return_per_trade']*100:.4f}%",
+                f"- **PnL/Day**: {result['pnl_per_day_pct']:.4f}%",
+                f"- **Win Rate**: {result['win_rate']*100:.1f}%",
+                f"- **Sharpe Ratio**: {result['sharpe_ratio']:.3f}",
+                f"- **Max Drawdown**: {result['max_drawdown']:.2f}%",
+                f"- **Final Equity**: {result['final_equity']:.4f}",
+                f"- **Max Consecutive Losses**: {result['max_consecutive_losses']}",
+                f"- **Avg Consecutive Losses**: {result['avg_consecutive_losses']:.2f}",
+                f"- **Win-Rate Stability**: {result['win_rate_stability']:.3f}",
+            ])
+        md_lines.append("")
+
+    # Add summary table
+    md_lines.extend([
+        "## Summary Table",
+        "",
+        "| Threshold | Trades | Trades/Day | Mean Return | PnL/Day | Win Rate | Sharpe | Max DD | Consec Losses |",
+        "|-----------|--------|------------|-------------|---------|----------|--------|--------|---------------|",
+    ])
+
+    for key in sorted(threshold_results.keys()):
+        result = threshold_results[key]
+        if result.get("insufficient_data", False):
+            continue
+
+        md_lines.append(
+            f"| {result['threshold']:.2f} | {result['n_trades']} | {result['trades_per_day']:.2f} | "
+            f"{result['mean_return_per_trade']*100:.3f}% | {result['pnl_per_day_pct']:.3f}% | "
+            f"{result['win_rate']*100:.1f}% | {result['sharpe_ratio']:.2f} | "
+            f"{result['max_drawdown']:.1f}% | {result['max_consecutive_losses']} |"
+        )
+
+    json_path, md_path = _export_report(
+        prefix="snr_trading_simulation",
+        symbol=symbol,
+        exchange=exchange,
+        timeframe=timeframe,
+        direction=direction,
+        model=model,
+        payload=payload,
+        markdown_lines=md_lines,
+    )
+
+    print(f"\nReports saved to: {json_path} and {md_path}")
+
+
 def run_full(
     symbol: str,
     exchange: str,
@@ -1503,6 +1969,7 @@ def run_full(
     model: str = "analyst",
     cv_splits_learn: int = 3,
     cv_splits_robust: int = 5,
+    prob_thresholds: list[float] | None = None,
 ) -> None:
     _LAST_EXPORTS.clear()
 
@@ -1532,10 +1999,21 @@ def run_full(
         cv_splits=cv_splits_robust,
     )
 
+    run_trading_simulation(
+        symbol=symbol,
+        exchange=exchange,
+        timeframe=timeframe,
+        direction=direction,
+        model=model,
+        prob_thresholds=prob_thresholds,
+        cv_splits=cv_splits_robust,
+    )
+
     required_prefixes = [
         "snr_label_quality",
         "snr_label_learnability",
         "snr_model_robustness",
+        "snr_trading_simulation",
     ]
     missing = [p for p in required_prefixes if p not in _LAST_EXPORTS]
     if missing:
@@ -1545,10 +2023,12 @@ def run_full(
     lq = _LAST_EXPORTS["snr_label_quality"]
     ll = _LAST_EXPORTS["snr_label_learnability"]
     mr = _LAST_EXPORTS["snr_model_robustness"]
+    ts = _LAST_EXPORTS["snr_trading_simulation"]
 
     lq_payload = lq["payload"]
     ll_payload = ll["payload"]
     mr_payload = mr["payload"]
+    ts_payload = ts["payload"]
 
     lq_coverage = lq_payload.get("coverage")
     lq_positive_rate = lq_payload.get("positive_rate")
@@ -1652,6 +2132,7 @@ def run_full(
     lq_md = lq["markdown_lines"]
     ll_md = ll["markdown_lines"]
     mr_md = mr["markdown_lines"]
+    ts_md = ts["markdown_lines"]
 
     md_lines.extend(lq_md[2:] if len(lq_md) > 2 else lq_md)
     md_lines.extend([
@@ -1664,6 +2145,11 @@ def run_full(
         "### Model-Robustness",
     ])
     md_lines.extend(mr_md[2:] if len(mr_md) > 2 else mr_md)
+    md_lines.extend([
+        "",
+        "### Trading-Simulation",
+    ])
+    md_lines.extend(ts_md[2:] if len(ts_md) > 2 else ts_md)
 
     md_lines.extend([
         "",
@@ -1730,6 +2216,7 @@ def run_full(
         "label_quality": lq_payload,
         "label_learnability": ll_payload,
         "model_robustness": mr_payload,
+        "trading_simulation": ts_payload,
     }
 
     json_path, md_path = _export_report(
@@ -1777,11 +2264,20 @@ def main() -> None:
     _add_common_args(p_robust)
     p_robust.add_argument("--cv-splits", type=int, default=5)
 
+    # trading-simulation
+    p_trading = subparsers.add_parser("trading-simulation", help="Trading simulation with calibration and threshold analysis")
+    _add_common_args(p_trading)
+    p_trading.add_argument("--cv-splits", type=int, default=5)
+    p_trading.add_argument("--prob-thresholds", type=float, nargs="+", default=[0.55, 0.60, 0.65],
+                          help="Probability thresholds to analyze (default: 0.55 0.60 0.65)")
+
     # full
     p_full = subparsers.add_parser("full", help="Run all diagnostics and aggregate results")
     _add_common_args(p_full)
     p_full.add_argument("--cv-splits-learn", type=int, default=3)
     p_full.add_argument("--cv-splits-robust", type=int, default=5)
+    p_full.add_argument("--prob-thresholds", type=float, nargs="+", default=[0.55, 0.60, 0.65],
+                        help="Probability thresholds to analyze (default: 0.55 0.60 0.65)")
 
     args = parser.parse_args()
 
@@ -1816,6 +2312,17 @@ def main() -> None:
             cv_splits=args.cv_splits,
         )
 
+    elif args.command == "trading-simulation":
+        run_trading_simulation(
+            symbol=args.symbol,
+            exchange=args.exchange,
+            timeframe=args.timeframe,
+            direction=args.direction,
+            model=args.model,
+            prob_thresholds=args.prob_thresholds,
+            cv_splits=args.cv_splits,
+        )
+
     elif args.command == "full":
         run_full(
             symbol=args.symbol,
@@ -1825,6 +2332,7 @@ def main() -> None:
             model=args.model,
             cv_splits_learn=args.cv_splits_learn,
             cv_splits_robust=args.cv_splits_robust,
+            prob_thresholds=args.prob_thresholds,
         )
 
 

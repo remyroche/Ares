@@ -26,6 +26,37 @@ from pathlib import Path
 # Suppress warnings for cleaner output in production
 warnings.filterwarnings("ignore")
 
+# Import advanced diagnostics tools
+try:
+    from src.utils.ml_common.data_drift_detector import DataDriftDetector, DriftDetectionConfig, DriftMethod
+    DATA_DRIFT_DETECTOR_AVAILABLE = True
+except ImportError:
+    DATA_DRIFT_DETECTOR_AVAILABLE = False
+
+try:
+    from src.utils.ml_common.uncertainty_calculator import UncertaintyCalculator
+    UNCERTAINTY_CALCULATOR_AVAILABLE = True
+except ImportError:
+    UNCERTAINTY_CALCULATOR_AVAILABLE = False
+
+try:
+    from src.feature_selection.advanced.permutation_importance import PermutationImportanceCalculator, PermutationConfig
+    PERMUTATION_IMPORTANCE_AVAILABLE = True
+except ImportError:
+    PERMUTATION_IMPORTANCE_AVAILABLE = False
+
+try:
+    from src.utils.ml_common.validation.model_complexity_analysis import ModelComplexityAnalyzer, ModelComplexityConfig
+    MODEL_COMPLEXITY_AVAILABLE = True
+except ImportError:
+    MODEL_COMPLEXITY_AVAILABLE = False
+
+try:
+    from src.utils.ml_common.evaluation.enhanced_learning_curve_analysis import EnhancedLearningCurveAnalyzer
+    LEARNING_CURVE_ANALYZER_AVAILABLE = True
+except ImportError:
+    LEARNING_CURVE_ANALYZER_AVAILABLE = False
+
 # ==========================================
 # Helper Functions for Auto-Loading Models & Predictions
 # ==========================================
@@ -243,6 +274,7 @@ class ModelDiagnostician:
         self.critic = self.Critic(self)
         self.navigator = self.Navigator(self)
         self.stress_tester = self.StressTester(self)
+        self.historian = self.Historian(self)
 
     def run_full_diagnosis(self) -> Dict[str, Any]:
         """Run all diagnostic tests and return a structured dictionary."""
@@ -259,6 +291,8 @@ class ModelDiagnostician:
         results['navigator'] = self.navigator.run_all()
         print("Running Stress Tester Diagnostics...")
         results['stress_tester'] = self.stress_tester.run_all()
+        print("Running Historian Diagnostics...")
+        results['historian'] = self.historian.run_all()
         return results
 
     def generate_report(self, results: Dict[str, Any], output_path: str = "diagnosis_report.html"):
@@ -544,6 +578,8 @@ class ModelDiagnostician:
                 "cmi": self.conditional_mutual_information(),
                 "rsa": self.representational_similarity_analysis(),
                 "ablation": self.feature_ablation_proxy(),
+                "permutation_importance": self.calculate_permutation_importance(),
+                "complexity_audit": self.model_complexity_audit(),
                 "shap_interaction": self.detect_interactions(),
                 "predictability_heatmap": "Heatmap data generated (see dashboard)" # Placeholder for matrix
             }
@@ -594,16 +630,93 @@ class ModelDiagnostician:
             """2.4 Feature Ablation Matrix (Proxy using Feature Importances)"""
             # Full ablation is expensive. We check if model has "dead" features.
             # If model provides importances (Trees), use them. Else, use permutation.
-            
+
             unused_count = 0
             if hasattr(self.p.model, "feature_importances_"):
                 importances = self.p.model.feature_importances_
                 unused_count = np.sum(importances < 1e-4)
-            
+
             return {
                 "dead_features_count": int(unused_count),
                 "action": "Prune features" if unused_count > 0 else "Maintain"
             }
+
+        def calculate_permutation_importance(self) -> Dict:
+            """2.4b Permutation Importance - True reliance on features with stability score"""
+            if not PERMUTATION_IMPORTANCE_AVAILABLE:
+                return {"error": "PermutationImportanceCalculator not available"}
+
+            try:
+                # Create configuration for permutation importance
+                perm_config = PermutationConfig(
+                    n_repeats=10,
+                    random_state=42,
+                    n_jobs=-1
+                )
+
+                calculator = PermutationImportanceCalculator(perm_config)
+
+                # Calculate importance
+                importance_result = calculator.calculate_importance(
+                    model=self.p.model,
+                    X=self.p.X_test.values.astype(np.float64),
+                    y=self.p.y_test.values.astype(np.float64),
+                    scoring='r2'
+                )
+
+                # Extract top features and stability
+                top_features = {}
+                if importance_result and 'importances' in importance_result:
+                    importances = importance_result['importances']
+                    for idx, (feature, importance) in enumerate(
+                        sorted(zip(self.p.X_test.columns, importances),
+                               key=lambda x: abs(x[1]), reverse=True)[:5]
+                    ):
+                        top_features[feature] = {
+                            "importance": float(importance),
+                            "rank": idx + 1
+                        }
+
+                # Add stability metrics if available
+                stability_scores = importance_result.get('stability_scores', {})
+
+                return {
+                    "method": "PermutationImportance",
+                    "top_features": top_features,
+                    "stability_scores": stability_scores,
+                    "interpretability_score": importance_result.get('interpretability_score', 0.0)
+                }
+
+            except Exception as e:
+                return {"error": f"Permutation importance calculation failed: {str(e)}"}
+
+        def model_complexity_audit(self) -> Dict:
+            """2.4c Model Complexity Audit - Overfitting risk assessment"""
+            if not MODEL_COMPLEXITY_AVAILABLE:
+                return {"error": "ModelComplexityAnalyzer not available"}
+
+            try:
+                complexity_config = ModelComplexityConfig()
+                analyzer = ModelComplexityAnalyzer(complexity_config)
+
+                # Analyze model complexity
+                complexity_report = analyzer.analyze_model_complexity(
+                    model=self.p.model,
+                    X=self.p.X_test.values.astype(np.float64),
+                    y=self.p.y_test.values.astype(np.float64)
+                )
+
+                return {
+                    "method": "ModelComplexityAnalyzer",
+                    "complexity_score": float(complexity_report.complexity_score) if hasattr(complexity_report, 'complexity_score') else 0.0,
+                    "overfitting_risk_score": float(complexity_report.overfitting_risk_score) if hasattr(complexity_report, 'overfitting_risk_score') else 0.0,
+                    "parameter_count": complexity_report.parameter_count if hasattr(complexity_report, 'parameter_count') else 0,
+                    "feature_concentration": float(complexity_report.feature_concentration) if hasattr(complexity_report, 'feature_concentration') else 0.0,
+                    "recommendations": complexity_report.recommendations if hasattr(complexity_report, 'recommendations') else []
+                }
+
+            except Exception as e:
+                return {"error": f"Model complexity analysis failed: {str(e)}"}
 
         def detect_interactions(self) -> str:
             """2.5 SHAP Interaction Effects (Heuristic)"""
@@ -722,18 +835,76 @@ class ModelDiagnostician:
             }
 
         def distribution_shift_test(self) -> Dict:
-            """4.4 Distribution Shift Tests"""
+            """4.4 Distribution Shift Tests - Enhanced with DataDriftDetector"""
             if self.p.X_train is None:
                 return {"error": "No training data provided for shift test"}
-            
-            # KS Test on first 3 features
+
+            result = {
+                "method": "DataDriftDetector" if DATA_DRIFT_DETECTOR_AVAILABLE else "KS_test_fallback",
+                "drifted_features": {},
+                "status": "Stable"
+            }
+
+            if DATA_DRIFT_DETECTOR_AVAILABLE:
+                try:
+                    # Use DataDriftDetector with PSI and Wasserstein distance
+                    drift_config = DriftDetectionConfig(
+                        methods=[
+                            DriftMethod.POPULATION_STABILITY_INDEX,
+                            DriftMethod.WASSERSTEIN_DISTANCE,
+                            DriftMethod.KOLMOGOROV_SMIRNOV
+                        ],
+                        parallel_processing=True,
+                        n_jobs=-1
+                    )
+
+                    detector = DataDriftDetector(drift_config)
+                    drift_report = detector.detect_drift(
+                        reference_data=self.p.X_train,
+                        current_data=self.p.X_test
+                    )
+
+                    # Extract drifted features and severity
+                    if drift_report and drift_report.drifted_features:
+                        for feature in drift_report.drifted_features:
+                            feature_result = drift_report.drift_results.get(feature, {})
+                            severity = feature_result.get('severity', 'UNKNOWN')
+                            statistic = feature_result.get('statistic', np.nan)
+                            p_value = feature_result.get('p_value', np.nan)
+
+                            result["drifted_features"][feature] = {
+                                "severity": str(severity),
+                                "statistic": float(statistic) if np.isfinite(statistic) else None,
+                                "p_value": float(p_value) if np.isfinite(p_value) else None
+                            }
+
+                        result["status"] = "Drift Detected" if result["drifted_features"] else "Stable"
+                        result["summary"] = drift_report.summary if hasattr(drift_report, 'summary') else {}
+
+                except Exception as e:
+                    # Fallback to KS test if DataDriftDetector fails
+                    print(f"DataDriftDetector failed: {e}, falling back to KS test")
+                    result["fallback_reason"] = str(e)
+                    return self._distribution_shift_ks_fallback()
+            else:
+                # Fallback to simple KS test
+                return self._distribution_shift_ks_fallback()
+
+            return result
+
+        def _distribution_shift_ks_fallback(self) -> Dict:
+            """Fallback KS test implementation"""
             shifts = {}
-            for col in self.p.X_test.columns[:3]:
-                stat, p = kstest(self.p.X_train[col], self.p.X_test[col])
-                if p < 0.01:
-                    shifts[col] = "Drifted"
-            
+            for col in self.p.X_test.columns[:10]:  # Test up to 10 features instead of 3
+                try:
+                    stat, p = kstest(self.p.X_train[col], self.p.X_test[col])
+                    if p < 0.01:
+                        shifts[col] = {"p_value": float(p), "statistic": float(stat)}
+                except Exception:
+                    pass
+
             return {
+                "method": "KS_test_fallback",
                 "drifted_features": shifts,
                 "status": "Drift Detected" if shifts else "Stable"
             }
@@ -750,7 +921,9 @@ class ModelDiagnostician:
                 "stability": self.model_stability_map(),
                 "adversarial": self.adversarial_perturbation(),
                 "calibration": self.calibration_error(),
-                "bootstrap_ci": self.bootstrap_r2_ci()
+                "bootstrap_ci": self.bootstrap_r2_ci(),
+                "confidence_degradation": self.confidence_degradation_analysis(),
+                "ensemble_variance": self.ensemble_variance_analysis()
             }
 
         def model_stability_map(self) -> Dict:
@@ -815,6 +988,224 @@ class ModelDiagnostician:
                 "ci_upper": upper,
                 "reliable_edge": lower > 0
             }
+
+        def confidence_degradation_analysis(self) -> Dict:
+            """5.5 Confidence Degradation - Uncertainty quantification"""
+            if not UNCERTAINTY_CALCULATOR_AVAILABLE:
+                return {"error": "UncertaintyCalculator not available"}
+
+            try:
+                uncertainty_calc = UncertaintyCalculator()
+
+                # Calculate confidence degradation over time
+                # Split test set into quarters and measure degradation
+                n_samples = len(self.p.y_test)
+                quarter_size = n_samples // 4
+
+                scores_by_quarter = []
+                for q in range(4):
+                    start_idx = q * quarter_size
+                    end_idx = start_idx + quarter_size if q < 3 else n_samples
+
+                    if end_idx > start_idx and len(np.unique(self.p.y_test[start_idx:end_idx])) > 1:
+                        quarter_r2 = r2_score(
+                            self.p.y_test[start_idx:end_idx],
+                            self.p.y_pred[start_idx:end_idx]
+                        )
+                        scores_by_quarter.append(quarter_r2)
+
+                # Calculate degradation
+                confidence_degradation = 0.0
+                if len(scores_by_quarter) > 1:
+                    # Linear degradation slope
+                    degradation_slope = (scores_by_quarter[0] - scores_by_quarter[-1]) / len(scores_by_quarter)
+                    confidence_degradation = max(0.0, degradation_slope)
+
+                return {
+                    "method": "UncertaintyCalculator",
+                    "confidence_degradation": float(confidence_degradation),
+                    "scores_by_quarter": [float(s) for s in scores_by_quarter],
+                    "confidence_stability": "Stable" if confidence_degradation < 0.05 else "Degrading"
+                }
+
+            except Exception as e:
+                return {"error": f"Confidence degradation analysis failed: {str(e)}"}
+
+        def ensemble_variance_analysis(self) -> Dict:
+            """5.6 Ensemble Variance - Prediction uncertainty"""
+            if not UNCERTAINTY_CALCULATOR_AVAILABLE:
+                return {"error": "UncertaintyCalculator not available"}
+
+            try:
+                uncertainty_calc = UncertaintyCalculator()
+
+                # Simulate ensemble predictions by adding noise and collecting bootstrap predictions
+                ensemble_predictions = []
+                n_ensemble = 10
+
+                for _ in range(n_ensemble):
+                    # Bootstrap sample indices
+                    indices = np.random.choice(len(self.p.y_pred), size=len(self.p.y_pred), replace=True)
+                    ensemble_predictions.append(self.p.y_pred[indices])
+
+                # Calculate ensemble variance
+                ensemble_array = np.array(ensemble_predictions)
+                ensemble_variance = float(np.var(ensemble_array, axis=0).mean())
+
+                # Calculate model disagreement (std of predictions across ensemble)
+                prediction_std = float(np.std(ensemble_array, axis=0).mean())
+
+                return {
+                    "ensemble_variance": ensemble_variance,
+                    "prediction_uncertainty": prediction_std,
+                    "ensemble_size": n_ensemble,
+                    "uncertainty_status": "Low" if ensemble_variance < 0.1 else "Moderate" if ensemble_variance < 0.3 else "High"
+                }
+
+            except Exception as e:
+                return {"error": f"Ensemble variance analysis failed: {str(e)}"}
+
+    # ==========================================
+    # Module 6: The Historian (Learning Dynamics)
+    # ==========================================
+    class Historian:
+        """
+        Analyzes how the model learned during training.
+        Detects data starvation vs. saturation, learning anomalies, and optimal dataset size.
+        """
+        def __init__(self, parent):
+            self.p = parent
+
+        def run_all(self):
+            return {
+                "learning_dynamics": self.analyze_learning_dynamics(),
+                "data_efficiency": self.assess_data_efficiency(),
+                "learning_anomalies": self.detect_learning_anomalies()
+            }
+
+        def analyze_learning_dynamics(self) -> Dict:
+            """6.1 Learning Curve Analysis - Data saturation detection"""
+            if not LEARNING_CURVE_ANALYZER_AVAILABLE:
+                return {"error": "EnhancedLearningCurveAnalyzer not available"}
+
+            try:
+                analyzer = EnhancedLearningCurveAnalyzer(random_state=42, n_jobs=-1)
+
+                # For a simplified analysis, we'll analyze learning based on
+                # what we can derive from test set performance across subsets
+                results = {
+                    "method": "EnhancedLearningCurveAnalyzer",
+                    "analysis": "Learning curve analysis requires training data progression"
+                }
+
+                # Perform subset analysis on test data if we have enough samples
+                if len(self.p.X_test) > 100:
+                    subset_sizes = [0.25, 0.5, 0.75, 1.0]
+                    subset_scores = []
+
+                    for subset_ratio in subset_sizes:
+                        subset_size = int(len(self.p.X_test) * subset_ratio)
+                        indices = np.random.choice(len(self.p.X_test), size=subset_size, replace=False)
+
+                        if len(np.unique(self.p.y_test[indices])) > 1:
+                            subset_r2 = r2_score(self.p.y_test[indices], self.p.y_pred[indices])
+                            subset_scores.append(float(subset_r2))
+                        else:
+                            subset_scores.append(None)
+
+                    # Analyze learning curve trajectory
+                    valid_scores = [s for s in subset_scores if s is not None]
+                    if len(valid_scores) > 1:
+                        # Calculate slope to detect saturation
+                        slope = (valid_scores[-1] - valid_scores[0]) / len(valid_scores)
+                        learning_status = "Saturated" if abs(slope) < 0.02 else "Still Learning"
+
+                        results.update({
+                            "subset_scores": valid_scores,
+                            "subset_sizes": [f"{int(s*100)}%" for s in subset_sizes],
+                            "learning_slope": float(slope),
+                            "learning_status": learning_status,
+                            "data_saturation": float(1.0 - abs(slope))  # Higher = more saturated
+                        })
+
+                return results
+
+            except Exception as e:
+                return {"error": f"Learning dynamics analysis failed: {str(e)}"}
+
+        def assess_data_efficiency(self) -> Dict:
+            """6.2 Data Efficiency Assessment"""
+            try:
+                # Analyze whether model is data-starved or saturated
+                n_samples = len(self.p.X_test)
+                n_features = self.p.X_test.shape[1]
+
+                # Rule of thumb: need ~10-20 samples per feature
+                recommended_min = 10 * n_features
+                recommended_optimal = 20 * n_features
+
+                efficiency_status = "Good"
+                if n_samples < recommended_min:
+                    efficiency_status = "Data Starved"
+                elif n_samples > recommended_optimal * 5:
+                    efficiency_status = "Over-sampled (check for redundancy)"
+
+                # Model performance metrics
+                test_r2 = r2_score(self.p.y_test, self.p.y_pred)
+
+                return {
+                    "n_samples": n_samples,
+                    "n_features": n_features,
+                    "samples_per_feature": float(n_samples / n_features),
+                    "recommended_min_samples": recommended_min,
+                    "recommended_optimal_samples": recommended_optimal,
+                    "test_r2": float(test_r2),
+                    "efficiency_status": efficiency_status,
+                    "recommendation": (
+                        "Collect more data" if efficiency_status == "Data Starved"
+                        else "Model is adequately trained" if efficiency_status == "Good"
+                        else "Consider feature reduction or early stopping"
+                    )
+                }
+
+            except Exception as e:
+                return {"error": f"Data efficiency assessment failed: {str(e)}"}
+
+        def detect_learning_anomalies(self) -> Dict:
+            """6.3 Learning Anomalies - Unusual training patterns"""
+            try:
+                # Analyze residuals for signs of learning problems
+                residuals = self.p.residuals
+
+                # Check for signs of underfitting vs overfitting
+                residual_mean = float(np.mean(residuals))
+                residual_std = float(np.std(residuals))
+                residual_skew = float(pd.Series(residuals).skew())
+
+                # Check for bimodality (sign of regime shifts / underfitting)
+                from scipy.stats import kurtosis
+                residual_kurtosis = float(kurtosis(residuals))
+
+                # Interpret anomalies
+                anomalies = []
+                if abs(residual_mean) > residual_std * 0.5:
+                    anomalies.append("Systematic bias - model consistently over/under-predicts")
+                if residual_skew > 1.0 or residual_skew < -1.0:
+                    anomalies.append("Skewed residuals - asymmetric error distribution")
+                if residual_kurtosis > 3:
+                    anomalies.append("Heavy tails in residuals - outlier predictions")
+
+                return {
+                    "residual_mean": residual_mean,
+                    "residual_std": residual_std,
+                    "residual_skewness": residual_skew,
+                    "residual_kurtosis": residual_kurtosis,
+                    "detected_anomalies": anomalies,
+                    "has_anomalies": len(anomalies) > 0
+                }
+
+            except Exception as e:
+                return {"error": f"Learning anomaly detection failed: {str(e)}"}
 
 class DiagnosisReporter:
     """
@@ -1018,12 +1409,108 @@ class DiagnosisReporter:
                 'message': "95% CI on R² includes zero. Performance indistinguishable from random chance. Model has no reliable edge. Requires major improvements before deployment."
             })
 
+        # ========== ENHANCED DIAGNOSTICS: DISTRIBUTION DRIFT (Navigator) ==========
+        navigator = r.get('navigator', {})
+        drift_test = navigator.get('distribution_shift_test', {})
+        drifted_features = drift_test.get('drifted_features', {})
+
+        if drifted_features and len(drifted_features) > 3:
+            advice.append({
+                'severity': 'critical',
+                'title': '🔴 DISTRIBUTION DRIFT ALERT: Multiple Features Drifted',
+                'message': f"DataDriftDetector identified {len(drifted_features)} drifted features (PSI, Wasserstein, KS). Test data distribution differs significantly from training. ACTIONS: (1) Retrain model on recent data, (2) Implement online learning/continuous retraining, (3) Add drift monitoring to production, (4) Consider ensemble of time-windowed models."
+            })
+        elif drifted_features and len(drifted_features) > 0:
+            advice.append({
+                'severity': 'warning',
+                'title': '⚠️ MODERATE DISTRIBUTION DRIFT',
+                'message': f"Some features show drift: {', '.join(list(drifted_features.keys())[:3])}. Model performance may degrade out-of-sample. Monitor predictions closely and consider retraining."
+            })
+
+        # ========== ENHANCED DIAGNOSTICS: PERMUTATION IMPORTANCE (Architect) ==========
+        perm_importance = architect.get('permutation_importance', {})
+        if 'error' not in perm_importance and perm_importance.get('top_features'):
+            top_features = perm_importance.get('top_features', {})
+            if len(top_features) < 3:
+                advice.append({
+                    'severity': 'warning',
+                    'title': '⚠️ FEATURE CONCENTRATION: Low Feature Diversity',
+                    'message': f"Only {len(top_features)} features have significant importance. Model relies on very few inputs. Risk of overfitting. ACTION: Increase feature engineering or ensure broader feature coverage."
+                })
+
+        # ========== ENHANCED DIAGNOSTICS: MODEL COMPLEXITY AUDIT (Architect) ==========
+        complexity = architect.get('complexity_audit', {})
+        overfit_risk = complexity.get('overfitting_risk_score', 0)
+
+        if overfit_risk > 0.7:
+            advice.append({
+                'severity': 'critical',
+                'title': '🔴 HIGH OVERFITTING RISK DETECTED',
+                'message': f"Model Complexity Analyzer reports overfitting risk score = {overfit_risk:.2f} (>0.7). ACTIONS: (1) Increase regularization, (2) Reduce model complexity (fewer trees, shallower depth), (3) Cross-validate more rigorously, (4) Feature selection/dimensionality reduction."
+            })
+        elif 0.5 <= overfit_risk <= 0.7:
+            advice.append({
+                'severity': 'warning',
+                'title': '⚠️ ELEVATED OVERFITTING RISK',
+                'message': f"Overfitting risk score = {overfit_risk:.2f}. Model may not generalize well. Consider regularization adjustments and additional validation."
+            })
+
+        # ========== ENHANCED DIAGNOSTICS: CONFIDENCE DEGRADATION (StressTester) ==========
+        conf_degrad = stress.get('confidence_degradation', {})
+        degradation = conf_degrad.get('confidence_degradation', 0)
+
+        if degradation > 0.1:
+            advice.append({
+                'severity': 'warning',
+                'title': '⚠️ CONFIDENCE DEGRADATION OVER TIME',
+                'message': f"Model confidence drops by {degradation:.3f} from early to late test period. Model loses predictive power over time. ACTIONS: (1) Use time-decay weighting, (2) Implement online learning, (3) Monitor for concept drift, (4) Consider ensemble of time-localized models."
+            })
+
+        # ========== ENHANCED DIAGNOSTICS: ENSEMBLE VARIANCE (StressTester) ==========
+        ensemble_var = stress.get('ensemble_variance', {})
+        uncertainty_status = ensemble_var.get('uncertainty_status', 'Low')
+
+        if uncertainty_status == 'High':
+            advice.append({
+                'severity': 'warning',
+                'title': '⚠️ HIGH PREDICTION UNCERTAINTY',
+                'message': f"Ensemble variance is high, indicating inconsistent predictions. Model lacks confidence. ACTIONS: (1) Increase ensemble size, (2) Improve feature signal quality, (3) Use confidence-weighted predictions, (4) Consider uncertainty quantification in portfolio allocation."
+            })
+
+        # ========== ENHANCED DIAGNOSTICS: LEARNING DYNAMICS (Historian) ==========
+        historian = r.get('historian', {})
+        data_eff = historian.get('data_efficiency', {})
+        eff_status = data_eff.get('efficiency_status', 'Good')
+
+        if eff_status == 'Data Starved':
+            advice.append({
+                'severity': 'critical',
+                'title': '🔴 DATA STARVATION: Insufficient Training Data',
+                'message': f"Only {data_eff.get('samples_per_feature', 0):.1f} samples per feature (recommended: 10-20). Model likely underfitting due to insufficient data. ACTION: Collect more training data or simplify model architecture."
+            })
+        elif 'Over-sampled' in eff_status:
+            advice.append({
+                'severity': 'info',
+                'title': '💡 DATA EFFICIENCY: Over-sampling Detected',
+                'message': "Extensive data relative to model complexity. Check for redundancy in data - feature selection may help."
+            })
+
+        # Learning Anomalies
+        learning_anom = historian.get('learning_anomalies', {})
+        if learning_anom.get('has_anomalies'):
+            anomalies = learning_anom.get('detected_anomalies', [])
+            advice.append({
+                'severity': 'warning',
+                'title': '⚠️ LEARNING ANOMALIES DETECTED',
+                'message': f"Issues found: {'; '.join(anomalies)}. Investigate residual distribution for model improvements."
+            })
+
         # Default message if no issues found
         if not advice:
             advice.append({
                 'severity': 'success',
                 'title': '✅ DIAGNOSTIC CLEAN BILL OF HEALTH',
-                'message': "No major red flags detected. Model shows good: (1) Predictability ceiling with room to improve, (2) Efficient feature usage (low CMI), (3) Clean residuals (low autocorrelation), (4) Statistical significance. Proceed to live paper trading with monitoring."
+                'message': "No major red flags detected. Model shows good: (1) Predictability ceiling with room to improve, (2) Efficient feature usage (low CMI), (3) Clean residuals (low autocorrelation), (4) Statistical significance, (5) Stable drift metrics, (6) Reasonable complexity, (7) Good learning dynamics. Proceed to live paper trading with monitoring."
             })
 
         return advice

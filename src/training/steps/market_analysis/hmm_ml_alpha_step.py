@@ -27,6 +27,7 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
+from scipy.stats import spearmanr, pearsonr
 
 from src.training.steps.base_step import BaseStep
 from src.utils.tprint import (
@@ -46,6 +47,36 @@ from src.utils.ml_common.optimization import (
     OptimizationStage,
 )
 from src.utils.ml_common.feature_engineering.feature_smoothing import apply_ewm_smoothing
+
+# Feature analysis and selection tools
+try:
+    from src.feature_selection.advanced.permutation_importance import (
+        PermutationImportanceCalculator,
+        PermutationConfig,
+    )
+    PERMUTATION_IMPORTANCE_AVAILABLE = True
+except ImportError:
+    PERMUTATION_IMPORTANCE_AVAILABLE = False
+
+try:
+    from src.feature_selection.advanced.improved_mrmr import ImprovedMRMR
+    IMPROVED_MRMR_AVAILABLE = True
+except ImportError:
+    IMPROVED_MRMR_AVAILABLE = False
+
+try:
+    from src.utils.ml_common.evaluation.enhanced_learning_curve_analysis import (
+        EnhancedLearningCurveAnalyzer,
+    )
+    ENHANCED_LEARNING_CURVE_AVAILABLE = True
+except ImportError:
+    ENHANCED_LEARNING_CURVE_AVAILABLE = False
+
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    SHAP_AVAILABLE = False
 
 
 logger = logging.getLogger(__name__)
@@ -252,7 +283,46 @@ class HMMMLAlphaStep(BaseStep):
                     )
 
             # ------------------------------------------------------------------
-            # 6) Switch context to dedicated alpha namespace and assess quality
+            # 6) Extract and save regime thresholds for production use
+            # ------------------------------------------------------------------
+            regime_thresholds: Optional[Dict[str, Any]] = None
+            regime_thresholds_path: Optional[str] = None
+
+            if alpha_scores is not None and regime_col_name is not None and regime_col_name in alpha_df.columns:
+                try:
+                    regime_thresholds = self._extract_and_save_regime_thresholds(
+                        alpha_scores=alpha_scores,
+                        regime_labels=alpha_df[regime_col_name],
+                        regime_col_name=regime_col_name,
+                        symbol=symbol,
+                        config=config,
+                    )
+
+                    if regime_thresholds and "extraction_error" not in regime_thresholds:
+                        # Save thresholds as artifact
+                        try:
+                            regime_thresholds_path = self._save_artifact(
+                                data=regime_thresholds,
+                                artifact_name="hmm_alpha_regime_thresholds_1h",
+                                artifact_type="model",
+                                metadata={
+                                    "symbol": symbol,
+                                    "exchange": exchange,
+                                    "timeframe": regime_timeframe,
+                                    "n_regimes": regime_thresholds.get("n_regimes", 0),
+                                },
+                            )
+                            tprint_info(f"💾 Saved regime thresholds artifact: {regime_thresholds_path}")
+                        except Exception as thresholds_save_exc:
+                            tprint_warning(f"Failed to save regime thresholds artifact: {thresholds_save_exc}")
+
+                        # Add thresholds to training metrics for reporting
+                        training_metrics["regime_thresholds"] = regime_thresholds
+                except Exception as thresholds_exc:
+                    tprint_warning(f"Regime threshold extraction failed (non-fatal): {thresholds_exc}")
+
+            # ------------------------------------------------------------------
+            # 7) Switch context to dedicated alpha namespace and assess quality
             # ------------------------------------------------------------------
             # Switch context to a dedicated alpha model namespace so we do not
             # pollute the original HMM regime store.
@@ -400,6 +470,135 @@ class HMMMLAlphaStep(BaseStep):
                         tprint_warning(
                             f"Failed to save alpha regime statistics CSV (ignored): {stats_csv_exc}"
                         )
+
+                # Walk-Forward Validation window metrics CSV (if available)
+                wfv_window_metrics = training_metrics.get("wfv_window_metrics", [])
+                if wfv_window_metrics and isinstance(wfv_window_metrics, list) and len(wfv_window_metrics) > 0:
+                    try:
+                        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        wfv_csv_name = f"hmm_alpha_wfv_window_metrics_{symbol}_{ts}.csv"
+                        wfv_csv_path = f"outcomes/{wfv_csv_name}"
+                        wfv_df = pd.DataFrame(wfv_window_metrics)
+                        wfv_df.to_csv(wfv_csv_path, index=False)
+                        tprint_info(
+                            f"📊 Saved Walk-Forward Validation window metrics CSV: {wfv_csv_path}"
+                        )
+                    except Exception as wfv_csv_exc:
+                        tprint_warning(
+                            f"Failed to save WFV metrics CSV (ignored): {wfv_csv_exc}"
+                        )
+
+                # Regime thresholds CSV (if available) - CRITICAL for production deployment
+                regime_thresholds_data = training_metrics.get("regime_thresholds", {})
+                if regime_thresholds_data and "regime_thresholds" in regime_thresholds_data:
+                    try:
+                        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        thresholds_csv_name = f"hmm_alpha_regime_thresholds_{symbol}_{ts}.csv"
+                        thresholds_csv_path = f"outcomes/{thresholds_csv_name}"
+
+                        # Convert thresholds to DataFrame for easier viewing
+                        thresholds_dict = regime_thresholds_data["regime_thresholds"]
+                        threshold_rows = []
+                        for regime_id, threshold_info in sorted(thresholds_dict.items()):
+                            threshold_rows.append({
+                                "regime_id": regime_id,
+                                "min_score": threshold_info.get("min_score", 0.0),
+                                "max_score": threshold_info.get("max_score", 0.0),
+                                "mean_score": threshold_info.get("mean_score", 0.0),
+                                "median_score": threshold_info.get("median_score", 0.0),
+                                "std_score": threshold_info.get("std_score", 0.0),
+                                "n_samples": threshold_info.get("n_samples", 0),
+                                "sample_percentage": threshold_info.get("sample_percentage", 0.0),
+                            })
+
+                        thresholds_df = pd.DataFrame(threshold_rows)
+                        thresholds_df.to_csv(thresholds_csv_path, index=False)
+                        tprint_info(
+                            f"📊 Saved regime thresholds CSV: {thresholds_csv_path}"
+                        )
+
+                        # Also export percentile thresholds
+                        percentile_data = regime_thresholds_data.get("percentile_thresholds", {})
+                        if percentile_data:
+                            percentile_csv_name = f"hmm_alpha_percentile_thresholds_{symbol}_{ts}.csv"
+                            percentile_csv_path = f"outcomes/{percentile_csv_name}"
+                            percentile_rows = [
+                                {"percentile": p, "threshold_score": score}
+                                for p, score in sorted(percentile_data.items())
+                            ]
+                            percentile_df = pd.DataFrame(percentile_rows)
+                            percentile_df.to_csv(percentile_csv_path, index=False)
+                            tprint_info(
+                                f"📊 Saved percentile thresholds CSV: {percentile_csv_path}"
+                            )
+                    except Exception as thresholds_csv_exc:
+                        tprint_warning(
+                            f"Failed to save regime thresholds CSV (ignored): {thresholds_csv_exc}"
+                        )
+
+                # Feature importance analysis CSV (if available)
+                try:
+                    feature_importance_dfs = []
+
+                    # LGBM importance
+                    lgbm_importance = training_metrics.get("lgbm_importance", [])
+                    if lgbm_importance:
+                        feature_importance_dfs.append(pd.DataFrame(lgbm_importance))
+
+                    # Permutation importance
+                    perm_importance = training_metrics.get("permutation_importance", {})
+                    if perm_importance:
+                        perm_data = []
+                        for feat_name, feat_data in perm_importance.items():
+                            perm_data.append({
+                                "feature_name": feat_name,
+                                "permutation_importance_mean": feat_data.get("importance_mean", 0.0),
+                                "permutation_importance_std": feat_data.get("importance_std", 0.0),
+                                "permutation_stability": feat_data.get("stability", True),
+                            })
+                        feature_importance_dfs.append(pd.DataFrame(perm_data))
+
+                    # mRMR analysis
+                    mrmr_relevance = training_metrics.get("mrmr_relevance_scores", {})
+                    if mrmr_relevance and isinstance(mrmr_relevance, dict):
+                        mrmr_selected = training_metrics.get("mrmr_selected_features", [])
+                        mrmr_data = []
+                        for feat_name, relevance_score in mrmr_relevance.items():
+                            mrmr_data.append({
+                                "feature_name": feat_name,
+                                "mrmr_relevance_score": relevance_score if isinstance(relevance_score, (int, float)) else float(relevance_score),
+                                "mrmr_selected": feat_name in mrmr_selected,
+                            })
+                        feature_importance_dfs.append(pd.DataFrame(mrmr_data))
+
+                    # SHAP importance
+                    shap_importance = training_metrics.get("shap_importance", [])
+                    if shap_importance:
+                        feature_importance_dfs.append(pd.DataFrame(shap_importance))
+
+                    # Merge all importance metrics
+                    if feature_importance_dfs:
+                        # Start with first dataframe
+                        merged_df = feature_importance_dfs[0].copy()
+
+                        # Merge remaining dataframes on feature_name
+                        for df in feature_importance_dfs[1:]:
+                            if "feature_name" in df.columns:
+                                merged_df = merged_df.merge(df, on="feature_name", how="outer")
+
+                        # Export combined importance CSV
+                        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        importance_csv_name = f"hmm_alpha_feature_importance_{symbol}_{ts}.csv"
+                        importance_csv_path = f"outcomes/{importance_csv_name}"
+                        merged_df = merged_df.fillna(0.0)
+                        merged_df.to_csv(importance_csv_path, index=False)
+                        tprint_info(
+                            f"📊 Saved feature importance metrics CSV: {importance_csv_path}"
+                        )
+                except Exception as importance_csv_exc:
+                    tprint_warning(
+                        f"Failed to save feature importance CSV (ignored): {importance_csv_exc}"
+                    )
             except Exception as report_outer_exc:
                 tprint_warning(
                     f"Alpha report generation encountered a non-fatal error: {report_outer_exc}"
@@ -413,6 +612,8 @@ class HMMMLAlphaStep(BaseStep):
                     "alpha_model_path": model_path,
                     "alpha_regime_stats": regime_stats_df,
                     "alpha_regime_stats_path": regime_stats_path,
+                    "alpha_regime_thresholds": regime_thresholds,
+                    "alpha_regime_thresholds_path": regime_thresholds_path,
                     "alpha_regime_quality_metrics": alpha_quality_metrics,
                     "alpha_regime_quality_path": alpha_quality_path,
                     "alpha_feature_pipeline": feature_pipeline_artifacts,
@@ -700,11 +901,13 @@ class HMMMLAlphaStep(BaseStep):
                 r2_score,
                 mean_squared_error,
             )
+            from sklearn.calibration import CalibratedClassifierCV
         except ImportError:  # pragma: no cover - optional metrics
             accuracy_score = None  # type: ignore[assignment]
             roc_auc_score = None  # type: ignore[assignment]
             r2_score = None  # type: ignore[assignment]
             mean_squared_error = None  # type: ignore[assignment]
+            CalibratedClassifierCV = None  # type: ignore[assignment]
 
         def _safe_rmse(y_true: pd.Series, y_pred: np.ndarray) -> Optional[float]:
             if mean_squared_error is None:
@@ -958,7 +1161,7 @@ class HMMMLAlphaStep(BaseStep):
             training_metrics["model_type"] = "lightgbm_regression"
 
         else:
-            model = lgb.LGBMClassifier(
+            base_model = lgb.LGBMClassifier(
                 n_estimators=int(config.get("alpha_n_estimators", 300)),
                 learning_rate=float(config.get("alpha_learning_rate", 0.05)),
                 num_leaves=int(config.get("alpha_num_leaves", 64)),
@@ -966,16 +1169,93 @@ class HMMMLAlphaStep(BaseStep):
                 colsample_bytree=float(config.get("alpha_colsample_bytree", 0.8)),
                 random_state=int(config.get("alpha_random_state", 42)),
             )
-            model.fit(X_train, y_train)
+            base_model.fit(X_train, y_train)
 
-            train_proba = model.predict_proba(X_train)[:, 1]
+            train_proba = base_model.predict_proba(X_train)[:, 1]
             train_pred = (train_proba > 0.5).astype(float)
 
             if roc_auc_score is not None:
-                training_metrics["train_auc"] = float(roc_auc_score(y_train, train_proba))
+                training_metrics["train_auc_uncalibrated"] = float(roc_auc_score(y_train, train_proba))
             if accuracy_score is not None:
-                training_metrics["train_accuracy"] = float(accuracy_score(y_train, train_pred))
+                training_metrics["train_accuracy_uncalibrated"] = float(accuracy_score(y_train, train_pred))
 
+            # Probability calibration using CalibratedClassifierCV with Isotonic Regression
+            calibration_enabled = bool(config.get("alpha_enable_probability_calibration", True))
+            training_metrics["probability_calibration_enabled"] = calibration_enabled
+
+            model = base_model
+            calibration_metrics = {}
+
+            if calibration_enabled and CalibratedClassifierCV is not None and len(X_val) > 0:
+                try:
+                    # Wrap base model with CalibratedClassifierCV using Isotonic Regression
+                    model = CalibratedClassifierCV(
+                        base_model,
+                        method='isotonic',
+                        cv='prefit'  # Use the already-trained model
+                    )
+                    # Fit calibration on validation set
+                    model.fit(X_val, y_val)
+
+                    tprint_info(
+                        f"✅ Probability calibration (Isotonic Regression) fitted on {len(X_val)} validation samples"
+                    )
+
+                    # Evaluate calibration improvement
+                    val_proba_calibrated = model.predict_proba(X_val)[:, 1]
+                    val_proba_uncalibrated = base_model.predict_proba(X_val)[:, 1]
+
+                    # Calibration quality metrics
+                    if roc_auc_score is not None:
+                        auc_cal = float(roc_auc_score(y_val, val_proba_calibrated))
+                        auc_uncal = float(roc_auc_score(y_val, val_proba_uncalibrated))
+                        calibration_metrics["val_auc_calibrated"] = auc_cal
+                        calibration_metrics["val_auc_uncalibrated"] = auc_uncal
+                        calibration_metrics["auc_improvement"] = auc_cal - auc_uncal
+                        training_metrics.update(calibration_metrics)
+
+                    # Expected Calibration Error (ECE) - simpler alternative to Brier score
+                    # Divide probabilities into bins and measure gap between average prob and accuracy
+                    try:
+                        n_bins = 10
+                        bin_edges = np.linspace(0, 1, n_bins + 1)
+                        bin_indices = np.digitize(val_proba_uncalibrated, bin_edges) - 1
+                        bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+                        ece_uncal = 0.0
+                        ece_cal = 0.0
+                        for bin_idx in range(n_bins):
+                            mask = bin_indices == bin_idx
+                            if mask.sum() > 0:
+                                bin_acc_uncal = float((y_val[mask] == 1).mean())
+                                bin_prob_uncal = float(val_proba_uncalibrated[mask].mean())
+                                ece_uncal += abs(bin_acc_uncal - bin_prob_uncal) * (mask.sum() / len(y_val))
+
+                                bin_acc_cal = float((y_val[mask] == 1).mean())
+                                bin_prob_cal = float(val_proba_calibrated[mask].mean())
+                                ece_cal += abs(bin_acc_cal - bin_prob_cal) * (mask.sum() / len(y_val))
+
+                        training_metrics["ece_uncalibrated"] = float(ece_uncal)
+                        training_metrics["ece_calibrated"] = float(ece_cal)
+                        training_metrics["ece_improvement"] = float(ece_uncal - ece_cal)
+                    except Exception as ece_err:
+                        tprint_warning(f"ECE calculation failed: {ece_err}")
+
+                    training_metrics["calibration_method"] = "isotonic_regression"
+
+                except Exception as calib_err:
+                    tprint_warning(f"Probability calibration failed, using uncalibrated model: {calib_err}")
+                    model = base_model
+                    training_metrics["calibration_failed"] = True
+                    training_metrics["calibration_error"] = str(calib_err)
+            elif not calibration_enabled:
+                tprint_info("Probability calibration disabled via config")
+            elif CalibratedClassifierCV is None:
+                tprint_warning("CalibratedClassifierCV not available; skipping probability calibration")
+            elif len(X_val) == 0:
+                tprint_warning("No validation set available; skipping probability calibration")
+
+            # Evaluate on validation set with calibrated probabilities
             if len(X_val) > 0:
                 val_proba = model.predict_proba(X_val)[:, 1]
                 val_pred = (val_proba > 0.5).astype(float)
@@ -984,6 +1264,27 @@ class HMMMLAlphaStep(BaseStep):
                 if accuracy_score is not None:
                     training_metrics["val_accuracy"] = float(accuracy_score(y_val, val_pred))
 
+                # Walk-Forward Validation on validation set to detect concept drift
+                try:
+                    wfv_metrics = self._calculate_walk_forward_validation_classification(
+                        X_val=X_val.to_numpy(dtype=float, copy=False) if hasattr(X_val, 'to_numpy') else X_val,
+                        y_val=y_val.to_numpy(dtype=float, copy=False) if hasattr(y_val, 'to_numpy') else y_val,
+                        model=base_model,
+                        config=config,
+                        accuracy_score=accuracy_score
+                    )
+                    if wfv_metrics:
+                        training_metrics.update(wfv_metrics)
+                        tprint_info(
+                            f"📊 Walk-Forward Validation completed: "
+                            f"avg_val_accuracy={wfv_metrics.get('wfv_avg_val_accuracy', 0.0):.3f}, "
+                            f"avg_test_accuracy={wfv_metrics.get('wfv_avg_test_accuracy', 0.0):.3f}, "
+                            f"accuracy_degradation={wfv_metrics.get('wfv_accuracy_degradation', 0.0):.3f}"
+                        )
+                except Exception as wfv_err:
+                    tprint_warning(f"Walk-Forward Validation failed: {wfv_err}")
+
+            # Get predictions on full dataset using calibrated model
             proba_all = model.predict_proba(X_scaled_full)[:, 1]
             scores = pd.Series(proba_all, index=df.index, name="alpha_pred_prob")
             pred_col_name = "alpha_pred_prob"
@@ -1033,6 +1334,26 @@ class HMMMLAlphaStep(BaseStep):
 
         training_metrics["alpha_horizon_bars"] = horizon
         training_metrics["target_type"] = target_type
+
+        # Comprehensive feature analysis (IC, importance metrics, mRMR, learning curves)
+        try:
+            feature_analysis = self._perform_comprehensive_feature_analysis(
+                model=model if target_type == "regression" else base_model if 'base_model' in locals() else model,
+                X_train=X_train_scaled if hasattr(X_train_scaled, 'index') else pd.DataFrame(X_train_scaled, columns=extended_feature_names),
+                y_train=y_train,
+                X_val=X_val_scaled if len(X_val) > 0 and (hasattr(X_val_scaled, 'index') or True) else (pd.DataFrame(X_val_scaled, columns=extended_feature_names) if len(X_val) > 0 else None),
+                y_val=y_val if len(y_val) > 0 else None,
+                X_full=X_scaled_full if hasattr(X_scaled_full, 'index') else pd.DataFrame(X_scaled_full, columns=extended_feature_names),
+                y_full=y,
+                feature_names=extended_feature_names,
+                config=config,
+                is_classification=(target_type == "classification"),
+            )
+            if feature_analysis.get("feature_analysis_completed"):
+                training_metrics.update(feature_analysis)
+                tprint_info(f"✅ Comprehensive feature analysis completed and integrated into metrics")
+        except Exception as feature_analysis_err:
+            tprint_warning(f"Comprehensive feature analysis integration failed (non-fatal): {feature_analysis_err}")
 
         return model, full_scores, pred_col_name, training_metrics, feature_pipeline_artifacts
 
@@ -1722,6 +2043,555 @@ class HMMMLAlphaStep(BaseStep):
             )
 
         return alpha_df, regime_stats_df, bucket_col
+
+    def _extract_and_save_regime_thresholds(
+        self,
+        *,
+        alpha_scores: pd.Series,
+        regime_labels: pd.Series,
+        regime_col_name: str,
+        symbol: str,
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Extract regime bin thresholds from assigned regimes for live/production use.
+
+        This is a CRITICAL production artifact: it captures the score boundaries that define
+        each regime. Without these thresholds, you cannot consistently assign new predictions
+        to regime buckets in live trading.
+
+        Args:
+            alpha_scores: Series of alpha predictions (continuous)
+            regime_labels: Series of assigned regime labels (discrete)
+            regime_col_name: Name of the regime column
+            symbol: Trading symbol for artifact metadata
+            config: Configuration dictionary
+
+        Returns:
+            Dictionary with:
+            - thresholds: Dict mapping regime → {min_score, max_score}
+            - thresholds_by_quantile: Percentile-based thresholds
+            - regime_counts: How many samples per regime
+            - sortable_thresholds: Sorted list for efficient lookup in production
+        """
+        try:
+            threshold_data = {
+                "extraction_timestamp": datetime.now().isoformat(),
+                "symbol": symbol,
+                "regime_col_name": regime_col_name,
+                "total_samples": len(regime_labels),
+            }
+
+            # Calculate score thresholds for each regime
+            unique_regimes = sorted(regime_labels.unique())
+            threshold_data["n_regimes"] = len(unique_regimes)
+
+            # Thresholds indexed by regime label
+            regimes_dict = {}
+            regime_counts = {}
+            sortable_thresholds = []
+
+            for regime in unique_regimes:
+                mask = regime_labels == regime
+                regime_scores = alpha_scores[mask]
+
+                if len(regime_scores) > 0:
+                    min_score = float(regime_scores.min())
+                    max_score = float(regime_scores.max())
+                    mean_score = float(regime_scores.mean())
+                    median_score = float(regime_scores.median())
+                    std_score = float(regime_scores.std()) if len(regime_scores) > 1 else 0.0
+
+                    regimes_dict[int(regime)] = {
+                        "min_score": min_score,
+                        "max_score": max_score,
+                        "mean_score": mean_score,
+                        "median_score": median_score,
+                        "std_score": std_score,
+                        "n_samples": int(len(regime_scores)),
+                        "sample_percentage": float(len(regime_scores) / len(regime_labels) * 100),
+                    }
+
+                    regime_counts[int(regime)] = len(regime_scores)
+                    sortable_thresholds.append((min_score, max_score, int(regime)))
+
+            threshold_data["regime_thresholds"] = regimes_dict
+            threshold_data["regime_counts"] = regime_counts
+
+            # Sort thresholds for efficient binary search in production
+            sortable_thresholds = sorted(sortable_thresholds, key=lambda x: x[0])
+            threshold_data["sortable_thresholds"] = [
+                {
+                    "regime": t[2],
+                    "min_score": t[0],
+                    "max_score": t[1],
+                }
+                for t in sortable_thresholds
+            ]
+
+            # Calculate percentile-based thresholds (0%, 25%, 50%, 75%, 100%)
+            percentiles = [0, 25, 50, 75, 100]
+            percentile_thresholds = {}
+            for p in percentiles:
+                percentile_thresholds[p] = float(np.percentile(alpha_scores, p))
+            threshold_data["percentile_thresholds"] = percentile_thresholds
+
+            tprint_info(
+                f"✅ Regime thresholds extracted: {len(unique_regimes)} regimes, "
+                f"min_score={min(alpha_scores):.6f}, max_score={max(alpha_scores):.6f}"
+            )
+
+            return threshold_data
+
+        except Exception as e:
+            tprint_warning(f"Regime threshold extraction failed: {e}")
+            return {"extraction_error": str(e)}
+
+    def _assign_alpha_regimes_with_thresholds(
+        self,
+        *,
+        alpha_scores: np.ndarray,
+        regime_thresholds: Dict[int, Dict[str, float]],
+    ) -> np.ndarray:
+        """Apply saved regime thresholds to new alpha predictions (for live trading).
+
+        This function replicates the regime assignment logic during backtest/live without
+        needing the full training dataset. Given a set of score thresholds, it assigns
+        each prediction to the appropriate regime.
+
+        Args:
+            alpha_scores: Array of new alpha predictions
+            regime_thresholds: Dict from _extract_and_save_regime_thresholds()["regime_thresholds"]
+
+        Returns:
+            Array of regime assignments matching the input scores
+        """
+        assignments = np.full(len(alpha_scores), -1, dtype=int)
+
+        for regime_id, threshold_info in regime_thresholds.items():
+            min_score = threshold_info["min_score"]
+            max_score = threshold_info["max_score"]
+
+            # Assign to this regime if score falls within bounds
+            # Use <= for max to handle boundary scores
+            mask = (alpha_scores >= min_score) & (alpha_scores <= max_score)
+            assignments[mask] = regime_id
+
+        # For scores outside all ranges (shouldn't happen in production), assign to nearest regime
+        unassigned_mask = assignments == -1
+        if unassigned_mask.any():
+            unassigned_scores = alpha_scores[unassigned_mask]
+            for idx in np.where(unassigned_mask)[0]:
+                # Assign to regime with closest mean score
+                closest_regime = min(
+                    regime_thresholds.keys(),
+                    key=lambda r: abs(unassigned_scores[idx] - regime_thresholds[r]["mean_score"])
+                )
+                assignments[idx] = closest_regime
+
+        return assignments
+
+    def _perform_comprehensive_feature_analysis(
+        self,
+        *,
+        model: Any,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: Optional[pd.DataFrame],
+        y_val: Optional[pd.Series],
+        X_full: pd.DataFrame,
+        y_full: pd.Series,
+        feature_names: List[str],
+        config: Dict[str, Any],
+        is_classification: bool = False,
+    ) -> Dict[str, Any]:
+        """Perform comprehensive feature analysis including IC, importance metrics, mRMR, and learning curves.
+
+        Args:
+            model: Trained model
+            X_train: Training features
+            y_train: Training targets
+            X_val: Validation features (optional)
+            y_val: Validation targets (optional)
+            X_full: Full dataset features for full model predictions
+            y_full: Full dataset targets
+            feature_names: Feature names
+            config: Configuration dictionary
+            is_classification: Whether this is a classification task
+
+        Returns:
+            Dictionary with comprehensive feature analysis results
+        """
+        feature_analysis_results = {
+            "feature_analysis_enabled": bool(config.get("alpha_enable_comprehensive_feature_analysis", True)),
+            "features_analyzed": len(feature_names),
+        }
+
+        if not feature_analysis_results["feature_analysis_enabled"]:
+            return feature_analysis_results
+
+        try:
+            # 1. Information Coefficient (IC) - Correlation between predictions and targets
+            try:
+                y_pred = model.predict(X_full)
+
+                # Ensure y_pred is 1D for IC calculation
+                if hasattr(y_pred, 'shape') and len(y_pred.shape) > 1:
+                    y_pred = y_pred.ravel() if y_pred.shape[1] == 1 else y_pred[:, 1] if is_classification else y_pred[:, 0]
+
+                y_full_vals = y_full.values if isinstance(y_full, pd.Series) else y_full
+
+                # Pearson correlation
+                ic_pearson_corr, ic_pearson_pval = pearsonr(y_full_vals, y_pred)
+                feature_analysis_results["ic_pearson_correlation"] = float(ic_pearson_corr)
+                feature_analysis_results["ic_pearson_pvalue"] = float(ic_pearson_pval)
+
+                # Spearman correlation (rank-based)
+                ic_spearman_corr, ic_spearman_pval = spearmanr(y_full_vals, y_pred)
+                feature_analysis_results["ic_spearman_correlation"] = float(ic_spearman_corr)
+                feature_analysis_results["ic_spearman_pvalue"] = float(ic_spearman_pval)
+
+                # Hit rate for classification
+                if is_classification:
+                    hits = (np.sign(y_pred) == np.sign(y_full_vals)).mean()
+                    feature_analysis_results["ic_hit_rate"] = float(hits)
+
+                tprint_info(f"✅ Information Coefficient (IC) calculated: Pearson r={ic_pearson_corr:.4f}, Spearman r={ic_spearman_corr:.4f}")
+            except Exception as ic_err:
+                tprint_warning(f"IC calculation failed: {ic_err}")
+
+            # 2. LGBM built-in feature importance (split and gain)
+            try:
+                if hasattr(model, 'feature_importances_'):
+                    # LightGBM split importance (number of times feature is used)
+                    split_importance = model.feature_importances_
+
+                    lgbm_importance_data = []
+                    for i, name in enumerate(feature_names):
+                        lgbm_importance_data.append({
+                            "feature_name": name,
+                            "split_importance": float(split_importance[i]) if i < len(split_importance) else 0.0,
+                        })
+
+                    feature_analysis_results["lgbm_importance"] = lgbm_importance_data
+                    feature_analysis_results["lgbm_top_features"] = sorted(
+                        lgbm_importance_data,
+                        key=lambda x: x["split_importance"],
+                        reverse=True
+                    )[:10]
+
+                    tprint_info(f"✅ LGBM importance calculated for {len(feature_names)} features")
+            except Exception as lgbm_err:
+                tprint_warning(f"LGBM importance calculation failed: {lgbm_err}")
+
+            # 3. Permutation Importance with stability checking
+            if PERMUTATION_IMPORTANCE_AVAILABLE and bool(config.get("alpha_enable_permutation_importance", True)):
+                try:
+                    X_train_arr = X_train.to_numpy(dtype=float, copy=False) if hasattr(X_train, 'to_numpy') else X_train
+                    y_train_arr = y_train.to_numpy(dtype=float, copy=False) if hasattr(y_train, 'to_numpy') else y_train
+
+                    perm_config = PermutationConfig(
+                        n_repeats=int(config.get("alpha_permutation_n_repeats", 5)),
+                        scoring='r2' if not is_classification else 'accuracy',
+                        enable_stability_check=True,
+                        n_jobs=int(config.get("alpha_n_jobs", -1)),
+                    )
+
+                    perm_calc = PermutationImportanceCalculator(perm_config)
+                    perm_results = perm_calc.calculate_importance(
+                        model, X_train_arr, y_train_arr, feature_names
+                    )
+
+                    if perm_results.get("success"):
+                        feature_analysis_results["permutation_importance"] = perm_results.get("feature_importance", {})
+                        feature_analysis_results["permutation_importance_mean"] = perm_results.get("importance_mean", [])
+                        feature_analysis_results["permutation_importance_std"] = perm_results.get("importance_std", [])
+                        feature_analysis_results["permutation_importance_execution_time"] = perm_results.get("execution_time", 0.0)
+
+                        # Top features by permutation importance
+                        top_features = sorted(
+                            [(name, perm_results["feature_importance"].get(name, {}).get("importance_mean", 0.0))
+                             for name in feature_names],
+                            key=lambda x: x[1],
+                            reverse=True
+                        )[:10]
+                        feature_analysis_results["permutation_top_features"] = [
+                            {"feature_name": name, "importance_mean": imp} for name, imp in top_features
+                        ]
+
+                        tprint_info(f"✅ Permutation importance calculated in {perm_results.get('execution_time', 0.0):.3f}s")
+                except Exception as perm_err:
+                    tprint_warning(f"Permutation importance calculation failed: {perm_err}")
+
+            # 4. Improved mRMR for redundancy analysis
+            if IMPROVED_MRMR_AVAILABLE and bool(config.get("alpha_enable_mrmr_analysis", True)):
+                try:
+                    X_full_arr = X_full.to_numpy(dtype=float, copy=False) if hasattr(X_full, 'to_numpy') else X_full
+                    y_full_arr = y_full.to_numpy(dtype=float, copy=False) if hasattr(y_full, 'to_numpy') else y_full
+
+                    mrmr_config = {
+                        'mi_weight': 0.7,
+                        'spearman_weight': 0.3,
+                        'target_ratio': float(config.get("alpha_mrmr_target_ratio", 0.7)),
+                        'use_mi_proxy': True,
+                        'enable_hardware_optimization': True,
+                    }
+
+                    mrmr = ImprovedMRMR(mrmr_config)
+                    mrmr_results = mrmr.select_features(X_full_arr, y_full_arr, feature_names)
+
+                    feature_analysis_results["mrmr_selected_features"] = mrmr_results.get("selected_features", [])
+                    feature_analysis_results["mrmr_n_selected"] = len(mrmr_results.get("selected_features", []))
+                    feature_analysis_results["mrmr_relevance_scores"] = mrmr_results.get("relevance_scores", {})
+                    feature_analysis_results["mrmr_execution_time"] = mrmr_results.get("execution_time", 0.0)
+
+                    tprint_info(f"✅ mRMR selected {feature_analysis_results['mrmr_n_selected']} features (ratio: {feature_analysis_results['mrmr_n_selected']/len(feature_names):.2%})")
+                except Exception as mrmr_err:
+                    tprint_warning(f"mRMR analysis failed: {mrmr_err}")
+
+            # 5. Learning curve analysis for overfitting detection
+            if ENHANCED_LEARNING_CURVE_AVAILABLE and X_val is not None and y_val is not None and bool(config.get("alpha_enable_learning_curve_analysis", True)):
+                try:
+                    X_train_arr = X_train.to_numpy(dtype=float, copy=False) if hasattr(X_train, 'to_numpy') else X_train
+                    y_train_arr = y_train.to_numpy(dtype=float, copy=False) if hasattr(y_train, 'to_numpy') else y_train
+                    X_val_arr = X_val.to_numpy(dtype=float, copy=False) if hasattr(X_val, 'to_numpy') else X_val
+                    y_val_arr = y_val.to_numpy(dtype=float, copy=False) if hasattr(y_val, 'to_numpy') else y_val
+
+                    lc_analyzer = EnhancedLearningCurveAnalyzer(random_state=int(config.get("alpha_random_state", 42)))
+                    lc_result = lc_analyzer.analyze_learning_curve(
+                        model,
+                        X_train_arr,
+                        y_train_arr,
+                        X_val_arr,
+                        y_val_arr,
+                        cv_folds=int(config.get("alpha_hpo_cv_folds", 3)),
+                        scoring='r2' if not is_classification else 'accuracy',
+                    )
+
+                    feature_analysis_results["learning_curve_analysis"] = {
+                        "learning_rate": lc_result.learning_rate,
+                        "convergence_stability": lc_result.convergence_stability,
+                        "overfitting_risk": lc_result.overfitting_risk,
+                        "training_efficiency": lc_result.training_efficiency,
+                        "max_score_gap": float(lc_result.max_score_gap),
+                        "final_score_gap": float(lc_result.final_score_gap),
+                        "early_learning_slope": float(lc_result.early_learning_slope),
+                        "convergence_stability_score": float(lc_result.convergence_stability_score),
+                        "final_train_score": float(lc_result.final_train_score) if lc_result.final_train_score else None,
+                        "final_validation_score": float(lc_result.final_validation_score) if lc_result.final_validation_score else None,
+                        "anomalies": lc_result.anomalies,
+                        "recommendations": lc_result.recommendations,
+                    }
+
+                    tprint_info(f"✅ Learning curve analysis completed: {lc_result.learning_rate} learning rate, {lc_result.overfitting_risk} overfitting risk")
+                except Exception as lc_err:
+                    tprint_warning(f"Learning curve analysis failed: {lc_err}")
+
+            # 6. SHAP analysis (if available)
+            if SHAP_AVAILABLE and bool(config.get("alpha_enable_shap_importance", False)):
+                try:
+                    X_train_sample = X_train.head(min(100, len(X_train))) if isinstance(X_train, pd.DataFrame) else X_train[:min(100, len(X_train))]
+                    X_train_sample_arr = X_train_sample.to_numpy(dtype=float, copy=False) if hasattr(X_train_sample, 'to_numpy') else X_train_sample
+
+                    # Use TreeExplainer for tree-based models
+                    if hasattr(model, 'booster'):  # LightGBM
+                        explainer = shap.TreeExplainer(model)
+                    else:
+                        explainer = shap.KernelExplainer(model.predict, X_train_sample_arr)
+
+                    shap_values = explainer.shap_values(X_train_sample_arr)
+
+                    # Handle multi-output case
+                    if isinstance(shap_values, list):
+                        shap_values = shap_values[1] if len(shap_values) > 1 else shap_values[0]
+
+                    # Calculate mean absolute SHAP values
+                    shap_importance = np.abs(shap_values).mean(axis=0)
+
+                    shap_data = []
+                    for i, name in enumerate(feature_names):
+                        if i < len(shap_importance):
+                            shap_data.append({
+                                "feature_name": name,
+                                "shap_importance": float(shap_importance[i]),
+                            })
+
+                    feature_analysis_results["shap_importance"] = shap_data
+                    feature_analysis_results["shap_top_features"] = sorted(shap_data, key=lambda x: x["shap_importance"], reverse=True)[:10]
+
+                    tprint_info(f"✅ SHAP importance calculated for {len(feature_names)} features")
+                except Exception as shap_err:
+                    tprint_warning(f"SHAP analysis failed (SHAP may have issues with this data): {shap_err}")
+
+            feature_analysis_results["feature_analysis_completed"] = True
+
+            return feature_analysis_results
+
+        except Exception as e:
+            tprint_warning(f"Comprehensive feature analysis failed: {e}")
+            feature_analysis_results["feature_analysis_error"] = str(e)
+            return feature_analysis_results
+
+    def _calculate_walk_forward_validation_classification(
+        self,
+        *,
+        X_val: np.ndarray,
+        y_val: np.ndarray,
+        model: Any,
+        config: Dict[str, Any],
+        accuracy_score: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Calculate Walk-Forward Validation metrics for classification model.
+
+        Uses rolling windows on validation set to detect concept drift and
+        accuracy degradation over time.
+
+        Args:
+            X_val: Validation feature matrix (n_samples, n_features)
+            y_val: Validation labels (n_samples,)
+            model: Trained classifier with predict_proba method
+            config: Configuration dictionary
+            accuracy_score: Optional sklearn accuracy_score function
+
+        Returns:
+            Dictionary with WFV metrics including:
+            - wfv_window_size: Size of test window
+            - wfv_n_windows: Number of rolling windows tested
+            - wfv_avg_val_accuracy: Average accuracy on validation windows
+            - wfv_avg_test_accuracy: Average accuracy on test windows
+            - wfv_accuracy_degradation: Test accuracy - Validation accuracy
+            - wfv_max_degradation: Maximum degradation in any window
+            - wfv_stability_score: Consistency metric (higher is better)
+            - wfv_window_metrics: Per-window detailed metrics
+        """
+        if accuracy_score is None or X_val is None or len(X_val) < 20:
+            return {}
+
+        try:
+            # Configure rolling window sizes
+            val_set_size = len(X_val)
+            # Use approximately 60% for validation window, 40% for test window
+            window_size = max(int(val_set_size * 0.6), 10)
+            step_size = max(int(val_set_size * 0.2), 5)
+
+            # Ensure we have at least 2 windows
+            n_windows = (val_set_size - window_size) // step_size
+            if n_windows < 2:
+                tprint_warning(f"Insufficient validation set size ({val_set_size}) for walk-forward validation")
+                return {}
+
+            window_metrics_list = []
+            val_accuracies = []
+            test_accuracies = []
+
+            for window_idx in range(n_windows):
+                start_idx = window_idx * step_size
+                val_end_idx = start_idx + window_size
+                test_start_idx = val_end_idx
+                test_end_idx = min(test_start_idx + int(window_size * 0.4), val_set_size)
+
+                # Skip if test window is too small
+                if test_end_idx - test_start_idx < 3:
+                    continue
+
+                # Split validation window chronologically
+                val_split_idx = int(window_size * 0.75)
+                X_val_train = X_val[start_idx:start_idx + val_split_idx]
+                y_val_train = y_val[start_idx:start_idx + val_split_idx]
+                X_val_val = X_val[start_idx + val_split_idx:val_end_idx]
+                y_val_val = y_val[start_idx + val_split_idx:val_end_idx]
+
+                # Test window
+                X_test = X_val[test_start_idx:test_end_idx]
+                y_test = y_val[test_start_idx:test_end_idx]
+
+                # Train model on validation training portion
+                try:
+                    # Create a fresh model instance for this window
+                    window_model = model.__class__(**model.get_params())
+                    window_model.fit(X_val_train, y_val_train)
+
+                    # Evaluate on validation validation portion
+                    val_pred = window_model.predict(X_val_val)
+                    val_acc = float(accuracy_score(y_val_val, val_pred))
+                    val_accuracies.append(val_acc)
+
+                    # Evaluate on test portion
+                    test_pred = window_model.predict(X_test)
+                    test_acc = float(accuracy_score(y_test, test_pred))
+                    test_accuracies.append(test_acc)
+
+                    # Calculate degradation for this window
+                    degradation = test_acc - val_acc
+
+                    window_metrics_list.append({
+                        "window_idx": window_idx,
+                        "window_start": start_idx,
+                        "window_end": val_end_idx,
+                        "test_start": test_start_idx,
+                        "test_end": test_end_idx,
+                        "val_accuracy": val_acc,
+                        "test_accuracy": test_acc,
+                        "accuracy_degradation": degradation,
+                        "n_val_samples": len(X_val_val),
+                        "n_test_samples": len(X_test),
+                    })
+                except Exception as window_err:
+                    tprint_warning(f"WFV window {window_idx} failed: {window_err}")
+                    continue
+
+            if len(val_accuracies) < 1:
+                tprint_warning("No valid walk-forward validation windows")
+                return {}
+
+            # Calculate aggregate metrics
+            val_acc_array = np.array(val_accuracies)
+            test_acc_array = np.array(test_accuracies)
+
+            avg_val_acc = float(np.mean(val_acc_array))
+            avg_test_acc = float(np.mean(test_acc_array))
+            accuracy_degradation = avg_test_acc - avg_val_acc
+
+            # Stability score: 1 - coefficient of variation of accuracies (higher is better)
+            if len(val_acc_array) > 1:
+                val_cv = float(np.std(val_acc_array) / (np.mean(val_acc_array) + 1e-8))
+                test_cv = float(np.std(test_acc_array) / (np.mean(test_acc_array) + 1e-8))
+                stability_score = max(0.0, 1.0 - (val_cv + test_cv) / 2.0)
+            else:
+                stability_score = 1.0
+
+            # Max degradation
+            max_degradation = float(np.max(test_acc_array - val_acc_array))
+            min_degradation = float(np.min(test_acc_array - val_acc_array))
+
+            # Trend analysis: is degradation getting worse over time?
+            degradation_trend = 0.0
+            if len(window_metrics_list) > 1:
+                degradations = [w["accuracy_degradation"] for w in window_metrics_list]
+                # Simple linear fit to detect trend
+                x = np.arange(len(degradations))
+                if len(x) > 1:
+                    z = np.polyfit(x, degradations, 1)
+                    degradation_trend = float(z[0])  # Slope
+
+            return {
+                "wfv_enabled": True,
+                "wfv_window_size": int(window_size),
+                "wfv_n_windows": len(window_metrics_list),
+                "wfv_avg_val_accuracy": avg_val_acc,
+                "wfv_avg_test_accuracy": avg_test_acc,
+                "wfv_accuracy_degradation": accuracy_degradation,
+                "wfv_max_degradation": max_degradation,
+                "wfv_min_degradation": min_degradation,
+                "wfv_stability_score": stability_score,
+                "wfv_val_accuracy_std": float(np.std(val_acc_array)),
+                "wfv_test_accuracy_std": float(np.std(test_acc_array)),
+                "wfv_degradation_trend": degradation_trend,
+                "wfv_window_metrics": window_metrics_list,
+            }
+
+        except Exception as e:
+            tprint_warning(f"Walk-Forward Validation calculation failed: {e}")
+            return {}
 
     def _assess_alpha_regime_quality(
         self,

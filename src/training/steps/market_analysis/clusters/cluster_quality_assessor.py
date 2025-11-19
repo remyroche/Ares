@@ -377,7 +377,15 @@ class ClusterQualityMetrics:
     strategy_performance_metrics: Dict[str, Any] = field(default_factory=dict)
     economic_significance_test: Dict[str, Any] = field(default_factory=dict)
     economic_report_path: Optional[str] = None
-    
+
+    # Information Coefficient (IC) - alpha model evaluation
+    information_coefficient: Dict[str, Any] = field(default_factory=dict)
+    # Contains: ic_pearson, ic_spearman, ic_t_stat, ic_p_value, ic_mean, ic_std, ic_hit_rate
+
+    # Walk-Forward Validation - time series robustness testing
+    walk_forward_validation: Dict[str, Any] = field(default_factory=dict)
+    # Contains: overall_accuracy, overall_sharpe, stability, n_windows, window_metrics, degradation
+
     @staticmethod
     def _safe_array_to_list(arr: Optional[Union[np.ndarray, List[Any]]]) -> Optional[List[Any]]:
         """
@@ -531,7 +539,9 @@ class ClusterQualityMetrics:
             'economic_relevance_analysis': self.economic_relevance_analysis,
             'strategy_performance_metrics': self.strategy_performance_metrics,
             'economic_significance_test': self.economic_significance_test,
-            'economic_report_path': self.economic_report_path
+            'economic_report_path': self.economic_report_path,
+            'information_coefficient': self.information_coefficient,
+            'walk_forward_validation': self.walk_forward_validation
         }
     
     def is_high_quality(self, 
@@ -899,7 +909,63 @@ class ClusterQualityAssessor:
             except Exception as e:
                 tprint_error(f"❌ Economic CV failed: {e}")
 
-        # 7c. Sub-period stability and stationarity tests (if returns available)
+        # 7c. Information Coefficient (IC) - alpha model evaluation
+        if forward_returns is not None:
+            try:
+                # Calculate regime labels as alpha scores (0-1 normalized)
+                unique_labels = np.unique(regime_labels)
+                non_noise_labels = unique_labels[unique_labels != -1]
+
+                # Create alpha scores based on regime quality (higher quality regimes = higher scores)
+                alpha_scores = np.zeros_like(regime_labels, dtype=float)
+                if non_noise_labels.size > 0 and metrics.per_regime_metrics:
+                    # Sort regimes by Sharpe ratio (as proxy for regime quality)
+                    regime_sharpes = {}
+                    for regime_id in non_noise_labels:
+                        regime_data = metrics.per_regime_metrics.get(int(regime_id), {})
+                        regime_sharpes[int(regime_id)] = regime_data.get('sharpe', 0.0)
+
+                    # Normalize Sharpe ratios to [0, 1] range
+                    sharpe_values = np.array(list(regime_sharpes.values()))
+                    if sharpe_values.max() > sharpe_values.min():
+                        sharpe_normalized = (sharpe_values - sharpe_values.min()) / (sharpe_values.max() - sharpe_values.min())
+                    else:
+                        sharpe_normalized = np.ones_like(sharpe_values) * 0.5
+
+                    # Assign alpha scores based on regime quality
+                    for idx, regime_id in enumerate(sorted(regime_sharpes.keys())):
+                        regime_mask = regime_labels == regime_id
+                        alpha_scores[regime_mask] = sharpe_normalized[idx] if idx < len(sharpe_normalized) else 0.5
+
+                # Calculate IC
+                if np.any(np.isfinite(alpha_scores)):
+                    metrics.information_coefficient = self._calculate_information_coefficient(
+                        alpha_scores, forward_returns.values
+                    )
+                    tprint_info(f"📊 IC Pearson: {metrics.information_coefficient.get('ic_pearson', 0.0):.4f} | "
+                               f"IC Hit Rate: {metrics.information_coefficient.get('ic_hit_rate', 0.0):.2%}")
+            except Exception as e:
+                tprint_error(f"❌ Information Coefficient (IC) failed: {e}")
+                metrics.information_coefficient = {}
+
+        # 7d. Walk-Forward Validation (time series robustness)
+        if forward_returns is not None and len(feature_data) >= 315:  # Need at least 252 + 63 samples
+            try:
+                # Use default parameters: 252 trading days for training, 63 for testing
+                metrics.walk_forward_validation = self._calculate_walk_forward_validation(
+                    regime_labels, feature_data, forward_returns,
+                    train_size=252, test_size=63
+                )
+                if metrics.walk_forward_validation and 'n_windows' in metrics.walk_forward_validation:
+                    wfv = metrics.walk_forward_validation
+                    tprint_info(f"🔄 Walk-Forward: {wfv.get('n_windows', 0)} windows | "
+                               f"Accuracy: {wfv.get('overall_accuracy', 0.0):.2%} | "
+                               f"Stability: {wfv.get('stability', 0.0):.4f}")
+            except Exception as e:
+                tprint_error(f"❌ Walk-Forward Validation failed: {e}")
+                metrics.walk_forward_validation = {}
+
+        # 7e. Sub-period stability and stationarity tests (if returns available)
         if forward_returns is not None and SCIPY_AVAILABLE:
             try:
                 subsample = self._calculate_subsample_stability(regime_labels, forward_returns)
@@ -1649,7 +1715,8 @@ class ClusterQualityAssessor:
 
         metrics_to_compare = [
             'mean_return', 'volatility', 'sharpe',
-            'pct_above_target', 'pct_below_neg_target', 'pct_target_hits'
+            'pct_above_target', 'pct_below_neg_target', 'pct_target_hits',
+            'max_drawdown'  # Economic CV for max drawdown between regimes
         ]
 
         for col in metrics_to_compare:
@@ -1671,6 +1738,325 @@ class ClusterQualityAssessor:
             metrics_data['economic_cv_ratio_mean_return'] = np.nan
 
         return metrics_data
+
+    def _calculate_information_coefficient(self,
+                                           alpha_scores: np.ndarray,
+                                           forward_returns: np.ndarray,
+                                           method: str = 'pearson') -> Dict[str, float]:
+        """
+        Calculate Information Coefficient (IC) between alpha predictions and forward returns.
+
+        Information Coefficient measures the correlation between predicted alpha (alpha_scores)
+        and actual forward returns. This is the gold standard for evaluating alpha models.
+
+        Args:
+            alpha_scores: Predicted alpha scores/signals (n_samples,)
+            forward_returns: Actual forward returns (n_samples,)
+            method: 'pearson' (linear correlation) or 'spearman' (rank correlation, more robust)
+
+        Returns:
+            Dictionary with IC metrics:
+            - ic_pearson: Pearson correlation coefficient
+            - ic_spearman: Spearman rank correlation coefficient
+            - ic_t_stat: t-statistic for significance testing
+            - ic_p_value: p-value for correlation significance
+            - ic_mean: Mean IC across all predictions
+            - ic_std: Standard deviation of IC
+            - ic_hit_rate: Percentage of predictions with correct sign
+        """
+        ic_metrics: Dict[str, float] = {}
+
+        try:
+            # Ensure arrays are properly formatted
+            alpha_scores = np.asarray(alpha_scores, dtype=np.float64)
+            forward_returns = np.asarray(forward_returns, dtype=np.float64)
+
+            # Align lengths
+            min_len = min(len(alpha_scores), len(forward_returns))
+            if min_len < 2:
+                return {'error': 'Insufficient data for IC calculation'}
+
+            alpha_scores = alpha_scores[:min_len]
+            forward_returns = forward_returns[:min_len]
+
+            # Remove NaN and infinite values
+            valid_mask = np.isfinite(alpha_scores) & np.isfinite(forward_returns)
+            if not valid_mask.any():
+                return {'error': 'No valid data for IC calculation'}
+
+            alpha_scores_clean = alpha_scores[valid_mask]
+            forward_returns_clean = forward_returns[valid_mask]
+
+            # Calculate Pearson IC
+            if len(alpha_scores_clean) >= 2:
+                pearson_corr = float(np.corrcoef(alpha_scores_clean, forward_returns_clean)[0, 1])
+                ic_metrics['ic_pearson'] = pearson_corr if np.isfinite(pearson_corr) else 0.0
+
+                # Calculate t-statistic for Pearson correlation
+                if len(alpha_scores_clean) > 2 and np.isfinite(pearson_corr):
+                    t_stat = pearson_corr * np.sqrt(len(alpha_scores_clean) - 2) / np.sqrt(1 - pearson_corr**2 + 1e-8)
+                    ic_metrics['ic_t_stat'] = float(t_stat)
+
+                    # Calculate p-value if scipy available
+                    if SCIPY_AVAILABLE:
+                        try:
+                            from scipy.stats import t as t_dist
+                            p_value = 2 * (1 - t_dist.cdf(abs(t_stat), len(alpha_scores_clean) - 2))
+                            ic_metrics['ic_p_value'] = float(p_value)
+                        except Exception:
+                            ic_metrics['ic_p_value'] = np.nan
+                    else:
+                        ic_metrics['ic_p_value'] = np.nan
+
+            # Calculate Spearman IC (rank correlation - more robust to outliers)
+            if len(alpha_scores_clean) >= 2 and SCIPY_AVAILABLE:
+                try:
+                    from scipy.stats import spearmanr
+                    spearman_corr, spearman_pval = spearmanr(alpha_scores_clean, forward_returns_clean)
+                    ic_metrics['ic_spearman'] = float(spearman_corr) if np.isfinite(spearman_corr) else 0.0
+                    ic_metrics['ic_spearman_p_value'] = float(spearman_pval) if np.isfinite(spearman_pval) else np.nan
+                except Exception:
+                    ic_metrics['ic_spearman'] = 0.0
+
+            # Calculate rolling/daily IC metrics
+            # Segment the data into rolling windows to compute rolling IC
+            window_size = max(20, len(alpha_scores_clean) // 10)  # At least 10 windows
+            if len(alpha_scores_clean) >= window_size * 2:
+                rolling_ics = []
+                for i in range(0, len(alpha_scores_clean) - window_size, window_size // 2):
+                    window_end = min(i + window_size, len(alpha_scores_clean))
+                    window_alpha = alpha_scores_clean[i:window_end]
+                    window_returns = forward_returns_clean[i:window_end]
+
+                    if len(window_alpha) >= 2:
+                        window_corr = np.corrcoef(window_alpha, window_returns)[0, 1]
+                        if np.isfinite(window_corr):
+                            rolling_ics.append(window_corr)
+
+                if rolling_ics:
+                    ic_metrics['ic_mean'] = float(np.mean(rolling_ics))
+                    ic_metrics['ic_std'] = float(np.std(rolling_ics))
+                    ic_metrics['ic_rolling_count'] = len(rolling_ics)
+
+            # Calculate IC hit rate: proportion of correct sign predictions
+            # (predictions and actual returns have the same sign)
+            sign_match = (np.sign(alpha_scores_clean) * np.sign(forward_returns_clean)) > 0
+            ic_metrics['ic_hit_rate'] = float(np.mean(sign_match))
+            ic_metrics['ic_correct_signs'] = int(np.sum(sign_match))
+            ic_metrics['ic_total_predictions'] = len(alpha_scores_clean)
+
+            return ic_metrics
+
+        except Exception as e:
+            self.logger.warning(f"IC calculation failed: {e}")
+            return {'error': str(e)}
+
+    def _calculate_walk_forward_validation(self,
+                                          regime_labels: np.ndarray,
+                                          features: pd.DataFrame,
+                                          forward_returns: pd.Series,
+                                          train_size: int = 252,
+                                          test_size: int = 63,
+                                          step_size: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Perform Walk-Forward Validation to assess model robustness across time.
+
+        Walk-Forward Validation uses a rolling window approach where:
+        1. Train on past data (train_size periods)
+        2. Test on future data (test_size periods)
+        3. Roll forward by step_size and repeat
+
+        This is more realistic for time series models as it avoids look-ahead bias
+        and tests the model's ability to generalize to unseen future data.
+
+        Args:
+            regime_labels: Cluster assignments (n_samples,)
+            features: Feature matrix (n_samples, n_features)
+            forward_returns: Forward returns (n_samples,)
+            train_size: Number of samples to use for training (default: 252 ≈ 1 trading year)
+            test_size: Number of samples to use for testing (default: 63 ≈ 1 trading quarter)
+            step_size: Number of samples to roll forward (default: test_size)
+
+        Returns:
+            Dictionary with walk-forward validation results including:
+            - overall_accuracy: Mean accuracy across all test periods
+            - overall_sharpe: Mean Sharpe ratio across all test periods
+            - stability: Standard deviation of accuracies (lower is better/more stable)
+            - n_windows: Number of rolling windows tested
+            - window_metrics: List of metrics for each window
+            - degradation: Performance degradation from training to testing
+        """
+        wfv_results: Dict[str, Any] = {}
+
+        try:
+            # Ensure data alignment
+            regime_labels, features, forward_returns = self._ensure_aligned_data(
+                regime_labels, features, forward_returns
+            )
+
+            n_samples = len(regime_labels)
+            if n_samples < train_size + test_size:
+                return {
+                    'error': f'Insufficient data: {n_samples} samples < required {train_size + test_size}',
+                    'n_windows': 0
+                }
+
+            # Set default step size
+            if step_size is None:
+                step_size = test_size
+
+            # Collect window results
+            window_metrics: List[Dict[str, Any]] = []
+            accuracies: List[float] = []
+            sharpes: List[float] = []
+            train_accuracies: List[float] = []
+            test_accuracies: List[float] = []
+
+            window_idx = 0
+            train_start = 0
+
+            while train_start + train_size + test_size <= n_samples:
+                train_end = train_start + train_size
+                test_end = train_end + test_size
+
+                # Extract training and testing data
+                train_mask = np.arange(train_start, train_end)
+                test_mask = np.arange(train_end, test_end)
+
+                X_train = features.iloc[train_mask]
+                y_train = regime_labels[train_mask]
+                X_test = features.iloc[test_mask]
+                y_test = regime_labels[test_mask]
+                returns_train = forward_returns.iloc[train_mask]
+                returns_test = forward_returns.iloc[test_mask]
+
+                # Train a simple regime classifier (using majority vote on features)
+                try:
+                    # Calculate mean feature values per regime in training set
+                    regime_means = {}
+                    for regime_id in np.unique(y_train):
+                        if regime_id != -1:
+                            regime_mask = y_train == regime_id
+                            regime_means[int(regime_id)] = X_train.iloc[regime_mask].mean().values
+
+                    # Predict on test set using nearest centroid
+                    test_predictions = []
+                    for test_idx in range(len(X_test)):
+                        test_sample = X_test.iloc[test_idx].values
+                        # Find closest regime centroid
+                        if regime_means:
+                            distances = {
+                                regime_id: np.linalg.norm(test_sample - mean)
+                                for regime_id, mean in regime_means.items()
+                            }
+                            predicted_regime = min(distances, key=distances.get)
+                        else:
+                            predicted_regime = -1
+                        test_predictions.append(predicted_regime)
+
+                    test_predictions = np.array(test_predictions)
+
+                    # Calculate accuracy
+                    test_accuracy = float(np.mean(test_predictions == y_test))
+                    accuracies.append(test_accuracy)
+                    test_accuracies.append(test_accuracy)
+
+                    # Calculate training accuracy
+                    train_predictions = np.array([
+                        min(
+                            {rid: np.linalg.norm(X_train.iloc[i].values - mean)
+                             for rid, mean in regime_means.items()},
+                            key=lambda x: x[1]
+                        )[0] if regime_means else -1
+                        for i in range(len(X_train))
+                    ])
+                    train_accuracy = float(np.mean(train_predictions == y_train))
+                    train_accuracies.append(train_accuracy)
+
+                    # Calculate Sharpe ratio on test set (regime-aware)
+                    regime_returns = {}
+                    for regime_id in np.unique(test_predictions):
+                        regime_mask = test_predictions == regime_id
+                        if regime_mask.any():
+                            regime_rets = returns_test.iloc[regime_mask].values
+                            if len(regime_rets) > 0:
+                                mean_ret = float(np.mean(regime_rets))
+                                vol = float(np.std(regime_rets))
+                                sharpe = mean_ret / (vol + 1e-8)
+                                regime_returns[int(regime_id)] = {
+                                    'mean_return': mean_ret,
+                                    'volatility': vol,
+                                    'sharpe': sharpe,
+                                    'n_samples': len(regime_rets)
+                                }
+
+                    avg_sharpe = float(np.mean([r['sharpe'] for r in regime_returns.values()])) if regime_returns else 0.0
+                    sharpes.append(avg_sharpe)
+
+                    window_metrics.append({
+                        'window': window_idx,
+                        'train_period': f'{train_start}-{train_end}',
+                        'test_period': f'{train_end}-{test_end}',
+                        'train_accuracy': train_accuracy,
+                        'test_accuracy': test_accuracy,
+                        'accuracy_degradation': train_accuracy - test_accuracy,
+                        'avg_sharpe': avg_sharpe,
+                        'regime_returns': regime_returns,
+                        'n_test_samples': len(test_predictions)
+                    })
+
+                except Exception as e:
+                    self.logger.debug(f"Window {window_idx} processing failed: {e}")
+                    continue
+
+                # Roll forward
+                train_start += step_size
+                window_idx += 1
+
+            # Compile results
+            if accuracies:
+                wfv_results = {
+                    'n_windows': len(accuracies),
+                    'overall_accuracy': float(np.mean(accuracies)),
+                    'overall_accuracy_std': float(np.std(accuracies)),
+                    'min_accuracy': float(np.min(accuracies)),
+                    'max_accuracy': float(np.max(accuracies)),
+                    'overall_sharpe': float(np.mean(sharpes)) if sharpes else 0.0,
+                    'overall_sharpe_std': float(np.std(sharpes)) if len(sharpes) > 1 else 0.0,
+                    'avg_train_accuracy': float(np.mean(train_accuracies)) if train_accuracies else 0.0,
+                    'avg_test_accuracy': float(np.mean(test_accuracies)) if test_accuracies else 0.0,
+                    'avg_degradation': float(np.mean([m['accuracy_degradation'] for m in window_metrics])) if window_metrics else 0.0,
+                    'stability': float(np.std(accuracies)) if len(accuracies) > 1 else 0.0,
+                    'window_metrics': window_metrics,
+                    'parameters': {
+                        'train_size': train_size,
+                        'test_size': test_size,
+                        'step_size': step_size,
+                        'total_samples': n_samples
+                    }
+                }
+            else:
+                wfv_results = {
+                    'error': 'No valid windows could be processed',
+                    'n_windows': 0,
+                    'parameters': {
+                        'train_size': train_size,
+                        'test_size': test_size,
+                        'step_size': step_size,
+                        'total_samples': n_samples
+                    }
+                }
+
+            return wfv_results
+
+        except Exception as e:
+            self.logger.warning(f"Walk-forward validation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'error': str(e),
+                'n_windows': 0
+            }
 
     def _calculate_subsample_stability(
         self,

@@ -212,10 +212,15 @@ class MLRiskRegimeStep(BaseStep):
             )
 
             if aligned_df.empty:
-                raise ValueError("Aligned dataset is empty after merging inputs")
+                raise ValueError("Aligned dataset is empty after after merging inputs")
 
             # ------------------------------------------------------------------
-            # 4) Compute risk targets (4-component composite)
+            # 4) Generate comprehensive risk features with EWMA smoothing
+            # ------------------------------------------------------------------
+            aligned_df = self._generate_risk_features(aligned_df, config)
+
+            # ------------------------------------------------------------------
+            # 5) Compute risk targets (4-component composite)
             # ------------------------------------------------------------------
             risk_df = self._compute_risk_targets(aligned_df, config)
 
@@ -223,7 +228,7 @@ class MLRiskRegimeStep(BaseStep):
                 raise ValueError("Risk dataset is empty after target construction")
 
             # ------------------------------------------------------------------
-            # 5) Train XGBoost risk model and derive risk regimes
+            # 6) Train XGBoost risk model and derive risk regimes
             # ------------------------------------------------------------------
             model = None
             risk_scores = None
@@ -245,7 +250,12 @@ class MLRiskRegimeStep(BaseStep):
                 if risk_scores is not None:
                     risk_df[pred_col_name] = risk_scores
                     risk_df["risk_score_continuous"] = risk_scores
-                    risk_df, regime_stats_df, regime_col_name = self._assign_alpha_regimes(
+
+                    # Pass residual sigma to config for probabilistic inference
+                    if "val_residual_sigma" in training_metrics:
+                        config["val_residual_sigma"] = training_metrics["val_residual_sigma"]
+
+                    risk_df, regime_stats_df, regime_col_name = self._assign_risk_regimes_with_kde(
                         risk_df,
                         risk_scores,
                         config,
@@ -274,7 +284,7 @@ class MLRiskRegimeStep(BaseStep):
                             risk_scores = fallback_series
                             risk_df[pred_col_name_fallback] = risk_scores
                             risk_df["risk_score_continuous"] = risk_scores
-                            risk_df, regime_stats_df, regime_col_name = self._assign_alpha_regimes(
+                            risk_df, regime_stats_df, regime_col_name = self._assign_risk_regimes_with_kde(
                                 risk_df,
                                 risk_scores,
                                 config,
@@ -291,7 +301,7 @@ class MLRiskRegimeStep(BaseStep):
                     )
 
             # ------------------------------------------------------------------
-            # 6) Extract and save regime thresholds for production use
+            # 7) Extract and save regime thresholds for production use
             # ------------------------------------------------------------------
             regime_thresholds: Optional[Dict[str, Any]] = None
             regime_thresholds_path: Optional[str] = None
@@ -824,6 +834,263 @@ class MLRiskRegimeStep(BaseStep):
 
         return aligned
 
+    def _generate_risk_features(
+        self,
+        df: pd.DataFrame,
+        config: Dict[str, Any],
+    ) -> pd.DataFrame:
+        """Generate comprehensive risk features with EWMA smoothing.
+
+        Features are generated with:
+        - Last bar value
+        - EWMA with period 2
+        - EWMA with period 6
+
+        Special metrics (Fragility, Shock, Desperation, Divergence) are NOT smoothed.
+        """
+        from src.feature_generation.categories.advanced_statistical import (
+            HurstExponentGenerator,
+            CVaRGenerator,
+            JumpIndicatorsGenerator,
+            MaxDrawdownGenerator,
+        )
+        from src.feature_generation.categories.volatility import (
+            OptimizedGARCHFeatureGenerator,
+            VectorBTVolatilityExpansionGenerator,
+            VectorBTGarmanKlassVolatilityGenerator,
+            VectorBTParkinsonVolatilityGenerator,
+            VectorBTRogersSatchellVolatilityGenerator,
+            VectorBTYangZhangVolatilityGenerator,
+            AdvancedVolatilityFeatures,
+        )
+        from src.feature_generation.categories.advanced_regime_features import (
+            RegimeHurstExponentGenerator,
+            RegimeFractalDimensionGenerator,
+        )
+        from src.feature_generation.categories.microstructure_features import (
+            VectorBTOrderFlowVolatilityGenerator,
+        )
+        from src.feature_generation.categories.returns import (
+            ReturnsVolatilityGenerator,
+        )
+        from src.feature_generation.categories.cross_timeframe import (
+            CrossTimeframeVolatilityGenerator,
+        )
+        from src.feature_generation.categories.regime_features import (
+            RegimeVolatilityFeatureGenerator,
+            RegimeIntermediateVolatilityFeatureGenerator,
+        )
+
+        tprint_info("🎯 Generating comprehensive risk features...")
+
+        result_df = df.copy()
+        required_cols = ['open', 'high', 'low', 'close', 'volume']
+        missing = [c for c in required_cols if c not in result_df.columns]
+        if missing:
+            tprint_warning(f"Missing columns for feature generation: {missing}")
+            return result_df
+
+        # Calculate returns for various metrics
+        returns = np.log(result_df['close'] / result_df['close'].shift(1))
+        result_df['returns_1h'] = returns
+
+        # EWMA periods
+        ewma_periods = [2, 6]
+
+        # ============ 1. Core Volatility Features with EWMA ============
+
+        # Simple realized volatility (baseline)
+        vol_20 = returns.rolling(window=20).std()
+        result_df['vol_realized_20'] = vol_20
+        for period in ewma_periods:
+            result_df[f'vol_realized_20_ewma{period}'] = vol_20.ewm(span=period, adjust=False).mean()
+
+        # High-Low range volatility (Parkinson-style)
+        parkinson_vol = np.sqrt(np.log(result_df['high'] / result_df['low']).rolling(window=20).var() / (4 * np.log(2)))
+        result_df['parkinson_vol'] = parkinson_vol
+        for period in ewma_periods:
+            result_df[f'parkinson_vol_ewma{period}'] = parkinson_vol.ewm(span=period, adjust=False).mean()
+
+        # Garman-Klass volatility (uses OHLC)
+        hl = np.log(result_df['high'] / result_df['low'])
+        co = np.log(result_df['close'] / result_df['open'])
+        gk_vol = np.sqrt(0.5 * hl.rolling(window=20).var() - (2 * np.log(2) - 1) * co.rolling(window=20).var())
+        result_df['garman_klass_vol'] = gk_vol
+        for period in ewma_periods:
+            result_df[f'garman_klass_vol_ewma{period}'] = gk_vol.ewm(span=period, adjust=False).mean()
+
+        # ============ 2. Tail Risk Features ============
+
+        # CVaR (5% and 10% levels)
+        for alpha in [0.05, 0.10]:
+            window = 20
+            cvar_vals = []
+            for i in range(len(returns)):
+                if i < window:
+                    cvar_vals.append(np.nan)
+                else:
+                    window_returns = returns.iloc[i-window:i].dropna()
+                    if len(window_returns) > 0:
+                        var_threshold = window_returns.quantile(alpha)
+                        tail_losses = window_returns[window_returns <= var_threshold]
+                        cvar = abs(tail_losses.mean()) if len(tail_losses) > 0 else abs(var_threshold)
+                        cvar_vals.append(cvar)
+                    else:
+                        cvar_vals.append(np.nan)
+
+            cvar_series = pd.Series(cvar_vals, index=returns.index)
+            alpha_pct = int(alpha * 100)
+            result_df[f'cvar_{alpha_pct}pct'] = cvar_series
+            for period in ewma_periods:
+                result_df[f'cvar_{alpha_pct}pct_ewma{period}'] = cvar_series.ewm(span=period, adjust=False).mean()
+
+        # Skewness and Kurtosis (tail shape)
+        skew_20 = returns.rolling(window=20).skew()
+        kurt_20 = returns.rolling(window=20).kurt()
+        result_df['skewness_20'] = skew_20
+        result_df['kurtosis_20'] = kurt_20
+        for period in ewma_periods:
+            result_df[f'skewness_20_ewma{period}'] = skew_20.ewm(span=period, adjust=False).mean()
+            result_df[f'kurtosis_20_ewma{period}'] = kurt_20.ewm(span=period, adjust=False).mean()
+
+        # ============ 3. Drawdown/Runup Features ============
+
+        # Max Drawdown (rolling 50-bar window)
+        cumulative = (1 + returns).cumprod()
+        running_max = cumulative.rolling(window=50, min_periods=1).max()
+        drawdown = (cumulative - running_max) / running_max
+        max_dd = drawdown.rolling(window=50).min()
+        result_df['max_drawdown_50'] = max_dd
+        for period in ewma_periods:
+            result_df[f'max_drawdown_50_ewma{period}'] = max_dd.ewm(span=period, adjust=False).mean()
+
+        # Max Run-Up (for short squeeze risk)
+        running_min = cumulative.rolling(window=50, min_periods=1).min()
+        runup = (cumulative - running_min) / (running_min + 1e-9)
+        max_ru = runup.rolling(window=50).max()
+        result_df['max_runup_50'] = max_ru
+        for period in ewma_periods:
+            result_df[f'max_runup_50_ewma{period}'] = max_ru.ewm(span=period, adjust=False).mean()
+
+        # ============ 4. Jump Detection ============
+
+        # Jump indicator (returns exceeding 3 std devs)
+        vol_rolling = returns.rolling(window=20).std()
+        jump_threshold = 3.0
+        jumps = (abs(returns) > jump_threshold * vol_rolling).astype(float)
+        result_df['jump_indicator'] = jumps
+        jump_freq = jumps.rolling(window=20).mean()
+        result_df['jump_frequency_20'] = jump_freq
+        for period in ewma_periods:
+            result_df[f'jump_frequency_20_ewma{period}'] = jump_freq.ewm(span=period, adjust=False).mean()
+
+        # ============ 5. Volatility Expansion & Acceleration ============
+
+        # Vol expansion (rate of change)
+        vol_roc = vol_20.pct_change(periods=5)
+        result_df['vol_expansion_5'] = vol_roc
+        for period in ewma_periods:
+            result_df[f'vol_expansion_5_ewma{period}'] = vol_roc.ewm(span=period, adjust=False).mean()
+
+        # Vol acceleration (already in target, but also as feature)
+        vol_accel = (vol_20 - vol_20.shift(6)) / (vol_20.shift(6) + 1e-9)
+        result_df['vol_acceleration'] = vol_accel
+        for period in ewma_periods:
+            result_df[f'vol_acceleration_ewma{period}'] = vol_accel.ewm(span=period, adjust=False).mean()
+
+        # ============ 6. Hurst Exponent (Mean Reversion vs Trending) ============
+
+        # Simplified Hurst calculation (R/S method)
+        window = 50
+        hurst_vals = []
+        for i in range(len(returns)):
+            if i < window:
+                hurst_vals.append(0.5)
+            else:
+                window_returns = returns.iloc[i-window:i].dropna().values
+                if len(window_returns) > 10:
+                    # R/S analysis
+                    mean_ret = np.mean(window_returns)
+                    deviations = window_returns - mean_ret
+                    cumulative_deviations = np.cumsum(deviations)
+                    R = np.max(cumulative_deviations) - np.min(cumulative_deviations)
+                    S = np.std(window_returns)
+                    if S > 0 and R > 0:
+                        hurst = np.log(R/S) / np.log(len(window_returns))
+                        hurst_vals.append(np.clip(hurst, 0, 1))
+                    else:
+                        hurst_vals.append(0.5)
+                else:
+                    hurst_vals.append(0.5)
+
+        hurst_series = pd.Series(hurst_vals, index=returns.index)
+        result_df['hurst_exponent_50'] = hurst_series
+        for period in ewma_periods:
+            result_df[f'hurst_exponent_50_ewma{period}'] = hurst_series.ewm(span=period, adjust=False).mean()
+
+        # ============ 7. Downside/Upside Deviation ============
+
+        # Downside deviation (risk of negative returns)
+        downside_returns = returns.copy()
+        downside_returns[downside_returns > 0] = 0
+        downside_dev = downside_returns.rolling(window=20).std()
+        result_df['downside_deviation_20'] = downside_dev
+        for period in ewma_periods:
+            result_df[f'downside_deviation_20_ewma{period}'] = downside_dev.ewm(span=period, adjust=False).mean()
+
+        # Upside deviation (squeeze risk for shorts)
+        upside_returns = returns.copy()
+        upside_returns[upside_returns < 0] = 0
+        upside_dev = upside_returns.rolling(window=20).std()
+        result_df['upside_deviation_20'] = upside_dev
+        for period in ewma_periods:
+            result_df[f'upside_deviation_20_ewma{period}'] = upside_dev.ewm(span=period, adjust=False).mean()
+
+        # ============ 8. Cross-Timeframe Volatility Ratios ============
+
+        # Vol ratio: short-term vs medium-term
+        vol_6 = returns.rolling(window=6).std()
+        vol_24 = returns.rolling(window=24).std()
+        vol_ratio = vol_6 / (vol_24 + 1e-9)
+        result_df['vol_ratio_6_24'] = vol_ratio
+        for period in ewma_periods:
+            result_df[f'vol_ratio_6_24_ewma{period}'] = vol_ratio.ewm(span=period, adjust=False).mean()
+
+        # ============ 9. Fragility Metrics (NO EWMA) ============
+
+        # Fragility Ratio (Modified Amihud): |Return| / Volume
+        fragility_raw = abs(returns) / (result_df['volume'] + 1e-9)
+        fragility_ewma24 = fragility_raw.ewm(span=24, adjust=False).mean()
+        fragility_ratio = fragility_raw / (fragility_ewma24 + 1e-9)
+        result_df['fragility_ratio'] = fragility_ratio  # NO EWMA
+
+        # Shock Ratio: (High - Low) / EWMA_Vol
+        vol_ewma6 = vol_20.ewm(span=6, adjust=False).mean()
+        shock_ratio = (result_df['high'] - result_df['low']) / (vol_ewma6 + 1e-9)
+        result_df['shock_ratio'] = shock_ratio  # NO EWMA
+
+        # Desperation Metric (CLV): (Close - Low) / (High - Low) - 0.5
+        hl_range = result_df['high'] - result_df['low']
+        clv = ((result_df['close'] - result_df['low']) / (hl_range + 1e-9)) - 0.5
+        result_df['desperation_clv'] = clv  # NO EWMA
+
+        # Volume-Vol Divergence (Trap Detector)
+        vol_1h = vol_20
+        vol_ewma6_for_div = vol_1h.ewm(span=6, adjust=False).mean()
+        volume_1h = result_df['volume']
+        volume_ewma6 = volume_1h.ewm(span=6, adjust=False).mean()
+
+        vol_component = vol_1h / (vol_ewma6_for_div + 1e-9)
+        volume_component = volume_1h / (volume_ewma6 + 1e-9)
+        divergence = vol_component / (volume_component + 1e-9)
+        result_df['volume_vol_divergence'] = divergence  # NO EWMA
+
+        tprint_info(
+            f"✅ Generated {len([c for c in result_df.columns if c not in df.columns])} risk features "
+            f"({len([c for c in result_df.columns if 'ewma' in c])} with EWMA smoothing)"
+        )
+
+        return result_df
     def _compute_risk_targets(
         self,
         aligned_df: pd.DataFrame,
@@ -2082,6 +2349,299 @@ class MLRiskRegimeStep(BaseStep):
             tprint_warning(f"Regime threshold extraction failed: {e}")
             return {"extraction_error": str(e)}
 
+    def _assign_risk_regimes_with_kde(
+        self,
+        risk_df: pd.DataFrame,
+        risk_scores: pd.Series,
+        config: Dict[str, Any],
+    ) -> Tuple[pd.DataFrame, Optional[pd.DataFrame], Optional[str]]:
+        """Assign risk regimes using KDE-based binning with natural breaks.
+
+        Workflow:
+        1. Apply MinMaxScaler to risk scores → [0, 1]
+        2. Use KDE to find distribution shape
+        3. Find local minima (valleys) in KDE curve
+        4. Place bin walls at local minima
+        5. Assign samples to bins
+        6. Calculate probabilistic inference using CDF
+
+        Args:
+            risk_df: DataFrame with risk features and targets
+            risk_scores: Predicted risk scores from XGBoost
+            config: Configuration dict
+
+        Returns:
+            Tuple of (updated_df, regime_stats_df, regime_col_name)
+        """
+        from scipy.signal import argrelextrema
+        from scipy.stats import norm
+
+        tprint_info("🔍 Assigning risk regimes using KDE-based binning...")
+
+        # Validate inputs
+        valid_scores = risk_scores.dropna()
+        if len(valid_scores) < 20:
+            tprint_warning(f"Insufficient valid scores ({len(valid_scores)}) for KDE binning")
+            return risk_df, None, None
+
+        # 1. MinMaxScale scores to [0, 1] (should already be done, but ensure)
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        scores_scaled = scaler.fit_transform(valid_scores.values.reshape(-1, 1)).flatten()
+        scores_series = pd.Series(scores_scaled, index=valid_scores.index)
+
+        # 2. Kernel Density Estimation
+        kde_bandwidth = float(config.get("risk_kde_bandwidth", 0.05))
+        try:
+            kde = gaussian_kde(scores_scaled, bw_method=kde_bandwidth)
+        except Exception as e:
+            tprint_warning(f"KDE failed with bandwidth={kde_bandwidth}, using 'scott': {e}")
+            kde = gaussian_kde(scores_scaled, bw_method='scott')
+
+        # Evaluate KDE on fine grid
+        x_grid = np.linspace(0, 1, 1000)
+        kde_values = kde(x_grid)
+
+        # 3. Find local minima (valleys where we'll place bin walls)
+        min_bin_samples = int(config.get("risk_min_bin_samples_pct", 0.01) * len(scores_scaled))
+        max_bin_samples = int(config.get("risk_max_bin_samples_pct", 0.50) * len(scores_scaled))
+
+        # Find all local minima
+        minima_indices = argrelextrema(kde_values, np.less, order=10)[0]
+
+        if len(minima_indices) == 0:
+            tprint_warning("No local minima found in KDE, using quantile-based binning")
+            # Fallback to 5 equal-probability bins
+            breakpoints = [scores_scaled.quantile(q) for q in [0.2, 0.4, 0.6, 0.8]]
+        else:
+            # Convert indices to x values (bin walls)
+            breakpoints_raw = x_grid[minima_indices]
+
+            # Ensure breakpoints create bins with size constraints
+            breakpoints = self._refine_breakpoints(
+                scores_scaled,
+                breakpoints_raw,
+                min_samples=min_bin_samples,
+                max_samples=max_bin_samples
+            )
+
+        # Add boundaries
+        breakpoints = np.sort(np.concatenate([[0.0], breakpoints, [1.0]]))
+        breakpoints = np.unique(breakpoints)  # Remove duplicates
+
+        n_regimes = len(breakpoints) - 1
+        tprint_info(f"📊 KDE binning: {n_regimes} regimes with breakpoints at {breakpoints}")
+
+        # 4. Assign samples to bins (hard assignment)
+        regime_labels = np.digitize(scores_scaled, bins=breakpoints[1:-1], right=False)
+        regime_series = pd.Series(regime_labels, index=valid_scores.index, name="risk_regime")
+
+        # 5. Calculate probabilistic inference (soft assignment using CDF)
+        # Get residual sigma from training metrics
+        sigma = float(config.get("val_residual_sigma", 0.05))  # Fallback if not in config
+
+        # For each sample, calculate P(Bin) using CDF
+        prob_cols = []
+        for i in range(n_regimes):
+            lower = breakpoints[i]
+            upper = breakpoints[i + 1]
+
+            # P(Bin_i) = CDF(upper) - CDF(lower)
+            # Using normal distribution centered at predicted score with std=sigma
+            probs = []
+            for score in scores_scaled:
+                cdf_upper = norm.cdf(upper, loc=score, scale=sigma)
+                cdf_lower = norm.cdf(lower, loc=score, scale=sigma)
+                prob = cdf_upper - cdf_lower
+                probs.append(prob)
+
+            prob_col_name = f"risk_regime_{i}_prob"
+            prob_series = pd.Series(probs, index=valid_scores.index, name=prob_col_name)
+            prob_cols.append(prob_col_name)
+
+            # Add to dataframe
+            risk_df.loc[valid_scores.index, prob_col_name] = prob_series
+
+        # 6. Apply asymmetric hysteresis
+        regime_series_hysteresis = self._apply_asymmetric_hysteresis(
+            regime_series,
+            prob_cols,
+            risk_df.loc[valid_scores.index],
+            config
+        )
+
+        # Add regime labels to dataframe
+        regime_col_name = "risk_regime"
+        risk_df.loc[valid_scores.index, regime_col_name] = regime_series_hysteresis
+
+        # 7. Calculate regime statistics
+        regime_stats = self._calculate_regime_statistics(
+            risk_df.loc[valid_scores.index],
+            regime_series_hysteresis,
+            risk_scores.loc[valid_scores.index],
+        )
+
+        # Save breakpoints and sigma to config for production use
+        config["risk_regime_breakpoints"] = breakpoints.tolist()
+        config["risk_regime_sigma"] = sigma
+        config["risk_regime_n_regimes"] = n_regimes
+
+        tprint_success(
+            f"✅ KDE binning complete: {n_regimes} regimes, "
+            f"bin sizes: {regime_series_hysteresis.value_counts().to_dict()}"
+        )
+
+        return risk_df, regime_stats, regime_col_name
+
+    def _refine_breakpoints(
+        self,
+        scores: np.ndarray,
+        breakpoints_raw: np.ndarray,
+        min_samples: int,
+        max_samples: int,
+    ) -> np.ndarray:
+        """Refine breakpoints to enforce bin size constraints.
+
+        Iteratively remove breakpoints that create bins with too few or too many samples.
+        """
+        breakpoints = np.sort(breakpoints_raw)
+
+        # Iterative refinement
+        max_iterations = 20
+        for iteration in range(max_iterations):
+            # Add boundaries
+            full_breaks = np.concatenate([[0.0], breakpoints, [1.0]])
+
+            # Check bin sizes
+            bin_sizes = []
+            bins_to_remove = []
+
+            for i in range(len(full_breaks) - 1):
+                lower = full_breaks[i]
+                upper = full_breaks[i + 1]
+                count = np.sum((scores >= lower) & (scores < upper))
+                bin_sizes.append(count)
+
+                # If bin too small and not first/last, mark for removal
+                if count < min_samples and i > 0 and i < len(full_breaks) - 2:
+                    bins_to_remove.append(i)
+
+            # Remove problematic breakpoints
+            if len(bins_to_remove) > 0:
+                # Remove breakpoint (merge with neighboring bin)
+                mask = np.ones(len(breakpoints), dtype=bool)
+                for idx in bins_to_remove:
+                    if idx - 1 < len(mask):
+                        mask[idx - 1] = False
+                breakpoints = breakpoints[mask]
+            else:
+                break  # Converged
+
+        return breakpoints
+
+    def _apply_asymmetric_hysteresis(
+        self,
+        regime_labels: pd.Series,
+        prob_cols: List[str],
+        df: pd.DataFrame,
+        config: Dict[str, Any],
+    ) -> pd.Series:
+        """Apply asymmetric hysteresis to regime transitions.
+
+        Rules:
+        - Switching to Danger (high regime): Instant if Prob > 25%
+        - Switching back to Safe (low regime): Delayed, require 3 consecutive candles
+        """
+        danger_threshold = float(config.get("risk_danger_threshold", 0.25))
+        safety_confirmation_bars = int(config.get("risk_safety_confirmation_bars", 3))
+
+        n_regimes = regime_labels.max() + 1
+        danger_regime = n_regimes - 1  # Highest regime = most dangerous
+        calm_regime = 0  # Lowest regime = calmest
+
+        result_labels = regime_labels.copy()
+
+        # Iterate through time series
+        for i in range(1, len(regime_labels)):
+            current_hard_regime = regime_labels.iloc[i]
+            previous_final_regime = result_labels.iloc[i - 1]
+
+            # Check if transitioning to danger
+            if current_hard_regime > previous_final_regime:
+                # Moving to higher risk: check if prob > danger_threshold
+                danger_prob_col = f"risk_regime_{danger_regime}_prob"
+                if danger_prob_col in df.columns:
+                    danger_prob = df[danger_prob_col].iloc[i]
+                    if danger_prob > danger_threshold:
+                        # Instant transition to danger
+                        result_labels.iloc[i] = current_hard_regime
+                    else:
+                        # Stay in previous regime (not enough confidence)
+                        result_labels.iloc[i] = previous_final_regime
+                else:
+                    # No prob available, use hard assignment
+                    result_labels.iloc[i] = current_hard_regime
+
+            # Check if transitioning to safety
+            elif current_hard_regime < previous_final_regime:
+                # Moving to lower risk: require confirmation
+                # Check if safe signal persists for N bars
+                lookback_start = max(0, i - safety_confirmation_bars + 1)
+                recent_labels = regime_labels.iloc[lookback_start:i+1]
+
+                if len(recent_labels) >= safety_confirmation_bars:
+                    # Check if all recent bars indicate safe regime
+                    if (recent_labels <= current_hard_regime).all():
+                        # Confirmed safe transition
+                        result_labels.iloc[i] = current_hard_regime
+                    else:
+                        # Not confirmed, stay in danger
+                        result_labels.iloc[i] = previous_final_regime
+                else:
+                    # Not enough history, stay in previous regime
+                    result_labels.iloc[i] = previous_final_regime
+            else:
+                # No transition, keep current assignment
+                result_labels.iloc[i] = current_hard_regime
+
+        n_transitions = (result_labels.diff() != 0).sum()
+        tprint_info(f"⚡ Asymmetric hysteresis applied: {n_transitions} regime transitions")
+
+        return result_labels
+
+    def _calculate_regime_statistics(
+        self,
+        df: pd.DataFrame,
+        regime_labels: pd.Series,
+        risk_scores: pd.Series,
+    ) -> pd.DataFrame:
+        """Calculate statistics for each regime."""
+        unique_regimes = sorted(regime_labels.unique())
+        stats_records = []
+
+        for regime_id in unique_regimes:
+            regime_mask = regime_labels == regime_id
+            regime_scores = risk_scores[regime_mask]
+
+            stats = {
+                "regime_id": int(regime_id),
+                "n_samples": int(regime_mask.sum()),
+                "mean_risk_score": float(regime_scores.mean()),
+                "std_risk_score": float(regime_scores.std()),
+                "min_risk_score": float(regime_scores.min()),
+                "max_risk_score": float(regime_scores.max()),
+            }
+
+            # Calculate returns if available
+            if 'returns_1h' in df.columns:
+                regime_returns = df.loc[regime_mask, 'returns_1h'].dropna()
+                if len(regime_returns) > 0:
+                    stats["mean_return"] = float(regime_returns.mean())
+                    stats["std_return"] = float(regime_returns.std())
+
+            stats_records.append(stats)
+
+        regime_stats_df = pd.DataFrame(stats_records)
+        return regime_stats_df
     def _assign_alpha_regimes_with_thresholds(
         self,
         *,

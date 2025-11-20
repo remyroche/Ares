@@ -343,13 +343,16 @@ class ImprovedMRMR:
         tprint_debug(f"🔧 Greedy selection: {n_target} features")
 
         try:
+            # Create a mapping from feature names to indices
+            feature_name_to_idx = {name: idx for idx, name in enumerate(feature_names)}
+
             n_features = X.shape[1]
             selected_features = []
             remaining_features = list(range(n_features))
 
             # Start with the feature with highest relevance
-            best_feature = max(relevance_scores.items(), key=lambda x: x[1])[0]
-            best_idx = int(best_feature.split('_')[-1])
+            best_feature_name = max(relevance_scores.items(), key=lambda x: x[1])[0]
+            best_idx = feature_name_to_idx.get(best_feature_name, 0)
             selected_features.append(best_idx)
             remaining_features.remove(best_idx)
 
@@ -381,8 +384,10 @@ class ImprovedMRMR:
         except Exception as e:
             self.logger.error(f"Greedy selection failed: {e}")
             # Fallback to simple relevance-based selection
+            # Create a mapping from feature names to indices for fallback
+            feature_name_to_idx = {name: idx for idx, name in enumerate(feature_names)}
             sorted_features = sorted(relevance_scores.items(), key=lambda x: x[1], reverse=True)
-            return [int(f[0].split('_')[-1]) for f in sorted_features[:n_target]]
+            return [feature_name_to_idx.get(f[0], idx) for idx, (f, score) in enumerate(sorted_features[:n_target]) if f[0] in feature_name_to_idx]
 
     def _calculate_candidate_score(self, X: np.ndarray, y: np.ndarray,
                                  selected_features: List[int], candidate_idx: int,
@@ -390,8 +395,10 @@ class ImprovedMRMR:
                                  is_classification: bool) -> float:
         """Calculate score for a candidate feature."""
         try:
-            # Get relevance score
-            relevance_key = f"feature_{candidate_idx}"
+            # Get relevance score - use the candidate_idx directly as key
+            # since relevance_scores uses feature names, not "feature_N" format
+            feature_keys = list(relevance_scores.keys())
+            relevance_key = feature_keys[candidate_idx] if candidate_idx < len(feature_keys) else f"feature_{candidate_idx}"
             relevance = relevance_scores.get(relevance_key, 0.0)
 
             # Calculate redundancy with selected features
@@ -413,7 +420,8 @@ class ImprovedMRMR:
         except Exception as e:
             self.logger.warning(f"Candidate score calculation failed: {e}")
             # Fallback to relevance only
-            relevance_key = f"feature_{candidate_idx}"
+            feature_keys = list(relevance_scores.keys())
+            relevance_key = feature_keys[candidate_idx] if candidate_idx < len(feature_keys) else f"feature_{candidate_idx}"
             return relevance_scores.get(relevance_key, 0.0)
 
     def _calculate_redundancy(self, X: np.ndarray, selected_features: List[int],

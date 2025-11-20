@@ -641,7 +641,7 @@ class AnalystEnsembleTrainingStep(BaseStep):
         direction: str
     ) -> Dict[str, str]:
         """
-        Save metrics to both .md and JSON formats.
+        Save metrics to .md, JSON, and CSV formats with calibration metrics.
 
         Args:
             metrics: Metrics dictionary
@@ -676,9 +676,59 @@ class AnalystEnsembleTrainingStep(BaseStep):
                     else:
                         f.write(f"- **{key}**: {value}\n")
 
+                # Add calibration metrics section if available
+                if 'calibration' in metrics:
+                    f.write("\n## Calibration Metrics\n\n")
+                    calibration = metrics['calibration']
+
+                    # Brier Score Decomposition
+                    if 'brier_score_decomposition' in calibration:
+                        brier = calibration['brier_score_decomposition']
+                        if 'error' not in brier:
+                            f.write("### Brier Score Decomposition\n\n")
+                            f.write(f"- **Brier Score**: {brier.get('brier_score', 0):.4f}\n")
+                            f.write(f"- **Reliability (Calibration Error)**: {brier.get('reliability', 0):.4f}\n")
+                            f.write(f"- **Resolution (Discrimination)**: {brier.get('resolution', 0):.4f}\n")
+                            f.write(f"- **Uncertainty**: {brier.get('uncertainty', 0):.4f}\n")
+                            f.write(f"- **Quality**: {brier.get('quality_assessment', 'N/A')}\n")
+                            f.write(f"- **Interpretation**: {brier.get('interpretation', 'N/A')}\n\n")
+
+                    # Rolling Calibration Error
+                    if 'rolling_calibration_error' in calibration:
+                        rolling = calibration['rolling_calibration_error']
+                        if 'error' not in rolling:
+                            f.write("### Rolling Calibration Error\n\n")
+                            f.write(f"- **Overall Mean ECE**: {rolling.get('overall_mean_ece', 0):.4f}\n")
+                            f.write(f"- **ECE Trend**: {rolling.get('overall_ece_trend', 0):.6f}\n")
+                            f.write(f"- **Degradation Status**: {rolling.get('degradation_status', 'N/A')}\n")
+                            f.write(f"- **Interpretation**: {rolling.get('interpretation', 'N/A')}\n\n")
+
+                    # Threshold-Weighted ECE
+                    if 'threshold_weighted_ece' in calibration:
+                        tw_ece = calibration['threshold_weighted_ece']
+                        if 'error' not in tw_ece:
+                            f.write("### Threshold-Weighted ECE (High-Confidence Focus)\n\n")
+                            f.write(f"- **Standard ECE**: {tw_ece.get('standard_ece', 0):.4f}\n")
+                            f.write(f"- **Threshold-Weighted ECE**: {tw_ece.get('threshold_weighted_ece', 0):.4f}\n")
+                            f.write(f"- **High-Confidence MAE**: {tw_ece.get('high_confidence_mae', 0):.4f}\n")
+                            f.write(f"- **High-Confidence %**: {tw_ece.get('high_confidence_pct', 0):.1f}%\n")
+                            f.write(f"- **Quality**: {tw_ece.get('quality_assessment', 'N/A')}\n")
+                            f.write(f"- **Interpretation**: {tw_ece.get('interpretation', 'N/A')}\n\n")
+
+                    # Standard calibration metrics
+                    if 'calibration_curve' in calibration:
+                        curve = calibration['calibration_curve']
+                        if 'error' not in curve:
+                            f.write("### Calibration Curve\n\n")
+                            f.write(f"- **Expected Calibration Error (ECE)**: {curve.get('expected_calibration_error', 0):.4f}\n")
+                            f.write(f"- **Max Calibration Error (MCE)**: {curve.get('max_calibration_error', 0):.4f}\n")
+                            f.write(f"- **Avg Calibration Error (ACE)**: {curve.get('avg_calibration_error', 0):.4f}\n")
+                            f.write(f"- **RMSCE**: {curve.get('rmsce', 0):.4f}\n")
+                            f.write(f"- **Quality**: {curve.get('calibration_quality', 'N/A')}\n\n")
+
                 f.write("\n## Detailed Metrics\n\n")
                 f.write("```json\n")
-                f.write(json.dumps(metrics, indent=2))
+                f.write(json.dumps(metrics, indent=2, default=str))
                 f.write("\n```\n")
 
             tprint(f"✅ Saved metrics to: {md_path}", "SUCCESS")
@@ -692,18 +742,85 @@ class AnalystEnsembleTrainingStep(BaseStep):
                     'direction': direction,
                     'timestamp': datetime.now().isoformat(),
                     'metrics': metrics
-                }, f, indent=2)
+                }, f, indent=2, default=str)
 
             tprint(f"✅ Saved metrics to: {json_path}", "SUCCESS")
 
+            # Save as CSV (flattened metrics)
+            csv_path = outcomes_dir / f"{base_filename}.csv"
+            try:
+                import csv
+
+                # Flatten metrics dictionary
+                flattened = self._flatten_metrics(metrics, prefix='')
+
+                # Add metadata
+                flattened_with_meta = {
+                    'symbol': symbol,
+                    'timeframe': timeframe,
+                    'direction': direction,
+                    'timestamp': datetime.now().isoformat(),
+                    **flattened
+                }
+
+                # Write CSV
+                with open(csv_path, 'w', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=flattened_with_meta.keys())
+                    writer.writeheader()
+                    writer.writerow(flattened_with_meta)
+
+                tprint(f"✅ Saved metrics to: {csv_path}", "SUCCESS")
+            except Exception as csv_error:
+                tprint(f"⚠️ Failed to save CSV metrics: {csv_error}", "WARNING")
+                csv_path = None
+
             return {
                 'markdown': str(md_path),
-                'json': str(json_path)
+                'json': str(json_path),
+                'csv': str(csv_path) if csv_path else None
             }
 
         except Exception as e:
             tprint(f"⚠️ Failed to save metrics: {e}", "WARNING")
             return {}
+
+    def _flatten_metrics(self, metrics: Dict[str, Any], prefix: str = '', separator: str = '.') -> Dict[str, Any]:
+        """
+        Flatten nested metrics dictionary for CSV export.
+
+        Args:
+            metrics: Nested metrics dictionary
+            prefix: Prefix for nested keys
+            separator: Separator for nested keys
+
+        Returns:
+            Flattened dictionary with string keys and numeric/string values
+        """
+        flattened = {}
+
+        for key, value in metrics.items():
+            new_key = f"{prefix}{separator}{key}" if prefix else key
+
+            if isinstance(value, dict):
+                # Recursively flatten nested dictionaries
+                flattened.update(self._flatten_metrics(value, new_key, separator))
+            elif isinstance(value, (list, tuple)):
+                # For lists, only include if they're simple numeric lists
+                if value and all(isinstance(v, (int, float)) for v in value):
+                    # Store list stats instead of full list
+                    flattened[f"{new_key}_mean"] = np.mean(value) if value else 0
+                    flattened[f"{new_key}_std"] = np.std(value) if len(value) > 1 else 0
+                    flattened[f"{new_key}_min"] = np.min(value) if value else 0
+                    flattened[f"{new_key}_max"] = np.max(value) if value else 0
+                # Skip complex lists for CSV
+            elif isinstance(value, (int, float, str, bool)) or value is None:
+                # Store simple values directly
+                flattened[new_key] = value
+            else:
+                # Convert other types to string
+                flattened[new_key] = str(value)
+
+        return flattened
 
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Run method required by BaseStep interface."""

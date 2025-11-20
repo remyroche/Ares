@@ -1298,7 +1298,10 @@ class ModelDiagnostician:
                 "quantile_calibration": self.analyze_quantile_calibration(),
                 "sharpness_analysis": self.analyze_sharpness(),
                 "calibration_drift": self.analyze_calibration_drift(),
-                "reliability_diagram": self.generate_reliability_diagram()
+                "reliability_diagram": self.generate_reliability_diagram(),
+                "brier_score_decomposition": self.brier_score_decomposition(),
+                "rolling_calibration_error": self.rolling_calibration_error(),
+                "threshold_weighted_ece": self.threshold_weighted_ece()
             }
 
         def analyze_calibration_curve(self) -> Dict:
@@ -1596,6 +1599,375 @@ class ModelDiagnostician:
                 }
             except Exception as e:
                 return {"error": f"Reliability diagram generation failed: {str(e)}"}
+
+        def brier_score_decomposition(self) -> Dict:
+            """
+            7.6 Brier Score Decomposition - Decomposes prediction error into reliability, resolution, and uncertainty.
+
+            Brier Score = Reliability - Resolution + Uncertainty
+            - Reliability: How close predicted probabilities are to actual frequencies
+            - Resolution: How well predictions discriminate between outcomes
+            - Uncertainty: Inherent unpredictability in the target
+
+            Lower Brier score = better calibration (closer to actual probabilities)
+            """
+            try:
+                # For regression, we'll adapt Brier score concept
+                # Brier score traditionally for probabilities [0,1], but we'll normalize
+
+                # Normalize predictions and targets to [0, 1] range for Brier calculation
+                y_pred_min, y_pred_max = self.p.y_pred.min(), self.p.y_pred.max()
+                y_test_min, y_test_max = self.p.y_test.min(), self.p.y_test.max()
+
+                # Use common range for both
+                common_min = min(y_pred_min, y_test_min)
+                common_max = max(y_pred_max, y_test_max)
+                range_span = common_max - common_min
+
+                if range_span > 0:
+                    y_pred_norm = (self.p.y_pred - common_min) / range_span
+                    y_test_norm = (self.p.y_test - common_min) / range_span
+                else:
+                    y_pred_norm = self.p.y_pred
+                    y_test_norm = self.p.y_test
+
+                # Overall Brier Score: mean squared error between normalized predictions and actuals
+                brier_score = float(np.mean((y_pred_norm - y_test_norm) ** 2))
+
+                # Decomposition using binning approach
+                n_bins = 10
+                bin_edges = np.percentile(y_pred_norm, np.linspace(0, 100, n_bins + 1))
+                bin_edges[-1] += 1e-8
+
+                bin_indices = np.digitize(y_pred_norm, bin_edges) - 1
+                bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+                # Calculate components
+                reliability_component = 0.0  # Calibration-in-the-large
+                resolution_component = 0.0   # Ability to discriminate
+
+                overall_mean = float(np.mean(y_test_norm))
+                total_samples = len(y_pred_norm)
+
+                for i in range(n_bins):
+                    mask = bin_indices == i
+                    n_i = mask.sum()
+
+                    if n_i > 0:
+                        # Mean predicted value in bin i
+                        mean_pred_i = float(np.mean(y_pred_norm[mask]))
+                        # Mean actual value in bin i
+                        mean_true_i = float(np.mean(y_test_norm[mask]))
+
+                        # Reliability: squared difference between predicted and observed in bin
+                        reliability_component += (n_i / total_samples) * (mean_pred_i - mean_true_i) ** 2
+
+                        # Resolution: how far each bin's actual mean is from overall mean
+                        resolution_component += (n_i / total_samples) * (mean_true_i - overall_mean) ** 2
+
+                # Uncertainty: variance of the target (inherent unpredictability)
+                uncertainty_component = float(np.var(y_test_norm))
+
+                # Verify decomposition: BS = Reliability - Resolution + Uncertainty
+                decomposed_brier = reliability_component - resolution_component + uncertainty_component
+
+                return {
+                    "brier_score": brier_score,
+                    "reliability": float(reliability_component),
+                    "resolution": float(resolution_component),
+                    "uncertainty": float(uncertainty_component),
+                    "decomposed_brier": float(decomposed_brier),
+                    "decomposition_error": float(abs(brier_score - decomposed_brier)),
+                    "normalized_range": {
+                        "min": float(common_min),
+                        "max": float(common_max),
+                        "span": float(range_span)
+                    },
+                    "interpretation": (
+                        f"Brier Score = {brier_score:.4f} (lower is better). "
+                        f"Reliability = {reliability_component:.4f} (calibration error, want low), "
+                        f"Resolution = {resolution_component:.4f} (discrimination power, want high), "
+                        f"Uncertainty = {uncertainty_component:.4f} (inherent noise). "
+                        f"Model {'is well-calibrated' if reliability_component < 0.01 else 'needs calibration improvement'}. "
+                        f"Model {'has good discrimination' if resolution_component > 0.01 else 'has weak discrimination'}."
+                    ),
+                    "quality_assessment": (
+                        "Excellent" if brier_score < 0.05 and reliability_component < 0.01 else
+                        "Good" if brier_score < 0.10 and reliability_component < 0.02 else
+                        "Fair" if brier_score < 0.20 else
+                        "Poor"
+                    )
+                }
+            except Exception as e:
+                return {"error": f"Brier score decomposition failed: {str(e)}"}
+
+        def rolling_calibration_error(self) -> Dict:
+            """
+            7.7 Rolling Calibration Error - Track calibration quality over time with rolling windows.
+
+            Calculates ECE over rolling windows to detect temporal degradation in calibration.
+            Critical for production models to identify when recalibration is needed.
+            """
+            try:
+                # Use rolling window to calculate calibration error over time
+                window_sizes = [50, 100, 200]  # Multiple window sizes
+
+                results_by_window_size = {}
+
+                for window_size in window_sizes:
+                    if len(self.p.y_pred) < window_size:
+                        continue
+
+                    n_windows = len(self.p.y_pred) - window_size + 1
+                    # Sample windows to avoid excessive computation
+                    sample_step = max(1, n_windows // 50)  # Max 50 windows per size
+
+                    rolling_eces = []
+                    rolling_maes = []
+                    window_positions = []
+
+                    for start_idx in range(0, n_windows, sample_step):
+                        end_idx = start_idx + window_size
+
+                        window_pred = self.p.y_pred[start_idx:end_idx]
+                        window_true = self.p.y_test[start_idx:end_idx]
+
+                        # Calculate ECE for this window
+                        try:
+                            n_bins = min(5, window_size // 10)  # Fewer bins for smaller windows
+                            if n_bins < 2:
+                                n_bins = 2
+
+                            bin_edges = np.percentile(window_pred, np.linspace(0, 100, n_bins + 1))
+                            bin_edges[-1] += 1e-8
+
+                            bin_indices = np.digitize(window_pred, bin_edges) - 1
+                            bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+                            calibration_errors = []
+                            bin_counts = []
+
+                            for i in range(n_bins):
+                                mask = bin_indices == i
+                                if mask.sum() > 0:
+                                    bin_pred_mean = np.mean(window_pred[mask])
+                                    bin_true_mean = np.mean(window_true[mask])
+                                    cal_error = abs(bin_pred_mean - bin_true_mean)
+                                    calibration_errors.append(cal_error)
+                                    bin_counts.append(mask.sum())
+
+                            # Weighted ECE
+                            if calibration_errors:
+                                total_in_bins = sum(bin_counts)
+                                window_ece = float(sum(
+                                    (count / total_in_bins) * error
+                                    for count, error in zip(bin_counts, calibration_errors)
+                                ))
+                            else:
+                                window_ece = 0.0
+
+                            # Also track MAE for this window
+                            window_mae = float(np.mean(np.abs(window_pred - window_true)))
+
+                            rolling_eces.append(window_ece)
+                            rolling_maes.append(window_mae)
+                            window_positions.append(start_idx + window_size // 2)  # Center position
+
+                        except Exception:
+                            continue
+
+                    if rolling_eces:
+                        results_by_window_size[f"window_{window_size}"] = {
+                            "window_size": window_size,
+                            "n_windows": len(rolling_eces),
+                            "rolling_ece": [float(e) for e in rolling_eces],
+                            "rolling_mae": [float(m) for m in rolling_maes],
+                            "window_positions": [int(p) for p in window_positions],
+                            "mean_ece": float(np.mean(rolling_eces)),
+                            "std_ece": float(np.std(rolling_eces)),
+                            "max_ece": float(np.max(rolling_eces)),
+                            "min_ece": float(np.min(rolling_eces)),
+                            "ece_trend": float(np.polyfit(range(len(rolling_eces)), rolling_eces, 1)[0]) if len(rolling_eces) > 1 else 0.0
+                        }
+
+                # Overall assessment
+                if results_by_window_size:
+                    # Use medium window size for overall assessment
+                    medium_window_key = f"window_{window_sizes[len(window_sizes)//2]}" if len(window_sizes) > 0 else list(results_by_window_size.keys())[0]
+
+                    if medium_window_key in results_by_window_size:
+                        medium_results = results_by_window_size[medium_window_key]
+                        mean_ece = medium_results['mean_ece']
+                        ece_trend = medium_results['ece_trend']
+
+                        degradation_status = (
+                            "Severe Degradation" if ece_trend > 0.0001 and mean_ece > 0.1 else
+                            "Moderate Degradation" if ece_trend > 0.00005 else
+                            "Stable" if abs(ece_trend) <= 0.00005 else
+                            "Improving"
+                        )
+                    else:
+                        mean_ece = 0.0
+                        ece_trend = 0.0
+                        degradation_status = "Unknown"
+                else:
+                    mean_ece = 0.0
+                    ece_trend = 0.0
+                    degradation_status = "Insufficient Data"
+
+                return {
+                    "results_by_window_size": results_by_window_size,
+                    "overall_mean_ece": float(mean_ece),
+                    "overall_ece_trend": float(ece_trend),
+                    "degradation_status": degradation_status,
+                    "interpretation": (
+                        f"Rolling calibration analysis with windows {window_sizes}. "
+                        f"Mean ECE = {mean_ece:.4f}, Trend = {ece_trend:.6f}. "
+                        f"{degradation_status} calibration over time. "
+                        f"{'Recalibration recommended' if degradation_status in ['Severe Degradation', 'Moderate Degradation'] else 'Calibration is stable'}."
+                    )
+                }
+            except Exception as e:
+                return {"error": f"Rolling calibration error analysis failed: {str(e)}"}
+
+        def threshold_weighted_ece(self) -> Dict:
+            """
+            7.8 Threshold-Weighted ECE - ECE with increasing weights for high-confidence predictions (0.8 -> 1.0).
+
+            In trading, high-confidence predictions are more actionable and carry higher risk.
+            This metric prioritizes calibration quality in the high-confidence regime where
+            position sizing is largest.
+
+            Weights increase linearly from 1.0 at threshold 0.8 to higher values at 1.0.
+            """
+            try:
+                # Normalize predictions to [0, 1] for threshold application
+                y_pred_min, y_pred_max = self.p.y_pred.min(), self.p.y_pred.max()
+                range_span = y_pred_max - y_pred_min
+
+                if range_span > 0:
+                    y_pred_norm = (self.p.y_pred - y_pred_min) / range_span
+                else:
+                    y_pred_norm = np.ones_like(self.p.y_pred) * 0.5
+
+                # Also normalize targets
+                y_test_min, y_test_max = self.p.y_test.min(), self.p.y_test.max()
+                test_range_span = y_test_max - y_test_min
+
+                if test_range_span > 0:
+                    y_test_norm = (self.p.y_test - y_test_min) / test_range_span
+                else:
+                    y_test_norm = np.ones_like(self.p.y_test) * 0.5
+
+                # Standard ECE calculation with bins
+                n_bins = 10
+                bin_edges = np.percentile(y_pred_norm, np.linspace(0, 100, n_bins + 1))
+                bin_edges[-1] += 1e-8
+
+                bin_indices = np.digitize(y_pred_norm, bin_edges) - 1
+                bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+                # Calculate standard ECE and threshold-weighted ECE
+                standard_ece = 0.0
+                threshold_weighted_ece_value = 0.0
+
+                bin_details = []
+                total_samples = len(y_pred_norm)
+
+                # High-confidence threshold (0.8 in normalized space)
+                threshold = 0.8
+                max_weight_multiplier = 3.0  # Max weight at 1.0 is 3x the weight at 0.8
+
+                for i in range(n_bins):
+                    mask = bin_indices == i
+                    n_i = mask.sum()
+
+                    if n_i > 0:
+                        bin_pred = y_pred_norm[mask]
+                        bin_true = y_test_norm[mask]
+
+                        mean_pred = float(np.mean(bin_pred))
+                        mean_true = float(np.mean(bin_true))
+
+                        cal_error = abs(mean_pred - mean_true)
+                        bin_weight = n_i / total_samples
+
+                        # Standard ECE contribution
+                        standard_ece += bin_weight * cal_error
+
+                        # Calculate threshold weight for this bin
+                        # Bins with mean_pred >= threshold get increasing weights
+                        if mean_pred >= threshold:
+                            # Linear increase from 1.0 at threshold to max_weight_multiplier at 1.0
+                            weight_multiplier = 1.0 + (max_weight_multiplier - 1.0) * ((mean_pred - threshold) / (1.0 - threshold))
+                            threshold_weight = bin_weight * weight_multiplier
+                        else:
+                            threshold_weight = bin_weight
+                            weight_multiplier = 1.0
+
+                        threshold_weighted_ece_value += threshold_weight * cal_error
+
+                        bin_details.append({
+                            "bin": i + 1,
+                            "mean_pred": mean_pred,
+                            "mean_true": mean_true,
+                            "cal_error": float(cal_error),
+                            "n_samples": int(n_i),
+                            "standard_weight": float(bin_weight),
+                            "threshold_weight": float(threshold_weight),
+                            "is_high_confidence": bool(mean_pred >= threshold),
+                            "weight_multiplier": float(weight_multiplier)
+                        })
+
+                # Normalize threshold-weighted ECE by total weights
+                total_threshold_weight = sum(bd['threshold_weight'] for bd in bin_details)
+                if total_threshold_weight > 0:
+                    threshold_weighted_ece_value = threshold_weighted_ece_value / total_threshold_weight * total_samples / len(bin_details)
+
+                # Calculate high-confidence calibration specifically
+                high_conf_mask = y_pred_norm >= threshold
+                high_conf_samples = high_conf_mask.sum()
+
+                if high_conf_samples > 0:
+                    high_conf_mae = float(np.mean(np.abs(
+                        y_pred_norm[high_conf_mask] - y_test_norm[high_conf_mask]
+                    )))
+                    high_conf_pct = float(high_conf_samples / len(y_pred_norm) * 100)
+                else:
+                    high_conf_mae = 0.0
+                    high_conf_pct = 0.0
+
+                return {
+                    "standard_ece": float(standard_ece),
+                    "threshold_weighted_ece": float(threshold_weighted_ece_value),
+                    "threshold": float(threshold),
+                    "max_weight_multiplier": float(max_weight_multiplier),
+                    "high_confidence_mae": high_conf_mae,
+                    "high_confidence_pct": high_conf_pct,
+                    "high_confidence_samples": int(high_conf_samples),
+                    "bin_details": bin_details,
+                    "ece_ratio": float(threshold_weighted_ece_value / standard_ece) if standard_ece > 0 else 1.0,
+                    "normalization": {
+                        "pred_min": float(y_pred_min),
+                        "pred_max": float(y_pred_max),
+                        "test_min": float(y_test_min),
+                        "test_max": float(y_test_max)
+                    },
+                    "interpretation": (
+                        f"Standard ECE = {standard_ece:.4f}, Threshold-Weighted ECE = {threshold_weighted_ece_value:.4f}. "
+                        f"High-confidence predictions (>{threshold:.1f}): {high_conf_pct:.1f}% of samples with MAE = {high_conf_mae:.4f}. "
+                        f"{'High-confidence calibration is excellent' if high_conf_mae < 0.05 else 'High-confidence calibration needs improvement'}. "
+                        f"This metric emphasizes calibration quality where it matters most for trading decisions."
+                    ),
+                    "quality_assessment": (
+                        "Excellent" if threshold_weighted_ece_value < 0.05 and high_conf_mae < 0.05 else
+                        "Good" if threshold_weighted_ece_value < 0.10 and high_conf_mae < 0.10 else
+                        "Fair" if threshold_weighted_ece_value < 0.20 else
+                        "Poor"
+                    )
+                }
+            except Exception as e:
+                return {"error": f"Threshold-weighted ECE calculation failed: {str(e)}"}
 
 class DiagnosisReporter:
     """

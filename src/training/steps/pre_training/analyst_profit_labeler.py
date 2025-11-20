@@ -60,7 +60,7 @@ from src.training.steps.pre_training.validation.schemas import validate_raw_ohlc
 
 # Import the volatility-aware labeler
 try:
-    from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import (
+    from src.training.steps.labeling.profit_labeling.volatility_aware_labeler import (
         VolatilityAwareMultiHorizonLabeler,
         VolatilityAwareConfig,
         LabelingResult,
@@ -425,7 +425,7 @@ class AnalystProfitLabeler:
             # Configure bar construction to use TIME bars (we're working with OHLCV data)
             # TIME bars with bar_size = timeframe period will pass through the data as-is
             tprint_info("📊 Configuring bar construction for OHLCV data...")
-            from src.training.steps.pre_training.profit_labeling.bar_construction import BarType
+            from src.training.steps.labeling.profit_labeling.bar_construction import BarType
             labeler_config.bar_construction.bar_type = BarType.TIME
             labeler_config.bar_construction.bar_size = float(self.config.base_period_minutes)  # 15 minutes for 15m data
             labeler_config.bar_construction.min_bars_required = 10  # Lower threshold for OHLCV data

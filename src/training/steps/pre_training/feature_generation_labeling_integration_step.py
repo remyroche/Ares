@@ -837,7 +837,7 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 # Keep default spike_detection_stats initialized earlier
 
             # Initialize volatility aware labeler with optimal configuration
-            from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import (
+            from src.training.steps.labeling.profit_labeling.volatility_aware_labeler import (
                 VolatilityAwareConfig, VolatilityAwareMultiHorizonLabeler, LabelDefinitionType
             )
 

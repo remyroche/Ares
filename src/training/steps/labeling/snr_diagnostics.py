@@ -56,6 +56,12 @@ from src.training.steps.labeling.feature_generation_meta_labeling_step import ( 
     compute_label_entropy_score,
     combined_label_quality_objective,
     DEFAULT_TRANSACTION_COST,
+    compute_label_quality_score_from_components,
+)
+from src.training.steps.labeling.labeled_data_schema import (
+    LABELED_DATA_SCHEMA_VERSION,
+    get_required_labeled_data_columns,
+    validate_labeled_data_schema,
 )
 
 try:
@@ -184,6 +190,24 @@ def _load_labeled_data(
             df = None
 
         if isinstance(df, pd.DataFrame) and not df.empty:
+            # Validate basic labeled_data schema for downstream diagnostics
+            try:
+                validate_labeled_data_schema(
+                    df,
+                    required_cols=get_required_labeled_data_columns(
+                        [
+                            "meta_probability",
+                            "event_duration_bars",
+                        ]
+                    ),
+                    context="snr_diagnostics._load_labeled_data",
+                )
+            except Exception:
+                # Fallback to minimal schema for backward compatibility
+                validate_labeled_data_schema(
+                    df,
+                    context="snr_diagnostics._load_labeled_data",
+                )
             logger.info(
                 "Loaded labeled data from artifact '%s' with shape %s",
                 name,
@@ -2268,16 +2292,16 @@ def main() -> None:
     p_trading = subparsers.add_parser("trading-simulation", help="Trading simulation with calibration and threshold analysis")
     _add_common_args(p_trading)
     p_trading.add_argument("--cv-splits", type=int, default=5)
-    p_trading.add_argument("--prob-thresholds", type=float, nargs="+", default=[0.55, 0.60, 0.65],
-                          help="Probability thresholds to analyze (default: 0.55 0.60 0.65)")
+    p_trading.add_argument("--prob-thresholds", type=float, nargs="+", default=[0.55, 0.60, 0.65, 0.70, 0.75, 0.80],
+                          help="Probability thresholds to analyze (default: 0.55 0.60 0.65 0.70 0.75 0.80)")
 
     # full
     p_full = subparsers.add_parser("full", help="Run all diagnostics and aggregate results")
     _add_common_args(p_full)
     p_full.add_argument("--cv-splits-learn", type=int, default=3)
     p_full.add_argument("--cv-splits-robust", type=int, default=5)
-    p_full.add_argument("--prob-thresholds", type=float, nargs="+", default=[0.55, 0.60, 0.65],
-                        help="Probability thresholds to analyze (default: 0.55 0.60 0.65)")
+    p_full.add_argument("--prob-thresholds", type=float, nargs="+", default=[0.55, 0.60, 0.65, 0.70, 0.75, 0.80],
+                        help="Probability thresholds to analyze (default: 0.55 0.60 0.65 0.70 0.75 0.80)")
 
     args = parser.parse_args()
 

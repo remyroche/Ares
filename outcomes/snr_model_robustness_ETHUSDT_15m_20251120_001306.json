@@ -1,0 +1,108 @@
+{
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "model": "analyst",
+    "prefix": "snr_model_robustness",
+    "timestamp_utc": "20251120_001306"
+  },
+  "section": "model_robustness",
+  "cv_splits": 5,
+  "fold_metrics": [
+    {
+      "fold": 1,
+      "n_train": 3778,
+      "n_test": 3776,
+      "auc": 0.6503255413869939,
+      "brier": 0.23460817445923457,
+      "ap": 0.6655554859124582,
+      "auc_logistic": 0.5741455968411275,
+      "brier_logistic": 0.30666678544859477,
+      "ap_logistic": 0.4957954410046366
+    },
+    {
+      "fold": 2,
+      "n_train": 7554,
+      "n_test": 3776,
+      "auc": 0.5573598229133672,
+      "brier": 0.21937447277670885,
+      "ap": 0.4493380883797603,
+      "auc_logistic": 0.5162207742714603,
+      "brier_logistic": 0.23604803964436097,
+      "ap_logistic": 0.3643875088892272
+    },
+    {
+      "fold": 3,
+      "n_train": 11330,
+      "n_test": 3776,
+      "auc": 0.6806199383115237,
+      "brier": 0.20737719928972143,
+      "ap": 0.7097186989685806,
+      "auc_logistic": 0.6149469778793362,
+      "brier_logistic": 0.24099732225254533,
+      "ap_logistic": 0.5609057819746475
+    },
+    {
+      "fold": 4,
+      "n_train": 15106,
+      "n_test": 3776,
+      "auc": 0.6904896509113376,
+      "brier": 0.20934785303191106,
+      "ap": 0.7409414528669512,
+      "auc_logistic": 0.5740935771056253,
+      "brier_logistic": 0.24686526417321775,
+      "ap_logistic": 0.5693351125694932
+    },
+    {
+      "fold": 5,
+      "n_train": 18882,
+      "n_test": 3776,
+      "auc": 0.7890847780521967,
+      "brier": 0.17740845803185465,
+      "ap": 0.8682771463297378,
+      "auc_logistic": 0.6077878597969351,
+      "brier_logistic": 0.24722562886339391,
+      "ap_logistic": 0.671624605666313
+    }
+  ],
+  "summary": {
+    "mean_auc": 0.6735759463150839,
+    "std_auc": 0.07446442117351222,
+    "mean_brier": 0.2096232315178861,
+    "std_brier": 0.0187736315331212,
+    "mean_ap": 0.6867661744914976,
+    "std_ap": 0.1365503580729622,
+    "stability_score": 0.88944910893815,
+    "n_folds": 5
+  },
+  "advanced": {
+    "global_auc": 0.6823105348435087,
+    "pseudo_r2": 0.15547209443740284,
+    "pseudo_r2_ci_low": 0.14640694672990837,
+    "pseudo_r2_ci_high": 0.1645143515791008,
+    "model_snr": 0.86997776418127,
+    "perm_pvalue_auc": 0.004975124378109453,
+    "residual_pattern_strength": 0.16755399542934746,
+    "residual_lag1_autocorr": 0.5897506158757677,
+    "model_family": {
+      "mean_auc_lightgbm": 0.6735759463150839,
+      "mean_auc_logistic": 0.5774389571788968,
+      "comment": "Nonlinear (LightGBM) >> linear (Logistic); real nonlinear structure present."
+    },
+    "baseline": {
+      "auc": 0.4315447182332417,
+      "brier": 0.2704851377802816,
+      "ap": 0.4266833203645447,
+      "delta_auc": 0.2420312280818422,
+      "delta_brier": 0.060861906262395515,
+      "delta_ap": 0.26008285412695287
+    }
+  },
+  "summary_score": {
+    "score": 0.765047236599324,
+    "rating": "Great",
+    "comment": "Strong, stable probe model with consistent performance."
+  }
+}

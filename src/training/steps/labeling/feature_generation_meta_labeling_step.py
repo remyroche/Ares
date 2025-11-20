@@ -75,6 +75,16 @@ except ImportError:
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+from .labeled_data_schema import (
+    LABELED_DATA_SCHEMA_VERSION,
+    get_required_labeled_data_columns,
+    validate_labeled_data_schema,
+)
+from .label_config import (
+    LABEL_CONFIG_VERSION,
+    build_label_config,
+    compute_label_config_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -861,6 +871,19 @@ def compute_vol_scaled_returns_for_events(
         econ_floor = ECON_MIN_RETURN_MULTIPLE * DEFAULT_TRANSACTION_COST
         small_mask = realized_returns.abs() < econ_floor
         vol_scaled[small_mask] = np.nan
+
+        # Robust outlier handling: winsorize extreme vol-scaled returns so that
+        # a handful of large moves do not dominate quantile thresholds.
+        try:
+            v = vol_scaled.dropna()
+            if len(v) >= 100:
+                low_clip = float(v.quantile(0.005))
+                high_clip = float(v.quantile(0.995))
+                if np.isfinite(low_clip) and np.isfinite(high_clip) and low_clip < high_clip:
+                    vol_scaled = vol_scaled.clip(lower=low_clip, upper=high_clip)
+        except Exception:
+            # Never let defensive winsorisation break labeling; fall back to raw vol_scaled
+            pass
     except Exception:
         vol_scaled[:] = np.nan
 
@@ -890,6 +913,71 @@ def create_quantile_labels_from_vol_scaled_returns(
         labels.loc[vol_scaled <= low_val] = 0.0
     except Exception:
         labels[:] = np.nan
+
+    return labels
+
+
+def create_regime_aware_quantile_labels_from_vol_scaled_returns(
+    vol_scaled: pd.Series,
+    regimes: Optional[pd.Series] = None,
+    low_q: float = 0.3,
+    high_q: float = 0.7,
+    min_samples_per_regime: int = 100,
+) -> pd.Series:
+    """Regime-aware wrapper around quantile-based label generation.
+
+    If a regime series is provided, compute quantile thresholds separately
+    within each regime. If there are not enough samples per regime or if
+    regimes is None, fall back to global quantiles.
+    """
+
+    labels = pd.Series(index=vol_scaled.index, dtype=float)
+    labels[:] = np.nan
+
+    # Fallback to global behavior if no regimes are provided
+    if regimes is None:
+        return create_quantile_labels_from_vol_scaled_returns(
+            vol_scaled=vol_scaled,
+            low_q=low_q,
+            high_q=high_q,
+        )
+
+    try:
+        regimes_aligned = regimes.reindex(vol_scaled.index)
+        v_global = vol_scaled.dropna()
+        if len(v_global) < min_samples_per_regime:
+            return create_quantile_labels_from_vol_scaled_returns(
+                vol_scaled=vol_scaled,
+                low_q=low_q,
+                high_q=high_q,
+            )
+
+        unique_regimes = pd.unique(regimes_aligned.dropna())
+        for reg_val in unique_regimes:
+            try:
+                mask = regimes_aligned == reg_val
+                v_reg = vol_scaled[mask].dropna()
+                if len(v_reg) < min_samples_per_regime:
+                    continue
+
+                low_val = float(v_reg.quantile(low_q))
+                high_val = float(v_reg.quantile(high_q))
+
+                if not np.isfinite(low_val) or not np.isfinite(high_val) or low_val >= high_val:
+                    continue
+
+                labels.loc[mask & (vol_scaled >= high_val)] = 1.0
+                labels.loc[mask & (vol_scaled <= low_val)] = 0.0
+            except Exception:
+                # Never let a single regime failure break global labeling
+                continue
+    except Exception:
+        # On any unexpected error, fall back to global behavior
+        return create_quantile_labels_from_vol_scaled_returns(
+            vol_scaled=vol_scaled,
+            low_q=low_q,
+            high_q=high_q,
+        )
 
     return labels
 
@@ -969,6 +1057,25 @@ def create_meta_features(
         tprint(f"⚠️ Warning: Could not create volatility regimes: {e}", "WARNING")
         features['vol_regime_medium'] = 0
         features['vol_regime_high'] = 0
+
+    # ===== EXTERNAL REGIME FEATURES (e.g., HMM regimes) =====
+
+    # If upstream steps have attached HMM regime labels/probabilities to the
+    # market_data frame (e.g., via rolling_hmm_regime_* artifacts), expose them
+    # as meta-features so that downstream meta-models and HPO can use them.
+    try:
+        if 'hmm_regime_label_1h' in df.columns:
+            features['hmm_regime_label_1h'] = df['hmm_regime_label_1h']
+
+        # Raw per-regime probabilities (regime_0_prob, regime_1_prob, ...)
+        regime_prob_cols = [
+            c for c in df.columns
+            if c.startswith('regime_') and c.endswith('_prob')
+        ]
+        for col in regime_prob_cols:
+            features[col] = df[col]
+    except Exception as e_reg:
+        tprint(f"⚠️ Warning: Could not attach external regime features: {e_reg}", "WARNING")
 
     # ===== KALMAN-FILTERED TECHNICAL INDICATORS =====
 
@@ -1417,6 +1524,270 @@ def select_features_by_importance(
     return selected_features
 
 
+def build_meta_features_for_model(
+    market_data: pd.DataFrame,
+    primary_signals: pd.DataFrame,
+    realized_returns: pd.Series,
+    binary_labels: pd.Series,
+    event_durations: pd.Series,
+    mfe_series: pd.Series,
+    mae_series: pd.Series,
+    adaptive_stop_threshold: pd.Series,
+    horizon: int,
+    volume_available: bool,
+    meta_feature_cfg: Dict[str, Any],
+) -> Tuple[pd.DataFrame, pd.DataFrame, List[str], Optional[np.ndarray]]:
+    # Optional: label uncertainty can be passed via meta_feature_cfg to enable
+    # quality-aware weighting without requiring direct access to the caller's
+    # local variables.
+    if isinstance(meta_feature_cfg, dict):
+        label_uncertainty = meta_feature_cfg.get('_label_uncertainty')
+
+    # Event-centric and label-history features (event-only where applicable)
+    event_mask = ~binary_labels.isna()
+
+    # Bars since last labeled event
+    idx = np.arange(len(market_data))
+    last_event_idx = np.where(event_mask.to_numpy(), idx, np.nan)
+    last_event_idx_series = pd.Series(last_event_idx, index=market_data.index).ffill()
+
+    bars_since_last_event = idx - last_event_idx_series.values
+    bars_since_last_event[last_event_idx_series.isna().values] = np.nan
+
+    # Distance to recent highs/lows and recent drawdown
+    recent_high_50 = market_data['high'].rolling(50).max()
+    recent_low_50 = market_data['low'].rolling(50).min()
+    dist_from_recent_high_50 = (market_data['close'] - recent_high_50) / (recent_high_50 + 1e-8)
+    dist_from_recent_low_50 = (market_data['close'] - recent_low_50) / (recent_low_50 + 1e-8)
+
+    rolling_max_100 = market_data['close'].rolling(100).max()
+    drawdown_100 = (market_data['close'] - rolling_max_100) / (rolling_max_100 + 1e-8)
+
+    # Label-history (rolling over past events only)
+    event_returns = realized_returns[event_mask]
+    event_labels = binary_labels[event_mask]
+
+    rolling_win_rate_50 = event_labels.rolling(window=50, min_periods=1).mean()
+    rolling_mean_ret_50 = event_returns.rolling(window=50, min_periods=1).mean()
+
+    win_rate_50_full = pd.Series(np.nan, index=market_data.index)
+    win_rate_50_full.loc[rolling_win_rate_50.index] = rolling_win_rate_50
+
+    mean_ret_50_full = pd.Series(np.nan, index=market_data.index)
+    mean_ret_50_full.loc[rolling_mean_ret_50.index] = rolling_mean_ret_50
+
+    # Event-mechanics history (R-multiple, TTO, MFE/MAE) based only on past events
+    try:
+        # Per-event R-multiple using adaptive stop as risk unit
+        r_unit_series = adaptive_stop_threshold.abs().replace(0.0, np.nan)
+        r_multiple_series = (realized_returns / (r_unit_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
+        event_r_multiple = r_multiple_series[event_mask]
+
+        # Time-to-outcome ratio (TTO): duration normalized by horizon
+        if horizon > 0:
+            event_tto = (event_durations[event_mask] / float(horizon)).replace([np.inf, -np.inf], np.nan)
+        else:
+            event_tto = pd.Series(index=event_returns.index, dtype=float)
+
+        # MFE/MAE ratio
+        event_mfe = mfe_series[event_mask]
+        event_mae = mae_series[event_mask]
+        mfe_mae_ratio_series = (event_mfe / (event_mae + 1e-6)).replace([np.inf, -np.inf], np.nan)
+
+        # Rolling histories over past events only
+        rolling_r_multiple_50 = event_r_multiple.rolling(window=50, min_periods=1).mean()
+        rolling_tto_50 = event_tto.rolling(window=50, min_periods=1).mean()
+        rolling_mfe_mae_ratio_50 = mfe_mae_ratio_series.rolling(window=50, min_periods=1).mean()
+
+        r_mult_50_full = pd.Series(np.nan, index=market_data.index)
+        r_mult_50_full.loc[rolling_r_multiple_50.index] = rolling_r_multiple_50
+
+        tto_50_full = pd.Series(np.nan, index=market_data.index)
+        tto_50_full.loc[rolling_tto_50.index] = rolling_tto_50
+
+        mfe_mae_ratio_50_full = pd.Series(np.nan, index=market_data.index)
+        mfe_mae_ratio_50_full.loc[rolling_mfe_mae_ratio_50.index] = rolling_mfe_mae_ratio_50
+    except Exception:
+        r_mult_50_full = pd.Series(np.nan, index=market_data.index)
+        tto_50_full = pd.Series(np.nan, index=market_data.index)
+        mfe_mae_ratio_50_full = pd.Series(np.nan, index=market_data.index)
+
+    # STEP 5: Create meta-features with Kalman filtering
+    tprint("🔧 [5/13] Creating meta-features with Kalman filtering...", "INFO")
+    meta_features = create_meta_features(
+        market_data,
+        primary_signals,
+        volume_available,
+        include_raw_signals=False,  # CRITICAL: avoid circular behavior
+        use_kalman=True  # Enable Kalman filtering
+    )
+
+    # Attach event-centric and label-history features
+    event_meta_features = pd.DataFrame(index=market_data.index)
+    event_meta_features['bars_since_last_event'] = bars_since_last_event
+    event_meta_features['dist_from_recent_high_50'] = dist_from_recent_high_50
+    event_meta_features['dist_from_recent_low_50'] = dist_from_recent_low_50
+    event_meta_features['drawdown_100'] = drawdown_100
+    event_meta_features['event_win_rate_last_50'] = win_rate_50_full
+    event_meta_features['event_mean_return_last_50'] = mean_ret_50_full
+    event_meta_features['event_r_multiple_mean_last_50'] = r_mult_50_full
+    event_meta_features['event_tto_mean_last_50'] = tto_50_full
+    event_meta_features['event_mfe_mae_ratio_mean_last_50'] = mfe_mae_ratio_50_full
+
+    # Attach/overwrite event-centric features without creating duplicate columns
+    meta_features[event_meta_features.columns] = event_meta_features
+
+    meta_features_model = prepare_feature_matrix(meta_features)
+
+    meta_features_model_processed = meta_features_model
+    if not isinstance(meta_feature_cfg, dict):
+        meta_feature_cfg = {}
+
+    if meta_feature_cfg.get('enable_winsorisation', False):
+        try:
+            lower_q = float(meta_feature_cfg.get('winsor_lower_q', 0.01))
+            upper_q = float(meta_feature_cfg.get('winsor_upper_q', 0.99))
+            robust_window = int(meta_feature_cfg.get('robust_window', 256))
+            robust_min_periods = int(meta_feature_cfg.get('robust_min_periods', max(1, robust_window // 4)))
+
+            meta_features_model_processed = rolling_robust_scale_features(
+                meta_features_model_processed,
+                window=robust_window,
+                min_periods=robust_min_periods,
+                skip_binary=True,
+                skip_low_cardinality_int=True,
+            )
+            meta_features_model_processed = winsorize_features(
+                meta_features_model_processed,
+                lower_quantile=lower_q,
+                upper_quantile=upper_q,
+            )
+            tprint(
+                f"📊 Applied rolling robust scaling (w={robust_window}) + winsorisation to meta-features (q={lower_q:.3f}-{upper_q:.3f})",
+                "INFO",
+            )
+        except Exception as e_w:
+            tprint(f"⚠️ Winsorisation failed, using raw features: {e_w}", "WARNING")
+
+    selected_feature_names = list(meta_features_model_processed.columns)
+    if meta_feature_cfg.get('enable_feature_selection', False):
+        try:
+            max_feats = meta_feature_cfg.get('max_features', None)
+            if max_feats is not None:
+                max_feats = int(max_feats)
+            corr_threshold = float(meta_feature_cfg.get('correlation_threshold', 0.95))
+            fs_method = meta_feature_cfg.get('selection_method', 'tree')
+            selected_feature_names = select_features_by_importance(
+                X=meta_features_model_processed,
+                y=binary_labels,
+                max_features=max_feats,
+                correlation_threshold=corr_threshold,
+                method=fs_method,
+            )
+            meta_features_model_processed = meta_features_model_processed[selected_feature_names]
+        except Exception as e_fs:
+            tprint(f"⚠️ Feature selection failed, using all features: {e_fs}", "WARNING")
+            selected_feature_names = list(meta_features_model_processed.columns)
+
+    sample_weights: Optional[np.ndarray] = None
+    if meta_feature_cfg.get('enable_sample_weighting', False):
+        try:
+            if isinstance(market_data.index, pd.DatetimeIndex):
+                event_mask_sw = ~binary_labels.isna()
+                if event_mask_sw.any():
+                    index_series = pd.Series(market_data.index, index=market_data.index)
+                    event_start_times = pd.Series(pd.NaT, index=market_data.index)
+                    event_start_times[event_mask_sw] = index_series[event_mask_sw]
+
+                    # Use median bar spacing as scalar Timedelta; fall back to no adjustment on failure
+                    bar_delta = index_series.diff().dropna().median()
+                    if not isinstance(bar_delta, pd.Timedelta) or bar_delta <= pd.Timedelta(0):
+                        event_end_times = event_start_times.copy()
+                    else:
+                        durations_bars = event_durations.fillna(0).round().astype(int)
+                        event_end_times = event_start_times.copy()
+                        event_end_times[event_mask_sw] = (
+                            event_start_times[event_mask_sw]
+                            + durations_bars[event_mask_sw] * bar_delta
+                        )
+                    sample_weights = compute_sample_weights_with_uniqueness(
+                        event_start_times=event_start_times,
+                        event_end_times=event_end_times,
+                        y=binary_labels,
+                        class_weight_mult=float(meta_feature_cfg.get('class_weight_mult', 5.0)),
+                    )
+
+                    # Optional cost- and R-multiple-aware reweighting
+                    if sample_weights is not None and meta_feature_cfg.get('enable_cost_aware_weighting', True):
+                        try:
+                            weights = np.asarray(sample_weights, dtype=float)
+
+                            # Compute per-event R-multiple at entry bars
+                            r_unit_series = adaptive_stop_threshold.abs().replace(0.0, np.nan)
+                            r_multiple_series = (realized_returns / (r_unit_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
+                            r_multiple_arr = r_multiple_series.fillna(0.0).to_numpy(dtype=float)
+
+                            # Emphasize high-R winners; clip to avoid extreme weights
+                            r_pos = np.clip(r_multiple_arr, 0.0, 3.0)
+                            r_factor = 1.0 + r_pos  # 1..4
+
+                            # Down-weight clearly bad losers if configured
+                            neg_weight_mult = float(meta_feature_cfg.get('neg_weight_mult', 0.7))
+                            label_arr = binary_labels.fillna(-1.0).to_numpy(dtype=float)
+
+                            class_factor = np.ones_like(weights, dtype=float)
+                            class_factor = np.where(label_arr == 1.0, r_factor, class_factor)
+                            class_factor = np.where(label_arr == 0.0, class_factor * neg_weight_mult, class_factor)
+
+                            # Additional noise-aware quality weighting (event diagnostics)
+                            try:
+                                quality_factor = np.ones_like(weights, dtype=float)
+
+                                # 1) Kalman label uncertainty: higher uncertainty → lower weight
+                                if 'label_uncertainty' in locals() and isinstance(label_uncertainty, pd.Series):
+                                    lu = pd.to_numeric(label_uncertainty, errors="coerce")
+                                    if lu.notna().any():
+                                        lu_filled = lu.fillna(lu.median())
+                                        lu_norm = (lu_filled - lu_filled.min()) / (lu_filled.max() - lu_filled.min() + 1e-8)
+                                        lu_factor = 1.2 - 0.4 * lu_norm.clip(0.0, 1.0)  # ≈ [0.8, 1.2]
+                                        quality_factor *= lu_factor.to_numpy(dtype=float)
+
+                                # 2) MFE/MAE ratio: reward efficient trends, penalize noisy paths
+                                if 'mfe_series' in locals() and 'mae_series' in locals() and isinstance(mfe_series, pd.Series) and isinstance(mae_series, pd.Series):
+                                    mfe_local = pd.to_numeric(mfe_series, errors="coerce")
+                                    mae_local = pd.to_numeric(mae_series, errors="coerce")
+                                    mfe_mae = (mfe_local / (mae_local + 1e-6)).replace([np.inf, -np.inf], np.nan)
+                                    mfe_mae_clipped = mfe_mae.clip(lower=0.0, upper=3.0).fillna(1.0)
+                                    mfe_factor = 0.7 + 0.3 * mfe_mae_clipped  # ≈ [0.7, 1.6]
+                                    quality_factor *= mfe_factor.to_numpy(dtype=float)
+
+                                # 3) Time-to-outcome ratio (TTO): down-weight near-timeout events
+                                if 'event_durations' in locals() and isinstance(event_durations, pd.Series) and horizon > 0:
+                                    tto = (event_durations / float(horizon)).replace([np.inf, -np.inf], np.nan)
+                                    tto_clipped = tto.clip(lower=0.0, upper=2.0).fillna(1.0)
+                                    tto_factor = 1.1 - 0.4 * tto_clipped.clip(0.0, 1.5)  # ≈ [0.5, 1.1]
+                                    quality_factor *= tto_factor.to_numpy(dtype=float)
+                            except Exception as w_quality_exc:
+                                tprint(f"⚠️ Quality-aware weighting failed, using cost/uniqueness only: {w_quality_exc}", "WARNING")
+                                quality_factor = np.ones_like(weights, dtype=float)
+
+                            # Combine class-based and quality-based weights
+                            weights *= class_factor * quality_factor
+
+                            # Normalize back to mean 1 to keep scale stable
+                            if np.isfinite(weights).any() and weights.mean() > 0:
+                                weights = weights / weights.mean()
+
+                            sample_weights = weights
+                        except Exception as w_cost_exc:
+                            tprint(f"⚠️ Cost-aware weighting failed, using uniqueness weights only: {w_cost_exc}", "WARNING")
+        except Exception as w_exc:
+            tprint(f"⚠️ Sample weight computation failed, using uniform weights: {w_exc}", "WARNING")
+            sample_weights = None
+
+    return meta_features, meta_features_model_processed, selected_feature_names, sample_weights
+
+
 def fit_probability_to_return_mapping(
     probabilities: np.ndarray,
     realized_returns: np.ndarray,
@@ -1438,18 +1809,10 @@ def fit_probability_to_return_mapping(
     Returns:
         Fitted IsotonicRegression model
     """
-    # DEBUG LOGGING: Input statistics
-    logger.info(f"Isotonic regression fitting - Input statistics:")
-    logger.info(f"  Probabilities: n={len(probabilities)}, mean={np.nanmean(probabilities):.4f}, std={np.nanstd(probabilities):.4f}, min={np.nanmin(probabilities):.4f}, max={np.nanmax(probabilities):.4f}")
-    logger.info(f"  Returns: n={len(realized_returns)}, mean={np.nanmean(realized_returns):.4f}, std={np.nanstd(realized_returns):.4f}, min={np.nanmin(realized_returns):.4f}, max={np.nanmax(realized_returns):.4f}")
-
     n_nan_prob = np.isnan(probabilities).sum()
     n_nan_ret = np.isnan(realized_returns).sum()
     n_inf_prob = np.isinf(probabilities).sum()
     n_inf_ret = np.isinf(realized_returns).sum()
-
-    logger.info(f"  NaN counts: probabilities={n_nan_prob}, returns={n_nan_ret}")
-    logger.info(f"  Inf counts: probabilities={n_inf_prob}, returns={n_inf_ret}")
 
     # Remove NaN values and ignore economically trivial events (below cost floor)
     econ_floor = ECON_MIN_RETURN_MULTIPLE * DEFAULT_TRANSACTION_COST
@@ -1466,7 +1829,18 @@ def fit_probability_to_return_mapping(
     p_clean = probabilities[mask]
     r_clean = realized_returns[mask]
 
-    logger.info(f"  After NaN/economic filtering: {len(p_clean)} samples remaining")
+    # Compact isotonic diagnostics: counts and filtering
+    try:
+        tprint(
+            f"📊 [META_ISO] n_prob={len(probabilities)}, n_ret={len(realized_returns)}, "
+            f"nan_prob={n_nan_prob}, nan_ret={n_nan_ret}, "
+            f"inf_prob={n_inf_prob}, inf_ret={n_inf_ret}, "
+            f"filtered={len(p_clean)}, econ_floor={econ_floor:.6f}",
+            "INFO",
+        )
+    except Exception:
+        # Never let diagnostics break the main flow
+        logger.debug("Isotonic diagnostics logging failed", exc_info=True)
 
     if len(p_clean) < 10:
         tprint("⚠️ Warning: Very few samples for probability mapping", "WARNING")
@@ -1492,23 +1866,25 @@ def fit_probability_to_return_mapping(
             # Older sklearn versions may not support sample_weight here
             iso.fit(p_clean, r_clean)
 
-        # DEBUG LOGGING: Check fitted mapping quality
-        test_probs = np.linspace(0, 1, 11)
-        test_expected_returns = iso.predict(test_probs)
-
-        logger.info(f"  Isotonic regression fitted successfully")
-        logger.info(f"  Test mapping (prob → expected return):")
-        for p, r in zip(test_probs, test_expected_returns):
-            logger.info(f"    {p:.1f} → {r:.4f}")
-
-        # Check correlation between input probabilities and returns
+        # Compact mapping & correlation diagnostics
         if len(p_clean) > 2:
             from scipy.stats import spearmanr
             try:
                 corr, pval = spearmanr(p_clean, r_clean)
-                logger.info(f"  Spearman correlation (prob, return): {corr:.4f} (p={pval:.4e})")
-            except:
-                logger.warning("  Could not compute Spearman correlation")
+
+                probe_probs = np.array([0.0, 0.5, 1.0])
+                probe_returns = iso.predict(probe_probs)
+
+                tprint(
+                    "📊 [META_ISO] mapping & corr → "
+                    f"p=0.0:{probe_returns[0]:.4f}, "
+                    f"0.5:{probe_returns[1]:.4f}, "
+                    f"1.0:{probe_returns[2]:.4f}, "
+                    f"spearman={corr:.4f}, p={pval:.2e}",
+                    "INFO",
+                )
+            except Exception:
+                logger.warning("  Could not compute Spearman correlation", exc_info=True)
 
         return iso
 
@@ -1569,16 +1945,11 @@ def translate_to_targets_with_isotonic(
     # Only apply minimal clipping to avoid extreme outliers
     final_targets = np.clip(net_positive, 0.0, 0.15)  # Cap at 15% to avoid outliers
 
-    # DEBUG LOGGING: Target statistics
+    # DEBUG LOGGING: Target statistics (compact summary)
     n_nonzero = (final_targets > 1e-6).sum()
     pct_nonzero = n_nonzero / len(final_targets) * 100 if len(final_targets) > 0 else 0
     n_above_cost = (final_targets > cost_threshold).sum()
     pct_above_cost = n_above_cost / len(final_targets) * 100 if len(final_targets) > 0 else 0
-
-    logger.info(f"Target generation (RAW expected returns):")
-    logger.info(f"  Non-zero: {n_nonzero}/{len(final_targets)} ({pct_nonzero:.1f}%)")
-    logger.info(f"  Above cost ({cost_threshold:.3%}): {n_above_cost}/{len(final_targets)} ({pct_above_cost:.1f}%)")
-    logger.info(f"  Mean={final_targets.mean():.6f}, Std={final_targets.std():.6f}, Max={final_targets.max():.6f}")
 
     # Vectorized assignment based on signal direction
     long_mask = (consensus > 0) & (~realized_returns.isna())
@@ -1587,10 +1958,21 @@ def translate_to_targets_with_isotonic(
     target_long.iloc[long_mask] = final_targets[long_mask]
     target_short.iloc[short_mask] = final_targets[short_mask]
 
-    # DEBUG LOGGING: Verify assignment coverage
+    # DEBUG LOGGING: Verify assignment coverage (compact)
     n_long_assigned = (target_long > 0).sum()
     n_short_assigned = (target_short > 0).sum()
-    logger.info(f"Target assignment: {n_long_assigned} long, {n_short_assigned} short")
+
+    try:
+        tprint(
+            "📊 [META_TARGETS] nonzero="
+            f"{n_nonzero}/{len(final_targets)} ({pct_nonzero:.1f}%), "
+            f"above_cost={n_above_cost}/{len(final_targets)} ({pct_above_cost:.1f}%), "
+            f"mean={final_targets.mean():.6f}, std={final_targets.std():.6f}, max={final_targets.max():.6f}, "
+            f"assigned_long={n_long_assigned}, assigned_short={n_short_assigned}",
+            "INFO",
+        )
+    except Exception:
+        logger.debug("Target diagnostics logging failed", exc_info=True)
 
     return target_long, target_short
 
@@ -2761,7 +3143,12 @@ def focal_loss_xgb(y_pred, dtrain, alpha=0.25, gamma=2.0):
     Returns:
         Tuple of (gradient, hessian)
     """
-    y_true = dtrain.get_label()
+    if hasattr(dtrain, "get_label"):
+        y_true = dtrain.get_label()
+    else:
+        y_true = dtrain
+
+    y_true = np.asarray(y_true, dtype=float).ravel()
 
     # Sigmoid to get probabilities
     p = 1.0 / (1.0 + np.exp(-y_pred))
@@ -3512,6 +3899,168 @@ def combined_label_quality_objective(
     return combined, diagnostics
 
 
+def compute_label_quality_score_from_components(
+    coverage: float,
+    retention_total: float,
+    snr_post: float,
+    d_post: float,
+    econ_margin: float,
+) -> Tuple[float, str, str]:
+    """Map label-quality components into a scalar score and rating.
+
+    This mirrors the scoring used in snr_diagnostics.run_label_quality so that
+    both diagnostics and HPO can refer to the same transformation from
+    coverage / retention / SNR / effect size / econ margin → [0, 1] score.
+    """
+
+    def _score_component(value: float, low: float, high: float) -> float:
+        if value is None or not np.isfinite(value):
+            return 0.0
+        if value <= low:
+            return 0.0
+        if value >= high:
+            return 1.0
+        return float((value - low) / (high - low))
+
+    coverage_score = _score_component(coverage, 0.05, 0.2)
+    retention_score = _score_component(retention_total, 0.1, 0.3)
+    snr_score = _score_component(snr_post, 0.5, 1.0)
+    d_score = _score_component(abs(d_post) if np.isfinite(d_post) else float("nan"), 0.2, 1.5)
+    econ_score = _score_component(econ_margin, 0.0, 0.02)
+
+    components = [coverage_score, retention_score, snr_score, d_score, econ_score]
+    label_quality_score = float(np.mean(components))
+
+    if label_quality_score < 0.4:
+        rating = "Bad"
+        comment = (
+            "Low coverage/SNR or weak economic separation; labels are likely "
+            "noisy or too sparse."
+        )
+    elif label_quality_score < 0.7:
+        rating = "Pass"
+        comment = (
+            "Mixed label quality; some usable signal but economic separation "
+            "or coverage may be modest."
+        )
+    else:
+        rating = "Great"
+        comment = (
+            "Strong label quality with good coverage, separation and "
+            "economic margins."
+        )
+
+    return label_quality_score, rating, comment
+
+
+def attach_rolling_hmm_regimes_to_market_data(
+    step: BaseStep,
+    market_data: pd.DataFrame,
+    config: Dict[str, Any],
+) -> pd.DataFrame:
+    if not isinstance(market_data, pd.DataFrame) or market_data.empty:
+        return market_data
+
+    try:
+        symbol = str(config.get("symbol", "ETHUSDT"))
+        exchange = str(config.get("exchange", "binance"))
+        base_timeframe = str(config.get("timeframe", "15m"))
+        direction = str(config.get("direction", "long"))
+        regime_timeframe = str(config.get("regime_timeframe", config.get("timeframe", "1h")))
+    except Exception:
+        return market_data
+
+    original_context: Optional[Dict[str, Any]] = None
+    if hasattr(step, "_current_context") and isinstance(step._current_context, dict):
+        original_context = step._current_context.copy()
+
+    labels = None
+    probs = None
+
+    try:
+        step.set_context(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=regime_timeframe,
+            direction=direction,
+            model="regime",
+        )
+
+        labels = step._get_artifact(
+            "rolling_hmm_regime_labels",
+            artifact_type="data",
+        )
+        probs = step._get_artifact(
+            "rolling_hmm_regime_probabilities",
+            artifact_type="data",
+        )
+    except Exception as e:
+        tprint(f"⚠️ Could not load rolling HMM regime artifacts: {e}", "WARNING")
+    finally:
+        try:
+            step.set_context(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=base_timeframe,
+                direction=direction,
+                model=config.get("model", "analyst"),
+            )
+        except Exception:
+            if isinstance(original_context, dict) and original_context:
+                try:
+                    step.set_context(**original_context)
+                except Exception:
+                    pass
+
+    if labels is None and (probs is None or (isinstance(probs, pd.DataFrame) and probs.empty)):
+        return market_data
+
+    md = market_data.copy()
+
+    try:
+        labels_series = None
+        if isinstance(labels, pd.DataFrame) and not labels.empty:
+            labels_df = labels.copy()
+            if "timestamp" in labels_df.columns:
+                labels_df["timestamp"] = pd.to_datetime(labels_df["timestamp"])
+                labels_df.set_index("timestamp", inplace=True)
+            if isinstance(labels_df.index, pd.DatetimeIndex):
+                if "regime_label_ml" in labels_df.columns:
+                    regime_col = "regime_label_ml"
+                elif "regime_label" in labels_df.columns:
+                    regime_col = "regime_label"
+                else:
+                    regime_col = None
+                if regime_col is not None:
+                    labels_series = labels_df[regime_col].sort_index()
+        if labels_series is not None:
+            aligned_labels = labels_series.reindex(md.index, method="ffill")
+            md["hmm_regime_label_1h"] = aligned_labels
+    except Exception as e_lab:
+        tprint(f"⚠️ Failed to align rolling HMM regime labels: {e_lab}", "WARNING")
+
+    try:
+        if isinstance(probs, pd.DataFrame) and not probs.empty:
+            probs_df = probs.copy()
+            if "timestamp" in probs_df.columns:
+                probs_df["timestamp"] = pd.to_datetime(probs_df["timestamp"])
+                probs_df.set_index("timestamp", inplace=True)
+            if isinstance(probs_df.index, pd.DatetimeIndex):
+                prob_cols = [
+                    c for c in probs_df.columns
+                    if c.startswith("regime_") and c.endswith("_prob")
+                ]
+                if prob_cols:
+                    probs_sub = probs_df[prob_cols].sort_index()
+                    probs_aligned = probs_sub.reindex(md.index, method="ffill")
+                    for col in prob_cols:
+                        md[col] = probs_aligned[col]
+    except Exception as e_prob:
+        tprint(f"⚠️ Failed to align rolling HMM regime probabilities: {e_prob}", "WARNING")
+
+    return md
+
+
 class HPOCache:
     """Simple cache for HPO computations to avoid recomputing labels."""
 
@@ -3631,6 +4180,8 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             iso_min_prob_param = float(config.get('iso_min_prob', 0.0))
             target_clip_high_q_param = config.get('target_clip_high_q', None)
 
+            used_hpo_params = False
+
             # Optionally override labeling parameters using latest HPO results
             # enable_labeling_hpo_params: if True (default), try to load best params JSON
             if config.get('enable_labeling_hpo_params', True):
@@ -3688,6 +4239,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                             f"⚙️ HPO overrides → profit={profit_threshold:.3%}, stop={stop_threshold:.3%}, horizon={horizon}, spacing={min_event_spacing}",
                             "INFO",
                         )
+                        used_hpo_params = True
                     else:
                         tprint("ℹ️ No HPO best-params file found; using configured/default labeling parameters", "INFO")
                 except Exception as hpo_exc:
@@ -3713,6 +4265,15 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 raise ValueError("Missing required 'close' column in market data")
 
             volume_available = 'volume' in market_data.columns
+
+            try:
+                market_data = attach_rolling_hmm_regimes_to_market_data(
+                    self,
+                    market_data,
+                    config,
+                )
+            except Exception as e_reg:
+                tprint(f"⚠️ Failed to attach rolling HMM regimes to market_data: {e_reg}", "WARNING")
 
             # STEP 1: Generate FIXED primary signals
             tprint("🎯 [1/13] Generating fixed primary signals...", "INFO")
@@ -3771,11 +4332,23 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             quantile_low_q = float(config.get("quantile_low_q", 0.3))
             quantile_high_q = float(config.get("quantile_high_q", 0.7))
 
-            quantile_labels = create_quantile_labels_from_vol_scaled_returns(
-                vol_scaled=vol_scaled_returns,
-                low_q=quantile_low_q,
-                high_q=quantile_high_q,
-            )
+            regimes_for_labeling = None
+            if config.get("enable_regime_aware_quantiles", True) and "hmm_regime_label_1h" in market_data.columns:
+                regimes_for_labeling = market_data["hmm_regime_label_1h"]
+
+            if regimes_for_labeling is not None:
+                quantile_labels = create_regime_aware_quantile_labels_from_vol_scaled_returns(
+                    vol_scaled=vol_scaled_returns,
+                    regimes=regimes_for_labeling,
+                    low_q=quantile_low_q,
+                    high_q=quantile_high_q,
+                )
+            else:
+                quantile_labels = create_quantile_labels_from_vol_scaled_returns(
+                    vol_scaled=vol_scaled_returns,
+                    low_q=quantile_low_q,
+                    high_q=quantile_high_q,
+                )
 
             # Always use quantile-based labels for meta-labeling. If they are
             # very sparse, downstream diagnostics will reflect that directly.
@@ -3810,214 +4383,23 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             )
             tprint(f"📊 Smoothed labels: Mean={smoothed_labels[labeled_mask].mean():.3f}, Std={smoothed_labels[labeled_mask].std():.3f}", "INFO")
 
-            # Event-centric and label-history features (event-only where applicable)
-            event_mask = ~binary_labels.isna()
+            meta_feature_cfg_raw = config.get('meta_feature_engineering', {})
+            meta_feature_cfg = dict(meta_feature_cfg_raw) if isinstance(meta_feature_cfg_raw, dict) else {}
+            meta_feature_cfg["_label_uncertainty"] = label_uncertainty
 
-            # Bars since last labeled event
-            idx = np.arange(len(market_data))
-            last_event_idx = np.where(event_mask.to_numpy(), idx, np.nan)
-            last_event_idx_series = pd.Series(last_event_idx, index=market_data.index).ffill()
-
-            bars_since_last_event = idx - last_event_idx_series.values
-            bars_since_last_event[last_event_idx_series.isna().values] = np.nan
-
-            # Distance to recent highs/lows and recent drawdown
-            recent_high_50 = market_data['high'].rolling(50).max()
-            recent_low_50 = market_data['low'].rolling(50).min()
-            dist_from_recent_high_50 = (market_data['close'] - recent_high_50) / (recent_high_50 + 1e-8)
-            dist_from_recent_low_50 = (market_data['close'] - recent_low_50) / (recent_low_50 + 1e-8)
-
-            rolling_max_100 = market_data['close'].rolling(100).max()
-            drawdown_100 = (market_data['close'] - rolling_max_100) / (rolling_max_100 + 1e-8)
-
-            # Label-history (rolling over past events only)
-            event_returns = realized_returns[event_mask]
-            event_labels = binary_labels[event_mask]
-
-            rolling_win_rate_50 = event_labels.rolling(window=50, min_periods=1).mean()
-            rolling_mean_ret_50 = event_returns.rolling(window=50, min_periods=1).mean()
-
-            win_rate_50_full = pd.Series(np.nan, index=market_data.index)
-            win_rate_50_full.loc[rolling_win_rate_50.index] = rolling_win_rate_50
-
-            mean_ret_50_full = pd.Series(np.nan, index=market_data.index)
-            mean_ret_50_full.loc[rolling_mean_ret_50.index] = rolling_mean_ret_50
-
-            # Event-mechanics history (R-multiple, TTO, MFE/MAE) based only on past events
-            try:
-                # Per-event R-multiple using adaptive stop as risk unit
-                r_unit_series = adaptive_stop_threshold.abs().replace(0.0, np.nan)
-                r_multiple_series = (realized_returns / (r_unit_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
-                event_r_multiple = r_multiple_series[event_mask]
-
-                # Time-to-outcome ratio (TTO): duration normalized by horizon
-                if horizon > 0:
-                    event_tto = (event_durations[event_mask] / float(horizon)).replace([np.inf, -np.inf], np.nan)
-                else:
-                    event_tto = pd.Series(index=event_returns.index, dtype=float)
-
-                # MFE/MAE ratio
-                event_mfe = mfe_series[event_mask]
-                event_mae = mae_series[event_mask]
-                mfe_mae_ratio_series = (event_mfe / (event_mae + 1e-6)).replace([np.inf, -np.inf], np.nan)
-
-                # Rolling histories over past events only
-                rolling_r_multiple_50 = event_r_multiple.rolling(window=50, min_periods=1).mean()
-                rolling_tto_50 = event_tto.rolling(window=50, min_periods=1).mean()
-                rolling_mfe_mae_ratio_50 = mfe_mae_ratio_series.rolling(window=50, min_periods=1).mean()
-
-                r_mult_50_full = pd.Series(np.nan, index=market_data.index)
-                r_mult_50_full.loc[rolling_r_multiple_50.index] = rolling_r_multiple_50
-
-                tto_50_full = pd.Series(np.nan, index=market_data.index)
-                tto_50_full.loc[rolling_tto_50.index] = rolling_tto_50
-
-                mfe_mae_ratio_50_full = pd.Series(np.nan, index=market_data.index)
-                mfe_mae_ratio_50_full.loc[rolling_mfe_mae_ratio_50.index] = rolling_mfe_mae_ratio_50
-            except Exception:
-                r_mult_50_full = pd.Series(np.nan, index=market_data.index)
-                tto_50_full = pd.Series(np.nan, index=market_data.index)
-                mfe_mae_ratio_50_full = pd.Series(np.nan, index=market_data.index)
-
-            # STEP 5: Create meta-features with Kalman filtering
-            tprint("🔧 [5/13] Creating meta-features with Kalman filtering...", "INFO")
-            meta_features = create_meta_features(
-                market_data,
-                primary_signals,
-                volume_available,
-                include_raw_signals=False,  # CRITICAL: avoid circular behavior
-                use_kalman=True  # Enable Kalman filtering
+            meta_features, meta_features_model_processed, selected_feature_names, sample_weights = build_meta_features_for_model(
+                market_data=market_data,
+                primary_signals=primary_signals,
+                realized_returns=realized_returns,
+                binary_labels=binary_labels,
+                event_durations=event_durations,
+                mfe_series=mfe_series,
+                mae_series=mae_series,
+                adaptive_stop_threshold=adaptive_stop_threshold,
+                horizon=horizon,
+                volume_available=volume_available,
+                meta_feature_cfg=meta_feature_cfg,
             )
-
-            # Attach event-centric and label-history features
-            event_meta_features = pd.DataFrame(index=market_data.index)
-            event_meta_features['bars_since_last_event'] = bars_since_last_event
-            event_meta_features['dist_from_recent_high_50'] = dist_from_recent_high_50
-            event_meta_features['dist_from_recent_low_50'] = dist_from_recent_low_50
-            event_meta_features['drawdown_100'] = drawdown_100
-            event_meta_features['event_win_rate_last_50'] = win_rate_50_full
-            event_meta_features['event_mean_return_last_50'] = mean_ret_50_full
-            event_meta_features['event_r_multiple_mean_last_50'] = r_mult_50_full
-            event_meta_features['event_tto_mean_last_50'] = tto_50_full
-            event_meta_features['event_mfe_mae_ratio_mean_last_50'] = mfe_mae_ratio_50_full
-
-            # Attach/overwrite event-centric features without creating duplicate columns
-            meta_features[event_meta_features.columns] = event_meta_features
-
-            meta_features_model = prepare_feature_matrix(meta_features)
-
-            meta_features_model_processed = meta_features_model
-            meta_feature_cfg = config.get('meta_feature_engineering', {})
-            if not isinstance(meta_feature_cfg, dict):
-                meta_feature_cfg = {}
-
-            if meta_feature_cfg.get('enable_winsorisation', False):
-                try:
-                    lower_q = float(meta_feature_cfg.get('winsor_lower_q', 0.01))
-                    upper_q = float(meta_feature_cfg.get('winsor_upper_q', 0.99))
-                    robust_window = int(meta_feature_cfg.get('robust_window', 256))
-                    robust_min_periods = int(meta_feature_cfg.get('robust_min_periods', max(1, robust_window // 4)))
-
-                    meta_features_model_processed = rolling_robust_scale_features(
-                        meta_features_model_processed,
-                        window=robust_window,
-                        min_periods=robust_min_periods,
-                        skip_binary=True,
-                        skip_low_cardinality_int=True,
-                    )
-                    meta_features_model_processed = winsorize_features(
-                        meta_features_model_processed,
-                        lower_quantile=lower_q,
-                        upper_quantile=upper_q,
-                    )
-                    tprint(
-                        f"📊 Applied rolling robust scaling (w={robust_window}) + winsorisation to meta-features (q={lower_q:.3f}-{upper_q:.3f})",
-                        "INFO",
-                    )
-                except Exception as e_w:
-                    tprint(f"⚠️ Winsorisation failed, using raw features: {e_w}", "WARNING")
-
-            selected_feature_names = list(meta_features_model_processed.columns)
-            if meta_feature_cfg.get('enable_feature_selection', False):
-                try:
-                    max_feats = meta_feature_cfg.get('max_features', None)
-                    if max_feats is not None:
-                        max_feats = int(max_feats)
-                    corr_threshold = float(meta_feature_cfg.get('correlation_threshold', 0.95))
-                    fs_method = meta_feature_cfg.get('selection_method', 'tree')
-                    selected_feature_names = select_features_by_importance(
-                        X=meta_features_model_processed,
-                        y=binary_labels,
-                        max_features=max_feats,
-                        correlation_threshold=corr_threshold,
-                        method=fs_method,
-                    )
-                    meta_features_model_processed = meta_features_model_processed[selected_feature_names]
-                except Exception as e_fs:
-                    tprint(f"⚠️ Feature selection failed, using all features: {e_fs}", "WARNING")
-                    selected_feature_names = list(meta_features_model_processed.columns)
-
-            sample_weights = None
-            if meta_feature_cfg.get('enable_sample_weighting', False):
-                try:
-                    if isinstance(market_data.index, pd.DatetimeIndex):
-                        event_mask = ~binary_labels.isna()
-                        if event_mask.any():
-                            index_series = pd.Series(market_data.index, index=market_data.index)
-                            event_start_times = pd.Series(pd.NaT, index=market_data.index)
-                            event_start_times[event_mask] = index_series[event_mask]
-
-                            # Use median bar spacing as scalar Timedelta; fall back to no adjustment on failure
-                            bar_delta = index_series.diff().dropna().median()
-                            if not isinstance(bar_delta, pd.Timedelta) or bar_delta <= pd.Timedelta(0):
-                                event_end_times = event_start_times.copy()
-                            else:
-                                durations_bars = event_durations.fillna(0).round().astype(int)
-                                event_end_times = event_start_times.copy()
-                                event_end_times[event_mask] = (
-                                    event_start_times[event_mask]
-                                    + durations_bars[event_mask] * bar_delta
-                                )
-                            sample_weights = compute_sample_weights_with_uniqueness(
-                                event_start_times=event_start_times,
-                                event_end_times=event_end_times,
-                                y=binary_labels,
-                                class_weight_mult=float(meta_feature_cfg.get('class_weight_mult', 5.0)),
-                            )
-
-                            # Optional cost- and R-multiple-aware reweighting
-                            if sample_weights is not None and meta_feature_cfg.get('enable_cost_aware_weighting', True):
-                                try:
-                                    weights = np.asarray(sample_weights, dtype=float)
-
-                                    # Compute per-event R-multiple at entry bars
-                                    r_unit_series = adaptive_stop_threshold.abs().replace(0.0, np.nan)
-                                    r_multiple_series = (realized_returns / (r_unit_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
-                                    r_multiple_arr = r_multiple_series.fillna(0.0).to_numpy(dtype=float)
-
-                                    # Emphasize high-R winners; clip to avoid extreme weights
-                                    r_pos = np.clip(r_multiple_arr, 0.0, 3.0)
-                                    r_factor = 1.0 + r_pos  # 1..4
-
-                                    # Down-weight clearly bad losers if configured
-                                    neg_weight_mult = float(meta_feature_cfg.get('neg_weight_mult', 0.7))
-                                    label_arr = binary_labels.fillna(-1.0).to_numpy(dtype=float)
-
-                                    class_factor = np.ones_like(weights, dtype=float)
-                                    class_factor = np.where(label_arr == 1.0, r_factor, class_factor)
-                                    class_factor = np.where(label_arr == 0.0, class_factor * neg_weight_mult, class_factor)
-
-                                    weights *= class_factor
-                                    # Normalize back to mean 1 to keep scale stable
-                                    if np.isfinite(weights).any() and weights.mean() > 0:
-                                        weights = weights / weights.mean()
-
-                                    sample_weights = weights
-                                except Exception as w_cost_exc:
-                                    tprint(f"⚠️ Cost-aware weighting failed, using uniqueness weights only: {w_cost_exc}", "WARNING")
-                except Exception as w_exc:
-                    tprint(f"⚠️ Sample weight computation failed, using uniform weights: {w_exc}", "WARNING")
-                    sample_weights = None
 
             # STEP 6: Train ensemble meta-models with K-fold cross-fitting
             tprint("🎓 [6/13] Training ensemble meta-models (LGBM + LogReg + RF) with purged K-fold CV...", "INFO")
@@ -4242,6 +4624,21 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 raw_weight = np.sqrt(strength * confidence)
                 sample_weight = raw_weight.clip(lower=0.1, upper=5.0)
 
+                # Exploit ensemble disagreement as anti-signal for downstream training weights
+                try:
+                    if 'meta_features_enhanced' in locals() and isinstance(meta_features_enhanced, pd.DataFrame):
+                        if 'signal_disagreement' in meta_features_enhanced.columns:
+                            dis = pd.to_numeric(meta_features_enhanced['signal_disagreement'], errors="coerce")
+                            dis = dis.reindex(labeled_data.index)
+                            if dis.notna().any():
+                                dis_filled = dis.fillna(dis.median())
+                                dis_norm = (dis_filled - dis_filled.min()) / (dis_filled.max() - dis_filled.min() + 1e-8)
+                                # High disagreement → stronger down-weight (≈0.5–1.0)
+                                dis_factor = 1.0 - 0.5 * dis_norm.clip(0.0, 1.0)
+                                sample_weight = sample_weight * dis_factor
+                except Exception as w_disc_exc:
+                    tprint(f"⚠️ Disagreement-based weighting failed, keeping base sample_weight: {w_disc_exc}", "WARNING")
+
                 if 'binary_label' in labeled_data.columns:
                     sample_weight = sample_weight.where(~labeled_data['binary_label'].isna())
 
@@ -4265,12 +4662,27 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             labeled_data['adaptive_profit_threshold'] = adaptive_profit_threshold
             labeled_data['adaptive_stop_threshold'] = adaptive_stop_threshold
 
+            # Attach schema version for downstream consumers
+            labeled_data['labeled_data_schema_version'] = LABELED_DATA_SCHEMA_VERSION
+
             timestamp_ns = np.int64(pd.Timestamp.utcnow().value)
             labeled_data['labeling_timestamp'] = timestamp_ns
             labeled_data['labeling_method_id'] = np.int8(2)
 
             # Save labeled data
             tprint("💾 [12b/13] Saving labeled data...", "INFO")
+
+            # Guard: ensure required columns are present before persisting
+            validate_labeled_data_schema(
+                labeled_data,
+                required_cols=get_required_labeled_data_columns(
+                    [
+                        'meta_probability',
+                        'event_duration_bars',
+                    ]
+                ),
+                context='FeatureGenerationMetaLabelingStep',
+            )
 
             labeled_data_path = self._save_artifact(
                 data=labeled_data,
@@ -4432,6 +4844,49 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                                 "score": 0.0,
                             }
 
+                        regime_gating = {}
+                        try:
+                            if "hmm_regime_label_1h" in labeled_data.columns:
+                                reg_all_events = labeled_data.loc[event_mask, "hmm_regime_label_1h"]
+                                unique_regs = pd.unique(reg_all_events.dropna())
+                                for reg_val in unique_regs:
+                                    try:
+                                        reg_mask = (reg_all_events == reg_val).to_numpy()
+                                        n_reg_events = int(reg_mask.sum())
+                                        if n_reg_events < 20:
+                                            continue
+                                        best_reg_cfg = None
+                                        for p_thr in prob_thresholds:
+                                            for k in er_multipliers:
+                                                E_thr_reg = tx_cost * k if E_hat_array is not None else 0.0
+                                                gate_reg = p_array >= p_thr
+                                                if E_hat_array is not None:
+                                                    gate_reg &= (E_hat_array >= E_thr_reg)
+                                                gate_reg &= reg_mask
+                                                gated_r_reg = r_array[gate_reg]
+                                                n_trades_reg = int(len(gated_r_reg))
+                                                if n_trades_reg < 10:
+                                                    continue
+                                                mean_r_reg = float(np.mean(gated_r_reg))
+                                                std_r_reg = float(np.std(gated_r_reg, ddof=1)) if n_trades_reg > 1 else 0.0
+                                                sharpe_reg = float(mean_r_reg / std_r_reg) if std_r_reg > 0 else 0.0
+                                                score_reg = sharpe_reg * np.sqrt(max(n_trades_reg, 1))
+                                                if (best_reg_cfg is None) or (score_reg > best_reg_cfg["score"]):
+                                                    best_reg_cfg = {
+                                                        "prob_threshold": float(p_thr),
+                                                        "expected_return_threshold": float(E_thr_reg),
+                                                        "mean_return": mean_r_reg,
+                                                        "sharpe": sharpe_reg,
+                                                        "n_trades": n_trades_reg,
+                                                        "score": float(score_reg),
+                                                    }
+                                        if best_reg_cfg is not None:
+                                            regime_gating[str(reg_val)] = best_reg_cfg
+                                    except Exception:
+                                        continue
+                        except Exception:
+                            regime_gating = {}
+
                         # Build meta-gating configuration payload
                         meta_gating_config = {
                             "symbol": symbol,
@@ -4467,6 +4922,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                                     "sharpe_gated": float(best_cfg["sharpe"]),
                                     "trades_gated": int(best_cfg["n_trades"]),
                                 },
+                                "regime_specific": regime_gating,
                             },
                         }
 

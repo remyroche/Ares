@@ -145,6 +145,7 @@ class OptimizationConfig:
     adaptive_memory_management: bool = True
 
     # Early stopping
+    enable_early_stopping: bool = True
     early_stopping_patience: Optional[int] = None
     early_stopping_threshold: Optional[float] = None
 
@@ -578,6 +579,10 @@ class BayesianTPEOptimizer:
 
     def _is_better_result(self, new_value: float, current_best: float) -> bool:
         """Check if new value is better than current best."""
+        # If the new value is None, it cannot be better than any existing best
+        if new_value is None:
+            return False
+        # If we don't have a best yet, any finite value is better
         if current_best is None:
             return True
         if self.config.direction == 'maximize':
@@ -2539,12 +2544,33 @@ class BayesianTPEOptimizer:
 
         # Check if best value hasn't improved for patience trials
         recent_trials = self.study.trials[-self.config.early_stopping_patience:]
+
+        # Filter out failed/invalid trials to avoid None/inf comparisons
         if self.config.direction == 'maximize':
-            best_recent = max(t.value for t in recent_trials if t.value != float('-inf'))
-            return current_value < best_recent and self.config.early_stopping_threshold is not None
+            values = [
+                t.value for t in recent_trials
+                if t.value is not None and t.value != float('-inf')
+            ]
         else:
-            best_recent = min(t.value for t in recent_trials if t.value != float('inf'))
-            return current_value > best_recent and self.config.early_stopping_threshold is not None
+            values = [
+                t.value for t in recent_trials
+                if t.value is not None and t.value != float('inf')
+            ]
+
+        # If no valid values, do not trigger early stopping
+        if not values:
+            return False
+
+        if self.config.direction == 'maximize':
+            best_recent = max(values)
+            return (current_value is not None
+                    and self.config.early_stopping_threshold is not None
+                    and current_value < best_recent)
+        else:
+            best_recent = min(values)
+            return (current_value is not None
+                    and self.config.early_stopping_threshold is not None
+                    and current_value > best_recent)
 
     def get_optimization_summary(self) -> Dict[str, Any]:
         """Get comprehensive summary of optimization results including hardware performance."""

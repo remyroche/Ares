@@ -1,0 +1,51 @@
+{
+  "symbol": "ETHUSDT",
+  "exchange": "binance",
+  "timeframe": "15m",
+  "best_score": -1000000000.0,
+  "best_edge": 0.0,
+  "best_params": {
+    "min_event_spacing": 3,
+    "profit_mult_min": 0.9253678939994053,
+    "profit_mult_max": 1.5342536582942952,
+    "stop_mult_min": 0.6869593986055134,
+    "stop_mult_max": 1.1204507079388881,
+    "kalman_Q": 0.0004673952530772555,
+    "kalman_R": 0.00162028797444862,
+    "iso_min_prob": 0.09832393534856684,
+    "target_clip_high_q": 0.9373533397100642
+  },
+  "knee_params": {
+    "min_event_spacing": 3,
+    "profit_mult_min": 0.9253678939994053,
+    "profit_mult_max": 1.5342536582942952,
+    "stop_mult_min": 0.6869593986055134,
+    "stop_mult_max": 1.1204507079388881,
+    "kalman_Q": 0.0004673952530772555,
+    "kalman_R": 0.00162028797444862,
+    "iso_min_prob": 0.09832393534856684,
+    "target_clip_high_q": 0.9373533397100642
+  },
+  "pareto_front_size": 0,
+  "total_trials": 32,
+  "stage_results": [
+    {
+      "stage": "Stage 1 (Screening)",
+      "complexity": "fast",
+      "best_score": -1000000000.0,
+      "trials": 8
+    },
+    {
+      "stage": "Stage 2 (Refinement)",
+      "complexity": "medium",
+      "best_score": -1000000000.0,
+      "trials": 4
+    },
+    {
+      "stage": "Stage 3 (Production Proxy)",
+      "complexity": "strong",
+      "best_score": -1000000000.0,
+      "trials": 20
+    }
+  ]
+}

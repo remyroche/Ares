@@ -16,7 +16,14 @@ from sklearn.model_selection import cross_val_score
 from sklearn.metrics import make_scorer
 
 # Import project utilities
-from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
+from src.utils.tprint import (
+    tprint,
+    tprint_success,
+    tprint_warning,
+    tprint_performance,
+    tprint_debug,
+    tprint_info,
+)
 from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, HardwareConfig
 

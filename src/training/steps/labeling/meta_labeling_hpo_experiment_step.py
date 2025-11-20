@@ -46,11 +46,14 @@ from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     generate_primary_signals,
     DEFAULT_TRANSACTION_COST,
     create_meta_features,
+    build_meta_features_for_model,
     compute_learnability_score,
     compute_label_entropy_score,
     generate_diagnostics_report,
     compute_vol_scaled_returns_for_events,
     create_quantile_labels_from_vol_scaled_returns,
+    attach_rolling_hmm_regimes_to_market_data,
+    create_regime_aware_quantile_labels_from_vol_scaled_returns,
 )
 
 from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
@@ -103,7 +106,7 @@ DEFAULT_STAGE_CONFIG = [
         "n_trials": 50,
         "top_k_to_pass": 10,  # Pass top 10 to final stage
         "model_params": {
-            "n_estimators": 200,
+            "n_estimators": 150,
             "max_depth": 5,
             "learning_rate": 0.05,
             "cv_splits": 4,
@@ -115,7 +118,7 @@ DEFAULT_STAGE_CONFIG = [
         "n_trials": 20,  # Fewer trials, expensive model
         "top_k_to_pass": 1,
         "model_params": {
-            "n_estimators": 500,
+            "n_estimators": 300,
             "max_depth": 8,
             "learning_rate": 0.01,
             "cv_splits": 5,
@@ -153,6 +156,7 @@ def compute_learnability_with_calibration(
         Tuple of (learnability_score, mean_auc, calibrated_probabilities, isotonic_regressor)
     """
     from sklearn.model_selection import cross_val_score
+    from sklearn.metrics import roc_auc_score
 
     # Remove NaN labels
     valid_mask = ~y.isna()
@@ -193,7 +197,7 @@ def compute_learnability_with_calibration(
             boosting_type='gbdt',
             objective='binary',
             max_depth=5,
-            n_estimators=200,
+            n_estimators=150,
             learning_rate=0.05,
             subsample=0.8,
             colsample_bytree=0.8,
@@ -210,8 +214,8 @@ def compute_learnability_with_calibration(
             lgb.LGBMClassifier(
                 boosting_type='gbdt',
                 objective='binary',
-                max_depth=8,
-                n_estimators=500,
+                max_depth=6,
+                n_estimators=300,
                 learning_rate=0.01,
                 subsample=0.8,
                 colsample_bytree=0.8,
@@ -228,7 +232,7 @@ def compute_learnability_with_calibration(
         if use_ensemble:
             if XGBOOST_AVAILABLE:
                 models.append(xgb.XGBClassifier(
-                    max_depth=8,
+                    max_depth=6,
                     n_estimators=500,
                     learning_rate=0.01,
                     subsample=0.8,
@@ -242,7 +246,7 @@ def compute_learnability_with_calibration(
 
             models.append(RandomForestClassifier(
                 n_estimators=300,
-                max_depth=10,
+                max_depth=8,
                 min_samples_leaf=10,
                 n_jobs=-1,
                 random_state=42
@@ -255,22 +259,82 @@ def compute_learnability_with_calibration(
         from sklearn.model_selection import KFold
         cv = KFold(n_splits=cv_splits, shuffle=True, random_state=42)
 
+    # Cost/return-aware sample weights with slight positive class bias (1.2x)
+    returns_array = returns_clean.fillna(0.0).to_numpy(dtype=float)
+    y_array = y_clean.to_numpy(dtype=float)
+
+    sample_weights = np.ones_like(returns_array, dtype=float)
+
+    # Conservative positive class up-weighting
+    pos_mask = (y_array == 1.0)
+    sample_weights[pos_mask] *= 1.2
+
+    # Return-based weighting for label=1: linear in realized return, clipped
     try:
-        # Collect OOF predictions from all models
+        finite_returns = returns_clean.replace([np.inf, -np.inf], np.nan).dropna().values
+        if finite_returns.size >= 50:
+            ret_clip = float(np.nanpercentile(np.abs(finite_returns), 95))
+            ret_clip = max(ret_clip, 1e-4)
+        else:
+            ret_clip = 0.02
+    except Exception:
+        ret_clip = 0.02
+
+    if ret_clip > 0:
+        ret_for_weight = np.clip(np.maximum(returns_array, 0.0), 0.0, ret_clip)
+        weight_factor = 1.0 + (ret_for_weight / ret_clip)
+        sample_weights[pos_mask] *= weight_factor[pos_mask]
+
+    # Normalize weights for numerical stability
+    mean_w = float(sample_weights.mean()) if sample_weights.size > 0 else 1.0
+    if mean_w > 0:
+        sample_weights = sample_weights / mean_w
+
+    try:
+        # Collect probability predictions and AUC scores from all models
         all_oof_probs = []
         all_aucs = []
 
         for model in models:
-            # Get OOF predictions
-            oof_probs = cross_val_predict(
-                model, X_clean, y_clean, cv=cv, method='predict_proba', n_jobs=-1
-            )[:, 1]
+            # Manual time-series CV with sample weights
+            fold_aucs = []
 
-            # Compute AUC
-            auc_scores = cross_val_score(model, X_clean, y_clean, cv=cv, scoring='roc_auc', n_jobs=-1)
-            mean_auc = auc_scores.mean()
+            for train_idx, test_idx in cv.split(X_clean):
+                X_train_cv = X_clean.iloc[train_idx]
+                y_train_cv = y_clean.iloc[train_idx]
+                X_test_cv = X_clean.iloc[test_idx]
+                y_test_cv = y_clean.iloc[test_idx]
 
-            all_oof_probs.append(oof_probs)
+                w_train_cv = sample_weights[train_idx]
+
+                try:
+                    model.fit(X_train_cv, y_train_cv, sample_weight=w_train_cv)
+                except TypeError:
+                    # Some models may not support sample_weight
+                    model.fit(X_train_cv, y_train_cv)
+
+                y_proba_cv = model.predict_proba(X_test_cv)[:, 1]
+
+                try:
+                    fold_auc = roc_auc_score(y_test_cv, y_proba_cv)
+                    fold_aucs.append(fold_auc)
+                except Exception:
+                    pass
+
+            if fold_aucs:
+                mean_auc = float(np.mean(fold_aucs))
+            else:
+                mean_auc = 0.5
+
+            # Fit on full cleaned data with weights for calibrated probabilities
+            try:
+                model.fit(X_clean, y_clean, sample_weight=sample_weights)
+            except TypeError:
+                model.fit(X_clean, y_clean)
+
+            full_probs = model.predict_proba(X_clean)[:, 1]
+
+            all_oof_probs.append(full_probs)
             all_aucs.append(mean_auc)
 
         # Ensemble: average probabilities (with signal disagreement awareness)
@@ -498,8 +562,8 @@ def shrink_search_space(
     if not previous_results:
         return original_space.copy()
 
-    # Sort by combined score and take top-K
-    sorted_results = sorted(previous_results, key=lambda x: x.get('combined', 0), reverse=True)
+    # Sort by objective score (prefer edge, fallback to combined) and take top-K
+    sorted_results = sorted(previous_results, key=lambda x: x.get('edge', x.get('combined', 0)), reverse=True)
     best_candidates = sorted_results[:top_k]
 
     if not best_candidates:
@@ -639,6 +703,20 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             tprint(msg, "ERROR")
             return {"success": False, "error": msg, "metrics": {}, "artifacts": {}}
 
+        # Attach rolling HMM regimes (typically 1h) to the market_data frame so that
+        # regime-aware features and thresholds can be evaluated during HPO.
+        try:
+            regime_cfg = dict(config)
+            if "regime_timeframe" not in regime_cfg:
+                regime_cfg["regime_timeframe"] = "1h"
+            market_data = attach_rolling_hmm_regimes_to_market_data(
+                self,
+                market_data,
+                regime_cfg,
+            )
+        except Exception as e_reg:
+            tprint_warning(f"⚠️ Failed to attach rolling HMM regimes to market_data for HPO: {e_reg}")
+
         tprint_info(f"📊 Loaded market data from: {source} | rows={len(market_data)}")
 
         # Generate primary consensus signals using the production helper
@@ -657,6 +735,37 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             )
         except Exception:
             days_span = 1
+
+        stage1_enable_subsample = bool(config.get("stage1_enable_subsample", True))
+        stage1_subsample_window_days = int(config.get("stage1_subsample_window_days", min(365, days_span)))
+        stage1_market_data = market_data
+        stage1_primary_signals = primary_signals
+        stage1_volatility_1d = volatility_1d
+        stage1_days_span = days_span
+        if stage1_enable_subsample:
+            try:
+                start_ts = market_data.index.min()
+                end_ts = start_ts + pd.Timedelta(days=stage1_subsample_window_days)
+                mask = (market_data.index >= start_ts) & (market_data.index <= end_ts)
+                if int(mask.sum()) > 0:
+                    stage1_market_data = market_data.loc[mask].copy()
+                    stage1_primary_signals = primary_signals.loc[mask].copy()
+                    stage1_volatility_1d = volatility_1d.loc[mask].copy()
+                    try:
+                        stage1_days_span = max(
+                            1,
+                            (stage1_market_data.index.max() - stage1_market_data.index.min()).days,
+                        )
+                    except Exception:
+                        stage1_days_span = days_span
+                else:
+                    stage1_enable_subsample = False
+            except Exception:
+                stage1_enable_subsample = False
+                stage1_market_data = market_data
+                stage1_primary_signals = primary_signals
+                stage1_volatility_1d = volatility_1d
+                stage1_days_span = days_span
 
         # Build simple arrays for the optimizer API (they are not used in
         # the objective itself but provide shapes/logging)
@@ -770,8 +879,116 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             ),
         ]
 
+        warm_start_best_params: Dict[str, Any] = {}
+        warm_start_candidates_df: Optional[pd.DataFrame] = None
+        outcomes_dir = Path("outcomes")
+        try:
+            json_pattern = f"meta_labeling_hpo_best_params_{symbol}_{timeframe}_*.json"
+            json_paths = sorted(outcomes_dir.glob(json_pattern))
+            if json_paths:
+                latest_json = json_paths[-1]
+                with open(latest_json, "r") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        best_params_data = data.get("best_params", {})
+                        if isinstance(best_params_data, dict):
+                            warm_start_best_params = best_params_data
+        except Exception:
+            warm_start_best_params = {}
+        try:
+            csv_pattern = f"meta_labeling_hpo_candidate_pool_{symbol}_{timeframe}_*.csv"
+            csv_paths = sorted(outcomes_dir.glob(csv_pattern))
+            if csv_paths:
+                latest_csv = csv_paths[-1]
+                warm_start_candidates_df = pd.read_csv(latest_csv)
+        except Exception:
+            warm_start_candidates_df = None
+
+        calibrated_horizon: Optional[int] = None
+        if stage1_enable_subsample:
+            def _evaluate_horizon_candidate(h: int) -> Dict[str, float]:
+                realized_returns_h, binary_labels_h, exit_reasons_h, event_durations_h, mfe_h, mae_h = compute_realized_returns(
+                    stage1_market_data,
+                    stage1_primary_signals,
+                    profit_threshold=float(warm_start_best_params.get("profit_thr_base", 0.012)),
+                    stop_threshold=float(warm_start_best_params.get("profit_thr_base", 0.012)) * float(warm_start_best_params.get("stop_to_profit_ratio", 0.5)),
+                    horizon=int(h),
+                    transaction_cost=DEFAULT_TRANSACTION_COST,
+                    min_event_spacing=int(warm_start_best_params.get("min_event_spacing", 4)),
+                )
+                labeled_mask_h = ~binary_labels_h.isna()
+                n_events_h = int(labeled_mask_h.sum())
+                if n_events_h <= 0 or stage1_days_span <= 0:
+                    return {
+                        "trades_per_day": 0.0,
+                        "risk_reward": 0.0,
+                        "profit_potential": 0.0,
+                    }
+                trades_per_day_h = n_events_h / float(stage1_days_span)
+                returns_labeled_h = realized_returns_h[labeled_mask_h].dropna()
+                if len(returns_labeled_h) == 0:
+                    return {
+                        "trades_per_day": trades_per_day_h,
+                        "risk_reward": 0.0,
+                        "profit_potential": 0.0,
+                    }
+                labels_labeled_h = binary_labels_h[labeled_mask_h]
+                r_pos_h = returns_labeled_h[labels_labeled_h == 1]
+                r_neg_h = returns_labeled_h[labels_labeled_h == 0]
+                mean_pos_h = float(r_pos_h.mean()) if len(r_pos_h) > 0 else 0.0
+                mean_neg_h = float(r_neg_h.mean()) if len(r_neg_h) > 0 else 0.0
+                mean_loss_h = abs(mean_neg_h) if mean_neg_h < 0 else (abs(float(r_neg_h.mean())) if len(r_neg_h) > 0 else 0.0)
+                mean_win_h = mean_pos_h
+                risk_reward_h = mean_win_h / (mean_loss_h + 1e-8) if mean_loss_h > 0 else 0.0
+                mean_return_h = float(returns_labeled_h.mean()) if len(returns_labeled_h) > 0 else 0.0
+                profit_potential_h = trades_per_day_h * mean_return_h
+                return {
+                    "trades_per_day": trades_per_day_h,
+                    "risk_reward": risk_reward_h,
+                    "profit_potential": profit_potential_h,
+                }
+            try:
+                event_group = param_groups[0]
+                horizon_spec = event_group.params.get("horizon_bars", {})
+                h_low = int(horizon_spec.get("low", 8))
+                h_high = int(horizon_spec.get("high", 56))
+                h_step = int(horizon_spec.get("step", 2)) or 1
+                candidate_horizons = list(range(h_low, h_high + 1, h_step))
+                best_h = None
+                best_potential = float("-inf")
+                best_trades = 0.0
+                best_rr = 0.0
+                for h in candidate_horizons:
+                    metrics_h = _evaluate_horizon_candidate(h)
+                    trades_h = metrics_h["trades_per_day"]
+                    rr_h = metrics_h["risk_reward"]
+                    if trades_h < 0.5 or trades_h > 3.0:
+                        continue
+                    if rr_h < 1.2:
+                        continue
+                    if metrics_h["profit_potential"] > best_potential:
+                        best_potential = metrics_h["profit_potential"]
+                        best_h = h
+                        best_trades = trades_h
+                        best_rr = rr_h
+                if best_h is None and candidate_horizons:
+                    best_h = int(np.median(candidate_horizons))
+                calibrated_horizon = int(best_h) if best_h is not None else None
+                if calibrated_horizon is not None:
+                    tprint_info(
+                        f"📏 Using calibrated horizon_bars={calibrated_horizon} on subsample (trades_per_day≈{best_trades:.3f}, rr≈{best_rr:.3f})"
+                    )
+            except Exception:
+                calibrated_horizon = None
+        else:
+            calibrated_horizon = None
+
         # Storage for candidate label configurations
         candidate_pool: List[Dict[str, Any]] = []
+
+        # Lightweight debug sampling for objective diagnostics
+        debug_sample_limit = 50
+        debug_sample_count = 0
 
         # ------------------------------------------------------------------
         # 3) Define objective function for labeling quality (with learnability)
@@ -816,15 +1033,23 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             cv_splits = cv_splits_map.get(model_complexity, 3)
 
             try:
-                # Enforce profit >= 1.5x stop constraint
-                profit_thr_base = float(params["profit_thr_base"])
-                stop_ratio = float(params["stop_to_profit_ratio"])
+                nonlocal debug_sample_count
+                # Enforce profit >= 1.5x stop constraint. During stages that do not
+                # actively optimize profit_thr_base/stop_to_profit_ratio, fall back
+                # to conservative defaults.
+                profit_thr_base = float(params.get("profit_thr_base", 0.012))
+                stop_ratio = float(params.get("stop_to_profit_ratio", 0.5))
 
                 # CONSTRAINT: Ensure profit is at least 1.5x stop
                 stop_thr_base = max(0.0005, profit_thr_base * stop_ratio)
                 if profit_thr_base < 1.5 * stop_thr_base:
                     tprint_warning(f"⚠️ Config rejected: profit {profit_thr_base:.4f} < 1.5x stop {stop_thr_base:.4f}")
-                    return {'learnability': 0.0, 'profitability': -1e9, 'combined': -1e9}
+                    return {
+                        'learnability': 0.0,
+                        'profitability': -1e9,
+                        'edge': -1e9,
+                        'combined': -1e9,
+                    }
 
                 # Extract parameters
                 horizon = int(params["horizon_bars"])
@@ -849,6 +1074,17 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     profit_mult_min, profit_mult_max = profit_mult_max, profit_mult_min
                 if stop_mult_min > stop_mult_max:
                     stop_mult_min, stop_mult_max = stop_mult_max, stop_mult_min
+
+                # Hard RR constraint: even in the worst-case (smallest profit, largest stop),
+                # require a minimum RR ~1.4 (≈1.25 net after fees).
+                worst_rr = (profit_thr_base * profit_mult_min) / max(stop_thr_base * stop_mult_max, 1e-8)
+                if worst_rr < 1.4:
+                    return {
+                        'learnability': 0.0,
+                        'profitability': -1e9,
+                        'edge': -1e9,
+                        'combined': -1e9,
+                    }
 
                 # Use safe defaults when target_transform params are not part of the current group
                 iso_min_prob = float(params.get("iso_min_prob", 0.0))
@@ -897,19 +1133,34 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     realized_returns=realized_returns,
                     volatility=volatility_1d,
                 )
-                quantile_labels = create_quantile_labels_from_vol_scaled_returns(
-                    vol_scaled=vol_scaled_returns,
-                    low_q=0.3,
-                    high_q=0.7,
-                )
+                regimes_for_labeling = None
+                if config.get("enable_regime_aware_quantiles", True) and "hmm_regime_label_1h" in market_data.columns:
+                    regimes_for_labeling = market_data["hmm_regime_label_1h"]
+
+                if regimes_for_labeling is not None:
+                    quantile_labels = create_regime_aware_quantile_labels_from_vol_scaled_returns(
+                        vol_scaled=vol_scaled_returns,
+                        regimes=regimes_for_labeling,
+                        low_q=0.35,
+                        high_q=0.75,
+                    )
+                else:
+                    quantile_labels = create_quantile_labels_from_vol_scaled_returns(
+                        vol_scaled=vol_scaled_returns,
+                        low_q=0.35,
+                        high_q=0.75,
+                    )
                 binary_labels = quantile_labels
 
-                # Guard: if we got very few labeled events, return a poor score
+                # Guard: extremely sparse configurations (< 0.5 events/day) are rejected
+                # outright; all others are allowed through and handled via softer
+                # density penalties further down.
                 labeled_mask = ~binary_labels.isna()
                 n_events = int(labeled_mask.sum())
-                if n_events < 200:
+                events_per_day = n_events / max(days_span, 1)
+                if events_per_day < 0.5:
                     tprint_warning(
-                        f"⚠️ HPO config produced too few events (n={n_events}), penalizing",
+                        f"⚠️ HPO config produced extremely sparse events (n={n_events}, {events_per_day:.3f} events/day), rejecting",
                     )
                     return -1e9
 
@@ -958,23 +1209,33 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         target_nz = target_nz.clip(low_val, high_val)
 
                 # ===== LEARNABILITY ASSESSMENT WITH CALIBRATION =====
-                # Create meta-features for this labeling configuration
-                from src.training.steps.labeling.feature_generation_meta_labeling_step import (
-                    create_meta_features,
-                    compute_label_entropy_score,
+                # Create meta-features for this labeling configuration using the
+                # same pipeline as the production meta-labeling step.
+                meta_feature_cfg = config.get("meta_feature_engineering", {})
+                volume_available = "volume" in market_data.columns
+
+                meta_features, meta_features_model_processed, selected_feature_names, sample_weights = build_meta_features_for_model(
+                    market_data=market_data,
+                    primary_signals=primary_signals,
+                    realized_returns=realized_returns,
+                    binary_labels=binary_labels,
+                    event_durations=event_durations,
+                    mfe_series=mfe_series,
+                    mae_series=mae_series,
+                    adaptive_stop_threshold=adaptive_stop,
+                    horizon=horizon,
+                    volume_available=volume_available,
+                    meta_feature_cfg=meta_feature_cfg,
                 )
 
-                meta_features = create_meta_features(
-                    market_data,
-                    primary_signals,
-                    volume_available=True,
-                    include_raw_signals=False,
-                    use_kalman=True
-                )
+                # Use the fully processed feature matrix (winsorisation, robust
+                # scaling, selection) for learnability and diagnostics, to
+                # match the production training path.
+                X_for_learnability = meta_features_model_processed
 
                 # Compute learnability score with isotonic calibration
                 learnability_score, mean_auc, calibrated_probs, iso_reg_probe = compute_learnability_with_calibration(
-                    X=meta_features,
+                    X=X_for_learnability,
                     y=binary_labels,
                     realized_returns=realized_returns,
                     model_complexity=model_complexity,
@@ -995,7 +1256,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 underfit_diagnostics = None
                 if compute_diagnostics and ENABLE_UNDERFIT_DIAGNOSTICS:
                     underfit_diagnostics = compute_underfit_diagnostics(
-                        X=meta_features,
+                        X=X_for_learnability,
                         y=binary_labels,
                         cv_splits=cv_splits,
                         time_aware_cv=True,
@@ -1010,20 +1271,32 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 r_pos = returns_labeled[labels_labeled == 1]
                 r_neg = returns_labeled[labels_labeled == 0]
 
-                if len(r_pos) == 0 or len(r_neg) == 0:
-                    return {'learnability': learnability_score, 'profitability': -1e9, 'combined': -1e9}
-
-                mean_pos = float(r_pos.mean())
-                mean_neg = float(r_neg.mean())
+                mean_pos = float(r_pos.mean()) if len(r_pos) > 0 else 0.0
+                mean_neg = float(r_neg.mean()) if len(r_neg) > 0 else 0.0
                 sep = mean_pos - mean_neg
 
                 # Simple Sharpe for label=1 trades
-                std_pos = float(r_pos.std())
-                sharpe_pos = mean_pos / (std_pos + 1e-8)
+                std_pos = float(r_pos.std()) if len(r_pos) > 1 else 0.0
+                sharpe_pos = mean_pos / (std_pos + 1e-8) if std_pos > 0 else 0.0
 
                 tx = float(DEFAULT_TRANSACTION_COST)
+
+                # Targeted debug logging for a small sample of trials
+                if debug_sample_count < debug_sample_limit:
+                    tprint_info(
+                        f"[HPO_DEBUG] n_events={n_events}, events_per_day={events_per_day:.3f}, "
+                        f"mean_pos={mean_pos:.6f}, tx={tx:.6f}, above_tx={mean_pos > tx}",
+                    )
+                    debug_sample_count += 1
+
+                # Hard economic gate: positive bucket must beat transaction cost
                 if mean_pos <= tx:
-                    return {'learnability': learnability_score, 'profitability': -1e9, 'combined': -1e9}
+                    return {
+                        'learnability': float(learnability_score),
+                        'profitability': -1e9,
+                        'edge': -1e9,
+                        'combined': -1e9,
+                    }
 
                 # Penalize configurations dominated by economically trivial events
                 returns_labeled_nonnull = returns_labeled.dropna()
@@ -1113,14 +1386,15 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     snr_pre = 0.0
                     snr_post = 0.0
 
-                # Event density penalty: we want neither too few nor too many
+                # Event density penalty: prefer ~0.5–3 trades/day (centered near ~2)
                 trades_per_day = n_events / days_span
-                # Target range roughly 1–5 trades/day
                 penalty_density = 0.0
-                if trades_per_day < 1.0:
-                    penalty_density += (1.0 - trades_per_day) * 5.0
-                if trades_per_day > 5.0:
-                    penalty_density += (trades_per_day - 5.0) * 0.5
+                if trades_per_day < 0.5:
+                    # Strong penalty for extremely sparse regimes
+                    penalty_density += (0.5 - trades_per_day) * 10.0
+                elif trades_per_day > 3.0:
+                    # Stronger penalty once we move into very active regimes
+                    penalty_density += (trades_per_day - 3.0) * 5.0
 
                 penalty_noise = frac_small * 10.0
 
@@ -1169,10 +1443,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 # ===== REGULARIZATION CHECKS =====
                 # Temporal stability check (rolling window AUC variance)
+                auc_variance = 0.0
                 try:
                     window_size = max(100, n_events // 5)
                     n_windows = min(5, n_events // window_size)
-                    auc_variance = 0.0
 
                     if n_windows >= 2:
                         window_aucs = []
@@ -1206,9 +1480,25 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     mean_auc=mean_auc,
                     transaction_cost=tx,
                 )
+                # Tie temporal instability to edge: softly down-weight edge when
+                # rolling-window AUC variance is high.
+                if auc_variance > 0.0:
+                    # For typical auc_variance in [0, ~0.02], this yields a modest
+                    # 0–20% down-weighting for unstable configurations.
+                    instability = min(1.0, auc_variance / 0.02)
+                    edge_score *= (1.0 - 0.3 * instability)
 
                 # Scale edge for combined metric (multiply by 1000 to make comparable)
                 edge_scaled = edge_score * 1000.0
+
+                # Additional hard penalties for pathological configurations (no positive
+                # or negative bucket), while still keeping them in the candidate pool
+                # for diagnostics.
+                if len(r_pos) == 0 or len(r_neg) == 0:
+                    profitability_score = -1e9
+                    edge_score = 0.0
+                    edge_scaled = 0.0
+                    learnability_score -= 0.5
 
                 # ===== COMBINED OBJECTIVE (Using Edge as Primary Metric) =====
                 # New formula: Edge-weighted combination
@@ -1244,6 +1534,73 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'model_complexity': model_complexity,
                 }
 
+                # Optional per-regime breakdown using attached HMM regimes, if available.
+                per_regime_metrics: Dict[str, Any] = {}
+                try:
+                    if "hmm_regime_label_1h" in market_data.columns:
+                        regimes_all = market_data["hmm_regime_label_1h"]
+                        regimes_events = regimes_all[labeled_mask]
+
+                        # Align calibrated probabilities with labeled events
+                        try:
+                            probs_series_full = pd.Series(calibrated_probs, index=binary_labels.index)
+                            probs_events = probs_series_full[labeled_mask]
+                        except Exception:
+                            probs_events = None
+
+                        from sklearn.metrics import roc_auc_score as _roc_auc_score_reg
+
+                        unique_regs = pd.unique(regimes_events.dropna())
+                        for reg_val in unique_regs:
+                            try:
+                                reg_mask = regimes_events == reg_val
+                                n_reg = int(reg_mask.sum())
+                                if n_reg < 20:
+                                    continue
+
+                                returns_reg = returns_labeled[reg_mask]
+                                labels_reg = labels_labeled[reg_mask]
+
+                                r_pos_reg = returns_reg[labels_reg == 1]
+                                r_neg_reg = returns_reg[labels_reg == 0]
+
+                                mean_pos_reg = float(r_pos_reg.mean()) if len(r_pos_reg) > 0 else 0.0
+                                mean_neg_reg = float(r_neg_reg.mean()) if len(r_neg_reg) > 0 else 0.0
+
+                                # Simple AUC on calibrated probabilities within this regime
+                                auc_reg = 0.5
+                                if probs_events is not None:
+                                    try:
+                                        probs_reg = probs_events[reg_mask]
+                                        if len(labels_reg.unique()) >= 2:
+                                            auc_reg = float(_roc_auc_score_reg(labels_reg, probs_reg))
+                                    except Exception:
+                                        auc_reg = 0.5
+
+                                edge_reg = compute_realistic_pnl_edge(
+                                    mean_return_positive=mean_pos_reg,
+                                    mean_auc=auc_reg,
+                                    transaction_cost=tx,
+                                )
+
+                                trades_per_day_reg = float(n_reg) / max(days_span, 1)
+
+                                per_regime_metrics[str(reg_val)] = {
+                                    'n_events': n_reg,
+                                    'trades_per_day': trades_per_day_reg,
+                                    'mean_pos': mean_pos_reg,
+                                    'mean_neg': mean_neg_reg,
+                                    'auc': auc_reg,
+                                    'edge': edge_reg,
+                                }
+                            except Exception:
+                                continue
+                except Exception:
+                    per_regime_metrics = {}
+
+                if per_regime_metrics:
+                    candidate_config['per_regime_metrics'] = per_regime_metrics
+
                 # Add underfit diagnostics if computed
                 if underfit_diagnostics is not None:
                     candidate_config['underfit_diagnostics'] = underfit_diagnostics
@@ -1261,7 +1618,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 tprint_warning(f"⚠️ Labeling objective failed: {exc}")
                 import traceback
                 traceback.print_exc()
-                return {'learnability': 0.0, 'profitability': -1e9, 'edge': 0.0, 'combined': -1e9}
+                return {'learnability': 0.0, 'profitability': -1e9, 'edge': -1e9, 'combined': -1e9}
 
         # ------------------------------------------------------------------
         # 4) Multi-objective wrapper for single-objective optimizers
@@ -1284,7 +1641,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     compute_diagnostics=compute_diagnostics,
                 )
                 if isinstance(result, dict):
-                    return float(result.get('combined', 0.0))
+                    return float(result.get('edge', result.get('combined', 0.0)))
                 return float(result)
             return wrapper
 
@@ -1299,6 +1656,60 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             for param_name, param_spec in group.params.items():
                 initial_search_space[param_name] = param_spec
 
+        if warm_start_candidates_df is not None and not warm_start_candidates_df.empty:
+            try:
+                shrinkable_params = [
+                    "profit_thr_base",
+                    "stop_to_profit_ratio",
+                    "horizon_bars",
+                    "min_event_spacing",
+                    "vol_baseline_window",
+                    "profit_mult_min",
+                    "profit_mult_max",
+                    "stop_mult_min",
+                    "stop_mult_max",
+                    "iso_min_prob",
+                    "target_clip_high_q",
+                ]
+                for p in shrinkable_params:
+                    if p not in initial_search_space:
+                        continue
+                    if p not in warm_start_candidates_df.columns:
+                        continue
+                    spec = initial_search_space.get(p, {})
+                    if not isinstance(spec, dict):
+                        continue
+                    ptype = spec.get("type", "float")
+                    if ptype not in ["float", "int"]:
+                        continue
+                    series = warm_start_candidates_df[p].dropna()
+                    if series.empty or len(series) < 20:
+                        continue
+                    try:
+                        q_low = float(series.quantile(0.10))
+                        q_high = float(series.quantile(0.90))
+                    except Exception:
+                        continue
+                    low = spec.get("low")
+                    high = spec.get("high")
+                    if low is None or high is None:
+                        continue
+                    new_low = max(float(low), q_low)
+                    new_high = min(float(high), q_high)
+                    if new_high <= new_low:
+                        continue
+                    new_spec = spec.copy()
+                    if ptype == "int":
+                        new_spec["low"] = int(new_low)
+                        new_spec["high"] = int(max(new_high, new_low + 1))
+                    else:
+                        new_spec["low"] = float(new_low)
+                        new_spec["high"] = float(new_high)
+                    initial_search_space[p] = new_spec
+                tprint_info("📌 Warm-start: narrowed search space around previous candidate quantiles")
+            except Exception:
+                pass
+
         # ------------------------------------------------------------------
         # 6) Multi-Stage HPO Execution Loop
         # ------------------------------------------------------------------
@@ -1312,16 +1723,27 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         # configurations that are both profitable AND learnable by production models.
 
         # Define which parameters to optimize at each stage
-        stage_1_params = [
-            'horizon_bars', 'min_event_spacing', 'target_clip_high_q',
-            'kalman_Q', 'kalman_R', 'vol_baseline_window',
-            'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'
-        ]
-        stage_2_params = [
-            'kalman_Q', 'kalman_R', 'vol_baseline_window',
-            'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'
-        ]
-        # Stage 3 uses all parameters
+        if calibrated_horizon is not None:
+            stage_1_params = [
+                'min_event_spacing', 'iso_min_prob', 'target_clip_high_q',
+                'kalman_Q', 'kalman_R', 'vol_baseline_window',
+                'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'
+            ]
+            stage_2_params = [
+                'kalman_Q', 'kalman_R', 'vol_baseline_window',
+                'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'
+            ]
+        else:
+            stage_1_params = [
+                'horizon_bars', 'min_event_spacing', 'iso_min_prob', 'target_clip_high_q',
+                'kalman_Q', 'kalman_R', 'vol_baseline_window',
+                'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'
+            ]
+            stage_2_params = [
+                'kalman_Q', 'kalman_R', 'vol_baseline_window',
+                'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'
+            ]
+        # Stage 3 uses all parameters (optionally treating horizon_bars as fixed when calibrated)
 
         stages = DEFAULT_STAGE_CONFIG
         stage_results: List[Dict[str, Any]] = []
@@ -1331,6 +1753,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
         # Track best params from each stage to use as defaults for fixed params
         accumulated_best_params: Dict[str, Any] = {}
+        if calibrated_horizon is not None:
+            accumulated_best_params["horizon_bars"] = int(calibrated_horizon)
 
         for stage_idx, stage in enumerate(stages):
             tprint_info(f"🚀 Starting {stage['name']} with complexity={stage['complexity']}...")
@@ -1341,7 +1765,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             elif stage_idx == 1:  # Stage 2
                 active_params = stage_2_params
             else:  # Stage 3 - all parameters
-                active_params = list(initial_search_space.keys())
+                if calibrated_horizon is not None:
+                    active_params = [
+                        k for k in initial_search_space.keys()
+                        if k != 'horizon_bars'
+                    ]
+                else:
+                    active_params = list(initial_search_space.keys())
 
             # Create stage-specific search space
             current_search_space = {
@@ -1357,21 +1787,195 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 use_ensemble: bool,
                 compute_diagnostics: bool,
                 fixed_params: Dict[str, Any],
+                use_stage1_subsample: bool,
             ) -> callable:
                 """Create a wrapper that injects fixed params from previous stages."""
                 def wrapper(params: Dict[str, Any]) -> float:
-                    # Merge: fixed params from previous stages + current optimized params
-                    full_params = {**fixed_params, **params}
-                    result = labeling_objective(
-                        full_params, X_dummy, y_dummy,
-                        model_complexity=model_complexity,
-                        use_ensemble=use_ensemble,
-                        compute_diagnostics=compute_diagnostics,
-                    )
+                    nonlocal market_data, primary_signals, volatility_1d, days_span
+                    if use_stage1_subsample and model_complexity == "fast" and stage1_enable_subsample:
+                        md_backup = market_data
+                        ps_backup = primary_signals
+                        vol_backup = volatility_1d
+                        days_backup = days_span
+                        try:
+                            market_data = stage1_market_data
+                            primary_signals = stage1_primary_signals
+                            volatility_1d = stage1_volatility_1d
+                            days_span = stage1_days_span
+                            full_params = {**fixed_params, **params}
+                            result = labeling_objective(
+                                full_params, X_dummy, y_dummy,
+                                model_complexity=model_complexity,
+                                use_ensemble=use_ensemble,
+                                compute_diagnostics=compute_diagnostics,
+                            )
+                        finally:
+                            market_data = md_backup
+                            primary_signals = ps_backup
+                            volatility_1d = vol_backup
+                            days_span = days_backup
+                    else:
+                        full_params = {**fixed_params, **params}
+                        result = labeling_objective(
+                            full_params, X_dummy, y_dummy,
+                            model_complexity=model_complexity,
+                            use_ensemble=use_ensemble,
+                            compute_diagnostics=compute_diagnostics,
+                        )
                     if isinstance(result, dict):
-                        return float(result.get('combined', 0.0))
+                        return float(result.get('edge', result.get('combined', 0.0)))
                     return float(result)
                 return wrapper
+
+            if stage_idx in (0, 1):
+                stage_param_groups: list[list[str]] = []
+                if stage_idx == 0:
+                    # Stage 1 (fast model, subsampled data):
+                    # Group A – event shape / density
+                    if calibrated_horizon is not None:
+                        stage_param_groups.append(['min_event_spacing'])
+                    else:
+                        stage_param_groups.append(['horizon_bars', 'min_event_spacing'])
+                    # Group B – TPSL geometry
+                    stage_param_groups.append(['profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'])
+                    # Group C – smoothing
+                    stage_param_groups.append(['kalman_Q', 'kalman_R'])
+                    # Group D – target transform
+                    stage_param_groups.append(['iso_min_prob', 'target_clip_high_q'])
+                else:
+                    # Stage 2 (medium model, full data): smoothing + TPSL/vol
+                    stage_param_groups.append(['kalman_Q', 'kalman_R'])
+                    stage_param_groups.append(['vol_baseline_window', 'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'])
+
+                stage_best_score = float('-inf')
+                stage_best_params: Dict[str, Any] = {}
+                stage_trials_total = 0
+
+                n_groups = max(1, len(stage_param_groups))
+
+                for group_idx, group_params in enumerate(stage_param_groups):
+                    group_search_space = {
+                        k: v for k, v in current_search_space.items()
+                        if k in group_params
+                    }
+                    if not group_search_space:
+                        continue
+
+                    # Fixed params: best from previous stages and previous groups in this stage
+                    group_fixed_params = {
+                        k: v for k, v in accumulated_best_params.items()
+                        if k not in group_search_space
+                    }
+
+                    group_objective = create_stage_objective_wrapper(
+                        model_complexity=stage["complexity"],
+                        use_ensemble=(stage["complexity"] == "strong"),
+                        compute_diagnostics=(stage_idx == len(stages) - 1 and group_idx == len(stage_param_groups) - 1),
+                        fixed_params=group_fixed_params,
+                        use_stage1_subsample=(stage_idx == 0),
+                    )
+
+                    group_n_trials = max(5, stage["n_trials"] // n_groups)
+
+                    group_config = OptimizationConfig(
+                        n_trials=group_n_trials,
+                        execution_mode=config.get("execution_mode", "full"),
+                        direction='maximize',
+                        # For small groups, use direct TPE (no internal grid) for speed
+                        enable_staged_optimization=False,
+                        coarse_grid_trials=0,
+                        fine_grid_trials=0,
+                        tpe_trials=group_n_trials,
+                        enable_hardware_optimization=False,
+                        enable_vectorbt_optimization=False,
+                        early_stopping_patience=max(5, group_n_trials // 3),
+                        early_stopping_threshold=None,
+                        seed=42 + stage_idx * 10 + group_idx,
+                    )
+
+                    group_optimizer = BayesianTPEOptimizer(config=group_config)
+
+                    tprint_info(
+                        f"   → Group {group_idx + 1}/{len(stage_param_groups)} params={list(group_search_space.keys())}, "
+                        f"trials={group_n_trials}"
+                    )
+
+                    try:
+                        group_result = group_optimizer.optimize(
+                            objective=group_objective,
+                            search_space=group_search_space,
+                        )
+                        group_best_params = group_result.get('best_params', {})
+                        group_best_score = group_result.get('best_value', 0.0)
+                        group_trials = int(group_result.get('n_trials', group_n_trials))
+
+                        stage_trials_total += group_trials
+
+                        if group_best_score > stage_best_score:
+                            stage_best_score = group_best_score
+
+                        # Accumulate params from this group
+                        accumulated_best_params.update(group_best_params)
+                        stage_best_params.update(group_best_params)
+
+                        tprint_success(
+                            f"   ✅ Group {group_idx + 1}/{len(stage_param_groups)} complete: "
+                            f"best_score={group_best_score:.4f}, trials={group_trials}"
+                        )
+
+                    except Exception as group_exc:
+                        tprint_warning(
+                            f"   ⚠️ Stage {stage['name']} group {group_idx + 1} failed: {group_exc}"
+                        )
+                        import traceback
+                        traceback.print_exc()
+                        continue
+
+                if stage_best_score == float('-inf'):
+                    # No successful groups; fall back to next stage
+                    continue
+
+                all_trials_count += stage_trials_total
+
+                if stage_best_score > best_overall_score:
+                    best_overall_score = stage_best_score
+                    best_overall_params = stage_best_params.copy()
+
+                stage_results.append({
+                    'stage': stage['name'],
+                    'complexity': stage['complexity'],
+                    'best_score': stage_best_score,
+                    'best_params': stage_best_params,
+                    'trials': stage_trials_total,
+                })
+
+                # For Stage 2, shrink Stage 3 search space using medium-model candidates
+                if stage_idx == len(stages) - 2:
+                    stage_candidates = [
+                        c for c in candidate_pool
+                        if c.get('model_complexity') == stage['complexity']
+                    ]
+                    if stage_candidates:
+                        try:
+                            initial_search_space = shrink_search_space(
+                                original_space=initial_search_space,
+                                previous_results=stage_candidates,
+                                top_k=stage['top_k_to_pass'],
+                            )
+                            tprint_info(
+                                f"   📉 Narrowed Stage 3 search space based on "
+                                f"Top {min(len(stage_candidates), stage['top_k_to_pass'])} candidates"
+                            )
+                        except Exception:
+                            pass
+
+                tprint_success(
+                    f"   ✅ {stage['name']} complete (hierarchical groups): "
+                    f"best_score={stage_best_score:.4f}, trials={stage_trials_total}"
+                )
+
+                # Done with this stage; move to next global stage
+                continue
 
             # Get fixed params: best values from previous stages for params not being optimized
             fixed_params = {
@@ -1384,11 +1988,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 use_ensemble=(stage["complexity"] == "strong"),
                 compute_diagnostics=(stage_idx == len(stages) - 1),
                 fixed_params=fixed_params,
+                use_stage1_subsample=(stage_idx == 0),
             )
 
             # Configure Bayesian optimizer for this stage
             bayesian_config = OptimizationConfig(
                 n_trials=stage["n_trials"],
+                execution_mode=config.get("execution_mode", "full"),
                 direction='maximize',
                 # Staged optimization settings (use TPE directly for speed)
                 enable_staged_optimization=(stage_idx == 0),  # Only use grid in first stage
@@ -1400,7 +2006,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 enable_vectorbt_optimization=False,
                 # Early stopping per trial
                 early_stopping_patience=max(5, stage["n_trials"] // 5),
-                early_stopping_threshold=0.001,  # Stop if improvement < 0.1%
+                early_stopping_threshold=None,
                 # Reproducibility
                 seed=42 + stage_idx,
             )
@@ -1479,61 +2085,16 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
         tprint_info(f"   Total trials across all stages: {all_trials_count}")
 
-        tprint_success(f"✅ Labeling HPO completed. Best combined score={best_score:.6f}")
+        tprint_success(f"✅ Labeling HPO completed. Best edge={best_score:.6f}")
         tprint_info(f"Best parameters: {best_params}")
 
         # ------------------------------------------------------------------
-        # 7) Compute Pareto Frontier from all candidate configurations
+        # 7) (Disabled) Pareto frontier and knee-point logic
         # ------------------------------------------------------------------
-        tprint_info("📊 Computing Pareto frontier...")
-
-        # Convert candidate pool to Solution objects
-        pareto_solutions = []
-        for candidate in candidate_pool:
-            solution = Solution(
-                metrics={
-                    'learnability': candidate['learnability'],
-                    'profitability': candidate['profitability'],
-                    'edge': candidate.get('edge', 0.0),
-                    'combined': candidate['combined'],
-                    'mean_auc': candidate['mean_auc'],
-                    'sharpe_pos': candidate['sharpe_pos'],
-                    'n_events': candidate['n_events'],
-                    'model_complexity': candidate.get('model_complexity', 'unknown'),
-                },
-                params=candidate['params']
-            )
-            pareto_solutions.append(solution)
-
-        # Compute Pareto front for learnability vs profitability
-        objectives = {
-            'learnability': 'max',
-            'profitability': 'max',
-        }
-
-        pareto_front = compute_pareto_front(
-            solutions=pareto_solutions,
-            objectives=objectives,
-            use_gpu=False,
-            use_vectorbt=False,
-        )
-
-        tprint_success(f"✅ Pareto frontier: {len(pareto_front)}/{len(pareto_solutions)} non-dominated solutions")
-
-        # Select knee point as recommended solution
-        knee_solution = select_knee_point(
-            pareto_solutions=pareto_front,
-            objectives=objectives,
-            weights={'learnability': 0.7, 'profitability': 0.3}
-        )
-
-        if knee_solution:
-            tprint_info(f"📍 Knee point (recommended): learnability={knee_solution.metrics['learnability']:.4f}, "
-                       f"profitability={knee_solution.metrics['profitability']:.4f}")
-            # Update best_params to knee point if it's better balanced
-            knee_params = knee_solution.params
-        else:
-            knee_params = best_params
+        pareto_solutions: list[Solution] = []
+        pareto_front: list[Solution] = []
+        knee_solution = None
+        knee_params = best_params
 
         # Compact run summary for quick log scanning
         try:
@@ -1704,16 +2265,25 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     labeled_data["primary_signal"] = primary_signals["consensus"]
 
                     # Meta-features for diagnostics (same helper as production)
-                    meta_features = create_meta_features(
-                        market_data,
-                        primary_signals,
-                        volume_available=True,
-                        include_raw_signals=False,
-                        use_kalman=True,
+                    meta_feature_cfg = config.get("meta_feature_engineering", {})
+                    volume_available = "volume" in market_data.columns
+
+                    meta_features_diag, meta_features_model_diag, _, _ = build_meta_features_for_model(
+                        market_data=market_data,
+                        primary_signals=primary_signals,
+                        realized_returns=realized_returns,
+                        binary_labels=binary_labels,
+                        event_durations=event_durations,
+                        mfe_series=mfe_series_diag,
+                        mae_series=mae_series_diag,
+                        adaptive_stop_threshold=adaptive_stop,
+                        horizon=horizon,
+                        volume_available=volume_available,
+                        meta_feature_cfg=meta_feature_cfg,
                     )
 
                     # Simple RF meta-model for feature importances
-                    X_diag = meta_features[labeled_mask].fillna(0)
+                    X_diag = meta_features_model_diag[labeled_mask].fillna(0)
                     y_diag = binary_labels[labeled_mask]
                     final_model = RandomForestClassifier(
                         n_estimators=200,
@@ -1761,7 +2331,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                     diagnostics_path_obj = generate_diagnostics_report(
                         labeled_data=labeled_data_for_diag,
-                        meta_features=meta_features,
+                        meta_features=meta_features_diag,
                         binary_labels=binary_labels_diag,
                         realized_returns=realized_returns,
                         smoothed_labels=smoothed_labels,
@@ -1792,7 +2362,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             # Get best edge from the best candidate
             best_candidate_edge = 0.0
             if candidate_pool:
-                sorted_candidates = sorted(candidate_pool, key=lambda x: x.get('combined', 0), reverse=True)
+                sorted_candidates = sorted(candidate_pool, key=lambda x: x.get('edge', x.get('combined', 0)), reverse=True)
                 if sorted_candidates:
                     best_candidate_edge = sorted_candidates[0].get('edge', 0.0)
 
@@ -1838,7 +2408,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     candidate_df = candidate_df.drop(columns=['params'])
                     candidate_df = pd.concat([candidate_df, params_df], axis=1)
 
-                if 'combined' in candidate_df.columns:
+                if 'edge' in candidate_df.columns:
+                    candidate_df = candidate_df.sort_values('edge', ascending=False)
+                elif 'combined' in candidate_df.columns:
                     candidate_df = candidate_df.sort_values('combined', ascending=False)
 
                 candidate_df.to_csv(csv_path, index=False, float_format='%.6f')
@@ -1853,7 +2425,6 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
         try:
             if not pareto_front:
-                tprint_warning("⚠️ Pareto frontier is empty; skipping Pareto CSV export")
                 pareto_csv_path = None
             else:
                 pareto_data: list[dict[str, Any]] = []
@@ -1864,7 +2435,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     pareto_data.append(row)
 
                 pareto_df = pd.DataFrame(pareto_data)
-                if 'combined' in pareto_df.columns:
+                if 'edge' in pareto_df.columns:
+                    pareto_df = pareto_df.sort_values('edge', ascending=False)
+                elif 'combined' in pareto_df.columns:
                     pareto_df = pareto_df.sort_values('combined', ascending=False)
 
                 pareto_df.to_csv(pareto_csv_path, index=False, float_format='%.6f')
@@ -1888,8 +2461,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 f.write(f"## Summary\n\n")
                 f.write(f"- **Total Configurations Evaluated:** {len(candidate_pool)}\n")
                 f.write(f"- **Total Trials:** {all_trials_count}\n")
-                f.write(f"- **Pareto Frontier Size:** {len(pareto_front)}\n")
-                f.write(f"- **Best Combined Score:** {best_score:.6f}\n")
+                f.write(f"- **Best Edge:** {best_score:.6f}\n")
                 f.write(f"- **Optimization Method:** Multi-Stage Bayesian TPE with Isotonic Calibration\n\n")
 
                 # Multi-Stage Results
@@ -1901,10 +2473,40 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 f.write(f"\n")
 
                 # Best Parameters
-                f.write(f"## Best Parameters (Highest Combined Score)\n\n")
+                f.write(f"## Best Parameters (Highest Edge)\n\n")
                 f.write(f"```json\n")
                 f.write(json.dumps(best_params, indent=2))
                 f.write(f"\n```\n\n")
+
+                # Per-regime metrics for best-edge configuration, if available
+                best_regime_metrics = None
+                try:
+                    if candidate_pool:
+                        best_candidate = max(
+                            candidate_pool,
+                            key=lambda x: x.get('edge', x.get('combined', 0)),
+                        )
+                        best_regime_metrics = best_candidate.get('per_regime_metrics')
+                except Exception:
+                    best_regime_metrics = None
+
+                if best_regime_metrics:
+                    f.write(f"## Per-Regime Metrics (Best Edge Configuration)\n\n")
+                    f.write(f"| Regime | n_events | trades_per_day | mean_pos | mean_neg | edge | AUC |\n")
+                    f.write(f"|--------|----------|----------------|----------|----------|------|-----|\n")
+                    for reg_key, m in best_regime_metrics.items():
+                        try:
+                            f.write(
+                                f"| {reg_key} | {int(m.get('n_events', 0))} | "
+                                f"{float(m.get('trades_per_day', 0.0)):.3f} | "
+                                f"{float(m.get('mean_pos', 0.0)):.5f} | "
+                                f"{float(m.get('mean_neg', 0.0)):.5f} | "
+                                f"{float(m.get('edge', 0.0)):.6f} | "
+                                f"{float(m.get('auc', 0.5)):.3f} |\n"
+                            )
+                        except Exception:
+                            continue
+                    f.write("\n")
 
                 # Knee Point Parameters
                 if knee_solution:
@@ -1917,25 +2519,6 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     f.write(f"```json\n")
                     f.write(json.dumps(knee_params, indent=2))
                     f.write(f"\n```\n\n")
-
-                # Pareto Frontier Summary
-                f.write(f"## Pareto Frontier Analysis\n\n")
-                f.write(f"The Pareto frontier contains {len(pareto_front)} non-dominated solutions "
-                       f"representing optimal trade-offs between learnability and profitability.\n\n")
-
-                # Top 10 Pareto Solutions
-                f.write(f"### Top 10 Pareto Solutions\n\n")
-                f.write(f"| Rank | Edge | Learnability | Profitability | Combined | Mean AUC | Sharpe | N Events | Complexity |\n")
-                f.write(f"|------|------|-------------|--------------|----------|----------|--------|----------|------------|\n")
-
-                sorted_pareto = sorted(pareto_front, key=lambda s: s.metrics['combined'], reverse=True)
-                for i, sol in enumerate(sorted_pareto[:10], 1):
-                    m = sol.metrics
-                    f.write(f"| {i} | {m.get('edge', 0):.6f} | {m['learnability']:.4f} | {m['profitability']:.4f} | "
-                           f"{m['combined']:.4f} | {m.get('mean_auc', 0):.4f} | "
-                           f"{m.get('sharpe_pos', 0):.4f} | {m.get('n_events', 0)} | {m.get('model_complexity', 'N/A')} |\n")
-
-                f.write(f"\n")
 
                 # Underfit Diagnostics (if available)
                 final_stage_candidates = [
@@ -2039,15 +2622,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 csv_path = outcomes_dir / csv_name
                 df_rounds.to_csv(csv_path, index=False)
                 tprint_success(f"💾 Saved HPO round metrics to {csv_path}")
-            else:
-                tprint_warning("⚠️ No round_results available on optimizer; skipping CSV export")
         except Exception as csv_exc:
             tprint_warning(f"⚠️ Failed to save HPO round metrics CSV: {csv_exc}")
 
         # Compute best edge from candidate pool
         best_edge = 0.0
         if candidate_pool:
-            best_candidate = max(candidate_pool, key=lambda x: x.get('combined', 0))
+            best_candidate = max(candidate_pool, key=lambda x: x.get('edge', x.get('combined', 0)))
             best_edge = best_candidate.get('edge', 0.0)
 
         metrics: Dict[str, Any] = {

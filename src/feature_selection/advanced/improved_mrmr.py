@@ -33,7 +33,7 @@ class ImprovedMRMR:
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize improved mRMR with MI proxy optimization."""
-        self.config = config or {
+        default_config = {
             'mi_weight': 0.7,
             'spearman_weight': 0.3,
             'target_ratio': 0.5,  # Select top 50% of features
@@ -49,6 +49,13 @@ class ImprovedMRMR:
             'verbose': True,
             'export_per_feature_csv': False  # Export per-feature scores to CSV
         }
+
+        if config is not None:
+            merged_config: Dict[str, Any] = default_config.copy()
+            merged_config.update(config)
+            self.config = merged_config
+        else:
+            self.config = default_config
 
         self.logger = logger.getChild('ImprovedMRMR')
 

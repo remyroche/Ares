@@ -33,6 +33,10 @@ import pandas as pd
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error
+from src.training.steps.labeling.labeled_data_schema import (
+    get_required_labeled_data_columns,
+    validate_labeled_data_schema,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -102,16 +106,17 @@ class MetaGatedBacktestStep(BaseStep):
 
             df = labeled_data.copy().sort_index()
 
-            required_cols = [
-                "realized_return",
-                "meta_probability",
-                "event_duration_bars",
-            ]
-            missing = [c for c in required_cols if c not in df.columns]
-            if missing:
-                raise ValueError(
-                    f"Labeled data is missing required columns: {missing}"
-                )
+            # Validate labeled_data schema for required columns
+            validate_labeled_data_schema(
+                df,
+                required_cols=get_required_labeled_data_columns(
+                    [
+                        "meta_probability",
+                        "event_duration_bars",
+                    ]
+                ),
+                context="MetaGatedBacktestStep",
+            )
 
             realized_returns = df["realized_return"].astype(float)
             meta_prob = df["meta_probability"].astype(float)
@@ -141,6 +146,8 @@ class MetaGatedBacktestStep(BaseStep):
             meta_gating = gating_config.get("meta_gating", {})
             entry_cfg = meta_gating.get("entry", {})
             calibration_cfg = meta_gating.get("calibration", {})
+            backtest_metrics_cfg = meta_gating.get("backtest_metrics", {})
+            filters_cfg = meta_gating.get("filters", {})
 
             prob_threshold = float(entry_cfg.get("prob_threshold", 0.0))
             use_expected_return = bool(entry_cfg.get("use_expected_return", False))
@@ -185,18 +192,27 @@ class MetaGatedBacktestStep(BaseStep):
             try:
                 df_events = df.loc[event_probs.index]
 
-                if "volatility_1d" in df_events.columns:
+                use_vol_filter = bool(filters_cfg.get("use_volatility_filter", True))
+                vol_quantile = float(filters_cfg.get("volatility_quantile", 0.40))
+                use_trend_filter = bool(filters_cfg.get("use_trend_filter", True))
+                trend_window = int(filters_cfg.get("trend_window", 20))
+                trend_min_abs = float(filters_cfg.get("trend_min_abs", 0.0))
+
+                if use_vol_filter and "volatility_1d" in df_events.columns:
                     v = df_events["volatility_1d"].astype(float)
-                    v_thr = v.quantile(0.40)  # top ~60% volatility
+                    try:
+                        v_thr = v.quantile(vol_quantile)
+                    except Exception:
+                        v_thr = v.quantile(0.40)
                     vol_mask = v >= v_thr
                     gate_mask &= vol_mask
 
-                if "close" in df_events.columns:
+                if use_trend_filter and "close" in df_events.columns:
                     close = df_events["close"].astype(float)
-                    sma = close.rolling(20, min_periods=10).mean()
+                    sma = close.rolling(trend_window, min_periods=trend_window // 2).mean()
                     trend = (close - sma) / sma
                     trend = trend.reindex(df_events.index)
-                    trend_mask = trend.abs() >= 0.0  # relaxed trend threshold
+                    trend_mask = trend.abs() >= trend_min_abs
                     gate_mask &= trend_mask
             except Exception as e:
                 tprint_error(
@@ -257,7 +273,31 @@ class MetaGatedBacktestStep(BaseStep):
                 f.write(f"- Trade-Level Sharpe (sqrt(N)): {sharpe_trade:.3f}\n")
                 f.write(f"- Max Drawdown (event-time equity): {max_drawdown:.2%}\n")
 
-            tprint_success(f"✅ Meta-gated backtest report saved to: {filepath}")
+                if backtest_metrics_cfg:
+                    auc_oof = float(backtest_metrics_cfg.get("auc_oof", 0.0))
+                    mean_return_gated_diag = float(backtest_metrics_cfg.get("mean_return_gated", 0.0))
+                    sharpe_gated_diag = float(backtest_metrics_cfg.get("sharpe_gated", 0.0))
+                    trades_gated_diag = int(backtest_metrics_cfg.get("trades_gated", 0))
+
+                    avg_trades_per_day_diag = None
+                    if isinstance(df.index, pd.DatetimeIndex) and len(df.index) >= 2:
+                        start_day = df.index[0].normalize()
+                        end_day = df.index[-1].normalize()
+                        n_days = int((end_day - start_day).days) + 1
+                        if n_days <= 0:
+                            n_days = 1
+                        avg_trades_per_day_diag = trades_gated_diag / float(n_days)
+
+                    f.write("\n## Meta-Gating Diagnostics (from meta-labeling step)\n\n")
+                    f.write("- These metrics are computed during the meta-labeling step for the diagnostics gate.\n")
+                    f.write(f"- AUC (OOF meta-model): {auc_oof:.3f}\n")
+                    f.write(f"- Mean return per gated trade (diagnostics gate): {mean_return_gated_diag:.2%}\n")
+                    f.write(f"- Sharpe (diagnostics gated set): {sharpe_gated_diag:.2f}\n")
+                    f.write(f"- Trades gated (diagnostics gate): {trades_gated_diag}\n")
+                    if avg_trades_per_day_diag is not None:
+                        f.write(f"- Approximate average trades per day (diagnostics gate): {avg_trades_per_day_diag:.2f}\n")
+
+            tprint_success(f" Meta-gated backtest report saved to: {filepath}")
 
             metrics: Dict[str, Any] = {
                 "n_events": n_events,

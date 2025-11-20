@@ -129,6 +129,7 @@ class HMMMLAlphaStep(BaseStep):
                 "alpha_enable_hpo": False,
                 "alpha_hpo_cv_folds": 3,
                 "alpha_hpo_final_trials": 20,
+                "alpha_enable_regression_calibration": True,
             }
             for k, v in alpha_defaults.items():
                 config.setdefault(k, v)
@@ -238,6 +239,7 @@ class HMMMLAlphaStep(BaseStep):
                 )
                 if alpha_scores is not None:
                     alpha_df[pred_col_name] = alpha_scores
+                    alpha_df["alpha_score_continuous"] = alpha_scores
                     alpha_df, regime_stats_df, regime_col_name = self._assign_alpha_regimes(
                         alpha_df,
                         alpha_scores,
@@ -266,6 +268,7 @@ class HMMMLAlphaStep(BaseStep):
                             pred_col_name_fallback = f"alpha_fallback_score_{forward_ret_cols[0].split('_')[-1]}"
                             alpha_scores = fallback_series
                             alpha_df[pred_col_name_fallback] = alpha_scores
+                            alpha_df["alpha_score_continuous"] = alpha_scores
                             alpha_df, regime_stats_df, regime_col_name = self._assign_alpha_regimes(
                                 alpha_df,
                                 alpha_scores,
@@ -305,6 +308,7 @@ class HMMMLAlphaStep(BaseStep):
                                 data=regime_thresholds,
                                 artifact_name="hmm_alpha_regime_thresholds_1h",
                                 artifact_type="model",
+                                data_category="config",
                                 metadata={
                                     "symbol": symbol,
                                     "exchange": exchange,
@@ -436,6 +440,33 @@ class HMMMLAlphaStep(BaseStep):
                                 "alpha_target_type": config.get("alpha_target_type", "regression"),
                             }
                         }
+
+                        target_type = str(config.get("alpha_target_type", "regression")).lower()
+                        calibration_config: Dict[str, Any] = {}
+
+                        if target_type == "regression":
+                            calibration_config = {
+                                "target_type": target_type,
+                                "regression_calibration_enabled": training_metrics.get("regression_calibration_enabled"),
+                                "regression_calibration_used": training_metrics.get("regression_calibration_used"),
+                                "regression_calibration_method": training_metrics.get("regression_calibration_method"),
+                                "val_rmse_uncalibrated": training_metrics.get("val_rmse_uncalibrated", training_metrics.get("val_rmse")),
+                                "val_rmse_calibrated": training_metrics.get("val_rmse_calibrated"),
+                            }
+                        elif target_type == "classification":
+                            calibration_config = {
+                                "target_type": target_type,
+                                "probability_calibration_enabled": training_metrics.get("probability_calibration_enabled"),
+                                "calibration_method": training_metrics.get("calibration_method"),
+                                "val_auc_uncalibrated": training_metrics.get("val_auc_uncalibrated", training_metrics.get("val_auc")),
+                                "val_auc_calibrated": training_metrics.get("val_auc_calibrated"),
+                                "ece_uncalibrated": training_metrics.get("ece_uncalibrated"),
+                                "ece_calibrated": training_metrics.get("ece_calibrated"),
+                                "ece_improvement": training_metrics.get("ece_improvement"),
+                            }
+
+                        if calibration_config:
+                            method_config["alpha_calibration"] = calibration_config
 
                         report_prefix = "hmm_alpha_quality"
                         self.quality_assessor.generate_markdown_report(
@@ -902,12 +933,14 @@ class HMMMLAlphaStep(BaseStep):
                 mean_squared_error,
             )
             from sklearn.calibration import CalibratedClassifierCV
+            from sklearn.isotonic import IsotonicRegression
         except ImportError:  # pragma: no cover - optional metrics
             accuracy_score = None  # type: ignore[assignment]
             roc_auc_score = None  # type: ignore[assignment]
             r2_score = None  # type: ignore[assignment]
             mean_squared_error = None  # type: ignore[assignment]
             CalibratedClassifierCV = None  # type: ignore[assignment]
+            IsotonicRegression = None  # type: ignore[assignment]
 
         def _safe_rmse(y_true: pd.Series, y_pred: np.ndarray) -> Optional[float]:
             if mean_squared_error is None:
@@ -1147,6 +1180,11 @@ class HMMMLAlphaStep(BaseStep):
                 if rmse_val is not None:
                     training_metrics["train_rmse"] = rmse_val
 
+            regression_calibration_enabled = bool(config.get("alpha_enable_regression_calibration", True))
+            training_metrics["regression_calibration_enabled"] = regression_calibration_enabled
+
+            calibrator = None
+
             if len(X_val) > 0:
                 val_pred = model.predict(X_val)
                 if r2_score is not None:
@@ -1156,7 +1194,39 @@ class HMMMLAlphaStep(BaseStep):
                     if rmse_val is not None:
                         training_metrics["val_rmse"] = rmse_val
 
-            scores = pd.Series(model.predict(X_scaled_full), index=df.index, name="alpha_pred_return")
+                if regression_calibration_enabled and IsotonicRegression is not None:
+                    try:
+                        calibrator = IsotonicRegression(out_of_bounds="clip")
+                        calibrator.fit(val_pred, y_val.to_numpy(dtype=float, copy=False))
+
+                        if mean_squared_error is not None:
+                            rmse_uncal = _safe_rmse(y_val, val_pred)
+                            val_pred_cal = calibrator.predict(val_pred)
+                            rmse_cal = _safe_rmse(y_val, val_pred_cal) if mean_squared_error is not None else None
+                            if rmse_uncal is not None:
+                                training_metrics["val_rmse_uncalibrated"] = rmse_uncal
+                            if rmse_cal is not None:
+                                training_metrics["val_rmse_calibrated"] = rmse_cal
+
+                        training_metrics["regression_calibration_method"] = "isotonic_regression"
+                        training_metrics["regression_calibration_used"] = True
+                    except Exception as calib_err:
+                        calibrator = None
+                        training_metrics["regression_calibration_used"] = False
+                        training_metrics["regression_calibration_failed"] = True
+                        training_metrics["regression_calibration_error"] = str(calib_err)
+                elif not regression_calibration_enabled:
+                    training_metrics["regression_calibration_used"] = False
+                elif IsotonicRegression is None:
+                    training_metrics["regression_calibration_used"] = False
+
+            if calibrator is not None:
+                full_raw_pred = model.predict(X_scaled_full)
+                full_scores = calibrator.predict(full_raw_pred)
+            else:
+                full_scores = model.predict(X_scaled_full)
+
+            scores = pd.Series(full_scores, index=df.index, name="alpha_pred_return")
             pred_col_name = "alpha_pred_return"
             training_metrics["model_type"] = "lightgbm_regression"
 

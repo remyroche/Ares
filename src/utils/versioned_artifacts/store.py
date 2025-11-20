@@ -13,6 +13,7 @@ import numpy as np
 import h5py
 import json
 import logging
+import re
 
 from .view import ArtifactView, CombinedView
 from .view_mask import ViewMask
@@ -1020,6 +1021,146 @@ class VersionedArtifactStore:
         tprint(f"✅ Replaced {len(row_indices)} rows | {context_str}")
 
         return self.get_view(version_name)
+
+    def prune_versions(self, keep_per_base: int = 5) -> Dict[str, Any]:
+        """Prune older versions and reconcile metadata with the HDF5 store.
+
+        Args:
+            keep_per_base: Number of newest versions to keep per artifact base name.
+
+        Returns:
+            Summary dictionary with counts of actions performed.
+        """
+        from src.utils.tprint import tprint
+
+        summary: Dict[str, Any] = {
+            "h5_only_removed": 0,
+            "meta_only_removed": 0,
+            "versions_pruned": 0,
+            "versions_kept_per_base": keep_per_base,
+        }
+
+        # If HDF5 file does not exist, nothing to prune
+        if not self.h5_file.exists():
+            return summary
+
+        tprint("🐛 DEBUG: prune_versions() called", "INFO")
+
+        # Reload metadata to ensure we are working with the latest state
+        self._metadata = self._load_metadata()
+        meta_versions = set(self._metadata.get("versions", {}).keys())
+
+        with h5py.File(self.h5_file, "a") as f:
+            if "versions" not in f:
+                tprint("🐛 DEBUG: No 'versions' group found in HDF5 file, nothing to prune", "INFO")
+                return summary
+
+            versions_group = f["versions"]
+            h5_versions = set(versions_group.keys())
+
+            # Reconcile mismatches between metadata and HDF5
+            h5_only = h5_versions - meta_versions
+            meta_only = meta_versions - h5_versions
+
+            if h5_only or meta_only:
+                tprint(
+                    f"🐛 DEBUG: prune_versions() mismatch - HDF5 only: {h5_only}, metadata only: {meta_only}",
+                    "INFO",
+                )
+
+            # Remove HDF5-only groups
+            for version_name in sorted(h5_only):
+                try:
+                    del versions_group[version_name]
+                    summary["h5_only_removed"] += 1
+                    self.logger.info(f"Removed orphan HDF5 version group: {version_name}")
+                except Exception as e:
+                    tprint(f"🐛 DEBUG: Failed to delete HDF5 version '{version_name}': {e}", "ERROR")
+
+            # Remove metadata-only entries
+            for version_name in sorted(meta_only):
+                if version_name in self._metadata.get("versions", {}):
+                    self._metadata["versions"].pop(version_name, None)
+                    summary["meta_only_removed"] += 1
+                    self.logger.info(f"Removed orphan metadata entry: {version_name}")
+
+            # Refresh sets after reconciliation
+            h5_versions = set(versions_group.keys())
+            meta_versions = set(self._metadata.get("versions", {}).keys())
+            existing_versions = sorted(h5_versions & meta_versions)
+
+            if not existing_versions:
+                # No consistent versions left
+                self._metadata["current_version"] = None
+                self._save_metadata()
+                return summary
+
+            # Helper to extract base artifact name from version_name
+            def _extract_base_name(name: str) -> str:
+                # Pattern: <artifact>_YYYYMMDD_HHMMSS or <artifact>_YYYYMMDD_HHMMSS_mmm
+                match = re.match(r"^(?P<base>.+?)_\d{8}_\d{6}(?:_\d{3})?$", name)
+                return match.group("base") if match else name
+
+            # Group versions by base name
+            base_groups: Dict[str, List[str]] = {}
+            for version_name in existing_versions:
+                base_name = _extract_base_name(version_name)
+                base_groups.setdefault(base_name, []).append(version_name)
+
+            # Helper for ordering versions by created_at, then name
+            def _version_sort_key(name: str) -> Tuple[str, str]:
+                meta = self._metadata.get("versions", {}).get(name, {})
+                created_at = meta.get("created_at") or ""
+                return (created_at, name)
+
+            # For each base, prune older versions
+            for base_name, versions in base_groups.items():
+                if len(versions) <= keep_per_base:
+                    continue
+
+                versions_sorted = sorted(versions, key=_version_sort_key)
+                to_keep = set(versions_sorted[-keep_per_base:])
+                to_prune = [v for v in versions_sorted if v not in to_keep]
+
+                if not to_prune:
+                    continue
+
+                tprint(
+                    f"🧹 Pruning {len(to_prune)} versions for base '{base_name}', keeping {len(to_keep)}",
+                    "INFO",
+                )
+
+                for version_name in to_prune:
+                    # Remove from HDF5
+                    if version_name in versions_group:
+                        try:
+                            del versions_group[version_name]
+                            summary["versions_pruned"] += 1
+                        except Exception as e:
+                            tprint(
+                                f"🐛 DEBUG: Failed to delete version '{version_name}' during pruning: {e}",
+                                "ERROR",
+                            )
+                            continue
+
+                    # Remove from metadata
+                    if version_name in self._metadata.get("versions", {}):
+                        self._metadata["versions"].pop(version_name, None)
+
+            # Ensure current_version is still valid
+            current = self._metadata.get("current_version")
+            if current not in self._metadata.get("versions", {}):
+                remaining = list(self._metadata.get("versions", {}).keys())
+                if remaining:
+                    remaining_sorted = sorted(remaining, key=_version_sort_key)
+                    self._metadata["current_version"] = remaining_sorted[-1]
+                else:
+                    self._metadata["current_version"] = None
+
+            # Persist metadata changes
+            self._save_metadata()
+
+        return summary
 
     def get_statistics(self) -> Dict[str, Any]:
         """

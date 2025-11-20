@@ -63,6 +63,7 @@ logger = logging.getLogger("ares.launcher")
 
 # Import step registry and base step
 from src.training.steps.base_step import step_registry, BaseStep
+from src.utils.versioned_artifacts import VersionedArtifactStore
 
 # Import step packages to register them
 import src.training.steps.data_collection  # Registers DATA_COLLECTION steps
@@ -360,6 +361,11 @@ Examples:
         action='store_true',
         help='Use latest meta-labeling HPO best-params when running feature_generation_meta_labeling_step'
     )
+    parser.add_argument(
+        '--labeling-hpo-use-best-params',
+        action='store_true',
+        help='Alias for --enable-labeling-hpo-params; use latest meta-labeling HPO best-params in labeling steps'
+    )
     
     # Legacy compatibility options
     parser.add_argument('--start-from-step-name', type=str, help='Legacy: start from specific step')
@@ -469,9 +475,42 @@ def cleanup_duplicate_files(directories: List[str], keep_count: int = 5):
     logger.info(f"✅ Cleanup complete: {total_deleted} files deleted, {total_skipped} files skipped")
 
 
+def cleanup_versioned_artifact_stores(keep_per_base: int = 5) -> None:
+    """Prune old versions inside each VersionedArtifactStore."""
+    logger.info(f"Starting cleanup of versioned artifact stores (keeping {keep_per_base} versions per base)")
+
+    root = Path("versioned_artifacts")
+    if not root.exists():
+        logger.debug("versioned_artifacts directory does not exist, skipping store cleanup")
+        return
+
+    for store_dir in root.iterdir():
+        if not store_dir.is_dir():
+            continue
+
+        h5_path = store_dir / "store.h5"
+        if not h5_path.exists():
+            continue
+
+        try:
+            logger.info(f"Cleaning VersionedArtifactStore at {store_dir}")
+            store = VersionedArtifactStore(store_path=store_dir)
+            summary = store.prune_versions(keep_per_base=keep_per_base)
+            logger.info(
+                "Pruned store %s: h5_only_removed=%d, meta_only_removed=%d, versions_pruned=%d (keep_per_base=%d)",
+                store_dir.name,
+                summary.get("h5_only_removed", 0),
+                summary.get("meta_only_removed", 0),
+                summary.get("versions_pruned", 0),
+                keep_per_base,
+            )
+        except Exception as e:
+            logger.error(f"Failed to clean VersionedArtifactStore at {store_dir}: {e}")
+
+
 async def main():
     """Main entry point."""
-    logger.info("🎯 Starting Simplified Ares Launcher...")
+    logger.info("Starting Simplified Ares Launcher...")
     
     # Run cleanup before anything else
     directories_to_clean = [
@@ -481,6 +520,7 @@ async def main():
         'outcomes'
     ]
     cleanup_duplicate_files(directories_to_clean, keep_count=3)
+    cleanup_versioned_artifact_stores(keep_per_base=5)
     
     # Create CLI parser
     parser = create_cli_parser()
@@ -586,7 +626,7 @@ async def main():
         config['alpha_enable_hpo'] = True
 
     # Optional labeling HPO configuration (used by feature_generation_meta_labeling_step)
-    if getattr(args, 'enable_labeling_hpo_params', False):
+    if getattr(args, 'enable_labeling_hpo_params', False) or getattr(args, 'labeling_hpo_use_best_params', False):
         config['enable_labeling_hpo_params'] = True
     
     # Import tprint for troubleshooting output

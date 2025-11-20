@@ -275,6 +275,7 @@ class ModelDiagnostician:
         self.navigator = self.Navigator(self)
         self.stress_tester = self.StressTester(self)
         self.historian = self.Historian(self)
+        self.calibration_auditor = self.CalibrationAuditor(self)
 
     def run_full_diagnosis(self) -> Dict[str, Any]:
         """Run all diagnostic tests and return a structured dictionary."""
@@ -293,6 +294,8 @@ class ModelDiagnostician:
         results['stress_tester'] = self.stress_tester.run_all()
         print("Running Historian Diagnostics...")
         results['historian'] = self.historian.run_all()
+        print("Running Calibration Auditor...")
+        results['calibration'] = self.calibration_auditor.run_all()
         return results
 
     def generate_report(self, results: Dict[str, Any], output_path: str = "diagnosis_report.html"):
@@ -963,11 +966,82 @@ class ModelDiagnostician:
                 return {"error": "Model object does not support direct prediction on array"}
 
         def calibration_error(self) -> Dict:
-            """5.3 Calibration Error (Regression version)"""
+            """5.3 Calibration Error (Regression version) - Enhanced with ECE and reliability diagrams"""
             # For regression, check if predicted magnitude matches actual magnitude
             # Rank correlation
             corr, _ = spearmanr(self.p.y_pred, self.p.y_test)
-            return {"rank_correlation": corr}
+
+            # Add Expected Calibration Error (ECE) calculation for regression
+            # ECE measures the average difference between predicted and actual values across bins
+            try:
+                n_bins = 10
+
+                # Create bins based on prediction quantiles
+                bin_edges = np.percentile(self.p.y_pred, np.linspace(0, 100, n_bins + 1))
+                bin_edges[-1] += 1e-8  # Ensure last bin includes maximum value
+
+                # Assign each prediction to a bin
+                bin_indices = np.digitize(self.p.y_pred, bin_edges) - 1
+                bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+                # Calculate calibration error per bin
+                calibration_errors = []
+                bin_accuracies = []
+                bin_confidences = []
+                bin_counts = []
+
+                for i in range(n_bins):
+                    mask = bin_indices == i
+                    if mask.sum() > 0:
+                        bin_pred = self.p.y_pred[mask]
+                        bin_true = self.p.y_test[mask]
+
+                        # Mean predicted value in this bin
+                        bin_confidence = float(np.mean(bin_pred))
+                        # Mean actual value in this bin
+                        bin_accuracy = float(np.mean(bin_true))
+
+                        # Calibration error = |predicted - actual|
+                        cal_error = abs(bin_confidence - bin_accuracy)
+
+                        calibration_errors.append(cal_error)
+                        bin_accuracies.append(bin_accuracy)
+                        bin_confidences.append(bin_confidence)
+                        bin_counts.append(int(mask.sum()))
+
+                # Expected Calibration Error (ECE) = weighted average of calibration errors
+                total_samples = len(self.p.y_pred)
+                ece = float(np.sum([
+                    (count / total_samples) * error
+                    for count, error in zip(bin_counts, calibration_errors)
+                ]))
+
+                # Maximum Calibration Error (MCE)
+                mce = float(np.max(calibration_errors)) if calibration_errors else 0.0
+
+                # Average Calibration Error (ACE)
+                ace = float(np.mean(calibration_errors)) if calibration_errors else 0.0
+
+                return {
+                    "rank_correlation": corr,
+                    "expected_calibration_error": ece,
+                    "max_calibration_error": mce,
+                    "avg_calibration_error": ace,
+                    "n_bins": n_bins,
+                    "bin_calibration_errors": [float(e) for e in calibration_errors],
+                    "bin_accuracies": [float(a) for a in bin_accuracies],
+                    "bin_confidences": [float(c) for c in bin_confidences],
+                    "bin_counts": bin_counts,
+                    "calibration_quality": (
+                        "Excellent" if ece < 0.01 else
+                        "Good" if ece < 0.05 else
+                        "Fair" if ece < 0.10 else
+                        "Poor"
+                    )
+                }
+            except Exception as e:
+                self.logger.warning(f"Failed to calculate detailed calibration metrics: {e}")
+                return {"rank_correlation": corr, "error": str(e)}
 
         def bootstrap_r2_ci(self) -> Dict:
             """5.4 Bootstrap R² CI"""
@@ -1206,6 +1280,322 @@ class ModelDiagnostician:
 
             except Exception as e:
                 return {"error": f"Learning anomaly detection failed: {str(e)}"}
+
+    # ==========================================
+    # Module 7: The Calibration Auditor (Prediction Calibration Quality)
+    # ==========================================
+    class CalibrationAuditor:
+        """
+        Comprehensive calibration assessment for trading model predictions.
+        Evaluates how well predicted values align with actual outcomes.
+        """
+        def __init__(self, parent):
+            self.p = parent
+
+        def run_all(self):
+            return {
+                "calibration_curve": self.analyze_calibration_curve(),
+                "quantile_calibration": self.analyze_quantile_calibration(),
+                "sharpness_analysis": self.analyze_sharpness(),
+                "calibration_drift": self.analyze_calibration_drift(),
+                "reliability_diagram": self.generate_reliability_diagram()
+            }
+
+        def analyze_calibration_curve(self) -> Dict:
+            """
+            7.1 Calibration Curve Analysis - ECE, MCE, and binned calibration errors.
+            Measures how well the predicted values match actual outcomes across different prediction ranges.
+            """
+            try:
+                n_bins = 10
+
+                # Create bins based on prediction quantiles
+                bin_edges = np.percentile(self.p.y_pred, np.linspace(0, 100, n_bins + 1))
+                bin_edges[-1] += 1e-8  # Ensure last bin includes maximum value
+
+                # Assign each prediction to a bin
+                bin_indices = np.digitize(self.p.y_pred, bin_edges) - 1
+                bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+                # Calculate calibration metrics per bin
+                calibration_errors = []
+                bin_accuracies = []
+                bin_confidences = []
+                bin_counts = []
+                bin_stds = []
+
+                for i in range(n_bins):
+                    mask = bin_indices == i
+                    if mask.sum() > 0:
+                        bin_pred = self.p.y_pred[mask]
+                        bin_true = self.p.y_test[mask]
+
+                        # Mean predicted value in this bin
+                        bin_confidence = float(np.mean(bin_pred))
+                        # Mean actual value in this bin
+                        bin_accuracy = float(np.mean(bin_true))
+                        # Standard deviation in this bin
+                        bin_std = float(np.std(bin_true))
+
+                        # Calibration error = |predicted - actual|
+                        cal_error = abs(bin_confidence - bin_accuracy)
+
+                        calibration_errors.append(cal_error)
+                        bin_accuracies.append(bin_accuracy)
+                        bin_confidences.append(bin_confidence)
+                        bin_counts.append(int(mask.sum()))
+                        bin_stds.append(bin_std)
+
+                # Expected Calibration Error (ECE) = weighted average of calibration errors
+                total_samples = len(self.p.y_pred)
+                ece = float(np.sum([
+                    (count / total_samples) * error
+                    for count, error in zip(bin_counts, calibration_errors)
+                ]))
+
+                # Maximum Calibration Error (MCE)
+                mce = float(np.max(calibration_errors)) if calibration_errors else 0.0
+
+                # Average Calibration Error (ACE)
+                ace = float(np.mean(calibration_errors)) if calibration_errors else 0.0
+
+                # Root Mean Square Calibration Error (RMSCE)
+                rmsce = float(np.sqrt(np.mean([e**2 for e in calibration_errors])))
+
+                return {
+                    "expected_calibration_error": ece,
+                    "max_calibration_error": mce,
+                    "avg_calibration_error": ace,
+                    "rmsce": rmsce,
+                    "n_bins": n_bins,
+                    "bin_calibration_errors": [float(e) for e in calibration_errors],
+                    "bin_accuracies": [float(a) for a in bin_accuracies],
+                    "bin_confidences": [float(c) for c in bin_confidences],
+                    "bin_counts": bin_counts,
+                    "bin_stds": [float(s) for s in bin_stds],
+                    "calibration_quality": (
+                        "Excellent" if ece < 0.01 else
+                        "Good" if ece < 0.05 else
+                        "Fair" if ece < 0.10 else
+                        "Poor"
+                    ),
+                    "interpretation": (
+                        f"ECE = {ece:.4f}. Model predictions {'are well-calibrated' if ece < 0.05 else 'show significant miscalibration'}. "
+                        f"MCE = {mce:.4f} indicates {'minimal' if mce < 0.1 else 'substantial'} maximum bin error. "
+                        "Consider isotonic or Platt scaling if miscalibrated."
+                    )
+                }
+            except Exception as e:
+                return {"error": f"Calibration curve analysis failed: {str(e)}"}
+
+        def analyze_quantile_calibration(self) -> Dict:
+            """
+            7.2 Quantile Calibration - Check if predictions are calibrated at different quantiles.
+            Important for trading: are we correctly predicting tails (large moves)?
+            """
+            try:
+                quantiles = [0.1, 0.25, 0.5, 0.75, 0.9]
+                quantile_results = {}
+
+                for q in quantiles:
+                    # Predicted quantile threshold
+                    pred_threshold = np.quantile(self.p.y_pred, q)
+
+                    # Actual quantile threshold
+                    true_threshold = np.quantile(self.p.y_test, q)
+
+                    # Calibration error at this quantile
+                    quantile_error = abs(pred_threshold - true_threshold)
+
+                    # What percentage of predictions above threshold actually exceed true threshold?
+                    pred_above = self.p.y_pred >= pred_threshold
+                    true_above = self.p.y_test >= true_threshold
+
+                    if pred_above.sum() > 0:
+                        precision_at_quantile = float(
+                            np.sum(pred_above & true_above) / pred_above.sum()
+                        )
+                    else:
+                        precision_at_quantile = 0.0
+
+                    quantile_results[f"q{int(q*100)}"] = {
+                        "predicted_threshold": float(pred_threshold),
+                        "actual_threshold": float(true_threshold),
+                        "calibration_error": float(quantile_error),
+                        "precision": float(precision_at_quantile)
+                    }
+
+                # Overall quantile calibration score
+                avg_quantile_error = float(np.mean([
+                    v['calibration_error'] for v in quantile_results.values()
+                ]))
+
+                return {
+                    "quantile_results": quantile_results,
+                    "avg_quantile_calibration_error": avg_quantile_error,
+                    "interpretation": (
+                        f"Average quantile calibration error = {avg_quantile_error:.4f}. "
+                        f"{'Excellent' if avg_quantile_error < 0.05 else 'Good' if avg_quantile_error < 0.1 else 'Poor'} "
+                        "tail calibration. Critical for position sizing and risk management."
+                    )
+                }
+            except Exception as e:
+                return {"error": f"Quantile calibration analysis failed: {str(e)}"}
+
+        def analyze_sharpness(self) -> Dict:
+            """
+            7.3 Sharpness Analysis - Are predictions informative (sharp) or overly conservative?
+            Sharp predictions have higher variance and provide more actionable signals.
+            """
+            try:
+                pred_variance = float(np.var(self.p.y_pred))
+                true_variance = float(np.var(self.p.y_test))
+
+                # Sharpness ratio: how much of the true variance is captured by predictions
+                sharpness_ratio = pred_variance / true_variance if true_variance > 0 else 0
+
+                # Prediction range vs actual range
+                pred_range = float(np.ptp(self.p.y_pred))  # peak-to-peak
+                true_range = float(np.ptp(self.p.y_test))
+                range_ratio = pred_range / true_range if true_range > 0 else 0
+
+                # Information coefficient (correlation)
+                ic = float(np.corrcoef(self.p.y_pred, self.p.y_test)[0, 1])
+
+                return {
+                    "prediction_variance": pred_variance,
+                    "actual_variance": true_variance,
+                    "sharpness_ratio": sharpness_ratio,
+                    "prediction_range": pred_range,
+                    "actual_range": true_range,
+                    "range_ratio": range_ratio,
+                    "information_coefficient": ic,
+                    "sharpness_quality": (
+                        "Over-confident" if sharpness_ratio > 1.2 else
+                        "Sharp" if 0.8 <= sharpness_ratio <= 1.2 else
+                        "Conservative" if 0.5 <= sharpness_ratio < 0.8 else
+                        "Under-confident"
+                    ),
+                    "interpretation": (
+                        f"Sharpness ratio = {sharpness_ratio:.3f}. "
+                        f"{'Model predictions are appropriately sharp' if 0.8 <= sharpness_ratio <= 1.2 else 'Model predictions are ' + ('too conservative' if sharpness_ratio < 0.8 else 'overconfident')}. "
+                        f"IC = {ic:.3f} shows {'strong' if abs(ic) > 0.1 else 'weak'} predictive power."
+                    )
+                }
+            except Exception as e:
+                return {"error": f"Sharpness analysis failed: {str(e)}"}
+
+        def analyze_calibration_drift(self) -> Dict:
+            """
+            7.4 Calibration Drift Over Time - Does calibration degrade over time?
+            Critical for production models that need retraining.
+            """
+            try:
+                # Split into time windows
+                n_windows = 4
+                window_size = len(self.p.y_pred) // n_windows
+
+                calibration_by_window = []
+
+                for i in range(n_windows):
+                    start_idx = i * window_size
+                    end_idx = start_idx + window_size if i < n_windows - 1 else len(self.p.y_pred)
+
+                    if end_idx > start_idx:
+                        window_pred = self.p.y_pred[start_idx:end_idx]
+                        window_true = self.p.y_test[start_idx:end_idx]
+
+                        # Calculate calibration error for this window
+                        # Simple approach: mean absolute error between predicted and actual
+                        window_mae = float(np.mean(np.abs(window_pred - window_true)))
+
+                        # Correlation for this window
+                        if len(window_pred) > 1 and np.std(window_pred) > 0 and np.std(window_true) > 0:
+                            window_corr = float(np.corrcoef(window_pred, window_true)[0, 1])
+                        else:
+                            window_corr = 0.0
+
+                        calibration_by_window.append({
+                            "window": i + 1,
+                            "mae": window_mae,
+                            "correlation": window_corr,
+                            "n_samples": end_idx - start_idx
+                        })
+
+                # Calculate drift: difference between first and last window
+                if len(calibration_by_window) >= 2:
+                    mae_drift = calibration_by_window[-1]["mae"] - calibration_by_window[0]["mae"]
+                    corr_drift = calibration_by_window[-1]["correlation"] - calibration_by_window[0]["correlation"]
+
+                    drift_severity = (
+                        "Severe" if abs(mae_drift) > 0.1 or abs(corr_drift) > 0.2 else
+                        "Moderate" if abs(mae_drift) > 0.05 or abs(corr_drift) > 0.1 else
+                        "Minimal"
+                    )
+                else:
+                    mae_drift = 0.0
+                    corr_drift = 0.0
+                    drift_severity = "Unknown"
+
+                return {
+                    "calibration_by_window": calibration_by_window,
+                    "mae_drift": float(mae_drift),
+                    "correlation_drift": float(corr_drift),
+                    "drift_severity": drift_severity,
+                    "interpretation": (
+                        f"MAE drift = {mae_drift:.4f}, Correlation drift = {corr_drift:.4f}. "
+                        f"{drift_severity} calibration drift detected. "
+                        f"{'Consider retraining or online learning' if drift_severity in ['Severe', 'Moderate'] else 'Calibration is stable over time'}."
+                    )
+                }
+            except Exception as e:
+                return {"error": f"Calibration drift analysis failed: {str(e)}"}
+
+        def generate_reliability_diagram(self) -> Dict:
+            """
+            7.5 Reliability Diagram Data - Data for plotting calibration reliability.
+            Returns binned data showing predicted vs observed values.
+            """
+            try:
+                n_bins = 15
+
+                # Create bins based on prediction quantiles
+                bin_edges = np.percentile(self.p.y_pred, np.linspace(0, 100, n_bins + 1))
+                bin_edges[-1] += 1e-8
+
+                # Assign each prediction to a bin
+                bin_indices = np.digitize(self.p.y_pred, bin_edges) - 1
+                bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+                # Calculate observed frequency per bin
+                observed_values = []
+                predicted_values = []
+                bin_counts = []
+
+                for i in range(n_bins):
+                    mask = bin_indices == i
+                    if mask.sum() > 0:
+                        observed_values.append(float(np.mean(self.p.y_test[mask])))
+                        predicted_values.append(float(np.mean(self.p.y_pred[mask])))
+                        bin_counts.append(int(mask.sum()))
+
+                return {
+                    "n_bins": n_bins,
+                    "observed_values": observed_values,
+                    "predicted_values": predicted_values,
+                    "bin_counts": bin_counts,
+                    "perfect_calibration_line": {
+                        "x": predicted_values,
+                        "y": predicted_values
+                    },
+                    "interpretation": (
+                        "Reliability diagram shows predicted vs observed values. "
+                        "Points on the diagonal indicate perfect calibration. "
+                        "Deviations suggest miscalibration requiring correction."
+                    )
+                }
+            except Exception as e:
+                return {"error": f"Reliability diagram generation failed: {str(e)}"}
 
 class DiagnosisReporter:
     """

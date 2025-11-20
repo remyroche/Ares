@@ -3776,6 +3776,126 @@ class UnifiedModelsTrainingStep(BaseStep):
                                 else:
                                     # If Series or ndarray-like
                                     oof_df = pd.DataFrame({'oof_pred': oof})
+
+                                # ------------------------------------------------------------------
+                                # PER-MODEL CALIBRATION: Calibrate OOF predictions before saving
+                                # This ensures the ensemble receives calibrated base predictions
+                                # ------------------------------------------------------------------
+                                enable_per_model_calibration = bool(
+                                    config.get('enable_per_model_calibration', True)
+                                )
+
+                                if enable_per_model_calibration:
+                                    tprint_info("=" * 80)
+                                    tprint_info("🎯 APPLYING PER-MODEL CALIBRATION TO OOF PREDICTIONS")
+                                    tprint_info("=" * 80)
+
+                                    # Get targets for calibration
+                                    y_true_series = getattr(self, '_full_analyst_targets', None)
+
+                                    if y_true_series is not None and not oof_df.empty:
+                                        # Align targets to OOF predictions index
+                                        y_true_aligned = y_true_series.reindex(oof_df.index)
+                                        valid_mask = y_true_aligned.notna()
+
+                                        if valid_mask.sum() >= 50:
+                                            tprint_info(f"📊 Calibrating {oof_df.shape[1]} model predictions with {valid_mask.sum()} valid samples")
+
+                                            # Calibrate each model's predictions independently
+                                            calibrated_oof = oof_df.copy()
+                                            calibration_metrics = {}
+
+                                            for col_name in oof_df.columns:
+                                                try:
+                                                    tprint_info(f"   🔧 Calibrating {col_name}...")
+
+                                                    # Get predictions for this model
+                                                    y_pred = oof_df[col_name].values[valid_mask]
+                                                    y_true = y_true_aligned.values[valid_mask]
+
+                                                    # Convert predictions to probabilities if needed (for isotonic calibration)
+                                                    # Isotonic regression expects values in [0, 1] range
+                                                    # For regression targets, we'll calibrate the relationship between
+                                                    # predicted and actual values
+                                                    from sklearn.isotonic import IsotonicRegression
+
+                                                    # Fit isotonic calibrator on the OOF predictions
+                                                    calibrator = IsotonicRegression(
+                                                        out_of_bounds='clip',
+                                                        increasing='auto'  # Auto-detect monotonicity
+                                                    )
+
+                                                    # Fit calibrator: maps model predictions to actual targets
+                                                    calibrator.fit(y_pred, y_true)
+
+                                                    # Apply calibration to all predictions
+                                                    calibrated_pred = calibrator.predict(oof_df[col_name].values)
+                                                    calibrated_oof[col_name] = calibrated_pred
+
+                                                    # Calculate calibration improvement metrics
+                                                    from sklearn.metrics import mean_squared_error, mean_absolute_error
+
+                                                    mse_before = mean_squared_error(y_true, y_pred)
+                                                    mse_after = mean_squared_error(
+                                                        y_true,
+                                                        calibrator.predict(y_pred)
+                                                    )
+
+                                                    mae_before = mean_absolute_error(y_true, y_pred)
+                                                    mae_after = mean_absolute_error(
+                                                        y_true,
+                                                        calibrator.predict(y_pred)
+                                                    )
+
+                                                    improvement = ((mse_before - mse_after) / mse_before * 100) if mse_before > 0 else 0
+
+                                                    calibration_metrics[col_name] = {
+                                                        'mse_before': float(mse_before),
+                                                        'mse_after': float(mse_after),
+                                                        'mse_improvement_pct': float(improvement),
+                                                        'mae_before': float(mae_before),
+                                                        'mae_after': float(mae_after),
+                                                        'n_samples': int(len(y_pred))
+                                                    }
+
+                                                    tprint_success(
+                                                        f"      ✅ {col_name}: MSE improved by {improvement:.2f}% "
+                                                        f"(before={mse_before:.6f}, after={mse_after:.6f})"
+                                                    )
+
+                                                except Exception as e:
+                                                    tprint_warning(f"      ⚠️ Failed to calibrate {col_name}: {e}")
+                                                    # Keep original predictions if calibration fails
+                                                    calibrated_oof[col_name] = oof_df[col_name]
+
+                                            # Use calibrated predictions
+                                            oof_df = calibrated_oof
+
+                                            # Save calibration metrics
+                                            if calibration_metrics:
+                                                calibration_summary = {
+                                                    'timestamp': datetime.now().isoformat(),
+                                                    'n_models': len(calibration_metrics),
+                                                    'per_model_metrics': calibration_metrics,
+                                                    'avg_mse_improvement_pct': float(
+                                                        np.mean([m['mse_improvement_pct'] for m in calibration_metrics.values()])
+                                                    )
+                                                }
+
+                                                # Store in artifacts
+                                                artifacts['calibration_metrics'] = calibration_summary
+
+                                                tprint_info("=" * 80)
+                                                tprint_success(f"✅ CALIBRATION COMPLETE: Avg MSE improvement = {calibration_summary['avg_mse_improvement_pct']:.2f}%")
+                                                tprint_info("=" * 80)
+                                        else:
+                                            tprint_warning(
+                                                f"⚠️ Insufficient valid samples for calibration ({valid_mask.sum()} < 50), "
+                                                "skipping per-model calibration"
+                                            )
+                                    else:
+                                        tprint_warning("⚠️ No targets available for calibration, skipping per-model calibration")
+
                                 oof_path = self._save_artifact(
                                     data=oof_df,
                                     artifact_name='analyst_base_predictions_oof',
@@ -3783,9 +3903,15 @@ class UnifiedModelsTrainingStep(BaseStep):
                                     data_category='predictions'
                                 )
                                 artifacts['analyst_base_predictions_oof'] = oof_path
-                                tprint_success(f"✅ Saved analyst_base_predictions_oof: {oof_df.shape}")
+
+                                if enable_per_model_calibration:
+                                    tprint_success(f"✅ Saved calibrated analyst_base_predictions_oof: {oof_df.shape}")
+                                else:
+                                    tprint_success(f"✅ Saved analyst_base_predictions_oof: {oof_df.shape}")
                         except Exception as e:
                             tprint_warning(f"⚠️ Failed to save OOF predictions: {e}")
+                            import traceback
+                            traceback.print_exc()
                     
                     # Save combined confidence scores (with optional calibration)
                     if all_confidence:

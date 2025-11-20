@@ -275,6 +275,7 @@ class ModelDiagnostician:
         self.navigator = self.Navigator(self)
         self.stress_tester = self.StressTester(self)
         self.historian = self.Historian(self)
+        self.calibration_auditor = self.CalibrationAuditor(self)
 
     def run_full_diagnosis(self) -> Dict[str, Any]:
         """Run all diagnostic tests and return a structured dictionary."""
@@ -293,6 +294,8 @@ class ModelDiagnostician:
         results['stress_tester'] = self.stress_tester.run_all()
         print("Running Historian Diagnostics...")
         results['historian'] = self.historian.run_all()
+        print("Running Calibration Auditor...")
+        results['calibration'] = self.calibration_auditor.run_all()
         return results
 
     def generate_report(self, results: Dict[str, Any], output_path: str = "diagnosis_report.html"):
@@ -963,11 +966,82 @@ class ModelDiagnostician:
                 return {"error": "Model object does not support direct prediction on array"}
 
         def calibration_error(self) -> Dict:
-            """5.3 Calibration Error (Regression version)"""
+            """5.3 Calibration Error (Regression version) - Enhanced with ECE and reliability diagrams"""
             # For regression, check if predicted magnitude matches actual magnitude
             # Rank correlation
             corr, _ = spearmanr(self.p.y_pred, self.p.y_test)
-            return {"rank_correlation": corr}
+
+            # Add Expected Calibration Error (ECE) calculation for regression
+            # ECE measures the average difference between predicted and actual values across bins
+            try:
+                n_bins = 10
+
+                # Create bins based on prediction quantiles
+                bin_edges = np.percentile(self.p.y_pred, np.linspace(0, 100, n_bins + 1))
+                bin_edges[-1] += 1e-8  # Ensure last bin includes maximum value
+
+                # Assign each prediction to a bin
+                bin_indices = np.digitize(self.p.y_pred, bin_edges) - 1
+                bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+                # Calculate calibration error per bin
+                calibration_errors = []
+                bin_accuracies = []
+                bin_confidences = []
+                bin_counts = []
+
+                for i in range(n_bins):
+                    mask = bin_indices == i
+                    if mask.sum() > 0:
+                        bin_pred = self.p.y_pred[mask]
+                        bin_true = self.p.y_test[mask]
+
+                        # Mean predicted value in this bin
+                        bin_confidence = float(np.mean(bin_pred))
+                        # Mean actual value in this bin
+                        bin_accuracy = float(np.mean(bin_true))
+
+                        # Calibration error = |predicted - actual|
+                        cal_error = abs(bin_confidence - bin_accuracy)
+
+                        calibration_errors.append(cal_error)
+                        bin_accuracies.append(bin_accuracy)
+                        bin_confidences.append(bin_confidence)
+                        bin_counts.append(int(mask.sum()))
+
+                # Expected Calibration Error (ECE) = weighted average of calibration errors
+                total_samples = len(self.p.y_pred)
+                ece = float(np.sum([
+                    (count / total_samples) * error
+                    for count, error in zip(bin_counts, calibration_errors)
+                ]))
+
+                # Maximum Calibration Error (MCE)
+                mce = float(np.max(calibration_errors)) if calibration_errors else 0.0
+
+                # Average Calibration Error (ACE)
+                ace = float(np.mean(calibration_errors)) if calibration_errors else 0.0
+
+                return {
+                    "rank_correlation": corr,
+                    "expected_calibration_error": ece,
+                    "max_calibration_error": mce,
+                    "avg_calibration_error": ace,
+                    "n_bins": n_bins,
+                    "bin_calibration_errors": [float(e) for e in calibration_errors],
+                    "bin_accuracies": [float(a) for a in bin_accuracies],
+                    "bin_confidences": [float(c) for c in bin_confidences],
+                    "bin_counts": bin_counts,
+                    "calibration_quality": (
+                        "Excellent" if ece < 0.01 else
+                        "Good" if ece < 0.05 else
+                        "Fair" if ece < 0.10 else
+                        "Poor"
+                    )
+                }
+            except Exception as e:
+                self.logger.warning(f"Failed to calculate detailed calibration metrics: {e}")
+                return {"rank_correlation": corr, "error": str(e)}
 
         def bootstrap_r2_ci(self) -> Dict:
             """5.4 Bootstrap R² CI"""
@@ -1206,6 +1280,943 @@ class ModelDiagnostician:
 
             except Exception as e:
                 return {"error": f"Learning anomaly detection failed: {str(e)}"}
+
+    # ==========================================
+    # Module 7: The Calibration Auditor (Prediction Calibration Quality)
+    # ==========================================
+    class CalibrationAuditor:
+        """
+        Comprehensive calibration assessment for trading model predictions.
+        Evaluates how well predicted values align with actual outcomes.
+        """
+        def __init__(self, parent):
+            self.p = parent
+
+        def run_all(self):
+            return {
+                "calibration_curve": self.analyze_calibration_curve(),
+                "quantile_calibration": self.analyze_quantile_calibration(),
+                "sharpness_analysis": self.analyze_sharpness(),
+                "calibration_drift": self.analyze_calibration_drift(),
+                "reliability_diagram": self.generate_reliability_diagram(),
+                "brier_score_decomposition": self.brier_score_decomposition(),
+                "rolling_calibration_error": self.rolling_calibration_error(),
+                "threshold_weighted_ece": self.threshold_weighted_ece(),
+                "conditional_calibration": self.conditional_calibration_analysis()
+            }
+
+        def analyze_calibration_curve(self) -> Dict:
+            """
+            7.1 Calibration Curve Analysis - ECE, MCE, and binned calibration errors.
+            Measures how well the predicted values match actual outcomes across different prediction ranges.
+            """
+            try:
+                n_bins = 10
+
+                # Create bins based on prediction quantiles
+                bin_edges = np.percentile(self.p.y_pred, np.linspace(0, 100, n_bins + 1))
+                bin_edges[-1] += 1e-8  # Ensure last bin includes maximum value
+
+                # Assign each prediction to a bin
+                bin_indices = np.digitize(self.p.y_pred, bin_edges) - 1
+                bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+                # Calculate calibration metrics per bin
+                calibration_errors = []
+                bin_accuracies = []
+                bin_confidences = []
+                bin_counts = []
+                bin_stds = []
+
+                for i in range(n_bins):
+                    mask = bin_indices == i
+                    if mask.sum() > 0:
+                        bin_pred = self.p.y_pred[mask]
+                        bin_true = self.p.y_test[mask]
+
+                        # Mean predicted value in this bin
+                        bin_confidence = float(np.mean(bin_pred))
+                        # Mean actual value in this bin
+                        bin_accuracy = float(np.mean(bin_true))
+                        # Standard deviation in this bin
+                        bin_std = float(np.std(bin_true))
+
+                        # Calibration error = |predicted - actual|
+                        cal_error = abs(bin_confidence - bin_accuracy)
+
+                        calibration_errors.append(cal_error)
+                        bin_accuracies.append(bin_accuracy)
+                        bin_confidences.append(bin_confidence)
+                        bin_counts.append(int(mask.sum()))
+                        bin_stds.append(bin_std)
+
+                # Expected Calibration Error (ECE) = weighted average of calibration errors
+                total_samples = len(self.p.y_pred)
+                ece = float(np.sum([
+                    (count / total_samples) * error
+                    for count, error in zip(bin_counts, calibration_errors)
+                ]))
+
+                # Maximum Calibration Error (MCE)
+                mce = float(np.max(calibration_errors)) if calibration_errors else 0.0
+
+                # Average Calibration Error (ACE)
+                ace = float(np.mean(calibration_errors)) if calibration_errors else 0.0
+
+                # Root Mean Square Calibration Error (RMSCE)
+                rmsce = float(np.sqrt(np.mean([e**2 for e in calibration_errors])))
+
+                return {
+                    "expected_calibration_error": ece,
+                    "max_calibration_error": mce,
+                    "avg_calibration_error": ace,
+                    "rmsce": rmsce,
+                    "n_bins": n_bins,
+                    "bin_calibration_errors": [float(e) for e in calibration_errors],
+                    "bin_accuracies": [float(a) for a in bin_accuracies],
+                    "bin_confidences": [float(c) for c in bin_confidences],
+                    "bin_counts": bin_counts,
+                    "bin_stds": [float(s) for s in bin_stds],
+                    "calibration_quality": (
+                        "Excellent" if ece < 0.01 else
+                        "Good" if ece < 0.05 else
+                        "Fair" if ece < 0.10 else
+                        "Poor"
+                    ),
+                    "interpretation": (
+                        f"ECE = {ece:.4f}. Model predictions {'are well-calibrated' if ece < 0.05 else 'show significant miscalibration'}. "
+                        f"MCE = {mce:.4f} indicates {'minimal' if mce < 0.1 else 'substantial'} maximum bin error. "
+                        "Consider isotonic or Platt scaling if miscalibrated."
+                    )
+                }
+            except Exception as e:
+                return {"error": f"Calibration curve analysis failed: {str(e)}"}
+
+        def analyze_quantile_calibration(self) -> Dict:
+            """
+            7.2 Quantile Calibration - Check if predictions are calibrated at different quantiles.
+            Important for trading: are we correctly predicting tails (large moves)?
+            """
+            try:
+                quantiles = [0.1, 0.25, 0.5, 0.75, 0.9]
+                quantile_results = {}
+
+                for q in quantiles:
+                    # Predicted quantile threshold
+                    pred_threshold = np.quantile(self.p.y_pred, q)
+
+                    # Actual quantile threshold
+                    true_threshold = np.quantile(self.p.y_test, q)
+
+                    # Calibration error at this quantile
+                    quantile_error = abs(pred_threshold - true_threshold)
+
+                    # What percentage of predictions above threshold actually exceed true threshold?
+                    pred_above = self.p.y_pred >= pred_threshold
+                    true_above = self.p.y_test >= true_threshold
+
+                    if pred_above.sum() > 0:
+                        precision_at_quantile = float(
+                            np.sum(pred_above & true_above) / pred_above.sum()
+                        )
+                    else:
+                        precision_at_quantile = 0.0
+
+                    quantile_results[f"q{int(q*100)}"] = {
+                        "predicted_threshold": float(pred_threshold),
+                        "actual_threshold": float(true_threshold),
+                        "calibration_error": float(quantile_error),
+                        "precision": float(precision_at_quantile)
+                    }
+
+                # Overall quantile calibration score
+                avg_quantile_error = float(np.mean([
+                    v['calibration_error'] for v in quantile_results.values()
+                ]))
+
+                return {
+                    "quantile_results": quantile_results,
+                    "avg_quantile_calibration_error": avg_quantile_error,
+                    "interpretation": (
+                        f"Average quantile calibration error = {avg_quantile_error:.4f}. "
+                        f"{'Excellent' if avg_quantile_error < 0.05 else 'Good' if avg_quantile_error < 0.1 else 'Poor'} "
+                        "tail calibration. Critical for position sizing and risk management."
+                    )
+                }
+            except Exception as e:
+                return {"error": f"Quantile calibration analysis failed: {str(e)}"}
+
+        def analyze_sharpness(self) -> Dict:
+            """
+            7.3 Sharpness Analysis - Are predictions informative (sharp) or overly conservative?
+            Sharp predictions have higher variance and provide more actionable signals.
+            """
+            try:
+                pred_variance = float(np.var(self.p.y_pred))
+                true_variance = float(np.var(self.p.y_test))
+
+                # Sharpness ratio: how much of the true variance is captured by predictions
+                sharpness_ratio = pred_variance / true_variance if true_variance > 0 else 0
+
+                # Prediction range vs actual range
+                pred_range = float(np.ptp(self.p.y_pred))  # peak-to-peak
+                true_range = float(np.ptp(self.p.y_test))
+                range_ratio = pred_range / true_range if true_range > 0 else 0
+
+                # Information coefficient (correlation)
+                ic = float(np.corrcoef(self.p.y_pred, self.p.y_test)[0, 1])
+
+                return {
+                    "prediction_variance": pred_variance,
+                    "actual_variance": true_variance,
+                    "sharpness_ratio": sharpness_ratio,
+                    "prediction_range": pred_range,
+                    "actual_range": true_range,
+                    "range_ratio": range_ratio,
+                    "information_coefficient": ic,
+                    "sharpness_quality": (
+                        "Over-confident" if sharpness_ratio > 1.2 else
+                        "Sharp" if 0.8 <= sharpness_ratio <= 1.2 else
+                        "Conservative" if 0.5 <= sharpness_ratio < 0.8 else
+                        "Under-confident"
+                    ),
+                    "interpretation": (
+                        f"Sharpness ratio = {sharpness_ratio:.3f}. "
+                        f"{'Model predictions are appropriately sharp' if 0.8 <= sharpness_ratio <= 1.2 else 'Model predictions are ' + ('too conservative' if sharpness_ratio < 0.8 else 'overconfident')}. "
+                        f"IC = {ic:.3f} shows {'strong' if abs(ic) > 0.1 else 'weak'} predictive power."
+                    )
+                }
+            except Exception as e:
+                return {"error": f"Sharpness analysis failed: {str(e)}"}
+
+        def analyze_calibration_drift(self) -> Dict:
+            """
+            7.4 Calibration Drift Over Time - Does calibration degrade over time?
+            Critical for production models that need retraining.
+            """
+            try:
+                # Split into time windows
+                n_windows = 4
+                window_size = len(self.p.y_pred) // n_windows
+
+                calibration_by_window = []
+
+                for i in range(n_windows):
+                    start_idx = i * window_size
+                    end_idx = start_idx + window_size if i < n_windows - 1 else len(self.p.y_pred)
+
+                    if end_idx > start_idx:
+                        window_pred = self.p.y_pred[start_idx:end_idx]
+                        window_true = self.p.y_test[start_idx:end_idx]
+
+                        # Calculate calibration error for this window
+                        # Simple approach: mean absolute error between predicted and actual
+                        window_mae = float(np.mean(np.abs(window_pred - window_true)))
+
+                        # Correlation for this window
+                        if len(window_pred) > 1 and np.std(window_pred) > 0 and np.std(window_true) > 0:
+                            window_corr = float(np.corrcoef(window_pred, window_true)[0, 1])
+                        else:
+                            window_corr = 0.0
+
+                        calibration_by_window.append({
+                            "window": i + 1,
+                            "mae": window_mae,
+                            "correlation": window_corr,
+                            "n_samples": end_idx - start_idx
+                        })
+
+                # Calculate drift: difference between first and last window
+                if len(calibration_by_window) >= 2:
+                    mae_drift = calibration_by_window[-1]["mae"] - calibration_by_window[0]["mae"]
+                    corr_drift = calibration_by_window[-1]["correlation"] - calibration_by_window[0]["correlation"]
+
+                    drift_severity = (
+                        "Severe" if abs(mae_drift) > 0.1 or abs(corr_drift) > 0.2 else
+                        "Moderate" if abs(mae_drift) > 0.05 or abs(corr_drift) > 0.1 else
+                        "Minimal"
+                    )
+                else:
+                    mae_drift = 0.0
+                    corr_drift = 0.0
+                    drift_severity = "Unknown"
+
+                return {
+                    "calibration_by_window": calibration_by_window,
+                    "mae_drift": float(mae_drift),
+                    "correlation_drift": float(corr_drift),
+                    "drift_severity": drift_severity,
+                    "interpretation": (
+                        f"MAE drift = {mae_drift:.4f}, Correlation drift = {corr_drift:.4f}. "
+                        f"{drift_severity} calibration drift detected. "
+                        f"{'Consider retraining or online learning' if drift_severity in ['Severe', 'Moderate'] else 'Calibration is stable over time'}."
+                    )
+                }
+            except Exception as e:
+                return {"error": f"Calibration drift analysis failed: {str(e)}"}
+
+        def generate_reliability_diagram(self) -> Dict:
+            """
+            7.5 Reliability Diagram Data - Data for plotting calibration reliability.
+            Returns binned data showing predicted vs observed values.
+            """
+            try:
+                n_bins = 15
+
+                # Create bins based on prediction quantiles
+                bin_edges = np.percentile(self.p.y_pred, np.linspace(0, 100, n_bins + 1))
+                bin_edges[-1] += 1e-8
+
+                # Assign each prediction to a bin
+                bin_indices = np.digitize(self.p.y_pred, bin_edges) - 1
+                bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+                # Calculate observed frequency per bin
+                observed_values = []
+                predicted_values = []
+                bin_counts = []
+
+                for i in range(n_bins):
+                    mask = bin_indices == i
+                    if mask.sum() > 0:
+                        observed_values.append(float(np.mean(self.p.y_test[mask])))
+                        predicted_values.append(float(np.mean(self.p.y_pred[mask])))
+                        bin_counts.append(int(mask.sum()))
+
+                return {
+                    "n_bins": n_bins,
+                    "observed_values": observed_values,
+                    "predicted_values": predicted_values,
+                    "bin_counts": bin_counts,
+                    "perfect_calibration_line": {
+                        "x": predicted_values,
+                        "y": predicted_values
+                    },
+                    "interpretation": (
+                        "Reliability diagram shows predicted vs observed values. "
+                        "Points on the diagonal indicate perfect calibration. "
+                        "Deviations suggest miscalibration requiring correction."
+                    )
+                }
+            except Exception as e:
+                return {"error": f"Reliability diagram generation failed: {str(e)}"}
+
+        def brier_score_decomposition(self) -> Dict:
+            """
+            7.6 Brier Score Decomposition - Decomposes prediction error into reliability, resolution, and uncertainty.
+
+            Brier Score = Reliability - Resolution + Uncertainty
+            - Reliability: How close predicted probabilities are to actual frequencies
+            - Resolution: How well predictions discriminate between outcomes
+            - Uncertainty: Inherent unpredictability in the target
+
+            Lower Brier score = better calibration (closer to actual probabilities)
+            """
+            try:
+                # For regression, we'll adapt Brier score concept
+                # Brier score traditionally for probabilities [0,1], but we'll normalize
+
+                # Normalize predictions and targets to [0, 1] range for Brier calculation
+                y_pred_min, y_pred_max = self.p.y_pred.min(), self.p.y_pred.max()
+                y_test_min, y_test_max = self.p.y_test.min(), self.p.y_test.max()
+
+                # Use common range for both
+                common_min = min(y_pred_min, y_test_min)
+                common_max = max(y_pred_max, y_test_max)
+                range_span = common_max - common_min
+
+                if range_span > 0:
+                    y_pred_norm = (self.p.y_pred - common_min) / range_span
+                    y_test_norm = (self.p.y_test - common_min) / range_span
+                else:
+                    y_pred_norm = self.p.y_pred
+                    y_test_norm = self.p.y_test
+
+                # Overall Brier Score: mean squared error between normalized predictions and actuals
+                brier_score = float(np.mean((y_pred_norm - y_test_norm) ** 2))
+
+                # Decomposition using binning approach
+                n_bins = 10
+                bin_edges = np.percentile(y_pred_norm, np.linspace(0, 100, n_bins + 1))
+                bin_edges[-1] += 1e-8
+
+                bin_indices = np.digitize(y_pred_norm, bin_edges) - 1
+                bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+                # Calculate components
+                reliability_component = 0.0  # Calibration-in-the-large
+                resolution_component = 0.0   # Ability to discriminate
+
+                overall_mean = float(np.mean(y_test_norm))
+                total_samples = len(y_pred_norm)
+
+                for i in range(n_bins):
+                    mask = bin_indices == i
+                    n_i = mask.sum()
+
+                    if n_i > 0:
+                        # Mean predicted value in bin i
+                        mean_pred_i = float(np.mean(y_pred_norm[mask]))
+                        # Mean actual value in bin i
+                        mean_true_i = float(np.mean(y_test_norm[mask]))
+
+                        # Reliability: squared difference between predicted and observed in bin
+                        reliability_component += (n_i / total_samples) * (mean_pred_i - mean_true_i) ** 2
+
+                        # Resolution: how far each bin's actual mean is from overall mean
+                        resolution_component += (n_i / total_samples) * (mean_true_i - overall_mean) ** 2
+
+                # Uncertainty: variance of the target (inherent unpredictability)
+                uncertainty_component = float(np.var(y_test_norm))
+
+                # Verify decomposition: BS = Reliability - Resolution + Uncertainty
+                decomposed_brier = reliability_component - resolution_component + uncertainty_component
+
+                return {
+                    "brier_score": brier_score,
+                    "reliability": float(reliability_component),
+                    "resolution": float(resolution_component),
+                    "uncertainty": float(uncertainty_component),
+                    "decomposed_brier": float(decomposed_brier),
+                    "decomposition_error": float(abs(brier_score - decomposed_brier)),
+                    "normalized_range": {
+                        "min": float(common_min),
+                        "max": float(common_max),
+                        "span": float(range_span)
+                    },
+                    "interpretation": (
+                        f"Brier Score = {brier_score:.4f} (lower is better). "
+                        f"Reliability = {reliability_component:.4f} (calibration error, want low), "
+                        f"Resolution = {resolution_component:.4f} (discrimination power, want high), "
+                        f"Uncertainty = {uncertainty_component:.4f} (inherent noise). "
+                        f"Model {'is well-calibrated' if reliability_component < 0.01 else 'needs calibration improvement'}. "
+                        f"Model {'has good discrimination' if resolution_component > 0.01 else 'has weak discrimination'}."
+                    ),
+                    "quality_assessment": (
+                        "Excellent" if brier_score < 0.05 and reliability_component < 0.01 else
+                        "Good" if brier_score < 0.10 and reliability_component < 0.02 else
+                        "Fair" if brier_score < 0.20 else
+                        "Poor"
+                    )
+                }
+            except Exception as e:
+                return {"error": f"Brier score decomposition failed: {str(e)}"}
+
+        def rolling_calibration_error(self) -> Dict:
+            """
+            7.7 Rolling Calibration Error - Track calibration quality over time with rolling windows.
+
+            Calculates ECE over rolling windows to detect temporal degradation in calibration.
+            Critical for production models to identify when recalibration is needed.
+            """
+            try:
+                # Use rolling window to calculate calibration error over time
+                window_sizes = [50, 100, 200]  # Multiple window sizes
+
+                results_by_window_size = {}
+
+                for window_size in window_sizes:
+                    if len(self.p.y_pred) < window_size:
+                        continue
+
+                    n_windows = len(self.p.y_pred) - window_size + 1
+                    # Sample windows to avoid excessive computation
+                    sample_step = max(1, n_windows // 50)  # Max 50 windows per size
+
+                    rolling_eces = []
+                    rolling_maes = []
+                    window_positions = []
+
+                    for start_idx in range(0, n_windows, sample_step):
+                        end_idx = start_idx + window_size
+
+                        window_pred = self.p.y_pred[start_idx:end_idx]
+                        window_true = self.p.y_test[start_idx:end_idx]
+
+                        # Calculate ECE for this window
+                        try:
+                            n_bins = min(5, window_size // 10)  # Fewer bins for smaller windows
+                            if n_bins < 2:
+                                n_bins = 2
+
+                            bin_edges = np.percentile(window_pred, np.linspace(0, 100, n_bins + 1))
+                            bin_edges[-1] += 1e-8
+
+                            bin_indices = np.digitize(window_pred, bin_edges) - 1
+                            bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+                            calibration_errors = []
+                            bin_counts = []
+
+                            for i in range(n_bins):
+                                mask = bin_indices == i
+                                if mask.sum() > 0:
+                                    bin_pred_mean = np.mean(window_pred[mask])
+                                    bin_true_mean = np.mean(window_true[mask])
+                                    cal_error = abs(bin_pred_mean - bin_true_mean)
+                                    calibration_errors.append(cal_error)
+                                    bin_counts.append(mask.sum())
+
+                            # Weighted ECE
+                            if calibration_errors:
+                                total_in_bins = sum(bin_counts)
+                                window_ece = float(sum(
+                                    (count / total_in_bins) * error
+                                    for count, error in zip(bin_counts, calibration_errors)
+                                ))
+                            else:
+                                window_ece = 0.0
+
+                            # Also track MAE for this window
+                            window_mae = float(np.mean(np.abs(window_pred - window_true)))
+
+                            rolling_eces.append(window_ece)
+                            rolling_maes.append(window_mae)
+                            window_positions.append(start_idx + window_size // 2)  # Center position
+
+                        except Exception:
+                            continue
+
+                    if rolling_eces:
+                        results_by_window_size[f"window_{window_size}"] = {
+                            "window_size": window_size,
+                            "n_windows": len(rolling_eces),
+                            "rolling_ece": [float(e) for e in rolling_eces],
+                            "rolling_mae": [float(m) for m in rolling_maes],
+                            "window_positions": [int(p) for p in window_positions],
+                            "mean_ece": float(np.mean(rolling_eces)),
+                            "std_ece": float(np.std(rolling_eces)),
+                            "max_ece": float(np.max(rolling_eces)),
+                            "min_ece": float(np.min(rolling_eces)),
+                            "ece_trend": float(np.polyfit(range(len(rolling_eces)), rolling_eces, 1)[0]) if len(rolling_eces) > 1 else 0.0
+                        }
+
+                # Overall assessment
+                if results_by_window_size:
+                    # Use medium window size for overall assessment
+                    medium_window_key = f"window_{window_sizes[len(window_sizes)//2]}" if len(window_sizes) > 0 else list(results_by_window_size.keys())[0]
+
+                    if medium_window_key in results_by_window_size:
+                        medium_results = results_by_window_size[medium_window_key]
+                        mean_ece = medium_results['mean_ece']
+                        ece_trend = medium_results['ece_trend']
+
+                        degradation_status = (
+                            "Severe Degradation" if ece_trend > 0.0001 and mean_ece > 0.1 else
+                            "Moderate Degradation" if ece_trend > 0.00005 else
+                            "Stable" if abs(ece_trend) <= 0.00005 else
+                            "Improving"
+                        )
+                    else:
+                        mean_ece = 0.0
+                        ece_trend = 0.0
+                        degradation_status = "Unknown"
+                else:
+                    mean_ece = 0.0
+                    ece_trend = 0.0
+                    degradation_status = "Insufficient Data"
+
+                return {
+                    "results_by_window_size": results_by_window_size,
+                    "overall_mean_ece": float(mean_ece),
+                    "overall_ece_trend": float(ece_trend),
+                    "degradation_status": degradation_status,
+                    "interpretation": (
+                        f"Rolling calibration analysis with windows {window_sizes}. "
+                        f"Mean ECE = {mean_ece:.4f}, Trend = {ece_trend:.6f}. "
+                        f"{degradation_status} calibration over time. "
+                        f"{'Recalibration recommended' if degradation_status in ['Severe Degradation', 'Moderate Degradation'] else 'Calibration is stable'}."
+                    )
+                }
+            except Exception as e:
+                return {"error": f"Rolling calibration error analysis failed: {str(e)}"}
+
+        def threshold_weighted_ece(self) -> Dict:
+            """
+            7.8 Threshold-Weighted ECE - ECE with increasing weights for high-confidence predictions (0.8 -> 1.0).
+
+            In trading, high-confidence predictions are more actionable and carry higher risk.
+            This metric prioritizes calibration quality in the high-confidence regime where
+            position sizing is largest.
+
+            Weights increase linearly from 1.0 at threshold 0.8 to higher values at 1.0.
+            """
+            try:
+                # Normalize predictions to [0, 1] for threshold application
+                y_pred_min, y_pred_max = self.p.y_pred.min(), self.p.y_pred.max()
+                range_span = y_pred_max - y_pred_min
+
+                if range_span > 0:
+                    y_pred_norm = (self.p.y_pred - y_pred_min) / range_span
+                else:
+                    y_pred_norm = np.ones_like(self.p.y_pred) * 0.5
+
+                # Also normalize targets
+                y_test_min, y_test_max = self.p.y_test.min(), self.p.y_test.max()
+                test_range_span = y_test_max - y_test_min
+
+                if test_range_span > 0:
+                    y_test_norm = (self.p.y_test - y_test_min) / test_range_span
+                else:
+                    y_test_norm = np.ones_like(self.p.y_test) * 0.5
+
+                # Standard ECE calculation with bins
+                n_bins = 10
+                bin_edges = np.percentile(y_pred_norm, np.linspace(0, 100, n_bins + 1))
+                bin_edges[-1] += 1e-8
+
+                bin_indices = np.digitize(y_pred_norm, bin_edges) - 1
+                bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+                # Calculate standard ECE and threshold-weighted ECE
+                standard_ece = 0.0
+                threshold_weighted_ece_value = 0.0
+
+                bin_details = []
+                total_samples = len(y_pred_norm)
+
+                # High-confidence threshold (0.8 in normalized space)
+                threshold = 0.8
+                max_weight_multiplier = 3.0  # Max weight at 1.0 is 3x the weight at 0.8
+
+                for i in range(n_bins):
+                    mask = bin_indices == i
+                    n_i = mask.sum()
+
+                    if n_i > 0:
+                        bin_pred = y_pred_norm[mask]
+                        bin_true = y_test_norm[mask]
+
+                        mean_pred = float(np.mean(bin_pred))
+                        mean_true = float(np.mean(bin_true))
+
+                        cal_error = abs(mean_pred - mean_true)
+                        bin_weight = n_i / total_samples
+
+                        # Standard ECE contribution
+                        standard_ece += bin_weight * cal_error
+
+                        # Calculate threshold weight for this bin
+                        # Bins with mean_pred >= threshold get increasing weights
+                        if mean_pred >= threshold:
+                            # Linear increase from 1.0 at threshold to max_weight_multiplier at 1.0
+                            weight_multiplier = 1.0 + (max_weight_multiplier - 1.0) * ((mean_pred - threshold) / (1.0 - threshold))
+                            threshold_weight = bin_weight * weight_multiplier
+                        else:
+                            threshold_weight = bin_weight
+                            weight_multiplier = 1.0
+
+                        threshold_weighted_ece_value += threshold_weight * cal_error
+
+                        bin_details.append({
+                            "bin": i + 1,
+                            "mean_pred": mean_pred,
+                            "mean_true": mean_true,
+                            "cal_error": float(cal_error),
+                            "n_samples": int(n_i),
+                            "standard_weight": float(bin_weight),
+                            "threshold_weight": float(threshold_weight),
+                            "is_high_confidence": bool(mean_pred >= threshold),
+                            "weight_multiplier": float(weight_multiplier)
+                        })
+
+                # Normalize threshold-weighted ECE by total weights
+                total_threshold_weight = sum(bd['threshold_weight'] for bd in bin_details)
+                if total_threshold_weight > 0:
+                    threshold_weighted_ece_value = threshold_weighted_ece_value / total_threshold_weight * total_samples / len(bin_details)
+
+                # Calculate high-confidence calibration specifically
+                high_conf_mask = y_pred_norm >= threshold
+                high_conf_samples = high_conf_mask.sum()
+
+                if high_conf_samples > 0:
+                    high_conf_mae = float(np.mean(np.abs(
+                        y_pred_norm[high_conf_mask] - y_test_norm[high_conf_mask]
+                    )))
+                    high_conf_pct = float(high_conf_samples / len(y_pred_norm) * 100)
+                else:
+                    high_conf_mae = 0.0
+                    high_conf_pct = 0.0
+
+                return {
+                    "standard_ece": float(standard_ece),
+                    "threshold_weighted_ece": float(threshold_weighted_ece_value),
+                    "threshold": float(threshold),
+                    "max_weight_multiplier": float(max_weight_multiplier),
+                    "high_confidence_mae": high_conf_mae,
+                    "high_confidence_pct": high_conf_pct,
+                    "high_confidence_samples": int(high_conf_samples),
+                    "bin_details": bin_details,
+                    "ece_ratio": float(threshold_weighted_ece_value / standard_ece) if standard_ece > 0 else 1.0,
+                    "normalization": {
+                        "pred_min": float(y_pred_min),
+                        "pred_max": float(y_pred_max),
+                        "test_min": float(y_test_min),
+                        "test_max": float(y_test_max)
+                    },
+                    "interpretation": (
+                        f"Standard ECE = {standard_ece:.4f}, Threshold-Weighted ECE = {threshold_weighted_ece_value:.4f}. "
+                        f"High-confidence predictions (>{threshold:.1f}): {high_conf_pct:.1f}% of samples with MAE = {high_conf_mae:.4f}. "
+                        f"{'High-confidence calibration is excellent' if high_conf_mae < 0.05 else 'High-confidence calibration needs improvement'}. "
+                        f"This metric emphasizes calibration quality where it matters most for trading decisions."
+                    ),
+                    "quality_assessment": (
+                        "Excellent" if threshold_weighted_ece_value < 0.05 and high_conf_mae < 0.05 else
+                        "Good" if threshold_weighted_ece_value < 0.10 and high_conf_mae < 0.10 else
+                        "Fair" if threshold_weighted_ece_value < 0.20 else
+                        "Poor"
+                    )
+                }
+            except Exception as e:
+                return {"error": f"Threshold-weighted ECE calculation failed: {str(e)}"}
+
+        def conditional_calibration_analysis(self) -> Dict:
+            """
+            7.9 Conditional Calibration Analysis - Calibration quality conditional on market features.
+
+            Analyzes calibration errors across different market regimes (volatility, trend, etc.)
+            and applies Lasso regression to create conditional calibration that adapts to market conditions.
+
+            This is critical for trading models where calibration quality varies significantly
+            across different market regimes (trending vs ranging, high vs low volatility).
+            """
+            try:
+                # Step A: Prepare features for conditional analysis
+                # We'll use proxy features based on prediction variance and trends
+
+                n_samples = len(self.p.y_pred)
+
+                # Create synthetic market regime features from available data
+                # These are proxies when real market data isn't available
+
+                # 1. Volatility proxy: rolling std of predictions
+                window = min(50, n_samples // 10)
+                if window < 5:
+                    return {"error": "Insufficient samples for conditional calibration (need at least 50)"}
+
+                pred_series = pd.Series(self.p.y_pred)
+                test_series = pd.Series(self.p.y_test)
+
+                # Volatility: rolling std of actuals
+                volatility = test_series.rolling(window=window, min_periods=5).std().fillna(method='bfill').fillna(method='ffill')
+
+                # Trend: rolling mean of actuals
+                trend = test_series.rolling(window=window, min_periods=5).mean().fillna(method='bfill').fillna(method='ffill')
+
+                # Ensemble disagreement: rolling std of predictions (proxy for model uncertainty)
+                ensemble_std = pred_series.rolling(window=window, min_periods=5).std().fillna(method='bfill').fillna(method='ffill')
+
+                # Relative volume proxy: rolling range of actuals
+                rvol = (test_series.rolling(window=window, min_periods=5).max() -
+                       test_series.rolling(window=window, min_periods=5).min()).fillna(method='bfill').fillna(method='ffill')
+
+                # Create DataFrame with features
+                features_df = pd.DataFrame({
+                    'volatility': volatility.values,
+                    'trend': trend.values,
+                    'ensemble_std': ensemble_std.values,
+                    'rvol': rvol.values
+                })
+
+                # Winsorize and normalize features (RobustScaler simulation)
+                from sklearn.preprocessing import RobustScaler
+
+                winsorize_threshold = 0.95
+                for col in features_df.columns:
+                    # Winsorization
+                    upper = features_df[col].quantile(winsorize_threshold)
+                    lower = features_df[col].quantile(1 - winsorize_threshold)
+                    features_df[col] = features_df[col].clip(lower, upper)
+
+                # Robust scaling
+                scaler = RobustScaler()
+                features_scaled = scaler.fit_transform(features_df)
+                features_df[features_df.columns] = features_scaled
+
+                # Step B: Decile Binning Analysis
+                decile_analysis = {}
+
+                for feat_name in features_df.columns:
+                    feat_values = features_df[feat_name].values
+
+                    # Create 10 decile bins
+                    try:
+                        bins = np.percentile(feat_values, np.linspace(0, 100, 11))
+                        bins[-1] += 1e-8  # Ensure last value is included
+                        bin_indices = np.digitize(feat_values, bins) - 1
+                        bin_indices = np.clip(bin_indices, 0, 9)
+
+                        # Calculate Brier score for each decile
+                        decile_brier = []
+                        decile_counts = []
+                        decile_means = []
+
+                        for i in range(10):
+                            mask = bin_indices == i
+                            if mask.sum() > 0:
+                                decile_pred = self.p.y_pred[mask]
+                                decile_true = self.p.y_test[mask]
+
+                                brier = float(np.mean((decile_pred - decile_true) ** 2))
+                                decile_brier.append(brier)
+                                decile_counts.append(int(mask.sum()))
+                                decile_means.append(float(np.mean(feat_values[mask])))
+                            else:
+                                decile_brier.append(None)
+                                decile_counts.append(0)
+                                decile_means.append(None)
+
+                        # Find worst deciles (top 3)
+                        valid_briers = [(i, b) for i, b in enumerate(decile_brier) if b is not None]
+                        valid_briers.sort(key=lambda x: x[1], reverse=True)
+                        worst_deciles = valid_briers[:3]
+
+                        decile_analysis[feat_name] = {
+                            'decile_brier_scores': decile_brier,
+                            'decile_counts': decile_counts,
+                            'decile_means': decile_means,
+                            'worst_deciles': [{'decile': d, 'brier': b} for d, b in worst_deciles],
+                            'max_brier': max([b for b in decile_brier if b is not None], default=0),
+                            'min_brier': min([b for b in decile_brier if b is not None], default=0),
+                            'brier_range': max([b for b in decile_brier if b is not None], default=0) -
+                                          min([b for b in decile_brier if b is not None], default=0)
+                        }
+                    except Exception as e:
+                        decile_analysis[feat_name] = {'error': str(e)}
+
+                # Identify top 3 offender features
+                feature_offenders = []
+                for feat_name, analysis in decile_analysis.items():
+                    if 'error' not in analysis:
+                        feature_offenders.append((feat_name, analysis['brier_range']))
+
+                feature_offenders.sort(key=lambda x: x[1], reverse=True)
+                top_offenders = [f for f, _ in feature_offenders[:3]]
+
+                # Step C: Lasso Regression Conditional Fix
+                from sklearn.linear_model import LogisticRegressionCV
+                from scipy.special import logit
+
+                # Prepare predictions as probabilities [0, 1]
+                epsilon = 1e-5
+
+                # Normalize predictions to [0, 1] if needed
+                y_pred_min, y_pred_max = self.p.y_pred.min(), self.p.y_pred.max()
+                if y_pred_max - y_pred_min > 0:
+                    y_prob = (self.p.y_pred - y_pred_min) / (y_pred_max - y_pred_min)
+                else:
+                    y_prob = np.ones_like(self.p.y_pred) * 0.5
+
+                # Clip to avoid log(0) or log(1)
+                y_prob_safe = np.clip(y_prob, epsilon, 1 - epsilon)
+
+                # Normalize targets similarly
+                y_test_min, y_test_max = self.p.y_test.min(), self.p.y_test.max()
+                if y_test_max - y_test_min > 0:
+                    y_true = (self.p.y_test - y_test_min) / (y_test_max - y_test_min)
+                else:
+                    y_true = np.ones_like(self.p.y_test) * 0.5
+
+                y_true_safe = np.clip(y_true, epsilon, 1 - epsilon)
+
+                # Build feature matrix X
+                X_cond = pd.DataFrame()
+
+                # Base signal (logit-transformed)
+                X_cond['L'] = logit(y_prob_safe)
+
+                # Add top offender features and their interactions
+                for feat_name in top_offenders:
+                    if feat_name in features_df.columns:
+                        # Pure feature (veto switch)
+                        X_cond[feat_name] = features_df[feat_name].values
+
+                        # Interaction (sizer switch)
+                        X_cond[f'L_x_{feat_name}'] = X_cond['L'] * features_df[feat_name].values
+
+                # Fit Lasso with cross-validation
+                try:
+                    calibrator = LogisticRegressionCV(
+                        Cs=10,
+                        cv=min(5, n_samples // 50),  # Adaptive CV folds
+                        penalty='l1',
+                        solver='liblinear',
+                        scoring='neg_brier_score_loss',
+                        max_iter=1000,
+                        random_state=42
+                    )
+
+                    calibrator.fit(X_cond, (y_true_safe > 0.5).astype(int))
+
+                    # Extract coefficients
+                    coeffs = pd.Series(calibrator.coef_[0], index=X_cond.columns)
+                    survivors = coeffs[abs(coeffs) > 1e-4].sort_values(ascending=False)
+
+                    # Calculate calibrated probabilities
+                    y_calibrated_prob = calibrator.predict_proba(X_cond)[:, 1]
+
+                    # Calculate metrics before and after
+                    raw_brier = float(np.mean((y_prob_safe - y_true_safe) ** 2))
+                    cal_brier = float(np.mean((y_calibrated_prob - y_true_safe) ** 2))
+
+                    # Resolution (sharpness)
+                    base_rate = float(np.mean(y_true_safe))
+                    raw_resolution = float(np.mean((y_prob_safe - base_rate) ** 2))
+                    cal_resolution = float(np.mean((y_calibrated_prob - base_rate) ** 2))
+
+                    # ROC-AUC
+                    from sklearn.metrics import roc_auc_score
+                    raw_auc = float(roc_auc_score((y_true_safe > 0.5).astype(int), y_prob_safe))
+                    cal_auc = float(roc_auc_score((y_true_safe > 0.5).astype(int), y_calibrated_prob))
+
+                    # Check for degradation
+                    resolution_change = (cal_resolution - raw_resolution) / raw_resolution if raw_resolution > 0 else 0
+                    auc_change = (cal_auc - raw_auc) / raw_auc if raw_auc > 0 else 0
+                    brier_change = (cal_brier - raw_brier) / raw_brier if raw_brier > 0 else 0
+
+                    warnings = []
+                    if cal_resolution < (raw_resolution * 0.8):
+                        warnings.append("WARNING: Significant Resolution Loss! Calibrator is over-smoothing.")
+                    if cal_auc < raw_auc:
+                        warnings.append("WARNING: AUC decreased. Calibration may be degrading ranking ability.")
+                    if cal_brier > raw_brier:
+                        warnings.append("WARNING: Brier score increased. Calibration not improving.")
+
+                    lasso_results = {
+                        'best_C': float(calibrator.C_[0]),
+                        'coefficients': {k: float(v) for k, v in survivors.items()},
+                        'n_survivors': len(survivors),
+                        'metrics': {
+                            'raw_brier': raw_brier,
+                            'calibrated_brier': cal_brier,
+                            'brier_improvement': brier_change,
+                            'raw_resolution': raw_resolution,
+                            'calibrated_resolution': cal_resolution,
+                            'resolution_change': resolution_change,
+                            'raw_auc': raw_auc,
+                            'calibrated_auc': cal_auc,
+                            'auc_change': auc_change
+                        },
+                        'warnings': warnings,
+                        'status': 'success' if not warnings else 'warning'
+                    }
+                except Exception as lasso_error:
+                    lasso_results = {'error': f"Lasso fitting failed: {str(lasso_error)}"}
+
+                return {
+                    'top_offender_features': top_offenders,
+                    'decile_analysis': decile_analysis,
+                    'lasso_conditional_fix': lasso_results,
+                    'interpretation': (
+                        f"Conditional calibration analysis identified {len(top_offenders)} key features "
+                        f"affecting calibration quality: {', '.join(top_offenders)}. "
+                        f"{'Lasso regression successfully applied conditional fixes.' if 'error' not in lasso_results else 'Lasso fitting encountered errors.'} "
+                        f"{'No significant degradation detected.' if not lasso_results.get('warnings', []) else 'Warnings detected - review carefully.'}"
+                    )
+                }
+
+            except Exception as e:
+                return {"error": f"Conditional calibration analysis failed: {str(e)}"}
 
 class DiagnosisReporter:
     """

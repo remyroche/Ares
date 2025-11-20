@@ -3004,35 +3004,62 @@ class UnifiedModelsTrainingStep(BaseStep):
             have_regime_features = False
             try:
                 tprint_info("=" * 80)
-                tprint_info("🌟 LOADING HMM ALPHA REGIME FEATURES FROM HDF5 VERSIONED ARTIFACTS (PREFERRED)")
+                tprint_info("🌟 LOADING REGIME FEATURES FROM HDF5 VERSIONED ARTIFACTS (PREFERRED)")
                 tprint_info("=" * 80)
-                tprint_info(f"   Source Step: hmm_ml_alpha_step")
-                tprint_info(f"   Artifact Name: hmm_alpha_training_data_1h")
-                tprint_info(f"   Storage Format: HDF5 (via versioned_artifacts)")
+                tprint_info(f"   Trying ML Risk Regime first, then falling back to HMM Alpha")
 
-                # Use direct ArtifactRouter access with the HMM Alpha context,
-                # since the alpha step writes to model='regime_alpha' on the
-                # regime_timeframe (typically 1h), not the analyst base context.
+                # Use direct ArtifactRouter access
                 symbol = config.get('symbol', 'ETHUSDT')
                 exchange = config.get('exchange', 'binance')
                 regime_timeframe = config.get('regime_timeframe', config.get('timeframe', '1h'))
                 direction = config.get('direction', 'long')
 
-                alpha_context = {
+                alpha_training = None
+                source_type = None
+
+                # Try ML Risk Regime first
+                tprint_info(f"   Attempting ml_risk_training_data_1h...")
+                risk_context = {
                     'symbol': symbol,
                     'exchange': exchange,
                     'timeframe': regime_timeframe,
                     'direction': direction,
-                    'model': 'regime_alpha',
-                    'step_name': 'hmm_ml_alpha_step',
+                    'model': 'regime_risk',
+                    'step_name': 'ml_risk_regime_step',
                 }
 
                 alpha_training = self.artifact_router.load(
-                    artifact_name='hmm_alpha_training_data_1h',
+                    artifact_name='ml_risk_training_data_1h',
                     artifact_type='data',
                     data_category='features',
-                    context=alpha_context,
+                    context=risk_context,
                 )
+
+                if alpha_training is not None and not alpha_training.empty:
+                    source_type = 'ml_risk'
+                    tprint_info(f"   ✅ Retrieved ml_risk_training_data_1h: shape={alpha_training.shape}")
+                else:
+                    # Fall back to HMM Alpha
+                    tprint_info(f"   ML Risk not found, trying hmm_alpha_training_data_1h...")
+                    alpha_context = {
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'timeframe': regime_timeframe,
+                        'direction': direction,
+                        'model': 'regime_alpha',
+                        'step_name': 'hmm_ml_alpha_step',
+                    }
+
+                    alpha_training = self.artifact_router.load(
+                        artifact_name='hmm_alpha_training_data_1h',
+                        artifact_type='data',
+                        data_category='features',
+                        context=alpha_context,
+                    )
+
+                    if alpha_training is not None and not alpha_training.empty:
+                        source_type = 'hmm_alpha'
+                        tprint_info(f"   ✅ Retrieved hmm_alpha_training_data_1h: shape={alpha_training.shape}")
 
                 if alpha_training is not None:
                     if not isinstance(alpha_training, pd.DataFrame):
@@ -3044,21 +3071,23 @@ class UnifiedModelsTrainingStep(BaseStep):
                         alpha_training['timestamp'] = pd.to_datetime(alpha_training['timestamp'])
                         alpha_training.set_index('timestamp', inplace=True)
                     elif not isinstance(alpha_training.index, pd.DatetimeIndex):
-                        tprint_warning("⚠️ HMM Alpha training data has no DatetimeIndex; skipping alpha regime features")
+                        tprint_warning(f"⚠️ {source_type} training data has no DatetimeIndex; skipping regime features")
                         alpha_training = None
 
                 if alpha_training is not None and not alpha_training.empty:
-                    tprint_info(f"   ↪ Retrieved hmm_alpha_training_data_1h: shape={alpha_training.shape}, columns={len(alpha_training.columns)}")
+                    tprint_info(f"   ↪ Retrieved {source_type} training data: shape={alpha_training.shape}, columns={len(alpha_training.columns)}")
 
-                    # Select safe alpha regime feature columns
+                    # Select regime feature columns (supports both alpha and risk regimes)
                     alpha_cols = [
                         c for c in alpha_training.columns
-                        if c.startswith('alpha_regime_bucket_') or c.startswith('alpha_pred_')
+                        if (c.startswith('alpha_regime_bucket_') or c.startswith('alpha_pred_') or
+                            c.startswith('risk_regime') or c.startswith('risk_pred_') or
+                            c.startswith('risk_score'))
                     ]
 
                     if alpha_cols:
                         alpha_features = alpha_training[alpha_cols].copy()
-                        tprint_info(f"   ↪ Selected {len(alpha_cols)} alpha regime/score columns: {alpha_cols[:5]}{'...' if len(alpha_cols) > 5 else ''}")
+                        tprint_info(f"   ↪ Selected {len(alpha_cols)} regime/score columns from {source_type}: {alpha_cols[:5]}{'...' if len(alpha_cols) > 5 else ''}")
 
                         # Create OOS-style proxy: shift forward by one step then ffill
                         tprint_warning("⚠️ HMM Alpha regime features are in-sample; creating OOS proxy via 1-step shift (ffill)")
@@ -3079,7 +3108,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                         have_regime_features = True
                         tprint_success(f"✅ Added HMM Alpha regime features: shape={alpha_features.shape}")
                     else:
-                        tprint_warning("⚠️ HMM Alpha training data contains no alpha_regime_bucket_* or alpha_pred_* columns; skipping alpha regime features")
+                        tprint_warning(f"⚠️ {source_type} training data contains no regime feature columns; skipping regime features")
 
             except Exception as e:
                 tprint_warning(f"⚠️ Failed to load HMM Alpha regime features, falling back to legacy regime ensemble features: {e}")

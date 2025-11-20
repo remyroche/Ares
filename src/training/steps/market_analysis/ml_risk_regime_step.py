@@ -308,20 +308,46 @@ class MLRiskRegimeStep(BaseStep):
 
             if risk_scores is not None and regime_col_name is not None and regime_col_name in risk_df.columns:
                 try:
-                    regime_thresholds = self._extract_and_save_regime_thresholds(
-                        alpha_scores=alpha_scores,
-                        regime_labels=risk_df[regime_col_name],
-                        regime_col_name=regime_col_name,
-                        symbol=symbol,
-                        config=config,
-                    )
+                    # Extract KDE breakpoints and sigma as regime thresholds
+                    regime_thresholds = {
+                        "extraction_timestamp": datetime.now().isoformat(),
+                        "symbol": symbol,
+                        "regime_col_name": regime_col_name,
+                        "total_samples": len(risk_scores),
+                        "n_regimes": int(config.get("risk_regime_n_regimes", 5)),
+                        "risk_regime_breakpoints": config.get("risk_regime_breakpoints", []),
+                        "risk_regime_sigma": config.get("risk_regime_sigma", 0.05),
+                        "kde_bandwidth": config.get("risk_kde_bandwidth", 0.05),
+                    }
 
                     if regime_thresholds and "extraction_error" not in regime_thresholds:
                         # Save thresholds as artifact
                         try:
+                            # Convert breakpoints to DataFrame format for HDF5 compatibility
+                            breakpoints = regime_thresholds.get("risk_regime_breakpoints", [])
+                            if breakpoints:
+                                breakpoints_df = pd.DataFrame({
+                                    "breakpoint_idx": range(len(breakpoints)),
+                                    "breakpoint_value": breakpoints,
+                                })
+                                regime_thresholds_for_save = {
+                                    "breakpoints_df": breakpoints_df,
+                                    "metadata": {
+                                        "extraction_timestamp": regime_thresholds.get("extraction_timestamp"),
+                                        "symbol": regime_thresholds.get("symbol"),
+                                        "regime_col_name": regime_thresholds.get("regime_col_name"),
+                                        "total_samples": regime_thresholds.get("total_samples"),
+                                        "n_regimes": regime_thresholds.get("n_regimes"),
+                                        "sigma": regime_thresholds.get("risk_regime_sigma"),
+                                        "kde_bandwidth": regime_thresholds.get("kde_bandwidth"),
+                                    }
+                                }
+                            else:
+                                regime_thresholds_for_save = regime_thresholds
+
                             regime_thresholds_path = self._save_artifact(
-                                data=regime_thresholds,
-                                artifact_name="hmm_alpha_regime_thresholds_1h",
+                                data=regime_thresholds_for_save,
+                                artifact_name="ml_risk_regime_thresholds_1h",
                                 artifact_type="model",
                                 data_category="config",
                                 metadata={
@@ -331,47 +357,47 @@ class MLRiskRegimeStep(BaseStep):
                                     "n_regimes": regime_thresholds.get("n_regimes", 0),
                                 },
                             )
-                            tprint_info(f"💾 Saved regime thresholds artifact: {regime_thresholds_path}")
+                            tprint_info(f"💾 Saved risk regime thresholds artifact: {regime_thresholds_path}")
                         except Exception as thresholds_save_exc:
-                            tprint_warning(f"Failed to save regime thresholds artifact: {thresholds_save_exc}")
+                            tprint_warning(f"Failed to save risk regime thresholds artifact: {thresholds_save_exc}")
 
                         # Add thresholds to training metrics for reporting
                         training_metrics["regime_thresholds"] = regime_thresholds
                 except Exception as thresholds_exc:
-                    tprint_warning(f"Regime threshold extraction failed (non-fatal): {thresholds_exc}")
+                    tprint_warning(f"Risk regime threshold extraction failed (non-fatal): {thresholds_exc}")
 
             # ------------------------------------------------------------------
-            # 7) Switch context to dedicated alpha namespace and assess quality
+            # 8) Switch context to dedicated risk namespace and assess quality
             # ------------------------------------------------------------------
-            # Switch context to a dedicated alpha model namespace so we do not
+            # Switch context to a dedicated risk model namespace so we do not
             # pollute the original HMM regime store.
             self.set_context(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=regime_timeframe,
                 direction=direction,
-                model="regime_alpha",
+                model="regime_risk",
             )
 
-            # Run unified cluster quality assessment on alpha regimes (if any)
+            # Run risk-specific cluster quality assessment on risk regimes (if any)
             try:
-                risk_quality_metrics, risk_quality_path = self._assess_alpha_regime_quality(
+                risk_quality_metrics, risk_quality_path = self._assess_risk_regime_quality(
                     risk_df=risk_df,
                     regime_col=regime_col_name,
                     config=config,
                 )
             except Exception as quality_exc:
-                tprint_warning(f"Alpha regime quality assessment failed: {quality_exc}")
+                tprint_warning(f"Risk regime quality assessment failed: {quality_exc}")
 
-            alpha_to_save = risk_df.reset_index().rename(columns={risk_df.index.name or "index": "timestamp"})
+            risk_to_save = risk_df.reset_index().rename(columns={risk_df.index.name or "index": "timestamp"})
 
             tprint_info(
-                f"💾 Saving alpha training dataset with shape {alpha_to_save.shape} "
+                f"💾 Saving risk training dataset with shape {risk_to_save.shape} "
                 f"to versioned HDF5 store"
             )
             training_data_path = self._save_artifact(
-                data=alpha_to_save,
-                artifact_name="hmm_alpha_training_data_1h",
+                data=risk_to_save,
+                artifact_name="ml_risk_training_data_1h",
                 artifact_type="data",
                 metadata={
                     "symbol": symbol,
@@ -384,27 +410,27 @@ class MLRiskRegimeStep(BaseStep):
             # Save trained model if available
             if model is not None:
                 try:
-                    tprint_info("💾 Saving LightGBM alpha model via artifact router")
+                    tprint_info("💾 Saving XGBoost risk model via artifact router")
                     model_path = self._save_artifact(
                         data=model,
-                        artifact_name="hmm_alpha_model_1h",
+                        artifact_name="ml_risk_model_1h",
                         artifact_type="model",
                         metadata={
                             "symbol": symbol,
                             "exchange": exchange,
                             "timeframe": regime_timeframe,
-                            "model_type": "lightgbm",
+                            "model_type": "xgboost",
                         },
                     )
                 except Exception as save_model_exc:
-                    tprint_warning(f"Failed to save alpha model artifact: {save_model_exc}")
+                    tprint_warning(f"Failed to save risk model artifact: {save_model_exc}")
 
             # Persist feature pipeline (feature list + scaler state) for live usage
             if feature_pipeline_artifacts is not None:
                 try:
                     feature_pipeline_path = self._save_artifact(
                         data=feature_pipeline_artifacts,
-                        artifact_name="hmm_alpha_feature_pipeline_1h",
+                        artifact_name="ml_risk_feature_pipeline_1h",
                         artifact_type="model",
                         metadata={
                             "symbol": symbol,
@@ -414,15 +440,15 @@ class MLRiskRegimeStep(BaseStep):
                         },
                     )
                 except Exception as save_fp_exc:
-                    tprint_warning(f"Failed to save alpha feature pipeline artifact: {save_fp_exc}")
+                    tprint_warning(f"Failed to save risk feature pipeline artifact: {save_fp_exc}")
 
-            # Save regime-level alpha statistics if available
+            # Save regime-level risk statistics if available
             if regime_stats_df is not None and not regime_stats_df.empty:
                 try:
                     regime_stats_to_save = regime_stats_df.reset_index()
                     regime_stats_path = self._save_artifact(
                         data=regime_stats_to_save,
-                        artifact_name="hmm_alpha_regime_stats_1h",
+                        artifact_name="ml_risk_regime_stats_1h",
                         artifact_type="data",
                         metadata={
                             "symbol": symbol,
@@ -3089,6 +3115,93 @@ class MLRiskRegimeStep(BaseStep):
             tprint_warning(f"Walk-Forward Validation calculation failed: {e}")
             return {}
 
+    def _assess_risk_regime_quality(
+        self,
+        risk_df: pd.DataFrame,
+        regime_col: Optional[str],
+        config: Dict[str, Any],
+    ) -> Tuple[Optional[Any], Optional[str]]:
+        """Assess risk regime quality using RiskClusterQualityAssessor.
+
+        Args:
+            risk_df: DataFrame with risk features and regime assignments
+            regime_col: Name of regime column
+            config: Configuration dict
+
+        Returns:
+            Tuple of (risk_quality_metrics, risk_quality_path)
+        """
+        from src.training.steps.market_analysis.risk_cluster_quality_assessor import (
+            RiskClusterQualityAssessor,
+            RiskClusterQualityMetrics,
+        )
+
+        if regime_col is None or regime_col not in risk_df.columns:
+            tprint_warning("No regime column available for risk quality assessment")
+            return None, None
+
+        regime_labels = risk_df[regime_col].dropna()
+        if len(regime_labels) < 20:
+            tprint_warning(f"Insufficient regime samples ({len(regime_labels)}) for quality assessment")
+            return None, None
+
+        try:
+            assessor = RiskClusterQualityAssessor(config=config)
+            risk_quality_metrics = assessor.assess_risk_clusters(
+                risk_df=risk_df,
+                regime_labels=regime_labels,
+                config=config
+            )
+
+            # Save assessment report
+            symbol = config.get("symbol", "UNKNOWN")
+            report_path = assessor.save_assessment_report(
+                metrics=risk_quality_metrics,
+                symbol=symbol,
+                output_dir="outcomes"
+            )
+
+            # Save metrics as artifact
+            quality_metrics_dict = {
+                "var_stratification_score": risk_quality_metrics.var_stratification_score,
+                "cvar_stratification_score": risk_quality_metrics.cvar_stratification_score,
+                "var_monotonicity": risk_quality_metrics.var_monotonicity,
+                "cvar_monotonicity": risk_quality_metrics.cvar_monotonicity,
+                "volatility_clustering_coeff": risk_quality_metrics.volatility_clustering_coeff,
+                "within_vol_cv": risk_quality_metrics.within_vol_cv,
+                "between_vol_cv": risk_quality_metrics.between_vol_cv,
+                "vol_separation_ratio": risk_quality_metrics.vol_separation_ratio,
+                "calm_to_crash_direct_prob": risk_quality_metrics.calm_to_crash_direct_prob,
+                "calm_to_turbulent_to_crash_prob": risk_quality_metrics.calm_to_turbulent_to_crash_prob,
+                "transition_stability_score": risk_quality_metrics.transition_stability_score,
+                "overall_quality_score": risk_quality_metrics.overall_quality_score,
+                "n_regimes": risk_quality_metrics.n_regimes,
+                "n_samples": risk_quality_metrics.n_samples,
+                "regime_metrics": risk_quality_metrics.regime_metrics,
+            }
+
+            quality_path = self._save_artifact(
+                data=quality_metrics_dict,
+                artifact_name="ml_risk_quality_metrics_1h",
+                artifact_type="data",
+                metadata={
+                    "overall_quality_score": risk_quality_metrics.overall_quality_score,
+                    "n_regimes": risk_quality_metrics.n_regimes,
+                    "assessment_timestamp": risk_quality_metrics.assessment_timestamp,
+                },
+            )
+
+            tprint_success(
+                f"✅ Risk quality assessment complete: "
+                f"overall_score={risk_quality_metrics.overall_quality_score:.3f}, "
+                f"report={report_path}"
+            )
+
+            return risk_quality_metrics, quality_path
+
+        except Exception as e:
+            tprint_error(f"Risk quality assessment failed: {e}")
+            return None, None
     def _assess_alpha_regime_quality(
         self,
         *,
